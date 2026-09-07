@@ -8,9 +8,24 @@
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
 import { Effect, Layer, Schema, Stream } from "effect"
-import { LLMClient, LLMEvent, Tool, type FinishReason, type LLMRequest, type Model } from "@maple/llm"
-import { CloudflareWorkersAI } from "@maple/llm/providers/cloudflare"
-import { makeTurnObservability, runChatTurn, type ChatTurnEvent, type TurnCompletion } from "./index"
+import {
+	LLMClient,
+	LLMEvent,
+	Tool,
+	Usage,
+	type FinishReason,
+	type LLMRequest,
+	type LanguageModel,
+} from "@opencode-ai/ai"
+import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare"
+import {
+	makeTurnObservability,
+	makeTurnUsage,
+	runChatTurn,
+	type ChatTurnEvent,
+	type TurnCompletion,
+	type TurnUsage,
+} from "./index"
 import { MAX_STEP_ATTEMPTS } from "./budgets"
 import { DEFAULT_RULESET } from "../permissions"
 import type { AgentDefinition } from "../agents"
@@ -32,7 +47,7 @@ const TOOL_EXECUTOR = {
 		}),
 } satisfies McpToolExecutorApi
 
-const MODEL: Model = CloudflareWorkersAI.configure({
+const MODEL: LanguageModel = CloudflareWorkersAI.configure({
 	accountId: "test",
 	apiKey: "test",
 }).model("@cf/test/model")
@@ -40,14 +55,19 @@ const MODEL: Model = CloudflareWorkersAI.configure({
 /** A text delta, as the provider-neutral event the turn folds. */
 const textDelta = (text: string): LLMEvent => ({ type: "text-delta", id: "t1", text }) as LLMEvent
 
-const finish = (reason: FinishReason = "stop"): LLMEvent => ({ type: "finish", reason }) as LLMEvent
+const finish = (reason: FinishReason = "stop", usage?: Usage): LLMEvent =>
+	({
+		type: "finish",
+		reason: { normalized: reason },
+		...(usage === undefined ? undefined : { usage }),
+	}) as LLMEvent
 
 const reasoningDelta = (text: string): LLMEvent => ({ type: "reasoning-delta", id: "r1", text }) as LLMEvent
 
 const providerError = (
 	message: string,
-	options: { readonly retryable?: boolean; readonly classification?: "context-overflow" } = {},
-): LLMEvent => ({ type: "provider-error", message, ...options }) as LLMEvent
+	options: { readonly classification?: "context-overflow" } = {},
+): LLMEvent => ({ type: "provider-error", message, ...options })
 
 /**
  * `input` matters to more than the tool: `stop.ts` fingerprints it, so a fixture that wants many
@@ -102,13 +122,12 @@ type Failure = {
 	readonly events: ReadonlyArray<LLMEvent>
 	readonly fail: true
 	/**
-	 * Vendored reason tag. Defaults to a retryable `ProviderInternal`; `"Authentication"` (or any
+	 * Upstream reason tag. Defaults to a retryable `ProviderInternal`; `"Authentication"` (or any
 	 * other terminal reason) is how a test asserts the non-retrying path. Note that `Transport` and
-	 * `InvalidProviderOutput` carry `retryable: false` on the wire and are still retried — see
+	 * `InvalidProviderOutput` are not retryable at the call level and are still retried — see
 	 * `./retry.ts`.
 	 */
 	readonly reason?: string
-	readonly retryable?: boolean
 }
 
 type Step =
@@ -131,14 +150,13 @@ const stubModel = (steps: ReadonlyArray<Step>, log: RequestLog = []) => {
 			step += 1
 			if (Array.isArray(scripted)) return Stream.fromIterable(scripted as ReadonlyArray<LLMEvent>)
 			const partial = scripted as Failure
-			// The vendored error shape the turn maps through `toLlmCallError`.
+			// The upstream error shape the turn maps through `toLlmCallError`.
 			const failure = {
-				_tag: "LLMError",
+				_tag: "AI.Error",
 				module: "test",
 				method: "stream",
 				reason: { _tag: partial.reason ?? "ProviderInternal" },
 				message: "upstream exploded",
-				retryable: partial.retryable ?? partial.reason === undefined,
 			} as never
 			return Stream.concat(Stream.fromIterable(partial.events), Stream.fail(failure))
 		},
@@ -152,6 +170,7 @@ interface CollectOverrides {
 	readonly softStop?: () => boolean
 	readonly agent?: AgentDefinition
 	readonly completion?: TurnCompletion
+	readonly usage?: TurnUsage
 }
 
 const collect = (steps: ReadonlyArray<Step>, overrides: CollectOverrides = {}) => {
@@ -169,6 +188,7 @@ const collect = (steps: ReadonlyArray<Step>, overrides: CollectOverrides = {}) =
 		...(overrides.softStop ? { softStop: overrides.softStop } : undefined),
 		...(overrides.agent ? { agent: overrides.agent } : undefined),
 		...(overrides.completion ? { completion: overrides.completion } : undefined),
+		...(overrides.usage ? { usage: overrides.usage } : undefined),
 	}).pipe(
 		Stream.runCollect,
 		Effect.map((events) => Array.from(events) as ChatTurnEvent[]),
@@ -195,7 +215,11 @@ describe("runChatTurn", () => {
 		}),
 	)
 
-	it.live("coalesces adjacent text deltas into one event without losing any text", () =>
+	// The test clock, not `it.live`: these five deltas arrive within one 16ms window on a quiet
+	// machine but can straddle two on a loaded runner, and "how many batches" is the assertion. Under
+	// virtual time no wall clock advances between them, so the window never fires mid-stream and the
+	// group flushes once, at stream end.
+	it.effect("coalesces adjacent text deltas into one event without losing any text", () =>
 		Effect.gen(function* () {
 			const chunks = ["Check", "ing ", "the ", "traces", "."]
 			const events = yield* collectEvents([[...chunks.map(textDelta), finish()]])
@@ -211,7 +235,10 @@ describe("runChatTurn", () => {
 		}),
 	)
 
-	it.live("keeps text ahead of the tool calls it precedes", () =>
+	// The test clock, not `it.live`: same 16ms `groupedWithin` window as the coalescing test above,
+	// so the two deltas can straddle a batch boundary on a loaded runner. Virtual time keeps them
+	// in one batch deterministically.
+	it.effect("keeps text ahead of the tool calls it precedes", () =>
 		Effect.gen(function* () {
 			const events = yield* collectEvents([
 				[textDelta("Looking"), textDelta(" it up"), toolCall("c1", "create_alert_rule"), finish()],
@@ -284,6 +311,20 @@ describe("runChatTurn", () => {
 			// An abort already recorded the terminal event on the session; emitting another here would
 			// double-close the turn in the durable log.
 			assert.isEmpty(terminal(events))
+		}),
+	)
+
+	it.live("still accounts a settled step's tokens when the turn is superseded", () =>
+		Effect.gen(function* () {
+			const usage = makeTurnUsage()
+			yield* collectEvents(
+				[[textDelta("hi"), finish("stop", new Usage({ inputTokens: 900, outputTokens: 120 }))]],
+				{ isCurrent: () => false, usage },
+			)
+
+			// The step completed, so the provider served and charged for it. Stopping the turn
+			// silences the log, not the bill — the session runner meters what this holds.
+			assert.deepEqual(usage, { input: 900, output: 120, cacheRead: 0 })
 		}),
 	)
 })
@@ -375,22 +416,15 @@ describe("runChatTurn completion outcomes", () => {
 	}
 
 	it.live(
-		"retries a response-level provider error only when marked retryable",
+		"ends the turn on a response-level provider error, without leaking the provider's message",
 		() =>
 			Effect.gen(function* () {
-				const retried = yield* collect([
-					[providerError("overloaded", { retryable: true })],
-					[textDelta("ok"), finish()],
-				])
-				assert.equal(retried.calls, 2)
-				assert.equal(fold(retried.events), "ok")
-				assert.lengthOf(retries(retried.events), 1)
-
 				const terminalFailure = yield* collect([
 					[providerError("invalid request")],
 					[textDelta("never"), finish()],
 				])
 				assert.equal(terminalFailure.calls, 1)
+				assert.isEmpty(retries(terminalFailure.events))
 				const end = terminal(terminalFailure.events)[0]
 				assert.equal(end?.type === "turn-end" ? end.reason : undefined, "error")
 				assert.equal(
@@ -620,14 +654,14 @@ describe("runChatTurn retry", () => {
 		}),
 	)
 
-	it.live("retries a Transport failure even though it reports retryable: false", () =>
+	it.live("retries a Transport failure even though the call-level classifier would not", () =>
 		Effect.gen(function* () {
-			// The whole point of `./retry.ts`. `TransportReason` and `InvalidProviderOutputReason`
-			// hardcode `retryable = false`, and they are exactly how a body that dies mid-stream
-			// surfaces — a classifier that trusted the flag would pass a naive test and do nothing.
+			// The whole point of `./retry.ts`. `Transport` and `InvalidProviderOutput` are never
+			// retryable at the call level, and they are exactly how a body that dies mid-stream
+			// surfaces — a classifier that stopped there would pass a naive test and do nothing.
 			for (const reason of ["Transport", "InvalidProviderOutput"]) {
 				const result = yield* collect([
-					{ events: [], fail: true, reason, retryable: false },
+					{ events: [], fail: true, reason },
 					[textDelta("ok"), finish()],
 				])
 				assert.equal(result.calls, 2, `${reason} should have been retried`)
@@ -1076,6 +1110,60 @@ describe("runChatTurn closing submit", () => {
 			})
 			assert.isEmpty(terminal(events))
 			assert.isEmpty(submitted)
+		}),
+	)
+})
+
+describe("runChatTurn duplicate completion calls", () => {
+	it.live("dispatches only the first of duplicate completion calls in an ordinary step", () =>
+		Effect.gen(function* () {
+			// The completion is an exactly-once output channel: a response that
+			// carries it twice must not execute two competing submits.
+			const record: Array<unknown> = []
+			const result = yield* collect(
+				[
+					[
+						toolCall("c1", SUBMIT, { claim: "first" }),
+						toolCall("c2", SUBMIT, { claim: "second" }),
+						finish("tool-calls"),
+					],
+				],
+				{ completion: submitCompletion(record) },
+			)
+
+			assert.deepEqual(record, [{ claim: "first" }])
+			const submitEvents = result.events.filter(
+				(event) => event.type === "tool-call" && event.name === SUBMIT,
+			)
+			assert.lengthOf(submitEvents, 1)
+			const end = terminal(result.events)[0]
+			assert.equal(end?.type === "turn-end" ? end.reason : undefined, "stop")
+		}),
+	)
+
+	it.live("dispatches only the first duplicate on the forced closing step", () =>
+		Effect.gen(function* () {
+			const record: Array<unknown> = []
+			// Prose first step forces the submit closing step; the model then
+			// ignores "exactly one call" and emits the completion twice.
+			const result = yield* collect(
+				[
+					[textDelta("thinking..."), finish()],
+					[
+						toolCall("c1", SUBMIT, { claim: "first" }),
+						toolCall("c2", SUBMIT, { claim: "second" }),
+						finish("tool-calls"),
+					],
+				],
+				{ completion: submitCompletion(record) },
+			)
+
+			assert.deepEqual(record, [{ claim: "first" }])
+			const submitEvents = result.events.filter(
+				(event) => event.type === "tool-call" && event.name === SUBMIT,
+			)
+			assert.lengthOf(submitEvents, 1)
+			assert.lengthOf(terminal(result.events), 1)
 		}),
 	)
 })

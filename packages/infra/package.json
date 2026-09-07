@@ -2,17 +2,34 @@
 	"name": "@maple/infra",
 	"private": true,
 	"type": "module",
+	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./acm": "./src/aws/acm-dns-validation.ts",
 		"./aws": "./src/aws/index.ts",
 		"./cloudflare": "./src/cloudflare/index.ts",
-		"./dev-urls": "./src/dev-urls.ts"
+		"./config-helpers": "./src/config-helpers.ts",
+		"./dev-urls": "./src/dev-urls.ts",
+		"./env": "./src/env.ts",
+		"./worker-runtime": "./src/cloudflare/worker-runtime.ts",
+		"./worker-telemetry": "./src/cloudflare/worker-telemetry.ts",
+		"./workers-cache": "./src/cloudflare/workers-cache.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
+	"dependencies": {
+		"@distilled.cloud/aws": "1.0.0-rc.6",
+		"@maple-dev/alchemy": "workspace:*",
+		"@maple-dev/effect-sdk": "workspace:*",
+		"@maple/alchemy-portless": "workspace:*",
+		"@maple/domain": "workspace:*",
+		"alchemy": "2.0.0-beta.74",
+		"effect": "catalog:effect"
+	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "4.20260603.1",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"

@@ -20,6 +20,7 @@ import {
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { ChartLoading } from "@maple/ui/components/charts"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
 import { formatBucketLabel, formatNumber, inferBucketSeconds, inferRangeMs } from "@maple/ui/lib/format"
@@ -162,23 +163,25 @@ function LogsVolumePlot({
 						]
 					: []),
 			],
-			x: {
-				scale: scalePoint,
-				axis: {
-					line: false,
-					ticks: {
-						size: 0,
-						padding: 4,
-						format: (value: string) => formatBucketLabel(value, axisContext, "tick"),
+			scales: {
+				x: {
+					scale: scalePoint,
+					axis: {
+						line: false,
+						ticks: {
+							size: 0,
+							padding: 4,
+							format: (value: string) => formatBucketLabel(value, axisContext, "tick"),
+						},
+						tickLabels: { thin: { minGap: 12 } },
 					},
-					tickLabels: { thin: { minGap: 12 } },
 				},
-			},
-			y: {
-				scale: scaleLinear().domain(yDomain),
-				axis: {
-					line: false,
-					ticks: { size: 0, padding: 4, format: (value: number) => formatNumber(value) },
+				y: {
+					scale: scaleLinear().domain(yDomain),
+					axis: {
+						line: false,
+						ticks: { size: 0, padding: 4, format: (value: number) => formatNumber(value) },
+					},
 				},
 			},
 			// `bottom` is left unset: an authored side is a hard lock, and `bottom: 0`
@@ -230,6 +233,9 @@ interface LogsVolumeChartProps {
 }
 
 export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartProps) {
+	// Injected here (not via the atom option) — the custom-chart family is
+	// shared with dashboard widgets, which stay unscoped for now.
+	const pinnedNamespace = useGlobalNamespace()
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
 		filters?.startTime,
 		filters?.endTime,
@@ -251,10 +257,29 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 				endTime: effectiveEndTime,
 				bucketSeconds,
 				filters: {
-					serviceName: filters?.services?.[0],
-					severity: filters?.severities?.[0],
+					serviceNames: filters?.services ? [...filters.services] : undefined,
+					severities: filters?.severities ? [...filters.severities] : undefined,
 					environments: filters?.deploymentEnvs ? [...filters.deploymentEnvs] : undefined,
-					namespaces: filters?.namespaces ? [...filters.namespaces] : undefined,
+					namespaces:
+						pinnedNamespace !== null
+							? [pinnedNamespace]
+							: filters?.namespaces
+								? [...filters.namespaces]
+								: undefined,
+					excludedServiceNames: filters?.excludedServices
+						? [...filters.excludedServices]
+						: undefined,
+					excludedSeverities: filters?.excludedSeverities
+						? [...filters.excludedSeverities]
+						: undefined,
+					excludedEnvironments: filters?.excludedDeploymentEnvs
+						? [...filters.excludedDeploymentEnvs]
+						: undefined,
+					excludedNamespaces:
+						pinnedNamespace === null && filters?.excludedNamespaces
+							? [...filters.excludedNamespaces]
+							: undefined,
+					traceId: filters?.traceId,
 				},
 			},
 		}),
@@ -352,10 +377,17 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 			const points = response.data
 			if (points.length === 0) return null
 
+			// Severity is grouped by the RAW `SeverityText`, and SDKs disagree on
+			// its case — one org ships `INFO`, `Info` and `info` side by side. They
+			// are one severity to the reader, so fold them into one series here.
+			// Leaving them apart produced three tooltip rows all labelled "INFO",
+			// and three identical React keys: on every hover re-render React then
+			// leaked the stale rows instead of replacing them, and the tooltip grew
+			// a row per bucket crossed.
 			const seriesKeysSet = new Set<string>()
 			for (const point of points) {
 				for (const key of Object.keys(point.series)) {
-					seriesKeysSet.add(key)
+					seriesKeysSet.add(key.toUpperCase())
 				}
 			}
 
@@ -368,10 +400,15 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 				}
 			}
 
-			const chartData = points.map((point) => ({
-				bucket: point.bucket,
-				...point.series,
-			}))
+			const chartData = points.map((point) => {
+				const bySeverity = new Map<string, number>()
+				for (const [key, value] of Object.entries(point.series)) {
+					if (typeof value !== "number") continue
+					const canonical = key.toUpperCase()
+					bySeverity.set(canonical, (bySeverity.get(canonical) ?? 0) + value)
+				}
+				return { bucket: point.bucket, ...Object.fromEntries(bySeverity) }
+			})
 
 			const totalCount = points.reduce((sum, point) => {
 				return (

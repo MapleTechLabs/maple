@@ -10,9 +10,11 @@
  * than an absent section.
  */
 import type { APIRoute } from "astro"
+import { competitors } from "../lib/competitors"
 import { features } from "../lib/features"
 import { useCases } from "../lib/use-cases"
 import { absolute, plainText } from "../lib/page-markdown"
+import { API_ORIGIN, API_PATHS, GITHUB_URL, SITE_PATHS } from "../lib/agent-resources"
 
 const CONVENTION = (family: string) =>
 	`Append \`.md\` to any ${family} URL, or send \`Accept: text/markdown\`, to receive the raw markdown source.`
@@ -77,6 +79,14 @@ export const GET: APIRoute = ({ site }) => {
 		...useCases.map((useCase) => `- [${useCase.navLabel()}](${url(`/use-cases/${useCase.slug}.md`)})`),
 		"",
 
+		"## Comparisons",
+		"",
+		`Maple against Datadog, Grafana Cloud, New Relic and Dash0. Each page tabulates the differences with who has the edge on each row, prices one reference month on both at list price, and cites the vendor pages it was checked against, with dates. ${CONVENTION("comparison")}`,
+		"",
+		...both("Comparisons index", "/compare"),
+		...competitors.map((competitor) => `- [${competitor.navLabel()}](${url(`/compare/${competitor.slug}.md`)})`),
+		"",
+
 		"## Guides",
 		"",
 		"Evergreen explanations of application performance monitoring, observability, OpenTelemetry, and the tools used to operate production software.",
@@ -88,11 +98,34 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
 		"",
 
+		"## Maple API",
+		"",
+		`REST API for the Maple observability platform, base URL \`${API_ORIGIN}/v2\`. Bearer auth with a Maple API key (\`maple_ak_…\`); JSON in and out; every error is a \`{ "error": { "_tag", "type", "code", "message" } }\` envelope; 600 requests/minute per key with \`Retry-After\` on 429.`,
+		"",
+		`- [Maple API guide](${url(`${SITE_PATHS.apiDocs}.md`)}) — authentication, conventions, errors, rate limits`,
+		`- [OpenAPI 3.1 specification (JSON)](${url(SITE_PATHS.openapi)}) — every operation has an operationId, description, typed parameters and response schemas`,
+		`- [Interactive API reference](${API_ORIGIN}${API_PATHS.reference})`,
+		`- [Same spec served by the API](${API_ORIGIN}${API_PATHS.openapi})`,
+		"",
+
+		"## MCP server",
+		"",
+		`Maple exposes its API to AI agents as a hosted Model Context Protocol server over Streamable HTTP at \`${API_ORIGIN}${API_PATHS.mcp}\`. Authenticate with a Maple API key as a Bearer token, or let the client complete the OAuth flow advertised at \`${API_ORIGIN}${API_PATHS.oauthResource}\`.`,
+		"",
+		`- [MCP server guide](${url(`${SITE_PATHS.mcpDocs}.md`)}) — connecting Claude, Cursor, and other clients; available tools`,
+		`- [MCP server manifest (server.json)](${url(SITE_PATHS.mcpManifest)}) — also at ${url(SITE_PATHS.mcpServerJson)} and ${API_ORIGIN}${API_PATHS.mcpManifest}`,
+		`- [AI & MCP feature page](${url("/features/ai-mcp-integration.md")})`,
+		"",
+
 		"## Command line tool",
 		"",
-		"Run Maple locally against a single embedded ClickHouse binary — no account required.",
+		"The official `maple` binary is a standalone observability stack for local development: one process on localhost that receives OpenTelemetry and serves a full dashboard and query CLI — no account, no Docker, no hosted service required. It replaces the collector + Jaeger + Prometheus + Loki + Grafana compose stack. The same CLI can optionally talk to a hosted workspace.",
 		"",
-		`- [Install script](${url("/cli/install")})`,
+		`- [Maple Local (Markdown)](${url("/local.md")})`,
+		`- [Maple Local (HTML)](${url("/local")})`,
+		`- Homebrew: \`brew install Makisuo/tap/maple\``,
+		`- Install script: \`curl -fsSL ${url("/cli/install")} | sh\` ([source](${url("/cli/install")}))`,
+		`- [Releases on GitHub](${GITHUB_URL}/releases)`,
 		`- [CLI reference](${url("/docs/local-mode/cli-reference.md")})`,
 		"",
 
@@ -100,9 +133,9 @@ export const GET: APIRoute = ({ site }) => {
 		"",
 		"Maple ingests OpenTelemetry, so any OTel SDK works unmodified. The Effect SDK and the per-language guides are documented here.",
 		"",
-		`- [SDK overview](${url("/docs/sdks/overview.md")})`,
+		`- [Instrumentation overview](${url("/docs/instrumentation.md")})`,
 		`- [Effect SDK](${url("/docs/sdks/effect.md")})`,
-		`- [Repository](https://github.com/Makisuo/maple)`,
+		`- [Repository](${GITHUB_URL})`,
 		"",
 
 		"## Brand",
@@ -113,8 +146,12 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Brand kit archive](${url("/brand/maple-brand-kit.zip")})`,
 		"",
 
-		"## Legal",
+		"## Company",
 		"",
+		"Maple is built and operated by Makisuo, Inc.",
+		"",
+		...both("About Maple", SITE_PATHS.about),
+		...both("Contact", SITE_PATHS.contact),
 		`- [Privacy policy](${url("/privacy")})`,
 		`- [Terms of service](${url("/terms")})`,
 		"",
@@ -122,7 +159,7 @@ export const GET: APIRoute = ({ site }) => {
 		"## Community",
 		"",
 		"- [Discord](https://discord.gg/BnXjKuwJqP)",
-		"- [X](https://x.com/maple_dev)",
+		"- [X](https://x.com/Mapledotdev)",
 	].join("\n")
 
 	return plainText(body)

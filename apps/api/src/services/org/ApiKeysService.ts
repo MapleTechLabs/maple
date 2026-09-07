@@ -18,14 +18,16 @@ import { and, desc, eq, getTableColumns, isNull, lt, ne, or, sql } from "drizzle
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "@/platform/DatabaseLive"
 import { readTxid, txidColumn } from "@/platform/electric-txid"
-import { forkRequestScoped } from "@/platform/fork-request-scoped"
 import { Env } from "@/platform/Env"
 import { dateToMs, msToDate } from "@/platform/time"
+import { revokeFamiliesForAccessKeys } from "@/services/auth/mcp-oauth-family"
 
 export interface ResolvedApiKey {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly keyId: ApiKeyId
+	/** The key's display name, frozen into audit entries at write time. */
+	readonly name: string
 	readonly kind: ApiKeyKind
 	readonly metadataJson: string | null
 	/** v2 scope strings; null = legacy full access. */
@@ -535,13 +537,26 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// (which would also replicate a pointless row out through Electric).
 			const revokedRows = yield* database
 				.execute((db) =>
-					db
-						.update(apiKeys)
-						.set({ revoked: true, revokedAt: msToDate(now) })
-						.where(
-							and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, orgId), eq(apiKeys.revoked, false)),
-						)
-						.returning({ ...getTableColumns(apiKeys), ...txidColumn }),
+					db.transaction(async (tx) => {
+						const claimed = await tx
+							.update(apiKeys)
+							.set({ revoked: true, revokedAt: msToDate(now) })
+							.where(
+								and(
+									eq(apiKeys.id, keyId),
+									eq(apiKeys.orgId, orgId),
+									eq(apiKeys.revoked, false),
+								),
+							)
+							.returning({ ...getTableColumns(apiKeys), ...txidColumn })
+						// An MCP key is the visible face of an OAuth grant whose refresh
+						// family re-mints it hourly. Flipping `revoked` here alone was a
+						// no-op the next rotation undid, so the family goes with it.
+						if (claimed[0]?.kind === "mcp") {
+							await revokeFamiliesForAccessKeys(tx, [claimed[0].id], msToDate(now))
+						}
+						return claimed
+					}),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -581,6 +596,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 				orgId: row.value.orgId,
 				userId: row.value.createdBy,
 				keyId: row.value.id,
+				name: row.value.name,
 				kind: row.value.kind,
 				metadataJson: row.value.metadataJson == null ? null : JSON.stringify(row.value.metadataJson),
 				scopes: row.value.scopes ?? null,
@@ -658,9 +674,16 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 					"tenant.userId": resolved.value.userId,
 					"maple.api_key.id": resolved.value.keyId,
 				})
-				// Scoped, not detached: this write shares the request's single Postgres
-				// connection, and a detached fiber can outlive its release.
-				yield* forkRequestScoped(touchLastUsed(resolved.value.keyId).pipe(Effect.ignore))
+				// Awaited, not forked. A fork — even one started immediately and bound
+				// to the request scope — still lost the race on requests whose handler
+				// had no further async work (`GET /mcp`): the response went out, the
+				// Postgres scope closed, and the UPDATE died with CONNECTION_ENDED
+				// before it reached the socket, recorded as an error span on every
+				// such request. The memo and the SQL predicate already make this at
+				// most one cheap UPDATE per key per heartbeat on an already-dialed
+				// connection, so there is nothing worth racing for. Failure is
+				// still best-effort: a missed heartbeat must never fail auth.
+				yield* touchLastUsed(resolved.value.keyId).pipe(Effect.ignore)
 			}
 			return resolved
 		})

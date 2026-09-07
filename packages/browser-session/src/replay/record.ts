@@ -1,7 +1,8 @@
 import { record } from "rrweb"
+import { BLOCK_SELECTOR } from "../privacy-markers"
 import { markActivity, nextChunkSeq } from "../session/session"
 import type { IngestConfig } from "../platform/transport"
-import { gzip, postSessionBlob, type ChunkMeta } from "../platform/transport"
+import { gzip, postSessionBlob, warnDropped, type ChunkMeta } from "../platform/transport"
 
 // rrweb event shape — typed loosely to avoid coupling to @rrweb/types across
 // alpha releases. We only read `type`, `timestamp`, and incremental `data`.
@@ -94,7 +95,17 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		const seq = nextChunkSeq()
 		resetBuffer()
 
-		const gzipped = await gzip(new TextEncoder().encode(body))
+		// `gzip` now rejects rather than returning a truncated stream, and `flush`
+		// is called as a floating promise — an escaping rejection would surface in
+		// the host app's console as ours. Dropping the chunk is the same outcome
+		// ingest produced by refusing it, minus the wasted POST.
+		let gzipped: Uint8Array
+		try {
+			gzipped = await gzip(new TextEncoder().encode(body))
+		} catch (error) {
+			warnDropped("chunk compression", error)
+			return
+		}
 		const meta: ChunkMeta = {
 			sessionId,
 			chunkSeq: seq,
@@ -165,6 +176,11 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 			if (bufferBytes >= FLUSH_BYTES) void flush()
 		},
 		maskAllInputs: config.maskAllInputs,
+		// The README and docs advertise `data-rr-block` alongside `.rr-block`, but
+		// rrweb defaults `blockSelector` to null — the attribute silently did
+		// nothing, so anyone who marked up sensitive elements from the docs was
+		// still being recorded. Declaring it makes the documented hook real.
+		blockSelector: BLOCK_SELECTOR,
 		// rrweb has no `maskAllText` flag; selecting all elements masks every text node.
 		...(config.maskAllText ? { maskTextSelector: "*" } : undefined),
 		checkoutEveryNms: CHECKOUT_EVERY_MS,

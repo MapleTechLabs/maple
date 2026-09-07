@@ -5,7 +5,6 @@ import {
 	OrgId,
 	ScrapeAuthType,
 	ScrapeIntervalSeconds,
-	ScrapeTargetAuthError,
 	ScrapeTargetDeleteResponse,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetId,
@@ -27,6 +26,7 @@ import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } 
 import { encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "@/platform/Crypto"
 import { forkRequestScoped } from "@/platform/fork-request-scoped"
 import { Database } from "@/platform/DatabaseLive"
+import { msToDate } from "@/platform/time"
 import { Env } from "@/platform/Env"
 import {
 	BasicCredentialsSchema,
@@ -34,7 +34,7 @@ import {
 	buildScrapeAuthHeaders,
 	TokenCredentialsSchema,
 } from "@/services/auth/scrape-auth"
-import { safeFetch, validateExternalUrl } from "@/http/url-validator"
+import { safeFetch, validateExternalUrl } from "@maple/safe-fetch"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
 import {
@@ -57,23 +57,14 @@ interface ScrapeTargetOutcome {
 	updatedAt: Date
 }
 
-interface ScrapeTargetProxyResponse {
-	readonly status: number
-	readonly body: string
-	readonly contentType: string
-	/**
-	 * Upstream `Retry-After` in seconds (delta-seconds form only), surfaced so
-	 * the scraper can back off precisely on 429/503. `null` when absent or in
-	 * the HTTP-date form we don't parse.
-	 */
-	readonly retryAfterSeconds: number | null
-}
-
-/** Parse a `Retry-After` header value, honoring only the delta-seconds form. */
-const parseRetryAfterSeconds = (value: string | null): number | null => {
-	if (value === null) return null
-	const seconds = Number(value.trim())
-	return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
+/**
+ * Mutation options for the scrape-target write paths. Integration-owned rows
+ * (`managedBy` set) are refused by default so a generic `scrape_targets:write`
+ * caller cannot delete, disable, or re-credential a row an integration owns;
+ * the owning integration passes `allowManaged` for its own writes.
+ */
+export interface ScrapeTargetMutationOptions {
+	readonly allowManaged?: boolean
 }
 
 export interface ScrapeTargetsServiceApi {
@@ -101,6 +92,7 @@ export interface ScrapeTargetsServiceApi {
 		orgId: OrgId,
 		targetId: ScrapeTargetId,
 		request: UpdateScrapeTargetRequest,
+		options?: ScrapeTargetMutationOptions,
 	) => Effect.Effect<
 		ScrapeTargetResponse,
 		| ScrapeTargetNotFoundError
@@ -112,22 +104,37 @@ export interface ScrapeTargetsServiceApi {
 	readonly delete: (
 		orgId: OrgId,
 		targetId: ScrapeTargetId,
+		options?: ScrapeTargetMutationOptions,
+	) => Effect.Effect<
+		ScrapeTargetDeleteResponse,
+		ScrapeTargetNotFoundError | ScrapeTargetValidationError | ScrapeTargetPersistenceError
+	>
+	/**
+	 * Delete a target the calling integration owns, skipping the managed-ownership
+	 * guard rather than opting out of it with a flag.
+	 *
+	 * `delete(…, { allowManaged: true })` could not fire `ScrapeTargetValidationError`
+	 * but still declared it, which left every integration caller either widening its
+	 * own contract with an impossible 400 or killing the branch as a defect. The
+	 * caller is responsible for having checked `managedBy` first.
+	 */
+	readonly deleteManaged: (
+		orgId: OrgId,
+		targetId: ScrapeTargetId,
 	) => Effect.Effect<ScrapeTargetDeleteResponse, ScrapeTargetNotFoundError | ScrapeTargetPersistenceError>
 	readonly listAllEnabled: (
 		interval?: ScrapeIntervalSeconds,
 	) => Effect.Effect<ReadonlyArray<ScrapeTargetRow>, ScrapeTargetPersistenceError>
-	readonly scrapeForCollector: (
-		targetId: ScrapeTargetId,
-		subTargetKey?: string,
-	) => Effect.Effect<
-		ScrapeTargetProxyResponse,
-		| ScrapeTargetNotFoundError
-		| ScrapeTargetPersistenceError
-		| ScrapeTargetEncryptionError
-		| ScrapeTargetAuthError
-		| ScrapeTargetUpstreamError
-		| PlanetScaleAccessTokenError
-	>
+	/**
+	 * The request headers a target's stored credential decrypts to (an
+	 * `Authorization` entry, or `{}` for `none`). For managed PlanetScale rows
+	 * this resolves the org's OAuth grant instead — that header authenticates
+	 * the http_sd DISCOVERY call only, so the scraper's target list never asks
+	 * for it (branch scrapes carry a signed URL).
+	 */
+	readonly authHeaders: (
+		row: ScrapeTargetRow,
+	) => Effect.Effect<Record<string, string>, ScrapeTargetEncryptionError | PlanetScaleAccessTokenError>
 	readonly recordScrapeResults: (
 		results: ReadonlyArray<{
 			readonly targetId: ScrapeTargetId
@@ -171,37 +178,10 @@ export interface ScrapeTargetsServiceApi {
 	>
 }
 
-// In-isolate row cache for the internal scrape proxy. Every proxied scrape used
-// to re-read the target row from Postgres: production traces showed ~95k of
-// these per day for FOUR distinct rows (one PlanetScale target fans out to 30
-// branch sub-targets, each scraped on its own interval), and the lookup alone
-// was 74ms of the route's 130ms average — more than the upstream fetch it
-// exists to perform. Workers reuse an isolate across requests, so a
-// module-scoped memo serves the steady state with zero network.
-//
-// Deliberately NOT the shared edge cache: `Database.execute` p50 is 16ms while
-// an edge read is bounded at 250ms, so a second tier would not reliably pay for
-// itself here, and the row carries credential ciphertext + Date columns that
-// would need a bespoke JSON projection to survive it.
-//
-// Staleness is bounded by the same TTL `OrgClickHouseSettingsService` accepts
-// for its config memo. Mutations clear the entry in the writing isolate; other
-// isolates fall off within the TTL. A disabled or deleted target cannot keep
-// being scraped for that long regardless — the scraper reconciles its target
-// list every 60s (apps/scraper ScrapeScheduler) and simply stops asking.
-// The Map itself is built per service instance (not at module scope) so it is
-// scoped to the layer that owns the connection it caches — module scope would
-// share one memo across every database in a process, which is exactly wrong for
-// tests that build a fresh PGlite per case.
-const SCRAPE_TARGET_ROW_MEMO_TTL_MS = 300_000
-
 const toPersistenceError = (error: unknown) =>
 	new ScrapeTargetPersistenceError({
 		message: error instanceof Error ? error.message : "Scrape target persistence failed",
 	})
-
-const toUpstreamError = (message: string, status?: number) =>
-	new ScrapeTargetUpstreamError({ message, ...(!(status === undefined) ? { status } : undefined) })
 
 const toEncryptionError = (message: string) => new ScrapeTargetEncryptionError({ message })
 
@@ -408,6 +388,37 @@ const validateUrl = (url: string) => {
 	)
 }
 
+/**
+ * Scheme + host + port equality over parsed URLs (a string compare would miss
+ * normalization and default ports). An unparseable side counts as a change:
+ * failing closed keeps a stored credential from following an unknown origin.
+ */
+const isSameOrigin = (left: string, right: string): boolean => {
+	const parse = Option.liftThrowable((value: string) => new URL(value))
+	const a = parse(left)
+	const b = parse(right)
+	if (Option.isNone(a) || Option.isNone(b)) return false
+	return (
+		a.value.protocol === b.value.protocol &&
+		a.value.hostname === b.value.hostname &&
+		a.value.port === b.value.port
+	)
+}
+
+/** Integration-owned rows are edited through the owning integration, not the generic API. */
+const rejectManaged = (
+	row: ScrapeTargetRow,
+	options: ScrapeTargetMutationOptions | undefined,
+	verb: string,
+) =>
+	options?.allowManaged !== true && row.managedBy !== null
+		? Effect.fail(
+				new ScrapeTargetValidationError({
+					message: `This scrape target is managed by an integration (${row.managedBy}); ${verb} it through that integration instead`,
+				}),
+			)
+		: Effect.void
+
 const validateInterval = (seconds: number | undefined) => {
 	if (seconds === undefined) return Effect.void
 	if (!Number.isInteger(seconds) || seconds < MIN_SCRAPE_INTERVAL || seconds > MAX_SCRAPE_INTERVAL) {
@@ -490,11 +501,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const scrapeTargetRowMemo = new Map<string, { row: ScrapeTargetRow | null; expiresAt: number }>()
-			/** Drop the memoized row so the next proxied scrape re-reads it from Postgres. */
-			const invalidateScrapeTargetRow = (targetId: ScrapeTargetId): void => {
-				scrapeTargetRowMemo.delete(targetId)
-			}
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
@@ -533,34 +539,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					}),
 				)
 			})
-
-			const selectByIdForInternalScrape = Effect.fn("ScrapeTargetsService.selectByIdForInternalScrape")(
-				function* (targetId: ScrapeTargetId) {
-					const nowMs = yield* Clock.currentTimeMillis
-					const memoized = scrapeTargetRowMemo.get(targetId)
-					if (memoized !== undefined && memoized.expiresAt > nowMs) {
-						yield* Effect.annotateCurrentSpan("scrapeTarget.rowMemoHit", true)
-						return Option.fromNullishOr(memoized.row)
-					}
-					yield* Effect.annotateCurrentSpan("scrapeTarget.rowMemoHit", false)
-
-					const rows = yield* database
-						.execute((db) =>
-							db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-
-					// Misses are memoized too: a target deleted while the scraper still
-					// holds it in its 60s reconcile window would otherwise re-read
-					// Postgres on every scrape just to be told it's gone again.
-					const row = rows[0] ?? null
-					scrapeTargetRowMemo.set(targetId, {
-						row,
-						expiresAt: nowMs + SCRAPE_TARGET_ROW_MEMO_TTL_MS,
-					})
-					return Option.fromNullishOr(row)
-				},
-			)
 
 			// Managed PlanetScale targets store no credentials — the org's OAuth grant
 			// is resolved (and refreshed) at scrape time. Everything else decrypts the
@@ -797,9 +775,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 				request: UpdateScrapeTargetRequest,
+				options?: ScrapeTargetMutationOptions,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
 				const existing = yield* requireTarget(orgId, targetId)
+				yield* rejectManaged(existing, options, "edit")
 				const isPlanetScale = existing.targetType === "planetscale"
 
 				if (isPlanetScale && request.url !== undefined) {
@@ -855,13 +835,16 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const labels = yield* validateLabelsJson(request.labelsJson)
 
 				const now = yield* Clock.currentTimeMillis
-				const updates: Record<string, unknown> = { updatedAt: new Date(now) } satisfies Record<
-					string,
-					unknown
-				>
+				const updates: Partial<typeof scrapeTargets.$inferInsert> = { updatedAt: msToDate(now) }
+
+				// Track URL changes separately for the credential-origin check below.
+				let nextUrl: string | null = null
 
 				if (request.name !== undefined) updates.name = request.name.trim()
-				if (request.url !== undefined && request.url !== null) updates.url = request.url.trim()
+				if (request.url !== undefined && request.url !== null) {
+					nextUrl = request.url.trim()
+					updates.url = nextUrl
+				}
 
 				if (
 					isPlanetScale &&
@@ -895,7 +878,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						request.excludeBranches !== undefined
 							? yield* validateBranchPatterns(request.excludeBranches, "excludeBranches")
 							: (existingConfig?.excludeBranches ?? [])
-					updates.url = planetScaleDiscoveryUrl(organization)
+					nextUrl = planetScaleDiscoveryUrl(organization)
+					updates.url = nextUrl
 					updates.discoveryConfigJson = buildDiscoveryConfig(
 						organization,
 						includeBranches,
@@ -935,6 +919,24 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					}
 				}
 
+				// A stored credential is bound to the origin it was issued for. Carrying
+				// it across a scheme/host/port change would hand the secret to whoever
+				// controls the new host on the very next scrape or probe.
+				const credentialsRewritten = "authCredentialsCiphertext" in updates
+				if (
+					nextUrl !== null &&
+					existing.authCredentialsCiphertext !== null &&
+					!credentialsRewritten &&
+					!isSameOrigin(existing.url, nextUrl)
+				) {
+					return yield* Effect.fail(
+						new ScrapeTargetValidationError({
+							message:
+								"Changing a scrape target's scheme, host, or port requires re-supplying authCredentials — stored credentials are never carried to a new origin",
+						}),
+					)
+				}
+
 				yield* database
 					.execute((db) =>
 						db
@@ -956,18 +958,22 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				// Org or credential changes must take effect on the next scrape, not
 				// after the discovery TTL elapses.
 				if (isPlanetScale) yield* discovery.invalidate(targetId)
-				// Same reasoning for the proxy's row memo: a rotated credential or a
-				// flipped `enabled` must not be masked by a warm entry in this isolate.
-				invalidateScrapeTargetRow(targetId)
 
 				return yield* rowToResponse(row.value)
 			})
 
-			const remove = Effect.fn("ScrapeTargetsService.delete")(function* (
+			/**
+			 * The delete itself, past the managed-ownership question.
+			 *
+			 * Split out so `deleteManaged` can expose a channel without
+			 * `ScrapeTargetValidationError` in it: that error comes only from
+			 * `rejectManaged`, so a caller that never runs the guard cannot receive
+			 * it, and shouldn't have to say what it would do if it did.
+			 */
+			const removeRow = Effect.fn("ScrapeTargetsService.deleteRow")(function* (
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
 				const rows = yield* database
 					.execute((db) =>
 						db
@@ -988,11 +994,28 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				}
 
 				yield* discovery.invalidate(targetId)
-				invalidateScrapeTargetRow(targetId)
 
 				return new ScrapeTargetDeleteResponse({
 					id: decodeTargetIdSync(deleted.value.id),
 				})
+			})
+
+			const remove = Effect.fn("ScrapeTargetsService.delete")(function* (
+				orgId: OrgId,
+				targetId: ScrapeTargetId,
+				options?: ScrapeTargetMutationOptions,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* rejectManaged(yield* requireTarget(orgId, targetId), options, "remove")
+				return yield* removeRow(orgId, targetId)
+			})
+
+			const removeManaged = Effect.fn("ScrapeTargetsService.deleteManaged")(function* (
+				orgId: OrgId,
+				targetId: ScrapeTargetId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				return yield* removeRow(orgId, targetId)
 			})
 
 			const listAllEnabled = Effect.fn("ScrapeTargetsService.listAllEnabled")(function* (
@@ -1015,150 +1038,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					.pipe(Effect.mapError(toPersistenceError))
 
 				return rows
-			})
-
-			// The upstream `/metrics` fetch is effectively the entire cost of the
-			// scrape-proxy route: by the time we get here the target row is memoized,
-			// PlanetScale discovery is cached and no Postgres read remains. Without its
-			// own span that time is invisible — it shows up only as the unexplained
-			// residual of `scrapeForCollector`, whose every instrumented child measures
-			// 0ms, which is what made a 2026-07 latency shift take raw SQL to explain.
-			//
-			// `server.address` + `url.path`, never `url.full`: PlanetScale authenticates
-			// the metrics data plane with `?sig=&exp=` query params, i.e. credentials.
-			// `pathname` drops the query, so the signed URL cannot leak into telemetry.
-			//
-			// `peer.service` is deliberately low-cardinality (two values, not one per
-			// target) — a per-target name would fragment the service map into a node
-			// per scrape target.
-			const fetchUpstream = Effect.fn("ScrapeTargetsService.fetchUpstream", { kind: "client" })(
-				function* (
-					scrapeUrl: string,
-					headers: Record<string, string>,
-					// The drizzle column is a plain string, not the domain union — keep it
-					// that way rather than casting a DB read into the branded type.
-					targetType: string,
-					timeoutMs: number,
-				) {
-					const parsed = Option.liftThrowable(() => new URL(scrapeUrl))()
-					// Annotated before the fetch so a failed or timed-out scrape still
-					// draws its service-map edge.
-					yield* Effect.annotateCurrentSpan({
-						"peer.service":
-							targetType === "planetscale" ? "planetscale-metrics" : "scrape-target",
-						"http.request.method": "GET",
-						"maple.scrape.target_type": targetType,
-						...(Option.isSome(parsed)
-							? {
-									"server.address": parsed.value.host,
-									"url.path": parsed.value.pathname,
-								}
-							: undefined),
-					})
-
-					// `safeFetch` is retained for its SSRF protection + per-hop redirect
-					// re-validation (the Effect HttpClient transport has neither). The manual
-					// AbortController/setTimeout is replaced by the interruption-aware signal
-					// from `Effect.tryPromise` plus `Effect.timeout`: on timeout the fiber is
-					// interrupted, which aborts the in-flight fetch via that signal.
-					const result = yield* Effect.tryPromise({
-						try: async (signal) => {
-							const response = await safeFetch(scrapeUrl, {
-								method: "GET",
-								headers,
-								signal,
-							})
-							return {
-								status: response.status,
-								body: await response.text(),
-								contentType:
-									response.headers.get("content-type") ??
-									"text/plain; version=0.0.4; charset=utf-8",
-								retryAfterSeconds: parseRetryAfterSeconds(
-									response.headers.get("retry-after"),
-								),
-							} satisfies ScrapeTargetProxyResponse
-						},
-						// An upstream failure is the scrape TARGET's fault, not ours — a
-						// persistence error here would report someone else's unreachable
-						// endpoint as a Maple storage fault, which is what the exact v2
-						// error contracts (#458) set out to stop.
-						catch: (cause) =>
-							toUpstreamError(
-								cause instanceof Error ? cause.message : "Scrape target request failed",
-							),
-					}).pipe(
-						Effect.timeout(timeoutMs),
-						Effect.catchTag("TimeoutError", () =>
-							Effect.fail(toUpstreamError("Scrape target request timed out")),
-						),
-					)
-
-					yield* Effect.annotateCurrentSpan({
-						"http.response.status_code": result.status,
-						// Decoded character count, not wire bytes — hence the vendor
-						// namespace rather than `http.response.body.size`.
-						"maple.scrape.response_chars": result.body.length,
-					})
-					return result
-				},
-			)
-
-			const scrapeForCollector = Effect.fn("ScrapeTargetsService.scrapeForCollector")(function* (
-				targetId: ScrapeTargetId,
-				subTargetKey?: string,
-			) {
-				yield* Effect.annotateCurrentSpan({
-					scrapeTargetId: targetId,
-					subTargetKey: subTargetKey ?? "",
-				})
-				const row = yield* selectByIdForInternalScrape(targetId)
-				if (Option.isNone(row) || !row.value.enabled) {
-					return yield* Effect.fail(
-						new ScrapeTargetNotFoundError({
-							targetId,
-							message: "Scrape target not found",
-						}),
-					)
-				}
-
-				let scrapeUrl = row.value.url
-				// PlanetScale targets send no Authorization header at all, and that is
-				// the point: `authHeadersForRow` resolves the org's OAuth grant through
-				// `getValidConnectionToken`, which is uncached and therefore one fresh
-				// Postgres read on *every* scrape — measured at ~1.2k/hour. The data
-				// plane ignores the header (see below), so the whole read bought nothing.
-				//
-				// Branch on `targetType`, not on "did we end up with a signed URL": if
-				// PlanetScale ever starts honouring the header, this should fail to
-				// compile against a new target type rather than silently 401.
-				let headers: Record<string, string> = {}
-				if (row.value.targetType === "planetscale") {
-					// Resolve the per-branch endpoint from the discovery cache and use
-					// its SIGNED url: PlanetScale authenticates the metrics data plane
-					// with the short-lived `?sig=&exp=` params minted in the SD response,
-					// not the Authorization header (that only auths the discovery
-					// listing).
-					const subTargets = yield* discovery.discover(row.value)
-					const match = subTargets.find((entry) => entry.subTargetKey === subTargetKey)
-					if (!match) {
-						return yield* Effect.fail(
-							new ScrapeTargetNotFoundError({
-								targetId,
-								message: `PlanetScale sub-target not found: ${subTargetKey ?? "(none)"}`,
-							}),
-						)
-					}
-					scrapeUrl = match.signedUrl
-				} else {
-					headers = yield* authHeadersForRow(row.value)
-				}
-				const timeoutMs = Math.min(
-					10_000,
-					Math.max(1_000, (row.value.scrapeIntervalSeconds - 1) * 1000),
-				)
-
-				return yield* fetchUpstream(scrapeUrl, headers, row.value.targetType, timeoutMs)
 			})
 
 			const recordScrapeResults = Effect.fn("ScrapeTargetsService.recordScrapeResults")(function* (
@@ -1406,8 +1285,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				create,
 				update,
 				delete: remove,
+				deleteManaged: removeManaged,
 				listAllEnabled,
-				scrapeForCollector,
+				authHeaders: authHeadersForRow,
 				recordScrapeResults,
 				listChecks,
 				probe,

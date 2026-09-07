@@ -12,14 +12,8 @@
 				},
 				"key": {
 					"type": "string",
-					"allOf": [
-						{
-							"minLength": 1
-						},
-						{
-							"maxLength": 512
-						}
-					]
+					"minLength": 1,
+					"maxLength": 512
 				},
 				"type": {
 					"type": "string",
@@ -69,14 +63,8 @@
 						},
 						"value": {
 							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 20
-								},
-								{
-									"pattern": "^-?(?:0|[1-9][0-9]*)$"
-								}
-							]
+							"maxLength": 20,
+							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
 					"required": ["type", "value"],
@@ -105,11 +93,7 @@
 						},
 						"value": {
 							"type": "string",
-							"allOf": [
-								{
-									"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
-								}
-							]
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
 						}
 					},
 					"required": ["type", "value"],
@@ -124,14 +108,8 @@
 						},
 						"value": {
 							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 20
-								},
-								{
-									"pattern": "^-?(?:0|[1-9][0-9]*)$"
-								}
-							]
+							"maxLength": 20,
+							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
 					"required": ["type", "value"],
@@ -153,14 +131,8 @@
 							"items": {
 								"$ref": "#/$defs/SignalPredicate"
 							},
-							"allOf": [
-								{
-									"minItems": 1
-								},
-								{
-									"maxItems": 64
-								}
-							]
+							"minItems": 1,
+							"maxItems": 64
 						}
 					},
 					"required": ["op", "clauses"],
@@ -178,14 +150,8 @@
 							"items": {
 								"$ref": "#/$defs/SignalPredicate"
 							},
-							"allOf": [
-								{
-									"minItems": 1
-								},
-								{
-									"maxItems": 64
-								}
-							]
+							"minItems": 1,
+							"maxItems": 64
 						}
 					},
 					"required": ["op", "clauses"],
@@ -251,14 +217,8 @@
 							"items": {
 								"$ref": "#/$defs/SignalLiteral"
 							},
-							"allOf": [
-								{
-									"minItems": 1
-								},
-								{
-									"maxItems": 100
-								}
-							]
+							"minItems": 1,
+							"maxItems": 100
 						}
 					},
 					"required": ["op", "field", "values"],
@@ -271,56 +231,28 @@
 			"properties": {
 				"id": {
 					"type": "string",
-					"allOf": [
-						{
-							"minLength": 1
-						},
-						{
-							"maxLength": 256
-						},
-						{
-							"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-						}
-					]
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
 				},
 				"revision": {
 					"type": "integer",
-					"allOf": [
-						{
-							"exclusiveMinimum": 0
-						}
-					]
+					"exclusiveMinimum": 0
 				},
 				"enabled": {
 					"type": "boolean"
 				},
 				"tenantId": {
 					"type": "string",
-					"allOf": [
-						{
-							"minLength": 1
-						},
-						{
-							"maxLength": 256
-						},
-						{
-							"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-						}
-					]
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
 				},
 				"sourceKind": {
 					"type": "string",
-					"allOf": [
-						{
-							"minLength": 1
-						},
-						{
-							"maxLength": 256
-						},
-						{
-							"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-						}
-					]
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
 				},
 				"selector": {
 					"$ref": "#/$defs/SignalPredicate"
@@ -330,25 +262,13 @@
 					"properties": {
 						"id": {
 							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 256
-								},
-								{
-									"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-								}
-							]
+							"minLength": 1,
+							"maxLength": 256,
+							"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
 						},
 						"version": {
 							"type": "integer",
-							"allOf": [
-								{
-									"exclusiveMinimum": 0
-								}
-							]
+							"exclusiveMinimum": 0
 						},
 						"config": {}
 					},
@@ -357,11 +277,7 @@
 				},
 				"activeFrom": {
 					"type": "string",
-					"allOf": [
-						{
-							"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
-						}
-					]
+					"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
 				}
 			},
 			"required": [

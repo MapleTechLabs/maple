@@ -1,4 +1,4 @@
-import { optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
+import { optionalNumberParam, optionalStringParam, optionalTimeParam, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "@/mcp/lib/map-warehouse-error"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
 import { queryWarehouse } from "@/mcp/lib/query-warehouse"
@@ -30,8 +30,8 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				"When provided, returns values for this key instead of listing all keys",
 			),
 			service_name: optionalStringParam("Filter by service name"),
-			start_time: optionalStringParam("Start time (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalStringParam("End time (YYYY-MM-DD HH:mm:ss)"),
+			start_time: optionalTimeParam("Start time (YYYY-MM-DD HH:mm:ss)"),
+			end_time: optionalTimeParam("End time (YYYY-MM-DD HH:mm:ss)"),
 			limit: optionalNumberParam("Max results (default 50)"),
 		}),
 		Effect.fn("McpTool.exploreAttributes")(function* (params) {

@@ -5,6 +5,7 @@
 // product code. Keeping them out of the user-facing query modules makes
 // their scope explicit.
 
+import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { param } from "@maple-dev/clickhouse-builder"
 import { from } from "@maple-dev/clickhouse-builder"
@@ -67,16 +68,16 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 			),
 			sampleCount: CH.count(),
 			// Duration is microseconds (uint64) — convert to ms for display.
-			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-			p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
-			p99DurationMs: CH.quantile(0.99)($.Duration).div(1000000),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
+			p99DurationMs: finiteOrZero(CH.quantile(0.99)($.Duration).div(1000000)),
 			maxDurationMs: CH.max_($.Duration).div(1000000),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.SpanName.eq("WarehouseQueryService.executeSql"),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
 			// Spans without a fingerprint pre-date this attribute or come from
 			// the in-process `EXPLAIN` calls the bench itself makes — neither
 			// is interesting for ranking.

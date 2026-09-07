@@ -23,6 +23,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { AlertSourceCard } from "@/components/errors/alert-source-card"
 import { IssueCommentComposer } from "@/components/errors/issue-comment-composer"
 import { IssueCulpritPanel } from "@/components/errors/issue-culprit-panel"
+import { IssueDetailSkeleton } from "@/components/errors/issue-detail-skeleton"
 import { IssueFactStrip } from "@/components/errors/issue-fact-strip"
 import { IssueHeader } from "@/components/errors/issue-header"
 import { IssueIncidentsTable } from "@/components/errors/issue-incidents-table"
@@ -31,6 +32,9 @@ import { IssueOccurrencesTable } from "@/components/errors/issue-occurrences-tab
 import { IssueSidebar } from "@/components/errors/issue-sidebar"
 import { ISSUE_TABS, IssueTabs, type IssueTab } from "@/components/errors/issue-tabs"
 import { IssueTimeline } from "@/components/errors/issue-timeline"
+import { Button } from "@maple/ui/components/ui/button"
+import { IssuePullRequestsPanel } from "@/components/errors/issue-pull-requests-panel"
+import { IssueVerificationCard } from "@/components/errors/issue-verification-card"
 import { LinkedInvestigationPanel } from "@/components/errors/linked-investigation-panel"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -42,6 +46,8 @@ import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { errorIssueDetailFromV2 } from "@/lib/services/error-issues"
 import {
 	ErrorIssueId,
+	ErrorIssueLinkPullRequestRequest,
+	type ErrorIssuePullRequestId,
 	ErrorIssueSetSeverityRequest,
 	EscalationPolicyEvaluationRequest,
 	type IssueSeverity,
@@ -56,6 +62,13 @@ import {
 } from "./-issue-mutation-payloads"
 
 const decodeIssueId = Schema.decodeSync(ErrorIssueId)
+
+/**
+ * States where somebody has taken the issue on, so a missing pull-request link
+ * is a gap worth pointing at. Deliberately not `triage`/`todo`: nothing is being
+ * fixed yet, and nagging there would just be noise on every open issue.
+ */
+const AWAITING_FIX_STATES = new Set<WorkflowState>(["in_progress", "in_review"])
 
 const ISSUE_LOADING_BREADCRUMBS = [{ label: "Errors", href: "/errors" }, { label: "…" }] as const
 
@@ -162,6 +175,19 @@ function IssueDetailContent() {
 		reactivityKeys: ["investigations", `errorIssue:${issueId}:investigations`],
 	})
 	const investigationsResult = useAtomValue(investigationsQueryAtom)
+	const pullRequestsQueryAtom = retainedQuery("errors", "listIssuePullRequests", {
+		params: { issueId },
+		reactivityKeys: [`errorIssue:${issueId}:pull-requests`],
+	})
+	const pullRequestsResult = useAtomValue(pullRequestsQueryAtom)
+	const verificationsQueryAtom = retainedQuery("errors", "listIssueVerifications", {
+		params: { issueId },
+		// Shares the events key: a verdict lands as a timeline event and a
+		// verification-row update in the same tick, so one invalidation refreshes both.
+		reactivityKeys: [`errorIssue:${issueId}:events`, `errorIssue:${issueId}:verifications`],
+	})
+	const verificationsResult = useAtomValue(verificationsQueryAtom)
+
 	const escalationQueryAtom = retainedQuery("errors", "listIssueEscalations", {
 		params: { issueId },
 		reactivityKeys: [`errorIssue:${issueId}:escalations`],
@@ -193,10 +219,25 @@ function IssueDetailContent() {
 	const createInvestigation = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
 	})
+	const linkPullRequest = useAtomSet(MapleApiAtomClient.mutation("errors", "linkIssuePullRequest"), {
+		mode: "promiseExit",
+	})
+	const unlinkPullRequest = useAtomSet(MapleApiAtomClient.mutation("errors", "unlinkIssuePullRequest"), {
+		mode: "promiseExit",
+	})
 
+	const [attachDialogOpen, setAttachDialogOpen] = useState(false)
 	const [commentDraft, setCommentDraft] = useState("")
 	const [busy, setBusy] = useState<
-		"state" | "claim" | "release" | "heartbeat" | "comment" | "severity" | "investigation" | null
+		| "state"
+		| "claim"
+		| "release"
+		| "heartbeat"
+		| "comment"
+		| "severity"
+		| "investigation"
+		| "pull-request"
+		| null
 	>(null)
 	const [severityConfirmation, setSeverityConfirmation] = useState<{
 		readonly severity: IssueSeverity
@@ -209,6 +250,8 @@ function IssueDetailContent() {
 			`errorIssue:${issueId}`,
 			`errorIssue:${issueId}:events`,
 			`errorIssue:${issueId}:escalations`,
+			`errorIssue:${issueId}:pull-requests`,
+			`errorIssue:${issueId}:verifications`,
 		],
 		[issueId],
 	)
@@ -225,8 +268,18 @@ function IssueDetailContent() {
 			reactivityKeys: invalidateKeys,
 		})
 		setBusy(null)
-		if (Exit.isSuccess(result)) toastManager.add({ title: `Moved to ${next}`, type: "success" })
-		else toastManager.add({ title: "State change failed", type: "error" })
+		if (!Exit.isSuccess(result)) {
+			toastManager.add({ title: "State change failed", type: "error" })
+			return
+		}
+		toastManager.add({ title: `Moved to ${next}`, type: "success" })
+		// "In review" with no pull request attached is the exact moment the link is
+		// worth asking for — it is what opens the verification window later. Offered
+		// after the transition has already committed, so dismissing it costs nothing.
+		const attached = Result.builder(pullRequestsResult)
+			.onSuccess((response) => response.pullRequests.length)
+			.orElse(() => 0)
+		if (next === "in_review" && attached === 0) setAttachDialogOpen(true)
 	}
 
 	const claim = async () => {
@@ -262,6 +315,39 @@ function IssueDetailContent() {
 		setBusy(null)
 		if (Exit.isSuccess(result)) toastManager.add({ title: "Released", type: "success" })
 		else toastManager.add({ title: "Release failed", type: "error" })
+	}
+
+	// Resolves to whether the link landed, so the dialog can stay open — with the
+	// URL the user pasted still in it — when it did not.
+	const attachPullRequest = async (url: string): Promise<boolean> => {
+		setBusy("pull-request")
+		const result = await linkPullRequest({
+			params: { issueId },
+			payload: new ErrorIssueLinkPullRequestRequest({ url }),
+			reactivityKeys: invalidateKeys,
+		})
+		setBusy(null)
+		if (Exit.isSuccess(result)) {
+			toastManager.add({ title: "Pull request attached", type: "success" })
+			return true
+		}
+		// The endpoint fails three ways; only one of them is a bad URL. Telling a
+		// user their valid URL is malformed because Postgres was down sends them
+		// off to re-check a link that was fine.
+		const { title, message } = displayError(result)
+		toastManager.add({ title, description: message, type: "error" })
+		return false
+	}
+
+	const detachPullRequest = async (pullRequestId: ErrorIssuePullRequestId) => {
+		setBusy("pull-request")
+		const result = await unlinkPullRequest({
+			params: { issueId, pullRequestId },
+			reactivityKeys: invalidateKeys,
+		})
+		setBusy(null)
+		if (Exit.isSuccess(result)) toastManager.add({ title: "Pull request detached", type: "success" })
+		else toastManager.add({ title: "Could not detach the pull request", type: "error" })
 	}
 
 	const applySeverity = async (next: IssueSeverity | null) => {
@@ -416,217 +502,285 @@ function IssueDetailContent() {
 		}
 	}
 
-	return Result.builder(detailResult)
-		.onInitial(() => (
-			<IssueShell breadcrumbs={[...ISSUE_LOADING_BREADCRUMBS]}>
-				<div className="space-y-4">
-					<Skeleton className="h-24 w-full" />
-					<Skeleton className="h-20 w-full" />
-					<Skeleton className="h-40 w-full" />
-				</div>
-			</IssueShell>
-		))
-		.onError((error) => (
-			<IssueShell breadcrumbs={[...ISSUE_LOADING_BREADCRUMBS]}>
-				<ErrorState error={error} title="Failed to load issue" onRetry={refreshDetail} />
-			</IssueShell>
-		))
-		.onSuccess((v2Detail) => {
-			const detail = errorIssueDetailFromV2(v2Detail)
-			const { issue, timeseries, sampleTraces, incidents } = detail
-			const totalInWindow = timeseries.reduce((sum, b) => sum + b.count, 0)
-			const linkedInvestigation = Result.builder(investigationsResult)
-				.onSuccess((response) => response.data[0] ?? null)
-				.orElse(() => null)
-			const escalationAttempts = Result.builder(escalationResult)
-				.onSuccess((response) => response.attempts)
-				.orElse(() => [])
-			const events = Result.builder(eventsResult)
-				.onSuccess((value) => value.events)
-				.orElse(() => [])
-			// Everyone who has spoken or acted on this issue, newest activity first,
-			// so the composer's participant strip leads with whoever is here now.
-			const participants = [
-				...(issue.leaseHolder ? [issue.leaseHolder] : []),
-				...(issue.assignedActor ? [issue.assignedActor] : []),
-				...[...events].reverse().flatMap((event) => (event.actor ? [event.actor] : [])),
-			]
-			const linkedEscalation = linkedInvestigation
-				? (escalationAttempts.find((attempt) => attempt.investigationId === linkedInvestigation.id) ??
-					null)
-				: null
-			const latestIncidentId =
-				issue.kind === "alert"
-					? typeof issue.sourceRef?.latestIncidentId === "string"
-						? issue.sourceRef.latestIncidentId
-						: null
-					: ((incidents.find((incident) => incident.status === "open") ?? incidents[0])?.id ?? null)
-			const investigate = () =>
-				void startInvestigation({
-					issue,
-					kind: issue.kind === "alert" ? "alert" : "error",
-					incidentId: latestIncidentId,
-				})
+	return (
+		Result.builder(detailResult)
+			// Not a page-shaped skeleton: the layout, tabs, window picker and rail
+			// labels are all knowable without the query, so the load draws the real
+			// page with ghosted values instead of blanking it.
+			.onInitial(() => (
+				<IssueDetailSkeleton
+					issueId={issueId}
+					tab={tab}
+					search={search}
+					onTimeChange={handleTimeChange}
+					windowLabel={windowLabel(search)}
+				/>
+			))
+			.onError((error) => (
+				<IssueShell breadcrumbs={[...ISSUE_LOADING_BREADCRUMBS]}>
+					<ErrorState error={error} title="Failed to load issue" onRetry={refreshDetail} />
+				</IssueShell>
+			))
+			.onSuccess((v2Detail) => {
+				const detail = errorIssueDetailFromV2(v2Detail)
+				const { issue, timeseries, sampleTraces, incidents, environments } = detail
+				const totalInWindow = timeseries.reduce((sum, b) => sum + b.count, 0)
+				const linkedInvestigation = Result.builder(investigationsResult)
+					.onSuccess((response) => response.data[0] ?? null)
+					.orElse(() => null)
+				const escalationAttempts = Result.builder(escalationResult)
+					.onSuccess((response) => response.attempts)
+					.orElse(() => [])
+				const pullRequests = Result.builder(pullRequestsResult)
+					.onSuccess((response) => response.pullRequests)
+					.orElse(() => [])
+				const suggestedRepository = Result.builder(pullRequestsResult)
+					.onSuccess((response) => response.suggestedRepository)
+					.orElse(() => null)
+				// Newest first from the API, so the head is the check that matters — an
+				// older settled verification is history the timeline already carries.
+				const latestVerification = Result.builder(verificationsResult)
+					.onSuccess((response) => response.verifications[0] ?? null)
+					.orElse(() => null)
+				const events = Result.builder(eventsResult)
+					.onSuccess((value) => value.events)
+					.orElse(() => [])
+				// Everyone who has spoken or acted on this issue, newest activity first,
+				// so the composer's participant strip leads with whoever is here now.
+				const participants = [
+					...(issue.leaseHolder ? [issue.leaseHolder] : []),
+					...(issue.assignedActor ? [issue.assignedActor] : []),
+					...[...events].reverse().flatMap((event) => (event.actor ? [event.actor] : [])),
+				]
+				const linkedEscalation = linkedInvestigation
+					? (escalationAttempts.find(
+							(attempt) => attempt.investigationId === linkedInvestigation.id,
+						) ?? null)
+					: null
+				const latestIncidentId =
+					issue.kind === "alert"
+						? typeof issue.sourceRef?.latestIncidentId === "string"
+							? issue.sourceRef.latestIncidentId
+							: null
+						: ((incidents.find((incident) => incident.status === "open") ?? incidents[0])?.id ??
+							null)
+				const investigate = () =>
+					void startInvestigation({
+						issue,
+						kind: issue.kind === "alert" ? "alert" : "error",
+						incidentId: latestIncidentId,
+					})
 
-			return (
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs
-						items={[
-							{ label: "Errors", href: "/errors" },
-							{ label: issue.exceptionType || issue.errorLabel || "Unlabelled error" },
-						]}
-					/>
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							<DashboardLayout.Sticky>
-								<IssueHeader
-									issue={issue}
-									issueId={issueId}
-									investigation={linkedInvestigation}
-									search={search}
-									onTimeChange={handleTimeChange}
-									onStartInvestigation={investigate}
-									startingInvestigation={busy === "investigation"}
-								/>
-								<IssueTabs
-									issueId={issueId}
-									active={tab}
-									occurrenceCount={sampleTraces.length}
-									activityCount={events.length + escalationAttempts.length}
-									showOccurrences={issue.kind === "error"}
-								/>
-							</DashboardLayout.Sticky>
-							<DashboardLayout.Scroll>
-								{tab === "overview" ? (
-									<div className="flex flex-col gap-7">
-										<IssueCulpritPanel issue={issue} />
-										<IssueFactStrip
-											issue={issue}
-											windowCount={totalInWindow}
-											windowLabel={windowLabel(search)}
-										/>
-										{issue.kind === "alert" ? (
-											<AlertSourceCard issue={issue} />
-										) : (
-											<IssueOccurrencePanel
-												data={timeseries}
-												severity={issue.severity}
-												window={chartWindow}
+				return (
+					<DashboardLayout.Root>
+						<DashboardLayout.Breadcrumbs
+							items={[
+								{ label: "Errors", href: "/errors" },
+								{ label: issue.exceptionType || issue.errorLabel || "Unlabelled error" },
+							]}
+						/>
+						<DashboardLayout.Body>
+							<DashboardLayout.Content>
+								<DashboardLayout.Sticky>
+									<IssueHeader
+										issue={issue}
+										issueId={issueId}
+										investigation={linkedInvestigation}
+										search={search}
+										onTimeChange={handleTimeChange}
+										onStartInvestigation={investigate}
+										startingInvestigation={busy === "investigation"}
+									/>
+									<IssueTabs
+										issueId={issueId}
+										active={tab}
+										occurrenceCount={sampleTraces.length}
+										activityCount={events.length + escalationAttempts.length}
+										showOccurrences={issue.kind === "error"}
+									/>
+								</DashboardLayout.Sticky>
+								<DashboardLayout.Scroll>
+									{tab === "overview" ? (
+										<div className="flex flex-col gap-7">
+											<IssueCulpritPanel issue={issue} />
+											<IssueFactStrip
+												issue={issue}
+												windowCount={totalInWindow}
+												windowLabel={windowLabel(search)}
 											/>
-										)}
-										<LinkedInvestigationPanel
-											investigation={linkedInvestigation}
-											escalation={linkedEscalation}
-											onStart={investigate}
-											starting={busy === "investigation"}
-										/>
-										{issue.kind === "error" ? (
-											<BodySection
-												id="incidents"
-												title="Incidents"
-												count={
-													incidents.length === 0
-														? undefined
-														: `${incidents.length} opened`
-												}
-											>
-												<IssueIncidentsTable incidents={incidents} />
-											</BodySection>
-										) : null}
-										<RelatedAnomaliesSection issueId={issueId} />
-									</div>
-								) : tab === "occurrences" ? (
-									<BodySection
-										id="occurrences"
-										title="Latest occurrences"
-										count={
-											sampleTraces.length === 0
-												? undefined
-												: `${sampleTraces.length} sampled in this window`
-										}
+											{issue.kind === "alert" ? (
+												<AlertSourceCard issue={issue} />
+											) : (
+												<IssueOccurrencePanel
+													data={timeseries}
+													severity={issue.severity}
+													window={chartWindow}
+												/>
+											)}
+											<LinkedInvestigationPanel
+												investigation={linkedInvestigation}
+												escalation={linkedEscalation}
+												onStart={investigate}
+												starting={busy === "investigation"}
+											/>
+											{issue.kind === "error" ? (
+												<BodySection
+													id="incidents"
+													title="Incidents"
+													count={
+														incidents.length === 0
+															? undefined
+															: `${incidents.length} opened`
+													}
+												>
+													<IssueIncidentsTable incidents={incidents} />
+												</BodySection>
+											) : null}
+											<RelatedAnomaliesSection issueId={issueId} />
+										</div>
+									) : tab === "occurrences" ? (
+										<BodySection
+											id="occurrences"
+											title="Latest occurrences"
+											count={
+												sampleTraces.length === 0
+													? undefined
+													: `${sampleTraces.length} sampled in this window`
+											}
+										>
+											<IssueOccurrencesTable traces={sampleTraces} />
+										</BodySection>
+									) : (
+										<BodySection id="activity" title="Activity">
+											{Result.builder(eventsResult)
+												.onError((error) => (
+													<ErrorState
+														error={error}
+														title="Failed to load the activity timeline"
+														onRetry={refreshEvents}
+														variant="inline"
+													/>
+												))
+												.onSuccess((value) => (
+													<IssueTimeline
+														events={value.events}
+														escalations={escalationAttempts}
+													/>
+												))
+												.orElse(() => (
+													<Skeleton className="h-20 w-full" />
+												))}
+											<IssueCommentComposer
+												className="mt-6"
+												disabled={busy === "comment"}
+												onChange={setCommentDraft}
+												onSubmit={submitComment}
+												participants={participants}
+												value={commentDraft}
+											/>
+										</BodySection>
+									)}
+									<AlertDialog
+										open={severityConfirmation !== null}
+										onOpenChange={(open) => {
+											if (!open) setSeverityConfirmation(null)
+										}}
 									>
-										<IssueOccurrencesTable traces={sampleTraces} />
-									</BodySection>
-								) : (
-									<BodySection id="activity" title="Activity">
-										{Result.builder(eventsResult)
-											.onError((error) => (
-												<ErrorState
-													error={error}
-													title="Failed to load the activity timeline"
-													onRetry={refreshEvents}
-													variant="inline"
-												/>
-											))
-											.onSuccess((value) => (
-												<IssueTimeline
-													events={value.events}
-													escalations={escalationAttempts}
-												/>
-											))
-											.orElse(() => (
-												<Skeleton className="h-20 w-full" />
-											))}
-										<IssueCommentComposer
-											className="mt-6"
-											disabled={busy === "comment"}
-											onChange={setCommentDraft}
-											onSubmit={submitComment}
-											participants={participants}
-											value={commentDraft}
+										<AlertDialogContent>
+											<AlertDialogHeader>
+												<AlertDialogTitle>
+													Notify escalation destinations?
+												</AlertDialogTitle>
+												<AlertDialogDescription>
+													Changing severity to {severityConfirmation?.severity} will
+													notify {severityConfirmation?.destinationNames.join(", ")}
+													. Manual severity changes represent explicit human intent
+													and bypass AI confidence gates.
+												</AlertDialogDescription>
+											</AlertDialogHeader>
+											<AlertDialogFooter>
+												<AlertDialogCancel>Cancel</AlertDialogCancel>
+												<AlertDialogAction
+													onClick={() => {
+														const pending = severityConfirmation
+														setSeverityConfirmation(null)
+														if (pending) void applySeverity(pending.severity)
+													}}
+												>
+													Change severity and notify
+												</AlertDialogAction>
+											</AlertDialogFooter>
+										</AlertDialogContent>
+									</AlertDialog>
+								</DashboardLayout.Scroll>
+							</DashboardLayout.Content>
+							<DashboardLayout.RightPanel>
+								<div className="flex flex-col gap-4">
+									<IssueSidebar
+										issue={issue}
+										environments={environments}
+										busy={busy}
+										onTransition={transitionTo}
+										onClaim={claim}
+										onHeartbeat={heartbeat}
+										onRelease={release}
+										onSetSeverity={changeSeverity}
+									/>
+									{/* Inset here, not on the outer column: `IssueSidebar` is
+								    deliberately full-bleed against the rail's border, while these
+								    two are bordered cards — without the padding their own border
+								    doubles up against the rail's and runs into the viewport edge. */}
+									<div className="flex flex-col gap-4 px-4 pb-4">
+										{/* Above the PR list: while a check is running it is the most
+									    load-bearing thing on the page — it explains why the issue is
+									    sitting in `verifying` and nobody needs to touch it. */}
+										{latestVerification ? (
+											<IssueVerificationCard
+												verification={latestVerification}
+												workflowState={issue.workflowState}
+											/>
+										) : AWAITING_FIX_STATES.has(issue.workflowState) &&
+										  pullRequests.length === 0 ? (
+											// Somebody is working this issue but nothing is attached, so
+											// there is nothing for verification to trigger on. Said here,
+											// in the slot the verification card will occupy, rather than
+											// only on the panel below where the payoff is easy to miss.
+											<section className="rounded-xl border bg-card px-4 py-3">
+												<p className="text-xs text-muted-foreground">
+													No pull request attached. Maple can only confirm this
+													error stopped if it knows which fix to watch.
+												</p>
+												<Button
+													size="sm"
+													variant="outline"
+													// The rail is ~255px wide; the label does not fit
+													// on one line at its natural width and overflowed
+													// the card until it was allowed to wrap.
+													className="mt-2 h-auto w-full whitespace-normal py-1.5 text-xs"
+													onClick={() => setAttachDialogOpen(true)}
+												>
+													Attach the PR that fixes this
+												</Button>
+											</section>
+										) : null}
+										<IssuePullRequestsPanel
+											pullRequests={pullRequests}
+											suggestedRepository={suggestedRepository}
+											onLink={attachPullRequest}
+											onUnlink={detachPullRequest}
+											busy={busy === "pull-request"}
+											open={attachDialogOpen}
+											onOpenChange={setAttachDialogOpen}
 										/>
-									</BodySection>
-								)}
-								<AlertDialog
-									open={severityConfirmation !== null}
-									onOpenChange={(open) => {
-										if (!open) setSeverityConfirmation(null)
-									}}
-								>
-									<AlertDialogContent>
-										<AlertDialogHeader>
-											<AlertDialogTitle>
-												Notify escalation destinations?
-											</AlertDialogTitle>
-											<AlertDialogDescription>
-												Changing severity to {severityConfirmation?.severity} will
-												notify {severityConfirmation?.destinationNames.join(", ")}.
-												Manual severity changes represent explicit human intent and
-												bypass AI confidence gates.
-											</AlertDialogDescription>
-										</AlertDialogHeader>
-										<AlertDialogFooter>
-											<AlertDialogCancel>Cancel</AlertDialogCancel>
-											<AlertDialogAction
-												onClick={() => {
-													const pending = severityConfirmation
-													setSeverityConfirmation(null)
-													if (pending) void applySeverity(pending.severity)
-												}}
-											>
-												Change severity and notify
-											</AlertDialogAction>
-										</AlertDialogFooter>
-									</AlertDialogContent>
-								</AlertDialog>
-							</DashboardLayout.Scroll>
-						</DashboardLayout.Content>
-						<DashboardLayout.RightPanel>
-							<IssueSidebar
-								issue={issue}
-								busy={busy}
-								onTransition={transitionTo}
-								onClaim={claim}
-								onHeartbeat={heartbeat}
-								onRelease={release}
-								onSetSeverity={changeSeverity}
-							/>
-						</DashboardLayout.RightPanel>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
-			)
-		})
-		.render()
+									</div>
+								</div>
+							</DashboardLayout.RightPanel>
+						</DashboardLayout.Body>
+					</DashboardLayout.Root>
+				)
+			})
+			.render()
+	)
 }
 
 /** Names the window the fact strip's "Events" lane is counting over. */

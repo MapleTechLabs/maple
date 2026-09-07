@@ -4,6 +4,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Link, useNavigate } from "@tanstack/react-router"
 
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { useAlertIncidentsList } from "@/hooks/use-alerts-list"
 import {
@@ -33,6 +34,7 @@ import {
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
 import {
 	type CommitBreakdown,
 	type ServiceOverview,
@@ -135,9 +137,16 @@ function groupByNamespace(services: ServiceOverview[]): [string, [string, Servic
  * Unset `groupBy` in the URL means auto: group by namespace as soon as the
  * displayed rows carry any `service.namespace` (the semconv grouping
  * dimension), else fall back to the environment grouping every org has.
+ * While the org-global namespace pin is active every row shares one
+ * namespace, so auto falls back to environment grouping.
  */
-function resolveGroupBy(explicit: ServicesGroupBy | undefined, services: ServiceOverview[]): ServicesGroupBy {
+function resolveGroupBy(
+	explicit: ServicesGroupBy | undefined,
+	services: ServiceOverview[],
+	namespacePinned: boolean,
+): ServicesGroupBy {
 	if (explicit !== undefined) return explicit
+	if (namespacePinned) return "environment"
 	return services.some((service) => service.serviceNamespace !== "") ? "namespace" : "environment"
 }
 
@@ -180,8 +189,7 @@ function HealthDot({ health }: { health: ServiceHealth | undefined }) {
 	)
 }
 
-// Mirrors MIN_BASELINE_SPANS in service-health.ts: a baseline computed from
-// fewer spans is noise, so the delta line is withheld entirely.
+// Withhold the delta when the baseline has too few spans to be meaningful.
 const MIN_BASELINE_SPANS = 100
 
 interface BaselineDelta {
@@ -478,12 +486,13 @@ const ServiceRow = React.memo(function ServiceRow({
 					to="/services/$serviceName"
 					params={{ serviceName: service.serviceName }}
 					search={serviceDetailSearch(filters, service.environment)}
-					className="flex max-w-full items-center gap-1.5 font-medium text-primary hover:underline"
+					className="flex max-w-full items-center gap-1.5 font-medium text-foreground hover:underline"
 					onClick={(e) => e.stopPropagation()}
 					title={service.serviceName}
 				>
 					<ServiceDot serviceName={service.serviceName} />
 					<span className="min-w-0 truncate">{service.serviceName}</span>
+					{isUnnamedService(service.serviceName) && <UnnamedServiceHint />}
 					<HealthDot health={health} />
 				</Link>
 				{subtitle !== "" && <div className="truncate text-xs text-muted-foreground">{subtitle}</div>}
@@ -603,6 +612,7 @@ function LoadingState() {
 
 export function ServicesTable({ filters }: ServicesTableProps) {
 	const navigate = useNavigate()
+	const pinnedNamespace = useGlobalNamespace()
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
 		filters?.startTime,
 		filters?.endTime,
@@ -617,6 +627,9 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 				environments: filters?.environments,
 				namespaces: filters?.namespaces,
 				commitShas: filters?.commitShas,
+				excludedEnvironments: filters?.excludedEnvironments,
+				excludedNamespaces: filters?.excludedNamespaces,
+				excludedCommitShas: filters?.excludedCommitShas,
 			},
 		}),
 	)
@@ -629,6 +642,9 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 				environments: filters?.environments,
 				namespaces: filters?.namespaces,
 				commitShas: filters?.commitShas,
+				excludedEnvironments: filters?.excludedEnvironments,
+				excludedNamespaces: filters?.excludedNamespaces,
+				excludedCommitShas: filters?.excludedCommitShas,
 			},
 		}),
 	)
@@ -645,6 +661,9 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 		environments: filters?.environments,
 		namespaces: filters?.namespaces,
 		commitShas: filters?.commitShas,
+		excludedEnvironments: filters?.excludedEnvironments,
+		excludedNamespaces: filters?.excludedNamespaces,
+		excludedCommitShas: filters?.excludedCommitShas,
 	})
 
 	// Progressive enrichment — does not block first paint. The baseline payload
@@ -676,7 +695,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 				: overviewResponse.data
 
 			const hasNamespaces = services.some((service) => service.serviceNamespace !== "")
-			const groupBy = resolveGroupBy(filters?.groupBy, services)
+			const groupBy = resolveGroupBy(filters?.groupBy, services, pinnedNamespace !== null)
 			// One shape for both modes: namespace mode nests environment groups
 			// under each namespace; environment mode is a single anonymous outer
 			// group whose header is skipped.
@@ -890,13 +909,16 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 															className="flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 														>
 															<div className="min-w-0 flex-1">
-																<div className="flex items-center gap-1.5 text-sm font-medium text-primary">
+																<div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
 																	<ServiceDot
 																		serviceName={service.serviceName}
 																	/>
 																	<span className="truncate">
 																		{service.serviceName}
 																	</span>
+																	{isUnnamedService(
+																		service.serviceName,
+																	) && <UnnamedServiceHint />}
 																	<HealthDot health={health} />
 																</div>
 																{subtitleFor(service) !== "" && (

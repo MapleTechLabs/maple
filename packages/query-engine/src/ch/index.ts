@@ -9,6 +9,11 @@
 // compilation, and unions — re-exported from the standalone library.
 export * from "@maple-dev/clickhouse-builder"
 
+// Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
+// is any string, with one that pins Maple's closed `RawSqlReason` union — the
+// explicit export wins over the star re-export above.
+export { type RawSqlReason, rawCompiledQuery } from "./raw-sql"
+
 // Pipe dispatch — maps Tinybird-style pipe names + params to compiled CH SQL.
 // Shared by the cloud WarehouseQueryService and the local CLI executor so both
 // resolve a pipe name to identical SQL.
@@ -154,13 +159,17 @@ export {
 // Queries — Web Analytics (product analytics over the browser SDK's session data)
 export {
 	webAnalyticsSummaryQuery,
+	webAnalyticsLiveQuery,
 	webAnalyticsTimeseriesQuery,
 	webAnalyticsPageviewsTimeseriesQuery,
 	webAnalyticsPagesQuery,
+	webAnalyticsEventsQuery,
 	webAnalyticsBreakdownsQuery,
 	type WebAnalyticsFilters,
 	type WebAnalyticsFacetKey,
 	type WebAnalyticsSummaryOutput,
+	type WebAnalyticsLiveOpts,
+	type WebAnalyticsLiveOutput,
 	type WebAnalyticsTimeseriesOpts,
 	type WebAnalyticsTimeseriesOutput,
 	type WebAnalyticsPageviewsTimeseriesOpts,
@@ -169,7 +178,37 @@ export {
 	type WebAnalyticsPagesOutput,
 	type WebAnalyticsBreakdownsOpts,
 	type WebAnalyticsBreakdownsOutput,
+	type ProductEventsFilters,
 } from "./queries/web-analytics"
+
+// Queries — Product events (funnels over `product_events`)
+export {
+	productEventsFunnelQuery,
+	productEventsFunnelRowSchema,
+	productEventsFunnelBreakdownQuery,
+	productEventsFunnelBreakdownRowSchema,
+	productEventNamesQuery,
+	productEventNamesRowSchema,
+	productEventsForTraceQuery,
+	productEventTraceSamplesQuery,
+	ProductEventsFunnelError,
+	FUNNEL_MAX_STEPS,
+	FUNNEL_BREAKDOWN_MAX_GROUPS,
+	type FunnelStep,
+	type FunnelKeyBy,
+	type FunnelSessionDimension,
+	type FunnelBreakdownBy,
+	type ProductEventsForTraceOpts,
+	type ProductEventForTraceOutput,
+	type ProductEventTraceSamplesOpts,
+	type ProductEventTraceSampleOutput,
+	type ProductEventsFunnelOpts,
+	type ProductEventsFunnelOutput,
+	type ProductEventsFunnelBreakdownOpts,
+	type ProductEventsFunnelBreakdownOutput,
+	type ProductEventNamesOpts,
+	type ProductEventNamesOutput,
+} from "./queries/product-events"
 
 // Queries — Services
 export {
@@ -178,13 +217,10 @@ export {
 	serviceUsageRowSchema,
 	serviceCatalogQuery,
 	serviceHealthSnapshotQuery,
-	serviceHealthSnapshotRowSchema,
 	serviceHealthBaselineQuery,
 	serviceReleasesTimelineQuery,
-	serviceReleasesTimelineRowSchema,
 	serviceEnvironmentsQuery,
 	serviceApdexTimeseriesQuery,
-	serviceApdexTimeseriesRowSchema,
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
@@ -208,6 +244,23 @@ export {
 	type ServicesFacetsOutput,
 } from "./queries/services"
 
+// Queries — Releases
+export {
+	releasesListQuery,
+	releasesListRowSchema,
+	releasesTimelineQuery,
+	releaseErrorFingerprintsQuery,
+	releaseErrorFingerprintsRowSchema,
+	RELEASES_LIST_CAP,
+	PLACEHOLDER_COMMIT_SHAS,
+	type ReleasesListOpts,
+	type ReleasesListOutput,
+	type ReleasesTimelineOpts,
+	type ReleasesTimelineOutput,
+	type ReleaseErrorFingerprintsOpts,
+	type ReleaseErrorFingerprintsOutput,
+} from "./queries/releases"
+
 // Queries — Errors
 export {
 	errorsByTypeQuery,
@@ -229,7 +282,10 @@ export {
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
 	errorIssueSampleTracesQuery,
-	ErrorIssueSampleTracesOutputSchema,
+	errorIssueEnvironmentsQuery,
+	errorIssueVersionsSinceQuery,
+	ErrorIssueVersionsSinceOutputSchema,
+	type ErrorIssueVersionsSinceOutput,
 	type ErrorsByTypeOpts,
 	type ErrorsByTypeOutput,
 	type ErrorsTimeseriesOpts,
@@ -285,7 +341,6 @@ export {
 	activeOrgsByErrorEventsQuery,
 	activeOrgsByTracesQuery,
 	activeOrgsByLogsQuery,
-	ActiveOrgsOutputSchema,
 	type ActiveOrgsOutput,
 } from "./queries/activity"
 
@@ -355,6 +410,17 @@ export {
 	type ServiceOperationsTimeseriesOutput,
 } from "./queries/service-operations"
 
+// Queries — Service API Endpoints (the HTTP slice of the operations rollup)
+export {
+	serviceEndpointsSummaryQuery,
+	serviceEndpointsSummaryRawQuery,
+	serviceEndpointsSummaryRowSchema,
+	splitEndpointName,
+	type EndpointName,
+	type ServiceEndpointsSummaryOpts,
+	type ServiceEndpointsSummaryOutput,
+} from "./queries/service-endpoints"
+
 // Queries — Alert Checks (historical rule evaluations)
 export {
 	listRuleChecksQuery,
@@ -367,6 +433,13 @@ export {
 	type AlertChecksSummaryOpts,
 	type AlertChecksSummaryOutput,
 } from "./queries/alert-checks"
+
+// Queries — Audit log (org-wide audit trail, admin-only)
+export {
+	auditLogEntriesQuery,
+	type AuditLogEntriesOpts,
+	type AuditLogEntriesOutput,
+} from "./queries/audit-log"
 
 // Queries — Cloudflare integration usage (integrations-page ingest proof)
 
@@ -392,8 +465,6 @@ export {
 export {
 	orgTelemetryPulseQuery,
 	serviceLivenessQuery,
-	serviceLivenessRowSchema,
-	telemetryPulseRowSchema,
 	type ServiceLivenessOpts,
 	type ServiceLivenessOutput,
 	type TelemetryPulseOutput,
@@ -416,7 +487,6 @@ export {
 	fleetUtilizationTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
-	ListPodsSummaryOutputSchema,
 	podDetailSummaryQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
@@ -459,4 +529,31 @@ export {
 	type WorkloadGaugeTimeseriesOpts,
 	type WorkloadFacetsOutput,
 	type WorkloadKind,
+	infraPresenceQuery,
+	type InfraSurface,
+	type InfraPresenceOutput,
 } from "./queries/infra"
+
+// Queries — Containers (Docker, docker_stats receiver)
+export {
+	listContainersQuery,
+	listContainersSummaryQuery,
+	containerDetailSummaryQuery,
+	containerCountersSummaryQuery,
+	containerGaugeTimeseriesQuery,
+	containerSumTimeseriesQuery,
+	containerFacetsQuery,
+	type ListContainersOpts,
+	type ListContainersOutput,
+	type ListContainersSummaryOutput,
+	type ContainerSortKey,
+	type ContainerScope,
+	type ContainerDetailSummaryOpts,
+	type ContainerDetailSummaryOutput,
+	type ContainerCountersSummaryOpts,
+	type ContainerCountersSummaryOutput,
+	type ContainerGaugeTimeseriesOpts,
+	type ContainerSumTimeseriesOpts,
+	type ContainerTimeseriesOutput,
+	type ContainerFacetsOutput,
+} from "./queries/containers"

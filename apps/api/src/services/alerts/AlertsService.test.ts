@@ -43,6 +43,7 @@ import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } 
 import { Database } from "@/platform/DatabaseLive"
 import { decryptAes256Gcm } from "@/platform/Crypto"
 import { InvestigationService } from "@/services/errors/InvestigationService"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const trackedDbs: TestDb[] = []
 
@@ -92,6 +93,40 @@ const makeConfig = () =>
 
 const emptyWarehouseRows: ReadonlyArray<Record<string, unknown>> = []
 
+/**
+ * A complete `traces.timeseries` row.
+ *
+ * The queries derive their row schema from the SELECT now, so `decodeRows`
+ * rejects a partial fixture instead of handing it through — which is the point:
+ * every one of these fixtures was missing `bucket`, `groupName`, `spanCount`
+ * and `estimatedSpanCount`, and none of them would have noticed the warehouse
+ * dropping one.
+ */
+const tracesRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+	// The sample-count columns follow `count` unless a caller says otherwise:
+	// `minimumSampleCount` reads them, so leaving them at 0 makes every rule
+	// evaluate as "not enough data" no matter what the metric says.
+	const count = overrides.count ?? 0
+	return {
+		// At the test clock, not a fixed calendar date: the evaluation window ends
+		// at "now", so a bucket outside it reduces to no data and nothing fires.
+		bucket: new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString().replace("T", " ").slice(0, 19),
+		groupName: "all",
+		count: 0,
+		spanCount: count,
+		estimatedSpanCount: count,
+		avgDuration: 0,
+		p50Duration: 0,
+		p95Duration: 0,
+		p99Duration: 0,
+		errorRate: 0,
+		satisfiedCount: 0,
+		toleratingCount: 0,
+		apdexScore: 1,
+		...overrides,
+	}
+}
+
 function makeWarehouseStub(state: {
 	tracesAggregateRows?: ReadonlyArray<Record<string, unknown>>
 	metricsAggregateRows?: ReadonlyArray<Record<string, unknown>>
@@ -118,15 +153,21 @@ function makeWarehouseStub(state: {
 		sqlQuery: sqlQueryStub,
 		rawSqlQuery: sqlQueryStub,
 		compiledQuery: (_tenant, compiled) =>
-			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie))),
+			sqlQueryStub().pipe(
+				Effect.flatMap((rows) => compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)),
+			),
 		compiledQueryWithCapabilities: (_tenant, compile) =>
 			sqlQueryStub().pipe(
 				Effect.flatMap((rows) =>
-					compile(baselineWarehouseCapabilities()).decodeRows(rows).pipe(Effect.orDie),
+					Effect.runSync(compile(baselineWarehouseCapabilities()))
+						.decodeRows(rows)
+						.pipe(Effect.orDie),
 				),
 			),
 		compiledQueryFirst: (_tenant, compiled) =>
-			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie))),
+			sqlQueryStub().pipe(
+				Effect.flatMap((rows) => compiledQueryOf(compiled).decodeFirstRow(rows).pipe(Effect.orDie)),
+			),
 		ingest: () => Effect.void,
 		asExecutor: () => {
 			throw new Error("asExecutor is not supported by this test stub")
@@ -461,7 +502,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -471,7 +512,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			],
 		}
 		const requests: Array<{ url: string; headers: Headers }> = []
@@ -530,7 +571,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -540,7 +581,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			],
 		}
 		const bodies: string[] = []
@@ -946,7 +987,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -956,7 +997,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
 
@@ -973,7 +1014,7 @@ describe("AlertsService", () => {
 			yield* alerts.runSchedulerTick()
 
 			state.tracesAggregateRows = [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 20,
 					p50Duration: 10,
@@ -983,7 +1024,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 195,
 					toleratingCount: 3,
 					apdexScore: 0.9825,
-				},
+				}),
 			]
 
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -1006,7 +1047,7 @@ describe("AlertsService", () => {
 	it.effect("suppresses trigger and resolve notifications while an incident flaps", () => {
 		const testDb = createTestDb(trackedDbs)
 		const breachedRows = [
-			{
+			tracesRow({
 				count: 200,
 				avgDuration: 40,
 				p50Duration: 20,
@@ -1016,10 +1057,10 @@ describe("AlertsService", () => {
 				satisfiedCount: 180,
 				toleratingCount: 10,
 				apdexScore: 0.925,
-			},
+			}),
 		] as ReadonlyArray<Record<string, unknown>>
 		const healthyRows = [
-			{
+			tracesRow({
 				count: 200,
 				avgDuration: 20,
 				p50Duration: 10,
@@ -1029,7 +1070,7 @@ describe("AlertsService", () => {
 				satisfiedCount: 195,
 				toleratingCount: 3,
 				apdexScore: 0.9825,
-			},
+			}),
 		] as ReadonlyArray<Record<string, unknown>>
 		const state = { tracesAggregateRows: breachedRows }
 
@@ -1079,7 +1120,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -1089,7 +1130,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
 		const failingFetch: typeof fetch = (async () => new Response("boom", { status: 500 })) as typeof fetch
@@ -1162,7 +1203,7 @@ describe("AlertsService", () => {
 		// Healthy from the start: errorRate 1 stays below the threshold of 5.
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 20,
 					p50Duration: 10,
@@ -1172,7 +1213,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 195,
 					toleratingCount: 3,
 					apdexScore: 0.9825,
-				},
+				}),
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
 
@@ -1234,7 +1275,7 @@ describe("AlertsService", () => {
 			// A transition writes immediately, even right after a heartbeat write:
 			// flip the warehouse to breaching and tick at T+7m.
 			state.tracesAggregateRows = [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -1244,7 +1285,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			]
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
@@ -1260,7 +1301,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -1270,7 +1311,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
 
@@ -1695,7 +1736,7 @@ describe("AlertsService", () => {
 
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -1705,7 +1746,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			],
 		}
 		const overrides = {
@@ -2145,7 +2186,16 @@ describe("AlertsService", () => {
 					makeLayer(
 						testDb,
 						makeWarehouseStub({
-							logsAggregateRows: [{ count: 42 }],
+							logsAggregateRows: [
+								{
+									bucket: new Date(DEFAULT_CLOCK_EPOCH_MS)
+										.toISOString()
+										.replace("T", " ")
+										.slice(0, 19),
+									groupName: "all",
+									count: 42,
+								},
+							],
 						}),
 					),
 				),
@@ -2827,7 +2877,7 @@ describe("AlertsService", () => {
 					testDb,
 					makeWarehouseStub({
 						tracesAggregateRows: [
-							{
+							tracesRow({
 								count: 200,
 								avgDuration: 20,
 								p50Duration: 10,
@@ -2837,7 +2887,7 @@ describe("AlertsService", () => {
 								satisfiedCount: 195,
 								toleratingCount: 3,
 								apdexScore: 0.9825,
-							},
+							}),
 						],
 					}),
 					{ fetch: okFetch },
@@ -3181,7 +3231,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -3191,7 +3241,7 @@ describe("AlertsService", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			],
 		}
 
@@ -3238,8 +3288,7 @@ describe("AlertsService", () => {
 	it.effect("opens per-service incidents for groupBy=service rules", () => {
 		const testDb = createTestDb(trackedDbs)
 
-		const breachingRow = {
-			bucket: "2026-01-01 00:00:00",
+		const breachingRow = tracesRow({
 			groupName: "svc-breach",
 			count: 200,
 			avgDuration: 40,
@@ -3251,9 +3300,8 @@ describe("AlertsService", () => {
 			toleratingCount: 10,
 			apdexScore: 0.925,
 			estimatedSpanCount: 200,
-		}
-		const healthyRow = {
-			bucket: "2026-01-01 00:00:00",
+		})
+		const healthyRow = tracesRow({
 			groupName: "svc-healthy",
 			count: 200,
 			avgDuration: 20,
@@ -3265,16 +3313,20 @@ describe("AlertsService", () => {
 			toleratingCount: 3,
 			apdexScore: 0.9825,
 			estimatedSpanCount: 200,
-		}
+		})
 
 		const alertRows: ReadonlyArray<Record<string, unknown>> = [breachingRow, healthyRow]
 		const stub: WarehouseQueryServiceApi = {
 			...makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
 			sqlQuery: () => Effect.succeed(alertRows),
-			compiledQuery: (_tenant, compiled) => compiled.decodeRows(alertRows).pipe(Effect.orDie),
+			compiledQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled).decodeRows(alertRows).pipe(Effect.orDie),
 			compiledQueryWithCapabilities: (_tenant, compile) =>
-				compile(baselineWarehouseCapabilities()).decodeRows(alertRows).pipe(Effect.orDie),
-			compiledQueryFirst: (_tenant, compiled) => compiled.decodeFirstRow(alertRows).pipe(Effect.orDie),
+				Effect.runSync(compile(baselineWarehouseCapabilities()))
+					.decodeRows(alertRows)
+					.pipe(Effect.orDie),
+			compiledQueryFirst: (_tenant, compiled) =>
+				compiledQueryOf(compiled).decodeFirstRow(alertRows).pipe(Effect.orDie),
 		}
 
 		return Effect.gen(function* () {
@@ -3337,16 +3389,22 @@ describe("AlertsService evaluation error persistence", () => {
 			sqlQuery: sqlQueryStub,
 			rawSqlQuery: sqlQueryStub,
 			compiledQuery: (_tenant, compiled) =>
-				sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie))),
+				sqlQueryStub().pipe(
+					Effect.flatMap((rows) => compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)),
+				),
 			compiledQueryWithCapabilities: (_tenant, compile) =>
 				sqlQueryStub().pipe(
 					Effect.flatMap((rows) =>
-						compile(baselineWarehouseCapabilities()).decodeRows(rows).pipe(Effect.orDie),
+						Effect.runSync(compile(baselineWarehouseCapabilities()))
+							.decodeRows(rows)
+							.pipe(Effect.orDie),
 					),
 				),
 			compiledQueryFirst: (_tenant, compiled) =>
 				sqlQueryStub().pipe(
-					Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie)),
+					Effect.flatMap((rows) =>
+						compiledQueryOf(compiled).decodeFirstRow(rows).pipe(Effect.orDie),
+					),
 				),
 			ingest: (_tenant, _datasource, rows) =>
 				Effect.sync(() => {
@@ -3363,7 +3421,7 @@ describe("AlertsService evaluation error persistence", () => {
 		const state = {
 			failing: true,
 			rows: [
-				{
+				tracesRow({
 					count: 200,
 					avgDuration: 40,
 					p50Duration: 20,
@@ -3373,7 +3431,7 @@ describe("AlertsService evaluation error persistence", () => {
 					satisfiedCount: 180,
 					toleratingCount: 10,
 					apdexScore: 0.925,
-				},
+				}),
 			],
 			ingested: [] as Array<Record<string, unknown>>,
 		}
@@ -3439,19 +3497,19 @@ describe("AlertsService evaluation error persistence", () => {
 describe("AlertsService.previewRule", () => {
 	const decodePreviewRequest = Schema.decodeUnknownSync(AlertRulePreviewRequest)
 
-	const bucketRow = (bucket: string, errorRate: number) => ({
-		bucket,
-		groupName: "all",
-		count: 200,
-		avgDuration: 40,
-		p50Duration: 20,
-		p95Duration: 120,
-		p99Duration: 240,
-		errorRate,
-		satisfiedCount: 180,
-		toleratingCount: 10,
-		apdexScore: 0.925,
-	})
+	const bucketRow = (bucket: string, errorRate: number) =>
+		tracesRow({
+			bucket,
+			count: 200,
+			avgDuration: 40,
+			p50Duration: 20,
+			p95Duration: 120,
+			p99Duration: 240,
+			errorRate,
+			satisfiedCount: 180,
+			toleratingCount: 10,
+			apdexScore: 0.925,
+		})
 
 	it.effect("returns evaluator-bucketed points and would-fire spans for a spec rule", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -3509,6 +3567,87 @@ describe("AlertsService.previewRule", () => {
 			// (which freezes counters), so no close within the window either way.
 			assert.lengthOf(response.wouldFire, 1)
 			assert.strictEqual(response.wouldFire[0]?.start, "2026-01-01T00:00:00.000Z")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("covers the whole requested range for the create form's default shape", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: [bucketRow("2026-01-01 00:00:00", 10)] }
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_preview_full_range")
+
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Preview rule",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					// The create form's defaults: a 5-minute window over the last 24h.
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-02T00:00:00.000Z",
+			})
+
+			const response = yield* alerts.previewRule(orgId, adminRoles, request)
+
+			// 288 windows — the bucket cap used to stop at 200, so the chart drew
+			// only the newest 16h40m of a full-width 24h axis.
+			const points = response.series[0]!.points
+			assert.lengthOf(points, 288)
+			assert.isNull(response.truncatedToStart)
+			assert.strictEqual(points[0]?.bucket, "2026-01-01T00:00:00.000Z")
+			assert.strictEqual(points[287]?.bucket, "2026-01-01T23:55:00.000Z")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("clamps to the newest windows and reports the clamp when the range is too long", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: [bucketRow("2026-01-01 00:00:00", 10)] }
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_preview_clamped")
+
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Preview rule",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					// 1-minute windows over 30 days is 43,200 evaluations — far past
+					// anything a preview replays.
+					windowMinutes: 1,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-31T00:00:00.000Z",
+			})
+
+			const response = yield* alerts.previewRule(orgId, adminRoles, request)
+
+			const points = response.series[0]!.points
+			assert.lengthOf(points, 1500)
+			// The clamped start is what the chart frames its axis on.
+			assert.strictEqual(response.truncatedToStart, "2026-01-29T23:00:00.000Z")
+			assert.strictEqual(points[0]?.bucket, "2026-01-29T23:00:00.000Z")
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -3741,10 +3880,13 @@ describe("AlertsService.previewRule", () => {
 		// regression guard for that snapshot going stale: neither group is orphaned,
 		// so `resolveOrphanedGroupIncidents` must leave both incidents open rather
 		// than firing an all-clear for the one it saw before this tick's writes.
+		// Rows in the shape the `error_rate` timeseries actually returns. They used
+		// to be `{ groupKey, value, sampleCount }` — a shape from an older
+		// evaluation path that nothing decoded, so nothing noticed.
 		const breachedGroups = {
-			rawQueryRows: [
-				{ groupKey: "checkout", value: 42, sampleCount: 500 },
-				{ groupKey: "payments", value: 37, sampleCount: 500 },
+			tracesAggregateRows: [
+				tracesRow({ groupName: "checkout", count: 500, errorRate: 42 }),
+				tracesRow({ groupName: "payments", count: 500, errorRate: 37 }),
 			],
 		}
 
@@ -3794,5 +3936,141 @@ describe("AlertsService.previewRule", () => {
 			)
 			assert.lengthOf(resolvedAfterSecond, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(breachedGroups), { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService delivery lease freshness", () => {
+	it.effect("claims later rows with a fresh timestamp, not the batch head's", () => {
+		const fixedTime = 1_710_000_400_000
+		const testDb = createTestDb(trackedDbs)
+		// Virtual scheduler clock: the first delivery "takes" longer than the
+		// lease TTL, so a claim dated from the batch-head timestamp would be
+		// born expired and an overlapping tick could re-send the event.
+		let virtualNow = fixedTime
+		let call = 0
+		let laterRowLeaseExpiry: number | null = null
+		const fetchImpl = (async () => {
+			call += 1
+			if (call === 1) {
+				virtualNow += 31_000
+			} else {
+				const row = await queryFirstRow<{ claimExpiresAt: Date | null }>(
+					testDb,
+					`select claim_expires_at as "claimExpiresAt"
+					 from alert_delivery_events where delivery_key = 'lease-2'`,
+					[],
+				)
+				laterRowLeaseExpiry = row?.claimExpiresAt?.getTime() ?? null
+			}
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_lease_fresh")
+			const userId = asUserId("user_lease_fresh")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			// Break the rule's stored query so the tick's evaluation half queues
+			// nothing of its own.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update alert_rules set query_spec_json = $1::jsonb where id = $2", [
+					"{}",
+					rule.id,
+				]),
+			)
+
+			for (const n of [1, 2]) {
+				yield* Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-00000000030${n}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId: destination.id,
+						deliveryKey: `lease-${n}`,
+						eventType: "test",
+						attemptNumber: 1,
+						status: "queued",
+						// Row 1 first: rows are processed in scheduledAt order.
+						scheduledAt: fixedTime - 10 + n,
+						payloadJson: JSON.stringify({
+							eventType: "test",
+							incidentId: null,
+							incidentStatus: "resolved",
+							dedupeKey: `lease-${n}`,
+							observed: { value: 0, sampleCount: 0 },
+						}),
+					}),
+				)
+			}
+			yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(call, 2)
+			// The second claim must be dated from its own claim time (after the
+			// 31s "slow" first delivery), so its lease is still alive while the
+			// delivery is in flight. A batch-head lease would already be expired.
+			assert.isNotNull(laterRowLeaseExpiry)
+			assert.isAbove(laterRowLeaseExpiry ?? 0, fixedTime + 31_000)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+					now: Effect.sync(() => virtualNow),
+				}),
+			),
+		)
+	})
+})
+
+describe("alert incident open uniqueness", () => {
+	const insertOpenIncident = (testDb: TestDb, id: string, status = "open") =>
+		executeSql(
+			testDb,
+			`
+        insert into alert_incidents (
+          id, org_id, rule_id, incident_key, rule_name, group_key, signal_type,
+          severity, status, comparator, threshold, first_triggered_at,
+          last_triggered_at, dedupe_key, created_at, updated_at
+        ) values (
+          $1, 'org_unique', 'rule_unique', $1, 'Rule', 'checkout', 'error_rate',
+          'critical', $2, 'gt', 5, now(), now(), 'org_unique:rule_unique:checkout',
+          now(), now()
+        )
+      `,
+			[id, status],
+		)
+
+	it.effect("rejects a second open incident for the same (rule, group)", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => insertOpenIncident(testDb, "inc-open-1"))
+			// The partial unique index is the backstop for an expired scheduler
+			// claim: two overlapping ticks can both decide to open, but only one
+			// row can exist.
+			const second = yield* Effect.promise(() =>
+				insertOpenIncident(testDb, "inc-open-2").then(
+					() => "inserted" as const,
+					() => "conflict" as const,
+				),
+			)
+			assert.strictEqual(second, "conflict")
+
+			// Resolved history does not participate: after resolving the first,
+			// a new open incident for the same key is legal again.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update alert_incidents set status = 'resolved' where id = $1", [
+					"inc-open-1",
+				]),
+			)
+			const third = yield* Effect.promise(() =>
+				insertOpenIncident(testDb, "inc-open-3").then(
+					() => "inserted" as const,
+					() => "conflict" as const,
+				),
+			)
+			assert.strictEqual(third, "inserted")
+		})
 	})
 })

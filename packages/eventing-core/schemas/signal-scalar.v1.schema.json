@@ -42,14 +42,8 @@
 						},
 						"value": {
 							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 20
-								},
-								{
-									"pattern": "^-?(?:0|[1-9][0-9]*)$"
-								}
-							]
+							"maxLength": 20,
+							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
 					"required": ["type", "value"],
@@ -78,11 +72,7 @@
 						},
 						"value": {
 							"type": "string",
-							"allOf": [
-								{
-									"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
-								}
-							]
+							"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
 						}
 					},
 					"required": ["type", "value"],
@@ -97,14 +87,8 @@
 						},
 						"value": {
 							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 20
-								},
-								{
-									"pattern": "^-?(?:0|[1-9][0-9]*)$"
-								}
-							]
+							"maxLength": 20,
+							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
 					"required": ["type", "value"],

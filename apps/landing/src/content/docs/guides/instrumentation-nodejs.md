@@ -2,13 +2,14 @@
 title: "Node.js Instrumentation"
 description: "Instrument a Node.js application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
-order: 3
+order: 5
+navLabel: "Node.js"
 sdk: "node"
 ---
 
 This guide covers instrumenting a Node.js application to send traces and logs to Maple using the OpenTelemetry SDK.
 
-> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/Makisuo/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/Makisuo/maple/tree/main/skills/maple-audit).
+> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 

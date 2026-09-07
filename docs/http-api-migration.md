@@ -41,10 +41,10 @@ Rebuilding the CLI's remote mode on v2 surfaced capabilities local mode has and 
 
 - **No attribute discovery.** Nothing in `/v2` returns the attribute keys or values observed in telemetry; `/v2/attribute_mappings` is mapping configuration. This blocks `maple attributes` entirely and is the largest gap.
 - **`/v2/traces/search` cannot sort.** It filters by `min_duration_ms` but has no order parameter, so "slowest N traces" is unexpressible.
-- **No span-level search.** Search returns root-based `V2TraceSummary`; there is no way to list spans matching a name.
+- **No span-level search.** Search returns root-based `V2TraceSummary`; there is no way to list spans matching a name, and its `span_name` filter matches exactly where the CLI matches a substring.
 - **Breakdown returns one aggregation per request.** A combined ranking (count + latency + error rate) needs N calls and cannot be ordered server-side by a composite.
-- **No fingerprint → issue lookup.** v2 keys errors by opaque `erris_…` ids, so a fingerprint hash cannot be resolved to an issue.
-- **No exception-type aggregate.** `/v2/error_issues` returns triage objects, not `(exception_type, service, count)` over a window.
+- ~~**No fingerprint → issue lookup.**~~ Closed: `/v2/error_issues` takes a `fingerprint_hash` filter, and the CLI's `maple error <fp>` runs on it remotely.
+- **No exception-type aggregate.** `/v2/error_issues` holds one triage object per fingerprint — it covers only fingerprints a sweep has turned into issues, and cannot say how many services an error spans, which `maple errors` prints.
 - **No window comparison.** Nothing corresponds to `service_overview_compare`.
 - **Offset pagination.** v2 lists seek by opaque cursor and cap at 100 rows, so `--offset` cannot be honoured.
 
@@ -70,7 +70,7 @@ The following v1 groups are dashboard workflows or protocol surfaces. Do not por
 
 Three consequences, all deliberate:
 
-- **No scope.** `requiredScopeForRequest` would derive the family `share` from the path, but it is only called by `ApiAuthorizationV2Layer`, which these routes never run. There is no `share:read` scope and nothing issues one.
+- **No scope.** `requiredScopeForRoute` would derive the family `share` from the path, but it is only called by `ApiAuthorizationV2Layer`, which these routes never run. There is no `share:read` scope and nothing issues one.
 - **`security: []` and no `401`** in the OpenAPI spec. `openapi.test.ts` exempts the two operations by operationId through `PUBLIC_OPERATION_IDS` — an allowlist, so a third public operation cannot appear without someone editing it. Every other operation guarantee still applies to them.
 - **The v2 rate limiter never runs.** These routes carry their own per-token and per-IP limiter in the handler; it is the only one on the path, not a supplement.
 

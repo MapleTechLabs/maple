@@ -3,6 +3,7 @@ import {
 	WarehouseAuthError,
 	WarehouseClientError,
 	WarehouseConfigError,
+	WarehouseInvalidSqlError,
 	WarehouseMalformedQueryError,
 	WarehouseQueryError,
 	WarehouseQuotaExceededError,
@@ -15,9 +16,15 @@ import {
 } from "@maple/domain/http"
 import { detectQuotaSetting } from "../profiles"
 
-/** Strip HTML error pages and whitespace noise before classifying/logging an upstream failure. */
+const redactWarehouseCredentials = (message: string): string =>
+	message
+		.replace(/(Invalid token\s+b?)(['"])[\s\S]*?\2/gi, "$1$2[redacted]$2")
+		.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted]")
+
+/** Strip credentials, HTML error pages and whitespace noise before exposing an upstream failure. */
 export const cleanErrorMessage = (raw: string): string => {
-	let cleaned = raw
+	const redacted = redactWarehouseCredentials(raw)
+	let cleaned = redacted
 	const htmlIndex = cleaned.search(/<\s*(html|head|body|center|h1|hr|title)\b/i)
 	if (htmlIndex >= 0) cleaned = cleaned.slice(0, htmlIndex)
 	cleaned = cleaned
@@ -25,7 +32,7 @@ export const cleanErrorMessage = (raw: string): string => {
 		.replace(/\s+/g, " ")
 		.trim()
 	if (cleaned.endsWith(":")) cleaned = cleaned.slice(0, -1).trim()
-	return cleaned || raw.slice(0, 200)
+	return cleaned || redacted.slice(0, 200)
 }
 
 const extractUpstreamStatus = (message: string): number | undefined => {
@@ -137,10 +144,29 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		make: (base, upstreamStatus) => new WarehouseUpstreamError({ ...base, upstreamStatus }),
 	},
 	{
+		// A table the CALLER named that does not exist — `run_sql`, the raw_sql
+		// widget, `maple query`. The config rule below reads the identical
+		// complaint as "Maple is pointed at the wrong database", which told a user
+		// who mistyped `FROM spans` that their warehouse was misconfigured. Same
+		// caller-before-maple ordering as the malformed-query twin further down.
+		//
+		// Deliberately no `status` matcher: a bare 404 says nothing about whether a
+		// table was named, so `Invalid URL`, `UNKNOWN_SETTING` and Tinybird's
+		// "Resource '<name>' not found" (a missing datasource, genuinely config)
+		// stay with the rule below.
+		authoredBy: "caller",
+		types: new Set(["UNKNOWN_DATABASE", "UNKNOWN_TABLE", "TABLE_IS_DROPPED"]),
+		pattern: /unknown table|table .* does not exist|database .* does not exist/i,
+		make: (base) => new WarehouseInvalidSqlError(base),
+	},
+	{
 		status: (s) => s === 404,
 		types: new Set(["UNKNOWN_DATABASE", "UNKNOWN_TABLE", "TABLE_IS_DROPPED", "UNKNOWN_SETTING"]),
+		// "Resource '<name>' not found" is the Tinybird gateway's phrasing of
+		// UNKNOWN_TABLE; without it a missing datasource fell through to the
+		// generic query error and the per-org missing-table fallbacks never fired.
 		pattern:
-			/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist/i,
+			/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist|Resource '[^']*' not found/i,
 		make: (base) => new WarehouseConfigError(base),
 	},
 	{
@@ -148,6 +174,28 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			/Cannot decode .* as JSON|Unexpected token .* JSON|Stream has been already consumed|Failed to parse ClickHouse response/i,
 		extra: (error) => error instanceof SyntaxError,
 		make: (base) => new WarehouseClientError(base),
+	},
+	{
+		// The same analyzer complaints as the Maple-authored rule below, but about
+		// SQL the CALLER wrote. Without this twin a plain typo in a raw_sql widget
+		// or `run_sql` — a stray comma, a function called with two arguments — fell
+		// past every authorship-guarded rule to the default `WarehouseQueryError`:
+		// a 502 reading "Database query failed. Contact support" that hid the one
+		// thing the author needed, which was ClickHouse's own explanation.
+		authoredBy: "caller",
+		types: new Set([
+			"NO_COMMON_TYPE",
+			"ILLEGAL_TYPE_OF_ARGUMENT",
+			"ILLEGAL_AGGREGATION",
+			"NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+			"TYPE_MISMATCH",
+			"SYNTAX_ERROR",
+			"UNKNOWN_FUNCTION",
+			"AMBIGUOUS_COLUMN_NAME",
+		]),
+		pattern:
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error/i,
+		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
 		// The analyzer refused SQL that Maple itself generated: mismatched `if()`
@@ -198,7 +246,7 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		]),
 		pattern:
 			/Unknown (?:expression or function )?identifier|Missing columns|There is no column|No such column/i,
-		make: (base) => new WarehouseMalformedQueryError(base),
+		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
 		// CH error types raised when a column or function reference doesn't exist in
@@ -223,12 +271,15 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	},
 ]
 
-export const toWarehouseQueryError = (pipe: string, error: unknown) =>
-	new WarehouseQueryError({
-		message: cleanErrorMessage(unknownToMessage(error, "Warehouse query failed")),
+export const toWarehouseQueryError = (pipe: string, error: unknown) => {
+	const rawMessage = unknownToMessage(error, "Warehouse query failed")
+	const redacted = redactWarehouseCredentials(rawMessage)
+	return new WarehouseQueryError({
+		message: cleanErrorMessage(redacted),
 		pipeName: pipe,
-		cause: error,
+		cause: redacted === rawMessage ? error : redacted,
 	})
+}
 
 /**
  * Classify a warehouse failure into a tagged error.
@@ -243,11 +294,14 @@ export const mapWarehouseError = (
 	authoredBy: SqlAuthorship = "caller",
 ): WarehouseClassifiedError => {
 	const { message: rawMessage, code, type } = getClickHouseErrorDetails(error)
+	const redacted = redactWarehouseCredentials(rawMessage)
 	const message = cleanErrorMessage(rawMessage)
 	const base: ClassifiedBase = {
 		pipeName: pipe,
 		message,
-		cause: error,
+		// Tinybird can echo the rejected JWT. Keeping the original cause would
+		// leak it through Effect's cause/stack rendering even with a clean message.
+		cause: redacted === rawMessage ? error : redacted,
 		clickhouseCode: code,
 		clickhouseType: type,
 	}

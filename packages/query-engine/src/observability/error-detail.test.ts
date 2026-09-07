@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect"
 import { errorDetail } from "./error-detail"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
+import { compiledQueryOf } from "../execution/compiled-input"
 
 interface CapturedCalls {
 	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
@@ -16,6 +17,15 @@ const traceRow = (traceId: string, startTime: string) => ({
 	services: ["api"],
 	rootSpanName: "GET /",
 	errorMessage: "boom",
+	errorSpanId: "span-err",
+	errorSpanName: "chat gpt-x",
+	errorServiceName: "api",
+	errorModel: "gpt-x",
+	errorToolName: "",
+	errorHttpMethod: "",
+	errorHttpRoute: "",
+	errorQueryContext: "",
+	errorType: "",
 })
 
 const makeMockExecutor = (
@@ -23,8 +33,8 @@ const makeMockExecutor = (
 	tracesData: ReadonlyArray<unknown>,
 ): WarehouseExecutorApi => ({
 	orgId: "org_test",
-	compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
-	compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
+	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {
 		captured.pipeCalls.push({ pipe, params })
 		return Effect.succeed({
@@ -73,6 +83,22 @@ describe("errorDetail", () => {
 			assert.lengthOf(logs, 1)
 			assert.strictEqual(logs[0]!.params.start_time, timeRange.startTime)
 			assert.strictEqual(logs[0]!.params.end_time, timeRange.endTime)
+		}),
+	)
+
+	it.effect("surfaces the failing span with only the attributes it carries", () =>
+		Effect.gen(function* () {
+			const captured: CapturedCalls = { pipeCalls: [] }
+			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
+				Effect.provide(
+					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")])),
+				),
+			)
+			const span = result.traces[0]!.errorSpan
+			assert.isDefined(span)
+			assert.strictEqual(span!.name, "chat gpt-x")
+			assert.strictEqual(span!.statusMessage, "boom")
+			assert.deepStrictEqual(span!.attributes, { "gen_ai.request.model": "gpt-x" })
 		}),
 	)
 })

@@ -25,6 +25,7 @@ import {
 	errorEvents,
 	errorEventsByTime,
 	errorFingerprintsMinutely,
+	aiTraceIndex,
 	traceDetailSpans,
 	traceListMv,
 	attributeKeysHourly,
@@ -35,7 +36,8 @@ import {
 	spanMetricsCallsHourly,
 	serviceOperationsMinutely,
 	serviceOperationsHourly,
-	webEvents,
+	productEvents,
+	identityLinks,
 } from "./datasources"
 import {
 	DB_NAMESPACE_ATTR_SQL,
@@ -44,7 +46,20 @@ import {
 	DB_STATEMENT_SQL,
 	DB_SYSTEM_ATTR_SQL,
 } from "./db-query-shape-sql"
+import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "../gen-ai"
+import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
+import {
+	GENAI_AGENT_NAME_SQL,
+	GENAI_COST_SQL,
+	GENAI_IS_ERROR_SQL,
+	GENAI_IS_LLM_CALL_SQL,
+	GENAI_IS_TOOL_CALL_SQL,
+	GENAI_MODEL_SQL,
+	GENAI_RESPONSE_ID_SQL,
+	GENAI_TOKENS_SQL,
+	GENAI_TOOL_NAME_SQL,
+} from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
 
 /**
@@ -285,8 +300,8 @@ export const serviceMapSpansMv = defineMaterializedView("service_map_spans_mv", 
  * Materialized view projecting service entry point spans for service overview queries.
  * Includes Server/Consumer spans (service entry points per OTel semantics) plus root spans
  * as a fallback for services with Internal/unset SpanKind (cron jobs, workers).
- * Pre-extracts deployment.environment and deployment.commit_sha from ResourceAttributes
- * so the service overview query avoids scanning heavy Map columns.
+ * Pre-extracts the deployment environment (either semconv spelling) and `vcs.ref.head.revision`
+ * from ResourceAttributes so the service overview query avoids scanning heavy Map columns.
  */
 export const serviceOverviewSpansMv = defineMaterializedView("service_overview_spans_mv", {
 	description:
@@ -304,7 +319,7 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
           StatusCode,
           TraceState,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
-          ResourceAttributes['deployment.commit_sha'] AS CommitSha,
+          ResourceAttributes['vcs.ref.head.revision'] AS CommitSha,
           SampleRate,
           ResourceAttributes['service.namespace'] AS ServiceNamespace
         FROM traces
@@ -332,7 +347,7 @@ export const serviceOverviewHourlyMv = defineMaterializedView("service_overview_
           ServiceName,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           ResourceAttributes['service.namespace'] AS ServiceNamespace,
-          ResourceAttributes['deployment.commit_sha'] AS CommitSha,
+          ResourceAttributes['vcs.ref.head.revision'] AS CommitSha,
           count() AS SpanCount,
           sum(SampleRate) AS EstimatedSpanCount,
           countIf(StatusCode = 'Error') AS ErrorCount,
@@ -378,7 +393,7 @@ export const serviceOverviewMinutelyMv = defineMaterializedView("service_overvie
           ServiceName,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           ResourceAttributes['service.namespace'] AS ServiceNamespace,
-          ResourceAttributes['deployment.commit_sha'] AS CommitSha,
+          ResourceAttributes['vcs.ref.head.revision'] AS CommitSha,
           count() AS SpanCount,
           sum(SampleRate) AS EstimatedSpanCount,
           countIf(StatusCode = 'Error') AS ErrorCount,
@@ -509,7 +524,8 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
           max(Duration / 1000000) AS MaxDurationMs,
           countIf(TraceState LIKE '%th:%') AS SampledSpanCount,
           countIf(TraceState = '' OR TraceState NOT LIKE '%th:%') AS UnsampledSpanCount,
-          sum(SampleRate) AS SampleRateSum
+          sum(SampleRate) AS SampleRateSum,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer')
           AND ${DB_SYSTEM_ATTR_SQL} != ''
@@ -621,7 +637,8 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
           countIf(StatusCode = 'Error') AS ErrorCount,
           sum(Duration / 1000000) AS DurationSumMs,
           max(Duration / 1000000) AS MaxDurationMs,
-          sum(SampleRate) AS SampleRateSum
+          sum(SampleRate) AS SampleRateSum,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer')
           AND SpanAttributes['db.system.name'] = ''
@@ -955,6 +972,66 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
           SpanAttributes,
           ResourceAttributes
         FROM traces
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `ai_trace_index` with only the spans the ingest gateway stamped as
+ * GenAI (`maple_ai.vendor.id`). This filter IS Agent Sessions' detection
+ * predicate, moved to insert time: the read side
+ * (`query-engine-integrations/src/ai/ai-sessions.ts`) carries no vendor
+ * predicate at all any more and treats membership in this table as the guard.
+ * Narrowing this filter narrows detection.
+ *
+ * A missing Map key reads back as `''`, so the single `!= ''` comparison is
+ * both the presence check and the non-empty check.
+ *
+ * The GenAI columns coalesce the dialects and classify the span at insert —
+ * the SQL comes from `gen-ai-columns.ts`, so a raw-table read of the same fact
+ * is the same expression. Migration 0026 added them; rows materialized before
+ * it carry `''`/0 throughout, which the facets drop, the filters never match
+ * and the sums count as nothing. Migration 0027 changed `Tokens` to count a
+ * nested cache or reasoning bucket once, under the reporter's usage
+ * convention; rows materialized between the two keep the over-count.
+ */
+export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
+	description:
+		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), pre-extracting the maple_ai.* identity, the environment, the GenAI model/agent/tool and the span's kind, failure and usage to plain columns.",
+	datasource: aiTraceIndex,
+	// Migration 0026's columns are additive, and the rows already in the target
+	// are explicitly allowed to carry ''/0 for them (see above). Without this,
+	// Tinybird migrates the target by replaying `traces` through this pipe — the
+	// backfill that crashed the maple_us deploy with an internal error. `alter`
+	// adds the columns at promotion with no data movement.
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "ai_trace_index_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanAttributes['${MAPLE_AI_SESSION_ID_ATTR}'] AS SessionId,
+          SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] AS VendorId,
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          ${GENAI_MODEL_SQL} AS Model,
+          ${GENAI_AGENT_NAME_SQL} AS AgentName,
+          ${GENAI_TOOL_NAME_SQL} AS ToolName,
+          SpanId,
+          ParentSpanId,
+          Duration,
+          ${GENAI_IS_ERROR_SQL} AS IsError,
+          ${GENAI_IS_LLM_CALL_SQL} AS IsLlmCall,
+          ${GENAI_IS_TOOL_CALL_SQL} AS IsToolCall,
+          ${GENAI_TOKENS_SQL} AS Tokens,
+          ${GENAI_COST_SQL} AS Cost,
+          ${GENAI_RESPONSE_ID_SQL} AS ResponseId
+        FROM traces
+        WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
       `,
 		}),
 	],
@@ -1427,6 +1504,15 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
 	description:
 		"Pre-aggregates every span by service operation and minute with normalized HTTP names, exact/estimated counts, errors, duration sum, and unweighted t-digest state.",
 	datasource: serviceOperationsMinutely,
+	// Migration 0023 adds three counter columns to the target. Without this,
+	// Tinybird treats a changed MV node as a reason to REBUILD the target by
+	// replaying its source — and the source here is `traces`, which keeps 30 days
+	// against this rollup's 90. The deploy warns and then drops eight months of
+	// history that cannot be reconstructed. `alter` applies the column addition
+	// with no data movement at promotion, which is what an additive change
+	// actually needs, and is also why these rollups need no FORWARD_QUERY (a
+	// leftover one makes every later deploy fail — see the note in datasources).
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_operations_minutely_mv_node",
@@ -1442,7 +1528,10 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
           countIf(StatusCode = 'Error') AS ErrorCount,
           sumIf(SampleRate, StatusCode = 'Error') AS EstimatedErrorCount,
           sum(toFloat64(Duration)) AS DurationSum,
-          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles
+          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles,
+          count() AS ClassifiedSpanCount,
+          countIf(SpanKind IN ('Server', 'Consumer')) AS ServerSpanCount,
+          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount
         FROM traces
         GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, SpanName
       `,
@@ -1458,6 +1547,10 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
 export const serviceOperationsHourlyMv = defineMaterializedView("service_operations_hourly_mv", {
 	description: "Merges minutely service-operation aggregates into an hour-grain one-year rollup.",
 	datasource: serviceOperationsHourly,
+	// Same reason as the minutely view, one tier worse: this target keeps 365 days
+	// and its source keeps 90, so a rebuild silently truncates the annual rollup
+	// to a quarter.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_operations_hourly_mv_node",
@@ -1473,7 +1566,10 @@ export const serviceOperationsHourlyMv = defineMaterializedView("service_operati
           sum(ErrorCount) AS ErrorCount,
           sum(EstimatedErrorCount) AS EstimatedErrorCount,
           sum(DurationSum) AS DurationSum,
-          quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS DurationQuantiles
+          quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS DurationQuantiles,
+          sum(ClassifiedSpanCount) AS ClassifiedSpanCount,
+          sum(ServerSpanCount) AS ServerSpanCount,
+          sum(RoutedSpanCount) AS RoutedSpanCount
         FROM service_operations_minutely
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, SpanName
       `,
@@ -1510,7 +1606,7 @@ export const logsAggregatesHourlyMv = defineMaterializedView("logs_aggregates_ho
 })
 
 /**
- * Populates `web_events` — the web analytics fact table.
+ * Populates the browser half of `product_events` — the product events fact table.
  *
  * A pure row-wise projection: filter to the two product-analytics event types,
  * pre-extract `domain(Url)`/`path(Url)`, re-sort by time in the target. No
@@ -1531,30 +1627,95 @@ export const logsAggregatesHourlyMv = defineMaterializedView("logs_aggregates_ho
  * the page-view predicate stays provably identical to the pre-rollup
  * `Type = 'navigation'` even if a customer calls `track('$pageview')`.
  *
- * Column order must match the `web_events` SCHEMA order — enforced by
+ * `Source` is the literal `'browser'`: this view is the only writer of browser
+ * rows, and the backfill deletes by it. Identity columns are copied through from
+ * the SDK-stamped `session_events` row — never joined from `session_replays`,
+ * whose v1/v2 rows may land after the event.
+ *
+ * Column order must match the `product_events` SCHEMA order — enforced by
  * `materialized-projection-order.test.ts`.
  */
-export const webEventsMv = defineMaterializedView("web_events_mv", {
+export const productEventsMv = defineMaterializedView("product_events_mv", {
 	description:
-		"Populates web_events from session_events navigation and custom rows, with domain(Url)/path(Url) pre-extracted and the event name normalized.",
-	datasource: webEvents,
+		"Populates product_events from session_events navigation and custom rows, with domain(Url)/path(Url) pre-extracted, the event name normalized and the SDK-stamped identity copied through.",
+	datasource: productEvents,
 	nodes: [
 		node({
-			name: "web_events_mv_node",
+			name: "product_events_mv_node",
 			sql: `
         SELECT
           OrgId,
           Timestamp,
+          'browser' AS Source,
           SessionId,
           Seq,
+          VisitorId,
+          UserId,
+          GroupId,
           Type AS Kind,
           if(Type = 'navigation', '$pageview', Message) AS EventName,
           domain(Url) AS Host,
           path(Url) AS PagePath,
           Url,
-          Attributes
+          '' AS ServiceName,
+          Attributes,
+          '' AS TraceId,
+          '' AS SpanId
         FROM session_events
         WHERE Type IN ('navigation', 'custom')
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `product_events` from spans carrying `maple.product_event.name` —
+ * the only feed that carries `TraceId`. The predicate is one map lookup per
+ * incoming span (an MV sees the insert block, so no skip index helps). Column
+ * order must match the `product_events` SCHEMA order, enforced by
+ * `materialized-projection-order.test.ts`.
+ */
+export const productEventsTracesMv = defineMaterializedView("product_events_traces_mv", {
+	description:
+		"Populates product_events from spans carrying the maple.product_event.name attribute, projecting the span's identity, attributes (narrowed by maple.product_event.include, merged with maple.product_event.prop.*), service and TraceId/SpanId so the event links back to the trace that produced it.",
+	datasource: productEvents,
+	nodes: [
+		node({
+			name: "product_events_traces_mv_node",
+			sql: `
+        SELECT
+          ${PRODUCT_EVENTS_TRACE_PROJECTION_SQL}
+        FROM traces
+        WHERE ${PRODUCT_EVENTS_TRACE_FILTER}
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `identity_links` from `session_replays` rows that carry both a
+ * visitor and a user id.
+ *
+ * Per-block firing is harmless here for the same reason it is fatal for
+ * per-session aggregates: this is a pure filter+project of one row, and the
+ * target is a ReplacingMergeTree keyed on the pair, so seeing the v1 and v2 rows
+ * of one session just re-inserts the same link.
+ */
+export const identityLinksMv = defineMaterializedView("identity_links_mv", {
+	description:
+		"Populates identity_links with every (VisitorId, UserId) pair observed on a session_replays row.",
+	datasource: identityLinks,
+	nodes: [
+		node({
+			name: "identity_links_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          VisitorId,
+          UserId,
+          StartTime AS FirstSeen
+        FROM session_replays
+        WHERE VisitorId != '' AND UserId != ''
       `,
 		}),
 	],

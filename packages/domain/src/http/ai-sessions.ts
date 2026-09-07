@@ -1,33 +1,99 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
+import { AiAgentSpanSchema, AiGenAiValuesSchema } from "../gen-ai"
 import { TinybirdDateTime } from "../query-engine"
 import { SessionAuthorization } from "./current-tenant"
+import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
 
 // AI agent session endpoint schemas
 //
 // Backed by the `maple_ai.*` span attributes the ingest gateway stamps at
 // decode time; a session is resolved at trace granularity by
-// `aiSessionListQuery` in the query-engine integrations layer. The Agent
+// `aiSessionPageQuery` (which ranks a page) and `aiSessionListQuery` (which
+// aggregates it) in the query-engine integrations layer. The Agent
 // Sessions page is behind the `agent_tracing` org rollout flag and these
 // shapes exist for it alone, so they live in the internal tier where they can
 // follow the UI.
 
+/** The measures the list can be ordered by; `startTime` is the default. */
+export const AI_SESSION_SORT_KEYS = [
+	"startTime",
+	"durationMs",
+	"cost",
+	"totalTokens",
+	"errorSpanCount",
+	"llmCalls",
+	"toolCalls",
+] as const
+export const AiSessionSortKey = Schema.Literals(AI_SESSION_SORT_KEYS)
+export type AiSessionSortKey = Schema.Schema.Type<typeof AiSessionSortKey>
+
+export const AiSessionSortDir = Schema.Literals(["asc", "desc"])
+export type AiSessionSortDir = Schema.Schema.Type<typeof AiSessionSortDir>
+
+/** A range bound. Every measure the list filters on is non-negative, so a
+ *  negative bound is a malformed request rather than an empty page. */
+const RangeBound = Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
+const CountBound = Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
+
 export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("ListAiSessionsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	// `Schema.optional`, not `optionalKey` — matches the `ListReplaysRequest`
-	// optional-payload contract for JS-constructed clients (see the note in
-	// session-replay.ts and CLAUDE.md, optional vs optionalKey).
-	limit: Schema.optional(Schema.Number),
-	// Both filters land on the session-detection subquery, so `serviceNames`
-	// means "the session-bearing spans came from this service", not "the trace
-	// touched it" — see `aiSessionListQuery`.
+	limit: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 100 })),
+	),
+	/**
+	 * Rows to skip, for the list's infinite scroll. Offset-based like the replays
+	 * list, and applied on the index-only page ranking (`aiSessionPageQuery`),
+	 * which is cheap to re-run at the volumes an org's agent traffic reaches
+	 * (~10k index rows a day). The span aggregation only ever covers the page
+	 * that ranking returned, so the offset costs nothing there.
+	 */
+	offset: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
+	// The counted filters land on the `ai_trace_index` level of both stages,
+	// one per index column, each as its own per-trace existence test:
+	// `serviceNames` means "some agent span of the trace came from this
+	// service", not "the trace touched it", and a model and a tool given
+	// together are matched by different spans of the trace — see
+	// `aiSessionPageQuery`. Each selects exactly the population its facet
+	// counted.
 	vendorIds: Schema.optional(Schema.Array(Schema.String)),
 	serviceNames: Schema.optional(Schema.Array(Schema.String)),
+	deploymentEnvs: Schema.optional(Schema.Array(Schema.String)),
+	models: Schema.optional(Schema.Array(Schema.String)),
+	agentNames: Schema.optional(Schema.Array(Schema.String)),
+	toolNames: Schema.optional(Schema.Array(Schema.String)),
+	/**
+	 * A session id or trace id, or the leading characters of one, matched as a
+	 * prefix. Bounded because it becomes a `LIKE` pattern against the index —
+	 * no id in either column is anywhere near this long.
+	 */
+	search: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	// The session-level filters: applied to the ranked row over the measures
+	// the index carries per agent span, so they have no facet count behind
+	// them. `hasErrors` means a failed agent span; a session whose only error
+	// is on a non-agent span shows the badge but is not matched.
+	hasErrors: Schema.optional(Schema.Boolean),
+	/** Drop the `trace:` sessions — traces whose vendor exposes no session key. */
+	excludeTraceSessions: Schema.optional(Schema.Boolean),
+	durationMinMs: RangeBound,
+	durationMaxMs: RangeBound,
+	costMin: RangeBound,
+	costMax: RangeBound,
+	tokensMin: CountBound,
+	tokensMax: CountBound,
+	llmCallsMin: CountBound,
+	llmCallsMax: CountBound,
+	toolCallsMin: CountBound,
+	toolCallsMax: CountBound,
+	sortBy: Schema.optional(AiSessionSortKey),
+	sortDir: Schema.optional(AiSessionSortDir),
 }) {}
 
 export const AiSessionListItem = Schema.Struct({
+	/** The vendor's own session id, or `trace:<TraceId>` for an agent trace whose
+	 *  vendor exposes no session key — see `MAPLE_AI_TRACE_SESSION_PREFIX`. */
 	sessionId: Schema.String,
 	/** Vendor of the earliest session-bearing span, e.g. `eve`, `vercel_ai_sdk`. */
 	vendorId: Schema.String,
@@ -36,8 +102,34 @@ export const AiSessionListItem = Schema.Struct({
 	/** All spans of all the session's traces, including non-AI infrastructure spans. */
 	spanCount: Schema.Number,
 	errorSpanCount: Schema.Number,
+	/** Failed tool calls, one per failure rather than per span that echoed it. */
+	toolErrorCount: Schema.Number,
+	/** Failed model calls and turn spans that failed on their own. */
+	turnErrorCount: Schema.Number,
 	/** Every service touched by the session's traces. */
 	serviceNames: Schema.Array(Schema.String),
+	/** Every model any agent span of the session ran on, dialects coalesced. */
+	models: Schema.Array(Schema.String),
+	/** Every agent named on any agent span of the session, in no order. */
+	agentNames: Schema.Array(Schema.String),
+	/** The agent on the session's earliest-starting named span — the name the
+	 *  list row goes by, resolved the way the detail page's heading resolves it.
+	 *  `''` when no span named an agent. */
+	firstAgentName: Schema.String,
+	llmCalls: Schema.Number,
+	toolCalls: Schema.Number,
+	/** Tokens across every bucket, deepest reporter counted, so the number
+	 *  agrees with the detail page's header. */
+	totalTokens: Schema.Number,
+	/** The five disjoint buckets the detail page's Tokens rail draws, summed
+	 *  the same way; the row draws their shares. */
+	inputTokens: Schema.Number,
+	cacheReadTokens: Schema.Number,
+	cacheWriteTokens: Schema.Number,
+	outputTokens: Schema.Number,
+	reasoningTokens: Schema.Number,
+	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
+	cost: Schema.Number,
 	/** Warehouse datetime literals, e.g. `2026-08-19 10:33:25.825000000`. */
 	startTime: Schema.String,
 	endTime: Schema.String,
@@ -46,6 +138,18 @@ export const AiSessionListItem = Schema.Struct({
 
 export class ListAiSessionsResponse extends Schema.Class<ListAiSessionsResponse>("ListAiSessionsResponse")({
 	data: Schema.Array(AiSessionListItem),
+	/**
+	 * How many sessions the page RANKED, which `data` can fall short of: the
+	 * ranking reads `ai_trace_index` and the rows read `trace_detail_spans`,
+	 * two materialized views written one after the other from the same insert,
+	 * so the newest session can be ranked a moment before its spans are
+	 * readable. A client paging on `data.length` would take that short page for
+	 * the end of the list and skip nothing but stop scrolling; it should page on
+	 * this instead — the next offset is the sum of `ranked`, and a page is the
+	 * last one when `ranked` is under the limit. Optional only for a client
+	 * built before the field existed.
+	 */
+	ranked: Schema.optionalKey(Schema.Number),
 }) {}
 
 export class ListAiSessionsFacetsRequest extends Schema.Class<ListAiSessionsFacetsRequest>(
@@ -69,26 +173,146 @@ export class ListAiSessionsFacetsResponse extends Schema.Class<ListAiSessionsFac
 	vendors: Schema.Array(AiSessionFacetItem),
 	/** Distinct sessions per service name, matching what `serviceNames` selects. */
 	services: Schema.Array(AiSessionFacetItem),
+	/** …per `deployment.environment(.name)`, matching `deploymentEnvs`. */
+	environments: Schema.Array(AiSessionFacetItem),
+	/** …per model, matching `models`. */
+	models: Schema.Array(AiSessionFacetItem),
+	/** …per agent name, matching `agentNames`. */
+	agents: Schema.Array(AiSessionFacetItem),
+	/** …per tool name, matching `toolNames`. */
+	tools: Schema.Array(AiSessionFacetItem),
 }) {}
 
-// Exactly what a compiled warehouse read can fail with — not the wider
-// `sessionReplayEndpointErrors` union, whose extra members (the legacy
-// QueryEngine wrappers, token-mint errors) this endpoint can never produce.
-const aiSessionEndpointErrors = warehouseReadHttpErrors
+export class GetAiSessionSpansRequest extends Schema.Class<GetAiSessionSpansRequest>(
+	"GetAiSessionSpansRequest",
+)({
+	/**
+	 * The framework's own session id, verbatim — `maple_ai.session.id` — or the
+	 * `trace:<TraceId>` id Maple synthesizes for a GenAI trace that carries none
+	 * (`MAPLE_AI_TRACE_SESSION_PREFIX`). The handler routes on the prefix and
+	 * validates the trace id behind it; a prefixed id that is not one reads as a
+	 * session nothing carries, which answers empty like any unknown id.
+	 */
+	sessionId: Schema.String.check(Schema.isMinLength(1)),
+	// Optional, and the two halves are read as a pair — supply both or neither.
+	//
+	// With a window the read is partition-pruned on both levels (detection and
+	// fan-out), which is the fast path every link from the list page takes: the
+	// row already knows the session's own bounds, so it hands them over.
+	//
+	// Without one the handler resolves the session's bounds from the id first and
+	// then runs the same pruned read. That resolve step is viable rather than
+	// reckless where the fan-out would not be: `traces` carries a
+	// `bloom_filter(0.01)` skip index over `mapValues(SpanAttributes)` for the id
+	// to prune with, and its TTL caps any scan at 30 days. It still costs an
+	// extra round trip and still degrades as an org's volume grows, so this is
+	// the exception path for hint-less deep links — a pasted id, an MCP answer —
+	// and not the default. The client is expected to write the bounds it got back
+	// into its URL, which makes the second load of any such link the direct one.
+	startTime: Schema.optionalKey(TinybirdDateTime),
+	endTime: Schema.optionalKey(TinybirdDateTime),
+}) {}
+
+/**
+ * Every `gen_ai.*` value the integration layer decoded off the span, one
+ * optional key per catalog field. Generated from `AI_GENAI_FIELDS`, so the
+ * wire shape and the decoder read the same list.
+ */
+export const AiSessionGenAiValues = AiGenAiValuesSchema
+export type AiSessionGenAiValues = Schema.Schema.Type<typeof AiSessionGenAiValues>
+
+/**
+ * One span of a session, already normalized onto Maple's standard AI span
+ * shape. The raw attribute maps the query reads are the bulk of that read and
+ * are dropped server-side, so what lands here is the decoded view alone.
+ */
+export const AiSessionSpan = AiAgentSpanSchema
+export type AiSessionSpan = Schema.Schema.Type<typeof AiSessionSpan>
+
+export class GetAiSessionSpansResponse extends Schema.Class<GetAiSessionSpansResponse>(
+	"GetAiSessionSpansResponse",
+)({
+	data: Schema.Array(AiSessionSpan),
+	/**
+	 * The session has more spans than one response carries. Truncation drops the
+	 * END of the session, so a client must say so rather than present the result
+	 * as a complete transcript.
+	 */
+	truncated: Schema.Boolean,
+}) {}
+
+/**
+ * Row ceiling for one session's spans. The handler asks the query for one row
+ * past it, so an exactly-full session is distinguishable from a truncated one.
+ */
+export const AI_SESSION_SPANS_MAX_SPANS = 2_000
+
+/**
+ * Response ceiling for one session's spans, measured over the warehouse rows —
+ * which still carry the raw attribute maps, in production ~17KB on a single
+ * agent span.
+ *
+ * The byte counter accumulates over rows that are already parsed, so the
+ * ceiling only trips once that much of the JS object graph is resident: it has
+ * to sit far below the 128MB isolate heap, not near it. Replay events get 8MB
+ * for opaque strings; 10MB here because these rows are attribute-map-heavy, and
+ * `AI_SESSION_SPANS_MAX_SPANS` bounds the ordinary session well before this
+ * does.
+ *
+ * For a pathologically attribute-heavy session the byte cap fires first and the
+ * request 413s instead of truncating. That is the designed outcome — the
+ * alternative is an OOM that takes the isolate with it.
+ */
+export const MAX_AI_SESSION_SPANS_RESPONSE_BYTES = 10_000_000
+
+/**
+ * The session's spans exceed `MAX_AI_SESSION_SPANS_RESPONSE_BYTES`.
+ *
+ * Distinct from the row cap, which truncates and reports `truncated: true`: the
+ * byte ceiling aborts the read before a response can be materialized, so there
+ * is nothing to return. The endpoint takes no size parameter, but it does take
+ * a window, and when one is supplied both the session detection and the span
+ * fan-out are bounded by it — so a narrower range genuinely returns fewer
+ * bytes, which is what `recovery: "fix_request"` points the caller at.
+ */
+export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeError>()(
+	"@maple/http/ai-sessions/AiSessionTooLargeError",
+	{
+		sessionId: Schema.String,
+		message: Schema.String,
+	},
+	{
+		status: 413,
+		code: "ai_session_too_large",
+		title: "Session is too large to load",
+		message:
+			"This session's spans are too large to return in one response. Open it from the Agent Sessions list, or narrow the time range.",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "redacted",
+	},
+) {}
 
 export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInternal")
 	.add(
 		HttpApiEndpoint.post("list", "/list", {
 			payload: ListAiSessionsRequest,
 			success: ListAiSessionsResponse,
-			error: aiSessionEndpointErrors,
+			error: warehouseReadHttpErrors,
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("facets", "/facets", {
 			payload: ListAiSessionsFacetsRequest,
 			success: ListAiSessionsFacetsResponse,
-			error: aiSessionEndpointErrors,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("spans", "/spans", {
+			payload: GetAiSessionSpansRequest,
+			success: GetAiSessionSpansResponse,
+			error: [...warehouseReadHttpErrors, AiSessionTooLargeError],
 		}),
 	)
 	.prefix("/internal/ai-sessions")

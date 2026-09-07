@@ -1,5 +1,6 @@
 import { Schema, SchemaGetter } from "effect"
 import { OrgId, UserId } from "../primitives"
+import { PullRequestLinkState } from "./fix-verification"
 
 // Vendor-agnostic VCS integration types.
 //
@@ -35,7 +36,7 @@ export type VcsBranchId = Schema.Schema.Type<typeof VcsBranchId>
 /**
  * A full 40-char git commit SHA. Case-insensitive on input and normalized to
  * lowercase during decode, so the same commit is identified regardless of the
- * case a provider — or an OTel `deployment.commit_sha` attribute — emits it in.
+ * case a provider — or an OTel `vcs.ref.head.revision` attribute — emits it in.
  * Strict — unlike the permissive telemetry `CommitSha` brand (which must not
  * throw on arbitrary OTel data) — so the SHA-shape regex lives in exactly this
  * one declarative type, validated at the webhook/REST boundary and on persistence.
@@ -193,6 +194,32 @@ export class VcsBranch extends Schema.Class<VcsBranch>("VcsBranch")({
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
+
+/**
+ * One pull request as a provider reports it, normalized.
+ *
+ * Read-only and never persisted: this is what the attach-a-PR picker lists and
+ * what hydrates a link at attach time. `state` collapses the provider's own
+ * split representation — GitHub answers `state: "open" | "closed"` alongside a
+ * separate `merged_at` — into the same three-way {@link PullRequestLinkState}
+ * the stored link and the webhook mapper already use, so a merged PR is never
+ * mistaken for a plain closed one.
+ */
+export const PullRequestSummary = Schema.Struct({
+	number: Schema.Number,
+	title: Schema.String,
+	url: Schema.String,
+	authorLogin: Schema.NullOr(Schema.String),
+	state: PullRequestLinkState,
+	/** The branch the PR merges *from* — what a person recognizes it by. */
+	headRef: Schema.String,
+	baseRef: Schema.String,
+	isDraft: Schema.Boolean,
+	updatedAtMs: Schema.Number,
+	mergedAtMs: Schema.NullOr(Schema.Number),
+	mergeCommitSha: Schema.NullOr(Schema.String),
+})
+export type PullRequestSummary = Schema.Schema.Type<typeof PullRequestSummary>
 
 /** Normalized repository, returned by a provider and persisted by the repo. */
 export const RepoUpsertInput = Schema.Struct({
@@ -371,12 +398,45 @@ export const BranchEventJob = Schema.Struct({
 })
 export type BranchEventJob = Schema.Schema.Type<typeof BranchEventJob>
 
+// A pull request webhook. Unlike every other job here this one touches no VCS
+// table: it is forwarded to the errors side, which owns the issue⇄PR link and
+// the post-merge verification window. The job carries only VCS facts (the
+// provider's own ids, the PR's text) so this layer stays ignorant of issues —
+// `VcsSyncService` resolves the org and hands it over.
+//
+// `title` and `body` are carried because the auto-link scan reads them: a PR
+// that names a Maple issue in its description links itself. `body` is nullable
+// (GitHub sends null for an empty description) and unbounded here; the scan
+// itself is a bounded regex.
+export const PullRequestEventJob = Schema.Struct({
+	kind: Schema.Literal("pull-request-event"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	number: Schema.Number,
+	// GitHub's `action`, narrowed to the ones that change a link's meaning.
+	// `closed` covers both "merged" and "closed without merging"; `merged`
+	// below is what distinguishes them.
+	action: Schema.Literals(["opened", "edited", "reopened", "closed", "synchronize"]),
+	url: Schema.String,
+	title: Schema.NullOr(Schema.String),
+	body: Schema.NullOr(Schema.String),
+	authorLogin: Schema.NullOr(Schema.String),
+	merged: Schema.Boolean,
+	mergeCommitSha: Schema.NullOr(Schema.String),
+	mergedAtMs: Schema.NullOr(Schema.Number),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type PullRequestEventJob = Schema.Schema.Type<typeof PullRequestEventJob>
+
 export const VcsSyncJob = Schema.Union([
 	InstallationSyncJob,
 	SyncCommitsJob,
 	PushJob,
 	SyncBranchesJob,
 	BranchEventJob,
+	PullRequestEventJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 
@@ -481,7 +541,7 @@ export class UnknownVcsProviderError extends Schema.TaggedError<UnknownVcsProvid
 
 /**
  * The requested commit reference is not a resolvable git SHA — it failed the
- * strict 40-hex `GitCommitSha` shape. Telemetry `deployment.commit_sha` is
+ * strict 40-hex `GitCommitSha` shape. Telemetry `vcs.ref.head.revision` is
  * unguarded OTel data, so a value can be a short SHA, a tag, or arbitrary text;
  * the hover-card endpoint surfaces that as this distinct, non-retryable error
  * (422) rather than a generic 400, so the dashboard can render a muted

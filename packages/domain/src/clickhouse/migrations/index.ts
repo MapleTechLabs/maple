@@ -19,6 +19,15 @@ import { migration_0017_error_service_version_columns } from "./0017_error_servi
 import { migration_0018_apple_crash_frames } from "./0018_apple_crash_frames"
 import { migration_0019_mv_sweep } from "./0019_mv_sweep"
 import { migration_0020_semconv_key_renames } from "./0020_semconv_key_renames"
+import { migration_0021_product_events } from "./0021_product_events"
+import { migration_0022_service_map_edge_quantiles } from "./0022_service_map_edge_quantiles"
+import { migration_0023_service_operations_discriminators } from "./0023_service_operations_discriminators"
+import { migration_0024_ai_trace_index } from "./0024_ai_trace_index"
+import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_revision"
+import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
+import { migration_0027_audit_log } from "./0027_audit_log"
+import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
+import { migration_0029_ai_trace_index_usage_conventions } from "./0029_ai_trace_index_usage_conventions"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -70,6 +79,15 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0018_apple_crash_frames,
 	migration_0019_mv_sweep,
 	migration_0020_semconv_key_renames,
+	migration_0021_product_events,
+	migration_0022_service_map_edge_quantiles,
+	migration_0023_service_operations_discriminators,
+	migration_0024_ai_trace_index,
+	migration_0025_commit_sha_vcs_revision,
+	migration_0026_ai_trace_index_filter_columns,
+	migration_0027_audit_log,
+	migration_0028_product_events_from_traces,
+	migration_0029_ai_trace_index_usage_conventions,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

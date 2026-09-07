@@ -4,7 +4,17 @@
 // value formatting used by tooltips, legend chips, and axes. Series colors come
 // from `resolveSeriesColors` — a host/pod/zone keeps its color across windows.
 
-import { formatBytesPerSecond, formatLoad, formatPercent } from "@maple/ui/lib/format"
+import { bucketTimeScale, timeseriesXAxis, type TimeseriesAxisContext } from "@maple/ui/components/plot"
+import {
+	formatBucketLabel,
+	formatBytes,
+	formatBytesPerSecond,
+	formatLatency,
+	formatLoad,
+	formatPercent,
+	formatThroughput,
+} from "@maple/ui/lib/format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 /**
  * Bucket width for the timeseries charts: aim for ~100 points, floored at the
@@ -18,7 +28,18 @@ export function chartBucketSeconds(startTime: string, endTime: string): number {
 }
 
 /** Every value unit an infra chart can carry. Drives unit-aware formatting. */
-export type ChartUnit = "percent" | "cores" | "seconds" | "load" | "bytes_per_second"
+export type ChartUnit =
+	| "percent"
+	| "cores"
+	| "seconds"
+	| "load"
+	| "bytes_per_second"
+	| "bytes"
+	// Service-side units, so a span metric can share a strip stack with a
+	// kubeletstats gauge. `seconds` cannot stand in for latency: it rounds to
+	// whole seconds and renders anything at or below zero as an em dash.
+	| "milliseconds"
+	| "rate"
 
 /** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */
 export function formatSeconds(seconds: number): string {
@@ -50,6 +71,12 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 			return formatLoad(value)
 		case "bytes_per_second":
 			return formatBytesPerSecond(value)
+		case "bytes":
+			return formatBytes(value)
+		case "milliseconds":
+			return formatLatency(value)
+		case "rate":
+			return formatThroughput(value, "/s")
 	}
 }
 
@@ -63,9 +90,17 @@ export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected wind
  */
 export const UNNAMED_SERIES_KEY = "value"
 
-export interface TransformedPoint extends Record<string, string | number> {
+export interface TransformedPoint extends Record<string, string | number | Date> {
 	bucket: string
+	/** The bucket's axis label. Charts on a categorical axis plot this. */
 	time: string
+	/**
+	 * The bucket as an instant, for charts on a time axis. Precomputed once here
+	 * because a scale accessor runs per datum per layout pass, and because the
+	 * warehouse spells buckets without a timezone — `toEpochMs` reads them as
+	 * UTC, where a bare `new Date(bucket)` would read them as local time.
+	 */
+	date: Date
 }
 
 /** Axis label for a bucket timestamp ("14:35"). */
@@ -107,6 +142,65 @@ export function makeBucketLabeler(bucketIsos: ReadonlyArray<string>): (iso: stri
 	}
 }
 
+/** A warehouse bucket as an instant — tz-less buckets are read as UTC, never as local time. */
+export function bucketDate(iso: string): Date {
+	return new Date(toEpochMs(iso))
+}
+
+/**
+ * The x axis for a chart over warehouse buckets: a TIME scale over each
+ * bucket's instant, pinned to the extent of `bucketIsos`.
+ *
+ * Every infra chart used to plot the bucket's formatted LABEL on a point scale,
+ * and a label is not an identity: a 24-hour window starting at 17:00 has
+ * "05:00 PM" at both ends, so the scale put the first and last buckets on the
+ * same x — the line drew straight back across the plot, a threshold label
+ * anchored to the "last" bucket landed on the y-axis ticks, and the end labels
+ * clipped. A multi-day window collapsed once per day. Plotting the instant makes
+ * the position honest; the shared axis builder puts ticks on round clock
+ * boundaries and keeps the end labels inside the plot.
+ *
+ * Pass the union of every sibling's buckets when charts are read down one
+ * vertical line, so they agree on where a minute sits.
+ */
+export function makeBucketAxis(bucketIsos: ReadonlyArray<string>) {
+	const epochs = bucketIsos
+		.map((iso) => toEpochMs(iso))
+		.filter((ms) => Number.isFinite(ms))
+		.toSorted((a, b) => a - b)
+	const first = epochs[0]
+	const last = epochs[epochs.length - 1]
+	const domainMs: readonly [number, number] | undefined =
+		first !== undefined && last !== undefined ? [first, last] : undefined
+
+	// The bucket width is the smallest positive gap, so an irregular union of two
+	// cadences still reports the finer one rather than whatever came first.
+	let stepMs: number | undefined
+	for (let index = 1; index < epochs.length; index++) {
+		const gap = epochs[index]! - epochs[index - 1]!
+		if (gap > 0 && (stepMs === undefined || gap < stepMs)) stepMs = gap
+	}
+
+	const context: TimeseriesAxisContext = {
+		rangeMs: domainMs ? domainMs[1] - domainMs[0] : 0,
+		bucketSeconds: stepMs === undefined ? undefined : stepMs / 1000,
+		domainMs,
+	}
+	const axis = timeseriesXAxis(context)
+
+	return {
+		/** Feed to `defineChart({ scales: { x } })`. */
+		x:
+			domainMs && domainMs[0] < domainMs[1]
+				? { ...axis, scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])]) }
+				: axis,
+		/** `[first, last]` epoch ms, absent when there is nothing to plot. */
+		domainMs,
+		/** The tooltip heading for a bucket: the full date, since the ticks stay terse. */
+		heading: (bucketIso: string) => formatBucketLabel(bucketIso, context, "tooltip"),
+	}
+}
+
 /** Pivot long-form `{bucket, attributeValue, value}` rows into per-bucket points keyed by series. */
 export function transformRows(
 	rows: ReadonlyArray<{ bucket: string; attributeValue: string; value: number }>,
@@ -120,6 +214,7 @@ export function transformRows(
 		const existing: TransformedPoint = byBucket.get(row.bucket) ?? {
 			bucket: row.bucket,
 			time: labeler(row.bucket),
+			date: bucketDate(row.bucket),
 		}
 		existing[series] = row.value
 		byBucket.set(row.bucket, existing)

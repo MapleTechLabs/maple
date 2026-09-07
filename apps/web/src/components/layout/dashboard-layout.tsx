@@ -174,8 +174,9 @@ function Body({ children }: { children: React.ReactNode }) {
 }
 
 /** Filter rail, flush left of the content and full height. A sheet below `lg`. */
-function Filters({ children }: { children: React.ReactNode }) {
-	return <PageLayout.FilterSidebar>{children}</PageLayout.FilterSidebar>
+/** `width` is a Tailwind class, forwarded for rails whose content needs more than `w-64`. */
+function Filters({ children, width }: { children: React.ReactNode; width?: string }) {
+	return <PageLayout.FilterSidebar width={width}>{children}</PageLayout.FilterSidebar>
 }
 
 /** The main column: `Sticky` (optional) above `Scroll`. */
@@ -215,8 +216,8 @@ function Header({
 }
 
 /** The scrolling page body. */
-function Scroll({ children }: { children: React.ReactNode }) {
-	return <PageLayout.ScrollArea>{children}</PageLayout.ScrollArea>
+function Scroll({ children, className }: { children: React.ReactNode; className?: string }) {
+	return <PageLayout.ScrollArea className={className}>{children}</PageLayout.ScrollArea>
 }
 
 /**
@@ -234,13 +235,17 @@ function RightPanel({
 	title,
 	/** Widen past the `w-72` default where the rail carries the page's substance. */
 	width,
+	open,
+	onOpenChange,
 }: {
 	children: React.ReactNode
 	title?: string
 	width?: string
+	open?: boolean
+	onOpenChange?: (open: boolean) => void
 }) {
 	return (
-		<PageLayout.RightSidebar title={title} width={width}>
+		<PageLayout.RightSidebar title={title} width={width} open={open} onOpenChange={onOpenChange}>
 			{children}
 		</PageLayout.RightSidebar>
 	)

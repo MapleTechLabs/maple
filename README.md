@@ -13,7 +13,7 @@ Maple is now organized as a monorepo with a SPA frontend and an Effect-based bac
 ## Workspace Layout
 
 - `apps/web`: TanStack Router SPA (Vite)
-- `apps/api`: Effect HTTP API (Tinybird proxy + MCP server code + AI chat/triage on `@maple/llm`)
+- `apps/api`: Effect HTTP API (Tinybird proxy + MCP server code + AI chat/triage on `@opencode-ai/ai`)
 - `apps/ingest`: OTLP ingest gateway (key auth + org enrichment + collector forwarding)
 - `apps/landing`: Astro landing site
 - `apps/alerting`: Alert evaluation worker
@@ -48,28 +48,26 @@ update, and uninstall details.
 
 ## Develop
 
-Run every available `dev` task in the monorepo:
+Run the whole stack — the Cloudflare Workers under alchemy's local runtime,
+the rest as child processes of the same `alchemy dev` — behind
+`https://<app>.localhost`:
 
 ```bash
-bun run dev
+bun dev
 ```
 
-Run individual apps from the repo root with workspace filters:
+Or just some of it (`api`, `alerting`, `electric-sync`, `web`, `landing`,
+`ingest`, `local-ui`, `scraper`):
+
+```bash
+bun dev api web
+```
+
+A single non-Worker app can also run on its raw port, outside the stack:
 
 ```bash
 bun --filter=@maple/web dev
-bun --filter=@maple/api dev
-bun --filter=@maple/ingest dev
-bun --filter=@maple/landing dev
 ```
-
-There is also a dedicated root helper for alerting:
-
-```bash
-bun run dev:alerting
-```
-
-Turbo dev runs in TUI mode so interactive servers stay attached.
 
 ## Validate
 
@@ -108,7 +106,7 @@ single `Alchemy.Stack("maple", …)` whose program composes per-app factories:
 
 Stage grammar is `prd` / `stg` / `pr-<number>` / dev names, resolved via
 `@maple/infra/cloudflare` (`parseMapleStage`, `resolveMapleDomains`, `resolveWorkerName`,
-`resolveHyperdriveName`, `resolveHyperdriveRefId`, `resolveDatabaseMode`). stg/prd bind the
+`resolveHyperdriveRefId`, `resolveDatabaseMode`). stg/prd bind the
 dashboard-managed Hyperdrive by config ID (`resolveHyperdriveRefId`) — origin credentials
 never touch a deploy. `MAPLE_PG_URL` is only needed for dev stages, whose Hyperdrive alchemy
 manages itself. PR previews bind **no database at all** (`resolveDatabaseMode` → `"none"`):
@@ -184,6 +182,7 @@ For ingest + key auth, set these at minimum in your root `.env` when running the
 - `MAPLE_INGEST_KEY_ENCRYPTION_KEY` (required when ingest reads encrypted credentials from Postgres)
 - `INGEST_PORT`
 - `INGEST_FORWARD_OTLP_ENDPOINT`
+- `MAPLE_INTERNAL_ORG_ID` (the org the gateway's own telemetry is filed under; no default)
 - `INGEST_FORWARD_TIMEOUT_MS`
 - `INGEST_MAX_REQUEST_BODY_BYTES`
 - `INGEST_REQUIRE_TLS`

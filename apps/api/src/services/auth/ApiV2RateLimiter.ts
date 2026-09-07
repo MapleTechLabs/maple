@@ -1,19 +1,14 @@
 import type { ApiKeyId } from "@maple/domain/http"
-import { Context, Effect, Layer, Schema } from "effect"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { Context, Effect, Layer, Option } from "effect"
+import { ApiV2RateLimit, type RateLimiter } from "@/platform/bindings"
+import { Env } from "@/platform/Env"
 
-export const API_V2_RATE_LIMIT_BINDING = "API_V2_RATE_LIMITER"
-export const API_V2_RATE_LIMIT_PARTITION = "API_V2_RATE_LIMIT_PARTITION"
 export const API_V2_RATE_LIMIT_REQUESTS = 600
 export const API_V2_RATE_LIMIT_PERIOD_SECONDS = 60
 
-export type ApiV2RateLimitOutcome = "allowed" | "limited" | "failed_open"
+export type RateLimitOutcome = "allowed" | "limited" | "failed_open"
 
-interface RateLimitBinding {
-	readonly limit: (options: { readonly key: string }) => Promise<{ readonly success: boolean }>
-}
-
-export interface ApiV2RateLimiterApi {
+export interface RateLimiterApi {
 	/**
 	 * Rate-limit one caller-chosen key.
 	 *
@@ -22,26 +17,7 @@ export interface ApiV2RateLimiterApi {
 	 * per client IP, neither of which is an API key. The `v2:` / `share:` scoping
 	 * prefix therefore belongs to the caller — see `makeApiV2RateLimitKey`.
 	 */
-	readonly check: (key: string) => Effect.Effect<ApiV2RateLimitOutcome>
-}
-
-class ApiV2RateLimiterBindingError extends Schema.TaggedError<ApiV2RateLimiterBindingError>()(
-	"@maple/api/services/ApiV2RateLimiterBindingError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-const isRateLimitBinding = (value: unknown): value is RateLimitBinding =>
-	typeof value === "object" &&
-	value !== null &&
-	"limit" in value &&
-	typeof (value as { readonly limit?: unknown }).limit === "function"
-
-const readPartition = (environment: Record<string, unknown>): string | undefined => {
-	const value = environment[API_V2_RATE_LIMIT_PARTITION]
-	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
+	readonly check: (key: string) => Effect.Effect<RateLimitOutcome>
 }
 
 export const makeApiV2RateLimitKey = (partition: string, key: string): string => `${partition}:${key}`
@@ -63,52 +39,52 @@ export const shareIpRateLimitKey = (ip: string): string => `shareip:${ip}`
  */
 export const shareOgRateLimitKey = (shareKeyPrefix: string): string => `shareog:${shareKeyPrefix}`
 
-const warnFailedOpen = (reason: "binding_missing" | "partition_missing" | "binding_error", cause?: unknown) =>
-	Effect.logWarning("API v2 rate limiter unavailable; allowing request").pipe(
-		Effect.annotateLogs({
-			"maple.rate_limit.outcome": "failed_open",
-			"maple.rate_limit.reason": reason,
-			...(cause instanceof Error ? { "error.type": cause.name } : undefined),
-		}),
-	)
+/**
+ * The one fail-open check implementation behind every limiter service: allow /
+ * limited from the binding, `failed_open` (with `maple.rate_limit.outcome`
+ * telemetry, never a silent pass) when the binding is unavailable. `partition`
+ * is the deployment (`MAPLE_ENVIRONMENT`), so counters never cross stages.
+ */
+export const makeRateLimitCheck = (
+	limiter: Option.Option<RateLimiter>,
+	partition: string,
+	config: { readonly spanName: string; readonly failOpenMessage: string },
+): RateLimiterApi["check"] => {
+	const warnFailedOpen = (reason: "binding_missing" | "binding_error", cause?: unknown) =>
+		Effect.logWarning(config.failOpenMessage).pipe(
+			Effect.annotateLogs({
+				"maple.rate_limit.outcome": "failed_open",
+				"maple.rate_limit.reason": reason,
+				...(cause instanceof Error ? { "error.type": cause.name } : undefined),
+			}),
+		)
 
-export class ApiV2RateLimiter extends Context.Service<ApiV2RateLimiter, ApiV2RateLimiterApi>()(
+	return Effect.fn(config.spanName)(function* (key: string) {
+		if (Option.isNone(limiter)) {
+			yield* warnFailedOpen("binding_missing")
+			return "failed_open" as const
+		}
+
+		return yield* limiter.value.limit(makeApiV2RateLimitKey(partition, key)).pipe(
+			Effect.map(({ success }) => (success ? ("allowed" as const) : ("limited" as const))),
+			Effect.catchTag("@maple/api/platform/RateLimitBindingError", (error) =>
+				warnFailedOpen("binding_error", error.cause).pipe(Effect.as<RateLimitOutcome>("failed_open")),
+			),
+		)
+	})
+}
+
+export class ApiV2RateLimiter extends Context.Service<ApiV2RateLimiter, RateLimiterApi>()(
 	"@maple/api/services/ApiV2RateLimiter",
 	{
 		make: Effect.gen(function* () {
-			const environment = yield* WorkerEnvironment
-
-			const check = Effect.fn("ApiV2RateLimiter.check")(function* (key: string) {
-				const binding = environment[API_V2_RATE_LIMIT_BINDING]
-				if (!isRateLimitBinding(binding)) {
-					yield* warnFailedOpen("binding_missing")
-					return "failed_open" as const
-				}
-
-				const partition = readPartition(environment)
-				if (partition === undefined) {
-					yield* warnFailedOpen("partition_missing")
-					return "failed_open" as const
-				}
-
-				return yield* Effect.tryPromise({
-					try: () => binding.limit({ key: makeApiV2RateLimitKey(partition, key) }),
-					catch: (cause) =>
-						new ApiV2RateLimiterBindingError({
-							message: "Cloudflare rate-limit binding call failed",
-							cause,
-						}),
-				}).pipe(
-					Effect.map(({ success }) => (success ? ("allowed" as const) : ("limited" as const))),
-					Effect.catchTag("@maple/api/services/ApiV2RateLimiterBindingError", (error) =>
-						warnFailedOpen("binding_error", error.cause).pipe(
-							Effect.as<ApiV2RateLimitOutcome>("failed_open"),
-						),
-					),
-				)
+			const limiter = yield* Effect.serviceOption(ApiV2RateLimit)
+			const env = yield* Env
+			const check = makeRateLimitCheck(limiter, env.MAPLE_ENVIRONMENT, {
+				spanName: "ApiV2RateLimiter.check",
+				failOpenMessage: "API v2 rate limiter unavailable; allowing request",
 			})
-
-			return { check } satisfies ApiV2RateLimiterApi
+			return { check } satisfies RateLimiterApi
 		}),
 	},
 ) {

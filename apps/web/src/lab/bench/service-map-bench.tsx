@@ -101,14 +101,14 @@ function refreshBenchMetrics(graph: BenchGraph, revision: number): BenchGraph {
 			callCount: Math.max(1, Math.round(edge.callCount * callScale)),
 			estimatedCallCount: Math.max(1, Math.round(edge.estimatedCallCount * callScale)),
 			avgDurationMs: edge.avgDurationMs * latencyScale,
-			p95DurationMs: edge.p95DurationMs * latencyScale,
+			maxDurationMs: edge.maxDurationMs * latencyScale,
 		})),
 		dbEdges: graph.dbEdges.map((edge) => ({
 			...edge,
 			callCount: Math.max(1, Math.round(edge.callCount * callScale)),
 			estimatedCallCount: Math.max(1, Math.round(edge.estimatedCallCount * callScale)),
 			avgDurationMs: edge.avgDurationMs * latencyScale,
-			p95DurationMs: edge.p95DurationMs * latencyScale,
+			maxDurationMs: edge.maxDurationMs * latencyScale,
 		})),
 		overviews: graph.overviews.map((overview) => ({
 			...overview,
@@ -159,7 +159,7 @@ function generateBenchGraph(params: BenchParams): BenchGraph {
 			errorCount: Math.round(callCount * errorRate),
 			errorRate,
 			avgDurationMs: 2 + rng() * 80,
-			p95DurationMs: 20 + rng() * 400,
+			maxDurationMs: 20 + rng() * 400,
 			hasSampling: rng() < 0.3,
 			samplingWeight: 1 + Math.floor(rng() * 9),
 		})
@@ -187,7 +187,8 @@ function generateBenchGraph(params: BenchParams): BenchGraph {
 			errorCount: Math.round(callCount * errorRate),
 			errorRate,
 			avgDurationMs: 1 + rng() * 40,
-			p95DurationMs: 10 + rng() * 200,
+			maxDurationMs: 10 + rng() * 200,
+			p95DurationMs: 8 + rng() * 120,
 			hasSampling: false,
 			samplingWeight: 1,
 		})
@@ -290,6 +291,36 @@ export interface ReactRenderReport {
 	topologyChanges: number
 }
 
+/**
+ * How far the drawn graph moved across an update — the "layout shifting" the
+ * frame-timing metrics are blind to. A run can hold a perfect 120fps while
+ * teleporting every node, so this is measured separately.
+ *
+ * Displacements are in flow coordinates and cover only node ids present both
+ * before and after (an added/removed node has no displacement to speak of).
+ * `viewportDelta` catches the other half of a shift: the camera reframing under
+ * a graph that itself held still.
+ */
+export interface LayoutStabilityReport {
+	/** False if layout was still moving when the measurement window expired. */
+	settled: boolean
+	/** Node ids present both before and after the update. */
+	sampled: number
+	/** Of those, how many moved more than half a pixel. */
+	moved: number
+	meanDisplacement: number
+	maxDisplacement: number
+	/** Euclidean change in camera x/y, in screen px. */
+	viewportDelta: number
+	/** Change in camera zoom, as a ratio (0 = unchanged). */
+	zoomDelta: number
+}
+
+export interface LayoutStabilityReportSet {
+	metricRefresh: LayoutStabilityReport
+	topologyChange: LayoutStabilityReport
+}
+
 interface ReactRecorder {
 	onRender: ProfilerOnRenderCallback
 	reset: () => void
@@ -303,6 +334,15 @@ interface SmBench {
 	last: BenchMetrics | null
 	run: (opts?: { durationMs?: number; pan?: boolean }) => Promise<BenchMetrics>
 	runReact: (opts?: { metricRefreshes?: number; topologyChanges?: number }) => Promise<ReactRenderReport>
+	runStability: (opts?: { settleMs?: number }) => Promise<LayoutStabilityReportSet>
+	/** Pin the camera so a frame-timing run measures a fixed amount of content. */
+	setCamera: (viewport: { x: number; y: number; zoom: number }) => void
+	/** Frame the whole graph, for measuring what a user sees at fit-all. */
+	fitCamera: () => void
+	/** Resolve once React has stopped committing, so a run times a steady state. */
+	waitForQuiet: (opts?: { maxMs?: number; quietMs?: number }) => Promise<boolean>
+	/** The camera as it currently stands, for reporting what a run measured. */
+	getCamera: () => { x: number; y: number; zoom: number }
 }
 
 declare global {
@@ -381,6 +421,85 @@ function BenchDriver({
 				await nextPaint()
 			}
 			return recorder.snapshot()
+		}
+
+		// Sample where every node currently sits, plus the camera. Positions come
+		// from the live ReactFlow store rather than the DOM so a transform-only
+		// camera move isn't mistaken for nodes moving.
+		const sampleLayout = () => {
+			const positions = new Map<string, { x: number; y: number }>()
+			for (const node of flow.getNodes()) {
+				positions.set(node.id, { x: node.position.x, y: node.position.y })
+			}
+			return { positions, viewport: flow.getViewport() }
+		}
+
+		// Wait until positions stop changing rather than for a fixed delay. Layout
+		// is asynchronous and its cost varies hugely by machine — a fixed delay
+		// silently samples an intermediate layout on a slow host and reports it as
+		// the settled one. Returns false if it never went quiet within `maxMs`.
+		//
+		// Stillness alone is not quiescence. A change that invalidates the layout
+		// leaves the graph sitting on its old positions while ELK re-runs — the
+		// canvas does not even reveal a fallback for the first 2s — so a quiet
+		// window measured from the update landed inside that gap and reported the
+		// PREVIOUS layout as the settled one. On a fast host that made the
+		// topology-change measurement vacuous (every node "moved" 0px because
+		// nothing had moved yet); on a slow one the same code measured the real
+		// thing. Wait for ELK to republish as well as for positions to hold.
+		const elkIsReady = () => document.querySelector('[data-elk-status="ready"]') !== null
+		const waitForQuiescence = async (maxMs: number, quietMs = 750) => {
+			const serialize = () =>
+				Array.from(sampleLayout().positions, ([id, p]) => `${id}:${p.x},${p.y}`)
+					.sort()
+					.join("|")
+			const start = performance.now()
+			let last = serialize()
+			let lastChange = performance.now()
+			while (performance.now() - start < maxMs) {
+				await new Promise((resolve) => setTimeout(resolve, 100))
+				const now = serialize()
+				if (now !== last) {
+					last = now
+					lastChange = performance.now()
+				} else if (!elkIsReady()) {
+					lastChange = performance.now()
+				} else if (performance.now() - lastChange >= quietMs) {
+					return true
+				}
+			}
+			return false
+		}
+
+		const measureStability = async (
+			update: () => void | Promise<void>,
+			settleMs: number,
+		): Promise<LayoutStabilityReport> => {
+			const before = sampleLayout()
+			await update()
+			const settled = await waitForQuiescence(settleMs)
+			await nextPaint()
+			const after = sampleLayout()
+
+			const displacements: number[] = []
+			for (const [id, from] of before.positions) {
+				const to = after.positions.get(id)
+				if (!to) continue
+				displacements.push(Math.hypot(to.x - from.x, to.y - from.y))
+			}
+			const total = displacements.reduce((sum, d) => sum + d, 0)
+			return {
+				settled,
+				sampled: displacements.length,
+				moved: displacements.filter((d) => d > 0.5).length,
+				meanDisplacement: displacements.length === 0 ? 0 : total / displacements.length,
+				maxDisplacement: displacements.length === 0 ? 0 : Math.max(...displacements),
+				viewportDelta: Math.hypot(
+					after.viewport.x - before.viewport.x,
+					after.viewport.y - before.viewport.y,
+				),
+				zoomDelta: Math.abs(after.viewport.zoom - before.viewport.zoom),
+			}
 		}
 
 		const harness: SmBench = {
@@ -496,17 +615,75 @@ function BenchDriver({
 					topologyChanges,
 				}
 			},
+			runStability: async ({ settleMs = 45_000 } = {}) => {
+				await new Promise((resolve) => setTimeout(resolve, 500))
+				await nextPaint()
+				// A metric refresh changes only node DATA — same services, same edges.
+				// Nothing about it justifies moving a single node or the camera.
+				const metricRefresh = await measureStability(onMetricRefresh, settleMs)
+				// A topology change does justify a new layout, but the surviving nodes
+				// should still land near where they were.
+				// react-doctor-disable-next-line react-doctor/server-sequential-independent-await -- Both scenarios mutate the same graph; overlapping them would corrupt the measurement.
+				const topologyChange = await measureStability(onTopologyChange, settleMs)
+				return { metricRefresh, topologyChange }
+			},
+			// Fixed sleeps do not work here: the camera write path schedules its own
+			// follow-up work, and on CI that landed inside a measurement window that
+			// had already waited 1.5s for it. Watch the commit counter instead.
+			waitForQuiet: async ({ maxMs = 15_000, quietMs = 750 } = {}) => {
+				const start = performance.now()
+				let last = recorder.snapshot().commits
+				let lastChange = performance.now()
+				while (performance.now() - start < maxMs) {
+					await new Promise((resolve) => setTimeout(resolve, 100))
+					const now = recorder.snapshot().commits
+					if (now !== last) {
+						last = now
+						lastChange = performance.now()
+					} else if (performance.now() - lastChange >= quietMs) {
+						return true
+					}
+				}
+				return false
+			},
+			setCamera: (viewport) => flow.setViewport(viewport),
+			fitCamera: () => flow.fitView(),
+			getCamera: () => flow.getViewport(),
 		}
 		window.__smBench = harness
 
-		// Mark ready once edges have rendered (nodes measured → geometry exists).
+		// Mark ready once edges have rendered (nodes measured → geometry exists) AND
+		// ELK has published its final layout.
+		//
+		// Edges alone are not enough. `ServiceMapCanvas` publishes a synchronous
+		// fallback layout after a 2s grace and renders it, so nodes are measured and
+		// edges are in the DOM while ELK is still running. On a fast machine ELK
+		// lands before anyone looks; on a CI runner it landed AFTER the harness had
+		// declared ready, after `waitForQuiet` had seen its 750ms of silence, and
+		// INSIDE the 4s idle window — where its re-render (plus the render-phase
+		// `setLayoutHasEverSettled` it triggers, hence the nested update) was billed
+		// as 4 commits of a render loop that does not exist. Intermittent by nature:
+		// it depended on ELK straddling the measurement, so it passed and failed on
+		// identical code.
+		// The escape hatch is a deadlock guard, not a budget: it exists so a
+		// genuinely broken ELK fails on an assertion instead of hanging, and it
+		// must sit well above the slowest honest layout. 8s was under it — this
+		// graph takes ~5s of worker ELK on a warm dev server and a fast laptop,
+		// so a two-core CI runner blew straight through the cap and every run
+		// declared ready while the map was still showing the fallback.
+		const ELK_SETTLE_DEADLINE_MS = 45_000
 		let raf = 0
 		const settleStart = performance.now()
 		const checkReady = () => {
 			const nodes = store.getState().nodes
 			const measured = nodes.length > 0 && nodes.every((n) => n.measured?.width)
 			const domEdges = document.querySelectorAll(".react-flow__edge").length
-			if ((measured && domEdges > 0) || performance.now() - settleStart > 8000) {
+			// "fallback" is NOT terminal — it is what is on screen while ELK works.
+			const elkSettled = document.querySelector('[data-elk-status="ready"]') !== null
+			if (
+				(measured && domEdges > 0 && elkSettled) ||
+				performance.now() - settleStart > ELK_SETTLE_DEADLINE_MS
+			) {
 				harness.readyMs = Math.round(performance.now() - settleStart)
 				harness.ready = true
 				return

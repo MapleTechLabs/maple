@@ -8,6 +8,9 @@ export {
 	ArrowLeftIcon,
 	ArrowRightIcon,
 	ArrowRotateClockwiseIcon,
+	BellIcon,
+	BoltIcon,
+	BracketsCurlyIcon,
 	CheckIcon,
 	ChevronDownIcon,
 	ChevronExpandYIcon,
@@ -26,11 +29,15 @@ export {
 	DatabaseIcon,
 	DotsIcon,
 	EyeIcon,
+	FileIcon,
 	FireIcon,
+	FolderOpenIcon,
 	GlobeIcon,
+	GlobePointerIcon,
 	LineHeightIcon,
 	LinkIcon,
 	LoaderIcon,
+	MagnifierCheckIcon,
 	MagnifierIcon,
 	MenuIcon,
 	MinusIcon,
@@ -38,26 +45,36 @@ export {
 	NetworkNodesIcon,
 	PulseIcon,
 	RadioCheckedIcon,
+	RocketIcon,
 	SidebarLeftIcon,
 	TabletIcon,
 	TextWrapIcon,
 	ThumbtackIcon,
+	TrashIcon,
+	UserIcon,
 	XmarkIcon,
 } from "@maple/ui/components/icons"
 
 // App-specific icons (not part of the core library).
+export { AionLabsIcon } from "./aion-labs"
+export { AmazonIcon } from "./amazon"
+export { AnthropicIcon } from "./anthropic"
+export { ArceeIcon } from "./arcee"
 export { ArrowPathIcon } from "./arrow-path"
 export { ArrowRightFromLineIcon } from "./arrow-right-from-line"
+export { ArrowThroughLineRightIcon } from "./arrow-through-line-right"
 export { ArrowRotateAnticlockwiseIcon } from "./arrow-rotate-anticlockwise"
 export { ArrowTrendDownIcon } from "./arrow-trend-down"
 export { ArrowTrendUpIcon } from "./arrow-trend-up"
 export { ArrowUpIcon } from "./arrow-up"
 export { ArrowUpDownIcon } from "./arrow-up-down"
 export { AwsLambdaIcon } from "./aws-lambda"
-export { BellIcon } from "./bell"
+export { BaiduIcon } from "./baidu"
 export { BluetoothIcon } from "./bluetooth"
-export { BoltIcon } from "./bolt"
-export { BracketsCurlyIcon } from "./brackets-curly"
+export { BranchForkIcon } from "./branch-fork"
+export { BunIcon } from "./bun"
+export { ByteDanceIcon } from "./bytedance"
+export { ChatBubbleIcon } from "./chat-bubble"
 export { ChatBubbleSparkleIcon } from "./chat-bubble-sparkle"
 export { ChartBarIcon } from "./chart-bar"
 export { ChartBarHorizontalIcon } from "./chart-bar-horizontal"
@@ -65,33 +82,63 @@ export { ChartBarTrendUpIcon } from "./chart-bar-trend-up"
 export { ChartLineIcon } from "./chart-line"
 export { CirclePercentageIcon } from "./circle-percentage"
 export { CircleQuestionIcon } from "./circle-question"
+export { ClaudeIcon } from "./claude"
 export { ClickhouseIcon } from "./clickhouse"
 export { CloudflareIcon, CloudflareMonoIcon } from "./cloudflare"
+export { CohereIcon } from "./cohere"
+export { CompassIcon } from "./compass"
+export { CrewAiIcon } from "./crewai"
 export { ChromeIcon } from "./chrome"
+export { CompactLinesIcon } from "./compact-lines"
 export { CornerDownLeftIcon } from "./corner-down-left"
 export { CursorIcon } from "./cursor"
+export { CursorPointerIcon } from "./cursor-pointer"
 export { CreditCardIcon } from "./credit-card"
 export { CubeIcon } from "./cube"
+export { DeepSeekIcon } from "./deepseek"
+export { DenoIcon } from "./deno"
 export { DiscordIcon } from "./discord"
+export { DockerIcon } from "./docker"
+export { EffectIcon } from "./effect"
 export { DotsVerticalIcon } from "./dots-vertical"
 export { DownloadIcon } from "./download"
 export { EdgeIcon } from "./edge"
 export { EnvelopeIcon } from "./envelope"
 export { ExternalLinkIcon } from "./external-link"
 export { FaceRobotIcon } from "./face-robot"
-export { FileIcon } from "./file"
 export { FingerprintIcon } from "./fingerprint"
 export { FirefoxIcon } from "./firefox"
 export { FloppyDiskIcon } from "./floppy-disk"
 export { FolderIcon } from "./folder"
-export { FolderOpenIcon } from "./folder-open"
 export { GearIcon } from "./gear"
+export { GeminiIcon } from "./gemini"
 export { GithubIcon } from "./github"
 export { GoogleIcon } from "./google"
+export { GrokIcon } from "./grok"
+export { HaystackIcon } from "./haystack"
+export { HuggingFaceIcon } from "./huggingface"
 export { GridIcon } from "./grid"
 export { GridSquareCirclePlusIcon } from "./grid-square-circle-plus"
 export { GripDotsIcon } from "./grip-dots"
+export { IbmIcon } from "./ibm"
+export { InceptionIcon } from "./inception"
+export { KimiIcon } from "./kimi"
+export { KwaipilotIcon } from "./kwaipilot"
 export { LayersIcon } from "./layers"
+export { LiquidIcon } from "./liquid"
+export { MeituanIcon } from "./meituan"
+export { MetaIcon } from "./meta"
+export { MiniMaxIcon } from "./minimax"
+export { MistralIcon } from "./mistral"
+export { MoonshotIcon } from "./moonshot"
+export { MorphIcon } from "./morph"
+export { NousResearchIcon } from "./nousresearch"
+export { NvidiaIcon } from "./nvidia"
+export { PerplexityIcon } from "./perplexity"
+export { PoolsideIcon } from "./poolside"
+export { QwenIcon } from "./qwen"
+export { RelaceIcon } from "./relace"
+export { StepFunIcon } from "./stepfun"
 export { TagIcon } from "./tag"
 export { HazelIcon } from "./hazel"
 export { HistoryIcon } from "./history"
@@ -99,6 +146,7 @@ export { HouseIcon } from "./house"
 export { IdBadgeIcon } from "./id-badge"
 export { ImageIcon } from "./image"
 export { KafkaIcon } from "./kafka"
+export { LangchainIcon } from "./langchain"
 export { KeyIcon } from "./key"
 export { KeyboardIcon } from "./keyboard"
 export { KubernetesIcon } from "./kubernetes"
@@ -107,22 +155,35 @@ export { LockIcon } from "./lock"
 export { LayoutLeftIcon } from "./layout-left"
 export { LayoutRightIcon } from "./layout-right"
 export { LogoutIcon } from "./logout"
-export { MagnifierCheckIcon } from "./magnifier-check"
 export { MaximizeIcon } from "./maximize"
 export { MediaPauseIcon } from "./media-pause"
 export { MediaPlayIcon } from "./media-play"
+export { MicrosoftIcon } from "./microsoft"
 export { MinimizeIcon } from "./minimize"
 export { MongodbIcon } from "./mongodb"
 export { MoonIcon } from "./moon"
 export { MysqlIcon } from "./mysql"
 export { NatsIcon } from "./nats"
-export { NodejsIcon } from "./nodejs"
-export { OpenjdkIcon } from "./openjdk"
+export { NodejsIcon, NodejsMonoIcon } from "./nodejs"
+export { OpenAiIcon } from "./openai"
+export { OpenjdkIcon, OpenjdkMonoIcon } from "./openjdk"
+export { OpenRouterIcon } from "./openrouter"
 export { OperaIcon } from "./opera"
 export { PaletteIcon } from "./palette"
 export { PaperPlaneIcon } from "./paper-plane"
 export { PencilIcon } from "./pencil"
+export { PythonIcon } from "./python"
 export { PlanetScaleIcon } from "./planetscale"
+export { PydanticIcon } from "./pydantic"
+// Nucleo Pixel Essential — a deliberately separate family, used where a row
+// needs a type marker rather than an action affordance (the session replay
+// event rail). Don't mix them with the outline icons inside one control.
+export { PixelBracketsCurlyIcon } from "./pixel-brackets-curly"
+export { PixelCrosshairsIcon } from "./pixel-crosshairs"
+export { PixelNodesIcon } from "./pixel-nodes"
+export { PixelSparkleIcon } from "./pixel-sparkle"
+export { PixelTriangleWarningIcon } from "./pixel-triangle-warning"
+export { PixelWindowIcon } from "./pixel-window"
 export { PlayRotateClockwiseIcon } from "./play-rotate-clockwise"
 export { PlusIcon } from "./plus"
 export { PostgresIcon } from "./postgres"
@@ -131,21 +192,29 @@ export { RabbitmqIcon } from "./rabbitmq"
 export { PriorityBarsIcon, PRIORITY_LABEL } from "./priority-bars"
 export type { PriorityLevel } from "./priority-bars"
 export { RedisIcon } from "./redis"
-export { RocketIcon } from "./rocket"
+export { RubyIcon } from "./ruby"
+export { RustIcon } from "./rust"
 export { SafariIcon } from "./safari"
 export { ServerIcon } from "./server"
 export { ShieldIcon } from "./shield"
 export { SlackIcon, SlackMonoIcon } from "./slack"
+export { SpringIcon } from "./spring"
 export { SlidersIcon } from "./sliders"
 export { SpinnerIcon } from "./spinner"
 export { SquareIcon } from "./square"
+export { SquareSparkleIcon } from "./square-sparkle"
 export { SquareTerminalIcon } from "./square-terminal"
 export { StarIcon, StarFilledIcon } from "./star"
 export { SunIcon } from "./sun"
 export { TelegramIcon, TelegramMonoIcon } from "./telegram"
-export { TrashIcon } from "./trash"
+export { TencentIcon } from "./tencent"
+export { TranscriptIcon } from "./transcript"
 export { TruckIcon } from "./truck"
+export { UpstageIcon } from "./upstage"
+export { VeniceIcon } from "./venice"
+export { VercelIcon } from "./vercel"
 export { WarpStreamIcon } from "./warpstream"
 export { UploadIcon } from "./upload"
-export { UserIcon } from "./user"
 export { WorkflowRingIcon, WORKFLOW_LABEL, WORKFLOW_COLOR } from "./workflow-ring"
+export { XaiIcon } from "./xai"
+export { ZaiIcon } from "./z-ai"

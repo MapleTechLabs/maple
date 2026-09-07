@@ -33,17 +33,20 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import {
 	LLM,
+	LLMClient,
 	LLMEvent,
+	LLMRequest,
 	LLMResponse,
 	Message,
 	ToolResultPart,
 	toDefinitions,
+	ToolChoice,
 	ToolRuntime,
 	type FinishReason,
-	type LLMRequest,
+	type LLMClientService,
 	type Tools,
-} from "@maple/llm"
-import { Duration, Effect, Stream } from "effect"
+} from "@opencode-ai/ai"
+import { Clock, Duration, Effect, Stream } from "effect"
 import { contextLimitOf, outputLimitOf, toLlmCallError } from "@/platform/Llm"
 import { agentForSession, buildSystemPrompt, spawnableFor } from "../agents"
 import { buildChatTools } from "../tools"
@@ -58,6 +61,17 @@ import {
 } from "./budgets"
 import { dropOldestToolStep, isNearContextLimit } from "./context"
 import { buildTaskTool } from "./delegate"
+import {
+	annotateModelCallEnd,
+	annotateModelCallTiming,
+	genAiIdentityOf,
+	invokeAgentAttributes,
+	invokeAgentSpanName,
+	modelCallAttributes,
+	modelCallSpanName,
+	withToolCallSpan,
+	type ModelCallTiming,
+} from "./genai"
 import { isRetryableStepFailure, stepRetryDelayMs } from "./retry"
 import { initialDoomLoopState, observeToolCallBatch } from "./stop"
 import {
@@ -139,7 +153,7 @@ const finishTurn = (
 	state: StepState,
 	reason: Parameters<typeof turnEnd>[1],
 	details: TerminalDetails = {},
-): Stream.Stream<ChatTurnEvent> => {
+): Stream.Stream<ChatTurnEvent, never, LLMClientService> => {
 	const observation = input.observability
 	if (observation !== undefined) {
 		observation.outcome = reason
@@ -180,19 +194,19 @@ const closingStep = (
 	const forced = closingCompletion(input)
 	if (forced === undefined) {
 		return {
-			request: LLM.updateRequest(request, {
+			request: LLMRequest.update(request, {
 				messages: [...messages, Message.user(notice)],
 				tools: [],
-				toolChoice: "none",
+				toolChoice: ToolChoice.make("none"),
 			}),
 			closing: "prose",
 		}
 	}
 	return {
-		request: LLM.updateRequest(request, {
+		request: LLMRequest.update(request, {
 			messages: [...messages, Message.user(forcedSubmitNotice(forced.name))],
 			tools: toDefinitions({ [forced.name]: forced.tool }),
-			toolChoice: forced.name,
+			toolChoice: ToolChoice.named(forced.name),
 		}),
 		closing: "submit",
 	}
@@ -218,15 +232,18 @@ const DELTA_BATCH_WINDOW = "16 millis"
  * `LLMResponse` on the way past so the assistant turn can be appended to the transcript verbatim
  * for the next step.
  */
-export const runChatTurn = (input: ChatTurnInput): Stream.Stream<ChatTurnEvent> =>
+export const runChatTurn = (input: ChatTurnInput): Stream.Stream<ChatTurnEvent, never, LLMClientService> =>
 	Stream.unwrap(
-		Effect.sync(() => {
+		Effect.gen(function* () {
+			// The sub-turn tool cannot carry a requirement, so the client is resolved here and
+			// handed to `buildTaskTool` as a value.
+			const llm = yield* LLMClient.Service
 			const agent = input.agent ?? agentForSession(input.sessionId)
 			const taskBudget = input.taskBudget ?? makeTaskBudget()
 			const tools = {
 				...buildChatTools(input.toolExecutor, input.tenant, agent.permission, input.surface),
 				// Delegation is opt-in per agent: an agent with no `spawns` never sees `task` at all.
-				...buildTaskTool(input, spawnableFor(agent), taskBudget, runChatTurn),
+				...buildTaskTool(input, spawnableFor(agent), taskBudget, runChatTurn, llm),
 				// One value, so the tool the model is offered and the name the closing step forces are
 				// the same fact rather than two that can drift apart. See `TurnCompletion`.
 				...(input.completion === undefined
@@ -250,7 +267,17 @@ export const runChatTurn = (input: ChatTurnInput): Stream.Stream<ChatTurnEvent> 
 				emptyRecoveryUsed: false,
 				doomLoop: initialDoomLoopState,
 			}
-			return Stream.concat(Stream.fromIterable([start]), runStep(input, tools, request, state))
+			// The turn's gen-ai root span. Sub-agent turns nest under the parent's
+			// `execute_tool task` span, attended turns under `chat.turn`, headless
+			// passes under their `investigation.*` span — the semconv identity lives
+			// here so every caller gets it without repeating it.
+			return Stream.concat(Stream.fromIterable([start]), runStep(input, tools, request, state)).pipe(
+				Stream.withSpan(invokeAgentSpanName(agent.name), {
+					attributes: invokeAgentAttributes(agent, input.model, genAiIdentityOf(input), {
+						tools: request.tools,
+					}),
+				}),
+			)
 		}),
 	)
 
@@ -265,7 +292,7 @@ const runStep = (
 	tools: Tools,
 	request: LLMRequest,
 	state: StepState,
-): Stream.Stream<ChatTurnEvent> =>
+): Stream.Stream<ChatTurnEvent, never, LLMClientService> =>
 	Stream.suspend(() => {
 		// Counted per model call, not per logical step, because a retry costs the same wall clock
 		// and the same money. Shared with every descendant, so a fan-out of sub-agents cannot
@@ -290,8 +317,44 @@ const runStep = (
 		// zero, and only text that actually reached a consumer is ever taken back.
 		let emitted = 0
 
-		const live: Stream.Stream<ChatTurnEvent> = LLM.stream(request).pipe(
-			Stream.tap((event) => Effect.sync(() => collected.push(event))),
+		const identity = genAiIdentityOf(input)
+		// For `gen_ai.tool.description` on the execute_tool spans; keyed off the
+		// definitions the model itself was offered, so span and prompt agree.
+		const toolDescriptions = new Map(request.tools.map((tool) => [tool.name, tool.description]))
+
+		// `unwrap` runs the clock read at subscription, the moment before the span
+		// opens and the request goes out — the zero every timing is measured from.
+		const live: Stream.Stream<ChatTurnEvent, never, LLMClientService> = Stream.unwrap(
+			Effect.map(Clock.currentTimeMillis, (startedMs) => {
+				const timing: ModelCallTiming = { startedMs, firstChunkMs: undefined }
+				return LLM.stream(request).pipe(
+					Stream.tap((event) => Effect.sync(() => collected.push(event))),
+					// TTFT on the first provider frame, model duration on the terminal
+					// event — the two numbers the span's own wall clock cannot carry,
+					// since it stays open while downstream consumers drain the stream.
+					Stream.tap((event) => annotateModelCallTiming(timing, event)),
+					// The response half of the model-call span, written while the span is
+					// still open: `collected` holds every event up to and including the
+					// terminal one, so it folds into a completed response right here.
+					Stream.tap((event) =>
+						event.type === "finish" || event.type === "provider-error"
+							? annotateModelCallEnd(collected)
+							: Effect.void,
+					),
+					// Mapped before the span closes so it records `@maple/llm/LlmCallError`
+					// with a reason, not the package's own `AI.Error` tag.
+					Stream.mapError((error) => toLlmCallError("chat.turn", error)),
+					// One span per model call — an attempt, not a logical step, because a
+					// retry costs the same money and wall clock and deserves its own record.
+					// The catch below sits outside, so a failed call ends this span with the
+					// error exit and the retry opens a fresh one.
+					Stream.withSpan(modelCallSpanName(input.model), {
+						kind: "client",
+						attributes: modelCallAttributes(request, identity, { stream: true }),
+					}),
+				)
+			}),
+		).pipe(
 			Stream.filter((event) => event.type === "text-delta" && event.text !== ""),
 			// One durable row, one SSE frame and one React commit per *token* is more fidelity than
 			// a screen can show. Coalescing into roughly one frame's worth of deltas is invisible
@@ -308,9 +371,8 @@ const runStep = (
 			// A model failure either retries the step or ends the turn as a recorded event. Either
 			// way it does not kill the stream: the session log is durable, so a client reconnecting
 			// after the failure must still be able to read what happened.
-			Stream.catch((error) => {
+			Stream.catch((called) => {
 				failed = true
-				const called = toLlmCallError("chat.turn", error)
 
 				// Aborted mid-stream. The DO already recorded the terminal event when it cleared the
 				// claim, so emitting anything here would be a second one.
@@ -395,11 +457,18 @@ const runStep = (
 		const settleAndRecurse = Stream.unwrap(
 			Effect.gen(function* () {
 				if (failed) return Stream.empty
+
+				const response = LLMResponse.fromEvents(collected)
+				// Accounted *before* the abort check: the provider served this step and charges for
+				// it whether or not the user has since stopped the turn, and the session runner
+				// bills what this accumulator holds. A step interrupted before the provider's
+				// terminal event reports no usage at all, so there is nothing to recover there.
+				if (response && input.usage) addUsage(input.usage, response.usage)
+
 				// Aborted between steps: the session already recorded the terminal event, so stop
 				// without emitting a second one.
 				if (!isCurrent(input)) return Stream.empty
 
-				const response = LLMResponse.fromEvents(collected)
 				// A clean EOF without a provider terminal event is not a successful answer. Treating it
 				// as `stop` produced the same empty bubble as a genuinely blank model completion.
 				if (!response) {
@@ -410,12 +479,21 @@ const runStep = (
 					})
 				}
 
-				if (input.usage) addUsage(input.usage, response.usage)
-
+				// The completion is an exactly-once output channel: a response carrying
+				// duplicate completion calls must not run it twice (competing submits
+				// would leave the report reflecting one payload and its side effects
+				// another). Keep the first and drop the rest before any dispatch.
+				let completionSeen = false
 				const calls = response.events
 					.filter(LLMEvent.is.toolCall)
 					.filter((call) => !call.providerExecuted)
-				const finishReason = response.finishReason
+					.filter((call) => {
+						if (call.name !== input.completion?.name) return true
+						if (completionSeen) return false
+						completionSeen = true
+						return true
+					})
+				const finishReason = response.finishReason?.normalized
 				const providerFailure = response.events.find(LLMEvent.is.providerError)
 
 				// Some protocols report a failed response as a normal stream event rather than failing
@@ -456,37 +534,9 @@ const runStep = (
 						})
 					}
 
-					if (providerFailure.retryable === true) {
-						const delayMs = stepRetryDelayMs(state.attempt)
-						const affordable = state.budget.spentMs + delayMs <= STEP_RETRY_BUDGET_MS
-						if (state.attempt + 1 < MAX_STEP_ATTEMPTS && affordable) {
-							state.budget.spentMs += delayMs
-							const marker = tagged(input, {
-								type: "turn-retry" as const,
-								messageId: input.messageId,
-								attempt: state.attempt + 2,
-								retractChars: emitted,
-								reason: failureReason,
-								delayMs,
-							})
-							return Stream.concat(
-								Stream.fromIterable([marker]),
-								Stream.unwrap(
-									Effect.sleep(Duration.millis(delayMs)).pipe(
-										Effect.map(() =>
-											isCurrent(input)
-												? runStep(input, tools, request, {
-														...state,
-														attempt: state.attempt + 1,
-													})
-												: Stream.empty,
-										),
-									),
-								),
-							)
-						}
-					}
-
+					// An in-band provider error is terminal for the step. It carried a `retryable`
+					// flag until upstream dropped it, and only the Bedrock protocol ever set it —
+					// a provider Maple deliberately does not import — so nothing here regressed.
 					return finishTurn(input, state, "error", {
 						error: CHAT_TURN_FAILED,
 						finishReason,
@@ -532,7 +582,7 @@ const runStep = (
 								input.observability.recoveryCount += 1
 							}
 							const replay = response.reasoning.trim() === "" ? [] : [response.message]
-							const recoveryRequest = LLM.updateRequest(request, {
+							const recoveryRequest = LLMRequest.update(request, {
 								messages: [...request.messages, ...replay, Message.user(EMPTY_OUTPUT_NOTICE)],
 							})
 							const marker = tagged(input, {
@@ -627,9 +677,12 @@ const runStep = (
 							const dispatched = yield* Effect.forEach(
 								forced,
 								(call) =>
-									ToolRuntime.dispatch(tools, call).pipe(
-										Effect.map((result) => [call, result] as const),
-									),
+									withToolCallSpan(
+										call,
+										identity,
+										ToolRuntime.dispatch(tools, call),
+										toolDescriptions.get(call.name),
+									).pipe(Effect.map((result) => [call, result] as const)),
 								{ concurrency: 1 },
 							)
 							return Stream.concat(
@@ -705,9 +758,12 @@ const runStep = (
 						const dispatched = yield* Effect.forEach(
 							calls,
 							(call) =>
-								ToolRuntime.dispatch(tools, call).pipe(
-									Effect.map((result) => [call, result] as const),
-								),
+								withToolCallSpan(
+									call,
+									identity,
+									ToolRuntime.dispatch(tools, call),
+									toolDescriptions.get(call.name),
+								).pipe(Effect.map((result) => [call, result] as const)),
 							{ concurrency: TOOL_CONCURRENCY },
 						)
 
@@ -821,7 +877,7 @@ const runStep = (
 							)
 						}
 
-						const next = withBudget(LLM.updateRequest(request, { messages: transcript }))
+						const next = withBudget(LLMRequest.update(request, { messages: transcript }))
 						// A fresh attempt count per step: `attempt` counts retries of *this* step's
 						// model call, and the shared `budget` is what bounds the turn overall.
 						return Stream.concat(

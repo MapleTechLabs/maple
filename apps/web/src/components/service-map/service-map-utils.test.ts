@@ -22,7 +22,7 @@ const baseEdge = (overrides: Partial<ServiceEdge> = {}): ServiceEdge => ({
 	errorCount: 0,
 	errorRate: 0,
 	avgDurationMs: 5,
-	p95DurationMs: 10,
+	maxDurationMs: 10,
 	hasSampling: false,
 	samplingWeight: 1,
 	...overrides,
@@ -37,7 +37,8 @@ const baseDbEdge = (overrides: Partial<ServiceDbEdge> = {}): ServiceDbEdge => ({
 	errorCount: 0,
 	errorRate: 0,
 	avgDurationMs: 8,
-	p95DurationMs: 20,
+	maxDurationMs: 20,
+	p95DurationMs: 12,
 	hasSampling: false,
 	samplingWeight: 1,
 	...overrides,
@@ -232,6 +233,137 @@ describe("buildFlowElements", () => {
 	})
 })
 
+describe("buildFlowElements database node metrics", () => {
+	// A database node and the drill-down panel that opens when you click it read
+	// the SAME edges, so they must render the same statistic. The node used to
+	// divide the RAW `callCount` and hardcode `hasSampling: false` while the panel
+	// showed the sample-weighted estimate: at a sample rate of 10 a Scylla node
+	// read 3k/s under a panel reading 30k/s.
+	it("reports the sample-weighted estimate, not the raw count", () => {
+		const { nodes } = buildFlowElements({
+			edges: [],
+			dbEdges: [
+				baseDbEdge({
+					dbSystem: "scylladb",
+					dbNamespace: "events",
+					callCount: 3_000,
+					estimatedCallCount: 30_000,
+					hasSampling: true,
+					samplingWeight: 10,
+				}),
+			],
+			serviceOverviews: [baseOverview()],
+			durationSeconds: 1,
+		})
+
+		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		expect(db?.data.throughput).toBe(30_000)
+		expect(db?.data.tracedThroughput).toBe(3_000)
+		expect(db?.data.hasSampling).toBe(true)
+		expect(db?.data.samplingWeight).toBe(10)
+	})
+
+	// The edge rollups store a max and carry no quantile state, so the node has no
+	// p95 to show. It rendered one anyway, from the max, beside a panel showing a
+	// real tDigest p95 off the same node — 3s against 7ms. `p95LatencyMs` stays
+	// undefined on a database node so the two can never be confused again.
+	// Migration 0022 gave the edge rollups a t-digest, so the node shows a real
+	// p95 whenever there is one to merge.
+	it("prefers the rollup p95 and keeps the max beside it", () => {
+		const { nodes } = buildFlowElements({
+			edges: [],
+			dbEdges: [
+				baseDbEdge({
+					dbSystem: "scylladb",
+					dbNamespace: "events",
+					maxDurationMs: 3_000,
+					p95DurationMs: 7,
+				}),
+			],
+			serviceOverviews: [baseOverview()],
+			durationSeconds: 1,
+		})
+
+		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		expect(db?.data.p95LatencyMs).toBe(7)
+		expect(db?.data.maxLatencyMs).toBe(3_000)
+	})
+
+	// Buckets sealed before 0022 hold an empty digest, which the query reports as
+	// 0. The node must fall back to the max rather than render a fabricated 0ms
+	// p95 — and the card relabels itself when it does.
+	it("leaves p95 undefined when the window has no digest, so the card can relabel", () => {
+		const { nodes } = buildFlowElements({
+			edges: [],
+			dbEdges: [
+				baseDbEdge({
+					dbSystem: "scylladb",
+					dbNamespace: "events",
+					maxDurationMs: 3_000,
+					p95DurationMs: 0,
+				}),
+			],
+			serviceOverviews: [baseOverview()],
+			durationSeconds: 1,
+		})
+
+		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		expect(db?.data.p95LatencyMs).toBeUndefined()
+		expect(db?.data.maxLatencyMs).toBe(3_000)
+	})
+
+	it("exposes the max as maxLatencyMs and never as a p95", () => {
+		const { nodes } = buildFlowElements({
+			edges: [],
+			dbEdges: [baseDbEdge({ dbSystem: "scylladb", dbNamespace: "events", maxDurationMs: 3_000 })],
+			serviceOverviews: [baseOverview()],
+			durationSeconds: 1,
+		})
+
+		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		expect(db?.data.maxLatencyMs).toBe(3_000)
+	})
+
+	// Several services calling one database collapse to a single node; the
+	// estimates add up and any sampled caller makes the whole node an estimate.
+	it("sums estimates across callers and inherits sampling from any of them", () => {
+		const { nodes } = buildFlowElements({
+			edges: [],
+			dbEdges: [
+				baseDbEdge({
+					sourceService: "api",
+					dbSystem: "scylladb",
+					dbNamespace: "events",
+					callCount: 100,
+					estimatedCallCount: 1_000,
+					hasSampling: true,
+					samplingWeight: 10,
+					maxDurationMs: 500,
+				}),
+				baseDbEdge({
+					sourceService: "worker",
+					dbSystem: "scylladb",
+					dbNamespace: "events",
+					callCount: 200,
+					estimatedCallCount: 200,
+					maxDurationMs: 900,
+				}),
+			],
+			serviceOverviews: [baseOverview()],
+			durationSeconds: 1,
+		})
+
+		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		expect(db?.data.throughput).toBe(1_200)
+		expect(db?.data.tracedThroughput).toBe(300)
+		expect(db?.data.hasSampling).toBe(true)
+		expect(db?.data.maxLatencyMs).toBe(900)
+		// The worst caller's p95 — see the note on the fold. An upper bound on the
+		// node's true p95, and still a p95 rather than a different statistic.
+		expect(db?.data.p95LatencyMs).toBe(baseDbEdge().p95DurationMs)
+	})
+})
+
 describe("buildFlowElements namespace", () => {
 	it("attaches namespace to service nodes but not db nodes", () => {
 		const result = buildFlowElements({
@@ -399,5 +531,73 @@ describe("topologyKey", () => {
 			edges: [...built.edges].reverse(),
 		}
 		expect(topologyKey(built.nodes, built.edges)).toBe(topologyKey(reversed.nodes, reversed.edges))
+	})
+})
+
+describe("layout anchoring on the synchronous fallback", () => {
+	// Two independent pairs, so they form two connected components that the flat
+	// layout stacks vertically. Component order is the thing that used to flip.
+	const twoComponents = (extra: string[] = []) =>
+		buildFlowElements({
+			edges: [
+				baseEdge({ sourceService: "api", targetService: "auth" }),
+				baseEdge({ sourceService: "web", targetService: "cart" }),
+				...extra.map((name) => baseEdge({ sourceService: name, targetService: `${name}-db` })),
+			],
+			serviceOverviews: [],
+			durationSeconds: 3600,
+		})
+
+	it("is unchanged when no previous layout is supplied", () => {
+		const { nodes, edges } = twoComponents()
+		expect(computeFlatPositions(nodes, edges, undefined, undefined)).toEqual(
+			computeFlatPositions(nodes, edges),
+		)
+	})
+
+	it("keeps components in the vertical order the previous layout had", () => {
+		const { nodes, edges } = twoComponents()
+		const natural = computeFlatPositions(nodes, edges)
+
+		// Previous layout with the two components swapped top-to-bottom.
+		const flipped = new Map(
+			[...natural].map(([id, at]) => [
+				id,
+				{ x: at.x, y: ["api", "auth"].includes(id) ? at.y + 10_000 : at.y - 10_000 },
+			]),
+		)
+		const anchored = computeFlatPositions(nodes, edges, undefined, flipped)
+
+		const midY = (ids: string[]) => ids.reduce((sum, id) => sum + anchored.get(id)!.y, 0) / ids.length
+		// The anchored layout follows the previous order: web/cart above api/auth.
+		expect(midY(["web", "cart"])).toBeLessThan(midY(["api", "auth"]))
+		// ...which is the opposite of what it produces unanchored.
+		const naturalMid = (ids: string[]) =>
+			ids.reduce((sum, id) => sum + natural.get(id)!.y, 0) / ids.length
+		expect(naturalMid(["api", "auth"])).toBeLessThan(naturalMid(["web", "cart"]))
+	})
+
+	it("holds surviving nodes closer to where they were when the graph grows", () => {
+		const before = twoComponents()
+		const previous = computeFlatPositions(before.nodes, before.edges)
+
+		// A third component appears — the kind of delta a sliding time window makes.
+		const after = twoComponents(["billing"])
+		const survivors = [...previous.keys()].filter((id) => after.nodes.some((n) => n.id === id))
+		const drift = (positions: Map<string, { x: number; y: number }>) =>
+			survivors.reduce((sum, id) => {
+				const from = previous.get(id)!
+				const to = positions.get(id)!
+				return sum + Math.hypot(to.x - from.x, to.y - from.y)
+			}, 0) / survivors.length
+
+		const unanchored = drift(computeFlatPositions(after.nodes, after.edges))
+		const anchored = drift(computeFlatPositions(after.nodes, after.edges, undefined, previous))
+
+		expect(survivors.length).toBeGreaterThan(0)
+		// Unanchored, a new component shifts every survivor (mean 85 units here).
+		// Anchored, the survivors do not move at all.
+		expect(unanchored).toBeGreaterThan(0)
+		expect(anchored).toBe(0)
 	})
 })

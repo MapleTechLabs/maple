@@ -10,6 +10,7 @@ import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryServic
 import { Database } from "@/platform/DatabaseLive"
 import { Env } from "@/platform/Env"
 import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "@/services/auth/AuthService"
 import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
@@ -32,6 +33,7 @@ import {
 	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
  * End-to-end HTTP tests for `GET /v2/instrumentation/audit` over an embedded PGlite. The pure check
@@ -76,8 +78,12 @@ const warehouseStub = (
 		query: () => Effect.die(new Error("unexpected warehouse pipe query")),
 		rawSqlQuery: () => Effect.succeed([]),
 		compiledQuery: (_tenant, compiled) => {
-			const table = Object.keys(rowsByTable).find((name) => compiled.sql.includes(`FROM ${name}`))
-			return compiled.decodeRows(table === undefined ? [] : rowsByTable[table]!).pipe(Effect.orDie)
+			const table = Object.keys(rowsByTable).find((name) =>
+				compiledQueryOf(compiled).sql.includes(`FROM ${name}`),
+			)
+			return compiledQueryOf(compiled)
+				.decodeRows(table === undefined ? [] : rowsByTable[table]!)
+				.pipe(Effect.orDie)
 		},
 		compiledQueryFirst: () => Effect.die(new Error("unexpected compiled query")),
 		// `fetchWarehouseInputs` / `fetchTraceCompleteness` warm the route before
@@ -137,6 +143,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)

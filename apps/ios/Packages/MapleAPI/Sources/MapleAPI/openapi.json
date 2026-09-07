@@ -343,9 +343,14 @@
             "type": "string"
           },
           "last_observed_value": {
+            "description": "The most recently observed value, or `null`.",
+            "examples": [
+              0.09
+            ],
             "type": "number"
           },
           "last_sample_count": {
+            "description": "Sample count of the most recent observation, or `null`.",
             "type": "number"
           },
           "last_triggered_at": {
@@ -535,14 +540,14 @@
             "type": "string"
           },
           "created_by": {
-            "description": "Maple user ID of the rule's creator.",
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "User ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_UserId"
           },
           "destination_ids": {
-            "$ref": "#/components/schemas/Arrays_9"
+            "description": "The alert destinations (`dest_…`) this rule notifies.",
+            "items": {
+              "$ref": "#/components/schemas/_maple_AlertDestinationId"
+            },
+            "type": "array"
           },
           "enabled": {
             "description": "Whether the scheduler evaluates this rule.",
@@ -552,12 +557,26 @@
             "type": "boolean"
           },
           "environments": {
-            "$ref": "#/components/schemas/Arrays_6"
+            "description": "Deployment environments the rule is scoped to. Empty for all environments. Always empty for `builder_query` / `raw_query`, whose queries carry their own filters.",
+            "examples": [
+              [
+                "production"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "exclude_service_names": {
-            "$ref": "#/components/schemas/Arrays_5"
+            "description": "Services excluded from evaluation.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "group_by": {
+            "description": "Attribute dimensions to evaluate per-group (each group gets its own incident lifecycle), or `null` for a single aggregate evaluation.",
             "items": {
               "minLength": 1,
               "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
@@ -637,7 +656,16 @@
             "type": "integer"
           },
           "service_names": {
-            "$ref": "#/components/schemas/Arrays_4"
+            "description": "Services the rule is scoped to. Empty for all services.",
+            "examples": [
+              [
+                "checkout"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "severity": {
             "$ref": "#/components/schemas/_maple_AlertSeverity"
@@ -646,23 +674,29 @@
             "$ref": "#/components/schemas/_maple_AlertSignalType"
           },
           "tags": {
-            "$ref": "#/components/schemas/Arrays_7"
+            "description": "Free-form tags used to group and filter rules.",
+            "examples": [
+              [
+                "payments"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "threshold": {
             "type": "number"
           },
           "threshold_upper": {
+            "description": "Upper bound for range comparators (`between` / `not_between`), otherwise `null`.",
             "type": "number"
           },
           "updated_at": {
             "type": "string"
           },
           "updated_by": {
-            "description": "Maple user ID of the last editor.",
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "User ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_UserId"
           },
           "window_minutes": {
             "description": "Length of the evaluation window in minutes.",
@@ -1061,74 +1095,6 @@
         "title": "Anomaly timeseries bucket",
         "type": "object"
       },
-      "Arrays_15": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "Arrays_19": {
-        "items": {
-          "$ref": "#/components/schemas/TimeseriesSeries"
-        },
-        "type": "array"
-      },
-      "Arrays_20": {
-        "items": {
-          "$ref": "#/components/schemas/BreakdownItem"
-        },
-        "type": "array"
-      },
-      "Arrays_4": {
-        "description": "Services the rule is scoped to. Empty for all services.",
-        "examples": [
-          [
-            "checkout"
-          ]
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "Arrays_5": {
-        "description": "Services excluded from evaluation.",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "Arrays_6": {
-        "description": "Deployment environments the rule is scoped to. Empty for all environments. Always empty for `builder_query` / `raw_query`, whose queries carry their own filters.",
-        "examples": [
-          [
-            "production"
-          ]
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "Arrays_7": {
-        "description": "Free-form tags used to group and filter rules.",
-        "examples": [
-          [
-            "payments"
-          ]
-        ],
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "Arrays_9": {
-        "description": "The alert destinations (`dest_…`) this rule notifies.",
-        "items": {
-          "$ref": "#/components/schemas/_maple_AlertDestinationId"
-        },
-        "type": "array"
-      },
       "AttributeFilter": {
         "anyOf": [
           {
@@ -1239,6 +1205,77 @@
         "title": "Breakdown item",
         "type": "object"
       },
+      "Environment": {
+        "additionalProperties": false,
+        "description": "One deployment environment telemetry has been observed in.",
+        "examples": [
+          {
+            "name": "production",
+            "object": "environment"
+          }
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "environment"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "name"
+        ],
+        "title": "Environment",
+        "type": "object"
+      },
+      "EnvironmentList": {
+        "additionalProperties": false,
+        "description": "Cursor-paginated list envelope wrapping a page of objects.",
+        "properties": {
+          "data": {
+            "description": "The page of objects, in the ordering documented by the endpoint.",
+            "items": {
+              "$ref": "#/components/schemas/Environment"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "description": "Whether more objects exist after this page. When `true`, use `next_cursor` to fetch them.",
+            "examples": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "description": "Cursor for the next page, or `null` on the last page. Pass it back as the `cursor` query param.",
+            "examples": [
+              "off_1k"
+            ],
+            "type": "string"
+          },
+          "object": {
+            "description": "Always `\"list\"` for a list response.",
+            "enum": [
+              "list"
+            ],
+            "examples": [
+              "list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data",
+          "has_more"
+        ],
+        "title": "Environment list",
+        "type": "object"
+      },
       "ErrorIncident": {
         "additionalProperties": false,
         "properties": {
@@ -1308,6 +1345,9 @@
           "claimed_at": {
             "type": "string"
           },
+          "comment_count": {
+            "type": "number"
+          },
           "error_label": {
             "type": "string"
           },
@@ -1347,6 +1387,9 @@
           "lease_holder": {
             "$ref": "#/components/schemas/ErrorIssueActor"
           },
+          "merged_pull_request_count": {
+            "type": "number"
+          },
           "notes": {
             "type": "string"
           },
@@ -1359,6 +1402,9 @@
           "occurrence_count": {
             "type": "number"
           },
+          "open_pull_request_count": {
+            "type": "number"
+          },
           "priority": {
             "type": "number"
           },
@@ -1369,7 +1415,10 @@
             "type": "string"
           },
           "resolved_versions": {
-            "$ref": "#/components/schemas/Arrays_15"
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "service_name": {
             "type": "string"
@@ -1410,7 +1459,10 @@
           "occurrence_count",
           "regression_count",
           "resolved_versions",
-          "has_open_incident"
+          "has_open_incident",
+          "comment_count",
+          "open_pull_request_count",
+          "merged_pull_request_count"
         ],
         "title": "Error issue",
         "type": "object"
@@ -1441,10 +1493,7 @@
             "$ref": "#/components/schemas/_maple_ActorType"
           },
           "user_id": {
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "User ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_UserId"
           }
         },
         "required": [
@@ -1457,7 +1506,7 @@
       },
       "ErrorIssueDetail": {
         "additionalProperties": false,
-        "description": "The issue resource with its requested timeseries window, sample traces, and incidents.",
+        "description": "The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in.",
         "properties": {
           "archived_at": {
             "type": "string"
@@ -1467,6 +1516,15 @@
           },
           "claimed_at": {
             "type": "string"
+          },
+          "comment_count": {
+            "type": "number"
+          },
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorIssueEnvironment"
+            },
+            "type": "array"
           },
           "error_label": {
             "type": "string"
@@ -1513,6 +1571,9 @@
           "lease_holder": {
             "$ref": "#/components/schemas/ErrorIssueActor"
           },
+          "merged_pull_request_count": {
+            "type": "number"
+          },
           "notes": {
             "type": "string"
           },
@@ -1525,6 +1586,9 @@
           "occurrence_count": {
             "type": "number"
           },
+          "open_pull_request_count": {
+            "type": "number"
+          },
           "priority": {
             "type": "number"
           },
@@ -1535,7 +1599,10 @@
             "type": "string"
           },
           "resolved_versions": {
-            "$ref": "#/components/schemas/Arrays_15"
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "sample_traces": {
             "items": {
@@ -1589,11 +1656,32 @@
           "regression_count",
           "resolved_versions",
           "has_open_incident",
+          "comment_count",
+          "open_pull_request_count",
+          "merged_pull_request_count",
           "timeseries",
           "sample_traces",
-          "incidents"
+          "incidents",
+          "environments"
         ],
         "title": "Error issue detail",
+        "type": "object"
+      },
+      "ErrorIssueEnvironment": {
+        "additionalProperties": false,
+        "description": "A deployment environment the issue was observed in over the requested window, with its occurrence count.",
+        "properties": {
+          "count": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
         "type": "object"
       },
       "ErrorIssueList": {
@@ -1653,19 +1741,13 @@
             "type": "string"
           },
           "span_id": {
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "Span ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_SpanId"
           },
           "timestamp": {
             "type": "string"
           },
           "trace_id": {
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "Trace ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_TraceId"
           }
         },
         "required": [
@@ -2407,7 +2489,10 @@
             "type": "string"
           },
           "data": {
-            "$ref": "#/components/schemas/Arrays_20"
+            "items": {
+              "$ref": "#/components/schemas/BreakdownItem"
+            },
+            "type": "array"
           },
           "end_time": {
             "type": "string"
@@ -2628,7 +2713,10 @@
             "type": "string"
           },
           "series": {
-            "$ref": "#/components/schemas/Arrays_19"
+            "items": {
+              "$ref": "#/components/schemas/TimeseriesSeries"
+            },
+            "type": "array"
           },
           "start_time": {
             "type": "string"
@@ -2675,10 +2763,7 @@
             "type": "string"
           },
           "organization_id": {
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "Org ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_OrgId"
           },
           "scopes": {
             "description": "Fixed by the server. Today, exactly `widget_summary:read`.",
@@ -2731,6 +2816,7 @@
         "description": "Everything the Maple iOS Home Screen widgets draw, in one response: ongoing error issues over the last day, and per-service traffic over the last hour.",
         "examples": [
           {
+            "deployment_environment": "production",
             "generated_at": "2026-08-21T09:10:00.000Z",
             "issues": {
               "data": [
@@ -2778,6 +2864,9 @@
           }
         ],
         "properties": {
+          "deployment_environment": {
+            "type": "string"
+          },
           "generated_at": {
             "type": "string"
           },
@@ -2792,10 +2881,7 @@
             "type": "string"
           },
           "organization_id": {
-            "minLength": 1,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "title": "Org ID",
-            "type": "string"
+            "$ref": "#/components/schemas/_maple_OrgId"
           },
           "schema_version": {
             "type": "number"
@@ -3322,6 +3408,13 @@
         "title": "Mobile Push Environment",
         "type": "string"
       },
+      "_maple_OrgId": {
+        "description": "The organization's opaque `org_…` ID (e.g. `org_2abcDEF`).",
+        "minLength": 1,
+        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+        "title": "Organization ID",
+        "type": "string"
+      },
       "_maple_QueryEngineAlertReducer": {
         "enum": [
           "identity",
@@ -3347,6 +3440,25 @@
         "title": "Service Name",
         "type": "string"
       },
+      "_maple_SpanId": {
+        "minLength": 1,
+        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+        "title": "Span ID",
+        "type": "string"
+      },
+      "_maple_TraceId": {
+        "minLength": 1,
+        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+        "title": "Trace ID",
+        "type": "string"
+      },
+      "_maple_UserId": {
+        "description": "Maple user ID of the key's creator (e.g. `user_…`).",
+        "minLength": 1,
+        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+        "title": "User ID",
+        "type": "string"
+      },
       "_maple_WorkflowState": {
         "enum": [
           "triage",
@@ -3354,6 +3466,7 @@
           "todo",
           "in_progress",
           "in_review",
+          "verifying",
           "done",
           "cancelled",
           "wontfix"
@@ -4189,7 +4302,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -4678,7 +4791,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -4786,6 +4899,148 @@
         "summary": "Retrieve incident timeseries",
         "tags": [
           "Anomalies"
+        ]
+      }
+    },
+    "/v2/environments": {
+      "get": {
+        "description": "Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
+        "operationId": "listEnvironments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_time",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_time",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentList"
+                }
+              }
+            },
+            "description": "Cursor-paginated list envelope wrapping a page of objects."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List deployment environments",
+        "tags": [
+          "Environments"
         ]
       }
     },
@@ -4929,7 +5184,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/CursorInvalidError failure. HTTP 400. | The @maple/http/v2/CursorSortMismatchError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/v2/CursorInvalidError failure. HTTP 400. | The @maple/http/v2/CursorSortMismatchError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -5200,7 +5455,7 @@
                 }
               }
             },
-            "description": "The issue resource with its requested timeseries window, sample traces, and incidents."
+            "description": "The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in."
           },
           "400": {
             "content": {
@@ -5210,7 +5465,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -6100,7 +6355,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -6250,7 +6505,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -6395,7 +6650,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/TelemetryBreakdownFilterRequiredError failure. HTTP 400. | The @maple/http/v2/TraceQueryInvalidError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/TelemetryBreakdownFilterRequiredError failure. HTTP 400. | The @maple/http/v2/TraceQueryInvalidError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -6530,7 +6785,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/TelemetryBucketCountTooLargeError failure. HTTP 400. | The @maple/http/v2/TraceQueryInvalidError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/TelemetryBucketCountTooLargeError failure. HTTP 400. | The @maple/http/v2/TraceQueryInvalidError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -6895,9 +7150,18 @@
     },
     "/v2/widget_summary": {
       "get": {
-        "description": "Returns ongoing error issues and per-service traffic in a single small payload sized for a Home Screen widget. The windows are fixed by the server. Requires the `widget_summary:read` scope.",
+        "description": "Returns ongoing error issues and per-service traffic in a single small payload sized for a Home Screen widget. The windows are fixed by the server; `deployment_environment` optionally narrows both halves to one environment and is echoed on the response. Requires the `widget_summary:read` scope.",
         "operationId": "getWidgetSummary",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deployment_environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6917,7 +7181,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -7072,6 +7336,10 @@
       "name": "Attribute Mappings"
     },
     {
+      "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, and MCP, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
+      "name": "Audit Log"
+    },
+    {
       "description": "Metrics endpoints Maple scrapes on a schedule — self-hosted Prometheus endpoints and PlanetScale branch metrics. Manage targets, probe them on demand, and inspect recent scrape checks. Credentials are write-only.",
       "name": "Scrape Targets"
     },
@@ -7122,6 +7390,10 @@
     {
       "description": "Service-to-service topology.",
       "name": "Service Map"
+    },
+    {
+      "description": "The deployment environments telemetry has been observed in.",
+      "name": "Environments"
     },
     {
       "description": "Read a dashboard through a share link. The only unauthenticated group in this API: the token in the request body is the credential, so these operations resolve for a viewer with no Maple account.",

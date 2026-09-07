@@ -12,6 +12,11 @@ import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { CloudflareBreakdownPanel } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
+import {
+	CloudflareIngestEmpty,
+	CloudflareStalledAction,
+} from "@/components/infra/cloudflare/cloudflare-ingest-status"
+import { useCloudflareIngestPhase } from "@/components/infra/cloudflare/use-cloudflare-ingest-phase"
 import { CloudflareEdgeShareBand } from "@/components/infra/cloudflare/cloudflare-edge-share-band"
 import { CloudflareFilterChips } from "@/components/infra/cloudflare/cloudflare-filter-chips"
 import { CloudflareFilterSidebarView } from "@/components/infra/cloudflare/cloudflare-filter-sidebar"
@@ -40,7 +45,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
@@ -123,7 +128,7 @@ function ZoneDetailPage() {
 	// instantiates a fresh atom whose first emission is `Initial`. Reading that directly replaced the
 	// whole sidebar with a skeleton on each click and reset every section's open/search/show-all
 	// state. Retaining the last success keeps the sections in place and merely dims the counts.
-	const facetsResult = useRetainedRefreshableResultValue(
+	const facetsResult = useRefreshableAtomValue(
 		cloudflareZoneFacetsResultAtom({ data: { serviceName, startTime, endTime, ...filters } }),
 	)
 
@@ -204,15 +209,18 @@ function ZoneDetailContent({
 	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
 }) {
 	const bucketSeconds = chartBucketSeconds(startTime, endTime)
+	// A zone drilled into before any data has been collected would otherwise read as "this zone
+	// has no traffic", which is a different — and wrong — thing to tell someone.
+	const { phase } = useCloudflareIngestPhase()
 
-	const detailResult = useRetainedRefreshableResultValue(
+	const detailResult = useRefreshableAtomValue(
 		cloudflareZoneDetailResultAtom({
 			data: { serviceName, startTime, endTime, bucketSeconds, ...filters },
 		}),
 	)
 	// The list rollup carries the bytes/visits/latency KPIs; picking this
 	// zone's row client-side shares the 30s-cached atom with the list page.
-	const zonesResult = useRetainedRefreshableResultValue(
+	const zonesResult = useRefreshableAtomValue(
 		cloudflareZonesResultAtom({ data: { startTime, endTime, ...filters } }),
 	)
 	const zoneRow = Result.builder(zonesResult)
@@ -233,6 +241,13 @@ function ZoneDetailContent({
 		.onError((err) => <QueryErrorState error={err} />)
 		.onSuccess((detail, result) => {
 			if (detail.statusBuckets.length === 0 && !result.waiting) {
+				if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
+					return (
+						<CloudflareIngestEmpty phase={phase}>
+							{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
+						</CloudflareIngestEmpty>
+					)
+				}
 				return (
 					<Empty className="py-16">
 						<EmptyHeader>

@@ -1,0 +1,270 @@
+diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
+index b71c514f6c36983a6fb94a663e9ff878d58a3c1b..6192bdac6f761aef3c8e1ed2f3b4747ffd55692f 100644
+--- a/dist/internal/redacted.js
++++ b/dist/internal/redacted.js
+@@ -1,5 +1,11 @@
+ /** @internal */
+-export const redactedRegistry = /*#__PURE__*/new WeakMap();
++// Patched (maple): share the registry across duplicate `effect` module
++// instances via a Symbol.for-keyed global (like effect v3's globalValue).
++// Bun's isolated linker gives the alchemy CLI and the user's alchemy.run.ts
++// two path-distinct copies of this module; a module-local WeakMap makes
++// `Redacted.value` throw "Unable to get redacted value" for a Redacted made
++// by the other copy.
++export const redactedRegistry = globalThis[Symbol.for("effect/Redacted/redactedRegistry")] ??= /*#__PURE__*/new WeakMap();
+ /** @internal */
+ export const value = self => {
+   if (redactedRegistry.has(self)) {
+diff --git a/dist/unstable/ai/McpServer.d.ts b/dist/unstable/ai/McpServer.d.ts
+index d9fa504a9c7c85cfb6b786dc6974f7ad2a963689..3c454c9daa4d88847c77948f368ebe99954fb7a7 100644
+--- a/dist/unstable/ai/McpServer.d.ts
++++ b/dist/unstable/ai/McpServer.d.ts
+@@ -24,7 +24,7 @@ import * as RpcServer from "../rpc/RpcServer.ts";
+ import type * as McpProtocol from "./McpProtocol.ts";
+ import * as McpSchema from "./McpSchema.ts";
+ import { CallToolResult, ElicitationDeclined, GetPromptResult, InternalError, InvalidParams, McpServerClient, Prompt, Resource, ResourceTemplate, Tool as McpTool } from "./McpSchema.ts";
+-import type { CallTool, ClientCapabilities, Complete, CompleteResult, GetPrompt, McpErrorBase, Param, PromptMessage, ReadResourceResult, ServerCapabilities } from "./McpSchema.ts";
++import type { CallTool, ClientCapabilities, Complete, CompleteResult, GetPrompt, Initialize, McpErrorBase, Param, PromptMessage, ReadResourceResult, ServerCapabilities } from "./McpSchema.ts";
+ import * as Tool from "./Tool.ts";
+ import type * as Toolkit from "./Toolkit.ts";
+ type CompletionContext = typeof Complete.payloadSchema.Type["context"];
+@@ -177,6 +177,7 @@ export declare const run: (options: {
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
+     readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+     readonly extensions?: ServerExtensions | undefined;
++    readonly clientSessions?: Map<string, typeof Initialize.payloadSchema.Type> | undefined;
+ }) => Effect.Effect<never, Cause.IllegalArgumentError, McpServer | RpcServer.Protocol>;
+ /**
+  * Creates a layer that starts an MCP server over an existing
+@@ -215,6 +216,7 @@ export declare const layer: (options: {
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
+     readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+     readonly extensions?: ServerExtensions | undefined;
++    readonly clientSessions?: Map<string, typeof Initialize.payloadSchema.Type> | undefined;
+ }) => Layer.Layer<McpServer | McpServerClient, Cause.IllegalArgumentError, RpcServer.Protocol>;
+ /**
+  * Creates a layer that runs an MCP server over standard input and output.
+@@ -244,6 +246,7 @@ export declare const layerStdio: (options: {
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
+     readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+     readonly extensions?: ServerExtensions | undefined;
++    readonly clientSessions?: Map<string, typeof Initialize.payloadSchema.Type> | undefined;
+ }) => Layer.Layer<McpServer | McpServerClient, Cause.IllegalArgumentError, Stdio>;
+ /**
+  * Registers a Streamable HTTP MCP endpoint at `options.path`.
+@@ -282,6 +285,7 @@ export declare const layerHttp: (options: {
+     readonly path: HttpRouter.PathInput;
+     readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+     readonly extensions?: ServerExtensions | undefined;
++    readonly clientSessions?: Map<string, typeof Initialize.payloadSchema.Type> | undefined;
+     readonly allowedOrigins?: ReadonlyArray<string> | undefined;
+ }) => Layer.Layer<McpServer | McpServerClient, Cause.IllegalArgumentError, HttpRouter.HttpRouter>;
+ /**
+diff --git a/dist/unstable/ai/McpServer.js b/dist/unstable/ai/McpServer.js
+index d8525be5cc4e5463300abaaec001f5c228130d36..2edd4f3d8a7d99c9e0171f8970143f9f08ec81ed 100644
+--- a/dist/unstable/ai/McpServer.js
++++ b/dist/unstable/ai/McpServer.js
+@@ -406,19 +406,68 @@ const MCP_INVALID_BATCH_METHOD = "invalid/json-rpc-batch";
+ const requestKey = requestId => `${typeof requestId}:${requestId}`;
+ class McpClientKey extends Data.Class {}
+ class McpProtocolState extends /*#__PURE__*/Context.Service()("effect/ai/McpServer/McpProtocolState") {}
+-const makeMcpProtocolState = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
++class PersistedSessionMap extends Map {
++  constructor(clientSessions, protocolRegistry) {
++    super();
++    this.clientSessions = clientSessions;
++    this.protocolRegistry = protocolRegistry;
++  }
++  get(sessionId) {
++    const current = super.get(sessionId);
++    if (current !== undefined) {
++      return current;
++    }
++    const initializePayload = this.clientSessions.get(sessionId);
++    if (initializePayload === undefined) {
++      return undefined;
++    }
++    const protocol = this.protocolRegistry.select(getOfferedProtocolVersion(initializePayload));
++    const session = {
++      initializePayload,
++      protocol,
++      // Required since rc.111: every non-initialize read does
++      // `session?.negotiatedProfile.protocolVersion`, which guards the session but not the profile.
++      negotiatedProfile: {
++        protocolVersion: protocol.protocolVersion,
++        clientCapabilities: initializePayload.capabilities,
++        clientInfo: initializePayload.clientInfo
++      },
++      resourceSubscriptions: undefined,
++      logLevel: {
++        _tag: "Effect",
++        level: "Info"
++      }
++    };
++    super.set(sessionId, session);
++    return session;
++  }
++  set(sessionId, session) {
++    this.clientSessions.set(sessionId, session.initializePayload);
++    return super.set(sessionId, session);
++  }
++  delete(sessionId) {
++    this.clientSessions.delete(sessionId);
++    return super.delete(sessionId);
++  }
++  clear() {
++    this.clientSessions.clear();
++    super.clear();
++  }
++}
++const makeMcpProtocolState = /*#__PURE__*/Effect.fnUntraced(function* (protocols, clientSessions) {
++  const protocolRegistry = yield* McpProtocolRegistry.make(protocols);
+   // TODO: Replace the shared session map with an adapter-owned lifecycle strategy
+   // before v2026-07-28. The strategy must let sessionful revisions pin a profile
+   // after initialize while stateless revisions select and derive it per request.
+   return McpProtocolState.of({
+     sessions: {
+-      bySessionId: new Map(),
++      bySessionId: clientSessions === undefined ? new Map() : new PersistedSessionMap(clientSessions, protocolRegistry),
+       byClientId: new Map()
+     },
+-    protocolRegistry: yield* McpProtocolRegistry.make(protocols)
++    protocolRegistry
+   });
+ });
+-const layerMcpProtocolState = protocols => Layer.effect(McpProtocolState)(makeMcpProtocolState(protocols));
++const layerMcpProtocolState = (protocols, clientSessions) => Layer.effect(McpProtocolState)(makeMcpProtocolState(protocols, clientSessions));
+ /**
+  * Runs an MCP server over the current `RpcServer.Protocol`.
+  *
+@@ -433,7 +482,7 @@ const layerMcpProtocolState = protocols => Layer.effect(McpProtocolState)(makeMc
+  */
+ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
+   const protocolStateOption = yield* Effect.serviceOption(McpProtocolState);
+-  const protocolState = Option.isSome(protocolStateOption) ? protocolStateOption.value : yield* makeMcpProtocolState(options.protocols);
++  const protocolState = Option.isSome(protocolStateOption) ? protocolStateOption.value : yield* makeMcpProtocolState(options.protocols, options.clientSessions);
+   return yield* runWithProtocolState(options, protocolState);
+ });
+ const runWithProtocolState = /*#__PURE__*/Effect.fnUntraced(function* (options, protocolState) {
+@@ -819,7 +868,7 @@ const runWithProtocolState = /*#__PURE__*/Effect.fnUntraced(function* (options,
+  * @category layers
+  * @since 4.0.0
+  */
+-export const layer = options => layerWithProtocolState(options).pipe(Layer.provide(layerMcpProtocolState(options.protocols)));
++export const layer = options => layerWithProtocolState(options).pipe(Layer.provide(layerMcpProtocolState(options.protocols, options.clientSessions)));
+ const layerWithProtocolState = options => Layer.effectDiscard(Effect.gen(function* () {
+   const protocolState = yield* McpProtocolState;
+   yield* Effect.forkScoped(runWithProtocolState(options, protocolState));
+@@ -930,7 +979,7 @@ const mcpStdioSerialization = protocols => {
+  * @since 4.0.0
+  */
+ export const layerHttp = options => {
+-  const protocolState = layerMcpProtocolState(options.protocols);
++  const protocolState = layerMcpProtocolState(options.protocols, options.clientSessions);
+   const methodNotAllowedResponse = HttpServerResponse.empty({
+     status: 405,
+     headers: {
+diff --git a/dist/unstable/httpapi/HttpApiBuilder.js b/dist/unstable/httpapi/HttpApiBuilder.js
+index c7a0ca450b5310a16f59447dba1334374cef332e..14cc08f3bc99439f1b4d2d13d3a5f027473e0398 100644
+--- a/dist/unstable/httpapi/HttpApiBuilder.js
++++ b/dist/unstable/httpapi/HttpApiBuilder.js
+@@ -52,8 +52,13 @@ export const layer = (api, options) => HttpRouter.use(Effect.fnUntraced(function
+   }
+   yield* router.addAll(routes);
+   if (options?.openapiPath) {
+-    const spec = OpenApi.fromApi(api);
+-    yield* router.add("GET", options.openapiPath, Effect.succeed(Response.jsonUnsafe(spec)));
++    let response;
++    yield* router.add("GET", options.openapiPath, Effect.sync(() => {
++      if (response !== undefined) return response;
++      const spec = OpenApi.fromApi(api);
++      response = Response.jsonUnsafe(spec);
++      return response;
++    }));
+   }
+ }));
+ /**
+@@ -347,7 +352,8 @@ function handlerToHttpEffect(group, endpoint, context, handler, isRaw) {
+ /** @internal */
+ export function handlerToRoute(group, handler, context) {
+   const endpoint = handler.endpoint;
+-  return HttpRouter.route(endpoint.method, endpoint.path, handlerToHttpEffect(group, endpoint, context, handler.handler, handler.isRaw), {
++  let httpEffect;
++  return HttpRouter.route(endpoint.method, endpoint.path, Effect.suspend(() => httpEffect ??= handlerToHttpEffect(group, endpoint, context, handler.handler, handler.isRaw)), {
+     uninterruptible: handler.uninterruptible
+   });
+ }
+diff --git a/dist/unstable/httpapi/HttpApiScalar.js b/dist/unstable/httpapi/HttpApiScalar.js
+index 5ca063414fbe976b01906190a63d4aeb16504c71..448fa363504b3105ac0d22aa7671301160a03842 100644
+--- a/dist/unstable/httpapi/HttpApiScalar.js
++++ b/dist/unstable/httpapi/HttpApiScalar.js
+@@ -15,17 +15,20 @@ import * as Html from "./internal/html.js";
+ import * as internal from "./internal/httpApiScalar.js";
+ import * as OpenApi from "./OpenApi.js";
+ const makeHandler = options => {
+-  const spec = OpenApi.fromApi(options.api);
+-  const {
+-    customFetch,
+-    ...scalar
+-  } = options.scalar ?? {};
+-  const scalarConfig = {
+-    _integration: "html",
+-    ...scalar
+-  };
+-  const scalarScript = options.source._tag === "Cdn" ? `<script src="${Html.escapeAttribute(`https://cdn.jsdelivr.net/npm/@scalar/api-reference@${encodeURIComponent(options.source.version ?? "latest")}/dist/browser/standalone.min.js`)}" crossorigin></script>` : `<script>${options.source.source}</script>`;
+-  const response = HttpServerResponse.html(`<!doctype html>
++  let response;
++  return Effect.sync(() => {
++    if (response !== undefined) return response;
++    const spec = OpenApi.fromApi(options.api);
++    const {
++      customFetch,
++      ...scalar
++    } = options.scalar ?? {};
++    const scalarConfig = {
++      _integration: "html",
++      ...scalar
++    };
++    const scalarScript = options.source._tag === "Cdn" ? `<script src="${Html.escapeAttribute(`https://cdn.jsdelivr.net/npm/@scalar/api-reference@${encodeURIComponent(options.source.version ?? "latest")}/dist/browser/standalone.min.js`)}" crossorigin></script>` : `<script>${options.source.source}</script>`;
++    response = HttpServerResponse.html(`<!doctype html>
+ <html>
+   <head>
+     <meta charset="utf-8" />
+@@ -48,7 +51,8 @@ const makeHandler = options => {
+     </script>
+   </body>
+ </html>`);
+-  return Effect.succeed(response);
++    return response;
++  });
+ };
+ /**
+  * Mounts a Scalar API reference page for an `HttpApi` using the bundled Scalar script.
+diff --git a/dist/unstable/httpapi/HttpApiSwagger.js b/dist/unstable/httpapi/HttpApiSwagger.js
+index 9d919816fa2540fbfa1a00a15a3702323dab021e..e57768856b70bca43339ff18c4646c10e4af1986 100644
+--- a/dist/unstable/httpapi/HttpApiSwagger.js
++++ b/dist/unstable/httpapi/HttpApiSwagger.js
+@@ -15,8 +15,11 @@ import * as Html from "./internal/html.js";
+ import * as internal from "./internal/httpApiSwagger.js";
+ import * as OpenApi from "./OpenApi.js";
+ const makeHandler = options => {
+-  const spec = OpenApi.fromApi(options.api);
+-  const response = HttpServerResponse.html(`<!DOCTYPE html>
++  let response;
++  return Effect.sync(() => {
++    if (response !== undefined) return response;
++    const spec = OpenApi.fromApi(options.api);
++    response = HttpServerResponse.html(`<!DOCTYPE html>
+ <html lang="en">
+ <head>
+   <meta charset="utf-8" />
+@@ -40,7 +43,8 @@ const makeHandler = options => {
+   </script>
+ </body>
+ </html>`);
+-  return Effect.succeed(response);
++    return response;
++  });
+ };
+ /**
+  * Mounts Swagger UI for an `HttpApi` at the configured path, defaulting to

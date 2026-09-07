@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
@@ -26,6 +27,15 @@ import { migration_0017_error_service_version_columns } from "./0017_error_servi
 import { migration_0018_apple_crash_frames } from "./0018_apple_crash_frames"
 import { migration_0019_mv_sweep } from "./0019_mv_sweep"
 import { migration_0020_semconv_key_renames } from "./0020_semconv_key_renames"
+import { migration_0022_service_map_edge_quantiles } from "./0022_service_map_edge_quantiles"
+import { migration_0023_service_operations_discriminators } from "./0023_service_operations_discriminators"
+import { migration_0024_ai_trace_index } from "./0024_ai_trace_index"
+import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_revision"
+import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
+import { migration_0027_audit_log } from "./0027_audit_log"
+import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
+import { migration_0029_ai_trace_index_usage_conventions } from "./0029_ai_trace_index_usage_conventions"
+import { migration_0021_product_events } from "./0021_product_events"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -41,15 +51,22 @@ const renderedSql = migration_0004_service_namespace_projections.statements
 describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
-			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+			27, 28, 29,
 		])
-		expect(migrations.at(-1)).toBe(migration_0020_semconv_key_renames)
-		expect(latestMigrationVersion).toBe(20)
-		// 0010 and 0014-0020 are read-path only, so the ingest-gating version skips
-		// all eight and stays at 13 — nothing writes `web_events`,
-		// `service_overview_minutely` or `error_events` directly, and bumping it
-		// would un-ready every BYO-CH org's ingest routing for a read-path change.
-		expect(clickHouseSchemaVersion).toBe("13")
+		expect(migrations.at(-1)).toBe(migration_0029_ai_trace_index_usage_conventions)
+		expect(latestMigrationVersion).toBe(29)
+		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
+		// version; 0021 is not — the gateway writes `session_events`' new identity
+		// columns and `product_events` directly, so a BYO-CH org must apply it
+		// before ingest routes there again. 0022 is read-path only again: both
+		// tables it touches are MV-populated and the gateway writes neither, and
+		// 0023 is the same: it only adds counter columns to those MV-populated
+		// service-operations rollups. 0024 is read-path only too: `ai_trace_index`
+		// is MV-populated and the gateway never writes it, and 0025 only rebuilds
+		// the three MV-populated service-overview views. 0027 (`audit_log`) is
+		// written by the API worker through Tinybird, never by the gateway.
+		expect(clickHouseSchemaVersion).toBe("21")
 		expect(migration_0010_search_indexes.requiredForIngest).toBe(false)
 		expect(migration_0014_web_events.requiredForIngest).toBe(false)
 		expect(migration_0015_service_overview_minutely.requiredForIngest).toBe(false)
@@ -58,6 +75,14 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0018_apple_crash_frames.requiredForIngest).toBe(false)
 		expect(migration_0019_mv_sweep.requiredForIngest).toBe(false)
 		expect(migration_0020_semconv_key_renames.requiredForIngest).toBe(false)
+		expect(migration_0022_service_map_edge_quantiles.requiredForIngest).toBe(false)
+		expect(migration_0023_service_operations_discriminators.requiredForIngest).toBe(false)
+		expect(migration_0024_ai_trace_index.requiredForIngest).toBe(false)
+		expect(migration_0025_commit_sha_vcs_revision.requiredForIngest).toBe(false)
+		// 0026 widens the same MV-populated ai_trace_index and rebuilds its view.
+		expect(migration_0026_ai_trace_index_filter_columns.requiredForIngest).toBe(false)
+		expect(migration_0027_audit_log.requiredForIngest).toBe(false)
+		expect(migration_0028_product_events_from_traces.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the 4xx guard and the widened frame redaction", () => {
@@ -379,6 +404,72 @@ describe("ClickHouse migrations", () => {
 		expect(serviceOperationsHourlyBackfill.tsColumn).toBe("Minute")
 	})
 
+	it("orders 0009 so a re-apply converges instead of doubling the annual rollups", () => {
+		// The targets are additive AggregatingMergeTrees retained a year: replaying
+		// the backfills after a partial failure (chunk N fails, admin re-runs the
+		// apply) would double every sum until TTL. DROP → TRUNCATE → backfill →
+		// CREATE MV is the 0015 cutover shape, restated as invariants.
+		const kinds = migration_0009_one_year_service_history.statements.map((stmt) =>
+			// Str.split returns a NonEmptyArray, so the head index is statically safe.
+			isBackfill(stmt) ? `backfill:${stmt.target}` : Str.split(stmt, "\n")[0].trim(),
+		)
+		const at = (needle: string) => {
+			const index = kinds.findIndex((kind) => kind.startsWith(needle))
+			expect(index, needle).toBeGreaterThanOrEqual(0)
+			return index
+		}
+
+		// Both live writers are detached before either target is truncated.
+		expect(at("DROP VIEW IF EXISTS service_overview_hourly_mv")).toBeLessThan(
+			at("TRUNCATE TABLE IF EXISTS service_overview_hourly"),
+		)
+		expect(at("DROP VIEW IF EXISTS service_operations_hourly_mv")).toBeLessThan(
+			at("TRUNCATE TABLE IF EXISTS service_operations_hourly"),
+		)
+		// Each target is emptied before its backfill, and its view reattaches after.
+		expect(at("TRUNCATE TABLE IF EXISTS service_overview_hourly")).toBeLessThan(
+			at("backfill:service_overview_hourly"),
+		)
+		expect(at("backfill:service_overview_hourly")).toBeLessThan(
+			at("CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_hourly_mv"),
+		)
+		expect(at("TRUNCATE TABLE IF EXISTS service_operations_hourly")).toBeLessThan(
+			at("backfill:service_operations_hourly"),
+		)
+		expect(at("backfill:service_operations_hourly")).toBeLessThan(
+			at("CREATE MATERIALIZED VIEW IF NOT EXISTS service_operations_hourly_mv"),
+		)
+	})
+
+	it("keeps every backfill convergent on re-apply: target emptied or rebuilt first", () => {
+		// A migration is recorded only after every statement succeeds, so a failure
+		// anywhere replays the WHOLE migration — including backfills that already
+		// inserted. Every backfill target must therefore be emptied of the rows the
+		// backfill writes earlier in the same migration: truncated, rebuilt from
+		// scratch (DROP TABLE IF EXISTS <fresh> + rename swap), or scoped-deleted
+		// for a dual-fed target (0021). An additive INSERT…SELECT into a surviving
+		// table doubles on the rerun and nothing downstream can detect it.
+		// identity_links is exempt because a replay is a merge no-op: its only
+		// aggregate is SimpleAggregateFunction(min) keyed by the full sorting key,
+		// so re-inserted rows collapse to the values already stored.
+		const mergeIdempotentTargets = new Set(["identity_links"])
+		for (const migration of migrations) {
+			migration.statements.forEach((stmt, index) => {
+				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target)) return
+				const before = migration.statements
+					.slice(0, index)
+					.filter((s): s is string => typeof s === "string")
+				const emptied = before.some(
+					(s) =>
+						s.startsWith(`TRUNCATE TABLE IF EXISTS ${stmt.target}`) ||
+						s.startsWith(`DROP TABLE IF EXISTS ${stmt.target}`) ||
+						s.startsWith(`DELETE FROM ${stmt.target} `),
+				)
+				expect(emptied, `m${migration.version} backfill:${stmt.target}`).toBe(true)
+			})
+		}
+	})
+
 	it("adds the service-operation rollup and exposes a coordinated chunkable backfill", () => {
 		const statements = migration_0008_service_operations_minutely.statements
 		const sql = statements.map((statement) => renderStatementFull(statement, "default")).join("\n\n")
@@ -525,5 +616,115 @@ describe("migration 0018 — Apple crash frames", () => {
 		expect(migration_0018_apple_crash_frames.statements.some((stmt) => stmt.includes("UPDATE"))).toBe(
 			false,
 		)
+	})
+})
+
+describe("migration 0026 — ai_trace_index filter columns", () => {
+	const statements = migration_0026_ai_trace_index_filter_columns.statements
+
+	it("widens the index with idempotent ALTERs before recreating its view", () => {
+		const alters = statements.filter((stmt) =>
+			stmt.startsWith("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS"),
+		)
+		expect(alters.map((stmt) => stmt.split(" ")[8])).toEqual([
+			"DeploymentEnv",
+			"Model",
+			"AgentName",
+			"ToolName",
+			"SpanId",
+			"ParentSpanId",
+			"Duration",
+			"IsError",
+			"IsLlmCall",
+			"IsToolCall",
+			"Tokens",
+			"Cost",
+		])
+		// The facet dimensions are LowCardinality(String): never free text.
+		for (const stmt of alters.slice(0, 4)) expect(stmt).toMatch(/ LowCardinality\(String\)$/)
+		// The view's SELECT is frozen at creation, so the body change needs a drop
+		// — and the drop must come after the ALTERs and before the CREATE, or the
+		// recreated view maps a column its target does not yet have.
+		const drop = statements.indexOf("DROP VIEW IF EXISTS ai_trace_index_mv")
+		const create = statements.findIndex((stmt) => stmt.startsWith("CREATE MATERIALIZED VIEW"))
+		expect(drop).toBe(alters.length)
+		expect(create).toBe(drop + 1)
+		expect(statements).toHaveLength(alters.length + 2)
+	})
+
+	it("recreates the view with the coalesced GenAI identity, measures and the semconv environment", () => {
+		const create = statements.find((stmt) => stmt.startsWith("CREATE MATERIALIZED VIEW"))!
+		expect(create).toContain("TO ai_trace_index AS")
+		// The write filter is unchanged: membership in the table is still the
+		// detection predicate the read side relies on.
+		expect(create).toContain("WHERE SpanAttributes['maple_ai.vendor.id'] != ''")
+		expect(create).toContain(
+			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv",
+		)
+		// Response model before request model, canonical keys before dialects.
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), SpanAttributes['llm.model_name']) AS Model",
+		)
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), SpanAttributes['ai.telemetry.functionId']) AS AgentName",
+		)
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), SpanAttributes['tool.name']) AS ToolName",
+		)
+		// The measures: the span's kind and failure as flags, its usage as sums
+		// the page can rank on, and the ids that let a roll-up be undone.
+		expect(create).toContain("SpanId,\n          ParentSpanId,\n          Duration,")
+		expect(create).toContain(
+			"toUInt8(((StatusCode = 'Error' OR SpanAttributes['error.type'] != '') OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))) AS IsError",
+		)
+		expect(create).toMatch(
+			/toUInt8\(.*IN \('chat', 'generate_content', 'text_completion', 'fetch_response'\).*\) AS IsLlmCall/,
+		)
+		expect(create).toMatch(/toUInt8\(.*IN \('execute_tool'\).*\) AS IsToolCall/)
+		expect(create).toMatch(
+			/toFloat64OrZero\(coalesce\(nullIf\(SpanAttributes\['gen_ai\.usage\.input_tokens'\], ''\).*\) AS Tokens/,
+		)
+		expect(create).toContain("SpanAttributes['llm.cost.total'])) AS Cost")
+	})
+
+	it("does not backfill", () => {
+		expect(statements.some((stmt) => typeof stmt !== "string" || stmt.includes("INSERT"))).toBe(false)
+	})
+})
+
+describe("migration 0029 — ai_trace_index usage conventions", () => {
+	const migration = migrations.find((entry) => entry.version === 29)!
+
+	it("adds ResponseId and recreates the view with the convention-aware token sum", () => {
+		const [alter, drop, create, ...rest] = migration.statements as ReadonlyArray<string>
+		expect(rest).toEqual([])
+		expect(alter).toBe("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ResponseId String")
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toContain("coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id']) AS ResponseId")
+		expect(create).toMatch(/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/)
+		// The prompt half nests the cache for the re-summing vendors and the
+		// OpenAI-shaped providers, and adds it beside the prompt for Anthropic.
+		expect(create).toContain(
+			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
+		)
+		expect(create).toContain("IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']")
+		// The completion half sets reasoning beside the completion for Gemini alone.
+		expect(create).toContain(
+			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
+		)
+		expect(create).toContain(") AS Tokens")
+		// Every 0026 column still projected: the view maps to the table by NAME.
+		for (const column of [
+			"DeploymentEnv", "Model", "AgentName", "ToolName", "IsError", "IsLlmCall", "IsToolCall",
+			"Tokens", "Cost", "ResponseId",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
+		expect(create).toMatch(/\bSpanId,\s+ParentSpanId,\s+Duration,/)
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
 	})
 })

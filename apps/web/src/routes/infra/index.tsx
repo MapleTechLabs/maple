@@ -18,6 +18,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { FleetGrid } from "@/components/infra/fleet-grid"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
 import { HostSummaryCards, HostSummaryCardsLoading } from "@/components/infra/host-summary-cards"
+import { InfraIntegrations } from "@/components/infra/infra-integrations"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import { deriveHostStatus, type HostStatus } from "@/components/infra/format"
 import { PageHero } from "@/components/infra/primitives/page-hero"
@@ -36,7 +37,7 @@ const STATUS_FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
 	{ value: "all", label: "All" },
 	{ value: "active", label: "Active" },
 	{ value: "idle", label: "Idle" },
-	{ value: "down", label: "Down" },
+	{ value: "ended", label: "Ended" },
 ]
 
 function InfraPage() {
@@ -122,6 +123,8 @@ function InfraPage() {
 									)
 								})
 								.render()}
+
+							<InfraIntegrations />
 						</div>
 
 						<InstallHostModal open={installOpen} onOpenChange={setInstallOpen} />
@@ -159,7 +162,7 @@ function FleetView({
 	)
 
 	const counts = useMemo(() => {
-		const c: Record<HostStatus, number> = { active: 0, idle: 0, down: 0 } satisfies Record<
+		const c: Record<HostStatus, number> = { active: 0, idle: 0, ended: 0 } satisfies Record<
 			HostStatus,
 			number
 		>

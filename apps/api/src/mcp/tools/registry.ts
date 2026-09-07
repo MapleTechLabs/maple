@@ -31,6 +31,7 @@ import { registerCommentOnErrorIssueTool } from "./comment-on-error-issue"
 import { registerListErrorIncidentsTool } from "./list-error-incidents"
 import { registerListErrorIssueEventsTool } from "./list-error-issue-events"
 import { registerListErrorIssuesTool } from "./list-error-issues"
+import { registerLinkPullRequestTool } from "./link-pull-request"
 import { registerProposeFixTool } from "./propose-fix"
 import { registerRegisterAgentTool } from "./register-agent"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
@@ -49,6 +50,8 @@ import { registerMineLogPatternsTool } from "./mine-log-patterns"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
+import { registerQueryFunnelTool } from "./query-funnel"
+import { registerListProductEventsTool } from "./list-product-events"
 import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerServiceMapTool } from "./service-map"
@@ -184,6 +187,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerMineLogPatternsTool(registrar)
 	registerSearchTracesTool(registrar)
 	registerSearchSessionsTool(registrar)
+	registerQueryFunnelTool(registrar)
+	registerListProductEventsTool(registrar)
 	registerGetSessionTranscriptTool(registrar)
 	registerGetSessionTracesTool(registrar)
 	registerDiagnoseServiceTool(registrar)
@@ -227,6 +232,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerReleaseErrorIssueTool(registrar)
 	registerCommentOnErrorIssueTool(registrar)
 	registerProposeFixTool(registrar)
+	registerLinkPullRequestTool(registrar)
 	registerListErrorIssueEventsTool(registrar)
 	registerRegisterAgentTool(registrar)
 	registerListErrorIncidentsTool(registrar)

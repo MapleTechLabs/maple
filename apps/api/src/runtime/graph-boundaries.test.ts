@@ -42,11 +42,8 @@ describe("API runtime graph boundaries", () => {
 				["@/runtime/mcp-service-graph"],
 				["McpServicesLive"],
 			],
-			[
-				readModule("../worker.ts"),
-				["./runtime/service-graph", "./runtime/mcp-service-graph"],
-				["HttpServicesLive", "InvestigationServicesLive"],
-			],
+			[readModule("../worker/http.ts"), ["../runtime/service-graph"], ["HttpServicesLive"]],
+			[readModule("../worker/rpc.ts"), ["../runtime/mcp-service-graph"], ["InvestigationServicesLive"]],
 			[
 				readModule("../workflows/InvestigationFanoutWorkflow.run.ts"),
 				["../runtime/mcp-service-graph"],
@@ -71,12 +68,17 @@ describe("API runtime graph boundaries", () => {
 			"AlertReadModelsServiceLive",
 			"AlertRulesServiceLive",
 			"AlertsServiceLive",
+			// Lets `register_agent` (and issue-workflow mutations) write org audit entries.
+			"AuditLogServiceLive",
 			"DashboardPersistenceService.layer",
 			"ErrorActorsServiceLive",
 			"ErrorIssueReadModelsServiceLive",
 			"ErrorIssueWorkflowServiceLive",
 			"ErrorPolicyServiceLive",
 			"ErrorsServiceLive",
+			// Backs `link_pull_request`, and is what lets `propose_fix` turn its
+			// `pr_url` into a durable link rather than an event-payload string.
+			"IssueFixVerificationServiceLive",
 			"QueryEngineServiceLive",
 			"RecommendationIssueServiceLive",
 			"SetupAuditServiceLive",

@@ -5,7 +5,7 @@
  * plus two small stamping helpers; nothing here decides anything.
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
-import type { AnyTool, FinishReason, Message, Model, Usage } from "@maple/llm"
+import type { AnyTool, FinishReason, Message, LanguageModel, Usage } from "@opencode-ai/ai"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import type { McpToolExecutorApi, McpToolSurface } from "@/mcp/dispatcher"
 import type { AgentDefinition } from "../agents"
@@ -60,6 +60,20 @@ export interface TurnCompletion {
 
 export interface ChatTurnInput {
 	readonly sessionId: string
+	/**
+	 * Session id the turn's gen-ai spans are grouped under (`maple_ai.session.id`),
+	 * when it differs from `sessionId`. A headless investigation pass runs with a
+	 * per-pass `sessionId`, but every pass of one investigation belongs to one
+	 * agent session — this is that session's id. Defaults to `sessionId`, which
+	 * is right for attended chat.
+	 */
+	readonly genAiSessionId?: string
+	/**
+	 * Workflow the turn runs inside, for `gen_ai.workflow.name` on the turn's
+	 * `invoke_agent` span (`"investigation"` for the headless passes). Attended
+	 * chat has no workflow and leaves it unset.
+	 */
+	readonly genAiWorkflowName?: string
 	readonly tenant: TenantContext
 	/** Closed, tenant-mandatory MCP execution boundary captured by the caller's runtime. */
 	readonly toolExecutor: McpToolExecutorApi
@@ -71,7 +85,7 @@ export interface ChatTurnInput {
 	 * one identical caller for both. Defaults to `"chat"`, the interactive case.
 	 */
 	readonly surface?: McpToolSurface
-	readonly model: Model
+	readonly model: LanguageModel
 	/** The full transcript so far, oldest first, already including the new user message. */
 	readonly messages: ReadonlyArray<Message>
 	readonly messageId: string
@@ -166,13 +180,13 @@ export interface StepState {
 /**
  * Running token total for one turn, accumulated across its steps.
  *
- * Mutable and shared rather than returned, because the one consumer — `submit_diagnosis` — is a
- * *tool* invoked mid-turn, so there is no "after the turn" moment at which to hand it a total.
- * In practice the diagnosis call is the last thing an investigation does, so this is the whole turn
- * bar the final assistant message. Before this, `SubmitDiagnosisRequest` was built with no usage at
- * all, so `InvestigationService`'s `if (env && (inputTokens || outputTokens))` was always false:
+ * Mutable and shared rather than returned, because one of its consumers — `submit_diagnosis` — is a
+ * *tool* invoked mid-turn, so there is no "after the turn" moment at which to hand it a total. It
+ * records what the investigation cost onto the row; the billing charge is raised separately, from
+ * the finalizer in `turn-runner.ts`, which reads the same record once the turn has ended however it
+ * ended. Before this record existed, `SubmitDiagnosisRequest` was built with no usage at all, so
  * `investigations.model` stayed null and Autumn was never metered for autonomous investigations,
- * which the pre-`@maple/llm` workflow path did meter.
+ * which the pre-`@opencode-ai/ai` workflow path did meter.
  */
 export interface TurnUsage {
 	input: number

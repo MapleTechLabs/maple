@@ -6,7 +6,10 @@ import { Env } from "@/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "@/services/auth/AuthService"
+import type { RateLimiterApi } from "@/services/auth/ApiV2RateLimiter"
+import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
 import { McpToolExecutor, type McpToolExecutorApi } from "./dispatcher"
+import { type SessionPayload, sessionStore } from "./lib/session-store"
 import { McpLive } from "./app"
 
 const createdDbs: TestDb[] = []
@@ -16,6 +19,10 @@ const makeMcpToolExecutorStubLayer = (
 	execute: McpToolExecutorApi["execute"] = () =>
 		Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 ) => Layer.succeed(McpToolExecutor, { execute })
+
+const makeRateLimiterStubLayer = (
+	check: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const),
+) => Layer.succeed(McpToolRateLimiter, { check })
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -39,6 +46,7 @@ describe("MCP HTTP authorization", () => {
 			ApiKeysService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
 		const routes = McpLive.pipe(Layer.provideMerge(services))
 		const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
@@ -85,6 +93,7 @@ describe("MCP HTTP authorization", () => {
 				executedOrgId = tenant.orgId
 				return Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] })
 			}),
+			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
 		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
 		const userId = Schema.decodeUnknownSync(UserId)("user_test")
@@ -201,6 +210,7 @@ describe("MCP HTTP authorization", () => {
 			ApiKeysService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
 		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
 		const userId = Schema.decodeUnknownSync(UserId)("user_test")
@@ -268,6 +278,166 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			expect(called.status).toBe(200)
+		} finally {
+			await dispose()
+		}
+	})
+	it("serves tools/list on a session rehydrated by a fresh worker isolate", async () => {
+		// Regression: `clientSessions` (our effect patch) persists only the initialize
+		// payload, so a second isolate rebuilds the session from scratch. rc.111 reads
+		// `session?.negotiatedProfile.protocolVersion` — the `?.` guards the session but
+		// not the profile — so a rehydrate without one died with a defect that Effect
+		// serialized under id -32603, which no client can match. tools/list hung until
+		// the client timed out, and the server looked merely slow.
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Rehydrate test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const headers = (extra: Record<string, string> = {}) => ({
+			authorization: `Bearer ${key.secret}`,
+			accept: "application/json, text/event-stream",
+			"content-type": "application/json",
+			host: "api.example.com",
+			"x-forwarded-proto": "https",
+			...extra,
+		})
+
+		// First isolate: initialize, which is the only call that writes to `sessionStore`.
+		const first = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
+			disableLogger: true,
+		})
+		let sessionId: string | null = null
+		let persisted: SessionPayload | undefined
+		try {
+			const initialized = await first.handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: headers(),
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						method: "initialize",
+						params: {
+							protocolVersion: "2025-06-18",
+							capabilities: {},
+							clientInfo: { name: "test", version: "1.0.0" },
+						},
+					}),
+				}),
+				Context.empty() as never,
+			)
+			expect(initialized.status).toBe(200)
+			sessionId = initialized.headers.get("mcp-session-id")
+			expect(sessionId).not.toBeNull()
+			// What worker.ts hands to KV, and what the next isolate preloads back.
+			persisted = sessionStore.get(sessionId!)
+			expect(persisted).toBeDefined()
+		} finally {
+			await first.dispose()
+		}
+		sessionStore.set(sessionId!, persisted!)
+
+		// Second isolate: a fresh McpProtocolState whose in-memory session map is empty,
+		// so this request can only be served through the `clientSessions` rehydrate path.
+		const second = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
+			disableLogger: true,
+		})
+		try {
+			const listed = await second.handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: headers({
+						"mcp-session-id": sessionId!,
+						"mcp-protocol-version": "2025-06-18",
+					}),
+					body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+				}),
+				Context.empty() as never,
+			)
+			const body = await listed.clone().text()
+			expect({ status: listed.status, defect: body.includes("A defect occurred") }).toEqual({
+				status: 200,
+				defect: false,
+			})
+			expect(body).toContain("inspect_trace")
+		} finally {
+			await second.dispose()
+		}
+	})
+
+	it("refuses an over-budget credential with 429 and Retry-After", async () => {
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const limitedKeys: string[] = []
+		let executed = false
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(() => {
+				executed = true
+				return Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] })
+			}),
+			makeRateLimiterStubLayer((key) => {
+				limitedKeys.push(key)
+				return Effect.succeed("limited" as const)
+			}),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Rate limit test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const routes = McpLive.pipe(Layer.provideMerge(services))
+		const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+		try {
+			const response = await handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${key.secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						method: "initialize",
+						params: {
+							protocolVersion: "2025-06-18",
+							capabilities: {},
+							clientInfo: { name: "test", version: "1.0.0" },
+						},
+					}),
+				}),
+				Context.empty() as never,
+			)
+			const body = await response.clone().json()
+			expect({
+				status: response.status,
+				retryAfter: response.headers.get("retry-after"),
+				error: body.error,
+				executed,
+			}).toEqual({ status: 429, retryAfter: "10", error: "rate_limited", executed: false })
+			// Buckets are per internal key id, so a rolled key gets a fresh budget
+			// and the raw secret never reaches the counter key.
+			expect(limitedKeys).toEqual([`key:${key.id}`])
 		} finally {
 			await dispose()
 		}

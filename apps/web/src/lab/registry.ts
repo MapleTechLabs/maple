@@ -60,10 +60,42 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/agent-session",
+		title: "Agent session detail",
+		description:
+			"The session detail page's Overview, Trace and Flow views over a fourteen-turn fixture that ends in a context-window failure.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/flow",
 		title: "Trace flow",
 		description:
 			"One synthetic trace exercising every Flow view card variant: server, edge, HTTP client, db, cache hit/miss, messaging, orphan.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-map-3d",
+		title: "Service map 3D",
+		description:
+			"Two 3D perspectives over one sample topology: Atlas groups infrastructure by namespace; Cascade follows dependency depth.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/agent-sessions",
+		title: "Agent sessions list",
+		description:
+			"The `/agent-sessions` list over rows that break its lanes — a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/errors",
+		title: "Errors list",
+		description:
+			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
 		kind: "lab",
 		session: "none",
 	},
@@ -94,6 +126,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/bench/infra",
 		title: "Infra charts",
 		description: "Host and k8s detail ChartViews on one page with synthetic rows; ?mode=recharts|cursor.",
+		kind: "bench",
+		session: "none",
+	},
+	{
+		path: "/lab/bench/agent-transcript",
+		title: "Agent transcript",
+		description:
+			"The session Transcript view over a synthetic session of `?turns=` turns (default 40) whose tool results run to hundreds of kilobytes — row mount cost and scroll perf, via window.__transcriptBench.",
 		kind: "bench",
 		session: "none",
 	},

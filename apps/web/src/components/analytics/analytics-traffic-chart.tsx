@@ -79,7 +79,9 @@ interface TrafficPoint {
  *
  * Buckets are outer-joined on the union of both series' timestamps, so a window
  * where one table has data and the other doesn't shows a gap in one line rather
- * than shifting the other sideways.
+ * than shifting the other sideways. Within that union a count with no row is
+ * drawn as zero — only a series that reports nothing at all in the window stays
+ * a gap.
  */
 export function AnalyticsTrafficChart({ metric, companion, source, syncId }: AnalyticsTrafficChartProps) {
 	const gradientPrefix = useChartId("traffic")
@@ -109,6 +111,31 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 		}
 
 		const buckets = [...byBucket.keys()].sort()
+
+		// Zero-fill the buckets the *other* table contributed to the union. Visitors
+		// and page views are counts read from different tables, and each table emits
+		// a row only where it has one — so an hour with page views but no visitor-
+		// reporting session left the visitors series undefined there, and a line
+		// broke at every quiet hour. For a count, "no row" is a zero on the axis.
+		//
+		// Only when the series reported *something* in the window: a metric whose
+		// table is empty end to end is unavailable, not flat zero, and must stay a
+		// gap. Only for counts, too — a bucket with no sessions has no bounce rate,
+		// and filling one in would draw a 0% that never happened.
+		const zeroFill = (
+			key: "primary" | "companion",
+			descriptor: AnalyticsMetricDescriptor | undefined,
+			points: ReadonlyArray<{ value: number }>,
+		) => {
+			if (!descriptor?.zeroWhenAbsent || points.length === 0) return
+			for (const bucket of buckets) {
+				const entry = byBucket.get(bucket)!
+				if (entry[key] == null) entry[key] = 0
+			}
+		}
+		zeroFill("primary", metric, primaryPoints)
+		zeroFill("companion", companion, companionPoints)
+
 		const label = makeBucketLabeler(buckets)
 		// The first bucket of each local calendar day. Over a multi-day window the
 		// axis ticks there and nowhere else — one dated label per day reads; a
@@ -226,33 +253,38 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 				...painted.map((entry) => focusDot(data, at, valueOf(entry.key), entry.color, chromeColors)),
 				focusCrosshair(chromeColors),
 			],
-			x: {
-				scale: scalePoint,
-				axis: {
-					line: false,
-					ticks: perDay
-						? {
-								size: 0,
-								padding: 8,
-								values: dayTicks,
-								format: (bucket: string) =>
-									new Date(bucket).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-							}
-						: { size: 0, padding: 8, format: isoToLabel },
-					tickLabels: { thin: { minGap: 12 } },
+			scales: {
+				x: {
+					scale: scalePoint,
+					axis: {
+						line: false,
+						ticks: perDay
+							? {
+									size: 0,
+									padding: 8,
+									values: dayTicks,
+									format: (bucket: string) =>
+										new Date(bucket).toLocaleDateString("en-US", {
+											month: "short",
+											day: "numeric",
+										}),
+								}
+							: { size: 0, padding: 8, format: isoToLabel },
+						tickLabels: { thin: { minGap: 12 } },
+					},
 				},
-			},
-			y: {
-				scale: scaleLinear,
-				axis: {
-					line: false,
-					ticks: {
-						size: 0,
-						padding: 8,
-						// The metric formatters render a zero *headline* as "—" ("no
-						// session ended", not "0s"). On an axis that reading is wrong —
-						// the baseline is a real zero — so it is spelled out here.
-						format: (value: number) => (value === 0 ? "0" : metric.format(value)),
+				y: {
+					scale: scaleLinear,
+					axis: {
+						line: false,
+						ticks: {
+							size: 0,
+							padding: 8,
+							// The metric formatters render a zero *headline* as "—" ("no
+							// session ended", not "0s"). On an axis that reading is wrong —
+							// the baseline is a real zero — so it is spelled out here.
+							format: (value: number) => (value === 0 ? "0" : metric.format(value)),
+						},
 					},
 				},
 			},

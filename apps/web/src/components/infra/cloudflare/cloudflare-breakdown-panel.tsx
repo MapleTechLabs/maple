@@ -33,7 +33,7 @@ import {
 	cloudflareTopTrafficResultAtom,
 	cloudflareZoneBreakdownResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
@@ -155,7 +155,7 @@ export function CloudflareBreakdownPanel({
 
 	// Read here rather than inside StoredBreakdown so the header's scope marker can report the
 	// filters the server actually applied instead of guessing at them.
-	const storedResult = useRetainedRefreshableResultValue(
+	const storedResult = useRefreshableAtomValue(
 		cloudflareZoneBreakdownResultAtom({
 			data: {
 				serviceName,
@@ -346,7 +346,7 @@ function BreakdownTable({
 			stickySurfaceClass="bg-card"
 		>
 			<DataTable.Head>
-				{head(dimension.column, "key", "flex-1 min-w-[220px]")}
+				{head(dimension.column, "key", "w-0 flex-1 min-w-[220px]")}
 				{head("Requests", "requests", "w-[110px]")}
 				{head("Error rate", "errorRate", "w-[90px]")}
 				{head("Bandwidth", "bytes", "w-[90px]", "hidden md:flex")}
@@ -357,7 +357,7 @@ function BreakdownTable({
 				const selected = selectedValues.includes(row.key)
 				return (
 					<div key={row.key} className={ROW_CLASS} style={shareBar(row.share)}>
-						<div className="min-w-[220px] flex-1 truncate">
+						<div className="w-0 min-w-[220px] flex-1 truncate">
 							{interactive && onToggleFilter ? (
 								<button
 									type="button"

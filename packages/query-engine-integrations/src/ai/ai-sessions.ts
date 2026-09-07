@@ -13,28 +13,91 @@
 // deliberate; the dashboard shows the full agent context, not just the spans
 // the framework happened to label.
 //
-// Both queries are that fan-out, in two stages against two different tables:
+// A trace can carry no session id at all and still be an agent run: several
+// vendors (haystack, litellm, llamaindex, semantic_kernel, effect_ai) expose no
+// session key, and the `unknown:*` buckets never do. Those traces used to be
+// invisible here. They are now sessions of one trace, keyed
+// `trace:<TraceId>` (`MAPLE_AI_TRACE_SESSION_PREFIX`) — the same page, with the
+// single trace as the whole context. That is why detection keys on the VENDOR
+// stamp rather than the session one: the vendor id is on every span the gateway
+// classified as GenAI, so it is the marker that finds both populations, and the
+// session id becomes a grouping key rather than an admission test.
 //
-//   detect  — `traces`, filtered on the presence of `maple_ai.session.id`. This
-//     is the only level that can use the `mapKeys(SpanAttributes)` bloom skip
-//     index, and with it the scan stays cheap over a week. It yields the
-//     qualifying trace-id set and nothing else.
-//   fan out — `trace_detail_spans`, restricted by `TraceId IN (…)`. `TraceId` is
-//     a sort-key prefix there (`(OrgId, TraceId, SpanId)`), so this is a seek.
-//     The same fan-out against raw `traces` times out at 10s on a 7-day window
-//     in production: that table is sorted `(OrgId, ServiceName, SpanName,
-//     Timestamp)` and `idx_trace_id` is only a bloom skip index, which prunes
-//     far too little at this org's volume.
+// The list is that fan-out, in two stages against two different tables — and
+// two round trips, because the second is bounded by what the first found:
 //
-// That is the "optimise the query, not the storage" answer to the fan-out: no
-// new table, no new index, an MV that already exists and that
-// `errorDetailTracesQuery` already splits across for exactly this reason. `IN`
-// rather than a JOIN for the same reason too — ClickHouse pushes the id set into
-// the read, which a JOIN does not do.
+//   page — `aiSessionPageQuery`, over `ai_trace_index`: the filtered
+//     projection holding ONLY the vendor-stamped spans (~0.01% of rows),
+//     pre-extracted to plain columns by `ai_trace_index_mv`. It is the one
+//     level that sees the caller's whole window, and the one that can afford
+//     to: ~10k narrow rows a day against 70M raw spans, ~600ms cold over 30
+//     days of production. It resolves every trace to its session key, ranks
+//     the sessions by their first agent span, and yields one page of session
+//     ids with the bounds of their agent spans — nothing else.
+//   fan out — `aiSessionListQuery`, over `trace_detail_spans`, restricted to
+//     that page's traces by `TraceId IN (…)`. `TraceId` is a sort-key prefix
+//     there (`(OrgId, TraceId, SpanId)`), so this is a seek. The same fan-out
+//     against raw `traces` times out at 10s on a 7-day window in production:
+//     that table is sorted `(OrgId, ServiceName, SpanName, Timestamp)` and
+//     `idx_trace_id` is only a bloom skip index, which prunes far too little
+//     at this org's volume.
 //
-// The window predicate stays on BOTH levels. On `trace_detail_spans` it prunes
-// partitions (`PARTITION BY toDate(Timestamp)`) as well as riding the sort key,
-// so it is strictly cheaper than omitting it.
+// Detection used to run the vendor predicate against raw `traces` behind the
+// `mapKeys(SpanAttributes)` bloom skip index, and that shape cannot be saved:
+// GenAI spans arrive continuously — about one per index granule at production
+// volume — so the bloom prunes nothing and the scan reads the fat Map column
+// for EVERY span in the window. Measured 2026-08-29 in production: ~3.6s for a
+// one-hour window, dead at the 15s kill by a day. The index is the same
+// predicate applied at insert time.
+//
+// The fan-out used to run over every qualifying trace in the window and page
+// with LIMIT/OFFSET afterwards, and that shape cannot be saved either — by the
+// index or by anything else. `trace_detail_spans` sits on object storage, and
+// what a seek costs there is set by the partitions it touches, not by the rows
+// it returns: measured 2026-09-02 in production, five trace ids across the 32
+// retained partitions ran past 10s, while a page's worth of sessions inside
+// one partition took 1.3–2.8s cold and ~300ms warm. The old shape read three
+// partitions for a one-day window (5–15s, eight of 31 reads killed at the 15s
+// ceiling over three days) and all of them for the 30-day window the page
+// offers (killed, every time). Paging first is what bounds the fan-out to the
+// hours a page spans.
+//
+// `IN` rather than a JOIN for the fan-out, the same reason
+// `errorDetailTracesQuery` uses it — ClickHouse pushes the id set into the
+// read, which a JOIN does not do. The JOIN the list DOES carry is one level up,
+// between two derived tables of at most a page of traces each, and it is there
+// so the fan-out takes the session key the page resolved rather than deriving
+// its own from the spans: two derivations over two windows can disagree, and
+// a disagreement would drop the row from the page it was ranked into.
+//
+// The index fills forward from its deploy: rows already in `traces` when the MV
+// was created are not in it until a backfill runs, so the page (and the
+// facets) can under-report windows that predate the deploy. The fan-out and the
+// per-session reads still see every span of any trace the page finds.
+//
+// The window predicate on the fan-out is the PAGE's, not the caller's: the
+// bounds of the page's agent spans, padded by `FAN_OUT_PAD_SECONDS` so a
+// trace's non-agent spans on either side are counted too. `trace_detail_spans`
+// is `PARTITION BY toDate(Timestamp)`, so the predicate is the only thing that
+// prunes partitions there. What that buys depends on how densely an org runs
+// agents: at production volume a page of sessions ordered by start spans
+// hours — one partition, two around midnight — while an org with a few
+// sessions a day has a first page that spans weeks, and its fan-out probes
+// every partition in between exactly as the old shape did (no worse, no
+// better; a chunked or per-partition fan-out is the follow-up if that bites).
+//
+// A caller that has no window — a deep link carrying only a session id —
+// resolves one with `aiSessionWindowQuery` first, rather than running the
+// fan-out unpruned. That query still reads raw `traces`, and can: it prunes by
+// the session id VALUE, which the `mapValues(SpanAttributes)` bloom index does
+// serve (the id is rare), unlike the presence-of-key detection this file moved
+// off `traces` — and the table's 30-day TTL bounds what is left.
+//
+// A `trace:` id needs neither the attribute detection nor the fan-out: it names
+// the trace outright, so `aiTraceWindowQuery`/`aiTraceSpansQuery` are the same
+// two reads with `TraceId = {traceId}` in place of the detection subquery —
+// `idx_trace_id` on `traces` for the bounds, the `(OrgId, TraceId, SpanId)`
+// sort key on `trace_detail_spans` for the spans.
 //
 // Tenant scoping: a subquery contributes nothing to the outer query's scope, so
 // every level that reads a table repeats `OrgId = {orgId}` itself. The outermost
@@ -43,23 +106,51 @@
 
 import { Schema } from "effect"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as T from "@maple-dev/clickhouse-builder/types"
+import { compile } from "@maple-dev/clickhouse-builder/sql"
 import {
 	compileFnCall,
 	from,
 	fromQuery,
 	inSubquery,
 	param,
+	QueryBuilderDefect,
 	unionAll,
 	type CHUnionQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
 } from "@maple-dev/clickhouse-builder"
-import { TraceDetailSpans, Traces } from "@maple/query-engine/ch/tables"
+import { AiTraceIndex, TraceDetailSpans, Traces } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
+import { AI_SESSION_SPANS_MAX_SPANS, type AiSessionSortDir, type AiSessionSortKey } from "@maple/domain/http"
+import {
+	MAPLE_AI_SESSION_ID_ATTR,
+	MAPLE_AI_TRACE_SESSION_PREFIX,
+	MAPLE_AI_VENDOR_ID_ATTR,
+	MAPLE_AI_VENDOR_VERSION_ATTR,
+} from "@maple/domain/gen-ai"
+import {
+	genAiResponseIdExpr,
+	genAiUsageBucketsExpr,
+	type MapColumnLike,
+} from "@maple/domain/tinybird/gen-ai-columns"
+import {
+	MAX_USAGE_REPORTERS_PER_TRACE,
+	sessionLlmCalls,
+	sessionUsageSum,
+	usageReportersExpr,
+} from "./ai-span-columns"
 
-const SESSION_ID_ATTR = "maple_ai.session.id"
-const VENDOR_ID_ATTR = "maple_ai.vendor.id"
-const VENDOR_VERSION_ATTR = "maple_ai.vendor.version"
+const SESSION_ID_ATTR = MAPLE_AI_SESSION_ID_ATTR
+const VENDOR_ID_ATTR = MAPLE_AI_VENDOR_ID_ATTR
+const VENDOR_VERSION_ATTR = MAPLE_AI_VENDOR_VERSION_ATTR
+const ERROR_TYPE_ATTR = "error.type"
+const RESPONSE_STATUS_ATTR = "gen_ai.response.status"
+/** `gen_ai.response.status` values that mean the generation failed — semconv's
+ *  `failed` plus the pre-enum `error` dialect. Mirrors `spanFailed` in
+ *  `apps/web/src/lib/agent-sessions/session-turns.ts`; the list badge and the
+ *  detail's Failures panel must count the same spans. */
+const FAILED_RESPONSE_STATUSES = ["failed", "error"]
 
 /**
  * Sorts every span that is NOT session-bearing behind every one that is, so a
@@ -72,12 +163,29 @@ const VENDOR_VERSION_ATTR = "maple_ai.vendor.version"
 const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
 
 /**
- * Default span cap for `aiSessionSpansQuery`, exported so a caller can request
- * `+ 1` and detect truncation instead of hardcoding the number. Mirrors
- * `SPAN_HIERARCHY_MAX_SPANS`, which is exported from the core package for the
- * same reason.
+ * How far past the page's own agent-span bounds the `trace_detail_spans`
+ * fan-out reads, in seconds — see `aiSessionListQuery`.
+ *
+ * The pad exists because a trace's non-agent spans lie outside its agent
+ * spans: measured over two days of production (4,920 agent traces,
+ * 2026-09-02), the first span leads the first agent span by at most 0.1s and
+ * the last span trails the last agent span by at most 10 minutes. An hour
+ * contains both with room to spare and keeps the read inside one partition
+ * (`PARTITION BY toDate(Timestamp)`) for every page but the ones nearest
+ * midnight; a day would make it three partitions every time, which is what
+ * the fan-out's cost is made of. A trace whose spans reach further than an
+ * hour past its agent spans is clamped in the list row alone.
  */
-export const AI_SESSION_SPANS_MAX_SPANS = 2_000
+const FAN_OUT_PAD_SECONDS = 3_600
+
+/**
+ * The pad on the bounds `aiSessionWindowQuery`/`aiTraceWindowQuery` report for
+ * a deep link, in seconds. A whole partition rather than the list's hour: that
+ * path resolves ONE session, so the extra partitions cost one read, and the
+ * detail page shows the spans themselves — clamping there would cut a
+ * transcript, where the list would only under-count a cell.
+ */
+const WINDOW_PAD_SECONDS = 86_400
 
 /** ClickHouse returns `''` for a missing Map key, so presence needs both halves. */
 const hasSessionId = (attrs: CH.Expr<Record<string, string>>, get: CH.Expr<string>) =>
@@ -87,21 +195,207 @@ const hasSessionId = (attrs: CH.Expr<Record<string, string>>, get: CH.Expr<strin
 const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
 	compileFnCall<string>("fromUnixTimestamp64Nano", nanos)
 
-/**
- * Exact distinct count. Not in the builder's function set, which only carries
- * the approximate `uniq`. A facet count sits next to the list it filters, so an
- * HLL estimate that disagrees with the visible row count reads as a bug.
- */
-const uniqExact = <T>(expr: CH.Expr<T>): CH.Expr<number> => compileFnCall<number>("uniqExact", expr)
+/** Lexicographic ordering key — ClickHouse compares tuples element by element,
+ *  which is how one `argMin` expresses "lowest rank, then earliest". Not in the
+ *  builder's function set, and never selected: it only ever orders an argMin. */
+const orderTuple = (...parts: ReadonlyArray<unknown>): CH.Expr<unknown> =>
+	compileFnCall<unknown>("tuple", ...parts)
 
-export interface AiSessionListOpts {
-	/** Sessions returned, most recently started first. */
-	readonly limit?: number
-	readonly vendorIds?: readonly string[]
-	readonly serviceNames?: readonly string[]
+/**
+ * The session id a trace is filed under: the vendor's own where it has one,
+ * else `trace:<TraceId>` — a session of exactly this one trace.
+ *
+ * Reads the per-trace derived table rather than raw spans, because
+ * sessionless-ness is a property of the TRACE and not of the span: most spans of
+ * a session-bearing trace carry no session id themselves, and keying on that
+ * would file each of them as its own sessionless trace.
+ */
+const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH.Expr<string> =>
+	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
+
+/**
+ * One trace's failed agent spans — `(SpanId, ParentSpanId, IsToolCall)` per
+ * failed index row — for the tool/turn split one level up, which needs the
+ * whole trace's failures in hand at once. Same shape and cap as
+ * `usageReportersExpr`, for the same reason: a framework that fails the turn
+ * span because the call beneath it failed reports one failure as two, and
+ * only the deepest span carrying the failure counts — `failureEvents` in
+ * `apps/web/src/lib/agent-sessions/session-summary.ts`, one level deep.
+ */
+const failedSpansExpr = ($: {
+	readonly SpanId: CH.Expr<string>
+	readonly ParentSpanId: CH.Expr<string>
+	readonly IsToolCall: CH.Expr<number>
+	readonly IsError: CH.Expr<number>
+}): CH.Expr<unknown> =>
+	CH.untypedExpr(
+		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1)`,
+	)
+
+/**
+ * Failed spans of one kind, summed over the traces' `failedSpans`, with a
+ * failed span whose own child also failed left out: the child is the failure,
+ * the parent its echo. `tool` counts the failed tool calls; the rest — failed
+ * model calls and turn spans that failed on their own — are the turn's.
+ *
+ * One level, and without the signal, where `shadowedAncestorIds` walks every
+ * ancestor and shadows only a match: the index carries no error signal (its
+ * `IsError` is a flag), and a framework that echoes a failure copies it onto
+ * the span that WRAPS the call, not two levels up — the roll-ups seen in
+ * production are all parent-and-child. The two counts can disagree for a
+ * turn span that fails on its own while a tool beneath it also fails (the
+ * detail counts both, this counts one), which reads as one turn failing
+ * either way; the cost of an exact copy is an error column on the index.
+ */
+const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Expr<number> =>
+	CH.rawExpr(
+		`sum(arrayCount(f -> f.3 ${kind === "tool" ? "=" : "!="} 1 AND NOT arrayExists(c -> c.2 = f.1, ${failedSpans}), ${failedSpans}))`,
+		T.float64,
+	)
+
+/**
+ * One trace's usage reporters with their buckets —
+ * `(SpanId, ParentSpanId, input, cacheRead, cacheWrite, output, reasoning,
+ * responseId)` per span that reported any — the five disjoint buckets
+ * `spanTokenBuckets` sums, read off the raw attributes because the index
+ * carries only the total, under the same convention (`genAiUsageBucketsExpr`).
+ * The response id rides along so two observations of one call collapse here
+ * as they do on the page.
+ */
+const usageBucketsExpr = ($: {
+	readonly SpanId: CH.Expr<string>
+	readonly ParentSpanId: CH.Expr<string>
+	readonly SpanAttributes: MapColumnLike
+}): CH.Expr<unknown> => {
+	const buckets = genAiUsageBucketsExpr($.SpanAttributes)
+	const reporter = compileFnCall<unknown>(
+		"tuple",
+		$.SpanId,
+		$.ParentSpanId,
+		buckets.input,
+		buckets.cacheRead,
+		buckets.cacheWrite,
+		buckets.output,
+		buckets.reasoning,
+		genAiResponseIdExpr($.SpanAttributes),
+	)
+	const reports = buckets.input
+		.add(buckets.cacheRead)
+		.add(buckets.cacheWrite)
+		.add(buckets.output)
+		.add(buckets.reasoning)
+		.gt(0)
+	return CH.untypedExpr(
+		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(${compile(reporter.toFragment())}, ${compile(
+			reports.toFragment(),
+		)})`,
+	)
 }
 
+/** `sessionUsageSum` over a bucket of `usageBucketsExpr` (elements 3–7). */
+const sessionBucketSum = (reporters: string, element: 3 | 4 | 5 | 6 | 7): CH.Expr<number> =>
+	sessionUsageSum(reporters, element, { responseId: 8 })
+
+/**
+ * The filters the page and the list share; both apply them on `ai_trace_index`,
+ * each as a per-trace existence test — see `indexTraces`. One per index
+ * column, so each selects exactly the population `aiSessionFacetsQuery`
+ * counted for it.
+ */
+export interface AiSessionFilterOpts {
+	readonly vendorIds?: readonly string[]
+	readonly serviceNames?: readonly string[]
+	readonly deploymentEnvs?: readonly string[]
+	readonly models?: readonly string[]
+	readonly agentNames?: readonly string[]
+	readonly toolNames?: readonly string[]
+	/**
+	 * A session id or trace id, or the leading characters of one — what a
+	 * reader pastes from a ticket, a log line, or the list row itself. Matched
+	 * as a prefix against both id columns of the index.
+	 */
+	readonly search?: string
+}
+
+export interface AiSessionPageOpts extends AiSessionFilterOpts {
+	/** Sessions returned, most recently started first unless `sortBy` says otherwise. */
+	readonly limit?: number
+	/** Sessions skipped before `limit` applies — the list's next page. */
+	readonly offset?: number
+	// Session-level filters — `HAVING` on the ranked session row, over the
+	// measures the index carries per span (migration 0026). A failure here is
+	// a failed AGENT span; the row's `errorSpanCount` counts every span of the
+	// trace, so a session whose only error is on an HTTP span is listed with a
+	// badge and not matched by the filter. A duration here is the extent of
+	// the agent spans, which the true extent trails by minutes at most (see
+	// `FAN_OUT_PAD_SECONDS`).
+	readonly hasErrors?: boolean
+	/** Drop the `trace:` sessions — traces whose vendor exposes no session key. */
+	readonly excludeTraceSessions?: boolean
+	readonly durationMinMs?: number
+	readonly durationMaxMs?: number
+	readonly costMin?: number
+	readonly costMax?: number
+	readonly tokensMin?: number
+	readonly tokensMax?: number
+	readonly llmCallsMin?: number
+	readonly llmCallsMax?: number
+	readonly toolCallsMin?: number
+	readonly toolCallsMax?: number
+	readonly sortBy?: AiSessionSortKey
+	readonly sortDir?: AiSessionSortDir
+}
+
+export interface AiSessionPageOutput {
+	/** The vendor's own session id, or `trace:<TraceId>` for a trace that has
+	 *  none — see `MAPLE_AI_TRACE_SESSION_PREFIX`. */
+	readonly sessionId: string
+	/** Bounds of the session's agent spans inside the window — warehouse
+	 *  datetime literals, the shape `aiSessionListQuery`'s `fanOutStart` and
+	 *  `fanOutEnd` params take back. */
+	readonly agentStart: string
+	readonly agentEnd: string
+	/** Every model any agent span of the session ran on, dialects coalesced. */
+	readonly models: readonly string[]
+	/** Every agent named on any agent span of the session, in no order. */
+	readonly agentNames: readonly string[]
+	/** The agent on the session's earliest-starting named span — what the list
+	 *  row calls the session, and what the detail page's heading resolves to
+	 *  from the spans themselves. `''` when no span named an agent. */
+	readonly firstAgentName: string
+	readonly llmCalls: number
+	readonly toolCalls: number
+	/** Failed agent spans — what `hasErrors` tests; not the row's all-span count. */
+	readonly errorAgentSpans: number
+	/** Failed tool calls, deepest failure counted — see `deepestFailureCount`. */
+	readonly toolErrors: number
+	/** Failed model calls and turn spans that failed on their own — the rest. */
+	readonly turnErrors: number
+	/** Tokens across every bucket, deepest reporter counted, one claim per response id — see `sessionUsageSum`. */
+	readonly totalTokens: number
+	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
+	readonly cost: number
+	/** Extent of the agent spans, what the duration filter and sort read. */
+	readonly agentDurationMs: number
+}
+
+export interface AiSessionListOpts extends AiSessionFilterOpts {
+	/**
+	 * The page to aggregate, as `aiSessionPageQuery` ranked it — under the same
+	 * filters, or the two stages resolve traces differently. Never empty: an
+	 * empty page is answered without this read, and an empty list here is a
+	 * defect rather than an empty result.
+	 */
+	readonly sessionIds: readonly string[]
+}
+
+/** Which pair of params bounds an `ai_trace_index` read: the caller's window
+ *  (`startTime`/`endTime`) or the page's (`fanOutStart`/`fanOutEnd`). */
+type IndexBounds = "window" | "page"
+
 export interface AiSessionListOutput {
+	/** The vendor's own session id, or `trace:<TraceId>` for a trace that has
+	 *  none — see `MAPLE_AI_TRACE_SESSION_PREFIX`. */
 	readonly sessionId: string
 	/** Vendor of the earliest session-bearing span — see `aiSessionListQuery`. */
 	readonly vendorId: string
@@ -110,62 +404,330 @@ export interface AiSessionListOutput {
 	readonly spanCount: number
 	readonly errorSpanCount: number
 	readonly serviceNames: readonly string[]
+	// The five token buckets, deepest reporter counted like `totalTokens` —
+	// which is the index's figure and can differ by a rounding of convention;
+	// the buckets are what the row draws, the total what it sorts on.
+	readonly inputTokens: number
+	readonly cacheReadTokens: number
+	readonly cacheWriteTokens: number
+	readonly outputTokens: number
+	readonly reasoningTokens: number
 	/** ClickHouse datetime literal, e.g. `2026-08-19 10:33:25.825000000`. */
 	readonly startTime: string
 	readonly endTime: string
 	readonly durationMs: number
 }
 
-export const aiSessionListRowSchema: CompiledQueryRowSchema<AiSessionListOutput> = Schema.Struct({
-	sessionId: Schema.String,
-	vendorId: Schema.String,
-	vendorVersion: Schema.String,
-	traceCount: CHNumber,
-	spanCount: CHNumber,
-	errorSpanCount: CHNumber,
-	serviceNames: Schema.Array(Schema.String),
-	startTime: Schema.String,
-	endTime: Schema.String,
-	durationMs: CHNumber,
-})
+/**
+ * A pasted id, as a `LIKE` prefix pattern.
+ *
+ * Strips what the list row itself shows around a `trace:` id — the prefix and
+ * the trailing ellipsis — so copying the visible text finds the row. Escapes the
+ * three characters `LIKE` reads as syntax; the builder quotes the literal.
+ */
+export function idSearchPattern(search: string): string {
+	let needle = search.trim()
+	if (needle.startsWith(MAPLE_AI_TRACE_SESSION_PREFIX)) {
+		needle = needle.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)
+	}
+	needle = needle.replace(/…+$/, "")
+	return `${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+}
+
+/** Distinct models/agents collected per trace for the list row. */
+const MAX_NAMES_PER_TRACE = 20
 
 /**
- * One row per AI agent session in the window.
+ * One row per agent trace in the window, off `ai_trace_index` alone: the
+ * trace's session key, the bounds of its agent spans, and the per-trace
+ * measures the page ranks on. The level both stages share, so a trace resolves
+ * to the same session in the page and in the aggregation.
+ *
+ * The page reads it over the caller's window; the aggregation over the page's
+ * own bounds, which is the same thing for every trace ON the page: a page
+ * trace's index rows all lie between its session's `agentStart` and `agentEnd`,
+ * and the page's bounds contain every session's. So the key and the filters
+ * come out identical, from hours of the index rather than the caller's month.
+ * A trace that is NOT on the page can key differently over the narrower read,
+ * and is then discarded by the page's key list like any other — unless it
+ * carries two session ids and only the lesser one falls inside the page's
+ * bounds, which no vendor has been seen to produce.
+ *
+ * `rawSessionId` is `max` over the trace's index rows because the session id
+ * sits on the turn-owning span alone (see the file header) and every other row
+ * reads `''`, which `max` discards.
+ *
+ * A filter is a TRACE-level existence test — "some agent span of the trace
+ * carries this value" — applied after the grouping, not a row predicate before
+ * it. A row predicate would also narrow the rows `rawSessionId` is read from,
+ * and a vendor filter would then file a trace under `trace:` whenever its
+ * session-bearing span belongs to another vendor — an eve agent calling through
+ * the Vercel AI SDK carries both. And the three GenAI identity columns are
+ * mutually exclusive by construction — a chat span has a model and no tool, a
+ * tool span the reverse, the session id sits on the turn-owning span alone —
+ * so a row predicate ANDing `Model IN (…)` with `ToolName IN (…)` could only
+ * match a row carrying both, and that pair of facets, each with a non-zero
+ * count, would return an empty list. The population is the one the facets
+ * count: `aiSessionFacetsQuery` also collects per trace and counts any-span.
+ *
+ * The measures are collected here per trace and summed per session one level
+ * up. Usage travels as the trace's reporters rather than a sum, because a
+ * wrapper's roll-up of its children cannot be undone one row at a time — see
+ * `usageReportersExpr`.
+ */
+const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
+	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
+	const search = opts.search?.trim() || undefined
+	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
+	return from(AiTraceIndex)
+		.select(($) => {
+			// Ranks the trace's spans for the agent-name `argMin`: a span that
+			// names an agent sorts at its own timestamp, one that does not sorts
+			// at the sentinel and can never win — here, or one level up where the
+			// same column orders the traces. Same idiom as `sessionOrder` in
+			// `aiSessionListQuery`, and the same reason: the DSL has no `argMinIf`.
+			// A trace that names no agent at all ties every span at the sentinel,
+			// and the tie is harmless because every candidate's name is `''`.
+			const agentOrder = CH.if_(
+				$.AgentName.neq(""),
+				$.Timestamp,
+				CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
+			)
+			return {
+				traceId: $.TraceId,
+				rawSessionId: CH.max_($.SessionId),
+				// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
+				// shadows the derived table's column of the same name, so `min(…)` of
+				// it would resolve to the outer `toString(…)` String and fail — see
+				// `traceStart` in `aiSessionListQuery`.
+				traceAgentStart: CH.min_($.Timestamp),
+				traceAgentEnd: CH.max_($.Timestamp),
+				// `Timestamp` is the span's START; the extent ends where the
+				// last-starting agent span ended. Same idiom as `traceEndNanos`.
+				traceAgentEndNanos: CH.max_(
+					CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration)),
+				),
+				// Bounded per trace: a row is a list cell, and a trace that somehow
+				// names more models than that is not one the cell can show anyway.
+				models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
+				agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
+				// The name the session goes by, and when that name first appeared.
+				// `agentNames` is a set — `groupUniqArrayIf`, then `groupUniqArrayArray`
+				// across traces — so its first element is whatever the aggregate
+				// happened to emit, while the detail page's heading is the agent on the
+				// session's earliest-starting named span. Taking the heading from the
+				// set left a multi-agent session titled one thing in the list and
+				// another on its own page.
+				firstAgentName: CH.argMin($.AgentName, agentOrder),
+				firstAgentAt: CH.min_(agentOrder),
+				toolCalls: CH.sum($.IsToolCall),
+				errorAgentSpans: CH.sum($.IsError),
+				failedSpans: failedSpansExpr($),
+				// Usage AND model calls travel as reporters: both are counted one level
+				// up, where every trace of the session is in hand — see `ai-span-columns`.
+				usageReporters: usageReportersExpr($),
+			}
+		})
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString(bounds === "window" ? "startTime" : "fanOutStart")),
+			$.Timestamp.lte(param.dateTimeString(bounds === "window" ? "endTime" : "fanOutEnd")),
+		])
+		.groupBy("traceId")
+		.having(($) => [
+			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
+			CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
+			CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
+			CH.when(values(opts.models), (v) => carries(CH.inList($.Model, v))),
+			CH.when(values(opts.agentNames), (v) => carries(CH.inList($.AgentName, v))),
+			CH.when(values(opts.toolNames), (v) => carries(CH.inList($.ToolName, v))),
+			CH.when(search, (needle) => {
+				const pattern = idSearchPattern(needle)
+				return carries($.SessionId.like(pattern).or($.TraceId.like(pattern)))
+			}),
+		])
+}
+
+/**
+ * The page: which sessions the list shows, in what order, and where their
+ * agent spans lie — the first of the list's two reads, and the only one that
+ * sees the caller's whole window. See the file header for why the fan-out
+ * cannot.
+ *
+ * Detection admits any trace with a GenAI span, and the session id then groups
+ * rather than admits: a trace that carries one is filed under it — with the
+ * session's other traces — and a trace that carries none becomes a session of
+ * its own, keyed `trace:<TraceId>`. Sessionless is the normal state for whole
+ * vendors, not an edge case; see this file's header.
+ *
+ * Ordered by the first AGENT span, not the first span of any kind: the index
+ * carries only agent spans, and the two differ by under a second in practice
+ * (see `FAN_OUT_PAD_SECONDS`). The row's `startTime` still reports the true
+ * first span; the caller keeps the page in this order rather than re-sorting
+ * by it, so what is shown is the order that was paged. A measure sort
+ * (`sortBy`) orders by that measure first, with the first agent span and then
+ * `sessionId` breaking ties, so a page boundary never splits two sessions that
+ * share a start.
+ *
+ * The session-level filters are `HAVING` on the ranked row, over the measures
+ * the index carries per span, and cost nothing beyond the index scan the page
+ * already is. What they cannot do is count — a facet for "sessions over $1"
+ * would be another pass over the same index per bucket, which the sidebar
+ * does not ask for.
+ *
+ * The remaining gap is between traces, not inside one: a session whose OTHER
+ * traces lie entirely outside the range is still found only by the traces that
+ * touched it, which needs a session-keyed table to fix and not a wider window.
+ */
+export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
+	const limit = opts.limit ?? 50
+	const offset = opts.offset ?? 0
+
+	// The `HAVING` level sees the outer aliases by name only.
+	const having = {
+		sessionId: CH.dynamicColumn<string>("sessionId", T.string),
+		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
+		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
+		cost: CH.dynamicColumn<number>("cost", T.float64),
+		totalTokens: CH.dynamicColumn<number>("totalTokens", T.float64),
+		llmCalls: CH.dynamicColumn<number>("llmCalls", T.float64),
+		toolCalls: CH.dynamicColumn<number>("toolCalls", T.float64),
+	}
+	const sortBy = opts.sortBy ?? "startTime"
+	const sortDir = opts.sortDir ?? "desc"
+	// The measure a sort key names on this level. `startTime` is the first
+	// agent span, and `errorSpanCount` the failed agent spans — the row's own
+	// numbers are the fan-out's, which the page cannot see.
+	const sortColumn = {
+		startTime: "agentStart",
+		durationMs: "agentDurationMs",
+		cost: "cost",
+		totalTokens: "totalTokens",
+		errorSpanCount: "errorAgentSpans",
+		llmCalls: "llmCalls",
+		toolCalls: "toolCalls",
+	} as const satisfies Record<AiSessionSortKey, string>
+	const order: Array<[(typeof sortColumn)[AiSessionSortKey] | "sessionId", AiSessionSortDir]> =
+		sortBy === "startTime"
+			? [["agentStart", sortDir]]
+			: [
+					[sortColumn[sortBy], sortDir],
+					["agentStart", "desc"],
+				]
+	order.push(["sessionId", "asc"])
+
+	const page = fromQuery(indexTraces(opts, "window"), "index_traces")
+		.select(($) => ({
+			// The grouping key, and the only level that can compute it: the
+			// derived table is one row per trace, so a trace with no session id
+			// of its own becomes a session of one trace here rather than joining
+			// every other sessionless trace under `''`.
+			sessionId: sessionKey($.rawSessionId, $.traceId),
+			agentStart: CH.toString_(CH.min_($.traceAgentStart)),
+			agentEnd: CH.toString_(CH.max_($.traceAgentEnd)),
+			models: CH.groupUniqArrayArray($.models),
+			agentNames: CH.groupUniqArrayArray($.agentNames),
+			// Across traces the same ordering resolves the session's own first
+			// named agent: a trace that named none carries the sentinel and loses
+			// to any trace that did.
+			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
+			llmCalls: sessionLlmCalls("usageReporters"),
+			toolCalls: CH.sum($.toolCalls),
+			errorAgentSpans: CH.sum($.errorAgentSpans),
+			toolErrors: deepestFailureCount("failedSpans", "tool"),
+			turnErrors: deepestFailureCount("failedSpans", "turn"),
+			totalTokens: sessionUsageSum("usageReporters", 3),
+			cost: sessionUsageSum("usageReporters", 4),
+			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
+			// `aiSessionListQuery` for both.
+			agentDurationMs: CH.intDiv(
+				CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
+				1_000_000,
+			),
+		}))
+		.groupBy("sessionId")
+		.having(() => [
+			CH.whenTrue(opts.hasErrors, () => having.errorAgentSpans.gt(0)),
+			CH.whenTrue(opts.excludeTraceSessions, () =>
+				CH.not(having.sessionId.like(`${MAPLE_AI_TRACE_SESSION_PREFIX}%`)),
+			),
+			CH.when(opts.durationMinMs, (v) => having.agentDurationMs.gte(v)),
+			CH.when(opts.durationMaxMs, (v) => having.agentDurationMs.lte(v)),
+			CH.when(opts.costMin, (v) => having.cost.gte(v)),
+			CH.when(opts.costMax, (v) => having.cost.lte(v)),
+			CH.when(opts.tokensMin, (v) => having.totalTokens.gte(v)),
+			CH.when(opts.tokensMax, (v) => having.totalTokens.lte(v)),
+			CH.when(opts.llmCallsMin, (v) => having.llmCalls.gte(v)),
+			CH.when(opts.llmCallsMax, (v) => having.llmCalls.lte(v)),
+			CH.when(opts.toolCallsMin, (v) => having.toolCalls.gte(v)),
+			CH.when(opts.toolCallsMax, (v) => having.toolCalls.lte(v)),
+		])
+		// A String order, and a correct one: the literal is fixed-width
+		// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
+		.orderBy(...order)
+		.limit(limit)
+	// Only a positive offset is emitted: `OFFSET 0` is a no-op that would still
+	// change the compiled SQL of every first-page read.
+	return (offset > 0 ? page.offset(offset) : page).format("JSON")
+}
+
+/**
+ * One row per session of the page `aiSessionPageQuery` ranked, with every
+ * fact the list shows that the index cannot answer — the second of the list's
+ * two reads. Bounded by the page alone: `fanOutStart`/`fanOutEnd` are the
+ * extent of the page's agent spans, and both the index reads and the fan-out
+ * run inside them (padded, for the fan-out) — see `indexTraces` for why the
+ * index level resolves a page trace exactly as the page did without the
+ * caller's window.
  *
  * `vendorId` is the vendor of the EARLIEST span that carries a session id, not
  * `max(vendorId)`. A single trace legitimately carries several vendors — an eve
  * agent calls through the Vercel AI SDK — and `max` picked `vercel_ai_sdk`
  * alphabetically over `eve` when `eve` was the framework actually running the
  * turn. The root-most session-bearing span is the one that names the framework,
- * so the two `argMin`s (per trace, then across traces) resolve to it.
+ * so the two `argMin`s (per trace, then across traces) resolve to it. A trace
+ * with no session-bearing span falls to the next rank of the same ordering —
+ * its earliest vendor-stamped span, which is that trace's root-most agent span.
  *
- * The vendor filter goes on the detection subquery: it is the level the bloom
- * index serves, and it is the only place `maple_ai.vendor.id` is unambiguous —
- * a trace's other spans carry other vendors, or none.
+ * The filters land on the index level, which means "the trace's agent spans
+ * came from this service" rather than "the trace touched this service". A
+ * trace spans services by definition, so the alternative — filtering the
+ * fan-out — would silently drop spans and under-count `spanCount`. The agent
+ * spans come from the agent's own service, which is the one a user filtering by
+ * service means.
  *
- * The service filter goes there too, which means "the session-bearing spans came
- * from this service" rather than "the trace touched this service". A trace spans
- * services by definition, so the alternative — filtering the fan-out — would
- * silently drop spans and under-count `spanCount`. The session-bearing spans come
- * from the agent's own service, which is the one a user filtering by service means.
+ * Once a trace is on the page it is aggregated across the padded fan-out window
+ * rather than the caller's, so `startTime`/`endTime`/`durationMs`/`spanCount`/
+ * `errorSpanCount`/`serviceNames` describe the whole trace rather than the
+ * slice of it that fell inside the range — a session that began an hour before
+ * the range no longer reports the range edge as its start, and the detail page
+ * can read the bounds this row carries as the session's own.
+ *
+ * Ordered by `startTime` for a caller that reads it alone; the list's caller
+ * re-imposes the page's order, which this row cannot know.
  */
-export function aiSessionListQuery(opts: AiSessionListOpts = {}) {
-	const limit = opts.limit ?? 50
+export function aiSessionListQuery(opts: AiSessionListOpts) {
+	// A defect, not a failure: `IN ()` is not SQL, and the caller already knows
+	// its page is empty — see `AiSessionListOpts`.
+	if (opts.sessionIds.length === 0) {
+		throw new QueryBuilderDefect({
+			message: "aiSessionListQuery needs the page's session ids; an empty page is answered without it",
+		})
+	}
+	// The page's traces, keyed as the page keyed them — read twice below, once
+	// as the id set the fan-out seeks by and once joined for the key, over the
+	// page's bounds rather than the caller's window (see `indexTraces`).
+	const onPage = ($: { rawSessionId: CH.Expr<string>; traceId: CH.Expr<string> }) =>
+		CH.inList(sessionKey($.rawSessionId, $.traceId), opts.sessionIds)
+	const pageTraceIds = fromQuery(indexTraces(opts, "page"), "agent_traces")
+		.select(($) => ({ traceId: $.traceId }))
+		.where(($) => [onPage($)])
+	const pageTraces = fromQuery(indexTraces(opts, "page"), "agent_traces")
+		.select(($) => ({ traceId: $.traceId, rawSessionId: $.rawSessionId }))
+		.where(($) => [onPage($)])
 
-	const sessionTraceIds = from(Traces)
-		.select(($) => ({ TraceId: $.TraceId }))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
-			hasSessionId($.SpanAttributes, $.SpanAttributes.get(SESSION_ID_ATTR)),
-			opts.vendorIds?.length
-				? CH.inList($.SpanAttributes.get(VENDOR_ID_ATTR), opts.vendorIds)
-				: undefined,
-			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
-		])
-
-	// Per trace: every span of a qualifying trace, session-bearing or not.
+	// Per trace: every span of a page trace, session-bearing or not, inside the
+	// page's padded window.
 	const perTrace = from(TraceDetailSpans)
 		.select(($) => {
 			const sessionOrder = CH.if_(
@@ -173,19 +735,50 @@ export function aiSessionListQuery(opts: AiSessionListOpts = {}) {
 				$.Timestamp,
 				CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
 			)
+			// Ranks a trace's spans for the vendor `argMin`s: session-bearing first,
+			// then merely vendor-stamped, then the rest, and inside each rank the
+			// earliest. `sessionOrder` alone ties every span of a SESSIONLESS trace
+			// at the sentinel, and argMin over ties is non-deterministic — it would
+			// hand back whichever span ClickHouse read first, blank vendor included.
+			const vendorOrder = orderTuple(
+				CH.multiIf(
+					[
+						[hasSessionId($.SpanAttributes, $.SpanAttributes.get(SESSION_ID_ATTR)), CH.lit(0)],
+						[$.SpanAttributes.get(VENDOR_ID_ATTR).neq(""), CH.lit(1)],
+					],
+					CH.lit(2),
+				),
+				$.Timestamp,
+			)
 			return {
 				traceId: $.TraceId,
-				// A trace belongs to one session; the non-bearing spans read `''`,
-				// which `max` discards.
-				sessionId: CH.max_($.SpanAttributes.get(SESSION_ID_ATTR)),
-				vendorId: CH.argMin($.SpanAttributes.get(VENDOR_ID_ATTR), sessionOrder),
-				vendorVersion: CH.argMin($.SpanAttributes.get(VENDOR_VERSION_ATTR), sessionOrder),
+				vendorId: CH.argMin($.SpanAttributes.get(VENDOR_ID_ATTR), vendorOrder),
+				vendorVersion: CH.argMin($.SpanAttributes.get(VENDOR_VERSION_ATTR), vendorOrder),
 				// Carried so the outer level can order traces by their first
 				// session-bearing span rather than by their first span of any kind.
 				sessionStart: CH.min_(sessionOrder),
 				spanCount: CH.count(),
-				errorSpanCount: CH.countIf($.StatusCode.eq("Error")),
+				// Span status, or an attribute-declared failure on a vendor-stamped
+				// span: frameworks record failed model/tool calls as values on `Ok`
+				// spans, and the badge must agree with the detail page's counting.
+				errorSpanCount: CH.countIf(
+					$.StatusCode.eq("Error").or(
+						$.SpanAttributes.get(VENDOR_ID_ATTR)
+							.neq("")
+							.and(
+								$.SpanAttributes.get(ERROR_TYPE_ATTR)
+									.neq("")
+									.or(
+										CH.inList(
+											$.SpanAttributes.get(RESPONSE_STATUS_ATTR),
+											FAILED_RESPONSE_STATUSES,
+										),
+									),
+							),
+					),
+				),
 				serviceNames: CH.groupUniqArray($.ServiceName),
+				usageBuckets: usageBucketsExpr($),
 				// Named apart from the outer `startTime`/`endTime` on purpose: an
 				// outer alias shadows the derived table's column of the same name,
 				// so `min(startTime)` would resolve to the outer `toString(…)` String
@@ -204,46 +797,48 @@ export function aiSessionListQuery(opts: AiSessionListOpts = {}) {
 		})
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
-			inSubquery($.TraceId, sessionTraceIds),
+			$.Timestamp.gte(CH.intervalSub(param.dateTimeString("fanOutStart"), FAN_OUT_PAD_SECONDS)),
+			$.Timestamp.lte(CH.intervalAdd(param.dateTimeString("fanOutEnd"), FAN_OUT_PAD_SECONDS)),
+			inSubquery($.TraceId, pageTraceIds),
 		])
 		.groupBy("traceId")
 
-	return (
-		fromQuery(perTrace, "session_traces")
-			.select(($) => ({
-				sessionId: $.sessionId,
-				vendorId: CH.argMin($.vendorId, $.sessionStart),
-				vendorVersion: CH.argMin($.vendorVersion, $.sessionStart),
-				// `count()`, not `uniq()`: the derived table already emits exactly one
-				// row per trace, so this is exact and cheaper — `uniq` is an
-				// approximate HLL that would start drifting on a very large session.
-				traceCount: CH.count(),
-				spanCount: CH.sum($.spanCount),
-				errorSpanCount: CH.sum($.errorSpanCount),
-				serviceNames: CH.groupUniqArrayArray($.serviceNames),
-				startTime: CH.toString_(CH.min_($.traceStart)),
-				endTime: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceEndNanos))),
-				// Nanoseconds first: `Timestamp` is DateTime64(9), and subtracting two
-				// of them yields a Decimal whose scale the wire format then quotes.
-				// Wrapped in `intDiv` because `Expr.sub`/`div` do not parenthesize.
-				durationMs: CH.intDiv(
-					CH.max_($.traceEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceStart))),
-					1_000_000,
-				),
-			}))
-			// A trace can qualify via the IN and still roll up empty if its only
-			// session-bearing span fell outside the window.
-			.where(($) => [$.sessionId.neq("")])
-			.groupBy("sessionId")
-			.orderBy(["startTime", "desc"])
-			.limit(limit)
-			.format("JSON")
-	)
+	return fromQuery(perTrace, "session_traces")
+		.innerJoinQuery(pageTraces, "index_traces", (t, i) => t.traceId.eq(i.traceId))
+		.select(($) => ({
+			// The key the page resolved, not one re-derived from the spans — see
+			// the file header for why the two must not be allowed to differ.
+			sessionId: sessionKey($.index_traces.rawSessionId, $.traceId),
+			vendorId: CH.argMin($.vendorId, $.sessionStart),
+			vendorVersion: CH.argMin($.vendorVersion, $.sessionStart),
+			// `count()`, not `uniq()`: the derived table already emits exactly one
+			// row per trace, so this is exact and cheaper — `uniq` is an
+			// approximate HLL that would start drifting on a very large session.
+			traceCount: CH.count(),
+			spanCount: CH.sum($.spanCount),
+			errorSpanCount: CH.sum($.errorSpanCount),
+			serviceNames: CH.groupUniqArrayArray($.serviceNames),
+			inputTokens: sessionBucketSum("usageBuckets", 3),
+			cacheReadTokens: sessionBucketSum("usageBuckets", 4),
+			cacheWriteTokens: sessionBucketSum("usageBuckets", 5),
+			outputTokens: sessionBucketSum("usageBuckets", 6),
+			reasoningTokens: sessionBucketSum("usageBuckets", 7),
+			startTime: CH.toString_(CH.min_($.traceStart)),
+			endTime: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceEndNanos))),
+			// Nanoseconds first: `Timestamp` is DateTime64(9), and subtracting two
+			// of them yields a Decimal whose scale the wire format then quotes.
+			// Wrapped in `intDiv` because `Expr.sub`/`div` do not parenthesize.
+			durationMs: CH.intDiv(
+				CH.max_($.traceEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceStart))),
+				1_000_000,
+			),
+		}))
+		.groupBy("sessionId")
+		.orderBy(["startTime", "desc"])
+		.format("JSON")
 }
 
-// List facets (UNION ALL — vendor / service)
+// List facets (UNION ALL — one branch per index dimension)
 
 export interface AiSessionFacetsOutput {
 	readonly name: string
@@ -251,56 +846,150 @@ export interface AiSessionFacetsOutput {
 	readonly facetType: string
 }
 
-export const aiSessionFacetsRowSchema: CompiledQueryRowSchema<AiSessionFacetsOutput> = Schema.Struct({
-	name: Schema.String,
-	count: CHNumber,
-	facetType: Schema.String,
-})
+export type AiSessionFacetType = "vendor" | "service" | "environment" | "model" | "agent" | "tool"
 
 /**
- * Distinct sessions per vendor and per service, for the list's filter sidebar.
+ * Distinct sessions per value of each index dimension, for the list's filter
+ * sidebar: vendor, service, environment, model, agent and tool.
  *
- * This is the detection scan of `aiSessionListQuery` and nothing else — no
- * `trace_detail_spans` fan-out, which is the expensive half. It can be: both of
- * the list's filters are applied at that level, so the population a facet
- * describes is exactly the population its filter selects.
+ * This is the page's index scan (`indexTraces`) and nothing else — no
+ * `trace_detail_spans` fan-out, which is the expensive half. It can be: every
+ * one of the list's counted filters is applied at that level, so the population
+ * a facet describes is exactly the population its filter selects. The
+ * session-level filters (errors, the ranges) have no facet for the same reason
+ * in reverse — their numbers exist only per ranked row.
  *
- * That makes the counts ANY-span counts, matching the filter: a session belongs
- * to every vendor and every service that ANY of its session-bearing spans
- * carries, so a session whose turn spans came from two vendors is counted under
- * both and the facet counts sum to more than the number of sessions. Picking one
- * value returns exactly the count shown.
+ * What it cannot do is count per span. A session id is a fact about the TRACE,
+ * so a facet keyed on the span's own value would count every agent span of a
+ * session-bearing trace that lacks the id — most of them — as a separate
+ * sessionless trace, and roughly double every number in the sidebar. Hence the
+ * per-trace level: one row per trace carrying its key, with the facet's values
+ * collected alongside and unnested by `arrayJoin` at the counting level.
+ *
+ * The counts stay ANY-span counts, matching the filter: a session belongs to
+ * every vendor and every service that ANY of its agent spans carries, so a
+ * session whose spans came from two vendors is counted under both and the facet
+ * counts sum to more than the number of sessions. Picking one value returns
+ * exactly the count shown.
  *
  * `uniqExact` rather than `uniq`: session counts are small enough that the exact
  * aggregate costs nothing, and the number has to agree with the list beside it.
  */
 export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
-	const facet = (facetType: string, name: ($: ColumnAccessor<typeof Traces.columns>) => CH.Expr<string>) =>
-		from(Traces)
+	const facet = (
+		facetType: AiSessionFacetType,
+		name: ($: ColumnAccessor<typeof AiTraceIndex.columns>) => CH.Expr<string>,
+	) => {
+		const perTrace = from(AiTraceIndex)
 			.select(($) => ({
-				name: name($),
-				count: uniqExact($.SpanAttributes.get(SESSION_ID_ATTR)),
-				facetType: CH.lit(facetType),
+				traceId: $.TraceId,
+				// Over EVERY span of the trace, not only those carrying the value:
+				// the session id sits on the turn-owning span and the model on the
+				// chat span beneath it, so keying the trace off the value-bearing
+				// rows alone would file it as a sessionless trace of its own — and
+				// count a session once per trace that names the value. A blank
+				// option filters nothing and is not offered, hence the `If`; a trace
+				// naming nothing yields no row from the `arrayJoin` below.
+				rawSessionId: CH.max_($.SessionId),
+				names: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)(name($), name($).neq("")),
 			}))
 			.where(($) => [
 				// Every UNION ALL branch reads a table, so every branch carries the org
 				// predicate itself — see this file's header.
 				$.OrgId.eq(param.string("orgId")),
-				$.Timestamp.gte(param.dateTime("startTime")),
-				$.Timestamp.lte(param.dateTime("endTime")),
-				hasSessionId($.SpanAttributes, $.SpanAttributes.get(SESSION_ID_ATTR)),
-				// A span can be session-bearing without a vendor stamp; a blank option
-				// filters nothing and is not offered.
-				name($).neq(""),
+				$.Timestamp.gte(param.dateTimeString("startTime")),
+				$.Timestamp.lte(param.dateTimeString("endTime")),
 			])
+			.groupBy("traceId")
+
+		return fromQuery(perTrace, "facet_traces")
+			.select(($) => ({
+				name: CH.arrayJoin($.names),
+				count: CH.uniqExact(sessionKey($.rawSessionId, $.traceId)),
+				facetType: CH.lit(facetType),
+			}))
 			.groupBy("name")
 			.orderBy(["count", "desc"])
 			.limit(50)
+	}
 
 	return unionAll(
-		facet("vendor", ($) => $.SpanAttributes.get(VENDOR_ID_ATTR)),
+		facet("vendor", ($) => $.VendorId),
 		facet("service", ($) => $.ServiceName),
+		facet("environment", ($) => $.DeploymentEnv),
+		facet("model", ($) => $.Model),
+		facet("agent", ($) => $.AgentName),
+		facet("tool", ($) => $.ToolName),
 	).format("JSON")
+}
+
+// Session window resolution (id → bounds)
+
+export interface AiSessionWindowOutput {
+	/** Warehouse datetime literals, already padded — feed them straight back in. */
+	readonly startTime: string
+	readonly endTime: string
+	/** Zero means no such session, which the bounds cannot say on their own. */
+	readonly spanCount: number
+}
+
+/**
+ * The bounds of one session, for a caller that holds its id and nothing else.
+ *
+ * This is `aiSessionSpansQuery`'s detection half with the trace ids replaced by
+ * an aggregate, and it is the one read in this file that legitimately runs with
+ * no time predicate: `traces` carries a `bloom_filter(0.01)` skip index over
+ * `mapValues(SpanAttributes)` for the id to prune with, and the table's 30-day
+ * TTL caps what is left. The fan-out has neither and must not be run that way.
+ *
+ * The bounds come back padded by `WINDOW_PAD_SECONDS`, because they are
+ * measured over the session-BEARING spans while the read they bound returns
+ * every span of those spans' traces — a trace whose first span is not the
+ * session-bearing one starts earlier than any window this could report exactly.
+ *
+ * `min`/`max` over no rows return the epoch rather than nothing, so a caller
+ * must read `spanCount` to tell an unknown session from a real one.
+ */
+export function aiSessionWindowQuery() {
+	return from(Traces)
+		.select(($) => ({
+			startTime: CH.toString_(CH.intervalSub(CH.min_($.Timestamp), WINDOW_PAD_SECONDS)),
+			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
+			spanCount: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			// Same presence guard as `aiSessionSpansQuery`, for the same reason: a
+			// missing Map key reads back as `''`, so equality alone would resolve a
+			// blank id to the bounds of every span in the org that lacks the key.
+			hasSessionId($.SpanAttributes, $.SpanAttributes.get(SESSION_ID_ATTR)),
+			$.SpanAttributes.get(SESSION_ID_ATTR).eq(param.string("sessionId")),
+		])
+		.format("JSON")
+}
+
+/**
+ * The same bounds for a `trace:` session — one whose id names a trace outright,
+ * because the vendor exposed no session key (`MAPLE_AI_TRACE_SESSION_PREFIX`).
+ *
+ * No attribute predicate at all: the id IS the trace id, so `idx_trace_id` on
+ * `traces` prunes what `mapValues(SpanAttributes)` prunes for a vendor session,
+ * and no presence guard is needed because a trace id cannot be read off a
+ * missing Map key. The caller extracts and validates the trace id before it
+ * reaches this param — a forged one must never arrive here as a bare string.
+ *
+ * Padded and `spanCount`-terminated exactly like {@link aiSessionWindowQuery};
+ * the two are interchangeable to a caller holding only an id.
+ */
+export function aiTraceWindowQuery() {
+	return from(Traces)
+		.select(($) => ({
+			startTime: CH.toString_(CH.intervalSub(CH.min_($.Timestamp), WINDOW_PAD_SECONDS)),
+			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
+			spanCount: CH.count(),
+		}))
+		.where(($) => [$.OrgId.eq(param.string("orgId")), $.TraceId.eq(param.string("traceId"))])
+		.format("JSON")
 }
 
 export interface AiSessionSpansOpts {
@@ -340,6 +1029,23 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	resourceAttributes: Schema.Record(Schema.String, Schema.String),
 })
 
+/** Shared by both span reads, so a session keyed by id and one keyed by trace
+ *  cannot drift apart in shape — {@link aiSessionSpansRowSchema} decodes both. */
+const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => ({
+	traceId: $.TraceId,
+	spanId: $.SpanId,
+	parentSpanId: $.ParentSpanId,
+	spanName: $.SpanName,
+	spanKind: $.SpanKind,
+	serviceName: $.ServiceName,
+	durationMs: $.Duration.div(1_000_000),
+	statusCode: $.StatusCode,
+	statusMessage: $.StatusMessage,
+	timestamp: CH.toString_($.Timestamp),
+	spanAttributes: $.SpanAttributes,
+	resourceAttributes: $.ResourceAttributes,
+})
+
 /**
  * Every span of every trace belonging to one session, oldest first.
  *
@@ -357,8 +1063,13 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
  * scope-based vendor detection at write time and encoded its verdict in
  * `maple_ai.vendor.id`; re-deriving the dialect here would only second-guess it.
  *
- * Known v1 limitation: the time window bounds BOTH levels, so a session whose
- * traces straddle the window edge returns only the spans inside it.
+ * The window bounds BOTH levels and is required, because the fan-out without one
+ * reads every partition the table retains — see this file's header for what that
+ * was measured to cost. A session whose traces straddle the window edge returns
+ * only the spans inside it, so the bounds a caller passes have to contain the
+ * whole session: the list row's `startTime`/`endTime` do by construction, and a
+ * caller holding only a session id gets bounds that do from
+ * `aiSessionWindowQuery`.
  *
  * Truncation drops the END of the session, because the rows come back oldest
  * first and an agent's answer is the last thing it writes. Ask for
@@ -376,8 +1087,8 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
 			// The presence guard is what stops an empty `sessionId` param from
 			// matching every span that simply LACKS the key — ClickHouse reads a
 			// missing Map key back as `''`, so equality alone would turn a blank
@@ -388,24 +1099,11 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 
 	return (
 		from(TraceDetailSpans)
-			.select(($) => ({
-				traceId: $.TraceId,
-				spanId: $.SpanId,
-				parentSpanId: $.ParentSpanId,
-				spanName: $.SpanName,
-				spanKind: $.SpanKind,
-				serviceName: $.ServiceName,
-				durationMs: $.Duration.div(1_000_000),
-				statusCode: $.StatusCode,
-				statusMessage: $.StatusMessage,
-				timestamp: CH.toString_($.Timestamp),
-				spanAttributes: $.SpanAttributes,
-				resourceAttributes: $.ResourceAttributes,
-			}))
+			.select(spanProjection)
 			.where(($) => [
 				$.OrgId.eq(param.string("orgId")),
-				$.Timestamp.gte(param.dateTime("startTime")),
-				$.Timestamp.lte(param.dateTime("endTime")),
+				$.Timestamp.gte(param.dateTimeString("startTime")),
+				$.Timestamp.lte(param.dateTimeString("endTime")),
 				inSubquery($.TraceId, sessionTraceIds),
 			])
 			// `spanId` breaks ties: agent spans routinely share a millisecond, and
@@ -416,4 +1114,33 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 			.limit(limit)
 			.format("JSON")
 	)
+}
+
+/**
+ * Every span of ONE trace, oldest first — the spans of a `trace:` session.
+ *
+ * {@link aiSessionSpansQuery} without its detection half: the id already names
+ * the trace, so there is nothing to resolve and `TraceId` is a sort-key prefix
+ * of `trace_detail_spans`. Everything else is identical, deliberately — same
+ * projection, same row schema, same tie-broken order, same truncation contract —
+ * so the detail page reads one shape whichever kind of session it opened.
+ *
+ * The window is still required and still bounds the read: `TraceId` prunes the
+ * sort key, the `Timestamp` predicate prunes partitions, and only both together
+ * keep this off every partition the table retains.
+ */
+export function aiTraceSpansQuery(opts: AiSessionSpansOpts = {}) {
+	const limit = opts.limit ?? AI_SESSION_SPANS_MAX_SPANS
+
+	return from(TraceDetailSpans)
+		.select(spanProjection)
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.TraceId.eq(param.string("traceId")),
+		])
+		.orderBy(["timestamp", "asc"], ["spanId", "asc"])
+		.limit(limit)
+		.format("JSON")
 }

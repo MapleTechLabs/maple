@@ -12,6 +12,7 @@ import {
 	type WarehouseQueryServiceApi,
 } from "@/services/warehouse/WarehouseQueryService"
 import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "@/services/auth/AuthService"
 import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
@@ -29,6 +30,7 @@ import {
 	PlanetScaleServiceStubsLayer,
 	SlackIntegrationServiceStubLayer,
 } from "./v2-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 const SPAN_ID = "0123456789abcdef"
@@ -168,6 +170,12 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 			},
 		]
 	}
+	// Before the catalog branch below: both read `service_overview_spans`, and
+	// the environments listing projects a single column the catalog rows would
+	// not decode against.
+	if (sql.includes("AS environment")) {
+		return [{ environment: "production" }, { environment: "staging" }]
+	}
 	if (sql.includes("FROM service_overview_spans")) {
 		return [
 			{
@@ -192,7 +200,7 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 				callCount: "10",
 				errorCount: "2",
 				avgDurationMs: "12.5",
-				p95DurationMs: "30",
+				maxDurationMs: "30",
 				estimatedSpanCount: "20",
 			},
 		]
@@ -202,10 +210,11 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 
 const warehouseStub = makeWarehouseServiceStub({
 	query: () => Effect.die(new Error("unexpected named query")),
-	compiledQuery: (_tenant, compiled) => compiled.decodeRows(rowsForSql(compiled.sql)),
+	compiledQuery: (_tenant, compiled) =>
+		compiledQueryOf(compiled).decodeRows(rowsForSql(compiledQueryOf(compiled).sql)),
 	compiledQueryFirst: (_tenant, compiled) =>
-		compiled
-			.decodeRows(rowsForSql(compiled.sql))
+		compiledQueryOf(compiled)
+			.decodeRows(rowsForSql(compiledQueryOf(compiled).sql))
 			.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0]))),
 	ingest: () => Effect.void,
 })
@@ -267,6 +276,7 @@ const makeHarness = (
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -394,7 +404,14 @@ describe("v2 telemetry reads over HTTP", () => {
 
 		const serviceMap = await harness.request("GET", `/v2/service_map?${windowQuery}`, key.secret)
 		expect(serviceMap.status).toBe(200)
-		expect(serviceMap.body.edges[0]).toMatchObject({ source_service: "api", target_service: "payments" })
+		// `max_duration_ms` included on purpose: this stub is not typechecked
+		// (see the partial-stub gap), so a renamed row field only ever surfaces as
+		// a decode failure here. Asserting the value keeps the fixture honest.
+		expect(serviceMap.body.edges[0]).toMatchObject({
+			source_service: "api",
+			target_service: "payments",
+			max_duration_ms: 30,
+		})
 
 		const annualWindow = "start_time=2025-07-16T12%3A00%3A00.000Z&end_time=2026-07-15T12%3A00%3A00.000Z"
 		const annualServices = await harness.request("GET", `/v2/services?${annualWindow}`, key.secret)
@@ -501,11 +518,11 @@ describe("v2 telemetry reads over HTTP", () => {
 		const observingWarehouse: WarehouseQueryServiceApi = {
 			...warehouseStub,
 			compiledQuery: (tenant, compiled, options) => {
-				observedSql.push(compiled.sql)
+				observedSql.push(compiledQueryOf(compiled).sql)
 				return warehouseStub.compiledQuery(tenant, compiled, options)
 			},
 			compiledQueryFirst: (tenant, compiled, options) => {
-				observedSql.push(compiled.sql)
+				observedSql.push(compiledQueryOf(compiled).sql)
 				return warehouseStub.compiledQueryFirst(tenant, compiled, options)
 			},
 		}
@@ -543,11 +560,11 @@ describe("v2 telemetry reads over HTTP", () => {
 		const observingWarehouse: WarehouseQueryServiceApi = {
 			...warehouseStub,
 			compiledQuery: (tenant, compiled, options) => {
-				observedSql.push(compiled.sql)
+				observedSql.push(compiledQueryOf(compiled).sql)
 				return warehouseStub.compiledQuery(tenant, compiled, options)
 			},
 			compiledQueryFirst: (tenant, compiled, options) => {
-				observedSql.push(compiled.sql)
+				observedSql.push(compiledQueryOf(compiled).sql)
 				return warehouseStub.compiledQueryFirst(tenant, compiled, options)
 			},
 		}
@@ -726,6 +743,54 @@ describe("v2 telemetry reads over HTTP", () => {
 		})
 		expect(response.status).toBe(200)
 		expect(observedOptions?.settings).toMatchObject({ maxBlockSize: 512 })
+		await harness.dispose()
+	})
+
+	it("lists the organization's deployment environments", async () => {
+		const observedSql: string[] = []
+		const observingWarehouse: WarehouseQueryServiceApi = {
+			...warehouseStub,
+			compiledQuery: (tenant, compiled, options) => {
+				observedSql.push(compiledQueryOf(compiled).sql)
+				return warehouseStub.compiledQuery(tenant, compiled, options)
+			},
+		}
+		const harness = makeHarness(observingWarehouse)
+		const key = await harness.bootstrapKey(["environments:read"])
+
+		const environments = await harness.request(
+			"GET",
+			`/v2/environments?start_time=${START}&end_time=${END}`,
+			key.secret,
+		)
+		expect(environments.status).toBe(200)
+		expect(environments.body).toEqual({
+			object: "list",
+			data: [
+				{ object: "environment", name: "production" },
+				{ object: "environment", name: "staging" },
+			],
+			// Always the whole list — a cursor here would never be non-null.
+			has_more: false,
+			next_cursor: null,
+		})
+		// The blank environment is excluded in SQL, not filtered afterwards: the
+		// DSL reads `''` as "no filter", so offering it would hand the caller back
+		// every environment under a label claiming otherwise.
+		expect(observedSql[0]).toContain("!= ''")
+		await harness.dispose()
+	})
+
+	it("fences the environments listing behind its own scope family", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["services:read"])
+		const environments = await harness.request(
+			"GET",
+			`/v2/environments?start_time=${START}&end_time=${END}`,
+			key.secret,
+		)
+		expect(environments.status).toBe(403)
+		expect(environments.body.error.message).toContain("environments:read")
 		await harness.dispose()
 	})
 

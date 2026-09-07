@@ -6,7 +6,7 @@ import * as Command from "effect/unstable/cli/Command"
 import { FetchHttpClient } from "effect/unstable/http"
 import { cli } from "./cli"
 import { MapleConfig } from "./core/config"
-import { Mode } from "./core/mode"
+import { Mode, isModeFailure } from "./core/mode"
 import { annotateOutcome, recoverExpected } from "./core/outcomes"
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
@@ -87,9 +87,16 @@ if (checkpointProbeDataDir !== undefined) {
 		// answers "how often do people hit this?" without the span being an error.
 		// Same rule `apps/ingest` applies to expected 4xx rejections.
 		//
-		// Genuine failures stay uncaught on purpose: `@maple/cli/ServerError` (bind
-		// failure, dirty store, incompatible store) and every other tag still close
-		// the span `Error` and are reported by `runMain`.
+		// Genuine failures stay uncaught on purpose and still close the span `Error`
+		// for `runMain` to report. Each now carries its own tag rather than one
+		// catch-all `ServerError`, so they group into separate issues:
+		// `ServerBindError`, `LocalStoreDirtyError`, `LocalStoreIncompatibleError`,
+		// `LocalStoreSchemaStaleError`, `LocalStoreMigrationError`,
+		// `CheckpointUnavailableError`, `BackgroundServerSpawnError`,
+		// `BackgroundServerTimeoutError`, `ServerStopTimeoutError` — plus the
+		// checkpoint tags (`CheckpointRecoveryError`, `CheckpointResetError`,
+		// `CheckpointRestoreError`, `CheckpointCreateError`) that the commands used
+		// to flatten on their way out. See `commands/server-errors.ts`.
 		Effect.catchTags({
 			"@maple/cli/ServerStateError": recoverExpected,
 			// `maple checkpoint` against a server whose chDB config has no
@@ -97,13 +104,13 @@ if (checkpointProbeDataDir !== undefined) {
 			// a failure. Same category as the already-running guard above.
 			"@maple/cli/CheckpointPreconditionError": recoverExpected,
 			// Mode resolution ("No Maple backend found", "Cannot use --remote and
-			// --local together") reaches here as a `WarehouseConfigError`, remapped by
-			// `WarehouseExecutorFromMode` in core/warehouse.ts. `pipeName` is the
-			// discriminator: only "mode" is an expected outcome — every other
-			// `WarehouseConfigError` is a real query failure (unknown table, bad
-			// column) and is re-raised so it still closes the span `Error`.
+			// --local together") reaches here as a `WarehouseConfigError`, because
+			// that is the error type `WarehouseExecutor`'s channel admits — the real
+			// `ModeError` rides in `cause`, and `isModeFailure` is what tells the two
+			// apart. Every other `WarehouseConfigError` is a genuine warehouse
+			// misconfiguration and is re-raised so it still closes the span `Error`.
 			"@maple/http/errors/WarehouseConfigError": (error) =>
-				error.pipeName === "mode" ? recoverExpected(error) : Effect.fail(error),
+				isModeFailure(error) ? recoverExpected(error) : Effect.fail(error),
 			// `Command.runWith` renders the help text and then re-fails with the same
 			// error, so `maple --help` recorded as an error span. The text is already
 			// on stdout by now; only the exit code is left to honour — 0 for a plain

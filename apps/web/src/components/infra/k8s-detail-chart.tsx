@@ -24,7 +24,7 @@ import { displayError } from "@/lib/error-messages"
  */
 const CHART_HEIGHT = 280
 
-type Unit = "percent" | "cores" | "seconds"
+type Unit = "percent" | "cores" | "seconds" | "bytes"
 
 // Human label for each metric, used as the tooltip/legend "type" for the single
 // unnamed series (gauges with no group-by attribute, e.g. a pod's CPU usage).
@@ -64,6 +64,8 @@ interface K8sMetricChartViewProps {
 	syncId?: string
 	/** Distinguishes sibling charts in the linked-cursor DOM markers. */
 	chartId?: string
+	/** Plot height. The detail pages take the tall default; the peek sheet stacks five and goes shorter. */
+	height?: number
 }
 
 /**
@@ -106,6 +108,7 @@ export function K8sMetricChartView({
 	waiting,
 	syncId,
 	chartId,
+	height = CHART_HEIGHT,
 }: K8sMetricChartViewProps) {
 	return (
 		<div className="rounded-lg border bg-card p-4">
@@ -116,7 +119,7 @@ export function K8sMetricChartView({
 				stacked={isStacked}
 				showThreshold={showThreshold}
 				waiting={waiting}
-				height={CHART_HEIGHT}
+				height={height}
 				linkedChartId={syncId != null ? (chartId ?? seriesLabel ?? "k8s-metric") : undefined}
 				header={K8sSeriesSummary}
 			/>
@@ -132,6 +135,7 @@ interface PodDetailChartProps {
 	endTime: string
 	bucketSeconds?: number
 	syncId?: string
+	height?: number
 }
 
 export function PodDetailChart({
@@ -142,6 +146,7 @@ export function PodDetailChart({
 	endTime,
 	bucketSeconds,
 	syncId,
+	height = CHART_HEIGHT,
 }: PodDetailChartProps) {
 	const result = useAtomValue(
 		podInfraTimeseriesResultAtom({
@@ -150,8 +155,8 @@ export function PodDetailChart({
 	)
 
 	return Result.builder(result)
-		.onInitial(() => <ChartLoading variant="area" height={CHART_HEIGHT} />)
-		.onError((err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>)
+		.onInitial(() => <ChartLoading variant="area" height={height} />)
+		.onError((err) => <ChartError height={height}>{displayError(err).message}</ChartError>)
 		.onSuccess((response, holder) => (
 			<K8sMetricChartView
 				rows={response.data}
@@ -161,6 +166,7 @@ export function PodDetailChart({
 				waiting={Boolean(holder.waiting)}
 				syncId={syncId}
 				chartId={`pod-${metric}`}
+				height={height}
 			/>
 		))
 		.render()

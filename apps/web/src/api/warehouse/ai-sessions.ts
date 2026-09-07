@@ -1,5 +1,11 @@
 import { Clock, Effect, Schema } from "effect"
-import { ListAiSessionsFacetsRequest, ListAiSessionsRequest } from "@maple/domain/http"
+import {
+	AiSessionSortDir,
+	AiSessionSortKey,
+	GetAiSessionSpansRequest,
+	ListAiSessionsFacetsRequest,
+	ListAiSessionsRequest,
+} from "@maple/domain/http"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
@@ -9,8 +15,28 @@ const ListAiSessionsInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
 	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 	vendorIds: Schema.optional(Schema.Array(Schema.String)),
 	serviceNames: Schema.optional(Schema.Array(Schema.String)),
+	deploymentEnvs: Schema.optional(Schema.Array(Schema.String)),
+	models: Schema.optional(Schema.Array(Schema.String)),
+	agentNames: Schema.optional(Schema.Array(Schema.String)),
+	toolNames: Schema.optional(Schema.Array(Schema.String)),
+	search: Schema.optional(Schema.String),
+	hasErrors: Schema.optional(Schema.Boolean),
+	excludeTraceSessions: Schema.optional(Schema.Boolean),
+	durationMinMs: Schema.optional(Schema.Number),
+	durationMaxMs: Schema.optional(Schema.Number),
+	costMin: Schema.optional(Schema.Number),
+	costMax: Schema.optional(Schema.Number),
+	tokensMin: Schema.optional(Schema.Number),
+	tokensMax: Schema.optional(Schema.Number),
+	llmCallsMin: Schema.optional(Schema.Number),
+	llmCallsMax: Schema.optional(Schema.Number),
+	toolCallsMin: Schema.optional(Schema.Number),
+	toolCallsMax: Schema.optional(Schema.Number),
+	sortBy: Schema.optional(AiSessionSortKey),
+	sortDir: Schema.optional(AiSessionSortDir),
 })
 export type ListAiSessionsInput = Schema.Schema.Type<typeof ListAiSessionsInput>
 
@@ -26,18 +52,18 @@ export const listAiSessions = Effect.fn("AiSessions.listAiSessions")(function* (
 }: {
 	data: ListAiSessionsInput
 }) {
-	const input = yield* decodeInput(ListAiSessionsInput, data ?? {}, "listAiSessions")
+	const input = yield* decodeInput(ListAiSessionsInput, data, "listAiSessions")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const result = yield* runWarehouseQuery("listAiSessions", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient
 			return yield* client.aiSessionsInternal.list({
+				// Everything but the window passes through by name; the request
+				// schema is where each field's bounds live.
 				payload: new ListAiSessionsRequest({
+					...input,
 					startTime: input.startTime ?? fallback.startTime,
 					endTime: input.endTime ?? fallback.endTime,
-					limit: input.limit ?? 50,
-					vendorIds: input.vendorIds,
-					serviceNames: input.serviceNames,
 				}),
 			})
 		}),
@@ -58,7 +84,7 @@ export const getAiSessionsFacets = Effect.fn("AiSessions.aiSessionsFacets")(func
 }: {
 	data: AiSessionsFacetsInput
 }) {
-	const input = yield* decodeInput(AiSessionsFacetsInput, data ?? {}, "aiSessionsFacets")
+	const input = yield* decodeInput(AiSessionsFacetsInput, data, "aiSessionsFacets")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const result = yield* runWarehouseQuery("aiSessionsFacets", () =>
 		Effect.gen(function* () {
@@ -71,5 +97,50 @@ export const getAiSessionsFacets = Effect.fn("AiSessions.aiSessionsFacets")(func
 			})
 		}),
 	)
-	return { vendors: result.vendors, services: result.services }
+	return {
+		vendors: result.vendors,
+		services: result.services,
+		environments: result.environments,
+		models: result.models,
+		agents: result.agents,
+		tools: result.tools,
+	}
+})
+
+// Session spans (detail page)
+
+const AiSessionSpansInput = Schema.Struct({
+	sessionId: Schema.String.check(Schema.isMinLength(1)),
+	// Optional, and sent as a pair. A caller that knows the session's bounds —
+	// anything opened from the list, and any link the detail page has already
+	// stamped — gets the partition-pruned read; one that does not lets the
+	// warehouse find the session by id across retention.
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+})
+export type AiSessionSpansInput = Schema.Schema.Type<typeof AiSessionSpansInput>
+
+export const getAiSessionSpans = Effect.fn("AiSessions.aiSessionSpans")(function* ({
+	data,
+}: {
+	data: AiSessionSpansInput
+}) {
+	const input = yield* decodeInput(AiSessionSpansInput, data, "aiSessionSpans")
+	yield* Effect.annotateCurrentSpan("sessionId", input.sessionId)
+	const result = yield* runWarehouseQuery("aiSessionSpans", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.spans({
+				payload: new GetAiSessionSpansRequest({
+					sessionId: input.sessionId,
+					// Spread rather than assigned: the payload keys are `optionalKey`,
+					// so an explicit `undefined` is not the same as an absent key.
+					...(input.startTime !== undefined && input.endTime !== undefined
+						? { startTime: input.startTime, endTime: input.endTime }
+						: undefined),
+				}),
+			})
+		}),
+	)
+	return { data: result.data, truncated: result.truncated }
 })

@@ -6,12 +6,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import type { ListHostsResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { InlineMetricBars } from "./primitives/inline-bars"
+import { MeterRows } from "./primitives/meter-rows"
+import { MetaLine } from "./primitives/meta-line"
 import {
 	ColumnHead,
 	DataTable,
 	type SortControls,
-	MetaChip,
 	ROW_LINK_CLASS,
 	useTableSort,
 } from "./primitives/data-table"
@@ -35,7 +35,7 @@ interface HostTableProps {
 function HostColumns({ sort }: { sort?: SortControls<SortKey> }) {
 	return (
 		<>
-			<ColumnHead<SortKey> label="Host" sortKey="hostName" {...sort} width="flex-1 min-w-[260px]" />
+			<ColumnHead<SortKey> label="Host" sortKey="hostName" {...sort} width="w-0 flex-1 min-w-[260px]" />
 			<ColumnHead label="Status" width="w-[88px]" />
 			<ColumnHead label="Usage" width="w-[200px]" />
 			<ColumnHead<SortKey>
@@ -64,7 +64,7 @@ export function HostTableLoading() {
 				<HostColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={6}>
-				<div className="min-w-[260px] flex-1">
+				<div className="w-0 min-w-[260px] flex-1">
 					<Skeleton className="h-4 w-40" />
 					<Skeleton className="mt-1.5 h-3 w-32" />
 				</div>
@@ -96,31 +96,23 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 					params={{ hostName: host.hostName }}
 					className={ROW_LINK_CLASS}
 				>
-					<div className="min-w-[260px] flex-1">
+					<div className="w-0 min-w-[260px] flex-1">
 						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
 							{host.hostName}
 						</div>
-						<div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-							{host.osType && <MetaChip>{host.osType}</MetaChip>}
-							{host.hostArch && (
-								<>
-									<span className="text-foreground/20">·</span>
-									<MetaChip>{host.hostArch}</MetaChip>
-								</>
-							)}
-							{host.cloudProvider && (
-								<>
-									<span className="text-foreground/20">·</span>
-									<MetaChip>{host.cloudProvider}</MetaChip>
-								</>
-							)}
-						</div>
+						<MetaLine items={[host.osType, host.hostArch, host.cloudProvider]} />
 					</div>
 					<div className="w-[88px]">
 						<HostStatusBadge lastSeen={host.lastSeen} />
 					</div>
 					<div className="w-[200px]">
-						<InlineMetricBars cpu={host.cpuPct} memory={host.memoryPct} disk={host.diskPct} />
+						<MeterRows
+							meters={[
+								{ label: "CPU", fraction: host.cpuPct },
+								{ label: "MEM", fraction: host.memoryPct },
+								{ label: "DSK", fraction: host.diskPct },
+							]}
+						/>
 					</div>
 					<div className="hidden w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80 lg:block">
 						{formatLoad(host.load15)}

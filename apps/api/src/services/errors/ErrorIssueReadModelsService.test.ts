@@ -7,6 +7,7 @@ import { Clock, Effect, Layer, Schema } from "effect"
 import { Database } from "@/platform/DatabaseLive"
 import { msToDate } from "@/platform/time"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
@@ -14,6 +15,7 @@ import {
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 // Compile-time guard: cache, Env, notifications, WorkerEnvironment, and the
 // broad ErrorsService cannot enter this layer without making this fail.
@@ -38,10 +40,11 @@ const makeWarehouseStub = (contexts: Array<string>): WarehouseQueryServiceApi =>
 	rawSqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
 	crossOrgQuery: () => Effect.die(new Error("unexpected cross-org query")),
 	compiledQuery: (_tenant, compile, options) => {
-		const compiled = typeof compile === "function" ? compile(baselineWarehouseCapabilities()) : compile
+		const compiled =
+			typeof compile === "function" ? Effect.runSync(compile(baselineWarehouseCapabilities())) : compile
 		return Effect.sync(() => contexts.push(options?.context ?? "")).pipe(
 			Effect.andThen(
-				compiled
+				compiledQueryOf(compiled)
 					.decodeRows(
 						options?.context === "errorIssueEnvFingerprints"
 							? [{ fingerprintHash: "fp-checkout" }]
@@ -64,7 +67,11 @@ const makeWarehouseStub = (contexts: Array<string>): WarehouseQueryServiceApi =>
 const makeLayer = (contexts: Array<string>) => {
 	const database = createTestDb(createdDbs).layer
 	const actors = ErrorActorsService.layer.pipe(Layer.provide(database))
-	const workflow = ErrorIssueWorkflowService.layer.pipe(Layer.provide(database), Layer.provide(actors))
+	const workflow = ErrorIssueWorkflowService.layer.pipe(
+		Layer.provide(AuditLogService.layerMemory),
+		Layer.provide(database),
+		Layer.provide(actors),
+	)
 	const warehouse = Layer.succeed(WarehouseQueryService, makeWarehouseStub(contexts))
 	const readModels = readRequirements.pipe(
 		Layer.provide(database),
@@ -157,6 +164,7 @@ describe("ErrorIssueReadModelsService", () => {
 				"errorIssueEnvFingerprints",
 				"errorIssueTimeseries",
 				"errorIssueSampleTraces",
+				"errorIssueEnvironments",
 			])
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})

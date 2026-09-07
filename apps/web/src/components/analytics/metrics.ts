@@ -67,10 +67,28 @@ export interface AnalyticsMetricDescriptor {
 	 *
 	 * Only ever a same-unit pairing — two counts share an axis, a count and a rate
 	 * do not — which is why this is a per-metric opt-in rather than something the
-	 * chart infers. Reciprocal by convention: if A names B, B names A, so the pair
-	 * looks the same whichever half you click.
+	 * chart infers.
+	 *
+	 * Same-unit is now a POLICY, not a limit: `@tanstack/charts` 0.16.0 added
+	 * named scales, so a rate could take a right-hand axis beside a count. Pairing
+	 * them here would still mean deciding which of the two axes a reader is meant
+	 * to trust at a glance — a second axis was tried on the throughput chart and
+	 * backed out for exactly that — which is why the allowlist stays an allowlist
+	 * rather than becoming an axis assignment.
+	 *
+	 * Reciprocal by convention: if A names B, B names A, so the pair looks the
+	 * same whichever half you click.
 	 */
 	readonly companion?: AnalyticsMetricKey
+	/**
+	 * True when a bucket this metric reports nothing for means zero, not "unknown".
+	 *
+	 * Counts qualify; rates and averages do not — no sessions in a bucket makes a
+	 * bounce rate undefined, and drawing it as 0% would invent a perfect bucket.
+	 * The chart reads this to decide whether a bucket missing from one of its two
+	 * source tables is a point on the axis or a break in the line.
+	 */
+	readonly zeroWhenAbsent?: boolean
 	/** The headline. `null` means "not measurable here", never zero. */
 	readonly value: (source: AnalyticsMetricSource) => number | null
 	/** The sparkline and, when selected, the chart. */
@@ -132,6 +150,7 @@ export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
 		key: "visitors",
 		label: "Unique visitors",
 		format: formatNumber,
+		zeroWhenAbsent: true,
 		visitorLevel: true,
 		// The pairing the page is really read for: how many people, against how much
 		// they read. They come from different tables with different coverage, so the
@@ -151,6 +170,7 @@ export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
 		key: "sessions",
 		label: "Sessions",
 		format: formatNumber,
+		zeroWhenAbsent: true,
 		value: (source) => source.summary.sessions,
 		series: (source) => fromTimeseries(source, (point) => point.sessions),
 		subline: (source) =>
@@ -162,6 +182,7 @@ export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
 		key: "pageViews",
 		label: "Page views",
 		format: formatNumber,
+		zeroWhenAbsent: true,
 		companion: "visitors",
 		// Summed from the buckets rather than taken from the summary: page views
 		// come from `session_events`, which the summary query deliberately does not
@@ -210,6 +231,7 @@ export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
 		key: "newVisitors",
 		label: "New visitors",
 		format: formatNumber,
+		zeroWhenAbsent: true,
 		visitorLevel: true,
 		value: (source) => source.summary.newSessions,
 		series: (source) => fromTimeseries(source, (point) => point.newSessions),
@@ -219,6 +241,7 @@ export const ANALYTICS_METRICS: ReadonlyArray<AnalyticsMetricDescriptor> = [
 		key: "returning",
 		label: "Returning",
 		format: formatNumber,
+		zeroWhenAbsent: true,
 		visitorLevel: true,
 		// Over identified sessions only, so this and `newVisitors` sum to the
 		// population that actually reports a visitor id rather than to all sessions.

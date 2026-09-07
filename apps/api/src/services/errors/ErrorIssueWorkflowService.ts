@@ -19,22 +19,28 @@ import {
 	type OrgId,
 	type WorkflowState,
 	WORKFLOW_TRANSITIONS,
-	TERMINAL_WORKFLOW_STATES,
+	CLOSED_WORKFLOW_STATES,
+	MACHINE_OWNED_WORKFLOW_STATES,
 } from "@maple/domain/http"
 import {
+	actors,
 	alertIncidents,
 	errorIncidents,
 	errorIssues,
 	errorIssueEvents,
+	errorIssuePullRequests,
 	errorIssueStates,
 	type ErrorIssueEventInsert,
 	type ErrorIssueEventRow,
 	type ErrorIssueRow,
 	issueEscalations,
 } from "@maple/db"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@/platform/DatabaseLive"
+import { AuditLogService } from "@/services/audit/AuditLogService"
+import { CurrentAuditActor } from "@/services/auth/audit-actor"
+import { SYSTEM_ERRORS_AGENT_NAME } from "@/services/auth/system-actors"
 import { readTxid, txidColumn } from "@/platform/electric-txid"
 import { dateToMs, msToDate } from "@/platform/time"
 import { ErrorActorsService } from "./ErrorActorsService"
@@ -106,12 +112,20 @@ export interface ErrorIssueWorkflowPublicApi {
 	) => Effect.Effect<ErrorIssueEventsResponse, ErrorPersistenceError | ErrorIssueNotFoundError>
 }
 
-/** Internal workflow kernel shared with the compatibility facade's broad operations and tick. */
+/** Per-issue activity rollup carried onto the document for list surfaces. */
+export interface IssueActivityRollup {
+	readonly commentCount: number
+	readonly openPullRequestCount: number
+	readonly mergedPullRequestCount: number
+}
+
+/** Internal workflow kernel shared with ErrorsService's transitions, claims, fixes, and tick. */
 export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicApi {
 	readonly rowToIssue: (
 		row: ErrorIssueRow,
 		hasOpenIncident: boolean,
 		actorMap: Map<ActorId, ActorDocument>,
+		activity: IssueActivityRollup,
 	) => ErrorIssueDocument
 	readonly requireIssue: (
 		orgId: OrgId,
@@ -142,6 +156,22 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly timestamp?: number
 		},
 	) => Effect.Effect<unknown, ErrorPersistenceError>
+	/**
+	 * The insert `recordEvent` would write, for a caller that must commit the
+	 * event atomically with its own statements in one transaction.
+	 */
+	readonly buildEvent: (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		actorId: ActorId | null,
+		type: ErrorIssueEventType,
+		timestamp: number,
+		opts?: {
+			readonly fromState?: WorkflowState | null
+			readonly toState?: WorkflowState | null
+			readonly payload?: StoredJsonRecord
+		},
+	) => ErrorIssueEventInsert
 	readonly applyTransition: (
 		orgId: OrgId,
 		actorId: ActorId | null,
@@ -159,10 +189,15 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 	>
 }
 
-const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorActorsService> = Effect.gen(
+const make: Effect.Effect<
+	ErrorIssueWorkflowServiceApi,
+	never,
+	Database | ErrorActorsService | AuditLogService
+> = Effect.gen(
 	function* () {
 		const database = yield* Database
-		const actors = yield* ErrorActorsService
+		const actorsService = yield* ErrorActorsService
+		const audit = yield* AuditLogService
 		const dbExecute = makeErrorDatabaseExecute(database, "ErrorIssueWorkflowService")
 
 		const newEventId = () => decodeEventIdSync(randomUUID())
@@ -177,7 +212,12 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 			})
 		}
 
-		const rowToIssue: ErrorIssueWorkflowServiceApi["rowToIssue"] = (row, hasOpenIncident, actorMap) =>
+		const rowToIssue: ErrorIssueWorkflowServiceApi["rowToIssue"] = (
+			row,
+			hasOpenIncident,
+			actorMap,
+			activity,
+		) =>
 			new ErrorIssueDocument({
 				id: row.id,
 				kind: row.kind,
@@ -210,6 +250,9 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 				snoozeUntil: row.snoozeUntil == null ? null : isoFromDate(row.snoozeUntil),
 				archivedAt: row.archivedAt == null ? null : isoFromDate(row.archivedAt),
 				hasOpenIncident,
+				commentCount: activity.commentCount,
+				openPullRequestCount: activity.openPullRequestCount,
+				mergedPullRequestCount: activity.mergedPullRequestCount,
 			})
 
 		const rowToEvent = (
@@ -295,18 +338,76 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 			)
 		}
 
+		const EMPTY_ACTIVITY: IssueActivityRollup = {
+			commentCount: 0,
+			openPullRequestCount: 0,
+			mergedPullRequestCount: 0,
+		}
+
+		const issueActivityRollups = (
+			orgId: OrgId,
+			issueIds: ReadonlyArray<ErrorIssueId>,
+		): Effect.Effect<Map<ErrorIssueId, IssueActivityRollup>, ErrorPersistenceError> =>
+			Effect.gen(function* () {
+				const rollups = new Map<ErrorIssueId, IssueActivityRollup>()
+				if (issueIds.length === 0) return rollups
+				const upsert = (issueId: ErrorIssueId, patch: Partial<IssueActivityRollup>) =>
+					rollups.set(issueId, { ...(rollups.get(issueId) ?? EMPTY_ACTIVITY), ...patch })
+				const [commentRows, prRows] = yield* Effect.all([
+					dbExecute((db) =>
+						db
+							.select({
+								issueId: errorIssueEvents.issueId,
+								count: sql<number>`count(*)::int`,
+							})
+							.from(errorIssueEvents)
+							.where(
+								and(
+									eq(errorIssueEvents.orgId, orgId),
+									inArray(errorIssueEvents.issueId, issueIds),
+									inArray(errorIssueEvents.type, ["comment", "agent_note"]),
+								),
+							)
+							.groupBy(errorIssueEvents.issueId),
+					),
+					dbExecute((db) =>
+						db
+							.select({
+								issueId: errorIssuePullRequests.issueId,
+								state: errorIssuePullRequests.state,
+								count: sql<number>`count(*)::int`,
+							})
+							.from(errorIssuePullRequests)
+							.where(
+								and(
+									eq(errorIssuePullRequests.orgId, orgId),
+									inArray(errorIssuePullRequests.issueId, issueIds),
+								),
+							)
+							.groupBy(errorIssuePullRequests.issueId, errorIssuePullRequests.state),
+					),
+				])
+				for (const row of commentRows) upsert(row.issueId, { commentCount: row.count })
+				for (const row of prRows) {
+					if (row.state === "open") upsert(row.issueId, { openPullRequestCount: row.count })
+					if (row.state === "merged") upsert(row.issueId, { mergedPullRequestCount: row.count })
+				}
+				return rollups
+			})
+
 		const hydrateIssueRows: ErrorIssueWorkflowServiceApi["hydrateIssueRows"] = (orgId, rows) =>
 			Effect.gen(function* () {
 				if (rows.length === 0) return []
-				const openSet = yield* issuesWithOpenIncidents(
-					orgId,
-					rows.map((row) => row.id),
-				)
-				const actorMap = yield* actors.collectActorDocs(
+				const issueIds = rows.map((row) => row.id)
+				const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
+				const activityMap = yield* issueActivityRollups(orgId, issueIds)
+				const actorMap = yield* actorsService.collectActorDocs(
 					orgId,
 					rows.flatMap((row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
 				)
-				return rows.map((row) => rowToIssue(row, openSet.has(row.id), actorMap))
+				return rows.map((row) =>
+					rowToIssue(row, openSet.has(row.id), actorMap, activityMap.get(row.id) ?? EMPTY_ACTIVITY),
+				)
 			})
 
 		const hydrateIssue: ErrorIssueWorkflowServiceApi["hydrateIssue"] = Effect.fn(
@@ -316,29 +417,134 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 			return hydrated[0]!
 		})
 
+		const buildEventInsert = (
+			orgId: OrgId,
+			issueId: ErrorIssueId,
+			actorId: ActorId | null,
+			type: ErrorIssueEventType,
+			timestamp: number,
+			opts: {
+				readonly fromState?: WorkflowState | null
+				readonly toState?: WorkflowState | null
+				readonly payload?: StoredJsonRecord
+			} = {},
+		): ErrorIssueEventInsert => ({
+			id: newEventId(),
+			orgId,
+			issueId,
+			actorId,
+			type,
+			fromState: opts.fromState ?? null,
+			toState: opts.toState ?? null,
+			payloadJson: opts.payload ?? {},
+			createdAt: msToDate(timestamp),
+		})
+
+		/**
+		 * Mirror an actor-attributed issue event into the org audit log. Never
+		 * fails: the issue event is already committed, and `audit.record` swallows
+		 * its own errors — only the actor lookup can fail, so it is caught here.
+		 */
+		const recordEventAudit = (
+			orgId: OrgId,
+			issueId: ErrorIssueId,
+			actorId: ActorId,
+			type: ErrorIssueEventType,
+			opts: { readonly fromState?: WorkflowState | null; readonly toState?: WorkflowState | null },
+		) =>
+			Effect.gen(function* () {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(actors)
+						.where(and(eq(actors.orgId, orgId), eq(actors.id, actorId)))
+						.limit(1),
+				)
+				const actor = rows[0]
+				if (actor === undefined || (actor.type !== "agent" && actor.type !== "user")) return
+				// Maple's own sweeps run as an agent actor (`ensureSystemActor` mints
+				// one), so without this check auto-close, lease expiry and fix
+				// verification all read as a third-party agent acting over MCP.
+				const isSystemActor = actor.type === "agent" && actor.agentName === SYSTEM_ERRORS_AGENT_NAME
+				// The actors row knows *who*, never *how*: it is the same row whether
+				// the mutation arrived from the dashboard, an API key, or MCP. The
+				// request's `CurrentAuditActor` is the only thing that knows the
+				// credential and surface, so a human actor is attributed through it and
+				// falls back to a dashboard session only when nothing set it (queue
+				// consumers, crons).
+				const request = yield* CurrentAuditActor
+				yield* audit.record({
+					orgId,
+					actor: isSystemActor
+						? { type: "system", actorId, label: SYSTEM_ERRORS_AGENT_NAME }
+						: actor.type === "agent"
+							? {
+									type: "agent",
+									actorId,
+									...(actor.agentName === null ? undefined : { label: actor.agentName }),
+									// On-behalf-of: the human who registered the agent, the
+									// closest authority the actor registry records.
+									...(actor.createdBy === null ? undefined : { userId: actor.createdBy }),
+								}
+							: {
+									type: request?.type ?? "user",
+									...(actor.userId === null ? undefined : { userId: actor.userId }),
+									...(request?.apiKeyId === undefined
+										? undefined
+										: { apiKeyId: request.apiKeyId }),
+									actorId,
+								},
+					source: isSystemActor
+						? "system"
+						: actor.type === "agent"
+							? "mcp"
+							: (request?.source ?? "dashboard"),
+					action: `error_issue.${type}`,
+					resourceId: issueId,
+					metadata: {
+						...(opts.fromState != null ? { from_state: opts.fromState } : undefined),
+						...(opts.toState != null ? { to_state: opts.toState } : undefined),
+					},
+				})
+			}).pipe(
+				// Typed failures and defects only — an interrupt must propagate so
+				// fiber teardown never triggers a stray write.
+				Effect.catch((error) => Effect.logWarning("Issue event audit write failed", { issueId, cause: error })),
+				Effect.catchDefect((defect) =>
+					Effect.logWarning("Issue event audit write failed", { issueId, cause: defect }),
+				),
+			)
+
 		const recordEvent: ErrorIssueWorkflowServiceApi["recordEvent"] = Effect.fn(
 			"ErrorsService.recordEvent",
 		)(function* (orgId, issueId, actorId, type, opts = {}) {
 			const timestamp = opts.timestamp ?? (yield* Clock.currentTimeMillis)
-			const insert: ErrorIssueEventInsert = {
-				id: newEventId(),
-				orgId,
-				issueId,
-				actorId: actorId ?? null,
-				type,
-				fromState: opts.fromState ?? null,
-				toState: opts.toState ?? null,
-				payloadJson: opts.payload ?? {},
-				createdAt: msToDate(timestamp),
+			const insert = buildEventInsert(orgId, issueId, actorId ?? null, type, timestamp, opts)
+			const inserted = yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
+			// System/sweep events carry no actor and stay out of the audit log.
+			if (actorId !== null) {
+				yield* recordEventAudit(orgId, issueId, actorId, type, opts)
 			}
-			return yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
+			return inserted
 		})
 
+		/**
+		 * The message is half the point. "Illegal transition from 'triage' to
+		 * 'in_review'" told a caller nothing it could act on, and it was the single
+		 * most common MCP error in the internal org — so it now names the moves that
+		 * would work, from the same matrix that rejected this one.
+		 */
 		const validateTransition = (issueId: ErrorIssueId, from: WorkflowState, to: WorkflowState) => {
 			if (!WORKFLOW_TRANSITIONS[from].includes(to)) {
+				const offered = WORKFLOW_TRANSITIONS[from].filter(
+					(target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target),
+				)
 				return Effect.fail(
 					new ErrorIssueTransitionError({
-						message: `Illegal transition from '${from}' to '${to}'`,
+						message:
+							offered.length === 0
+								? `Cannot move an issue out of '${from}'.`
+								: `Cannot move an issue from '${from}' to '${to}'. From '${from}' it can go to: ${offered.join(", ")}.`,
 						issueId,
 						fromState: from,
 						toState: to,
@@ -382,7 +588,7 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 			} else if (fromState === "wontfix") {
 				update.snoozeUntil = null
 			}
-			if (TERMINAL_WORKFLOW_STATES.has(toState)) {
+			if (CLOSED_WORKFLOW_STATES.has(toState)) {
 				// Reaching a terminal state ends the work, so the lease ends with it.
 				update.leaseHolderActorId = null
 				update.leaseExpiresAt = null
@@ -397,47 +603,52 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 				)
 			}
 
-			yield* dbExecute((db) =>
-				db
-					.update(errorIssues)
-					.set(update)
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, row.id))),
-			)
-			if (toState === "done") {
-				yield* dbExecute((db) =>
-					db
-						.update(errorIncidents)
-						.set({
-							status: "resolved",
-							resolvedAt: msToDate(timestamp),
-							updatedAt: msToDate(timestamp),
-						})
-						.where(
-							and(
-								eq(errorIncidents.orgId, orgId),
-								eq(errorIncidents.issueId, row.id),
-								eq(errorIncidents.status, "open"),
-							),
-						),
-				)
-				yield* dbExecute((db) =>
-					db
-						.update(errorIssueStates)
-						.set({ openIncidentId: null, updatedAt: msToDate(timestamp) })
-						.where(and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, row.id))),
-				)
-			}
-
 			const notePayload: StoredJsonRecord = opts.note
 				? { ...opts.payload, note: opts.note }
 				: { ...opts.payload }
-			yield* recordEvent(orgId, row.id, actorId, "state_change", {
+			const eventInsert = buildEventInsert(orgId, row.id, actorId ?? null, "state_change", timestamp, {
 				fromState,
 				toState,
 				payload: notePayload,
-				timestamp,
 			})
-			if (actorId) yield* actors.touchActor(orgId, actorId, timestamp)
+			// One transaction, because a `done` that committed the issue but lost the
+			// incident resolution or its timeline event could never be repaired: a
+			// retry sees `fromState === toState` and returns before reaching them.
+			yield* dbExecute((db) =>
+				db.transaction(async (tx) => {
+					await tx
+						.update(errorIssues)
+						.set(update)
+						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, row.id)))
+					if (toState === "done") {
+						await tx
+							.update(errorIncidents)
+							.set({
+								status: "resolved",
+								resolvedAt: msToDate(timestamp),
+								updatedAt: msToDate(timestamp),
+							})
+							.where(
+								and(
+									eq(errorIncidents.orgId, orgId),
+									eq(errorIncidents.issueId, row.id),
+									eq(errorIncidents.status, "open"),
+								),
+							)
+						await tx
+							.update(errorIssueStates)
+							.set({ openIncidentId: null, updatedAt: msToDate(timestamp) })
+							.where(
+								and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, row.id)),
+							)
+					}
+					await tx.insert(errorIssueEvents).values(eventInsert)
+				}),
+			)
+			if (actorId) {
+				yield* recordEventAudit(orgId, row.id, actorId, "state_change", { fromState, toState })
+				yield* actorsService.touchActor(orgId, actorId, timestamp)
+			}
 			return yield* requireIssue(orgId, row.id)
 		})
 
@@ -479,7 +690,7 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 					)
 					.returning(txidColumn),
 			)
-			yield* actors.touchActor(orgId, actorId, timestamp)
+			yield* actorsService.touchActor(orgId, actorId, timestamp)
 			const next = yield* requireIssue(orgId, issueId)
 			const doc = yield* hydrateIssue(orgId, next)
 			const txid = readTxid(heartbeatRows)
@@ -560,7 +771,7 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 					timestamp,
 				})
 			}
-			yield* actors.touchActor(orgId, actorId, timestamp)
+			yield* actorsService.touchActor(orgId, actorId, timestamp)
 			return yield* hydrateIssue(orgId, next)
 		})
 
@@ -569,7 +780,7 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 		)(function* (orgId, byActorId, issueId, toActorId) {
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
-			if (toActorId !== null && !(yield* actors.actorExists(orgId, toActorId))) {
+			if (toActorId !== null && !(yield* actorsService.actorExists(orgId, toActorId))) {
 				return yield* Effect.fail(
 					new ActorNotFoundError({
 						message: `Actor '${toActorId}' not found`,
@@ -588,47 +799,40 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 				payload: { fromActorId: current.assignedActorId, toActorId },
 				timestamp,
 			})
-			yield* actors.touchActor(orgId, byActorId, timestamp)
+			yield* actorsService.touchActor(orgId, byActorId, timestamp)
 			const next = yield* requireIssue(orgId, issueId)
 			const doc = yield* hydrateIssue(orgId, next)
 			const txid = readTxid(assignedRows)
 			return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
 		})
 
-		const enqueueSeverityEscalation = Effect.fn("ErrorsService.enqueueSeverityEscalation")(function* (
+		/** The outbox row a severity change owes, or none when the change does not escalate. */
+		const severityEscalationInsert = (
 			orgId: OrgId,
 			issueId: ErrorIssueId,
 			from: IssueSeverity | null,
 			to: IssueSeverity,
 			source: "ai" | "manual",
-		) {
-			const reason = escalationReasonFor(from, to)
-			if (reason === null) return
-			const timestamp = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db
-					.insert(issueEscalations)
-					.values({
-						id: newIssueEscalationId(),
-						orgId,
-						issueId,
-						severity: to,
-						source,
-						reason,
-						runId: null,
-						investigationId: null,
-						payloadJson: {},
-						deliveryResultsJson: [],
-						status: "queued",
-						attempts: 0,
-						dedupeKey: escalationDedupeKey(orgId, issueId, to),
-						error: null,
-						createdAt: msToDate(timestamp),
-						processedAt: null,
-					})
-					.onConflictDoNothing(),
-			)
-		})
+			timestamp: number,
+		): Option.Option<typeof issueEscalations.$inferInsert> =>
+			Option.map(Option.fromNullOr(escalationReasonFor(from, to)), (reason) => ({
+				id: newIssueEscalationId(),
+				orgId,
+				issueId,
+				severity: to,
+				source,
+				reason,
+				runId: null,
+				investigationId: null,
+				payloadJson: {},
+				deliveryResultsJson: [],
+				status: "queued",
+				attempts: 0,
+				dedupeKey: escalationDedupeKey(orgId, issueId, to),
+				error: null,
+				createdAt: msToDate(timestamp),
+				processedAt: null,
+			}))
 
 		const setSeverity: ErrorIssueWorkflowServiceApi["setSeverity"] = Effect.fn(
 			"ErrorsService.setSeverity",
@@ -650,30 +854,47 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 			const changed = current.severity !== severity || current.severitySource !== nextSource
 			if (!changed) return yield* hydrateIssue(orgId, current)
 
-			const severityRows = yield* dbExecute((db) =>
-				db
-					.update(errorIssues)
-					.set({
-						severity,
-						severitySource: nextSource,
-						updatedAt: msToDate(timestamp),
-					})
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-					.returning(txidColumn),
+			const payload: StoredJsonRecord = opts?.note
+				? { from: current.severity, to: severity, source, note: opts.note }
+				: { from: current.severity, to: severity, source }
+			const eventInsert =
+				current.severity !== severity
+					? Option.some(
+							buildEventInsert(orgId, issueId, actorId, "severity_change", timestamp, {
+								payload,
+							}),
+						)
+					: Option.none()
+			// Clearing the severity (null) never escalates; a set severity may.
+			const escalationInsert = Option.flatMap(Option.fromNullOr(severity), (next) =>
+				severityEscalationInsert(orgId, issueId, current.severity, next, source, timestamp),
 			)
-			if (current.severity !== severity) {
-				const payload: StoredJsonRecord = opts?.note
-					? { from: current.severity, to: severity, source, note: opts.note }
-					: { from: current.severity, to: severity, source }
-				yield* recordEvent(orgId, issueId, actorId, "severity_change", {
-					payload,
-					timestamp,
-				})
+			// One transaction: a severity that committed without its escalation row
+			// could never page anyone — a retry sees the severity already stored and
+			// returns before reaching the outbox insert.
+			const severityRows = yield* dbExecute((db) =>
+				db.transaction(async (tx) => {
+					const rows = await tx
+						.update(errorIssues)
+						.set({
+							severity,
+							severitySource: nextSource,
+							updatedAt: msToDate(timestamp),
+						})
+						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
+						.returning(txidColumn)
+					if (Option.isSome(eventInsert))
+						await tx.insert(errorIssueEvents).values(eventInsert.value)
+					if (Option.isSome(escalationInsert)) {
+						await tx.insert(issueEscalations).values(escalationInsert.value).onConflictDoNothing()
+					}
+					return rows
+				}),
+			)
+			if (Option.isSome(eventInsert)) {
+				yield* recordEventAudit(orgId, issueId, actorId, "severity_change", {})
 			}
-			if (severity !== null) {
-				yield* enqueueSeverityEscalation(orgId, issueId, current.severity, severity, source)
-			}
-			yield* actors.touchActor(orgId, actorId, timestamp)
+			yield* actorsService.touchActor(orgId, actorId, timestamp)
 			const next = yield* requireIssue(orgId, issueId)
 			const doc = yield* hydrateIssue(orgId, next)
 			const txid = readTxid(severityRows)
@@ -704,8 +925,13 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 				createdAt: msToDate(timestamp),
 			}
 			yield* dbExecute((db) => db.insert(errorIssueEvents).values(row))
-			yield* actors.touchActor(orgId, actorId, timestamp)
-			const actorMap = yield* actors.collectActorDocs(orgId, [actorId])
+			// This path writes the event row itself rather than going through
+			// `recordEvent`, so the audit mirror has to be invoked explicitly. The
+			// comment body stays out of the row — the audit records that a comment
+			// was made, not what it said.
+			yield* recordEventAudit(orgId, issueId, actorId, type, {})
+			yield* actorsService.touchActor(orgId, actorId, timestamp)
+			const actorMap = yield* actorsService.collectActorDocs(orgId, [actorId])
 			return rowToEvent(row, actorMap)
 		})
 
@@ -723,7 +949,7 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 					.orderBy(desc(errorIssueEvents.createdAt))
 					.limit(limit),
 			)
-			const actorMap = yield* actors.collectActorDocs(
+			const actorMap = yield* actorsService.collectActorDocs(
 				orgId,
 				rows.map((row) => row.actorId ?? null),
 			)
@@ -739,6 +965,7 @@ const make: Effect.Effect<ErrorIssueWorkflowServiceApi, never, Database | ErrorA
 			hydrateIssueRows,
 			hydrateIssue,
 			recordEvent,
+			buildEvent: buildEventInsert,
 			applyTransition,
 			heartbeatIssue,
 			releaseIssue,

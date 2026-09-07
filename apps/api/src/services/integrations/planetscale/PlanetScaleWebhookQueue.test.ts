@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/effect-cloudflare"
+import { PlanetScaleWebhookQueueProducer, type QueueProducer, QueueSendError } from "@/platform/bindings"
 import { Effect, Layer, Schema } from "effect"
 import { projectPlanetScaleWebhookEvent } from "./webhook-events"
 import {
@@ -32,9 +32,11 @@ const job: PlanetScaleWebhookJob = {
 	}),
 }
 
-const provideQueue = (environment: Record<string, unknown>) =>
+const provideQueue = (producer: QueueProducer) =>
 	Effect.provide(
-		PlanetScaleWebhookQueue.layer.pipe(Layer.provide(Layer.succeed(WorkerEnvironment, environment))),
+		PlanetScaleWebhookQueue.layer.pipe(
+			Layer.provide(Layer.succeed(PlanetScaleWebhookQueueProducer, producer)),
+		),
 	)
 
 describe("PlanetScaleWebhookQueue", () => {
@@ -73,22 +75,13 @@ describe("PlanetScaleWebhookQueue", () => {
 			assert.deepStrictEqual(sent, [job])
 		}).pipe(
 			provideQueue({
-				PLANETSCALE_WEBHOOK_QUEUE: {
-					send: async (body: unknown) => {
-						sent.push(body)
-					},
-				},
+				sendBatch: (messages) =>
+					Effect.sync(() => {
+						for (const message of messages) sent.push(message.body)
+					}),
 			}),
 		)
 	})
-
-	it.effect("fails with a typed error when the binding is absent", () =>
-		Effect.gen(function* () {
-			const queue = yield* PlanetScaleWebhookQueue
-			const error = yield* queue.send(job).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/api/services/planetscale/PlanetScaleWebhookQueueError")
-		}).pipe(provideQueue({})),
-	)
 
 	it.effect("maps binding rejections to the typed queue error", () => {
 		let attempts = 0
@@ -100,12 +93,16 @@ describe("PlanetScaleWebhookQueue", () => {
 			assert.strictEqual(attempts, 1)
 		}).pipe(
 			provideQueue({
-				PLANETSCALE_WEBHOOK_QUEUE: {
-					send: async () => {
+				sendBatch: () =>
+					Effect.sync(() => {
 						attempts += 1
-						throw new Error("simulated queue outage")
-					},
-				},
+					}).pipe(
+						Effect.andThen(
+							Effect.fail(
+								new QueueSendError({ message: "simulated queue outage", cause: undefined }),
+							),
+						),
+					),
 			}),
 		)
 	})
@@ -136,11 +133,10 @@ describe("PlanetScaleWebhookQueue", () => {
 			assert.strictEqual(attempts, 1)
 		}).pipe(
 			provideQueue({
-				PLANETSCALE_WEBHOOK_QUEUE: {
-					send: async () => {
+				sendBatch: () =>
+					Effect.sync(() => {
 						attempts += 1
-					},
-				},
+					}),
 			}),
 		)
 	})

@@ -22,7 +22,7 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
  * is recoverable on the next tick; resolving a live incident is not.
  *
  * The verdict maths is pure and lives at the bottom of this file (mirroring the
- * split in services/anomaly/state-machine.ts) so the interesting decisions are
+ * split in services/alerts/incident-hysteresis.ts) so the interesting decisions are
  * testable without standing up a warehouse.
  */
 
@@ -87,6 +87,13 @@ export interface LivenessProbeInput {
 	readonly tenant: TenantContext
 	/** Services the subject is scoped to. Empty probes the org as a whole. */
 	readonly serviceNames: ReadonlyArray<string>
+	/**
+	 * Deployment environments the alert is scoped to. Empty means unscoped.
+	 * Only honoured on the per-service path: without it, staging traffic for
+	 * the same service satisfies the probe while production is dark — exactly
+	 * the gap the probe exists to veto.
+	 */
+	readonly environments: ReadonlyArray<string>
 	/** The quiet window being interpreted as recovery. */
 	readonly windowStartMs: number
 	readonly windowEndMs: number
@@ -107,19 +114,24 @@ const probeServiceWindow = (
 	warehouse: LivenessWarehouse,
 	tenant: TenantContext,
 	serviceName: string,
+	deploymentEnv: string | null,
 	startMs: number,
 	endMs: number,
 ): Effect.Effect<ServiceWindowTotals | null, never> =>
 	Effect.gen(function* () {
+		const scopedEnv = Option.fromNullOr(deploymentEnv)
 		const compiled = CH.compile(
-			CH.serviceLivenessQuery(),
+			CH.serviceLivenessQuery(Option.isSome(scopedEnv) ? { scopeToEnvironment: true } : {}),
 			{
 				orgId: tenant.orgId,
 				serviceName,
+				...Option.match(scopedEnv, {
+					onNone: () => ({}),
+					onSome: (deploymentEnv) => ({ deploymentEnv }),
+				}),
 				startTime: formatWarehouseDateTime(startMs),
 				endTime: formatWarehouseDateTime(endMs),
 			},
-			{ rowSchema: CH.serviceLivenessRowSchema },
 		)
 		const row = yield* warehouse.compiledQueryFirst(tenant, compiled, {
 			profile: "list",
@@ -140,15 +152,11 @@ const probeOrgWindow = (
 	endMs: number,
 ): Effect.Effect<number | null, never> =>
 	Effect.gen(function* () {
-		const compiled = CH.compileUnion(
-			CH.orgTelemetryPulseQuery(),
-			{
-				orgId: tenant.orgId,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(endMs),
-			},
-			{ rowSchema: CH.telemetryPulseRowSchema },
-		)
+		const compiled = CH.compileUnion(CH.orgTelemetryPulseQuery(), {
+			orgId: tenant.orgId,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		})
 		const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 			profile: "list",
 			context: "telemetryLivenessPulse",
@@ -183,15 +191,33 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 					)),
 				)
 			: verdictForServiceTotals(
+					// One pair per (service, environment): `verdictForServiceTotals`
+					// already vetoes when ANY baseline-active pair goes dark, so an
+					// env-scoped rule cannot have a production gap papered over by
+					// staging traffic on the same service.
 					yield* Effect.forEach(
-						serviceNames,
-						(serviceName): Effect.Effect<ServiceWindowPair, never> =>
+						serviceNames.flatMap(
+							(
+								serviceName,
+							): ReadonlyArray<{
+								readonly serviceName: string
+								readonly deploymentEnv: string | null
+							}> =>
+								input.environments.length === 0
+									? [{ serviceName, deploymentEnv: null }]
+									: input.environments.map((deploymentEnv) => ({
+											serviceName,
+											deploymentEnv,
+										})),
+						),
+						({ serviceName, deploymentEnv }): Effect.Effect<ServiceWindowPair, never> =>
 							Effect.all(
 								[
 									probeServiceWindow(
 										warehouse,
 										tenant,
 										serviceName,
+										deploymentEnv,
 										windowStartMs,
 										windowEndMs,
 									),
@@ -199,6 +225,7 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 										warehouse,
 										tenant,
 										serviceName,
+										deploymentEnv,
 										baselineStartMs,
 										baselineEndMs,
 									),

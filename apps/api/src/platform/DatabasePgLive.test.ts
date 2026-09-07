@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { layerFromEnvRecord } from "@maple/effect-cloudflare"
 import { sql } from "drizzle-orm"
-import { Cause, Effect, Exit, Layer, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
+import { type DatabaseConnection, MapleDbConnection } from "./bindings"
 import { Database, type DatabaseClient } from "./DatabaseLive"
 import { layerPg } from "./DatabasePgLive"
 import { PgConnectionScope, type PgConnectionScopeApi } from "./pg-connection-scope"
@@ -14,17 +14,13 @@ import { PgConnectionScope, type PgConnectionScopeApi } from "./pg-connection-sc
  * test costs milliseconds instead of the `CONNECT_TIMEOUT_SECONDS` a blackholed
  * host would.
  */
-const closedPortBinding = {
-	MAPLE_DB: {
-		connectionString: "postgres://maple:maple@127.0.0.1:1/never",
-		host: "127.0.0.1",
-		port: 1,
-		database: "never",
-	},
-}
+const closedPortBinding: Option.Option<DatabaseConnection> = Option.some({
+	connectionString: "postgres://maple:maple@127.0.0.1:1/never",
+	attributes: { "db.namespace": "never", "server.address": "127.0.0.1", "server.port": 1 },
+})
 
-const databaseFor = (env: Record<string, unknown>) =>
-	Effect.provide(Database, layerPg.pipe(Layer.provide(layerFromEnvRecord(env))))
+const databaseFor = (connection: Option.Option<DatabaseConnection>) =>
+	Effect.provide(Database, layerPg.pipe(Layer.provide(Layer.succeed(MapleDbConnection, connection))))
 
 const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []
@@ -47,7 +43,7 @@ const failureMessage = (exit: Exit.Exit<unknown, unknown>): string =>
 describe("layerPg", () => {
 	it.effect("fails per execute when the stage has no MAPLE_DB binding", () =>
 		Effect.gen(function* () {
-			const database = yield* databaseFor({})
+			const database = yield* databaseFor(Option.none())
 
 			const exit = yield* Effect.exit(database.execute(() => Promise.resolve("unreachable")))
 

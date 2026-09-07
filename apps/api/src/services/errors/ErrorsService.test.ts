@@ -38,18 +38,22 @@ import { Database, DatabaseError } from "@/platform/DatabaseLive"
 import { Env } from "@/platform/Env"
 import { isRetryablePostgresContention } from "@/platform/postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { msToDate } from "@/platform/time"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import type { SqlQueryOptions, WarehouseQueryServiceApi } from "@/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
-import { describeCause, ErrorsService, makePersistenceError } from "./ErrorsService"
+import { ErrorsService } from "./ErrorsService"
+import { describeCause, makePersistenceError } from "./error-persistence"
 import { isErrorTickClaimLost, persistErrorTickWindow } from "./error-tick-persistence"
 import { NotificationDispatcher } from "@/services/alerts/NotificationDispatcher"
 import { InvestigationService } from "@/services/errors/InvestigationService"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 describe("makePersistenceError", () => {
 	it("omits the cause key when the source has no cause", () => {
 		const err = makePersistenceError(new Error("boom"))
@@ -165,25 +169,29 @@ const makeWarehouseStub = (
 	crossOrgQuery: <T>(tenant: unknown, compiled: CompiledQuery<T>) =>
 		Effect.suspend(() => {
 			const orgId = (tenant as { orgId?: string }).orgId ?? ""
-			return Effect.orDie(compiled.decodeRows(scanRows().length > 0 ? [{ orgId }] : []))
+			return Effect.orDie(
+				compiledQueryOf(compiled).decodeRows(scanRows().length > 0 ? [{ orgId }] : []),
+			)
 		}),
 	compiledQuery: <T>(tenant: unknown, compiled: CompiledQuery<T>, options?: SqlQueryOptions) =>
 		Effect.suspend(() => {
 			if (options?.context === "errorIssuesScan") {
 				onScan?.()
-				return Effect.orDie(compiled.decodeRows(scanRows()))
+				return Effect.orDie(compiledQueryOf(compiled).decodeRows(scanRows()))
 			}
 			// listIssues' deployment-environment filter (shaped like ErrorFingerprintsOutput).
 			if (options?.context === "errorIssueEnvFingerprints") {
-				return Effect.orDie(compiled.decodeRows(fingerprintRows?.() ?? []))
+				return Effect.orDie(compiledQueryOf(compiled).decodeRows(fingerprintRows?.() ?? []))
 			}
 			// Active-org discovery reads the same data the scan does, so model that
 			// consistency: surface the org iff it currently has error rows.
 			if (options?.context === "errorActiveOrgsDiscovery") {
 				const orgId = (tenant as { orgId?: string }).orgId ?? ""
-				return Effect.orDie(compiled.decodeRows(scanRows().length > 0 ? [{ orgId }] : []))
+				return Effect.orDie(
+					compiledQueryOf(compiled).decodeRows(scanRows().length > 0 ? [{ orgId }] : []),
+				)
 			}
-			return Effect.orDie(compiled.decodeRows([]))
+			return Effect.orDie(compiledQueryOf(compiled).decodeRows([]))
 		}),
 	compiledQueryFirst: () => Effect.die(new Error("unexpected warehouse query")),
 	ingest: () => Effect.void,
@@ -204,6 +212,7 @@ const makeErrorsLayer = (
 	const databaseLive = testDb.layer
 	const errorActorsLive = ErrorActorsService.layer.pipe(Layer.provide(databaseLive))
 	const errorIssueWorkflowLive = ErrorIssueWorkflowService.layer.pipe(
+		Layer.provide(AuditLogService.layerMemory),
 		Layer.provide(databaseLive),
 		Layer.provide(errorActorsLive),
 	)
@@ -239,7 +248,6 @@ const makeErrorsLayer = (
 		),
 		Layer.provide(dispatcherStub),
 		Layer.provide(errorActorsLive),
-		Layer.provide(errorIssueReadModelsLive),
 		Layer.provide(errorIssueWorkflowLive),
 		Layer.provide(errorPolicyLive),
 		Layer.provide(investigationsLive),
@@ -294,6 +302,7 @@ const makeGatingLayer = (opts: {
 	const databaseLive = testDb.layer
 	const errorActorsLive = ErrorActorsService.layer.pipe(Layer.provide(databaseLive))
 	const errorIssueWorkflowLive = ErrorIssueWorkflowService.layer.pipe(
+		Layer.provide(AuditLogService.layerMemory),
 		Layer.provide(databaseLive),
 		Layer.provide(errorActorsLive),
 	)
@@ -320,23 +329,27 @@ const makeGatingLayer = (opts: {
 				if (options?.context) opts.profiles?.set(options.context, options.profile)
 				if (opts.failDiscovery) return Effect.die(new Error("discovery down"))
 				const orgId = (tenant as { orgId?: string }).orgId ?? ""
-				return Effect.orDie(compiled.decodeRows(scanRows().length > 0 ? [{ orgId }] : []))
+				return Effect.orDie(
+					compiledQueryOf(compiled).decodeRows(scanRows().length > 0 ? [{ orgId }] : []),
+				)
 			}),
 		compiledQuery: <T>(tenant: unknown, compiled: CompiledQuery<T>, options?: SqlQueryOptions) => {
 			if (options?.context) opts.profiles?.set(options.context, options.profile)
 			if (options?.context === "errorActiveOrgsDiscovery") {
 				if (opts.failDiscovery) return Effect.die(new Error("discovery down"))
 				const orgId = (tenant as { orgId?: string }).orgId ?? ""
-				return Effect.orDie(compiled.decodeRows(scanRows().length > 0 ? [{ orgId }] : []))
+				return Effect.orDie(
+					compiledQueryOf(compiled).decodeRows(scanRows().length > 0 ? [{ orgId }] : []),
+				)
 			}
 			if (options?.context === "errorIssuesScan") {
 				const orgId = (tenant as { orgId?: string }).orgId ?? ""
 				return Effect.suspend(() => {
 					opts.scanned?.add(orgId)
-					return Effect.orDie(compiled.decodeRows(scanRows()))
+					return Effect.orDie(compiledQueryOf(compiled).decodeRows(scanRows()))
 				})
 			}
-			return Effect.orDie(compiled.decodeRows([]))
+			return Effect.orDie(compiledQueryOf(compiled).decodeRows([]))
 		},
 		compiledQueryFirst: () => Effect.die(new Error("unexpected warehouse query")),
 		ingest: () => Effect.void,
@@ -345,11 +358,6 @@ const makeGatingLayer = (opts: {
 		},
 	}
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseStub)
-	const errorIssueReadModelsLive = ErrorIssueReadModelsService.layer.pipe(
-		Layer.provide(databaseLive),
-		Layer.provide(warehouseLive),
-		Layer.provide(errorIssueWorkflowLive),
-	)
 	return ErrorsService.layer.pipe(
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
@@ -357,7 +365,6 @@ const makeGatingLayer = (opts: {
 		Layer.provide(Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend()))),
 		Layer.provide(dispatcherStub),
 		Layer.provide(errorActorsLive),
-		Layer.provide(errorIssueReadModelsLive),
 		Layer.provide(errorIssueWorkflowLive),
 		Layer.provide(errorPolicyLive),
 		Layer.provide(investigationsLive),
@@ -423,47 +430,12 @@ const seedIngestKey = (orgId: string) =>
 		)
 	})
 
-describe("ErrorsService compatibility facade", () => {
-	it.effect("delegates extracted actor, workflow, read, and policy operations by exact reference", () =>
-		Effect.gen(function* () {
-			const errors = yield* ErrorsService
-			const actors = yield* ErrorActorsService
-			const readModels = yield* ErrorIssueReadModelsService
-			const workflow = yield* ErrorIssueWorkflowService
-			const policies = yield* ErrorPolicyService
-
-			expect(errors.registerAgent).toBe(actors.registerAgent)
-			expect(errors.listAgents).toBe(actors.listAgents)
-			expect(errors.lookupActor).toBe(actors.lookupActor)
-			expect(errors.ensureUserActor).toBe(actors.ensureUserActor)
-			expect(errors.heartbeatIssue).toBe(workflow.heartbeatIssue)
-			expect(errors.releaseIssue).toBe(workflow.releaseIssue)
-			expect(errors.assignIssue).toBe(workflow.assignIssue)
-			expect(errors.setSeverity).toBe(workflow.setSeverity)
-			expect(errors.commentOnIssue).toBe(workflow.commentOnIssue)
-			expect(errors.listIssueEvents).toBe(workflow.listIssueEvents)
-			expect(errors.listIssues).toBe(readModels.listIssues)
-			expect(errors.countOpenIssuesByService).toBe(readModels.countOpenIssuesByService)
-			expect(errors.getIssue).toBe(readModels.getIssue)
-			expect(errors.listIssueIncidents).toBe(readModels.listIssueIncidents)
-			expect(errors.listOpenIncidents).toBe(readModels.listOpenIncidents)
-			expect(errors.getNotificationPolicy).toBe(policies.getNotificationPolicy)
-			expect(errors.upsertNotificationPolicy).toBe(policies.upsertNotificationPolicy)
-			expect(errors.getEscalationPolicy).toBe(policies.getEscalationPolicy)
-			expect(errors.upsertEscalationPolicy).toBe(policies.upsertEscalationPolicy)
-			expect(errors.evaluateEscalationPolicy).toBe(policies.evaluateEscalationPolicy)
-			expect(errors.listIssueEscalations).toBe(policies.listIssueEscalations)
-			expect(errors.listRecentEscalations).toBe(policies.listRecentEscalations)
-		}).pipe(Effect.provide(makeErrorsLayer())),
-	)
-})
-
 // countOpenIssuesByService
 
-describe("ErrorsService.countOpenIssuesByService", () => {
+describe("ErrorIssueReadModelsService.countOpenIssuesByService", () => {
 	it.effect("groups actionable error issues by service, excluding done/alert/archived", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const readModels = yield* ErrorIssueReadModelsService
 			const now = new Date()
 			yield* seedIssue(asIssueId(randomUUID()), {
 				serviceName: "checkout-api",
@@ -491,7 +463,7 @@ describe("ErrorsService.countOpenIssuesByService", () => {
 			})
 			yield* seedIssue(asIssueId(randomUUID()), { serviceName: "" })
 
-			const counts = yield* errors.countOpenIssuesByService(ORG)
+			const counts = yield* readModels.countOpenIssuesByService(ORG)
 			const byService = new Map(counts.map((row) => [row.serviceName, row.openCount]))
 			assert.strictEqual(byService.get("checkout-api"), 2)
 			assert.strictEqual(byService.get("ingest"), 1)
@@ -503,16 +475,17 @@ describe("ErrorsService.countOpenIssuesByService", () => {
 
 // setSeverity
 
-describe("ErrorsService.setSeverity", () => {
+describe("Error issue severity, policies, and read models", () => {
 	it.effect("sets a manual severity, records the event, and queues an escalation", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const workflow = yield* ErrorIssueWorkflowService
 			const database = yield* Database
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			const actor = yield* errors.ensureUserActor(ORG, USER)
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
 
-			const updated = yield* errors.setSeverity(ORG, actor.id, issueId, "critical", {
+			const updated = yield* workflow.setSeverity(ORG, actor.id, issueId, "critical", {
 				note: "paging-worthy",
 			})
 			assert.strictEqual(updated.severity, "critical")
@@ -540,13 +513,14 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("an AI write never clobbers a manual severity", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const workflow = yield* ErrorIssueWorkflowService
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			const actor = yield* errors.ensureUserActor(ORG, USER)
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
 
-			yield* errors.setSeverity(ORG, actor.id, issueId, "low")
-			const afterAi = yield* errors.setSeverity(ORG, actor.id, issueId, "critical", {
+			yield* workflow.setSeverity(ORG, actor.id, issueId, "low")
+			const afterAi = yield* workflow.setSeverity(ORG, actor.id, issueId, "critical", {
 				source: "ai",
 			})
 			assert.strictEqual(afterAi.severity, "low")
@@ -556,14 +530,15 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("clearing severity nulls both fields and skips escalation", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const workflow = yield* ErrorIssueWorkflowService
 			const database = yield* Database
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			const actor = yield* errors.ensureUserActor(ORG, USER)
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
 
-			yield* errors.setSeverity(ORG, actor.id, issueId, "medium")
-			const cleared = yield* errors.setSeverity(ORG, actor.id, issueId, null)
+			yield* workflow.setSeverity(ORG, actor.id, issueId, "medium")
+			const cleared = yield* workflow.setSeverity(ORG, actor.id, issueId, null)
 			assert.isNull(cleared.severity)
 			assert.isNull(cleared.severitySource)
 
@@ -577,7 +552,7 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("upsertEscalationPolicy rejects destination IDs the org does not own", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const policies = yield* ErrorPolicyService
 			const database = yield* Database
 			const now = yield* Clock.currentTimeMillis
 			const ownedId = asDestinationId(randomUUID())
@@ -600,7 +575,7 @@ describe("ErrorsService.setSeverity", () => {
 				}),
 			)
 
-			const rejected = yield* errors
+			const rejected = yield* policies
 				.upsertEscalationPolicy(
 					ORG,
 					USER,
@@ -621,7 +596,7 @@ describe("ErrorsService.setSeverity", () => {
 				assert.notInclude(rejected.details, ownedId)
 			}
 
-			const accepted = yield* errors.upsertEscalationPolicy(
+			const accepted = yield* policies.upsertEscalationPolicy(
 				ORG,
 				USER,
 				new IssueEscalationPolicyUpsertRequest({
@@ -640,12 +615,14 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("listIssues filters by severity and kind", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const workflow = yield* ErrorIssueWorkflowService
+			const readModels = yield* ErrorIssueReadModelsService
 			const database = yield* Database
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			const actor = yield* errors.ensureUserActor(ORG, USER)
-			yield* errors.setSeverity(ORG, actor.id, issueId, "high")
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* workflow.setSeverity(ORG, actor.id, issueId, "high")
 
 			const alertIssueId = asIssueId(randomUUID())
 			const now = yield* Clock.currentTimeMillis
@@ -666,19 +643,19 @@ describe("ErrorsService.setSeverity", () => {
 				}),
 			)
 
-			const high = yield* errors.listIssues(ORG, { severity: "high" })
+			const high = yield* readModels.listIssues(ORG, { severity: "high" })
 			assert.deepStrictEqual(
 				high.issues.map((i) => i.id),
 				[issueId],
 			)
 
-			const unset = yield* errors.listIssues(ORG, { severity: "unset" })
+			const unset = yield* readModels.listIssues(ORG, { severity: "unset" })
 			assert.deepStrictEqual(
 				unset.issues.map((i) => i.id),
 				[alertIssueId],
 			)
 
-			const alerts = yield* errors.listIssues(ORG, { kind: "alert" })
+			const alerts = yield* readModels.listIssues(ORG, { kind: "alert" })
 			assert.deepStrictEqual(
 				alerts.issues.map((i) => i.id),
 				[alertIssueId],
@@ -689,13 +666,13 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("listIssues deploymentEnv filter keeps only warehouse-observed fingerprints", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const readModels = yield* ErrorIssueReadModelsService
 			const prodIssueId = asIssueId(randomUUID())
 			const otherIssueId = asIssueId(randomUUID())
 			yield* seedIssue(prodIssueId, { fingerprintHash: "111" })
 			yield* seedIssue(otherIssueId, { fingerprintHash: "222" })
 
-			const filtered = yield* errors.listIssues(ORG, {
+			const filtered = yield* readModels.listIssues(ORG, {
 				deploymentEnv: "production",
 			})
 			assert.deepStrictEqual(
@@ -704,7 +681,7 @@ describe("ErrorsService.setSeverity", () => {
 			)
 
 			// The unfiltered list still returns both.
-			const all = yield* errors.listIssues(ORG, {})
+			const all = yield* readModels.listIssues(ORG, {})
 			assert.strictEqual(all.issues.length, 2)
 		}).pipe(
 			// The warehouse saw only fingerprint 111 in the selected environment.
@@ -716,10 +693,10 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("listIssues deploymentEnv filter short-circuits when no fingerprints match", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const readModels = yield* ErrorIssueReadModelsService
 			yield* seedIssue(asIssueId(randomUUID()))
 
-			const filtered = yield* errors.listIssues(ORG, {
+			const filtered = yield* readModels.listIssues(ORG, {
 				deploymentEnv: "staging",
 			})
 			assert.deepStrictEqual(filtered.issues, [])
@@ -732,7 +709,7 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("listIssues paginates with a keyset cursor", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const readModels = yield* ErrorIssueReadModelsService
 			const now = yield* Clock.currentTimeMillis
 			// 5 issues with strictly decreasing lastSeenAt so page order is stable.
 			const ids: Array<ErrorIssueId> = []
@@ -742,7 +719,7 @@ describe("ErrorsService.setSeverity", () => {
 				yield* seedIssue(id, { lastSeenAt: new Date(now - i * 60_000) })
 			}
 
-			const page1 = yield* errors.listIssues(ORG, { limit: 2 })
+			const page1 = yield* readModels.listIssues(ORG, { limit: 2 })
 			assert.deepStrictEqual(
 				page1.issues.map((i) => i.id),
 				[ids[0], ids[1]],
@@ -750,7 +727,7 @@ describe("ErrorsService.setSeverity", () => {
 			assert.isString(page1.nextCursor)
 
 			const cursor1 = Schema.decodeUnknownSync(IssueListCursor)(page1.nextCursor)
-			const page2 = yield* errors.listIssues(ORG, {
+			const page2 = yield* readModels.listIssues(ORG, {
 				limit: 2,
 				cursor: cursor1,
 			})
@@ -761,7 +738,7 @@ describe("ErrorsService.setSeverity", () => {
 			assert.isString(page2.nextCursor)
 
 			const cursor2 = Schema.decodeUnknownSync(IssueListCursor)(page2.nextCursor)
-			const page3 = yield* errors.listIssues(ORG, {
+			const page3 = yield* readModels.listIssues(ORG, {
 				limit: 2,
 				cursor: cursor2,
 			})
@@ -779,7 +756,7 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("listIssues pages tie-broken by id when lastSeenAt collides", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const readModels = yield* ErrorIssueReadModelsService
 			const now = yield* Clock.currentTimeMillis
 			const sameInstant = new Date(now)
 			const ids = ["cccc", "bbbb", "aaaa"].map((prefix) =>
@@ -789,8 +766,8 @@ describe("ErrorsService.setSeverity", () => {
 				yield* seedIssue(id, { lastSeenAt: sameInstant })
 			}
 
-			const page1 = yield* errors.listIssues(ORG, { limit: 2 })
-			const page2 = yield* errors.listIssues(ORG, {
+			const page1 = yield* readModels.listIssues(ORG, { limit: 2 })
+			const page2 = yield* readModels.listIssues(ORG, {
 				limit: 2,
 				cursor: Schema.decodeUnknownSync(IssueListCursor)(page1.nextCursor),
 			})
@@ -803,7 +780,7 @@ describe("ErrorsService.setSeverity", () => {
 
 	it.effect("listIssues returns bounded actionable issues in severity order", () =>
 		Effect.gen(function* () {
-			const errors = yield* ErrorsService
+			const readModels = yield* ErrorIssueReadModelsService
 			const now = yield* Clock.currentTimeMillis
 			const critical = asIssueId("00000000-0000-4000-8000-000000000001")
 			const high = asIssueId("00000000-0000-4000-8000-000000000002")
@@ -832,7 +809,7 @@ describe("ErrorsService.setSeverity", () => {
 				severity: "critical",
 			})
 
-			const first = yield* errors.listIssues(ORG, {
+			const first = yield* readModels.listIssues(ORG, {
 				service: "checkout-api",
 				actionable: true,
 				sort: "severity",
@@ -845,7 +822,7 @@ describe("ErrorsService.setSeverity", () => {
 			assert.match(first.nextCursor ?? "", /^sev_/)
 
 			const cursor = Schema.decodeUnknownSync(IssueSeverityListCursor)(first.nextCursor?.slice(4))
-			const second = yield* errors.listIssues(ORG, {
+			const second = yield* readModels.listIssues(ORG, {
 				service: "checkout-api",
 				actionable: true,
 				sort: "severity",
@@ -887,6 +864,11 @@ const scanRow = (overrides: Record<string, unknown> = {}): Record<string, unknow
 	topFrame: "checkout/handler.ts:42",
 	count: 3,
 	affectedServicesCount: 1,
+	// The compiled query derives its row schema from the SELECT now, so a fixture
+	// missing a column fails the same way a warehouse that stopped returning one
+	// would. Empty by default: most of these tests are not about build sets, and
+	// a version here would put them on the pre-fix-build path.
+	serviceVersions: [],
 	firstSeen: formatWarehouseDateTime(TICK_MS - 120_000),
 	lastSeen: formatWarehouseDateTime(TICK_MS - 60_000 - 1_000),
 	...overrides,
@@ -1367,6 +1349,7 @@ describe("ErrorsService.runTick", () => {
 			const rows = [scanRow()]
 			return Effect.gen(function* () {
 				const errors = yield* ErrorsService
+				const actorService = yield* ErrorActorsService
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
 				yield* errors.runTick()
@@ -1374,7 +1357,7 @@ describe("ErrorsService.runTick", () => {
 
 				// Walk the long way round on purpose: the direct triage -> done path is
 				// covered separately, and this keeps the multi-step route exercised.
-				const actor = yield* errors.ensureUserActor(ORG, USER)
+				const actor = yield* actorService.ensureUserActor(ORG, USER)
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_progress")
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_review")
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
@@ -1421,6 +1404,7 @@ describe("ErrorsService.runTick", () => {
 			const rows = [scanRow()]
 			return Effect.gen(function* () {
 				const errors = yield* ErrorsService
+				const actorService = yield* ErrorActorsService
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
 				yield* errors.runTick()
@@ -1430,7 +1414,7 @@ describe("ErrorsService.runTick", () => {
 				// The path auto-resolve uses. It was previously illegal, which is why
 				// nothing could ever retire a quiet alert- or integration-kind issue:
 				// those are created in triage and never advance through review.
-				const actor = yield* errors.ensureUserActor(ORG, USER)
+				const actor = yield* actorService.ensureUserActor(ORG, USER)
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
 
 				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
@@ -1754,12 +1738,13 @@ describe("ErrorsService.runTick", () => {
 			const rows = [scanRow()]
 			return Effect.gen(function* () {
 				const errors = yield* ErrorsService
+				const actorService = yield* ErrorActorsService
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
 				yield* errors.runTick()
 				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
-				const actor = yield* errors.ensureUserActor(ORG, USER)
+				const actor = yield* actorService.ensureUserActor(ORG, USER)
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
 				// Record the build the issue was fixed on, then backdate the fix so the
 				// rollout grace window is not what keeps the issue closed.
@@ -1906,10 +1891,11 @@ describe("ErrorsService.runTick", () => {
 	it.effect("expired leases are released and in_progress issues fall back to todo", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
 			yield* TestClock.setTime(TICK_MS)
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			const actor = yield* errors.ensureUserActor(ORG, USER)
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
 			// Default lease is 30 minutes; claiming moves triage -> in_progress.
 			yield* errors.claimIssue(ORG, actor.id, issueId)
 
@@ -2037,6 +2023,254 @@ describe("ErrorsService.runTick", () => {
 	)
 })
 
+describe("ErrorsService.claimIssue audit events", () => {
+	for (const scenario of [
+		{ name: "picks up an unowned issue", holder: null, renewed: false },
+		{ name: "renews its own lease", holder: "self", renewed: true },
+		{ name: "takes over another actor's expired lease", holder: "other", renewed: false },
+	] as const) {
+		it.effect(`records one claim when it ${scenario.name}`, () =>
+			Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				const actorService = yield* ErrorActorsService
+				yield* TestClock.setTime(TICK_MS)
+				const actor = yield* actorService.ensureUserActor(ORG, USER)
+				const issueId = asIssueId(randomUUID())
+				const leaseDurationMs = 60_000
+				yield* seedIssue(issueId, {
+					workflowState: "in_progress",
+					leaseHolderActorId:
+						scenario.holder === "self"
+							? actor.id
+							: scenario.holder === "other"
+								? asActorId(randomUUID())
+								: null,
+					leaseExpiresAt:
+						scenario.holder === null
+							? null
+							: msToDate(TICK_MS + (scenario.holder === "self" ? 30_000 : -1)),
+				})
+
+				yield* errors.claimIssue(ORG, actor.id, issueId, leaseDurationMs)
+
+				const events = yield* loadEventsForIssue(issueId)
+				expect(
+					events.filter((event) => event.type === "claim").map((event) => event.payloadJson),
+				).toEqual([
+					{
+						leaseExpiresAt: TICK_MS + leaseDurationMs,
+						leaseDurationMs,
+						renewed: scenario.renewed,
+					},
+				])
+			}).pipe(Effect.provide(makeErrorsLayer())),
+		)
+	}
+})
+
+describe("ErrorsService.proposeFix claims the issue", () => {
+	// The production bug, pinned. `propose_fix` on a `triage` issue failed with
+	// "Illegal transition from 'triage' to 'in_review'" — 18 occurrences in two
+	// days in the internal org — and failed only AFTER writing the fix_proposed
+	// event. Agents land on issues in `triage`; this is the state that matters.
+	it.effect("takes a triage issue all the way to in_review", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "triage" })
+
+			const issue = yield* errors.proposeFix(ORG, actor.id, issueId, {
+				patchSummary: "Guard the self-PID case",
+			})
+
+			assert.strictEqual(issue.workflowState, "in_review")
+
+			// The lease is the whole point: an agent that only ever calls
+			// `propose_fix` must still end up holding it.
+			const [row] = yield* database.execute((db) =>
+				db
+					.select({
+						leaseHolderActorId: errorIssues.leaseHolderActorId,
+						leaseExpiresAt: errorIssues.leaseExpiresAt,
+					})
+					.from(errorIssues)
+					.where(eq(errorIssues.id, issueId)),
+			)
+			assert.strictEqual(row?.leaseHolderActorId, actor.id)
+			assert.isNotNull(row?.leaseExpiresAt)
+
+			const events = yield* database.execute((db) =>
+				db
+					.select({ type: errorIssueEvents.type, toState: errorIssueEvents.toState })
+					.from(errorIssueEvents)
+					.where(eq(errorIssueEvents.issueId, issueId)),
+			)
+			const types = events.map((event) => event.type)
+			expect(types).toContain("claim")
+			expect(types).toContain("fix_proposed")
+			// It walked triage → in_progress → in_review, not a single illegal hop.
+			expect(events.filter((e) => e.type === "state_change").map((e) => e.toState)).toEqual([
+				"in_progress",
+				"in_review",
+			])
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("works from every state an issue can be worked from", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			for (const from of ["triage", "regressed", "todo", "in_progress", "in_review"] as const) {
+				const issueId = asIssueId(randomUUID())
+				yield* seedIssue(issueId, { workflowState: from })
+				const issue = yield* errors.proposeFix(ORG, actor.id, issueId, {
+					patchSummary: `fix from ${from}`,
+				})
+				assert.strictEqual(issue.workflowState, "in_review", from)
+			}
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("refuses a closed issue before writing anything", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "cancelled" })
+
+			const exit = yield* errors
+				.proposeFix(ORG, actor.id, issueId, { patchSummary: "too late" })
+				.pipe(Effect.exit)
+			assert.isTrue(exit._tag === "Failure")
+
+			// The regression that made the old ordering dangerous: no half-written
+			// proposal left behind by a rejected call.
+			const events = yield* database.execute((db) =>
+				db
+					.select({ type: errorIssueEvents.type })
+					.from(errorIssueEvents)
+					.where(eq(errorIssueEvents.issueId, issueId)),
+			)
+			expect(events.map((event) => event.type)).not.toContain("fix_proposed")
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("refuses a pr_url that is not a pull request, instead of silently dropping it", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "triage" })
+
+			const exit = yield* errors
+				.proposeFix(ORG, actor.id, issueId, {
+					patchSummary: "fixed it",
+					prUrl: "https://example.com/not-a-pr",
+				})
+				.pipe(Effect.exit)
+
+			// It used to succeed, swallow the link failure, and report back
+			// "- PR: https://example.com/not-a-pr" — so the agent believed the fix
+			// was attached and would be verified after merge. Nothing was linked and
+			// no verification would ever run.
+			assert.isTrue(exit._tag === "Failure")
+			const events = yield* database.execute((db) =>
+				db
+					.select({ type: errorIssueEvents.type })
+					.from(errorIssueEvents)
+					.where(eq(errorIssueEvents.issueId, issueId)),
+			)
+			expect(events.map((event) => event.type)).not.toContain("fix_proposed")
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("fails when another actor holds the lease", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const issueId = asIssueId(randomUUID())
+			const mine = yield* actorService.ensureUserActor(ORG, USER)
+			const now = yield* Clock.currentTimeMillis
+			yield* seedIssue(issueId, {
+				workflowState: "in_progress",
+				leaseHolderActorId: asActorId(randomUUID()),
+				claimedAt: new Date(now),
+				leaseExpiresAt: new Date(now + 600_000),
+			})
+
+			const exit = yield* errors
+				.proposeFix(ORG, mine.id, issueId, { patchSummary: "racing" })
+				.pipe(Effect.exit)
+
+			// The duplicate-work collision the lease exists to catch, finally caught
+			// on the path agents actually take.
+			assert.isTrue(exit._tag === "Failure")
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+})
+
+describe("ErrorsService.transitionIssue claims on in_progress", () => {
+	// The path the internal org's agent actually took: transition to in_progress
+	// by hand, then to in_review. It left every one of 50 live issues unclaimed.
+	it.effect("takes the lease when an actor moves an issue to in_progress", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "triage" })
+
+			yield* errors.transitionIssue(ORG, actor.id, issueId, "in_progress")
+
+			const [row] = yield* database.execute((db) =>
+				db
+					.select({ leaseHolderActorId: errorIssues.leaseHolderActorId })
+					.from(errorIssues)
+					.where(eq(errorIssues.id, issueId)),
+			)
+			assert.strictEqual(row?.leaseHolderActorId, actor.id)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("leaves another actor's lease alone rather than refusing the move", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const holder = asActorId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			const now = yield* Clock.currentTimeMillis
+			yield* seedIssue(issueId, {
+				workflowState: "triage",
+				leaseHolderActorId: holder,
+				claimedAt: new Date(now),
+				leaseExpiresAt: new Date(now + 600_000),
+			})
+
+			const issue = yield* errors.transitionIssue(ORG, actor.id, issueId, "in_progress")
+
+			assert.strictEqual(issue.workflowState, "in_progress")
+			const [row] = yield* database.execute((db) =>
+				db
+					.select({ leaseHolderActorId: errorIssues.leaseHolderActorId })
+					.from(errorIssues)
+					.where(eq(errorIssues.id, issueId)),
+			)
+			assert.strictEqual(row?.leaseHolderActorId, holder)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+})
+
 describe("ErrorsService.transitionIssue lease renewal", () => {
 	// Covers the non-terminal branch of `applyTransition`: an agent moving its own
 	// claimed issue along is working on it, so the lease should follow rather than
@@ -2045,9 +2279,10 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 	it.effect("extends the holder's lease on a non-terminal transition", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
 			const database = yield* Database
 			const issueId = asIssueId(randomUUID())
-			const actor = yield* errors.ensureUserActor(ORG, USER)
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
 			const now = yield* Clock.currentTimeMillis
 			yield* seedIssue(issueId, {
 				workflowState: "in_progress",
@@ -2072,8 +2307,9 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 	it.effect("clears the lease when the transition is terminal", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
 			const issueId = asIssueId(randomUUID())
-			const actor = yield* errors.ensureUserActor(ORG, USER)
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
 			const now = yield* Clock.currentTimeMillis
 			yield* seedIssue(issueId, {
 				workflowState: "in_progress",

@@ -3,6 +3,7 @@ import {
 	type BranchEventJob,
 	type InstallationSyncJob,
 	isInstallationProcessable,
+	type PullRequestEventJob,
 	type PushJob,
 	type SyncCommitsJob,
 	type SyncBranchesJob,
@@ -20,6 +21,7 @@ import {
 } from "@maple/domain/http"
 import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
+import { PullRequestEventSink } from "./PullRequestEventSink"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
@@ -69,6 +71,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const repo = yield* VcsRepository
 			const registry = yield* VcsProviderRegistry
 			const queue = yield* VcsSyncQueue
+			const sink = yield* PullRequestEventSink
 
 			// The repo's single tracked branch, with the default-branch fallback for a
 			// row whose `trackedBranch` was never set (legacy) — the one place the
@@ -153,6 +156,28 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				job: SyncCommitsJob,
 			) =>
 				Effect.gen(function* () {
+					// A tracked-branch change wipes the repo's commits and enqueues a fresh
+					// backfill, but old-branch jobs survive in the queue (a rate-limited
+					// continuation can sit delayed for hours). Drop them — and re-check
+					// after the provider fetch below — so a stale job can never repopulate
+					// the wiped set, mark it ready, or overwrite the new backfill's status.
+					if (job.branch !== trackedBranchOf(repository)) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.commits.outcome": "skipped",
+							"vcs.commits.reason": "stale_tracked_branch",
+						})
+						yield* Effect.logInfo(
+							"[VCS] Dropping commit sync for a branch no longer tracked",
+						).pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalRepoId: job.externalRepoId,
+								branch: job.branch,
+								trackedBranch: trackedBranchOf(repository),
+							}),
+						)
+						return
+					}
 					// Mark the backfill in progress before the first provider call — the
 					// execution path owns every sync_status transition, so this is what the
 					// dashboard sees the moment a (re)sync actually starts (e.g. after a
@@ -182,6 +207,19 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							...(!(job.untilMs === undefined) ? { untilMs: job.untilMs } : undefined),
 						},
 					)
+
+					// Re-read the tracked branch after the provider round-trip: a retarget
+					// that committed (wipe + fresh backfill) while we were fetching must
+					// invalidate this walk before it writes, or old-branch commits reappear
+					// in the freshly reset repo. `None` covers a concurrent purge.
+					const current = yield* repo.getRepositoryById(repository.orgId, repository.id)
+					if (Option.isNone(current) || trackedBranchOf(current.value) !== job.branch) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.commits.outcome": "skipped",
+							"vcs.commits.reason": "tracked_branch_changed_mid_fetch",
+						})
+						return
+					}
 
 					// Commits belong to the repo (no branch link), and the repo's commit set
 					// is reset up front whenever the tracked branch changes — so a walk just
@@ -634,8 +672,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// webhook and the dashboard callback each enqueue one — finds no siblings left.
 					// "updated" (a reconnect) runs the same purge; it just finds nothing to remove.
 					if (job.reason === "created" || job.reason === "updated") {
+						// Strictly-older siblings only: "supersedes" must be a strict order,
+						// or two concurrent created/updated jobs for different installations
+						// could each observe the other and mutually purge both. The newest
+						// installation wins; the older job finds nothing to remove, and its
+						// later writes no-op against the purged row (the repo layer gates
+						// child upserts on a live parent).
 						const superseded = (yield* repo.listInstallationsByOrg(active.orgId)).filter(
-							(other) => other.provider === active.provider && other.id !== active.id,
+							(other) =>
+								other.provider === active.provider &&
+								other.id !== active.id &&
+								(other.createdAt < active.createdAt ||
+									(other.createdAt === active.createdAt && other.id < active.id)),
 						)
 						if (superseded.length > 0) {
 							yield* Effect.forEach(
@@ -761,6 +809,29 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				yield* applyBranchEvent(installation, repositoryOpt.value, job)
 			})
 
+			/**
+			 * A pull request changed. Unlike every other handler this one persists
+			 * nothing here — it resolves the owning org and forwards to the sink,
+			 * which owns the issue link and the verification window.
+			 *
+			 * Deliberately NOT behind `ensureProcessable`: that gate asks whether a
+			 * repository is synced, and a PR can name an issue in a repository this
+			 * org never asked Maple to index. Requiring a synced repo would drop
+			 * exactly the link a user most wants.
+			 */
+			const handlePullRequestEvent = Effect.fn("VcsSyncService.handlePullRequestEvent")(function* (
+				installation: VcsInstallation,
+				job: PullRequestEventJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"vcs.pull_request.number": job.number,
+					"vcs.pull_request.action": job.action,
+					"vcs.pull_request.merged": job.merged,
+				})
+				yield* sink.onPullRequestEvent(installation.orgId, job)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
@@ -838,6 +909,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("branch-event", (job) =>
 						handleBranchEvent(installation, job),
 					),
+					Match.discriminator("kind")("pull-request-event", (job) =>
+						handlePullRequestEvent(installation, job),
+					),
 					Match.exhaustive,
 				)
 
@@ -908,6 +982,15 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						yield* Effect.annotateCurrentSpan({
 							"vcs.exhausted.outcome": "noop",
 							"vcs.exhausted.reason": "repository_unresolved",
+						})
+						return
+					}
+					// An exhausted job for a branch no longer tracked must not flag the NEW
+					// branch's backfill as errored — the stale walk it represents is moot.
+					if (job.branch !== trackedBranchOf(repositoryOpt.value)) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "noop",
+							"vcs.exhausted.reason": "stale_tracked_branch",
 						})
 						return
 					}

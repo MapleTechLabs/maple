@@ -9,6 +9,7 @@ import { Layer, Redacted } from "effect"
 import {
 	buildResolved,
 	type FlushTransport,
+	guardFlush,
 	makeSerializedFlush,
 	type Resolved,
 	type ResourceInput,
@@ -19,6 +20,7 @@ import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import { browserDocument, browserNavigator } from "./browser-globals.js"
+import { trySyncOrUndefined } from "../shared/try-sync.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import type { PrivacyOptions } from "./track.js"
@@ -83,7 +85,7 @@ export interface MapleClientFlushableConfig {
 	 * Post session metadata rows for the standalone session so it appears in
 	 * Maple's Sessions UI (list entry + linked traces, no replay recording).
 	 * Default `true`; no-ops when `@maple-dev/browser` is on the page (it owns
-	 * the session rows), during SSR, or without an ingest key.
+	 * the session rows), without a browser DOM, or without an ingest key.
 	 */
 	readonly emitSessionMeta?: boolean | undefined
 	/**
@@ -160,9 +162,10 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 		if (nav.language) attributes["browser.language"] = nav.language
 	}
 	if (typeof Intl !== "undefined") {
-		try {
-			attributes["browser.timezone"] = Intl.DateTimeFormat().resolvedOptions().timeZone
-		} catch {}
+		// A locale-stripped build throws from `DateTimeFormat` rather than
+		// reporting an unknown zone.
+		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
+		if (timezone) attributes["browser.timezone"] = timezone
 	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
@@ -170,7 +173,11 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 		attributes["deployment.environment"] = config.environment
 		attributes["deployment.environment.name"] = config.environment
 	}
-	if (config.serviceVersion) attributes["deployment.commit_sha"] = config.serviceVersion
+	// `serviceVersion` may be a semver release string, which belongs in
+	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
+	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+		attributes["vcs.ref.head.revision"] = config.serviceVersion
+	}
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	if (config.attributes) Object.assign(attributes, config.attributes)
 	return attributes
@@ -243,8 +250,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 
 	// Never rejects — fired from `pagehide`/`visibilitychange` handlers and the
 	// auto-flush timer as `void flush()`.
-	const flush = makeSerializedFlush(async (): Promise<void> => {
-		try {
+	const flush = makeSerializedFlush(
+		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
 			if (!hasConsent()) {
 				spans.drain()
 				logs.drain()
@@ -263,10 +270,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				logPrefix: "[MapleClientSDK]",
 				onNoOp: noOpNotice,
 			})
-		} catch (err) {
-			console.error("[MapleClientSDK] flush failed:", err)
-		}
-	})
+		}),
+	)
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -316,8 +321,12 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			name: "browser.uncaught_error",
 			attributes: {
 				"maple.exception.source": "window.onerror",
-				...(event.filename ? { "code.filepath": event.filename } : undefined),
-				...(event.lineno ? { "code.lineno": event.lineno } : undefined),
+				// `code.file.path` / `code.line.number` since semconv v1.34.0. Nothing
+				// reads the names they replaced, so they are dropped rather than
+				// dual-emitted — carrying both would put four near-identical rows on
+				// every uncaught error in the attribute list.
+				...(event.filename ? { "code.file.path": event.filename } : undefined),
+				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
 			},
 		})
 	}

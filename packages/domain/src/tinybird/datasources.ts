@@ -501,6 +501,19 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 		UnsampledSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
 		DbNamespace: t.string().lowCardinality(),
+		// Sample-weighted t-digest of Duration (nanoseconds), so the map's database
+		// nodes can show a real p95 instead of the max they showed for months.
+		// Same state type and weight expression as
+		// `service_map_db_query_shapes_hourly.DurationQuantiles`, which the detail
+		// panel already merges — the node and the panel therefore finalize the
+		// identical statistic off the identical spans.
+		//
+		// Added by migration 0022. Buckets sealed before it hold an empty state,
+		// which merges to nothing; the read path reports 0 and the UI falls back to
+		// the max, labelled as a max. Not backfilled: raw `traces` keeps 30 days
+		// against this table's 365, so a backfill could only ever repair a twelfth
+		// of the window.
+		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -609,6 +622,9 @@ export const serviceExternalEdgesHourly = defineDatasource("service_external_edg
 		DurationSumMs: t.simpleAggregateFunction("sum", t.float64()),
 		MaxDurationMs: t.simpleAggregateFunction("max", t.float64()),
 		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
+		// See the note on `service_map_db_edges_hourly.DurationQuantiles` — same
+		// state, same reason, same migration.
+		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -714,7 +730,7 @@ export type ServicePlatformsHourlyRow = InferRow<typeof servicePlatformsHourly>
 
 /**
  * Lightweight projection of service entry point spans for service overview queries.
- * Pre-extracts deployment.environment and deployment.commit_sha from ResourceAttributes.
+ * Pre-extracts deployment.environment(.name) and vcs.ref.head.revision from ResourceAttributes.
  * Stores Server/Consumer spans (service entry points) plus root spans as fallback.
  * Populated by materialized view, not direct ingestion.
  */
@@ -1062,6 +1078,83 @@ export const traceDetailSpans = defineDatasource("trace_detail_spans", {
 })
 
 export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
+
+/**
+ * Filtered projection of GenAI agent spans — every span the ingest gateway
+ * stamped with `maple_ai.vendor.id` — for the Agent Sessions read path
+ * (`aiSessionPageQuery`, `aiSessionListQuery`'s index levels, and
+ * `aiSessionFacetsQuery`).
+ *
+ * Why it exists: detecting agent traces by `mapContains(SpanAttributes, …)` on
+ * raw `traces` cannot be indexed at this shape. GenAI spans are ~0.01% of rows
+ * but arrive continuously — about one per index granule — so the
+ * `mapKeys(SpanAttributes)` bloom index prunes nothing and the scan reads the
+ * fat Map column for every span in the window (measured 2026-08-29: ~3.6s for
+ * one hour, timeout at a day). This table holds only those spans, pre-extracted
+ * to plain columns, so the same detection is a scan of ~10k narrow rows per day.
+ *
+ * The columns are what its readers need — the trace-id set, the grouping key,
+ * the agent-span bounds that tell the fan-out which hours to read, the filter
+ * dimensions the sidebar offers (service, environment, and the span's model,
+ * agent and tool coalesced across dialects), and the per-span measures the
+ * page ranks and filters on: whether the span is a model call, a tool call, a
+ * failure, and the tokens and cost it reported, with `SpanId`/`ParentSpanId`
+ * so a wrapper's roll-up of its children's usage can be taken off it. Every
+ * one of those is a fact of the GenAI span itself, so the index can carry it
+ * and the page can filter, sort and page on it without the fan-out. What the
+ * index cannot carry is the trace's non-agent spans: the row's `spanCount`,
+ * its all-span `errorSpanCount` and its true extent still come per-trace off
+ * `trace_detail_spans`, over the page's bounds rather than the caller's window.
+ *
+ * `Model`/`AgentName`/`ToolName` are `''` on the rows that carry no such fact
+ * — a chat span has no tool, a tool span no model — and the facets drop the
+ * blank option. `DeploymentEnv` is the resource attribute under either semconv
+ * spelling, like every other MV that pre-extracts it.
+ *
+ * Session ids live only on the turn-owning spans, so `SessionId` is '' for most
+ * rows — resolution to a session key stays per-TRACE at read time, exactly as
+ * documented in `query-engine-integrations/src/ai/ai-sessions.ts`.
+ */
+export const aiTraceIndex = defineDatasource("ai_trace_index", {
+	description:
+		"GenAI agent spans only (maple_ai.vendor.id stamped), pre-extracted to plain columns. Detection/facet surface for the Agent Sessions pages. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Timestamp: t.dateTime64(9),
+		TraceId: t.string(),
+		SessionId: t.string(),
+		VendorId: t.string().lowCardinality(),
+		ServiceName: t.string().lowCardinality(),
+		// Migration 0026 — the sidebar's other facet dimensions, and the per-span
+		// measures the page ranks and filters on. All `gen-ai-columns.ts`.
+		DeploymentEnv: t.string().lowCardinality(),
+		Model: t.string().lowCardinality(),
+		AgentName: t.string().lowCardinality(),
+		ToolName: t.string().lowCardinality(),
+		SpanId: t.string(),
+		ParentSpanId: t.string(),
+		Duration: t.uint64(),
+		IsError: t.uint8(),
+		IsLlmCall: t.uint8(),
+		IsToolCall: t.uint8(),
+		Tokens: t.float64(),
+		Cost: t.float64(),
+		// Migration 0029 — the provider's id for the response (`gen_ai.response.id`
+		// and its Vercel spelling), so two observations of one model call — the
+		// app's own span and a gateway's mirror of it (OpenRouter Broadcast,
+		// Helicone, …), which land in the same session as separate traces — are
+		// counted once. '' where the span carries none.
+		ResponseId: t.string(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	}),
+})
+
+export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>
 
 /**
  * OpenTelemetry sum/counter metrics datasource
@@ -1497,6 +1590,64 @@ export const alertChecks = defineDatasource("alert_checks", {
 export type AlertChecksRow = InferRow<typeof alertChecks>
 
 /**
+ * The org-wide audit log: one row per allowed or denied action, and per read
+ * of telemetry or session replays, attributed to the user, API key, agent, or
+ * Maple itself that performed it. Written by the API through `ingest` (the
+ * audit events queue consumer, or the producer directly when no queue is
+ * bound) and read only by the admin-gated `GET /v2/audit_log`; never fed by a
+ * materialized view and never routed to a BYO ClickHouse — the log is Maple's
+ * record, not the customer warehouse's.
+ *
+ * Absent values are empty strings rather than NULL: `LowCardinality(Nullable)`
+ * is awkward in ClickHouse and every read maps `''` back to `null` on the wire.
+ * `Changes`/`Metadata` hold JSON documents (`''` when none); `ChangedFields`
+ * keeps the touched field names queryable without parsing `Changes`.
+ *
+ * Six-year retention: HIPAA §164.316(b)(2) keeps required documentation for six
+ * years, and the audit trail is the documentation of who accessed what.
+ */
+export const auditLog = defineDatasource("audit_log", {
+	description:
+		"Org-wide audit trail: allowed and denied actions plus telemetry/session-replay reads, attributed to the user, API key, or agent that performed them. Admin-only; read through GET /v2/audit_log.",
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Id: t.string(),
+		OccurredAt: t.dateTime64(3),
+		RecordedAt: t.dateTime64(3),
+		ActorType: t.string().lowCardinality(),
+		UserId: t.string(),
+		ApiKeyId: t.string(),
+		ActorId: t.string(),
+		ActorLabel: t.string(),
+		AffectedUserId: t.string(),
+		Source: t.string().lowCardinality(),
+		Action: t.string().lowCardinality(),
+		Outcome: t.string().lowCardinality(),
+		DenialReason: t.string(),
+		ResourceType: t.string().lowCardinality(),
+		ResourceId: t.string(),
+		// `[:]` is what lets the Events API map a JSON array onto Array(String).
+		ChangedFields: column(t.array(t.string()), { jsonPath: "$.ChangedFields[:]" }),
+		Changes: t.string(),
+		Metadata: t.string(),
+		RequestId: t.string(),
+		OriginIp: t.string(),
+		OriginCountry: t.string().lowCardinality(),
+	},
+	// ReplacingMergeTree keyed on the entry id makes queue redelivery idempotent:
+	// a second delivery of the same event collapses at the next merge. Until
+	// then a page can carry both copies; `AuditLogService.list` drops the
+	// repeat by id.
+	engine: engine.replacingMergeTree({
+		partitionKey: "toYYYYMM(OccurredAt)",
+		sortingKey: ["OrgId", "OccurredAt", "Id"],
+		ttl: "toDate(OccurredAt) + INTERVAL 2190 DAY",
+	}),
+})
+
+export type AuditLogRow = InferRow<typeof auditLog>
+
+/**
  * Minute-grain operation metrics used by the service-detail Operations panel.
  * The operation name is normalized once by the write-side MV, while exact and
  * sampling-weighted counts are retained side-by-side. Duration aggregates are
@@ -1523,6 +1674,26 @@ export const serviceOperationsMinutely = defineDatasource("service_operations_mi
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
+		// Discriminators added by migration 0023, as additive MEASURES rather than
+		// GROUP BY dimensions: a new dimension would have to join the sorting key,
+		// and on an AggregatingMergeTree a non-key column merges rows together and
+		// sums across the values you were trying to separate. Counting instead keeps
+		// the grain, the cardinality and the sorting key exactly as they were.
+		//
+		// ClassifiedSpanCount is written only by the post-0023 MV, so a bucket where
+		// it is 0 predates the migration and its two siblings mean "unknown", not
+		// "none" — that distinction is what stops historical windows reading as
+		// zero-endpoint. Nothing is backfilled: raw `traces` keeps 30 days against
+		// this table's 90, so a backfill could only ever repair part of the window.
+		ClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Spans that actually served a request. Outbound HTTP calls normalize to the
+		// same `METHOD /path` name as an endpoint, so without this the API tab lists
+		// a service's own outbound calls as endpoints it serves.
+		ServerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Spans that carried `http.route`. The normalized name falls back to
+		// `url.path`, so a route template and a raw URL are indistinguishable in
+		// SpanName alone — this is the difference.
+		RoutedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Minute)",
@@ -1560,6 +1731,26 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95)", t.uint64()),
+		// Discriminators added by migration 0023, as additive MEASURES rather than
+		// GROUP BY dimensions: a new dimension would have to join the sorting key,
+		// and on an AggregatingMergeTree a non-key column merges rows together and
+		// sums across the values you were trying to separate. Counting instead keeps
+		// the grain, the cardinality and the sorting key exactly as they were.
+		//
+		// ClassifiedSpanCount is written only by the post-0023 MV, so a bucket where
+		// it is 0 predates the migration and its two siblings mean "unknown", not
+		// "none" — that distinction is what stops historical windows reading as
+		// zero-endpoint. Nothing is backfilled: raw `traces` keeps 30 days against
+		// this table's 365, so a backfill could only ever repair part of the window.
+		ClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Spans that actually served a request. Outbound HTTP calls normalize to the
+		// same `METHOD /path` name as an endpoint, so without this the API tab lists
+		// a service's own outbound calls as endpoints it serves.
+		ServerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Spans that carried `http.route`. The normalized name falls back to
+		// `url.path`, so a route template and a raw URL are indistinguishable in
+		// SpanName alone — this is the difference.
+		RoutedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
@@ -2011,6 +2202,14 @@ export const sessionEvents = defineDatasource("session_events", {
 		Attributes: column(t.map(t.string(), t.string()), {
 			jsonPath: "$.attributes",
 		}),
+		// Identity, stamped by the SDK on every event (the same lazy `identify()`
+		// read that fills session rows and spans). All defaulted: an SDK build that
+		// predates them keeps writing, and `product_events_mv` copies them through
+		// so a funnel never needs an insert-order-dependent join back to
+		// `session_replays`. `''` means "unidentified", never "unknown".
+		VisitorId: column(t.string().default(""), { jsonPath: "$.visitor_id" }),
+		UserId: column(t.string().default(""), { jsonPath: "$.user_id" }),
+		GroupId: column(t.string().default(""), { jsonPath: "$.group_id" }),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
@@ -2024,12 +2223,17 @@ export const sessionEvents = defineDatasource("session_events", {
 	// cluster, whereas Tinybird rebuilds the table and replays live rows
 	// through this SELECT. Every other column is carried forward untouched;
 	// only the map is re-typed, and the cast preserves values because
-	// `LowCardinality(String)` keys are already strings.
+	// `LowCardinality(String)` keys are already strings. The identity columns
+	// (migration 0021) are new, so existing rows carry them forward as their
+	// default `''` — Tinybird requires every schema column to appear here.
 	forwardQuery: `SELECT
 		OrgId, SessionId, Timestamp, Seq, Type, Url, TraceId, Level, Message,
 		TargetSelector, TargetText, NetMethod, NetUrl, NetStatus, NetDurationMs,
 		ErrorStack,
-		CAST(Attributes, 'Map(String, String)') AS Attributes`,
+		CAST(Attributes, 'Map(String, String)') AS Attributes,
+		defaultValueOfTypeName('String') AS VisitorId,
+		defaultValueOfTypeName('String') AS UserId,
+		defaultValueOfTypeName('String') AS GroupId`,
 	indexes: [
 		{
 			// `Type` is not in the sorting key, so the "top custom events" query
@@ -2047,76 +2251,123 @@ export const sessionEvents = defineDatasource("session_events", {
 export type SessionEventsRow = InferRow<typeof sessionEvents>
 
 /**
- * Web analytics fact table — the page views and custom events out of
- * `session_events`, re-sorted by time and with the URL pre-parsed.
- * Populated by materialized view, not direct ingestion.
+ * Product events fact table — every event a funnel or product-analytics query
+ * can step on, from every surface: browser page views and `track()` calls
+ * (materialized out of `session_events`), and events posted directly by
+ * backends and mobile apps via `POST /v1/events`.
  *
- * ## Why this exists
+ * ## Why this exists (the browser half)
  *
  * `session_events` is sorted `(OrgId, SessionId, Timestamp, Seq)`, so a
  * time-range filter cannot use the primary index at all — only
  * `PARTITION BY toDate(Timestamp)` prunes, at day granularity. Its `idx_type`
  * skip index does not rescue that: navigation rows are interleaved with every
- * session's clicks and network calls, so at `GRANULARITY 4` (32,768 rows per
- * index granule) essentially every granule contains one and it prunes ~nothing.
- * Measured on one production org over 7 days: 6,879 navigation rows out of
- * 88,250 — the analytics queries read ~13x the data they use, and evaluated
- * `domain(Url)`/`path(Url)` per row on top of it.
- *
- * A `host`/`pagePath` filter then multiplies that by twelve, because
- * `navigationSessionsSubquery` is inlined into every branch of the breakdowns
- * UNION.
+ * session's clicks and network calls, so at `GRANULARITY 4` essentially every
+ * granule contains one and it prunes ~nothing. Measured on one production org
+ * over 7 days: 6,879 navigation rows out of 88,250 — the analytics queries read
+ * ~13x the data they used, and evaluated `domain(Url)`/`path(Url)` per row.
  *
  * So: time-first sorting key, `Host`/`PagePath` materialized at write time, and
- * only the two event types product analytics asks about.
+ * only the event types product analytics asks about (navigation + custom —
+ * clicks are ~2x more rows and a CSS selector is not a stable step definition).
+ * In-session debugging still reads `session_events` directly.
  *
- * ## Why only navigation + custom
+ * ## Why it is dual-fed (the server/mobile half)
  *
- * These are the two that answer product questions and the two that can be funnel
- * steps ("viewed /pricing", `track('signup_completed')`). Clicks are the next
- * largest type by far (11,970 vs 6,879 over the same window) and a CSS selector
- * is not a stable step definition, so including them would roughly triple the
- * table to serve a worse funnel. In-session debugging still reads
- * `session_events` directly — this table is not a replacement for it.
+ * "Started a plan" happens on a Stripe/webhook path the browser never sees, and
+ * a mobile app has no `session_events` transcript. Those events are posted
+ * straight into this table with `Source = 'server' | 'mobile'` and no
+ * `SessionId`. `Source` is also what keeps the browser backfill re-runnable:
+ * it deletes `WHERE Source = 'browser'` rather than truncating, so a re-run can
+ * never destroy directly ingested rows (which have no source to rebuild from).
+ *
+ * ## Person key
+ *
+ * `VisitorId` (device/anonymous id — the browser's cross-subdomain cookie, a
+ * mobile install id) and `UserId`/`GroupId` from `identify()`, stamped on the
+ * row by the SDK. A funnel keys on `if(UserId != '', UserId, VisitorId)`,
+ * stitched across the anonymous→identified boundary by `identity_links`.
+ * `VisitorId` sits third in the sorting key so a per-person `windowFunnel`
+ * groups over contiguous rows inside the time range.
  *
  * ## Kind vs EventName
  *
- * Both, deliberately. `track()` puts a caller-supplied name straight into
- * `Message` with no reserved-prefix check, so a customer calling
+ * Both, deliberately. `track()` puts a caller-supplied name straight into the
+ * event with no reserved-prefix check on the browser path, so a customer calling
  * `track('$pageview')` would silently inflate page views if `EventName` were the
  * only discriminator. `Kind` is the column that is provably identical to the old
  * `Type = 'navigation'` predicate; `EventName` is the funnel's step key.
  *
- * TTL 30 days, matching the rest of the session family. Note the source carries
- * the same TTL, so this table can never be rebuilt past that horizon — a longer
- * retention here is a one-way decision, not a tuning knob.
+ * TTL 365 days. The browser half can never be rebuilt past `session_events`'
+ * 30 days, but this table's rows are tiny (a handful of event names per org) and
+ * a referral → paid funnel spans weeks, so retention here is the primary copy,
+ * not a rebuildable cache.
  */
-export const webEvents = defineDatasource("web_events", {
+export const productEvents = defineDatasource("product_events", {
 	description:
-		"Web analytics fact table: navigation and custom events from session_events, sorted by time with domain(Url)/path(Url) pre-extracted. Powers page views, top pages and funnels. Populated by materialized view.",
-	jsonPaths: false,
+		"Product events fact table: browser page views and track() calls (materialized from session_events) plus events posted directly by backends and mobile apps via POST /v1/events. Carries the person key (VisitorId/UserId/GroupId). Powers page views, top pages and funnels.",
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime64(9),
-		SessionId: t.string(),
-		/** Breaks ties within a millisecond, so a funnel's step order is stable. */
-		Seq: t.uint32(),
-		/** `navigation` | `custom` — the source `Type`, carried through unchanged. */
-		Kind: t.string().lowCardinality(),
-		/** `$pageview` for navigation, else the `track()` name. */
-		EventName: t.string(),
+		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		/** `browser` (from session_events) | `server` | `mobile`. */
+		Source: column(t.string().lowCardinality().default("browser"), {
+			jsonPath: "$.source",
+		}),
+		/** Empty for server events. */
+		SessionId: column(t.string().default(""), { jsonPath: "$.session_id" }),
+		/** Breaks ties within a millisecond, so a funnel's step order is stable. 0 for direct rows. */
+		Seq: column(t.uint32().default(0), { jsonPath: "$.seq" }),
+		VisitorId: column(t.string().default(""), { jsonPath: "$.visitor_id" }),
+		UserId: column(t.string().default(""), { jsonPath: "$.user_id" }),
+		GroupId: column(t.string().default(""), { jsonPath: "$.group_id" }),
+		/** `navigation` | `custom` | `screen` — the source type, carried through unchanged. */
+		Kind: column(t.string().lowCardinality(), { jsonPath: "$.kind" }),
+		/** `$pageview` for navigation, `$screen` for mobile screen views, else the `track()` name. */
+		EventName: column(t.string(), { jsonPath: "$.event_name" }),
 		/** `domain(Url)`. LowCardinality: an org has a handful of hosts. */
-		Host: t.string().lowCardinality(),
+		Host: column(t.string().lowCardinality().default(""), { jsonPath: "$.host" }),
 		/** `path(Url)` — pathname only, so no query string or fragment. Unbounded for `/orders/:uuid` apps, hence plain String. */
-		PagePath: t.string(),
-		Url: t.string(),
+		PagePath: column(t.string().default(""), { jsonPath: "$.page_path" }),
+		Url: column(t.string().default(""), { jsonPath: "$.url" }),
+		/** The emitting service (`maple-api`, `acme-ios`). Empty on browser rows — the session carries it. */
+		ServiceName: column(t.string().lowCardinality().default(""), {
+			jsonPath: "$.service_name",
+		}),
 		/** `track()` props. Plain String keys — the customer's app chooses them. */
-		Attributes: t.map(t.string(), t.string()),
+		Attributes: column(t.map(t.string(), t.string()).defaultExpr("map()"), {
+			jsonPath: "$.attributes",
+		}),
+		/**
+		 * The trace this event was derived from — set on `Source = 'trace'` rows,
+		 * `''` otherwise. A real column because both link directions filter on it
+		 * and a `Map` lookup reads the whole map per row. Last because
+		 * `ALTER TABLE … ADD COLUMN` appends.
+		 *
+		 * NO `jsonPath`, deliberately: only `product_events_traces_mv` and its
+		 * backfill write these. The insert-mapping generator skips path-less
+		 * columns, so the gateway's INSERT never names them and migration 0028 can
+		 * stay `requiredForIngest: false`. Give them a path and every `/v1/events`
+		 * batch for a BYO cluster stamped below 28 is rejected.
+		 */
+		TraceId: t.string().default(""),
+		/** The annotated span within {@link TraceId}. `''` on non-trace rows. */
+		SpanId: t.string().default(""),
 	},
+	// REQUIRED, proven against a real deploy: without it Tinybird REBUILDS this
+	// table from its 30-day sources to satisfy the new columns, dropping history
+	// past 30 days and every `/v1/events` row at any age (they have no source).
+	// `DEPLOYMENT_METHOD alter` on the view does not substitute — tested. Do not
+	// follow Tinybird's later suggestion to drop it in favour of ALTER TABLE.
+	// Every column must be listed; the two new ones take their type default.
+	forwardQuery: `SELECT
+		OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, GroupId, Kind, EventName,
+		Host, PagePath, Url, ServiceName, Attributes,
+		defaultValueOfTypeName('String') AS TraceId,
+		defaultValueOfTypeName('String') AS SpanId`,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "Timestamp", "SessionId", "Seq"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+		sortingKey: ["OrgId", "Timestamp", "VisitorId", "SessionId", "Seq"],
+		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
 	}),
 	indexes: [
 		{
@@ -2129,7 +2380,68 @@ export const webEvents = defineDatasource("web_events", {
 			type: "set(64)",
 			granularity: 4,
 		},
+		{
+			// "Everything this user did" — the person drill-in and the
+			// UserId-keyed funnel branch. Near-unique values, so a bloom filter.
+			name: "idx_user_id",
+			expr: "UserId",
+			type: "bloom_filter",
+			granularity: 4,
+		},
+		{
+			// The trace view looks up by id alone; near-unique values and `''` on
+			// most rows make a bloom filter prune hard and stay cheap.
+			name: "idx_trace_id",
+			expr: "TraceId",
+			type: "bloom_filter",
+			granularity: 4,
+		},
 	],
 })
 
-export type WebEventsRow = InferRow<typeof webEvents>
+export type ProductEventsRow = InferRow<typeof productEvents>
+
+/**
+ * Identity links — one row per (visitor, user) pair ever observed together on a
+ * session, materialized out of `session_replays` (later also from mobile
+ * `identify` calls). This is how a funnel collapses a person's anonymous
+ * marketing visit (VisitorId only) and their later server-side events (UserId
+ * only) into one row: a `product_events` row resolves its person as
+ * `if(UserId != '', UserId, coalesce(link.UserId, VisitorId))`.
+ *
+ * AggregatingMergeTree keyed on the pair, with `FirstSeen` as
+ * `SimpleAggregateFunction(min, …)`, so re-observing a pair collapses to the
+ * EARLIEST sighting. That engine choice is load-bearing, not tidiness: the
+ * reader ranks a visitor's users by `FirstSeen` to pick the one they became
+ * first, and under a plain ReplacingMergeTree (no version column) a merge keeps
+ * an arbitrary duplicate — commonly the newest. A visitor linked to A in
+ * January and again in March, and to B in February, then answers "A" until the
+ * merge lands and "B" afterwards, moving funnel counts with merge timing rather
+ * than with the data. Read-time `min()` cannot repair that: by then the January
+ * row is gone. The merge itself has to keep the minimum.
+ *
+ * Readers still aggregate `min(FirstSeen)` per pair — unmerged parts hold
+ * several rows — and only then rank; see `identityLinksByVisitor` in
+ * `@maple/query-engine`'s `ch/queries/product-events.ts`.
+ */
+export const identityLinks = defineDatasource("identity_links", {
+	description:
+		"Visitor→user identity links, one row per (VisitorId, UserId) pair observed on a session_replays row with both set. Stitches anonymous and identified product_events into one person for funnels.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		VisitorId: t.string(),
+		UserId: t.string(),
+		FirstSeen: t.simpleAggregateFunction("min", t.dateTime64(9)),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "tuple()",
+		sortingKey: ["OrgId", "VisitorId", "UserId"],
+		// A pair not re-observed for a year is dead weight. Keyed off the pair's
+		// first sighting, which `min` now makes stable, so the TTL of a link does
+		// not move every time the visitor signs in again.
+		ttl: "toDate(FirstSeen) + INTERVAL 365 DAY",
+	}),
+})
+
+export type IdentityLinksRow = InferRow<typeof identityLinks>

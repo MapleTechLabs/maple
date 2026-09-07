@@ -1,5 +1,8 @@
 import * as React from "react"
+import { useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
+import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
+import { logFilterChips } from "@/lib/logs/log-filter-chips"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
@@ -19,8 +22,11 @@ import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
+import { HighlightedText } from "./highlighted-text"
+import { shortTraceId } from "@/lib/logs/log-search-query"
 import { ChevronRightIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
 
 const ROW_HEIGHT = 36
 const ROW_HEIGHT_COMFORTABLE = 48
@@ -40,8 +46,18 @@ interface LogsTableViewProps {
 	wrap: boolean
 	density: LogsDensity
 	pinnedColumns: string[]
+	/** Body search text, marked in every message and named in the count line. */
+	searchText?: string
+	/** Trace the stream is scoped to, named in the count line and the empty state. */
+	traceId?: string
+	/** Clears both from the empty state. Omitted where neither is set. */
+	onClearSearch?: () => void
 	onLogClick?: (log: Log) => void
 	embedded?: boolean
+	/** Flattened active exclusions, for the empty state's hint. Optional: embedded log lists
+	 *  (a trace's spans, a session) carry no facet filters. */
+	excludedValues?: ReadonlyArray<string>
+	clearExclusions?: () => void
 }
 
 interface LogsTableProps {
@@ -79,6 +95,12 @@ interface LogRowProps {
 	wrap: boolean
 	density: LogsDensity
 	pinnedColumns: string[]
+	/** Text to mark in the message. Only a text search highlights; an id lookup
+	 *  matches the id columns, not the body. */
+	highlight?: string
+	/** Visible width of the list's scroller, in px. The inline expansion is
+	 *  pinned to it so a wide row's horizontal track doesn't stretch the panel. */
+	viewportWidth: number
 	measureRef?: (node: Element | null) => void
 	onClick: (log: Log) => void
 	onToggleExpand: (index: number) => void
@@ -95,6 +117,8 @@ const LogRow = React.memo(function LogRow({
 	wrap,
 	density,
 	pinnedColumns,
+	highlight,
+	viewportWidth,
 	measureRef,
 	onClick,
 	onToggleExpand,
@@ -121,8 +145,10 @@ const LogRow = React.memo(function LogRow({
 				position: "absolute",
 				top: 0,
 				left: 0,
-				width: fill ? "100%" : "max-content",
-				minWidth: "100%",
+				// The track owns the horizontal size (see `trackStyle`). A row that
+				// needs more than the track still overflows via the inner `w-max`,
+				// which is what grows the track on the next frame.
+				width: "100%",
 				transform: `translateY(${top}px)`,
 			}}
 			className="border-b border-border"
@@ -205,14 +231,14 @@ const LogRow = React.memo(function LogRow({
 							wrap ? "whitespace-pre-wrap break-words" : "truncate",
 						)}
 					>
-						{log.body}
+						<HighlightedText text={log.body} query={highlight} />
 					</span>
 				) : (
 					<span
 						style={{ width: BODY_WIDTH }}
 						className="shrink-0 truncate text-foreground text-[12px]"
 					>
-						{log.body}
+						<HighlightedText text={log.body} query={highlight} />
 					</span>
 				)}
 				{!fill && chips.length > 0 && (
@@ -231,19 +257,39 @@ const LogRow = React.memo(function LogRow({
 				    narrower than the viewport; collapses to 0 when the row overflows. */}
 				{!fill && <span className="flex-1" aria-hidden="true" />}
 			</div>
-			{isExpanded && <LogRowExpanded log={log} onOpenDetail={() => onClick(log)} />}
+			{isExpanded && (
+				// The row sits on a track as wide as the widest row in the list, so an
+				// expansion left at `width: 100%` inherits that width and has to be
+				// scrolled sideways to read. Pinned to the scroller's visible width
+				// instead, it reads in place at any horizontal scroll position.
+				<div
+					className="sticky left-0"
+					style={viewportWidth > 0 ? { width: viewportWidth } : undefined}
+				>
+					<LogRowExpanded log={log} highlight={highlight} onOpenDetail={() => onClick(log)} />
+				</div>
+			)}
 		</div>
 	)
 })
 
 /** Slim sticky header that labels the pinned-attribute columns. */
-function PinnedHeader({ pinnedColumns, wrap }: { pinnedColumns: string[]; wrap: boolean }) {
+function PinnedHeader({
+	pinnedColumns,
+	wrap,
+	trackStyle,
+}: {
+	pinnedColumns: string[]
+	wrap: boolean
+	trackStyle: React.CSSProperties
+}) {
 	return (
 		<div
-			className={cn(
-				"sticky top-0 left-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground/70 select-none",
-				wrap ? "w-full" : "w-max min-w-full",
-			)}
+			// `top-0` only: a `left-0` sticky header stays glued to the viewport
+			// while the rows scroll sideways underneath it, so the labels drift off
+			// the columns they name. It shares the rows' track width instead.
+			style={trackStyle}
+			className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground/70 select-none"
 		>
 			<span className="shrink-0 size-4" aria-hidden="true" />
 			<span className="shrink-0 size-1.5" aria-hidden="true" />
@@ -284,14 +330,22 @@ export function LogsTableView({
 	wrap,
 	density,
 	pinnedColumns,
+	searchText,
+	traceId,
+	onClearSearch,
 	onLogClick,
 	embedded,
+	excludedValues = EMPTY_EXCLUDED,
+	clearExclusions,
 }: LogsTableViewProps) {
 	const [selectedLog, setSelectedLog] = React.useState<Log | null>(null)
 	const [sheetOpen, setSheetOpen] = React.useState(false)
 	const [expandedRows, setExpandedRows] = React.useState<ReadonlySet<number>>(() => new Set())
 	const { effectiveTimezone } = useTimezonePreference()
 	const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+	// This pane owns its scroller (the route mounts it under `DashboardLayout.Fill`,
+	// not `.Scroll`), so it has to raise the sticky area's shadow itself.
+	const reportScrolled = usePageScrolledReporter()
 
 	const handleRowClick = React.useCallback(
 		(log: Log) => {
@@ -319,7 +373,20 @@ export function LogsTableView({
 		if (!open) setSelectedLog(null)
 	}, [])
 
+	// Measured row heights, feeding an adaptive estimate. The constants below are
+	// only a cold start: a compact row actually lands near 31px (an 18px chip
+	// between two 6px paddings plus the border), so every measurement used to
+	// shrink `getTotalSize()` and drag the scrollbar out from under the cursor.
+	// Expanded rows are excluded — they are not representative of the rest.
+	const sizeStatsRef = React.useRef({ sum: 0, byIndex: new Map<number, number>() })
+	const expandedRowsRef = React.useRef(expandedRows)
+	React.useLayoutEffect(() => {
+		expandedRowsRef.current = expandedRows
+	}, [expandedRows])
+
 	const estimateSize = React.useCallback(() => {
+		const stats = sizeStatsRef.current
+		if (stats.byIndex.size >= 8) return Math.round(stats.sum / stats.byIndex.size)
 		if (wrap) return density === "comfortable" ? 88 : 72
 		return density === "comfortable" ? ROW_HEIGHT_COMFORTABLE : ROW_HEIGHT
 	}, [wrap, density])
@@ -328,18 +395,106 @@ export function LogsTableView({
 		count: allData.length,
 		getScrollElement: () => scrollContainerRef.current,
 		estimateSize,
-		overscan: 4,
+		// 4 rows of buffer is ~140px at compact density — a flick outruns it and
+		// leaves blank bands, which reads as the list stuttering.
+		overscan: wrap ? 6 : 12,
 	})
+
+	// Every row is measured, not just the wrapped/expanded ones: an unmeasured
+	// row keeps its estimate, and a list of wrong estimates is exactly the drift
+	// above. Recording the height here (rather than reading the virtualizer's
+	// cache) keeps the mean deduped by index.
+	const measureElement = React.useCallback(
+		(node: Element | null) => {
+			virtualizer.measureElement(node)
+			if (!(node instanceof HTMLElement)) return
+			const index = Number(node.dataset.index)
+			if (!Number.isInteger(index) || expandedRowsRef.current.has(index)) return
+			const height = node.offsetHeight
+			if (height <= 0) return
+			const stats = sizeStatsRef.current
+			const previous = stats.byIndex.get(index)
+			if (previous === height) return
+			stats.sum += height - (previous ?? 0)
+			stats.byIndex.set(index, height)
+		},
+		[virtualizer],
+	)
 
 	// A global wrap/density change resizes every row at once. Clear the
 	// measurement cache so off-screen rows re-measure from the corrected
 	// estimate instead of jumping on the stale one. Per-row expand/collapse
 	// re-measures automatically via the row's ResizeObserver.
 	React.useLayoutEffect(() => {
+		sizeStatsRef.current = { sum: 0, byIndex: new Map() }
 		virtualizer.measure()
 	}, [wrap, density, virtualizer])
 
 	const virtualItems = virtualizer.getVirtualItems()
+
+	const scopeSuffix = [
+		traceId ? ` in trace ${shortTraceId(traceId)}` : "",
+		searchText ? ` matching “${searchText}”` : "",
+	].join("")
+
+	// A virtualized list's horizontal scroll width is the width of whichever rows
+	// happen to be mounted, and in the default layout a row sizes to its content
+	// — so scrolling vertically swung `scrollWidth` by hundreds of px and the
+	// browser yanked `scrollLeft` along with it. The track is sized to the widest
+	// row seen so far and only ever grows, which keeps the horizontal range
+	// still while you scroll. It resets when the layout or the query changes.
+	const [trackWidth, setTrackWidth] = React.useState(0)
+	// Mirrored in a ref so the effect can decide *not* to call `setTrackWidth` at
+	// all: a `setState` in a layout effect costs a second commit even when the
+	// updater returns the current value, and this effect runs on every scroll
+	// frame — which doubled the list's commits per frame.
+	const trackWidthRef = React.useRef(0)
+	const trackResetKey = `${wrap}|${density}|${pinnedColumns.join("\u0000")}`
+	const trackStateRef = React.useRef({ key: trackResetKey, count: allData.length })
+
+	React.useLayoutEffect(() => {
+		const element = scrollContainerRef.current
+		if (!element) return
+		const previous = trackStateRef.current
+		const reset = previous.key !== trackResetKey || allData.length < previous.count
+		trackStateRef.current = { key: trackResetKey, count: allData.length }
+		if (reset) {
+			if (trackWidthRef.current === 0) return
+			trackWidthRef.current = 0
+			setTrackWidth(0)
+			return
+		}
+		// Wrap mode fills the container and never scrolls sideways.
+		if (wrap) return
+		const measured = element.scrollWidth
+		if (measured <= trackWidthRef.current) return
+		trackWidthRef.current = measured
+		setTrackWidth(measured)
+	}, [virtualItems, trackResetKey, allData.length, wrap])
+
+	// The scroller's own visible width (not `scrollWidth`), for the expansions.
+	// Mirrored in a ref so a resize that lands on the same width costs no commit.
+	const [viewportWidth, setViewportWidth] = React.useState(0)
+	const viewportWidthRef = React.useRef(0)
+	React.useLayoutEffect(() => {
+		const element = scrollContainerRef.current
+		if (!element) return
+		const sync = () => {
+			const width = element.clientWidth
+			if (width === viewportWidthRef.current) return
+			viewportWidthRef.current = width
+			setViewportWidth(width)
+		}
+		sync()
+		const observer = new ResizeObserver(sync)
+		observer.observe(element)
+		return () => observer.disconnect()
+	}, [])
+
+	const trackStyle = React.useMemo<React.CSSProperties>(
+		() => ({ width: trackWidth > 0 ? trackWidth : "100%", minWidth: "100%" }),
+		[trackWidth],
+	)
 
 	// Index-keyed nav ids: logs have no stable row id, and the list is
 	// append-only for a given query, so indices stay stable while browsing.
@@ -401,8 +556,43 @@ export function LogsTableView({
 		return (
 			<div className="flex-1 min-h-0 flex flex-col gap-4">
 				{!onLogClick && !embedded && <LogsTableToolbar />}
-				<div className="rounded-md border flex items-center justify-center h-48">
-					<span className="text-sm text-muted-foreground">No logs found</span>
+				<div className="flex h-48 flex-col items-center justify-center gap-2 rounded-md border px-6 text-center">
+					{searchText || traceId ? (
+						<>
+							<span className="text-sm text-muted-foreground">
+								{traceId ? (
+									<>
+										No logs on trace{" "}
+										<span className="font-mono text-foreground">{traceId}</span> in this
+										time range
+									</>
+								) : (
+									<>
+										No log message contains{" "}
+										<span className="font-mono text-foreground">“{searchText}”</span>
+									</>
+								)}
+							</span>
+							{onClearSearch && (
+								<button
+									type="button"
+									onClick={onClearSearch}
+									className="cursor-pointer text-xs text-primary underline-offset-2 hover:underline"
+								>
+									Clear search
+								</button>
+							)}
+						</>
+					) : (
+						<span className="text-sm text-muted-foreground">No logs found</span>
+					)}
+					{clearExclusions && (
+						<ExcludedEmptyHint
+							excluded={excludedValues}
+							onClear={clearExclusions}
+							className="max-w-lg"
+						/>
+					)}
 				</div>
 			</div>
 		)
@@ -415,12 +605,20 @@ export function LogsTableView({
 				<div className="flex-1 min-h-0 relative">
 					<div
 						ref={scrollContainerRef}
-						className="absolute inset-0 overflow-auto rounded-md border"
+						onScroll={(e) => reportScrolled(e.currentTarget.scrollTop > 0)}
+						className="absolute inset-0 overflow-auto overscroll-contain rounded-md border"
 					>
 						{pinnedColumns.length > 0 && (
-							<PinnedHeader pinnedColumns={pinnedColumns} wrap={wrap} />
+							<PinnedHeader pinnedColumns={pinnedColumns} wrap={wrap} trackStyle={trackStyle} />
 						)}
-						<div style={{ height: virtualizer.getTotalSize(), position: "relative" }} role="log">
+						<div
+							style={{
+								...trackStyle,
+								height: virtualizer.getTotalSize(),
+								position: "relative",
+							}}
+							role="log"
+						>
 							{virtualItems.map((virtualRow) => {
 								const log = allData[virtualRow.index]
 								const isSelected = selectedLog === log
@@ -435,12 +633,12 @@ export function LogsTableView({
 										isSelected={isSelected}
 										isFocused={virtualRow.index === focusedIndex}
 										isExpanded={isExpanded}
+										viewportWidth={viewportWidth}
 										wrap={wrap}
 										density={density}
 										pinnedColumns={pinnedColumns}
-										measureRef={
-											wrap || isExpanded ? virtualizer.measureElement : undefined
-										}
+										highlight={searchText}
+										measureRef={measureElement}
 										onClick={handleRowClick}
 										onToggleExpand={toggleExpanded}
 									/>
@@ -453,8 +651,8 @@ export function LogsTableView({
 
 				<div className="text-sm text-muted-foreground shrink-0 mt-1.5">
 					{isCapped
-						? `Showing first ${allData.length.toLocaleString()} logs — narrow filters to continue`
-						: `Showing ${allData.length.toLocaleString()} logs${!hasNextPage ? " (all loaded)" : ""}`}
+						? `Showing first ${allData.length.toLocaleString()} logs${scopeSuffix} — narrow filters to continue`
+						: `Showing ${allData.length.toLocaleString()} logs${scopeSuffix}${!hasNextPage ? " (all loaded)" : ""}`}
 				</div>
 			</div>
 
@@ -463,9 +661,25 @@ export function LogsTableView({
 	)
 }
 
+/** Stable identity for the default, so the view never sees a new array each render. */
+const EMPTY_EXCLUDED: ReadonlyArray<string> = []
+
 export function LogsTable({ filters, embedded }: LogsTableProps) {
 	const { firstPageResult, allData, isFetchingNextPage, hasNextPage, isCapped, fetchNextPage } =
 		useInfiniteLogs(filters)
+	// Bound to the logs route so clearing exclusions keeps the rest of the search params typed.
+	const navigateLogs = useNavigate({ from: "/logs/" })
+
+	// An empty list under an exclusion cannot explain itself — see `ExcludedEmptyHint`.
+	const excludedChips = logFilterChips(filters ?? {}).filter((chip) => chip.negated)
+	const excludedValues = excludedChips.flatMap((chip) => chip.values)
+	const clearExclusions = () =>
+		navigateLogs({
+			search: (prev) => ({
+				...prev,
+				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
+			}),
+		})
 	const { wrap, density } = useLogsViewPreferences()
 
 	const columnsKey = (filters?.columns ?? EMPTY_COLUMNS).join("\x00")
@@ -489,7 +703,19 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 				wrap={wrap}
 				density={density}
 				pinnedColumns={pinnedColumns}
+				searchText={filters?.search}
+				traceId={filters?.traceId}
+				onClearSearch={
+					filters?.search || filters?.traceId
+						? () =>
+								navigateLogs({
+									search: (prev) => ({ ...prev, search: undefined, traceId: undefined }),
+								})
+						: undefined
+				}
 				embedded={embedded}
+				excludedValues={excludedValues}
+				clearExclusions={clearExclusions}
 			/>
 		))
 		.render()

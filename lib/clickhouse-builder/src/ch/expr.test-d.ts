@@ -1,5 +1,6 @@
 // Type-level tests: Expression type safety
 
+import type { DateTime } from "effect"
 import { expectTypeOf } from "expect-type"
 import * as CH from "./index"
 import type { Expr, Condition } from "./expr"
@@ -15,7 +16,7 @@ expectTypeOf(CH.lit(42)).toMatchTypeOf<Expr<number>>()
 // Aggregate functions — return types
 
 expectTypeOf(CH.count()).toMatchTypeOf<Expr<number>>()
-expectTypeOf(CH.avg(CH.lit(1))).toMatchTypeOf<Expr<number>>()
+expectTypeOf(CH.avg(CH.lit(1))).toMatchTypeOf<Expr<number | null>>()
 expectTypeOf(CH.sum(CH.lit(1))).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.uniq(CH.lit("x"))).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.countIf(CH.lit(1).gt(0))).toMatchTypeOf<Expr<number>>()
@@ -24,6 +25,16 @@ expectTypeOf(CH.countIf(CH.lit(1).gt(0))).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.min(CH.lit("a"))).toMatchTypeOf<Expr<string>>()
 expectTypeOf(CH.max(CH.lit(1))).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.min(CH.lit(1))).toMatchTypeOf<Expr<number>>()
+
+// min/max preserve nullability: over a Nullable column ClickHouse returns NULL
+// when every contributing value is NULL, so the result must not narrow to the
+// non-null type.
+declare const nullableNum: Expr<number | null>
+expectTypeOf(CH.min(nullableNum)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(CH.max(nullableNum)).toEqualTypeOf<Expr<number | null>>()
+
+// ifNull with a non-nullable fallback strips the null the aggregate kept
+expectTypeOf(CH.ifNull(nullableNum, CH.lit(0))).toEqualTypeOf<Expr<number>>()
 
 // any_ preserves generic
 expectTypeOf(CH.any(CH.lit("x"))).toMatchTypeOf<Expr<string>>()
@@ -34,15 +45,15 @@ expectTypeOf(CH.groupUniqArray(CH.lit("x"))).toMatchTypeOf<Expr<ReadonlyArray<st
 expectTypeOf(CH.groupUniqArray(CH.lit(1))).toMatchTypeOf<Expr<ReadonlyArray<number>>>()
 
 // quantile returns Expr<number>
-expectTypeOf(CH.quantile(0.95)(CH.lit(1))).toMatchTypeOf<Expr<number>>()
+expectTypeOf(CH.quantile(0.95)(CH.lit(1))).toMatchTypeOf<Expr<number | null>>()
 
 // ClickHouse functions — return types
 
-expectTypeOf(CH.toStartOfInterval(CH.lit("ts"), 60)).toMatchTypeOf<Expr<string>>()
+expectTypeOf(CH.toStartOfInterval(CH.param.dateTime("ts"), 60)).toMatchTypeOf<Expr<DateTime.Utc>>()
 expectTypeOf(CH.if_(CH.lit(1).gt(0), CH.lit("yes"), CH.lit("no"))).toMatchTypeOf<Expr<string>>()
 expectTypeOf(CH.coalesce(CH.lit("a"), CH.lit("b"))).toMatchTypeOf<Expr<string>>()
 expectTypeOf(CH.concat(CH.lit("a"), CH.lit("b"))).toMatchTypeOf<Expr<string>>()
-expectTypeOf(CH.round_(CH.lit(1), 2)).toMatchTypeOf<Expr<number>>()
+expectTypeOf(CH.round(CH.lit(1), 2)).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.intDiv(CH.lit(10), 3)).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.toString(CH.lit(1))).toMatchTypeOf<Expr<string>>()
 expectTypeOf(CH.toFloat64OrZero(CH.lit("3.14"))).toMatchTypeOf<Expr<number>>()
@@ -76,13 +87,26 @@ expectTypeOf(cond.or(numExpr.lt(10))).toMatchTypeOf<Condition>()
 
 // Arithmetic — only valid for Expr<number>
 
-expectTypeOf(numExpr.div(2)).toMatchTypeOf<Expr<number>>()
+// A non-zero literal divisor cannot produce inf/nan, so the dividend's
+// nullability carries through; a zero, a plain number, or an Expr can.
+expectTypeOf(numExpr.div(2)).toEqualTypeOf<Expr<number>>()
+expectTypeOf(numExpr.div(1_000_000)).toEqualTypeOf<Expr<number>>()
+expectTypeOf(numExpr.mod(2)).toEqualTypeOf<Expr<number>>()
+expectTypeOf(nullableNum.div(2)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(numExpr.div(0)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(numExpr.div(2 as number)).toEqualTypeOf<Expr<number | null>>()
+// A literal below 1 can overflow a large dividend to inf, so it stays nullable.
+expectTypeOf(numExpr.div(0.5)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(numExpr.div(-0.5)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(numExpr.div(5e-324)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(numExpr.div(-1000)).toEqualTypeOf<Expr<number>>()
+expectTypeOf(numExpr.div(1.5)).toEqualTypeOf<Expr<number>>()
 expectTypeOf(numExpr.mul(2)).toMatchTypeOf<Expr<number>>()
 expectTypeOf(numExpr.add(1)).toMatchTypeOf<Expr<number>>()
 expectTypeOf(numExpr.sub(1)).toMatchTypeOf<Expr<number>>()
 
 // Arithmetic with Expr<number> argument
-expectTypeOf(numExpr.div(CH.lit(2))).toMatchTypeOf<Expr<number>>()
+expectTypeOf(numExpr.div(CH.lit(2))).toMatchTypeOf<Expr<number | null>>()
 
 // @ts-expect-error — .div() requires Expr<number>, not Expr<string>
 strExpr.div(2)
@@ -148,8 +172,8 @@ expectTypeOf(CH.param.string("orgId")).toMatchTypeOf<ParamMarker<"orgId", string
 expectTypeOf(CH.param.int("limit")).toMatchTypeOf<Expr<number>>()
 expectTypeOf(CH.param.int("limit")).toMatchTypeOf<ParamMarker<"limit", number>>()
 
-expectTypeOf(CH.param.dateTime("start")).toMatchTypeOf<Expr<string>>()
-expectTypeOf(CH.param.dateTime("start")).toMatchTypeOf<ParamMarker<"start", string>>()
+expectTypeOf(CH.param.dateTime("start")).toMatchTypeOf<Expr<DateTime.Utc>>()
+expectTypeOf(CH.param.dateTime("start")).toMatchTypeOf<ParamMarker<"start", DateTime.Utc>>()
 
 // Param name is captured as a literal type
 expectTypeOf(CH.param.string("orgId")._paramName).toEqualTypeOf<"orgId">()
@@ -165,3 +189,33 @@ expectTypeOf(CH.inList(strExpr, ["a", "b"])).toMatchTypeOf<Condition>()
 
 expectTypeOf(CH.arrayOf(CH.lit("a"), CH.lit("b"))).toMatchTypeOf<Expr<ReadonlyArray<string>>>()
 expectTypeOf(CH.arrayOf(CH.lit(1), CH.lit(2))).toMatchTypeOf<Expr<ReadonlyArray<number>>>()
+
+// Branded column types — comparisons widen to the underlying primitive
+
+type BrandedId = string & { readonly __brand: "BrandedId" }
+declare const brandedRef: Expr<BrandedId>
+declare const plainStringExpr: Expr<string>
+
+// A branded column compares against a plain param/expr and a plain literal…
+expectTypeOf(brandedRef.eq(CH.param.string("orgId"))).toMatchTypeOf<Condition>()
+expectTypeOf(brandedRef.eq(plainStringExpr)).toMatchTypeOf<Condition>()
+expectTypeOf(brandedRef.eq("org_123")).toMatchTypeOf<Condition>()
+expectTypeOf(brandedRef.in_("a", "b")).toMatchTypeOf<Condition>()
+// …and against another ref of its own branded type.
+expectTypeOf(brandedRef.eq(brandedRef)).toMatchTypeOf<Condition>()
+expectTypeOf(CH.inList(brandedRef, ["a", "b"])).toMatchTypeOf<Condition>()
+
+// Nullable SQL results must require narrowing at a TypeScript call site.
+expectTypeOf(CH.nullIf(CH.lit(""), "")).toEqualTypeOf<Expr<string | null>>()
+expectTypeOf(numExpr.div(0)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(numExpr.mod(0)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(nullableNum.add(1).mul(2)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(CH.coalesce(nullableNum, CH.lit(0))).toEqualTypeOf<Expr<number>>()
+expectTypeOf(CH.ifNotFinite(nullableNum, 0)).toEqualTypeOf<Expr<number | null>>()
+expectTypeOf(CH.ifNull(CH.ifNotFinite(nullableNum, 0), CH.lit(0))).toEqualTypeOf<Expr<number>>()
+// @ts-expect-error nullIf can return null
+const nonNullableString: Expr<string> = CH.nullIf(CH.lit(""), "")
+// @ts-expect-error non-finite divisions serialize as null
+const nonNullableNumber: Expr<number> = numExpr.div(0)
+void nonNullableString
+void nonNullableNumber

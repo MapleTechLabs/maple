@@ -21,11 +21,11 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@tanstack/db": "0.6.13",
+		"@tanstack/db": "0.8.5",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@effect/vitest": "4.0.0-rc.108",
+		"@effect/vitest": "catalog:effect",
 		"@types/react": "catalog:react",
 		"typescript": "catalog:tooling",
 		"vitest": "^4.1.9"

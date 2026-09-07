@@ -4,6 +4,33 @@ Two brands flow through the DSL. An **`Expr<T>`** is anything that evaluates to 
 column, a literal, a function call. A **`Condition`** is a boolean predicate, which is what
 `where` collects. Comparison methods turn an `Expr` into a `Condition`.
 
+## How a value becomes a literal
+
+Comparing a column against a plain value encodes that value through the column's own type, so
+the literal is whatever ClickHouse expects for _that_ column rather than whatever the JavaScript
+value looks like:
+
+```ts
+$.Attributes.eq({ "http.method": "GET" }) // Attributes = map('http.method', 'GET')
+$.Tags.eq(["a", "b"])                     // Tags = ['a', 'b']
+$.Live.eq(true)                           // Live = 1
+$.Note.eq(null)                           // Note = NULL
+$.Timestamp.gte(new Date(...))            // Timestamp >= '2026-01-01 00:00:00'
+```
+
+A value the column cannot hold fails while the SQL is being built:
+
+```ts
+$.Count.eq("lots")
+// QueryBuilderError { code: "InvalidLiteral" }: column Count: string "lots" is not a valid value
+```
+
+Expressions with no type to read — `untypedExpr`, an untyped `dynamicColumn` — fall back to
+guessing from the JavaScript value, which handles strings, numbers, booleans and dates but
+nothing structured.
+
+_(Backed by `src/ch/literal.test.ts`.)_
+
 ## Comparisons
 
 Every `Expr<T>` carries:
@@ -38,9 +65,8 @@ Each accepts a raw value or another `Expr<T>`. String literals are escaped; bool
 `.and()` / `.or()` parenthesise their result, so precedence is explicit. `not(condition)` wraps
 in `NOT (…)` and is available from the `/expr` subpath.
 
-Prefer listing predicates as separate array entries over `.and()`-chaining them — the array is
-AND-joined anyway, and [tenant scoping](./tenant-scoping.md) is only detected on top-level
-entries.
+The `where` array is AND-joined. [Tenant scoping](./tenant-scoping.md) preserves evidence
+through both separate entries and `.and()`; `.or()` discards it.
 
 _(Backed by `docs/expressions.md > Combining conditions with and/or`.)_
 
@@ -82,11 +108,43 @@ _(Backed by `docs/expressions.md > Optional predicates with when`.)_
 
 _(Backed by `docs/expressions.md > Arithmetic does not parenthesise`.)_
 
+### Division can produce a NULL
+
+`.div()` and `.mod()` decode nullably, whatever their operands are. ClickHouse renders `1 / 0` as
+`inf` and `0 / 0` as `nan`, and both come back as JSON `null` — so a division that meets a zero
+denominator returns a null the column type has to accept, or the row fails to decode.
+
+Both operators return `Expr<number | null>` — unless the divisor is a numeric literal of
+magnitude 1 or more. `$.Duration.div(1_000_000)` cannot manufacture a null from a finite
+dividend, so it stays as nullable as `$.Duration` (and is exactly rounded, where
+`.mul(0.000001)` drifts by an ulp on a third of integer inputs). A zero, a literal below 1
+(`1 / 5e-324` overflows to `inf`), a plain `number`, or another expression as the divisor
+makes the result nullable. Modulo by zero can also raise a ClickHouse error; nullable
+decoding does not suppress server errors.
+
+When the output must be numeric, guard both non-finite numbers and SQL NULL:
+
+```ts
+.select(($) => ({
+	errorRate: CH.ifNull(CH.ifNotFinite(CH.sum($.Errors).div(CH.sum($.Total)), 0), CH.lit(0)),
+}))
+```
+
+`CH.ifNotFinite(expr, fallback)` replaces `nan`/`inf`, but SQL NULL passes through unchanged.
+`CH.ifNull` supplies the remaining fallback. `CH.nullIf(expr, value)` returns `Expr<T | null>`;
+for example, `CH.sum(x).div(CH.nullIf(CH.sum(y), 0))` keeps a null for an absent denominator.
+
+Addition, subtraction, and multiplication preserve nullable operands in their types and codecs.
+
+_(Backed by `docs/expressions.md > division decodes nullably and ifNotFinite guards it`.)_
+
 ## Literals and raw escape hatches
 
 - `lit(value)` — an explicit `Expr` from a `string` or `number`. You rarely need it, since
   comparison methods accept raw values directly.
-- `rawExpr<T>(sql)` — an `Expr<T>` from a SQL string.
+- `rawExpr(sql, type)` — an `Expr` from a SQL string, with the column type it produces.
+- `untypedExpr<T>(sql)` — the same with no type declared; selecting one costs the query its
+  row schema, so it is a separate name rather than an omitted argument.
 - `rawCond(sql)` — a `Condition` from a SQL string.
 
 Raw helpers interpolate nothing and escape nothing. Never build one from user input. See
@@ -113,7 +171,23 @@ The `*If` family takes a `Condition` as its last argument:
 CH.quantile(0.95)($.DurationMs) // quantile(0.95)(DurationMs)
 ```
 
+So are the parametric funnel aggregates — the window / pattern is a parameter,
+the timestamp and step conditions are the arguments:
+
+```ts
+CH.windowFunnel(3600)($.Timestamp, $.Name.eq("view"), $.Name.eq("signup"))
+// windowFunnel(3600)(Timestamp, Name = 'view', Name = 'signup')
+CH.windowFunnel(3600, "strict_order")($.Timestamp, …)
+CH.sequenceMatch("(?1)(?t<3600)(?2)")($.Timestamp, $.Name.eq("view"), $.Name.eq("signup"))
+```
+
+`windowFunnel` takes `Date`, `DateTime` or an unsigned integer for the timestamp
+(not `DateTime64`) and the window is in that column's unit.
+
 _(Backed by `docs/expressions.md > Conditional aggregation`.)_
+
+`avg`, `avgIf`, and `quantile` return `Expr<number | null>` because empty input produces NaN,
+which ClickHouse serializes as JSON null. Use the guards above when the empty result should be zero.
 
 ## Conditionals
 

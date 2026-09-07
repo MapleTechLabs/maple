@@ -2,6 +2,7 @@ import { GitCommitSha } from "@maple/domain/http"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Env } from "@/platform/Env"
 import { GithubHttp } from "./GithubHttp"
+import { githubWebBaseUrl } from "./github-hosts"
 
 // GitHub App REST client. Vendor-specific: mints a short-lived App JWT (RS256,
 // Web Crypto), exchanges it for per-installation tokens, and calls the GitHub
@@ -24,9 +25,6 @@ export class GithubAppError extends Schema.TaggedError<GithubAppError>()("@maple
 
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
-// The user-facing OAuth host (NOT the REST API host): the App's web OAuth leg
-// exchanges the install-callback `code` for a user access token here.
-const GITHUB_OAUTH_BASE_URL = "https://github.com"
 const PER_PAGE = 100
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
@@ -161,6 +159,25 @@ const GithubApiBranchSchema = Schema.Struct({
 type GithubApiBranch = Schema.Schema.Type<typeof GithubApiBranchSchema>
 const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
 
+// A pull request as the REST API reports it, list and detail alike (the detail
+// payload is a superset). `merged_at` — not `state` — is what distinguishes a
+// merged PR from one closed unmerged; `state` alone only ever says open/closed.
+const GithubApiPullRequestSchema = Schema.Struct({
+	number: Schema.Number,
+	title: Schema.String,
+	html_url: Schema.String,
+	state: Schema.String,
+	draft: Schema.optionalKey(Schema.Boolean),
+	updated_at: Schema.String,
+	merged_at: Schema.NullOr(Schema.String),
+	merge_commit_sha: Schema.NullOr(Schema.String),
+	user: Schema.NullOr(GithubApiUser),
+	head: Schema.Struct({ ref: Schema.String }),
+	base: Schema.Struct({ ref: Schema.String }),
+})
+export type GithubApiPullRequest = Schema.Schema.Type<typeof GithubApiPullRequestSchema>
+const GithubApiPullRequestList = Schema.Array(GithubApiPullRequestSchema)
+
 const GithubCodeSearchResponseSchema = Schema.Struct({
 	items: Schema.Array(
 		Schema.Struct({
@@ -196,6 +213,8 @@ const decodeInstallationRepos = Schema.decodeUnknownEffect(GithubInstallationRep
 const decodeCommitList = Schema.decodeUnknownEffect(GithubApiCommitList)
 const decodeCommit = Schema.decodeUnknownEffect(GithubApiCommitSchema)
 const decodeBranchList = Schema.decodeUnknownEffect(GithubApiBranchList)
+const decodePullRequestList = Schema.decodeUnknownEffect(GithubApiPullRequestList)
+const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodeCodeSearch = Schema.decodeUnknownEffect(GithubCodeSearchResponseSchema)
 const decodeContentFile = Schema.decodeUnknownEffect(GithubContentFileSchema)
 
@@ -604,6 +623,69 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			// One page, newest-updated first — never a pagination walk. This feeds the
+			// attach-a-PR picker, where the PR that fixes a live issue is recent by
+			// construction, and a walk would spend an installation's rate budget on
+			// history nobody is going to scroll to.
+			//
+			// Deliberately not `GET /search/issues`, which would allow server-side text
+			// matching: its 30-req/min secondary limit is a poor fit for a keystroke-
+			// driven picker. Filtering happens client-side over this page instead.
+			const listPullRequests = Effect.fn("GithubAppClient.listPullRequests")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				limit: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const params = new URLSearchParams({
+					state: "all",
+					sort: "updated",
+					direction: "desc",
+					per_page: String(Math.min(limit, PER_PAGE)),
+					page: "1",
+				})
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${params.toString()}`,
+				)
+				if (!response.ok) return yield* failure(response, "List pull requests", "repository")
+				const json = yield* parseJson(response, "List pull requests")
+				return yield* decodePullRequestList(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected pull requests payload", cause }),
+					),
+				)
+			})
+
+			// `null` on 404 — a PR number that does not exist in this repo is an
+			// expected answer (someone mistyped, or pasted a URL for another repo),
+			// not a provider failure. Every other non-2xx stays repository-scoped.
+			const getPullRequest = Effect.fn("GithubAppClient.getPullRequest")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+				)
+				if (response.status === 404) return null
+				if (!response.ok) return yield* failure(response, "Get pull request", "repository")
+				const json = yield* parseJson(response, "Get pull request")
+				return yield* decodePullRequest(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected pull request payload", cause }),
+					),
+				)
+			})
+
 			const searchCode = Effect.fn("GithubAppClient.searchCode")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -717,7 +799,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				})
 				const response = yield* rateLimitedFetch(
 					tracedFetch(
-						`${GITHUB_OAUTH_BASE_URL}/login/oauth/access_token`,
+						`${githubWebBaseUrl(env.GITHUB_API_BASE_URL)}/login/oauth/access_token`,
 						{
 							method: "POST",
 							headers: {
@@ -781,6 +863,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listBranches,
 				listCommits,
 				getCommit,
+				listPullRequests,
+				getPullRequest,
 				searchCode,
 				getSourceFile,
 				getInstallation,

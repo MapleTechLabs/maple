@@ -4,12 +4,11 @@ import {
 	type MaplePgSocketOptions,
 	wrapMaplePgClient,
 } from "@maple/db/client"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
-import { Context, Effect, Schema } from "effect"
-import type { HttpMiddleware } from "effect/unstable/http"
+import { trackOutboundSlot } from "@maple/cache"
+import { Context, Effect, Option, Schema } from "effect"
+import { MapleDbConnection } from "./bindings"
 import type { DatabaseClient, DatabaseError } from "./DatabaseLive"
 import { executeWithSpan, failExecuteWithSpan, toDatabaseError } from "./DatabaseLive"
-import { resolveDbConnectionSource } from "./pg-connection-source"
 
 /**
  * Cloudflare's documented value for postgres.js behind Hyperdrive.
@@ -160,13 +159,18 @@ export const makePgConnectionScope = (
 				const reused = state._tag === "Open"
 				const open = state._tag === "Open" ? state.handle : openSocket()
 				state = { _tag: "Open", handle: open }
-				return executeWithSpan(async (hooks) => {
-					hooks.record({ "db.connect.reused": reused })
-					// Wrapped per call so each call's statements land in its own span.
-					// One shared wrapper would cross-attribute `db.query.text` between
-					// concurrent calls; the wrapper is cheap (relational config only).
-					return await fn(wrapMaplePgClient(open.sql, { onQuery: hooks.collect }))
-				}, extraAttributes)
+				// `trackOutboundSlot` scopes to the statement, not the socket: an idle
+				// kept-open connection doesn't starve `cache.match()`, an in-flight
+				// statement does.
+				return trackOutboundSlot(
+					executeWithSpan(async (hooks) => {
+						hooks.record({ "db.connect.reused": reused })
+						// Wrapped per call so each call's statements land in its own span.
+						// One shared wrapper would cross-attribute `db.query.text` between
+						// concurrent calls; the wrapper is cheap (relational config only).
+						return await fn(wrapMaplePgClient(open.sql, { onQuery: hooks.collect }))
+					}, extraAttributes),
+				)
 			}),
 
 		// Closed first, then release: a call racing the teardown is refused
@@ -232,29 +236,19 @@ export const withPgConnectionScopeOf = <A, E, R>(
 /**
  * Install a connection scope for the duration of `program`.
  *
- * Stages with no application database resolve to `Unavailable`; those run
+ * Stages with no application database (`MapleDbConnection` is `None`) run
  * unwrapped so `DatabasePgLive` keeps reporting the missing binding per
  * `execute` instead of failing here.
  */
 export const withPgConnectionScope = <A, E, R>(
 	program: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R | WorkerEnvironment> =>
+): Effect.Effect<A, E, R | MapleDbConnection> =>
 	Effect.gen(function* () {
-		const env = yield* WorkerEnvironment
-		const source = resolveDbConnectionSource(env)
-		if (source._tag === "Unavailable") return yield* program
+		const connection = yield* MapleDbConnection
+		if (Option.isNone(connection)) return yield* program
 
 		return yield* withPgConnectionScopeOf(
-			makePgConnectionScope(source.connectionString, source.attributes),
+			makePgConnectionScope(connection.value.connectionString, connection.value.attributes),
 			program,
 		)
 	})
-
-/**
- * HTTP boundary for the scope: one connection per request.
- *
- * Also satisfies the api worker's standing requirement that SOME middleware be
- * present — `POST /mcp` hangs on Workers when `toWebHandler` is given none.
- */
-export const pgConnectionMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) =>
-	withPgConnectionScope(httpApp)

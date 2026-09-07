@@ -8,9 +8,10 @@
  * highest-leverage model call in the flow, so it is the one that should not be
  * economised on.
  */
+import { makeChatSessionId } from "@maple/domain/chat-session"
 import { InvestigationPlan } from "@maple/domain/http"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { Model } from "@maple/llm"
+import type { LanguageModel } from "@opencode-ai/ai"
 import { Effect, Option } from "effect"
 import { plannerAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
@@ -22,7 +23,7 @@ export interface PlannerAgentInput {
 	readonly investigationId: string
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
-	readonly model: Model
+	readonly model: LanguageModel
 	readonly tenant: TenantContext
 	readonly deadlineAtMs: number
 }
@@ -48,6 +49,10 @@ export const runPlannerAgent = Effect.fn("investigation.plan")(function* (input:
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_plan`,
+		// The seeded transcript's chat session id, so the workflow's passes and any
+		// attended follow-up land in one agent session.
+		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
+		workflowName: "investigation",
 		agent: plannerAgent(),
 		tenant: input.tenant,
 		model: input.model,

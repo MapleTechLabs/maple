@@ -22,6 +22,7 @@ import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom, listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@/components/attributes"
+import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
@@ -34,6 +35,9 @@ interface SpanDetailPanelProps {
 	/** Start of the whole trace (earliest span start) — anchors the position-in-trace bar. */
 	traceStartTime: string
 	totalDurationMs: number
+	/** Extra header controls, left of the close button — e.g. the session page's
+	 *  "open full trace" link. The trace page itself needs none. */
+	headerActions?: ReactNode
 	className?: string
 }
 
@@ -124,7 +128,16 @@ function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onCl
 	)
 }
 
-function SpanLogs({ traceId, spanId, timeZone }: { traceId: string; spanId: string; timeZone: string }) {
+/** Exported for the agent-session span expansion, which shows the same read. */
+export function SpanLogs({
+	traceId,
+	spanId,
+	timeZone,
+}: {
+	traceId: string
+	spanId: string
+	timeZone: string
+}) {
 	const [selectedLog, setSelectedLog] = useState<Log | null>(null)
 	const [sheetOpen, setSheetOpen] = useState(false)
 
@@ -190,6 +203,7 @@ export function SpanDetailPanel({
 	onClose,
 	traceStartTime,
 	totalDurationMs,
+	headerActions,
 	className,
 }: SpanDetailPanelProps) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -257,9 +271,12 @@ export function SpanDetailPanel({
 						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
-				<Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
-					<XmarkIcon size={16} />
-				</Button>
+				<div className="flex shrink-0 items-center gap-0.5">
+					{headerActions}
+					<Button variant="ghost" size="icon" onClick={onClose}>
+						<XmarkIcon size={16} />
+					</Button>
+				</div>
 			</div>
 
 			{/* Summary stats */}
@@ -437,10 +454,12 @@ export function SpanDetailPanel({
 							{/* Span + Resource Attributes — loaded lazily for the
 							    selected span (see detailResult above) */}
 							{span.isMissing ? (
-								<AttributesSection
-									attributes={span.spanAttributes ?? {}}
-									title="Span Attributes"
-								/>
+								<TraceAttributeFilterProvider scope="span">
+									<AttributesSection
+										attributes={span.spanAttributes ?? {}}
+										title="Span Attributes"
+									/>
+								</TraceAttributeFilterProvider>
 							) : (
 								Result.builder(detailResult)
 									.onInitial(() => (
@@ -453,24 +472,32 @@ export function SpanDetailPanel({
 									))
 									.onError(() => (
 										<>
-											<AttributesSection
-												attributes={span.spanAttributes ?? {}}
-												title="Span Attributes"
-											/>
-											<ResourceAttributesSection
-												attributes={span.resourceAttributes ?? {}}
-											/>
+											<TraceAttributeFilterProvider scope="span">
+												<AttributesSection
+													attributes={span.spanAttributes ?? {}}
+													title="Span Attributes"
+												/>
+											</TraceAttributeFilterProvider>
+											<TraceAttributeFilterProvider scope="resource">
+												<ResourceAttributesSection
+													attributes={span.resourceAttributes ?? {}}
+												/>
+											</TraceAttributeFilterProvider>
 										</>
 									))
 									.onSuccess((detail) => (
 										<>
-											<AttributesSection
-												attributes={detail.spanAttributes}
-												title="Span Attributes"
-											/>
-											<ResourceAttributesSection
-												attributes={detail.resourceAttributes}
-											/>
+											<TraceAttributeFilterProvider scope="span">
+												<AttributesSection
+													attributes={detail.spanAttributes}
+													title="Span Attributes"
+												/>
+											</TraceAttributeFilterProvider>
+											<TraceAttributeFilterProvider scope="resource">
+												<ResourceAttributesSection
+													attributes={detail.resourceAttributes}
+												/>
+											</TraceAttributeFilterProvider>
 										</>
 									))
 									.render()

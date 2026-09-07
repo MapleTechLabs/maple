@@ -16,7 +16,7 @@ The chart defaults to Maple's hosted ingest gateway (`https://ingest.maple.dev`)
 The chart is published to GHCR. The easiest install path is:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Makisuo/maple/main/deploy/k8s-infra/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8s-infra/install.sh | \
   MAPLE_INGEST_KEY=YOUR_MAPLE_INGEST_KEY \
   MAPLE_CLUSTER_NAME=production \
   bash
@@ -28,7 +28,7 @@ Direct Helm install from the OCI chart:
 
 ```bash
 helm upgrade --install maple-k8s-infra \
-  oci://ghcr.io/makisuo/charts/maple-k8s-infra \
+  oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra \
   --namespace maple \
   --create-namespace \
   --set-string maple.ingestKey.value=YOUR_MAPLE_INGEST_KEY \

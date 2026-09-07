@@ -1,10 +1,11 @@
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { useMemo } from "react"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ServiceMapView } from "@/components/service-map/service-map-view"
@@ -14,7 +15,7 @@ import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-r
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
-import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
+import { LONG_RANGE_PRESET_OPTIONS, snapRangeForCache } from "@/lib/time-utils"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 // `__all__` is the sentinel for the "All Environments" option. Storing it in the
@@ -24,6 +25,7 @@ const ALL_ENVIRONMENTS = "__all__"
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 
 const serviceMapSearchSchema = Schema.Struct({
+	view: Schema.optional(Schema.Literals(["2d", "3d"])),
 	environment: Schema.optional(Schema.String),
 	// Focus mode: dim/hide everything outside a service's neighborhood. Kept in
 	// the URL so a focused view is shareable / survives reloads.
@@ -58,17 +60,22 @@ function ServiceMapContent() {
 
 	// Stable 24h window for the environment dropdown — environments move slowly, so
 	// a fixed range keeps this a single cached facets request independent of the
-	// map's own time range. Matches the dashboard's facets probe.
+	// map's own time range.
+	//
+	// Snapped: `formatWarehouseDateTime` is second-precision, so an unsnapped
+	// `new Date()` minted a distinct atom key on every single mount. The atom's
+	// 5-minute `staleTime` could therefore never fire — every visit re-queried
+	// facets and leaked another retained atom. Snapping floors the endpoint to the
+	// window's cache grid so revisits share one entry.
 	const facetsRange = useMemo(() => {
-		const end = new Date()
-		const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-		return {
-			startTime: formatWarehouseDateTime(start.getTime()),
-			endTime: formatWarehouseDateTime(end.getTime()),
-		}
+		const end = Date.now()
+		return snapRangeForCache({
+			startTime: formatWarehouseDateTime(end - 24 * 60 * 60 * 1000),
+			endTime: formatWarehouseDateTime(end),
+		})
 	}, [])
 	const facetsAtom = getServicesFacetsResultAtom({ data: facetsRange })
-	const facetsResult = useRetainedRefreshableResultValue(facetsAtom)
+	const facetsResult = useRefreshableAtomValue(facetsAtom)
 	const refreshFacets = useAtomRefresh(facetsAtom)
 
 	const environments = Result.builder(facetsResult)
@@ -139,17 +146,39 @@ function ServiceMapContent() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Service Map"
-							description="Visualize service-to-service dependencies and data flow."
-						>
-							<div className="flex items-center gap-2">
+						<DashboardLayout.Header title="Service Map">
+							{/* Wraps, and below the header's side-by-side breakpoint the
+							    environment select takes a row of its own: all three controls
+							    on one narrow row left it ~70px, and unwrapped they stacked
+							    into a ragged two-line block. */}
+							<div className="flex flex-wrap items-center gap-2">
+								<ToggleGroup
+									variant="outline"
+									size="sm"
+									aria-label="Service map view"
+									value={[search.view ?? "2d"]}
+									onValueChange={(values) => {
+										const view = values[0]
+										if (view === "2d" || view === "3d")
+											void navigate({ search: (prev) => ({ ...prev, view }) })
+									}}
+								>
+									<ToggleGroupItem value="2d" aria-label="2D map">
+										2D
+									</ToggleGroupItem>
+									<ToggleGroupItem value="3d" aria-label="3D map">
+										3D
+									</ToggleGroupItem>
+								</ToggleGroup>
 								<Select
 									items={environmentItems}
 									value={selectedEnvironment}
 									onValueChange={handleEnvironmentChange}
 								>
-									<SelectTrigger size="sm">
+									<SelectTrigger
+										size="sm"
+										className="w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-36"
+									>
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
@@ -181,6 +210,7 @@ function ServiceMapContent() {
 						) : (
 							<div className="-mx-4 -mb-4 h-[calc(100vh-10rem)]">
 								<ServiceMapView
+									viewMode={search.view ?? "2d"}
 									startTime={effectiveStartTime}
 									endTime={effectiveEndTime}
 									deploymentEnv={deploymentEnv}

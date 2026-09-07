@@ -1,6 +1,6 @@
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
-import { Context, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { WarehouseConfigError, type WarehouseQueryRequest } from "@maple/domain/http"
 import {
 	BackendDialect,
@@ -19,7 +19,7 @@ import {
 	type WarehouseSqlClient,
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
-import type { CompiledQuery } from "@maple/query-engine/ch"
+import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "@/platform/Env"
 import type { TenantContext } from "@/services/auth/AuthService"
@@ -38,12 +38,50 @@ import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgToke
 // Re-export the executor types so existing import sites stay stable.
 export type { WarehouseQueryServiceApi, SqlQueryOptions }
 
-const createClickHouseSqlClient = (config: ClickHouseProtocolBackendConfig): WarehouseSqlClient => {
+/**
+ * A ClickHouse-protocol endpoint answering a query with a redirect is never
+ * legitimate, and a BYO cluster's URL is org-configured and validated when
+ * saved, not when used — so a target that passed validation can still answer a
+ * query with a 307 into the internal network. Refused here, and named so it is
+ * distinguishable from an ordinary 4xx (same reasoning as the ingest exporter's
+ * `redirect_refused` drop, which keeps redirects for Tinybird and R2).
+ */
+export class WarehouseRedirectRefusedError extends Schema.TaggedError<WarehouseRedirectRefusedError>()(
+	"@maple/api/warehouse/WarehouseRedirectRefusedError",
+	{
+		status: Schema.Number,
+		location: Schema.optionalKey(Schema.String),
+		message: Schema.String,
+	},
+) {}
+
+const redirectRefusingFetch =
+	(requestFetch: typeof fetch = fetch): typeof fetch =>
+	async (input, init) => {
+		const response = await requestFetch(input, { ...init, redirect: "manual" })
+		// `redirect: "manual"` surfaces the 3xx itself on Workers/undici, and an
+		// `opaqueredirect` response (status 0) in browser-shaped runtimes.
+		if ((response.status >= 300 && response.status < 400) || response.type === "opaqueredirect") {
+			const location = response.headers.get("location")
+			throw new WarehouseRedirectRefusedError({
+				status: response.status,
+				...(location === null ? undefined : { location }),
+				message: `ClickHouse redirect responses are not allowed (${response.status})`,
+			})
+		}
+		return response
+	}
+
+const createClickHouseSqlClient = (
+	config: ClickHouseProtocolBackendConfig,
+	requestFetch: typeof fetch = fetch,
+): WarehouseSqlClient => {
 	const client = createClickHouseClient({
 		url: config.url,
 		username: config.username,
 		password: config.password,
 		database: config.database,
+		fetch: redirectRefusingFetch(requestFetch),
 	})
 	// Wire-format parity with the Tinybird SDK: without this, JSONEachRow quotes
 	// 64-bit ints ("count":"42") and every schema-less query leaks strings into
@@ -53,9 +91,12 @@ const createClickHouseSqlClient = (config: ClickHouseProtocolBackendConfig): War
 		? ({ output_format_json_quote_64bit_integers: 0 } as const)
 		: undefined
 	return {
-		sql: async (sql: string, options) => {
+		// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend, so the
+		// executor has already stripped any FORMAT clause and the format travels as
+		// a request field instead.
+		sql: async (statement, options) => {
 			const resultSet = await client.query({
-				query: sql,
+				query: statement.text,
 				format: "JSONEachRow",
 				...(clickhouseSettings ? { clickhouse_settings: clickhouseSettings } : undefined),
 			})
@@ -172,19 +213,15 @@ const createTinybirdSdkSqlClient = (
 	const client = makeClient()
 	const boundedClients = new Map<number, typeof client>()
 	return {
-		sql: async (sql: string, options) => {
+		sql: async (statement, options) => {
 			try {
 				// Tinybird Cloud currently defaults /v0/sql to JSON, while Tinybird Local
-				// defaults to tab-separated output. The SDK always calls response.json(), so
-				// make the expected wire format explicit for both environments. DSL-compiled
-				// queries already end with `FORMAT JSON` (profile SETTINGS are inserted
-				// before it by appendSettings) — appending a second FORMAT clause is a
-				// ClickHouse syntax error, so only add one when the query doesn't carry
-				// its own. The trailing-SETTINGS alternative covers SQL from callers that
-				// still emit the legacy `FORMAT JSON SETTINGS …` order.
-				const trimmed = sql.trimEnd().replace(/;$/, "")
-				const hasFormat = /\bFORMAT\s+\w+(\s+SETTINGS\s[^\n]*)?$/i.test(trimmed)
-				const jsonSql = hasFormat ? trimmed : `${trimmed}\nFORMAT JSON`
+				// defaults to tab-separated output, and the SDK always calls
+				// response.json() — so the format has to be explicit for both. This
+				// backend's dialect is `wireFormat: "in-statement"`, so the executor has
+				// already put a FORMAT clause on the statement; rendering it is all this
+				// driver has to do.
+				const jsonSql = statement.text
 				const limits = options?.responseLimits
 				// The SDK normally buffers through response.json(). Raw execution gets
 				// a fetch adapter that aborts before constructing an oversized Response.
@@ -465,7 +502,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 
 	static readonly compiledQuery = <T>(
 		tenant: TenantContext,
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options?: SqlQueryOptions,
 	) => this.use((service) => service.compiledQuery(tenant, compiled, options))
 
@@ -477,7 +514,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 	 */
 	static readonly compiledQueryBounded = <T>(
 		tenant: TenantContext,
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options: SqlQueryOptions & {
 			readonly responseLimits: { readonly maxRows: number; readonly maxBytes: number }
 		},
@@ -485,7 +522,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 
 	static readonly compiledQueryFirst = <T>(
 		tenant: TenantContext,
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options?: SqlQueryOptions,
 	) => this.use((service) => service.compiledQueryFirst(tenant, compiled, options))
 
@@ -515,5 +552,6 @@ export const __testables = {
 	createClickHouseSqlClient,
 	createTinybirdSdkSqlClient,
 	boundedResponseFetch,
+	redirectRefusingFetch,
 	isEmptyJsonBodyError,
 }

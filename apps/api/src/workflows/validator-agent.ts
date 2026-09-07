@@ -14,10 +14,11 @@
  * could not be checked, and the strongest remaining lead at low confidence. The
  * run lands on `status: "inconclusive"`, not `failed`.
  */
+import { makeChatSessionId } from "@maple/domain/chat-session"
 import { ValidatorVerdict } from "@maple/domain/http"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { Model } from "@maple/llm"
-import { Effect, Option } from "effect"
+import type { LanguageModel } from "@opencode-ai/ai"
+import { Effect, Option, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
@@ -55,7 +56,7 @@ export interface ValidatorAgentInput {
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
 	readonly candidates: ReadonlyArray<ValidatorCandidateInput>
-	readonly model: Model
+	readonly model: LanguageModel
 	readonly tenant: TenantContext
 	/**
 	 * Wall clock after which the pass stops at its next step boundary.
@@ -107,9 +108,28 @@ const buildValidatorPrompt = (input: ValidatorAgentInput): string => {
 	return buildIncidentContextMessage(lines.join("\n"), input.subject, input.snapshot)
 }
 
+/**
+ * The agent table is a module constant, so a missing entry is a build that
+ * shipped without it rather than a runtime condition to recover from.
+ */
+class MissingAgentError extends Schema.TaggedError<MissingAgentError>()(
+	"@maple/api/workflows/MissingAgentError",
+	{ agentName: Schema.String, message: Schema.String },
+) {}
+
 export const runValidatorAgent = Effect.fn("investigation.validator")(function* (input: ValidatorAgentInput) {
 	const agent = AGENTS["investigation-validator"]
-	if (!agent) return yield* Effect.die(new Error("no investigation-validator agent registered"))
+	if (!agent) {
+		// `AGENTS` is a module constant, so an absent entry is a build that shipped
+		// without it — nothing a run could recover from.
+		// oxlint-disable-next-line maple/no-effect-die
+		return yield* Effect.die(
+			new MissingAgentError({
+				agentName: "investigation-validator",
+				message: "No investigation-validator agent is registered",
+			}),
+		)
+	}
 
 	yield* Effect.annotateCurrentSpan({
 		"maple.investigation.id": input.investigationId,
@@ -118,6 +138,8 @@ export const runValidatorAgent = Effect.fn("investigation.validator")(function* 
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_validator`,
+		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
+		workflowName: "investigation",
 		agent,
 		tenant: input.tenant,
 		model: input.model,

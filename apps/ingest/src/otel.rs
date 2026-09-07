@@ -40,7 +40,7 @@ pub fn build_resource(cfg: ResourceConfig) -> Resource {
     attrs.push(KeyValue::new(
         "vcs.repository.url.full",
         env::var("VCS_REPOSITORY_URL")
-            .unwrap_or_else(|_| "https://github.com/Makisuo/maple".to_owned()),
+            .unwrap_or_else(|_| "https://github.com/MapleTechLabs/maple".to_owned()),
     ));
     if let Some(revision) = detect_head_revision() {
         attrs.push(KeyValue::new("vcs.ref.head.revision", revision));
@@ -708,7 +708,7 @@ mod tests {
     fn build_resource_sets_runtime_and_sdk_type() {
         let resource = build_resource(ResourceConfig {
             service_name: "ingest",
-            service_namespace: "ingest",
+            service_namespace: "core",
             service_version: "0.0.0",
             service_instance_id: "test-instance".to_owned(),
             deployment_env: "test".to_owned(),
@@ -728,7 +728,7 @@ mod tests {
         );
         assert_eq!(
             find_attr(&resource, "service.namespace").as_deref(),
-            Some("ingest")
+            Some("core")
         );
         // Dual-emit deployment env
         assert_eq!(

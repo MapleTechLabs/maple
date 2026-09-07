@@ -79,6 +79,10 @@ const chartConfig = {
 		label: FEATURE_SHORT_LABELS.browser_sessions,
 		color: FEATURE_COLORS.browser_sessions,
 	},
+	product_events: {
+		label: FEATURE_SHORT_LABELS.product_events,
+		color: FEATURE_COLORS.product_events,
+	},
 } satisfies Record<string, { label: string; color: string }>
 
 const BANDS = ["base", ...SPEND_FEATURES] as const
@@ -112,6 +116,7 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 			traces: latest?.traces ?? 0,
 			metrics: latest?.metrics ?? 0,
 			browser_sessions: latest?.browser_sessions ?? 0,
+			product_events: latest?.product_events ?? 0,
 		} satisfies Record<(typeof BANDS)[number], number>
 	}, [data])
 	const lastPoint = data[data.length - 1]
@@ -238,22 +243,24 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 					: []),
 				focusCrosshair(chromeColors),
 			],
-			x: {
-				scale: scalePoint,
-				axis: {
-					line: false,
-					ticks: { size: 0, padding: 8, format: dateLabel },
-					tickLabels: { thin: { minGap: 12 } },
+			scales: {
+				x: {
+					scale: scalePoint,
+					axis: {
+						line: false,
+						ticks: { size: 0, padding: 8, format: dateLabel },
+						tickLabels: { thin: { minGap: 12 } },
+					},
 				},
-			},
-			y: {
-				scale: scaleLinear().domain([0, yMax]),
-				axis: {
-					line: false,
-					ticks: {
-						size: 0,
-						padding: 8,
-						format: (value: number) => `$${Math.round(value)}`,
+				y: {
+					scale: scaleLinear().domain([0, yMax]),
+					axis: {
+						line: false,
+						ticks: {
+							size: 0,
+							padding: 8,
+							format: (value: number) => `$${Math.round(value)}`,
+						},
 					},
 				},
 			},
@@ -290,7 +297,7 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 					</p>
 				</div>
 				{/* The legend carries each band's cycle-to-date dollars, not just its
-				    color: a row of five dots tells you which color is which, but not
+				    color: a row of six dots tells you which color is which, but not
 				    which band is worth reading. With the amounts it doubles as the
 				    breakdown, and the "$0.00" bands say plainly that they contribute
 				    nothing rather than hiding somewhere on the axis. */}

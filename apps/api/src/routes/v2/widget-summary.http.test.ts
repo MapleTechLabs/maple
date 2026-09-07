@@ -15,6 +15,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Env } from "@/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
 import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "@/services/auth/AuthService"
 import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
@@ -34,6 +35,7 @@ import {
 	PlanetScaleServiceStubsLayer,
 	SlackIntegrationServiceStubLayer,
 } from "./v2-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -88,6 +90,9 @@ const issueDocument = (overrides: Partial<ErrorIssueDocument> = {}): ErrorIssueD
 		snoozeUntil: null,
 		archivedAt: null,
 		hasOpenIncident: true,
+		commentCount: 0,
+		openPullRequestCount: 0,
+		mergedPullRequestCount: 0,
 		...overrides,
 	})
 
@@ -106,9 +111,13 @@ const serviceRow = {
 
 const warehouseStub = makeWarehouseServiceStub({
 	compiledQuery: (_tenant, compiled) =>
-		compiled.decodeRows(compiled.sql.includes("FROM service_overview_spans") ? [serviceRow] : []),
+		compiledQueryOf(compiled).decodeRows(
+			compiledQueryOf(compiled).sql.includes("FROM service_overview_spans") ? [serviceRow] : [],
+		),
 	compiledQueryFirst: (_tenant, compiled) =>
-		compiled.decodeRows([]).pipe(Effect.map((rows) => Option.fromNullishOr(rows[0]))),
+		compiledQueryOf(compiled)
+			.decodeRows([])
+			.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0]))),
 	ingest: () => Effect.void,
 })
 
@@ -144,6 +153,7 @@ const seriesEngine = queryEngineStub((_tenant, request) =>
 const makeHarness = (options: {
 	readonly listIssues?: ErrorIssueReadModelsService["listIssues"]
 	readonly queryEngine?: QueryEngineServiceApi
+	readonly warehouse?: WarehouseQueryService
 }) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -159,7 +169,7 @@ const makeHarness = (options: {
 	// Provided ahead of `ConfigResourceServiceStubsLayer`, whose issue read
 	// models all `die` — this suite is the one that actually calls them.
 	const readsLive = Layer.mergeAll(
-		Layer.succeed(WarehouseQueryService, warehouseStub),
+		Layer.succeed(WarehouseQueryService, options.warehouse ?? warehouseStub),
 		Layer.succeed(QueryEngineService, options.queryEngine ?? seriesEngine),
 		Layer.succeed(ErrorIssueReadModelsService, {
 			listIssues:
@@ -181,6 +191,7 @@ const makeHarness = (options: {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -195,9 +206,9 @@ const makeHarness = (options: {
 				return yield* service.create(org, user, { name: "widget-test", scopes })
 			}),
 		)
-	const get = async (token: string, headers: Record<string, string> = {}) => {
+	const get = async (token: string, headers: Record<string, string> = {}, query = "") => {
 		const response = await handler(
-			new Request("http://maple.test/v2/widget_summary", {
+			new Request(`http://maple.test/v2/widget_summary${query}`, {
 				headers: { authorization: `Bearer ${token}`, ...headers },
 			}),
 			Context.empty() as never,
@@ -305,6 +316,81 @@ describe("GET /v2/widget_summary", () => {
 			const summary = await harness.get(key.secret)
 			expect(summary.status).toBe(403)
 			expect(summary.body.error.message).toContain("widget_summary:read")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("applies deployment_environment to all three reads and echoes it", async () => {
+		// Asserted per read rather than on the response alone: a filter that
+		// reached the issues query but not the throughput one would still return a
+		// plausible payload, with an error rate the traffic under it cannot make.
+		let issuesEnv: string | undefined
+		let catalogSql = ""
+		const seriesEnvironments: Array<ReadonlyArray<string> | undefined> = []
+
+		const harness = makeHarness({
+			listIssues: (_orgId, opts) => {
+				issuesEnv = opts.deploymentEnv
+				return Effect.succeed(new ErrorIssuesListResponse({ issues: [issueDocument()] }))
+			},
+			warehouse: makeWarehouseServiceStub({
+				compiledQuery: (_tenant, compiled) => {
+					catalogSql = compiledQueryOf(compiled).sql
+					return compiledQueryOf(compiled).decodeRows(
+						compiledQueryOf(compiled).sql.includes("FROM service_overview_spans")
+							? [serviceRow]
+							: [],
+					)
+				},
+				compiledQueryFirst: (_tenant, compiled) =>
+					compiledQueryOf(compiled)
+						.decodeRows([])
+						.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0]))),
+				ingest: () => Effect.void,
+			}) as WarehouseQueryService,
+			queryEngine: queryEngineStub((tenant, request) => {
+				seriesEnvironments.push(request.query.filters?.environments)
+				return seriesEngine.execute(tenant, request)
+			}),
+		})
+		try {
+			const key = await harness.bootstrapKey(["widget_summary:read"])
+			const summary = await harness.get(key.secret, {}, "?deployment_environment=staging")
+
+			expect(summary.status).toBe(200)
+			expect(issuesEnv).toBe("staging")
+			expect(catalogSql).toContain("staging")
+			// Both series — grouped and ungrouped — or the sparkline and the
+			// headline it sits under would describe different populations.
+			expect(seriesEnvironments).toHaveLength(2)
+			expect(seriesEnvironments).toEqual([["staging"], ["staging"]])
+			// Echoed so the client can prove the payload belongs to the snapshot
+			// slot it is about to overwrite.
+			expect(summary.body.deployment_environment).toBe("staging")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reads the whole organization when no environment is given", async () => {
+		let issuesEnv: string | undefined = "unset"
+		const harness = makeHarness({
+			listIssues: (_orgId, opts) => {
+				issuesEnv = opts.deploymentEnv
+				return Effect.succeed(new ErrorIssuesListResponse({ issues: [issueDocument()] }))
+			},
+		})
+		try {
+			const key = await harness.bootstrapKey(["widget_summary:read"])
+			const summary = await harness.get(key.secret)
+
+			expect(summary.status).toBe(200)
+			expect(issuesEnv).toBeUndefined()
+			// Null, not absent: widgets placed before the parameter existed keep
+			// asking for the organization, and must be able to tell that apart from
+			// a server that ignored their filter.
+			expect(summary.body.deployment_environment).toBeNull()
 		} finally {
 			await harness.dispose()
 		}

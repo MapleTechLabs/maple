@@ -11,7 +11,7 @@ Three roots, and the split is a rule, not a habit:
 - **`packages/*`** — shared code that **knows Maple**: its schema, tables, API, or product.
   `domain`, `query-engine`, `ui`, `db`, `auth`, `effect-sdk`, `browser`, …
 - **`lib/*`** — libraries with **zero Maple knowledge**, extractable to their own repo tomorrow.
-  `clickhouse-builder`, `effect-cloudflare`, `effect-db`, `effect-router`, `cache`,
+  `clickhouse-builder`, `effect-db`, `effect-router`, `cache`, `safe-fetch`,
   `otel-helpers`, `unitflow`.
 
 The test for `lib/` is "could this ship as a standalone OSS library?" — not "is it published?"
@@ -28,12 +28,14 @@ Sign in at `https://web.localhost` with the Clerk test account `david+clerk_test
 `Maple-Dev-Kx92qZ!` when you need an authenticated browser session.
 
 ```bash
-bun dev                        # all apps via turbo → https://[<worktree>.]<app>.localhost
-bun --filter=@maple/web dev:app # single app, raw port, no portless proxy
+bun dev                        # everything, ONE `alchemy dev` stack → https://[<worktree>.]<app>.localhost
+bun dev api web                # a subset (api, alerting, electric-sync, web, landing, ingest, local-ui, scraper)
+bun --filter=@maple/web dev    # single app on its raw port, no portless proxy
 bun run test                   # Vitest via turbo (NOT `bun test` — that's Bun's own runner)
 bun typecheck
 bun run tinybird:manifest      # regenerate after editing datasources.ts
-bun db:up && bun db:migrate:local   # docker Postgres for wrangler dev (vitest uses embedded PGlite)
+bun run local-schema:bump <slug>   # scaffold the local chDB schema bump a datasources.ts change needs
+bun db:up && bun db:migrate:local   # docker Postgres for `alchemy dev` (vitest uses embedded PGlite)
 bun run --cwd apps/api tinybird:deploy   # tinybird:dev / :build / :deploy live in apps/api
 ```
 
@@ -75,7 +77,33 @@ no `castRows` — a cast that looked type-safe hid wire-format drift.
   the SELECT — values above 2^53 corrupt as JS numbers; the SQL-catalog e2e sweep enforces this.
   (2) `rowSchema`s still use `CH.CHNumber`, never `Schema.Number`, so a gateway/readonly cluster
   that refuses the setting (quoted wire) keeps decoding.
+- `CH.compile` reports failures in the Effect channel, and **the unrun Effect is what you hand
+  the warehouse** — `warehouse.compiledQuery(tenant, CH.compile(q, params), …)`. Never
+  `Effect.orDie` a compile at a call site: the executor already does it once, in
+  `resolveCompiledQuery`, because a query built from Maple's own definitions that will not
+  compile is a bug. Wherever a **request field** reaches a `param.*` value or a column
+  comparison (a cursor, a bucket size, a time bound), constrain it at the HTTP boundary —
+  `TinybirdDateTime`, `BucketSeconds`, `WarehouseDateTime` — so a bad value is a 400 rather than
+  a 500. `bucket_seconds: 1.5` and a forged replay cursor were both the latter. A value that
+  genuinely cannot be pre-validated is the one case for `Effect.mapError` at the call site, into
+  a failure the route already returns.
 - `packages/domain/src/tinybird/endpoints.ts` is **type-only** — no `defineEndpoint()` calls.
+
+## Query benchmarking
+
+Use `bun run bench:queries` for query optimization evidence; see
+[`docs/query-benchmarking.md`](docs/query-benchmarking.md). `catalog` compiles the real core and
+integration fixtures, or a custom `--suite` TypeScript module using
+`@maple/query-engine/benchmark`'s `caseFromCompiled`. Export a baseline before changing the builder,
+then re-export the candidate with the same case IDs, inputs, and populated dataset. `run` saves
+individual measurements and collects query logs after timing; `inspect` accepts the saved run to
+explain the SQL/settings actually measured; `compare --fail-on-regression` gates regressions and
+incomplete evidence. Catalog fixtures use synthetic inputs, so empty-table timings are not
+optimization evidence. Benchmark artifacts belong in the gitignored `apps/api/scripts/.bench/`.
+The benchmark package owns the former SQL catalog fixtures and coverage checks. The CLI and
+`query-benchmark.clickhouse.e2e.test.ts` share `apps/api/scripts/query-bench/catalog.ts`; add cases
+under the owning package's `src/benchmark/`, not a separate catalog. The live test also seeds an
+isolated database and exercises run/compare/inspect against real Maple builders.
 
 ## Application database (PlanetScale Postgres)
 
@@ -98,16 +126,17 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   dial is bounded so a stall lands as `error.type = CONNECT_TIMEOUT` instead of hanging.
 - Migrations: `bun run --cwd packages/db db:generate`; CI applies them against the branch's DIRECT
   port 5432 (never a pooler) before `alchemy deploy`. PGlite applies them at layer build.
-- **PR preview deploys are disabled** (2026-08, cost). `deploy-pr-preview.yml` triggers on the
-  `closed` event only, so it tears down pre-cutover stacks and never deploys a new one; restore
-  `types: [opened, synchronize, reopened, closed]` to re-enable.
-- **PR previews have no application database** either (PS-DEV branches billed continuously and
-  ate the Hyperdrive config cap) — this is the state previews return to when re-enabled.
-  `resolveDatabaseMode` in
-  `packages/infra/src/cloudflare/stage.ts` returns `"none"` for `pr`, so no `MAPLE_DB` is bound
-  and `DatabasePgLive` fails every query with a `DatabaseError` — DB-backed routes 500, the rest
-  of the preview works. To restore: return `"managed"` for `pr` and re-add the PlanetScale +
-  Electric steps to `.github/workflows/deploy-pr-preview.yml` (the scripts are kept, dormant).
+- **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a
+  preview only while it carries the `preview` label; `deploy-pr-preview.yml` triggers on
+  `opened, reopened, synchronize, labeled, unlabeled, closed` and tears the stack down the moment
+  the label is removed or the PR closes. `cleanup-preview-orphans.yml` is the backstop for PRs that
+  close without a teardown run.
+- **PR previews still have no application database** (PS-DEV branches billed continuously and ate
+  the Hyperdrive config cap). `resolveDatabaseMode` in `packages/infra/src/cloudflare/stage.ts`
+  returns `"none"` for `pr`, so no `MAPLE_DB` is bound and `DatabasePgLive` fails every query with a
+  `DatabaseError` — DB-backed routes 500, the rest of the preview works. To restore: return
+  `"managed"` for `pr` and re-add the PlanetScale + Electric steps to
+  `.github/workflows/deploy-pr-preview.yml` (the scripts are kept, dormant).
 - The ingest gateway resolves ingest keys from the same Postgres via PSBouncer (6432, no Hyperdrive).
 
 ## Conventions
@@ -120,7 +149,7 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   JS plugin in `scripts/oxlint-plugins/maple.mjs`) and the repo is at zero — keep it there. Generic
   constraints (`<T extends Record<string, any>>`) are exempt: `unknown` does not work in that
   position. `typescript/no-explicit-any` is `warn` (75 left, all outside `lib/`). Both rules are off
-  under `lib/**`, whose builder DSLs (`clickhouse-builder`, `unitflow`, `effect-cloudflare`) use
+  under `lib/**`, whose builder DSLs (`clickhouse-builder`, `unitflow`) use
   `any` as a type-level placeholder in variance positions. `Record<string, unknown>` is _not_ banned —
   it forces narrowing at every read, which is the point.
 - **Effect:** source is vendored at `.context/effect/` (subtree of Effect-TS/effect-smol).
@@ -141,10 +170,11 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   it had diverged exactly where it mattered — it has `AWS/StageConfig.ts` where the real
   package has `AWS/Environment.ts` + `AWS/AuthProvider.ts` — and a code review cited its line
   numbers as fact for a bug in the live code.
-- **LLM core:** `lib/llm` (`@maple/llm`) is a vendored copy of `anomalyco/opencode`'s
-  `packages/llm`, pinned by SHA in `lib/llm/UPSTREAM.json` and re-synced with
-  `bun run llm:sync`. Don't reformat it and don't put Maple behaviour inside it — see
-  `lib/llm/MAPLE.md`.
+- **LLM core:** `@opencode-ai/ai` — opencode's Effect-native LLM core, on npm and pinned exactly
+  (`0.0.0-beta-18050`; the `dev`/`beta` channels carry no semver, so a bump is a read of the diff).
+  Only `apps/api` depends on it, and every piece of Maple behaviour — layer wiring, the Workers AI
+  binding shim, model/provider selection, error mapping — lives at the seam in
+  `apps/api/src/platform/Llm.ts`, never in a wrapper around the package.
 - **Span status codes:** Title case — `"Ok"`, `"Error"`, `"Unset"`.
 - **UI:** shadcn/Base UI + Tailwind 4 (`npx shadcn@latest add <component>`), Recharts, Nucleo icons.
   Find an icon in the local Nucleo DB, then port it into `apps/web/src/components/icons/` by copying
@@ -174,7 +204,12 @@ there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER
 
 ## Docs (`docs/`)
 
-`api-v2.md` (v2 public API spec) · `sampling-throughput.md` · `persistence.md` ·
+`api-v2.md` (v2 public API spec) · `error-issue-lifecycle.md` (how an error becomes an issue,
+gets diagnosed, fixed and verified — read before touching `apps/api/src/services/errors/`) ·
+`sampling-throughput.md` · `persistence.md` ·
+`ingest-wal-durability.md` (WAL segments, the S3 tier, and what survives a task dying) ·
+`docker-container-monitoring.md` (Docker agent → `/infra/containers` lifecycle + its invariants) ·
+`service-map-architecture.md` (the map's tiers, its splice invariant, and what a new overlay costs) ·
 `warehouse-rollups.md` (MV/rollup tiering contract — read before adding a materialized view) ·
 `sst-fork-workflow.md` · `local-mode.md` (single-binary CLI + embedded chDB) ·
 `tinybird-pr-branches.md` · `otel-spec/` (OTel spec map @ v1.58.0 — start at its README).

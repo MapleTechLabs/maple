@@ -5,6 +5,7 @@ import {
 	defaultLocalUrl,
 	hostedDashboardUrl,
 	hostedUiOrigin,
+	isProcessAlive,
 	type DirtyStorePolicy,
 	resolveAdvertiseHost,
 	resolveBindHost,
@@ -80,6 +81,7 @@ describe("buildDetachedChildArgs", () => {
 				chdbConfigFile: "/tmp/backup config.xml",
 				onDirtyStore: policy,
 				minimumRawTelemetryRetentionDays: 120,
+				checkpointInterval: "30m",
 			})
 			deepStrictEqual(args, [
 				"/repo/apps/cli/src/bin.ts",
@@ -94,6 +96,8 @@ describe("buildDetachedChildArgs", () => {
 				"/tmp/maple data",
 				"--on-dirty-store",
 				policy,
+				"--checkpoint-interval",
+				"30m",
 				"--chdb-config-file",
 				"/tmp/backup config.xml",
 				"--minimum-raw-telemetry-retention-days",
@@ -118,6 +122,9 @@ describe("buildDetachedChildArgs", () => {
 				chdbConfigFile: undefined,
 				onDirtyStore: "fail",
 				minimumRawTelemetryRetentionDays: undefined,
+				// Not optional, unlike the flags below: an omitted cadence would come
+				// back as the default, so `off` has to survive the re-exec.
+				checkpointInterval: "off",
 			}),
 			[
 				"start",
@@ -131,7 +138,30 @@ describe("buildDetachedChildArgs", () => {
 				"/data",
 				"--on-dirty-store",
 				"fail",
+				"--checkpoint-interval",
+				"off",
 			],
 		)
+	})
+})
+
+describe("isProcessAlive", () => {
+	it("treats a PID file naming this very process as stale", () => {
+		// A container restarts `maple start` as PID 1 every time, and the PID file
+		// survives on the data volume — `kill(1, 0)` succeeding must not read as
+		// "already running" or the container never starts again.
+		strictEqual(isProcessAlive(process.pid), false)
+	})
+
+	it("never treats a non-positive PID as alive", () => {
+		// kill(0, 0) / kill(-n, 0) signal process groups and succeed for our own.
+		strictEqual(isProcessAlive(0), false)
+		strictEqual(isProcessAlive(-1), false)
+		strictEqual(isProcessAlive(Number.NaN), false)
+	})
+
+	it("still reports a real foreign process as alive", () => {
+		// The parent shell/runner is the one live process whose PID we can know.
+		strictEqual(isProcessAlive(process.ppid), true)
 	})
 })

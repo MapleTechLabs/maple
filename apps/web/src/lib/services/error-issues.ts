@@ -4,6 +4,7 @@ import {
 	ErrorIssueDetailResponse,
 	ErrorIssueDocument,
 	ErrorIssueSampleTrace,
+	ErrorIssueEnvironment,
 	ErrorIssueTimeseriesPoint,
 	IsoDateTimeString,
 	type IssueKind,
@@ -125,6 +126,9 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		snoozeUntil: asIsoOrNull(issue.snooze_until),
 		archivedAt: asIsoOrNull(issue.archived_at),
 		hasOpenIncident: issue.has_open_incident,
+		commentCount: issue.comment_count,
+		openPullRequestCount: issue.open_pull_request_count,
+		mergedPullRequestCount: issue.merged_pull_request_count,
 	})
 
 export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDetailResponse =>
@@ -156,5 +160,8 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 					resolvedAt: asIsoOrNull(incident.resolved_at),
 					occurrenceCount: incident.occurrence_count,
 				}),
+		),
+		environments: detail.environments.map(
+			(env) => new ErrorIssueEnvironment({ name: env.name, count: env.count }),
 		),
 	})

@@ -1,4 +1,4 @@
-import { optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
+import { optionalNumberParam, optionalStringParam, optionalTimeParam, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 import { withTenantExecutor } from "@/mcp/lib/query-warehouse"
 import { resolveTimeRange, rangeExceededResult, MCP_SEARCH_MAX_HOURS } from "@/mcp/lib/time"
@@ -14,8 +14,8 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 		"find_slow_traces",
 		"Find the slowest traces with percentile context (p50, p95, min, max). Use inspect_trace on slow trace_ids to find bottleneck spans.",
 		Schema.Struct({
-			start_time: optionalStringParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalStringParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
+			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
+			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
 			service: optionalStringParam("Filter by service name"),
 			environment: optionalStringParam("Filter by deployment environment (e.g. production, staging)"),
 			limit: optionalNumberParam("Max results (default 10)"),

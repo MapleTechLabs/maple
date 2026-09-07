@@ -72,6 +72,8 @@ export interface FindSlowTracesData {
 export interface ErrorTypeRow {
 	fingerprintHash: string
 	label: string
+	/** One occurrence's status message, to tell fingerprints with the same label apart. */
+	sampleMessage: string
 	count: number
 	affectedServicesCount: number
 	lastSeen: string
@@ -79,7 +81,18 @@ export interface ErrorTypeRow {
 
 export interface FindErrorsData {
 	timeRange: { start: string; end: string }
+	/** "all", or "unexpected" when the list was narrowed to policy-violating identities. */
+	identity: string
 	errors: ErrorTypeRow[]
+}
+
+/** The span that failed inside a sampled trace, with the attributes that say what it was doing. */
+export interface ErrorDetailSpanSummary {
+	spanId: string
+	name: string
+	serviceName: string
+	statusMessage: string
+	attributes: Record<string, string>
 }
 
 export interface ErrorDetailTrace {
@@ -90,6 +103,7 @@ export interface ErrorDetailTrace {
 	services: string[]
 	startTime: string
 	errorMessage?: string
+	errorSpan?: ErrorDetailSpanSummary
 	logs: Array<{
 		timestamp: string
 		severityText: string
@@ -269,7 +283,8 @@ export interface ServiceMapEdge {
 	callCount: number
 	errorCount: number
 	avgDurationMs: number
-	p95DurationMs: number
+	/** Slowest call in the window, not a percentile — the edge rollup stores a max. */
+	maxDurationMs: number
 }
 
 export interface ServiceMapData {
@@ -660,8 +675,26 @@ export interface ErrorIssueRow {
 	hasOpenIncident: boolean
 }
 
+/** The `compact: true` row — identity, state and volume; no assignment, lease or notes. */
+export interface ErrorIssueCompactRow {
+	id: string
+	kind: string
+	fingerprintHash: string
+	workflowState: string
+	severity: string | null
+	serviceName: string
+	errorLabel: string
+	occurrenceCount: number
+	firstSeenAt: string
+	lastSeenAt: string
+	regressionCount: number
+	lastResolvedAt: string | null
+	hasOpenIncident: boolean
+}
+
 export interface ListErrorIssuesData {
-	issues: ErrorIssueRow[]
+	compact: boolean
+	issues: ErrorIssueRow[] | ErrorIssueCompactRow[]
 	total: number
 }
 
@@ -707,8 +740,16 @@ export interface CommentOnErrorIssueData {
 export interface ProposeFixData {
 	issueId: string
 	workflowState: string
-	eventId: string
 	prUrl: string | null
+}
+
+export interface LinkPullRequestData {
+	pullRequestId: string
+	issueId: string
+	repoFullName: string
+	number: number
+	url: string
+	state: "open" | "merged" | "closed"
 }
 
 export interface ListErrorIssueEventsData {
@@ -957,6 +998,7 @@ export type StructuredToolOutput =
 	| { tool: "release_error_issue"; data: ReleaseErrorIssueData }
 	| { tool: "comment_on_error_issue"; data: CommentOnErrorIssueData }
 	| { tool: "propose_fix"; data: ProposeFixData }
+	| { tool: "link_pull_request"; data: LinkPullRequestData }
 	| { tool: "list_error_issue_events"; data: ListErrorIssueEventsData }
 	| { tool: "register_agent"; data: RegisterAgentData }
 	| { tool: "list_error_incidents"; data: ListErrorIncidentsData }
@@ -964,3 +1006,44 @@ export type StructuredToolOutput =
 			tool: "update_error_notification_policy"
 			data: UpdateErrorNotificationPolicyData
 	  }
+	| { tool: "query_funnel"; data: QueryFunnelData }
+	| { tool: "list_product_events"; data: ListProductEventsData }
+
+// Product-event funnels
+
+export interface QueryFunnelStepData {
+	/** 1-based. */
+	step: number
+	label: string
+	count: number
+	/** Share of step 1, 0–1. */
+	ofFirst: number
+	/** Conversion from the previous step, 0–1; null on step 1 or when the previous step counted nobody. */
+	ofPrevious: number | null
+	dropOff: number
+}
+
+export interface QueryFunnelData {
+	timeRange: { start: string; end: string }
+	keyBy: "person" | "visitor" | "user" | "session"
+	windowSeconds: number
+	steps: ReadonlyArray<QueryFunnelStepData>
+	/** Last step over first, 0–1; null with fewer than two steps or an empty first step. */
+	conversion: number | null
+	breakdown?: {
+		by: string
+		groups: ReadonlyArray<{ group: string; counts: ReadonlyArray<number>; conversion: number | null }>
+	}
+}
+
+export interface ListProductEventsData {
+	timeRange: { start: string; end: string }
+	events: ReadonlyArray<{
+		eventName: string
+		/** `navigation` (page view), `custom` (`track()`), `screen` (mobile). */
+		kind: string
+		count: number
+		sessions: number
+		persons: number
+	}>
+}

@@ -1,5 +1,8 @@
 "use client"
 
+import { Option } from "effect"
+
+import { trySync } from "../../lib/try-sync"
 import * as React from "react"
 
 import { useCopy, type CopyStatus, type UseCopyOptions } from "../../hooks/use-copy"
@@ -81,6 +84,9 @@ const LABEL_ACTIVE: Record<CopyStatus, string> = {
 
 export interface CopyTooltipLabels {
 	copiedLabel?: string
+	/** Failure wording, used verbatim inline and in the tooltip. Left unset,
+	 *  the inline label is a compact "Failed" and the tooltip the full
+	 *  sentence, so the button is not sized to a state it is almost never in. */
 	errorLabel?: string
 }
 
@@ -221,11 +227,7 @@ export interface CopyButtonProps
  * `JSON.stringify`, say) escape as an uncaught click handler error. */
 function resolveValue(value: string | (() => string)): string | null {
 	if (typeof value !== "function") return value
-	try {
-		return value()
-	} catch {
-		return null
-	}
+	return Option.getOrNull(trySync(value))
 }
 
 /**
@@ -240,7 +242,7 @@ export function CopyButton({
 	label,
 	idleLabel,
 	copiedLabel = "Copied",
-	errorLabel = "Failed to copy",
+	errorLabel,
 	tooltip,
 	iconSize = 14,
 	idleIcon,
@@ -258,6 +260,17 @@ export function CopyButton({
 	const { copy, status } = useCopy({ label, onCopy, onError, successMessage, timeout, toast })
 	const withLabel = idleLabel !== undefined
 	const resolvedSize = size ?? (withLabel ? "sm" : "icon-xs")
+
+	/**
+	 * The three inline labels are stacked, so the button reserves the widest of
+	 * them for good — and a full "Failed to copy" beside a resting "Copy" is a
+	 * button three times wider than the word it shows, all of it dead space in
+	 * the state it sits in essentially always. Inline the failure reads fine as
+	 * one word; the tooltip, the toast and the live region keep the sentence. A
+	 * callsite that passes its own `errorLabel` gets it verbatim in both.
+	 */
+	const inlineErrorLabel = errorLabel ?? "Failed"
+	const errorText = errorLabel ?? "Failed to copy"
 
 	const button = (
 		<Button
@@ -279,12 +292,12 @@ export function CopyButton({
 					labels={[
 						["idle", idleLabel],
 						["copied", copiedLabel],
-						["error", errorLabel],
+						["error", inlineErrorLabel],
 					]}
 				/>
 			)}
 			<span role="status" aria-live="polite" className="sr-only">
-				{status === "copied" ? copiedLabel : status === "error" ? errorLabel : ""}
+				{status === "copied" ? copiedLabel : status === "error" ? errorText : ""}
 			</span>
 		</Button>
 	)
@@ -294,7 +307,9 @@ export function CopyButton({
 	return (
 		<Tooltip>
 			<TooltipTrigger render={button} />
-			<TooltipPopup>{copyTooltipText(status, label, { copiedLabel, errorLabel })}</TooltipPopup>
+			<TooltipPopup>
+				{copyTooltipText(status, label, { copiedLabel, errorLabel: errorText })}
+			</TooltipPopup>
 		</Tooltip>
 	)
 }

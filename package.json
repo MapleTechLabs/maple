@@ -10,25 +10,24 @@
 	],
 	"scripts": {
 		"build": "turbo build",
-		"dev": "turbo dev",
+		"dev": "bun run ./scripts/dev.ts",
 		"prepare": "effect-tsgo unpatch --no-typescript --oxlint && effect-tsgo patch --no-typescript --oxlint",
-		"dev:essentials": "turbo dev --filter=@maple/api --filter=@maple/alerting --filter=@maple/ingest --filter=@maple/web --filter=@maple/scraper --filter=@maple/electric-sync",
 		"docker:build": "COMPOSE_PARALLEL_LIMIT=1 docker compose build",
 		"docker:up": "COMPOSE_PARALLEL_LIMIT=1 docker compose up --build",
 		"db:up": "docker compose up -d postgres electric",
 		"ch:up": "docker compose -f docker-compose.development.yml up -d clickhouse",
 		"ch:down": "docker compose -f docker-compose.development.yml stop clickhouse",
-		"ch:test": "CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 bun run --filter=@maple/api test -- src/services/warehouse/sql-catalog.clickhouse.e2e.test.ts src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts",
+		"bench:queries": "bun apps/api/scripts/bench-queries.ts",
+		"ch:test": "CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 bun run --filter=@maple/api test -- src/services/warehouse/query-benchmark.clickhouse.e2e.test.ts src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts",
 		"db:migrate:local": "DATABASE_URL=postgres://maple:maple@localhost:5499/maple bun run --cwd packages/db db:migrate",
 		"migrate:prod": "bun run --cwd packages/db ps:apply-schema main",
-		"dev:alerting": "bun --filter=@maple/alerting dev",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
 		"lint": "oxlint -c .oxlintrc.effect.json --quiet alchemy.run.ts scripts apps packages lib examples && bun run lint:slack-agent",
 		"lint:slack-agent": "oxlint -c .oxlintrc.json --quiet apps/slack-agent",
 		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts apps packages lib examples",
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
-		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/browser --filter=@maple-dev/clickhouse-builder",
+		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser --filter=@maple-dev/clickhouse-builder",
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
 		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
 		"alchemy:deploy:stg": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage stg",
@@ -41,12 +40,11 @@
 		"tinybird:manifest:check": "bun run ./scripts/generate-tinybird-project-manifest.ts --check",
 		"clickhouse:schema": "bun run ./scripts/generate-clickhouse-schema.ts && bun run ./scripts/generate-clickhouse-schema-sql.ts && bun run ./scripts/generate-clickhouse-insert-mappings.ts && bun run ./scripts/lint-clickhouse-schema.ts",
 		"clickhouse:schema:check": "bun run ./scripts/generate-clickhouse-schema.ts --check && bun run ./scripts/generate-clickhouse-schema-sql.ts --check && bun run ./scripts/generate-clickhouse-insert-mappings.ts --check && bun run ./scripts/lint-clickhouse-schema.ts && bun run ./scripts/check-local-schema-manifest.ts",
+		"local-schema:bump": "bun run ./scripts/bump-local-schema.ts",
 		"clickhouse:schema:lint": "bun run ./scripts/lint-clickhouse-schema.ts",
 		"check:tokens": "bun run ./scripts/check-token-drift.ts",
 		"ios:openapi": "bun run ./scripts/generate-ios-openapi.ts",
 		"ios:openapi:check": "bun run ./scripts/generate-ios-openapi.ts --check",
-		"llm:sync": "bun run ./scripts/sync-llm-upstream.ts",
-		"llm:sync:check": "bun run ./scripts/sync-llm-upstream.ts --check",
 		"knip": "bun run --cwd apps/landing sync:i18n && knip",
 		"knip:fix": "bun run --cwd apps/landing sync:i18n && knip --fix --allow-remove-files",
 		"typecheck": "turbo typecheck && tsc -p tsconfig.alchemy.json"
@@ -54,14 +52,15 @@
 	"dependencies": {},
 	"devDependencies": {
 		"@cloudflare/workers-types": "4.20260603.1",
-		"@effect/platform-node": "4.0.0-rc.108",
+		"@effect/platform-node": "4.0.0-rc.111",
 		"@effect/tsgo": "0.36.4",
-		"@effect/vitest": "4.0.0-rc.108",
+		"@effect/vitest": "catalog:effect",
+		"@maple/alchemy-portless": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@oxlint/plugins": "1.77.0",
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"@types/node": "catalog:tooling",
-		"alchemy": "2.0.0-beta.72",
+		"alchemy": "2.0.0-beta.74",
 		"effect": "catalog:effect",
 		"knip": "^6.17.1",
 		"oxfmt": "^0.55.0",
@@ -72,7 +71,7 @@
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.0-rc.108"
+		"@effect/sql-d1": "4.0.0-rc.111"
 	},
 	"packageManager": "bun@1.4.0",
 	"catalog": {
@@ -80,14 +79,19 @@
 		"vitest": "^4.1.9"
 	},
 	"catalogs": {
+		"charts": {
+			"@tanstack/charts": "0.16.0",
+			"@tanstack/charts-scales": "0.16.0"
+		},
 		"clickhouse": {
 			"@clickhouse/client-web": "^1.21.0"
 		},
 		"effect": {
-			"@effect/atom-react": "4.0.0-rc.108",
+			"@effect/atom-react": "4.0.0-rc.111",
 			"@effect/language-service": "^0.87.2",
-			"@effect/platform-bun": "4.0.0-rc.108",
-			"effect": "4.0.0-rc.108"
+			"@effect/platform-bun": "4.0.0-rc.111",
+			"@effect/vitest": "4.0.0-rc.111",
+			"effect": "4.0.0-rc.111"
 		},
 		"react": {
 			"@types/react": "^19.2.14",
@@ -116,7 +120,7 @@
 		}
 	},
 	"patchedDependencies": {
-		"@effect/vitest@4.0.0-rc.108": "patches/@effect%2Fvitest@4.0.0-rc.108.patch",
-		"effect@4.0.0-rc.108": "patches/effect@4.0.0-rc.108.patch"
+		"@effect/vitest@4.0.0-rc.111": "patches/@effect%2Fvitest@4.0.0-rc.111.patch",
+		"effect@4.0.0-rc.111": "patches/effect@4.0.0-rc.111.patch"
 	}
 }

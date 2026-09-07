@@ -21,13 +21,19 @@
  * its own lifetime, so hosting the turn here is what actually makes it survive. It also removes
  * every cross-process hop: appending an event is a method call, not a stub RPC.
  *
- * Startup-CPU note (Cloudflare error 10021): this class is exported from `worker.ts`, whose module
- * scope Cloudflare evaluates during upload validation. It must therefore import nothing from the
- * app service graph at module scope — hence `@maple/domain/chat-session` types being the only
- * import, and `./turn-runner` (which pulls in the whole graph) arriving through a dynamic import
- * inside the method that needs it, exactly as `worker.ts` does for the route graph.
+ * A plain class over the object's state and env rather than a `DurableObject` subclass: the Durable
+ * Object itself is `ChatSessionObject` at the bottom of this file, alchemy's Effect-native form, which
+ * the api Worker's init yields (binding, namespace and the entry's class export all derive from it)
+ * and which builds one of these per activation and drives its methods over RPC.
+ *
+ * Startup-CPU note (Cloudflare error 10021): this class is reachable from `worker.ts`, whose
+ * module scope Cloudflare evaluates during upload validation. It must therefore import nothing
+ * from the app service graph at module scope — hence `@maple/domain/chat-session` types being the
+ * only import, and `./turn-runner` (which pulls in the whole graph) arriving through a dynamic
+ * import inside the method that needs it, exactly as `worker.ts` does for the route graph.
  */
-import { DurableObject } from "cloudflare:workers"
+import * as Cloudflare from "alchemy/Cloudflare"
+import { Effect } from "effect"
 import {
 	decodeChatEventPayload,
 	encodeChatEventPayload,
@@ -39,6 +45,13 @@ import {
 	type ChatToolCall,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
+import type { ChatSessionStub } from "./session"
+
+/** What the class reads off its Durable Object state: the SQLite handle and the object's own `waitUntil`. */
+interface ChatSessionState {
+	readonly storage: { readonly sql: SqlStorage }
+	waitUntil(promise: Promise<unknown>): void
+}
 
 /** SQLite row shapes. `SqlStorage.exec` requires an index signature on its row type. */
 interface EventRow extends Record<string, SqlStorageValue> {
@@ -105,7 +118,7 @@ const RETRY_HINT = "retry: 1000\n\n"
 const TURN_STALE_MS = 15 * 60 * 1000
 const CHAT_TURN_FAILED = "Maple couldn't complete this response."
 
-export class ChatSession extends DurableObject<Record<string, unknown>> {
+export class ChatSession {
 	private readonly sql: SqlStorage
 
 	/**
@@ -119,8 +132,10 @@ export class ChatSession extends DurableObject<Record<string, unknown>> {
 	 */
 	private waiters = new Set<() => void>()
 
-	constructor(ctx: DurableObjectState, env: Record<string, unknown>) {
-		super(ctx, env)
+	constructor(
+		private readonly ctx: ChatSessionState,
+		private readonly env: Record<string, unknown>,
+	) {
 		this.sql = ctx.storage.sql
 		this.sql.exec(SCHEMA)
 		// Sessions created before the watchdog columns existed (local dev only — the class has
@@ -400,7 +415,7 @@ export class ChatSession extends DurableObject<Record<string, unknown>> {
 	/**
 	 * Drive one turn to completion, appending events as they are produced.
 	 *
-	 * Everything heavy — the Effect runtime, the service graph, `@maple/llm` — is behind this
+	 * Everything heavy — the Effect runtime, the service graph, `@opencode-ai/ai` — is behind this
 	 * dynamic import so none of it is evaluated at module scope. Failures are recorded as a
 	 * terminal event rather than thrown: the log is what the client reads, so a turn that dies
 	 * silently is indistinguishable from one that hung.
@@ -616,3 +631,46 @@ const foldTaskEvent = (
 		},
 	} as ChatToolCall
 }
+
+/** The stub's surface with each method's Promise lifted to the Effect alchemy runs per RPC call. */
+type EffectRpc<Stub> = {
+	readonly [K in keyof Stub]: Stub[K] extends (...args: infer Args) => Promise<infer Result>
+		? (...args: Args) => Effect.Effect<Result>
+		: never
+}
+
+/**
+ * The session's methods, one Effect each. alchemy runs the Effect per RPC call and hands its value
+ * back as-is — a `ReadableStream` included, which Workers RPC carries by reference — so
+ * `ChatSessionStub` stays what a caller sees.
+ */
+export const chatSessionRpc = (session: ChatSession) =>
+	({
+		cursor: () => Effect.sync(() => session.cursor()),
+		running: () => Effect.sync(() => session.running()),
+		history: () => Effect.sync(() => session.history()),
+		since: (cursor) => Effect.sync(() => session.since(cursor)),
+		subscribe: (cursor) => Effect.sync(() => session.subscribe(cursor)),
+		append: (event) => Effect.sync(() => session.append(event)),
+		beginTurn: (input) => Effect.sync(() => session.beginTurn(input)),
+		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
+		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
+		abort: () => Effect.sync(() => session.abort()),
+	}) satisfies EffectRpc<ChatSessionStub>
+
+/**
+ * One activation, in alchemy's two phases: the outer Effect resolves the state and env (it also
+ * runs at plan time, against a mock state, so it must not touch storage), the inner one builds the
+ * session inside the object's `blockConcurrencyWhile` — the schema statements have run before the
+ * first call reaches it, hibernation wakes included.
+ */
+export const activateChatSession = Effect.map(
+	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment]),
+	([state, env]) => Effect.sync(() => chatSessionRpc(new ChatSession(state.raw, env))),
+)
+
+/** The Durable Object: one per `"<orgId>:<tabId>"`, SQLite-backed, bound to the api Worker as `ChatSession`. */
+export default class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject>()(
+	"ChatSession",
+	activateChatSession,
+) {}

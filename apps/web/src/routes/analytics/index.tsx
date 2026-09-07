@@ -12,13 +12,16 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { PlayRotateClockwiseIcon } from "@/components/icons"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
-import type { WebAnalyticsBreakdowns } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	AnalyticsBreakdownPanel,
 	type BreakdownDimension,
 } from "@/components/analytics/analytics-breakdown-panel"
+import { AnalyticsBotNotice } from "@/components/analytics/analytics-bot-notice"
+import { ProductEventTraceSamples } from "@/components/analytics/product-event-trace-samples"
 import { AnalyticsFilterSidebar } from "@/components/analytics/analytics-filter-sidebar"
+import { AnalyticsLiveBadge } from "@/components/analytics/analytics-live-badge"
 import {
 	AnalyticsMetricStrip,
 	AnalyticsMetricStripLoading,
@@ -33,7 +36,7 @@ import {
 	type AnalyticsMetricKey,
 	type AnalyticsMetricSource,
 } from "@/components/analytics/metrics"
-import { countryLabel, languageLabel } from "@/components/analytics/labels"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "@/components/analytics/labels"
 import {
 	activeFilterChips,
 	analyticsFilterSearchFields,
@@ -44,13 +47,14 @@ import {
 } from "@/components/analytics/filters"
 import {
 	webAnalyticsBreakdownsResultAtom,
+	webAnalyticsEventsResultAtom,
 	webAnalyticsPagesResultAtom,
 	webAnalyticsPageviewsResultAtom,
 	webAnalyticsSummaryResultAtom,
 	webAnalyticsTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
@@ -62,6 +66,7 @@ const analyticsSearchSchema = Schema.Struct({
 
 const DEFAULT_PRESET = "7d"
 const PAGES_LIMIT = 100
+const EVENTS_LIMIT = 100
 const BREAKDOWN_LIMIT = 50
 
 export const Route = createFileRoute("/analytics/")({
@@ -99,6 +104,8 @@ function WebAnalyticsPage() {
 		onFilterChange(key, toggleFilterValue(filters[key], value))
 	}
 
+	// Clearing filters keeps the time range: that is what you are looking at,
+	// the filters are how narrowly.
 	const onClearFilters = () => {
 		navigate({
 			search: {
@@ -113,9 +120,18 @@ function WebAnalyticsPage() {
 	// instantiates a fresh atom whose first emission is `Initial`. Reading that
 	// directly would replace the sidebar with a skeleton on every click and reset
 	// each section's open/search state — same reasoning as the Cloudflare pages.
-	const breakdownsResult = useRetainedRefreshableResultValue(
+	const breakdownsResult = useRefreshableAtomValue(
 		webAnalyticsBreakdownsResultAtom({
 			data: { startTime, endTime, limitPerDimension: BREAKDOWN_LIMIT, ...filters },
+		}),
+	)
+
+	// Its own query, not a branch of the breakdowns union: custom events live on
+	// the page-view source, not `session_replays`. Read here rather than in the
+	// content so the sidebar's Event section and the Events card share one fetch.
+	const eventsResult = useRefreshableAtomValue(
+		webAnalyticsEventsResultAtom({
+			data: { startTime, endTime, limit: EVENTS_LIMIT, ...filters },
 		}),
 	)
 
@@ -129,6 +145,7 @@ function WebAnalyticsPage() {
 					<DashboardLayout.Filters>
 						<AnalyticsFilterSidebar
 							breakdownsResult={breakdownsResult}
+							eventsResult={eventsResult}
 							filters={filters}
 							onFilterChange={onFilterChange}
 							onClearFilters={onClearFilters}
@@ -138,6 +155,10 @@ function WebAnalyticsPage() {
 						<DashboardLayout.Sticky>
 							<DashboardLayout.Header>
 								<div className="flex flex-wrap items-center gap-2">
+									{/* Ahead of the range controls, because it is the one number
+									    on the page they do not govern: "right now" is its own
+									    window, and the filters still narrow it. */}
+									<AnalyticsLiveBadge filters={filters} />
 									{/* The reciprocal of the Analytics button on Session Replays: this
 									    page aggregates the sessions that page plays back one at a time,
 									    and "who are these people actually" is the next question from
@@ -206,6 +227,7 @@ function WebAnalyticsPage() {
 									endTime={endTime}
 									filters={filters}
 									breakdownsResult={breakdownsResult}
+									eventsResult={eventsResult}
 									onToggleFilter={onToggleFilter}
 								/>
 							</div>
@@ -256,12 +278,14 @@ function AnalyticsContent({
 	endTime,
 	filters,
 	breakdownsResult,
+	eventsResult,
 	onToggleFilter,
 }: {
 	startTime: string
 	endTime: string
 	filters: AnalyticsFilters
 	breakdownsResult: Result.Result<WebAnalyticsBreakdowns, QueryAtomFailure>
+	eventsResult: Result.Result<{ data: ReadonlyArray<WebAnalyticsEvent> }, QueryAtomFailure>
 	onToggleFilter: (key: AnalyticsFilterKey, value: string) => void
 }) {
 	const bucketSeconds = chartBucketSeconds(startTime, endTime)
@@ -282,16 +306,24 @@ function AnalyticsContent({
 	// and every back-button step.
 	const [picked, setPicked] = useState<AnalyticsMetricKey | null>(null)
 
-	const summaryResult = useRetainedRefreshableResultValue(
-		webAnalyticsSummaryResultAtom({ data: windowInput }),
+	const summaryResult = useRefreshableAtomValue(webAnalyticsSummaryResultAtom({ data: windowInput }))
+
+	// The bot split for this window, measured over every agent regardless of the
+	// Traffic filter — which is the only way it can be reported while that filter
+	// defaults to Humans, and the right semantics anyway: "how much of this window
+	// is crawlers" is a property of the window, not of the view. Same query and so
+	// the same atom as the summary above whenever Traffic is already `all`, which
+	// makes this free in that case rather than a second fetch.
+	const trafficMixResult = useRefreshableAtomValue(
+		webAnalyticsSummaryResultAtom({ data: { ...windowInput, traffic: "all" } }),
 	)
-	const timeseriesResult = useRetainedRefreshableResultValue(
+	const timeseriesResult = useRefreshableAtomValue(
 		webAnalyticsTimeseriesResultAtom({ data: { ...windowInput, bucketSeconds } }),
 	)
-	const pageviewsResult = useRetainedRefreshableResultValue(
+	const pageviewsResult = useRefreshableAtomValue(
 		webAnalyticsPageviewsResultAtom({ data: { ...windowInput, bucketSeconds } }),
 	)
-	const pagesResult = useRetainedRefreshableResultValue(
+	const pagesResult = useRefreshableAtomValue(
 		webAnalyticsPagesResultAtom({ data: { ...windowInput, limit: PAGES_LIMIT } }),
 	)
 
@@ -299,10 +331,10 @@ function AnalyticsContent({
 	// Pages / session are measured over `session_events`, which the summary query
 	// deliberately does not read — without the second, those two tiles would be
 	// the only ones with no delta.
-	const previousSummaryResult = useRetainedRefreshableResultValue(
+	const previousSummaryResult = useRefreshableAtomValue(
 		webAnalyticsSummaryResultAtom({ data: previousInput }),
 	)
-	const previousPageviewsResult = useRetainedRefreshableResultValue(
+	const previousPageviewsResult = useRefreshableAtomValue(
 		webAnalyticsPageviewsResultAtom({ data: { ...previousInput, bucketSeconds } }),
 	)
 
@@ -348,6 +380,14 @@ function AnalyticsContent({
 
 					return (
 						<>
+							{/* Above the strip, because it qualifies every number in it.
+							    Decorative like the comparison window: a slow or failed mix
+							    query costs the line, not the page. */}
+							{Result.builder(trafficMixResult)
+								.onSuccess((mix) => (
+									<AnalyticsBotNotice mix={mix} traffic={filters.traffic} />
+								))
+								.orElse(() => null)}
 							<AnalyticsMetricStrip
 								source={source}
 								previous={previousSource}
@@ -389,8 +429,7 @@ function AnalyticsContent({
 							filterKey: "referrerHost",
 							noun: "referrer",
 							nounPlural: "referrers",
-							emptyMessage:
-								"No referrers recorded. Sessions with an empty referrer are excluded rather than bucketed as direct — an empty value also covers internal navigation and Referrer-Policy suppression.",
+							formatValue: referrerLabel,
 						},
 						{
 							tab: "UTM source",
@@ -398,6 +437,7 @@ function AnalyticsContent({
 							filterKey: "utmSource",
 							noun: "source",
 							nounPlural: "sources",
+							formatValue: utmLabel,
 						},
 						{
 							tab: "Medium",
@@ -405,6 +445,7 @@ function AnalyticsContent({
 							filterKey: "utmMedium",
 							noun: "medium",
 							nounPlural: "mediums",
+							formatValue: utmLabel,
 						},
 						{
 							tab: "Campaign",
@@ -412,6 +453,7 @@ function AnalyticsContent({
 							filterKey: "utmCampaign",
 							noun: "campaign",
 							nounPlural: "campaigns",
+							formatValue: utmLabel,
 						},
 					]
 
@@ -507,6 +549,29 @@ function AnalyticsContent({
 						},
 					]
 
+					const events = Result.builder(eventsResult)
+						.onSuccess((rows) => rows.data)
+						.orElse(() => [])
+
+					const eventDimensions: ReadonlyArray<BreakdownDimension> = [
+						{
+							tab: "Events",
+							// Ranked by firings, with the sessions that fired each beside it —
+							// the same two-column shape as Pages, read from the same source.
+							rows: events.map((event) => ({
+								name: event.name,
+								count: event.sessions,
+								views: event.events,
+							})),
+							filterKey: "eventName",
+							noun: "event",
+							nounPlural: "events",
+							viewsLabel: "Events",
+							emptyMessage:
+								'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
+						},
+					]
+
 					// `items-start` so each card sizes to its own content instead of
 					// stretching to match the tallest in its row — a Devices card with
 					// three rows should not be as tall as a Pages card with fifty.
@@ -514,24 +579,44 @@ function AnalyticsContent({
 						/** Names the theme the tabs share; carried only as a stable key. */
 						id: string
 						dimensions: ReadonlyArray<BreakdownDimension>
+						/** Spans both columns — an odd card count leaves the last one alone. */
+						wide?: boolean
 					}> = [
 						{ id: "acquisition", dimensions: referrers },
 						{ id: "content", dimensions: pageDimensions },
 						{ id: "technology", dimensions: devices },
 						{ id: "audience", dimensions: geography },
+						{ id: "events", dimensions: eventDimensions, wide: true },
 					]
+
+					// Traces behind the filtered event; renders nothing unless the event
+					// came from an annotated span.
+					const eventName = filters.eventName
 
 					return (
 						<div className="grid items-start gap-4 @min-[880px]/page:grid-cols-2">
 							{cards.map((card) => (
-								<AnalyticsBreakdownPanel
+								<div
 									key={card.id}
-									dimensions={card.dimensions}
-									activeValue={(key) => filters[key]}
-									onToggleFilter={onToggleFilter}
-									waiting={result.waiting}
-								/>
+									className={card.wide ? "@min-[880px]/page:col-span-2" : undefined}
+								>
+									<AnalyticsBreakdownPanel
+										dimensions={card.dimensions}
+										activeValue={(key) => filters[key]}
+										onToggleFilter={onToggleFilter}
+										waiting={result.waiting}
+									/>
+								</div>
 							))}
+							{eventName === undefined ? null : (
+								<div className="@min-[880px]/page:col-span-2">
+									<ProductEventTraceSamples
+										eventName={eventName}
+										startTime={startTime}
+										endTime={endTime}
+									/>
+								</div>
+							)}
 						</div>
 					)
 				})

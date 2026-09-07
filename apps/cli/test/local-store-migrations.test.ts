@@ -21,6 +21,19 @@ import {
 	LOCAL_SCHEMA_V7,
 	LOCAL_SCHEMA_V8,
 	LOCAL_SCHEMA_V10,
+	LOCAL_SCHEMA_V10_MANIFEST,
+	LOCAL_SCHEMA_V11,
+	LOCAL_SCHEMA_V11_MANIFEST,
+	LOCAL_SCHEMA_V12,
+	LOCAL_SCHEMA_V12_MANIFEST,
+	LOCAL_SCHEMA_V13,
+	LOCAL_SCHEMA_V13_MANIFEST,
+	LOCAL_SCHEMA_V14,
+	LOCAL_SCHEMA_V15,
+	LOCAL_SCHEMA_V16,
+	LOCAL_SCHEMA_V17,
+	LOCAL_SCHEMA_V18,
+	LOCAL_SCHEMA_V19,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "../src/server/schema-identity"
@@ -53,25 +66,31 @@ import {
 import { ensureStoreMarkerDurable, readMarker, storeMarkerPath } from "../src/server/store-version"
 import { durableJson } from "../src/server/durable-files"
 import {
+	__testables as legacyTestables,
 	advanceDuplicateKeyProgress,
 	duplicateCursorContinuation,
+	LEGACY_RAW_TABLES,
+	nextFetchRowLimit,
 	type CopyProgress,
+	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
+import { v10ToV11ProductEventsModule } from "../src/server/local-store-migrations/v10-to-v11-product-events"
+import { v11ToV12ServiceMapEdgeQuantilesModule } from "../src/server/local-store-migrations/v11-to-v12-service-map-edge-quantiles"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 describe("current local schema identity", () => {
-	it("matches the generated v10 revision and keeps the issue-297 identity frozen", () => {
-		expect(SCHEMA_FINGERPRINT).toBe("b10c1137fb63a6f3")
-		expect(SCHEMA_DIGEST).toBe("b10c1137fb63a6f3ebd4d44c37ed82d469d1e52ea483c03b3c5cc25399410bd1")
+	it("matches the generated v19 revision and keeps the issue-297 identity frozen", () => {
+		expect(SCHEMA_FINGERPRINT).toBe("778888eceae9d6b7")
+		expect(SCHEMA_DIGEST).toBe("778888eceae9d6b717004bf2b7cf8b0db84fb0d65c81e2cb72d7cb39a9c3bd74")
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
 		)
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(10)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V10)
+		expect(CURRENT_LOCAL_SCHEMA.version).toBe(19)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V19)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
 		expect(logs?.columns.some((column) => column.name.startsWith("idx_"))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
@@ -96,12 +115,15 @@ describe("current local schema identity", () => {
 
 		// v4 is exactly v3 plus the web analytics fact table and its view. Asserted
 		// against the frozen v3 manifest rather than the diff so a later structural
-		// change can't quietly ride along on this version.
-		const webEvents = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "web_events")
+		// change can't quietly ride along on this version. (v6 drops web_events
+		// again, so it is read from the frozen v4 manifest, not the current one.)
+		const webEvents = LOCAL_SCHEMA_V4_MANIFEST.objects.find((object) => object.name === "web_events")
 		expect(webEvents?.engine).toBe("MergeTree")
 		expect(webEvents?.orderBy).toBe("(OrgId, Timestamp, SessionId, Seq)")
 		expect(webEvents?.indexes).toContain("idx_event_name")
-		const webEventsView = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "web_events_mv")
+		const webEventsView = LOCAL_SCHEMA_V4_MANIFEST.objects.find(
+			(object) => object.name === "web_events_mv",
+		)
 		expect(webEventsView?.definition).toContain("FROM session_events")
 		const v3Names = new Set(LOCAL_SCHEMA_V3_MANIFEST.objects.map((object) => object.name))
 		expect(v3Names.has("web_events")).toBe(false)
@@ -111,14 +133,14 @@ describe("current local schema identity", () => {
 		// v5 is exactly v4 plus the minutely service-overview rollup and its view.
 		// Asserted against the frozen v4 manifest, same as above, so a later
 		// structural change cannot quietly ride along on this version.
-		const minutely = LOCAL_SCHEMA_MANIFEST.objects.find(
+		const minutely = LOCAL_SCHEMA_V5_MANIFEST.objects.find(
 			(object) => object.name === "service_overview_minutely",
 		)
 		expect(minutely?.engine).toBe("AggregatingMergeTree")
 		expect(minutely?.orderBy).toBe(
 			"(OrgId, ServiceName, Minute, DeploymentEnv, ServiceNamespace, CommitSha)",
 		)
-		const minutelyView = LOCAL_SCHEMA_MANIFEST.objects.find(
+		const minutelyView = LOCAL_SCHEMA_V5_MANIFEST.objects.find(
 			(object) => object.name === "service_overview_minutely_mv",
 		)
 		// Reads traces directly — a cascade off the hourly rollup would make the
@@ -134,15 +156,28 @@ describe("current local schema identity", () => {
 
 		// v6, v7 and v8 add and remove nothing: they only replace materialized-view
 		// bodies, so their object set is identical to v5 and the manifest digest
-		// differs solely through those definitions. v9 is the first edge to remove
-		// objects — `error_spans` and its view, which no query ever read. Asserted
-		// as an exact set difference rather than a relaxed check, so a future edge
-		// still cannot add or drop an object unnoticed.
+		// differs solely through those definitions. v9 removes `error_spans` and
+		// its view; v11 replaces `web_events` with `product_events` and adds
+		// `identity_links`; v17 adds `audit_log`, which local mode creates but
+		// never writes. Asserted as an exact set difference rather than a
+		// relaxed check, so a future edge still cannot add or drop an object
+		// unnoticed.
 		expect([...v5Names].filter((name) => !currentNames.has(name))).toEqual([
 			"error_spans",
 			"error_spans_mv",
+			"web_events",
+			"web_events_mv",
 		])
-		expect([...currentNames].filter((name) => !v5Names.has(name))).toEqual([])
+		expect([...currentNames].filter((name) => !v5Names.has(name))).toEqual([
+			"ai_trace_index",
+			"ai_trace_index_mv",
+			"audit_log",
+			"identity_links",
+			"identity_links_mv",
+			"product_events",
+			"product_events_mv",
+			"product_events_traces_mv",
+		])
 		const errorEventsView = LOCAL_SCHEMA_MANIFEST.objects.find(
 			(object) => object.name === "error_events_mv",
 		)
@@ -160,6 +195,101 @@ describe("current local schema identity", () => {
 			(object) => object.name === "error_events_mv",
 		)
 		expect(v5ErrorEventsView?.definition).not.toContain("_httpStatus")
+
+		// v11 replaces web_events with product_events, adds identity_links, and
+		// widens session_events by the three identity columns. Asserted against
+		// the frozen v10 manifest, same as above.
+		const productEvents = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "product_events")
+		expect(productEvents?.engine).toBe("MergeTree")
+		expect(productEvents?.orderBy).toBe("(OrgId, Timestamp, VisitorId, SessionId, Seq)")
+		expect(productEvents?.ttl).toContain("365 DAY")
+		expect(productEvents?.indexes).toEqual(["idx_event_name", "idx_user_id", "idx_trace_id"])
+		expect(productEvents?.columns.map((column) => column.name)).toEqual([
+			"OrgId",
+			"Timestamp",
+			"Source",
+			"SessionId",
+			"Seq",
+			"VisitorId",
+			"UserId",
+			"GroupId",
+			"Kind",
+			"EventName",
+			"Host",
+			"PagePath",
+			"Url",
+			"ServiceName",
+			"Attributes",
+			// Appended, not inserted: `ALTER TABLE … ADD COLUMN` puts them last, and
+			// every projection into this table has to match that order.
+			"TraceId",
+			"SpanId",
+		])
+		const productEventsView = LOCAL_SCHEMA_MANIFEST.objects.find(
+			(object) => object.name === "product_events_mv",
+		)
+		expect(productEventsView?.definition).toContain("FROM session_events")
+		expect(productEventsView?.definition).toContain("'browser' AS Source")
+		const identityLinks = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "identity_links")
+		// Aggregating, not Replacing: the funnel ranks a visitor's linked users by
+		// `FirstSeen`, so the merge has to keep the pair's EARLIEST sighting. A
+		// Replacing merge with no version column keeps an arbitrary duplicate and
+		// the ranking flips as merges land.
+		expect(identityLinks?.engine).toBe("AggregatingMergeTree")
+		expect(identityLinks?.orderBy).toBe("(OrgId, VisitorId, UserId)")
+		const identityLinksView = LOCAL_SCHEMA_MANIFEST.objects.find(
+			(object) => object.name === "identity_links_mv",
+		)
+		expect(identityLinksView?.definition).toContain("FROM session_replays")
+		const sessionEventColumns = (manifest: LocalSchemaManifest) =>
+			manifest.objects
+				.find((object) => object.name === "session_events")
+				?.columns.map((column) => column.name) ?? []
+		expect(sessionEventColumns(LOCAL_SCHEMA_V10_MANIFEST)).not.toContain("VisitorId")
+		expect(sessionEventColumns(LOCAL_SCHEMA_MANIFEST).slice(-3)).toEqual([
+			"VisitorId",
+			"UserId",
+			"GroupId",
+		])
+		const v10Names = new Set(LOCAL_SCHEMA_V10_MANIFEST.objects.map((object) => object.name))
+		// The frozen v11 manifest, not the current one: v14 adds objects of its
+		// own, and this assertion pins what v11 itself introduced.
+		const v11Names = new Set(LOCAL_SCHEMA_V11_MANIFEST.objects.map((object) => object.name))
+		expect([...v11Names].filter((name) => !v10Names.has(name))).toEqual([
+			"identity_links",
+			"identity_links_mv",
+			"product_events",
+			"product_events_mv",
+		])
+		expect([...v10Names].filter((name) => !v11Names.has(name))).toEqual(["web_events", "web_events_mv"])
+
+		// v12 replaces two view bodies and v13 adds columns to two rollups; neither
+		// adds an object. v14 is exactly the GenAI span index and its view, created
+		// empty and filled forward; v17 adds `audit_log`, created empty and never
+		// written in local mode.
+		const v12Names = new Set(LOCAL_SCHEMA_V12_MANIFEST.objects.map((object) => object.name))
+		const v13Names = new Set(LOCAL_SCHEMA_V13_MANIFEST.objects.map((object) => object.name))
+		const currentSchemaNames = new Set(LOCAL_SCHEMA_MANIFEST.objects.map((object) => object.name))
+		expect([...v12Names].filter((name) => !v11Names.has(name))).toEqual([])
+		expect([...v13Names].filter((name) => !v12Names.has(name))).toEqual([])
+		expect([...v12Names].filter((name) => !v13Names.has(name))).toEqual([])
+		expect([...currentSchemaNames].filter((name) => !v13Names.has(name))).toEqual([
+			"ai_trace_index",
+			"ai_trace_index_mv",
+			"audit_log",
+			"product_events_traces_mv",
+		])
+		expect([...v13Names].filter((name) => !currentSchemaNames.has(name))).toEqual([])
+		const aiTraceIndex = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "ai_trace_index")
+		expect(aiTraceIndex?.engine).toBe("MergeTree")
+		expect(aiTraceIndex?.orderBy).toBe("(OrgId, Timestamp, TraceId)")
+		const aiTraceIndexView = LOCAL_SCHEMA_MANIFEST.objects.find(
+			(object) => object.name === "ai_trace_index_mv",
+		)
+		// Reads raw traces with the vendor stamp as its write filter — the same
+		// predicate Agent Sessions detection used to scan for at read time.
+		expect(aiTraceIndexView?.definition).toContain("FROM traces")
+		expect(aiTraceIndexView?.definition).toContain("SpanAttributes['maple_ai.vendor.id'] != ''")
 	})
 
 	it("recognises Apple crash frames at v8 but not before", () => {
@@ -189,6 +319,15 @@ describe("local migration registry", () => {
 			"local-0007-to-0008-apple-crash-frames",
 			"local-0008-to-0009-mv-sweep",
 			"local-0009-to-0010-semconv-key-renames",
+			"local-0010-to-0011-product-events",
+			"local-0011-to-0012-service-map-edge-quantiles",
+			"local-0012-to-0013-service-operations-discriminators",
+			"local-0013-to-0014-ai-trace-index",
+			"local-0014-to-0015-commit-sha-vcs-revision",
+			"local-0015-to-0016-ai-trace-index-filter-columns",
+			"local-0016-to-0017-audit-log",
+			"local-0017-to-0018-product-events-from-traces",
+			"local-0018-to-0019-ai-trace-index-usage-conventions",
 		])
 		expect(chain[0]?.from.fingerprint).toBe(LEGACY_SCHEMA_FINGERPRINT)
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V1)
@@ -235,7 +374,7 @@ describe("local migration registry", () => {
 				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
 				// stops testing the future-store guard and starts testing the
 				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 11, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{ ...CURRENT_LOCAL_SCHEMA, version: 20, fingerprint: "future", digest: SCHEMA_DIGEST },
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -1202,5 +1341,278 @@ describe("legacy raw replay progress decoding", () => {
 		expect(() => decode({ ...progress, sourceInventory: { logs: shortInventory } })).toThrow()
 		const { rows: _r, ...shortCopied } = copied
 		expect(() => decode({ ...progress, copied: { logs: shortCopied } })).toThrow()
+	})
+})
+
+describe("v10 -> v11 product events module", () => {
+	const rawRows = {
+		logs: "1",
+		traces: "2",
+		metrics_sum: "0",
+		metrics_gauge: "0",
+		metrics_histogram: "0",
+		metrics_exponential_histogram: "0",
+	}
+	const state = {
+		module: "local-0010-to-0011-product-events",
+		version: 1,
+		rawRows,
+		sourceRows: { browserEvents: "3", identityPairs: "2" },
+	}
+
+	it("binds the frozen v10 and v11 identities and never the current constant", () => {
+		expect(v10ToV11ProductEventsModule.from).toEqual(LOCAL_SCHEMA_V10)
+		expect(v10ToV11ProductEventsModule.to).toEqual(LOCAL_SCHEMA_V11)
+		expect(v10ToV11ProductEventsModule.from).not.toBe(CURRENT_LOCAL_SCHEMA)
+		expect(v10ToV11ProductEventsModule.operations.map((operation) => operation.id)).toEqual([
+			"clone-v10-store",
+			"add-session-event-identity",
+			"install-product-events",
+			"verify-v11-schema",
+		])
+		// The chain must reach v11 through this module and only this module.
+		const chain = resolveMigrationChain(LOCAL_SCHEMA_V10, CURRENT_LOCAL_SCHEMA)
+		expect(chain.map((migration) => migration.id)).toEqual([
+			"local-0010-to-0011-product-events",
+			"local-0011-to-0012-service-map-edge-quantiles",
+			"local-0012-to-0013-service-operations-discriminators",
+			"local-0013-to-0014-ai-trace-index",
+			"local-0014-to-0015-commit-sha-vcs-revision",
+			"local-0015-to-0016-ai-trace-index-filter-columns",
+			"local-0016-to-0017-audit-log",
+			"local-0017-to-0018-product-events-from-traces",
+			"local-0018-to-0019-ai-trace-index-usage-conventions",
+		])
+		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
+		// The dropped table is declared, and the backfilled ones say what they
+		// are rebuilt from.
+		const dispositions = new Map(
+			v10ToV11ProductEventsModule.dispositions.map((entry) => [entry.name, entry.disposition]),
+		)
+		expect(dispositions.get("web_events")).toBe("invalidate")
+		expect(dispositions.get("product_events")).toBe("rebuild-complete")
+		expect(dispositions.get("identity_links")).toBe("rebuild-complete")
+		expect(dispositions.get("session_events")).toBe("preserve-exact")
+	})
+
+	it("decodes only its own well-formed persisted state", () => {
+		expect(v10ToV11ProductEventsModule.decodeState(state)).toEqual(state)
+		expect(v10ToV11ProductEventsModule.decodeState({ ...state, retentionDays: 120 })).toEqual({
+			...state,
+			retentionDays: 120,
+		})
+		expect(() =>
+			v10ToV11ProductEventsModule.decodeState({
+				...state,
+				module: "local-0009-to-0010-semconv-key-renames",
+			}),
+		).toThrow(/unsupported module or version/)
+		expect(() => v10ToV11ProductEventsModule.decodeState({ ...state, version: 2 })).toThrow(
+			/unsupported module or version/,
+		)
+		expect(() => v10ToV11ProductEventsModule.decodeState({ ...state, extra: true })).toThrow(
+			/unknown field/,
+		)
+		expect(() => v10ToV11ProductEventsModule.decodeState({ ...state, retentionDays: "120" })).toThrow(
+			/retentionDays must be an integer/,
+		)
+		expect(() =>
+			v10ToV11ProductEventsModule.decodeState({ ...state, rawRows: { ...rawRows, logs: "-1" } }),
+		).toThrow(/rawRows.logs/)
+		expect(() =>
+			v10ToV11ProductEventsModule.decodeState({ ...state, rawRows: { ...rawRows, web_events: "1" } }),
+		).toThrow(/unknown table/)
+		// The backfill counts are part of the resume key: a state without them
+		// cannot verify, so it must not decode.
+		const { sourceRows: _sourceRows, ...withoutSourceRows } = state
+		expect(() => v10ToV11ProductEventsModule.decodeState(withoutSourceRows)).toThrow(
+			/sourceRows must be an object/,
+		)
+		expect(() =>
+			v10ToV11ProductEventsModule.decodeState({ ...state, sourceRows: { browserEvents: "3" } }),
+		).toThrow(/identityPairs/)
+		expect(() =>
+			v10ToV11ProductEventsModule.decodeState({
+				...state,
+				sourceRows: { browserEvents: 3, identityPairs: "2" },
+			}),
+		).toThrow(/browserEvents/)
+		expect(() =>
+			v10ToV11ProductEventsModule.decodeState({
+				...state,
+				sourceRows: { browserEvents: "3", identityPairs: "2", webEvents: "0" },
+			}),
+		).toThrow(/unknown field/)
+	})
+
+	it("decodes progress as the single installed marker", () => {
+		expect(v10ToV11ProductEventsModule.decodeProgress(undefined)).toBeUndefined()
+		expect(v10ToV11ProductEventsModule.decodeProgress({ installed: true })).toEqual({ installed: true })
+		expect(() => v10ToV11ProductEventsModule.decodeProgress({ installed: false })).toThrow(/invalid/)
+		expect(() => v10ToV11ProductEventsModule.decodeProgress({ installed: true, rows: 1 })).toThrow(
+			/invalid/,
+		)
+	})
+
+	it("recovers by keeping whatever state and progress were persisted", async () => {
+		const progress = { installed: true } as const
+		await expect(
+			v10ToV11ProductEventsModule.recover({} as MigrationModuleContext, state as never, progress),
+		).resolves.toEqual({ state, progress })
+	})
+})
+
+describe("legacy raw replay fetch bounds", () => {
+	const tracesTable = LEGACY_RAW_TABLES[1]
+
+	it("seeds the first fetch small instead of materializing batchRows full rows", () => {
+		expect(nextFetchRowLimit(tracesTable, 0, 0)).toBe(128)
+	})
+
+	it("grows toward batchRows for small rows and shrinks for huge rows", () => {
+		// 128 rows of ~200 bytes: the budget allows far more — clamp to batchRows.
+		expect(nextFetchRowLimit(tracesTable, 128, 128 * 200)).toBe(tracesTable.batchRows)
+		// 4 rows of ~8 MiB: even one row overshoots the budget — floor at 1.
+		expect(nextFetchRowLimit(tracesTable, 4, 4 * 8 * 1024 * 1024)).toBe(1)
+		// ~64 KiB rows: the limit lands near budget/rowBytes, never above batchRows.
+		const limit = nextFetchRowLimit(tracesTable, 100, 100 * 64 * 1024)
+		expect(limit).toBeGreaterThanOrEqual(64)
+		expect(limit).toBeLessThanOrEqual(128)
+	})
+})
+
+describe("legacy raw replay 64-bit exactness", () => {
+	it("requests quoted 64-bit output and reinserts a >2^53 UInt64 verbatim", async () => {
+		const bigDuration = "9007199254740993" // 2^53 + 1: rounds to ...992 as a JS number
+		const sourceQueries: string[] = []
+		const targetStatements: string[] = []
+		let call = 0
+		const fakeSourceDb = {
+			query: (sql: string): string => {
+				sourceQueries.push(sql)
+				call += 1
+				if (call > 1) return ""
+				return `${JSON.stringify({
+					Timestamp: "2026-08-30 12:00:00.000000000",
+					Duration: bigDuration,
+					__maple_timestamp: "1756555200000000000",
+					__maple_hash: "18446744073709551615",
+					__maple_tie_break: "3",
+				})}\n`
+			},
+		}
+		const fakeTargetDb = {
+			query: (sql: string): string => {
+				targetStatements.push(sql)
+				return ""
+			},
+			exec: (sql: string): void => {
+				targetStatements.push(sql)
+			},
+		}
+		const context = {
+			dataDir: "/tmp/fake",
+			sourceDataDir: "/tmp/fake-source",
+			targetDataDir: "/tmp/fake-target",
+			source: LEGACY_LOCAL_SCHEMA,
+			target: LOCAL_SCHEMA_V1,
+			cutoffAt: "2026-08-31T00:00:00.000Z",
+			step: {
+				id: "local-0000-to-0001-raw-replay",
+				moduleVersion: 1,
+				from: LEGACY_LOCAL_SCHEMA,
+				to: LOCAL_SCHEMA_V1,
+				status: "running" as const,
+			},
+			openSource: async (fn: (db: typeof fakeSourceDb) => string | Promise<string>) => fn(fakeSourceDb),
+			openTarget: async (fn: (db: typeof fakeTargetDb) => string | void | Promise<string | void>) =>
+				fn(fakeTargetDb),
+			closeStores: async () => undefined,
+			ensureCapacity: async () => undefined,
+			saveStep: async () => undefined,
+		} as MigrationModuleContext
+		const columns = [
+			{ name: "Timestamp", type: "DateTime64(9)" },
+			{ name: "Duration", type: "UInt64" },
+		]
+		const initial: RawReplayProgress = { sourceInventory: {}, copied: {} }
+		await legacyTestables.copyTable(context, LEGACY_RAW_TABLES[1], columns, initial)
+
+		// The source SELECT must override the connection-wide unquoted 64-bit
+		// output; without it chDB emits Duration as a JSON number and the decode
+		// below would round it before reinsertion.
+		expect(sourceQueries[0]).toContain("SETTINGS output_format_json_quote_64bit_integers = 1")
+		const insert = targetStatements.find((sql) => sql.startsWith("INSERT INTO"))
+		expect(insert).toBeDefined()
+		expect(insert).toContain(`"Duration":"${bigDuration}"`)
+	})
+})
+
+describe("clone-based staging excludes the checkpoint registry", () => {
+	it("clones store contents but never <dataDir>/backups", async () => {
+		const root = await mkdtemp(join(tmpdir(), "maple-clone-staging-"))
+		try {
+			const source = join(root, "source")
+			const target = join(root, "target", "data")
+			await mkdir(join(source, "store", "parts"), { recursive: true })
+			await mkdir(join(source, "backups", "snapshots", "cp-1"), { recursive: true })
+			const { writeFile } = await import("node:fs/promises")
+			await writeFile(join(source, "store", "parts", "part.bin"), "data")
+			await writeFile(join(source, "backups", "state.json"), "{}")
+			await writeFile(
+				join(source, "backups", "snapshots", "cp-1", "manifest.json"),
+				// A copied manifest pins the OLD schema fingerprint: post-promotion it
+				// fails resolution and marks the registry "unusable", blocking the new
+				// checkpoint the migration instructs the user to create.
+				JSON.stringify({ schemaFingerprint: "stale" }),
+			)
+			const { cloneStoreForStaging } =
+				await import("../src/server/local-store-migrations/journal-codecs")
+			await cloneStoreForStaging(source, target)
+			const { existsSync } = await import("node:fs")
+			expect(existsSync(join(target, "store", "parts", "part.bin"))).toBe(true)
+			expect(existsSync(join(target, "backups"))).toBe(false)
+			// The registry stays with the retained rollback source.
+			expect(existsSync(join(source, "backups", "state.json"))).toBe(true)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+})
+
+describe("migration journal creation is lock-serialized", () => {
+	it("does not create a journal while another maintenance operation holds the lock", async () => {
+		const root = await mkdtemp(join(tmpdir(), "maple-migration-lock-order-"))
+		try {
+			const dataDir = join(root, "data")
+			await mkdir(join(dataDir, "store"), { recursive: true })
+			const { writeFile } = await import("node:fs/promises")
+			await writeFile(
+				storeMarkerPath(dataDir),
+				`${JSON.stringify({
+					chdb: (await import("../src/version")).CHDB_VERSION,
+					maple: "test",
+					createdAt: "2026-08-30T00:00:00.000Z",
+					schema: LEGACY_LOCAL_SCHEMA.fingerprint,
+				})}\n`,
+			)
+			const { withMaintenanceLock } = await import("../src/server/checkpoints")
+			const { randomUUID } = await import("node:crypto")
+			await withMaintenanceLock(dataDir, randomUUID(), async () => {
+				// A concurrent migrate must fail at the lock WITHOUT having written
+				// the canonical journal first — journal creation used to happen
+				// before lock acquisition and could clobber a running migration's
+				// journal with a fresh one under a different migration id.
+				await expect(runLocalStoreMigration({ dataDir })).rejects.toThrow(
+					/another Maple maintenance operation is active/,
+				)
+			})
+			const { existsSync } = await import("node:fs")
+			expect(existsSync(migrationJournalPath(dataDir))).toBe(false)
+			// And no orphaned migration root either.
+			expect(existsSync(join(root, ".maple-migrations"))).toBe(false)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 })

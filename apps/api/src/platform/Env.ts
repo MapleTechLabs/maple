@@ -1,4 +1,9 @@
-import { optionalRedacted, optionalString, stringWithDefault } from "@maple/effect-cloudflare/config-helpers"
+// oxlint-disable maple/no-effect-die -- Startup configuration validation. Every
+// check here runs once while the layer is built, before a request exists; there
+// is no caller that could answer a missing or malformed env var differently, and
+// a worker that boots with one is worse than one that refuses to boot. Each is a
+// tagged `EnvValidationError` so the crash names the variable.
+import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 
 /** Fatal misconfiguration discovered at startup — surfaces as a tagged defect in the Cause. */
@@ -36,16 +41,46 @@ export interface EnvConfig {
 	readonly MAPLE_SHARE_TOKEN_HMAC_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_INGEST_PUBLIC_URL: string
 	readonly MAPLE_APP_BASE_URL: string
+	/**
+	 * This worker's own canonical public origin, e.g. `https://api.maple.dev`.
+	 * Anything the API publishes about itself — the MCP `server.json` remote URL,
+	 * the discovery index — must be built from this, never from the request's
+	 * `Host`/`X-Forwarded-*` headers, which a client controls.
+	 */
+	readonly MAPLE_API_BASE_URL: string
 	/** Deployment environment (`production`, `staging`, `pr-<n>`, `development`) — set by alchemy from the stage. */
 	readonly MAPLE_ENVIRONMENT: string
 	/** Escape hatch: allow real email sends outside production (e.g. a dedicated stg test run). */
 	readonly MAPLE_EMAIL_ALLOW_NONPROD: string
+	/** Route every org to the managed warehouse; honoured only in development. */
+	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: string
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
 	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
+	/** Svix signing secret (`whsec_…`) for `POST /webhooks/clerk`; the route answers 503 while unset. */
+	readonly CLERK_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
 	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly AUTUMN_API_URL: string
+	/** Svix signing secret (`whsec_…`) for `POST /webhooks/autumn`; the route answers 503 while unset. */
+	readonly AUTUMN_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Stripe secret (or restricted, Customers read/write) key for the billing
+	 * details the Autumn API has no surface for — company name, address and tax
+	 * IDs on the Stripe customer Autumn links. Unset → those routes answer
+	 * `BillingNotConfiguredError`; nothing else depends on it.
+	 */
+	readonly STRIPE_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly STRIPE_API_URL: string
+	/**
+	 * Self-observability ingest key (`@maple-dev/effect-sdk` reads the same variable
+	 * for OTLP export). Also the default credential for server-side product events.
+	 */
+	readonly MAPLE_INGEST_KEY: Option.Option<Redacted.Redacted<string>>
+	/** Ingest gateway base URL for the SDK's OTLP export; product events reuse it, falling back to MAPLE_INGEST_PUBLIC_URL. */
+	readonly MAPLE_ENDPOINT: Option.Option<string>
+	/** Overrides MAPLE_INGEST_KEY for product events when the dogfood org differs from the tracing org. */
+	readonly MAPLE_PRODUCT_EVENTS_INGEST_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly SD_INTERNAL_TOKEN: Option.Option<Redacted.Redacted<string>>
 	readonly INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
 	readonly EMAIL_FROM: string
@@ -135,14 +170,23 @@ const envConfig = Config.all({
 	MAPLE_SHARE_TOKEN_HMAC_KEY: optionalRedacted("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 	MAPLE_INGEST_PUBLIC_URL: stringWithDefault("MAPLE_INGEST_PUBLIC_URL", "http://127.0.0.1:3474"),
 	MAPLE_APP_BASE_URL: stringWithDefault("MAPLE_APP_BASE_URL", "http://127.0.0.1:3471"),
+	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false"),
+	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false"),
 	CLERK_SECRET_KEY: optionalRedacted("CLERK_SECRET_KEY"),
 	CLERK_PUBLISHABLE_KEY: optionalString("CLERK_PUBLISHABLE_KEY"),
 	CLERK_JWT_KEY: optionalRedacted("CLERK_JWT_KEY"),
+	CLERK_WEBHOOK_SECRET: optionalRedacted("CLERK_WEBHOOK_SECRET"),
 	MAPLE_ORG_ID_OVERRIDE: optionalString("MAPLE_ORG_ID_OVERRIDE"),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
+	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
+	STRIPE_SECRET_KEY: optionalRedacted("STRIPE_SECRET_KEY"),
+	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
+	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),
+	MAPLE_ENDPOINT: optionalString("MAPLE_ENDPOINT"),
+	MAPLE_PRODUCT_EVENTS_INGEST_KEY: optionalRedacted("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
 	SD_INTERNAL_TOKEN: optionalRedacted("SD_INTERNAL_TOKEN"),
 	INTERNAL_SERVICE_TOKEN: optionalRedacted("INTERNAL_SERVICE_TOKEN"),
 	EMAIL_FROM: stringWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),

@@ -4,9 +4,10 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Option, Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
@@ -24,6 +25,7 @@ import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-ran
 import { Button } from "@maple/ui/components/ui/button"
 import { BellIcon } from "@/components/icons"
 import { ServiceDependenciesTab } from "@/components/services/service-dependencies-tab"
+import { ServiceApiTab } from "@/components/services/service-api-tab"
 import { ServiceOperationsTab } from "@/components/services/service-operations-tab"
 import { ServiceDependencyStrip } from "@/components/services/service-dependency-strip"
 import { ServiceEnvironmentSwitcher } from "@/components/services/service-environment-switcher"
@@ -43,7 +45,7 @@ import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 const EMPTY_RELEASES: ReadonlyArray<ReleasePoint> = []
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 
-const ServiceDetailTab = Schema.Literals(["overview", "operations", "dependencies"])
+const ServiceDetailTab = Schema.Literals(["overview", "api", "operations", "dependencies"])
 type ServiceDetailTabValue = Schema.Schema.Type<typeof ServiceDetailTab>
 const decodeServiceDetailTab = Schema.decodeUnknownOption(ServiceDetailTab)
 
@@ -194,6 +196,7 @@ function ServiceDetailContent() {
 								<PageLayout.Title className="flex items-center gap-2.5" title={serviceName}>
 									<ServiceDot serviceName={serviceName} className="size-3" />
 									<span className="truncate">{serviceName}</span>
+									{isUnnamedService(serviceName) && <UnnamedServiceHint />}
 								</PageLayout.Title>
 							}
 						>
@@ -213,6 +216,12 @@ function ServiceDetailContent() {
 											className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
 										>
 											Overview
+										</TabsTrigger>
+										<TabsTrigger
+											value="api"
+											className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
+										>
+											API
 										</TabsTrigger>
 										<TabsTrigger
 											value="operations"
@@ -273,6 +282,17 @@ function ServiceDetailContent() {
 								onShowOperations={handleShowOperations}
 							/>
 						)}
+						{activeTab === "api" && (
+							<ServiceApiTab
+								serviceName={serviceName}
+								effectiveStartTime={effectiveStartTime}
+								effectiveEndTime={effectiveEndTime}
+								environments={search.environments}
+								startTime={search.startTime}
+								endTime={search.endTime}
+								timePreset={search.timePreset}
+							/>
+						)}
 						{activeTab === "operations" && (
 							<ServiceOperationsTab
 								serviceName={serviceName}
@@ -330,7 +350,7 @@ function OverviewTab({
 			environments,
 		},
 	})
-	const overviewResult = useRetainedRefreshableResultValue(overviewAtom)
+	const overviewResult = useRefreshableAtomValue(overviewAtom)
 	const refreshOverview = useAtomRefresh(overviewAtom)
 
 	// Sampling verdict from the already-loaded primary chart. Drives a separate,

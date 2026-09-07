@@ -11,10 +11,15 @@
 // panel renderer, so the two never drift. Keep it React-free — it is unit
 // tested directly.
 
-import type { HostInfraMetric, NodeInfraMetric, PodInfraMetric } from "@/api/warehouse/infra"
+import type {
+	ContainerInfraMetric,
+	HostInfraMetric,
+	NodeInfraMetric,
+	PodInfraMetric,
+} from "@/api/warehouse/infra"
 
 interface InfraCorrelationBase {
-	/** Display heading for the group ("Pod" | "Node" | "Host"). */
+	/** Display heading for the group ("Container" | "Pod" | "Node" | "Host"). */
 	title: string
 	/** Resource-attribute key whose presence gated this group. */
 	detectAttribute: string
@@ -33,6 +38,12 @@ interface InfraCorrelationBase {
  */
 export type InfraCorrelation =
 	| (InfraCorrelationBase & {
+			kind: "container"
+			/** Narrows the deep-link — container names collide across hosts. */
+			hostName?: string
+			charts: ReadonlyArray<{ label: string; metric: ContainerInfraMetric }>
+	  })
+	| (InfraCorrelationBase & {
 			kind: "pod"
 			namespace?: string
 			charts: ReadonlyArray<{ label: string; metric: PodInfraMetric }>
@@ -49,6 +60,12 @@ export type InfraCorrelation =
 // Charts shown per kind. Pod has no disk metric (kubeletstats doesn't emit one
 // in Maple's pipeline), so it shows CPU usage + the two limit-utilization
 // gauges; host mirrors HyperDX's CPU / Memory / Disk trio.
+const CONTAINER_CHARTS: ReadonlyArray<{ label: string; metric: ContainerInfraMetric }> = [
+	{ label: "CPU", metric: "cpu" },
+	{ label: "Memory / limit", metric: "memory_percent" },
+	{ label: "Network I/O", metric: "network" },
+]
+
 const POD_CHARTS: ReadonlyArray<{ label: string; metric: PodInfraMetric }> = [
 	{ label: "CPU cores", metric: "cpu_usage" },
 	{ label: "CPU / limit", metric: "cpu_limit" },
@@ -66,6 +83,16 @@ const HOST_CHARTS: ReadonlyArray<{ label: string; metric: HostInfraMetric }> = [
 	{ label: "Disk", metric: "filesystem" },
 ]
 
+const CONTAINER_NAME_KEY = "container.name"
+/**
+ * Semconv v1.37.0 renamed `container.runtime` to `container.runtime.name`, and
+ * both spellings arrive: current collectors send `.name`, older ones and older
+ * SDKs send the bare key. Reading only one is not merely lossy here — an absent
+ * runtime *passes* the docker check below, so a containerd pod reporting the
+ * canonical spelling would render the empty docker chart stack that check
+ * exists to prevent.
+ */
+const CONTAINER_RUNTIME_KEYS = ["container.runtime.name", "container.runtime"] as const
 const POD_NAME_KEY = "k8s.pod.name"
 const POD_NAMESPACE_KEY = "k8s.namespace.name"
 const NODE_NAME_KEY = "k8s.node.name"
@@ -83,15 +110,36 @@ function attr(
 
 /**
  * Returns the correlation groups whose detect attribute is present on the given
- * resource attributes, in render order (Pod, Node, Host). A pod span/log
- * typically yields both Pod and Node groups, since a pod always runs on a node.
+ * resource attributes, in render order (Container, Pod, Node, Host). A pod
+ * span/log typically yields both Pod and Node groups, since a pod always runs
+ * on a node.
  */
 export function getActiveInfraCorrelations(
 	resourceAttributes: Record<string, string> | null | undefined,
 ): InfraCorrelation[] {
 	const out: InfraCorrelation[] = []
-
 	const podName = attr(resourceAttributes, POD_NAME_KEY)
+
+	// The container group's metrics come from docker_stats only, so it needs a
+	// docker-shaped record: k8s pods also carry `container.name` (kubeletstats),
+	// and a declared non-docker runtime (containerd, cri-o, …) has no docker
+	// metrics either — both would render an empty duplicate chart stack.
+	const containerName = attr(resourceAttributes, CONTAINER_NAME_KEY)
+	const containerRuntime = CONTAINER_RUNTIME_KEYS.reduce<string | undefined>(
+		(found, key) => found ?? attr(resourceAttributes, key),
+		undefined,
+	)
+	if (containerName && !podName && (containerRuntime === undefined || containerRuntime === "docker")) {
+		out.push({
+			kind: "container",
+			title: "Container",
+			detectAttribute: CONTAINER_NAME_KEY,
+			identifier: containerName,
+			hostName: attr(resourceAttributes, HOST_NAME_KEY),
+			charts: CONTAINER_CHARTS,
+		})
+	}
+
 	if (podName) {
 		out.push({
 			kind: "pod",

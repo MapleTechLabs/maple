@@ -16,7 +16,12 @@ import type {
 	ErrorsSummaryRequest,
 	ErrorsTimeseriesRequest,
 	ErrorsSparkRequest,
+	ContainerDetailSummaryRequest,
+	ContainerFacetsRequest,
+	ContainersSummaryRequest,
 	HostDetailSummaryRequest,
+	ListContainersRequest,
+	InfraPresenceRequest,
 	ListHostsRequest,
 	ListLogsRequest,
 	ListMetricsRequest,
@@ -32,14 +37,20 @@ import type {
 	ServiceHealthBaselineRequest,
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
+	ReleasesListRequest,
+	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
 	WebAnalyticsSummaryRequest,
+	WebAnalyticsLiveRequest,
 	WebAnalyticsTimeseriesRequest,
 	WebAnalyticsPageviewsRequest,
 	WebAnalyticsPagesRequest,
+	WebAnalyticsEventsRequest,
 	WebAnalyticsBreakdownsRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
+import { WEB_ANALYTICS_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { formatWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
@@ -47,6 +58,13 @@ import { makeTimeRangeCachePolicy, timeRangeCache } from "../runtime/query-engin
 import { defineQuery } from "./query-definition"
 
 export { logsCount, logsTimeseries } from "./logs"
+export {
+	productEventsFunnel,
+	productEventsFunnelBreakdown,
+	productEventNames,
+	productEventsForTrace,
+	productEventTraceSamples,
+} from "./product-events"
 
 /**
  * Declarative compile, execution, and cache policy. Handlers retain response
@@ -73,6 +91,10 @@ export const errorsByType = defineQuery({
 				fingerprintHashes: payload.fingerprintHashes,
 				errorLabels: payload.errorLabels,
 				serviceVersions: payload.serviceVersions,
+				excludedServices: payload.excludedServices,
+				excludedDeploymentEnvs: payload.excludedDeploymentEnvs,
+				excludedErrorLabels: payload.excludedErrorLabels,
+				excludedServiceVersions: payload.excludedServiceVersions,
 				limit: payload.limit,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
@@ -111,6 +133,10 @@ export const errorsSpark = defineQuery({
 				deploymentEnvs: payload.deploymentEnvs,
 				errorLabels: payload.errorLabels,
 				serviceVersions: payload.serviceVersions,
+				excludedServices: payload.excludedServices,
+				excludedDeploymentEnvs: payload.excludedDeploymentEnvs,
+				excludedErrorLabels: payload.excludedErrorLabels,
+				excludedServiceVersions: payload.excludedServiceVersions,
 			}),
 			{
 				orgId,
@@ -119,7 +145,6 @@ export const errorsSpark = defineQuery({
 				// Optional buckets default to one hour, as errorsTimeseries does.
 				bucketSeconds: payload.bucketSeconds ?? 3600,
 			},
-			{ rowSchema: CH.ErrorsSparkOutputSchema },
 		),
 })
 
@@ -168,6 +193,9 @@ export const serviceOverview = defineQuery({
 				environments: payload.environments,
 				namespaces: payload.namespaces,
 				commitShas: payload.commitShas,
+				excludedEnvironments: payload.excludedEnvironments,
+				excludedNamespaces: payload.excludedNamespaces,
+				excludedCommitShas: payload.excludedCommitShas,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -194,11 +222,11 @@ export const serviceHealthSnapshot = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ServiceHealthSnapshotRequest, orgId: string) =>
-		CH.compile(
-			CH.serviceHealthSnapshotQuery({ environments: payload.environments }),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-			{ rowSchema: CH.serviceHealthSnapshotRowSchema },
-		),
+		CH.compile(CH.serviceHealthSnapshotQuery({ environments: payload.environments }), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
 })
 
 export const serviceHealthBaseline = defineQuery({
@@ -288,13 +316,29 @@ export const listLogs = defineQuery({
 				bodySearchMode: logBodySearchMode(capabilities),
 				serviceName: payload.service,
 				severity: payload.severity,
+				serviceNames: payload.services,
+				severities: payload.severities,
+				excludedServiceNames: payload.excludedServices,
+				excludedSeverities: payload.excludedSeverities,
+				excludedEnvironments: payload.excludedDeploymentEnvs,
+				excludedNamespaces: payload.excludedNamespaces,
 				minSeverity: payload.minSeverity,
 				traceId: payload.traceId,
 				spanId: payload.spanId,
 				cursor: payload.cursor,
 				search: payload.search,
-				environments: payload.deploymentEnv ? [payload.deploymentEnv] : undefined,
-				namespaces: payload.namespace ? [payload.namespace] : undefined,
+				// The array spelling wins when present; the scalar stays for the dashboard
+				// read-model plans, which select exactly one.
+				environments: payload.deploymentEnvs?.length
+					? payload.deploymentEnvs
+					: payload.deploymentEnv
+						? [payload.deploymentEnv]
+						: undefined,
+				namespaces: payload.namespaces?.length
+					? payload.namespaces
+					: payload.namespace
+						? [payload.namespace]
+						: undefined,
 				matchModes: Match.value([
 					payload.deploymentEnvMatchMode,
 					payload.namespaceMatchMode,
@@ -340,6 +384,24 @@ export const metricsSummary = defineQuery({
 		}),
 })
 
+/**
+ * Sidebar gate: which Infrastructure surfaces this org reports. Runs on every
+ * page load, so it is cached generously — a surface appearing or disappearing
+ * is not something the nav has to notice within the minute, and the probe's
+ * whole value is that it costs less than the pages it hides.
+ */
+export const infraPresence = defineQuery({
+	id: "infraPresence",
+	profile: "discovery",
+	cache: 300,
+	compile: (payload: InfraPresenceRequest, orgId: string) =>
+		CH.compileUnion(CH.infraPresenceQuery(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
 export const listHosts = defineQuery({
 	id: "listHosts",
 	profile: "list",
@@ -379,7 +441,6 @@ export const podsSummary = defineQuery({
 				environments: payload.environments,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-			{ rowSchema: CH.ListPodsSummaryOutputSchema },
 		),
 })
 
@@ -458,6 +519,104 @@ export const workloadDetailSummary = defineQuery({
 				namespace: payload.namespace,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+// Releases page. The list and the timeline share one payload so the bundle
+// handler forwards it to both; the detail reuses the list query scoped to one
+// service, which is the comparison table.
+export const releasesList = defineQuery({
+	id: "releasesList",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ReleasesListRequest, orgId: string) =>
+		CH.compile(
+			CH.releasesListQuery({
+				environments: payload.environments,
+				namespaces: payload.namespaces,
+				serviceNames: payload.services,
+				excludedEnvironments: payload.excludedEnvironments,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			{ rowSchema: CH.releasesListRowSchema },
+		),
+})
+
+export const releasesTimeline = defineQuery({
+	id: "releasesTimeline",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ReleasesListRequest, orgId: string) =>
+		CH.compile(
+			CH.releasesTimelineQuery({
+				environments: payload.environments,
+				namespaces: payload.namespaces,
+				serviceNames: payload.services,
+				excludedEnvironments: payload.excludedEnvironments,
+				bucketSeconds: payload.bucketSeconds,
+			}),
+			{
+				orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+				bucketSeconds: payload.bucketSeconds,
+			},
+		),
+})
+
+export const releaseVersions = defineQuery({
+	id: "releaseVersions",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ReleaseDetailRequest, orgId: string) =>
+		CH.compile(
+			CH.releasesListQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+				limit: 100,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			{ rowSchema: CH.releasesListRowSchema },
+		),
+})
+
+export const releaseTimeline = defineQuery({
+	id: "releaseTimeline",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ReleaseDetailRequest, orgId: string) =>
+		CH.compile(
+			CH.releasesTimelineQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+				bucketSeconds: payload.bucketSeconds,
+			}),
+			{
+				orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+				bucketSeconds: payload.bucketSeconds,
+			},
+		),
+})
+
+export const releaseErrorFingerprints = defineQuery({
+	id: "releaseErrorFingerprints",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ReleaseDetailRequest, orgId: string) =>
+		CH.compile(
+			CH.releaseErrorFingerprintsQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+			}),
+			{
+				orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+				serviceVersion: payload.commitSha,
+			},
+			{ rowSchema: CH.releaseErrorFingerprintsRowSchema },
 		),
 })
 
@@ -640,8 +799,10 @@ const webAnalyticsFilters = (
 		readonly utmMedium?: string
 		readonly utmCampaign?: string
 		readonly visitorType?: "new" | "returning"
+		readonly traffic?: "all" | "humans" | "bots"
+		readonly eventName?: string
 	},
-	useWebEvents: boolean,
+	useProductEvents: boolean,
 ): CH.WebAnalyticsFilters => ({
 	host: payload.host,
 	pagePath: payload.pagePath,
@@ -655,17 +816,19 @@ const webAnalyticsFilters = (
 	utmMedium: payload.utmMedium,
 	utmCampaign: payload.utmCampaign,
 	visitorType: payload.visitorType,
-	useWebEvents,
+	traffic: payload.traffic,
+	eventName: payload.eventName,
+	useProductEvents,
 })
 
 // Rollup/raw pairs share ids and cache keys because parity tests require identical results.
 
-const webAnalyticsSummaryDef = (useWebEvents: boolean) => ({
+const webAnalyticsSummaryDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsSummary" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsSummaryRequest, orgId: string) =>
-		CH.compile(CH.webAnalyticsSummaryQuery(webAnalyticsFilters(payload, useWebEvents)), {
+		CH.compile(CH.webAnalyticsSummaryQuery(webAnalyticsFilters(payload, useProductEvents)), {
 			orgId,
 			startTime: payload.startTime,
 			endTime: payload.endTime,
@@ -675,14 +838,55 @@ const webAnalyticsSummaryDef = (useWebEvents: boolean) => ({
 export const webAnalyticsSummary = defineQuery(webAnalyticsSummaryDef(true))
 export const webAnalyticsSummaryRaw = defineQuery(webAnalyticsSummaryDef(false))
 
-const webAnalyticsTimeseriesDef = (useWebEvents: boolean) => ({
+/**
+ * How far back the live counter's `StartTime` floor reaches.
+ *
+ * The floor only prunes partitions — recency is decided by `LastActivityAt`
+ * inside the query — so it has to sit behind the longest session that could
+ * still be active. A day is far past any real browser session and still scans a
+ * single org's sessions for one day.
+ */
+const LIVE_LOOKBACK_SECONDS = 86_400
+
+/**
+ * The window ends at *now*, resolved here rather than sent by the client.
+ *
+ * That is what makes the counter live: the payload carries only filters, so its
+ * cache key holds still while every poll re-resolves the window. Freshness is
+ * the 15s TTL instead of the key churning on each request — the opposite of the
+ * time-range queries, whose key must move with the range being asked about.
+ */
+const webAnalyticsLiveDef = (useProductEvents: boolean) => ({
+	id: "webAnalyticsLive" as const,
+	profile: "aggregation" as const,
+	cache: 15,
+	compile: (payload: WebAnalyticsLiveRequest, orgId: string) => {
+		const now = Date.now()
+		return CH.compile(
+			CH.webAnalyticsLiveQuery({
+				...webAnalyticsFilters(payload, useProductEvents),
+				windowSeconds: WEB_ANALYTICS_LIVE_WINDOW_SECONDS,
+			}),
+			{
+				orgId,
+				startTime: formatWarehouseDateTime(now - LIVE_LOOKBACK_SECONDS * 1000),
+				endTime: formatWarehouseDateTime(now),
+			},
+		)
+	},
+})
+
+export const webAnalyticsLive = defineQuery(webAnalyticsLiveDef(true))
+export const webAnalyticsLiveRaw = defineQuery(webAnalyticsLiveDef(false))
+
+const webAnalyticsTimeseriesDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsTimeseries" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsTimeseriesRequest, orgId: string) =>
 		CH.compile(
 			CH.webAnalyticsTimeseriesQuery({
-				...webAnalyticsFilters(payload, useWebEvents),
+				...webAnalyticsFilters(payload, useProductEvents),
 				bucketSeconds: payload.bucketSeconds,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
@@ -692,14 +896,14 @@ const webAnalyticsTimeseriesDef = (useWebEvents: boolean) => ({
 export const webAnalyticsTimeseries = defineQuery(webAnalyticsTimeseriesDef(true))
 export const webAnalyticsTimeseriesRaw = defineQuery(webAnalyticsTimeseriesDef(false))
 
-const webAnalyticsPageviewsDef = (useWebEvents: boolean) => ({
+const webAnalyticsPageviewsDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsPageviews" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsPageviewsRequest, orgId: string) =>
 		CH.compile(
 			CH.webAnalyticsPageviewsTimeseriesQuery({
-				...webAnalyticsFilters(payload, useWebEvents),
+				...webAnalyticsFilters(payload, useProductEvents),
 				bucketSeconds: payload.bucketSeconds,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
@@ -709,14 +913,14 @@ const webAnalyticsPageviewsDef = (useWebEvents: boolean) => ({
 export const webAnalyticsPageviews = defineQuery(webAnalyticsPageviewsDef(true))
 export const webAnalyticsPageviewsRaw = defineQuery(webAnalyticsPageviewsDef(false))
 
-const webAnalyticsPagesDef = (useWebEvents: boolean) => ({
+const webAnalyticsPagesDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsPages" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: WebAnalyticsPagesRequest, orgId: string) =>
 		CH.compile(
 			CH.webAnalyticsPagesQuery({
-				...webAnalyticsFilters(payload, useWebEvents),
+				...webAnalyticsFilters(payload, useProductEvents),
 				limit: payload.limit,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
@@ -726,7 +930,24 @@ const webAnalyticsPagesDef = (useWebEvents: boolean) => ({
 export const webAnalyticsPages = defineQuery(webAnalyticsPagesDef(true))
 export const webAnalyticsPagesRaw = defineQuery(webAnalyticsPagesDef(false))
 
-const webAnalyticsBreakdownsDef = (useWebEvents: boolean) => ({
+const webAnalyticsEventsDef = (useProductEvents: boolean) => ({
+	id: "webAnalyticsEvents" as const,
+	profile: "aggregation" as const,
+	cache: timeRangeCache,
+	compile: (payload: WebAnalyticsEventsRequest, orgId: string) =>
+		CH.compile(
+			CH.webAnalyticsEventsQuery({
+				...webAnalyticsFilters(payload, useProductEvents),
+				limit: payload.limit,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const webAnalyticsEvents = defineQuery(webAnalyticsEventsDef(true))
+export const webAnalyticsEventsRaw = defineQuery(webAnalyticsEventsDef(false))
+
+const webAnalyticsBreakdownsDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsBreakdowns" as const,
 	profile: "aggregation" as const,
 	// Bound memory across the UNION fan-out.
@@ -735,7 +956,7 @@ const webAnalyticsBreakdownsDef = (useWebEvents: boolean) => ({
 	compile: (payload: WebAnalyticsBreakdownsRequest, orgId: string) =>
 		CH.compileUnion(
 			CH.webAnalyticsBreakdownsQuery({
-				...webAnalyticsFilters(payload, useWebEvents),
+				...webAnalyticsFilters(payload, useProductEvents),
 				limitPerDimension: payload.limitPerDimension,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
@@ -765,6 +986,16 @@ export const podFacets = defineQuery({
 				jobs: payload.jobs,
 				environments: payload.environments,
 				computeTypes: payload.computeTypes,
+				excludedPodNames: payload.excludedPodNames,
+				excludedNamespaces: payload.excludedNamespaces,
+				excludedNodeNames: payload.excludedNodeNames,
+				excludedClusters: payload.excludedClusters,
+				excludedDeployments: payload.excludedDeployments,
+				excludedStatefulsets: payload.excludedStatefulsets,
+				excludedDaemonsets: payload.excludedDaemonsets,
+				excludedJobs: payload.excludedJobs,
+				excludedEnvironments: payload.excludedEnvironments,
+				excludedComputeTypes: payload.excludedComputeTypes,
 			}),
 			{ orgId: orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -822,8 +1053,21 @@ const listPodsFilters = (payload: ListPodsRequest) => ({
 	jobs: payload.jobs,
 	environments: payload.environments,
 	computeTypes: payload.computeTypes,
+	excludedPodNames: payload.excludedPodNames,
+	excludedNamespaces: payload.excludedNamespaces,
+	excludedNodeNames: payload.excludedNodeNames,
+	excludedClusters: payload.excludedClusters,
+	excludedDeployments: payload.excludedDeployments,
+	excludedStatefulsets: payload.excludedStatefulsets,
+	excludedDaemonsets: payload.excludedDaemonsets,
+	excludedJobs: payload.excludedJobs,
+	excludedEnvironments: payload.excludedEnvironments,
+	excludedComputeTypes: payload.excludedComputeTypes,
 	workloadKind: payload.workloadKind,
 	workloadName: payload.workloadName,
+	// Lifecycle rides with the filters, not the scope: the denominator has to
+	// count the same slice of the fleet the page is showing.
+	lifecycle: payload.lifecycle,
 })
 
 export const listPods = defineQuery({
@@ -849,11 +1093,114 @@ export const listPodsCount = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ListPodsRequest, orgId: string) =>
+		CH.compile(CH.listPodsSummaryQuery(listPodsFilters(payload)), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+// Containers (Docker) — keep page and denominator filters identical.
+const listContainersFilters = (payload: ListContainersRequest | ContainerFacetsRequest) => ({
+	search: payload.search,
+	containerNames: payload.containerNames,
+	hostNames: payload.hostNames,
+	images: payload.images,
+	composeProjects: payload.composeProjects,
+	composeServices: payload.composeServices,
+	environments: payload.environments,
+	excludedContainerNames: payload.excludedContainerNames,
+	excludedHostNames: payload.excludedHostNames,
+	excludedImages: payload.excludedImages,
+	excludedComposeProjects: payload.excludedComposeProjects,
+	excludedComposeServices: payload.excludedComposeServices,
+	excludedEnvironments: payload.excludedEnvironments,
+})
+
+export const listContainers = defineQuery({
+	id: "listContainers",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ListContainersRequest, orgId: string) =>
 		CH.compile(
-			CH.listPodsSummaryQuery(listPodsFilters(payload)),
+			CH.listContainersQuery({
+				...listContainersFilters(payload),
+				scope: payload.scope,
+				sortBy: payload.sortBy,
+				sortDir: payload.sortDir,
+				limit: payload.limit,
+				offset: payload.offset,
+			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
-			{ rowSchema: CH.ListPodsSummaryOutputSchema },
 		),
+})
+
+export const listContainersCount = defineQuery({
+	id: "listContainersCount",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ListContainersRequest, orgId: string) =>
+		CH.compile(CH.listContainersSummaryQuery(listContainersFilters(payload)), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+export const containersSummary = defineQuery({
+	id: "containersSummary",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ContainersSummaryRequest, orgId: string) =>
+		CH.compile(
+			CH.listContainersSummaryQuery({
+				hostNames: payload.hostNames,
+				environments: payload.environments,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const containerDetailSummary = defineQuery({
+	id: "containerDetailSummary",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ContainerDetailSummaryRequest, orgId: string) =>
+		CH.compile(
+			CH.containerDetailSummaryQuery({
+				containerName: payload.containerName,
+				hostName: payload.hostName,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const containerCountersSummary = defineQuery({
+	id: "containerCountersSummary",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ContainerDetailSummaryRequest, orgId: string) =>
+		CH.compile(
+			CH.containerCountersSummaryQuery({
+				containerName: payload.containerName,
+				hostName: payload.hostName,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const containerFacets = defineQuery({
+	id: "containerFacets",
+	profile: "discovery",
+	// Bound Map-column decompression memory across the UNION fan-out.
+	settings: { maxThreads: 4 },
+	cache: 60,
+	compile: (payload: ContainerFacetsRequest, orgId: string) =>
+		CH.compileUnion(CH.containerFacetsQuery(listContainersFilters(payload)), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
 })
 
 // Probes resolve a time bound so hierarchy reads avoid ~30 daily partitions.
@@ -949,6 +1296,37 @@ export const serviceOperationsSummaryRaw = defineQuery({
 		),
 })
 
+/**
+ * The API tab. Same splice, same rollup tables, same cost — the only difference
+ * is the HTTP-endpoint predicate, so the raw fallback and its 10s ceiling apply
+ * identically. Its own id keeps the cache entries separate from the unfiltered
+ * Operations tab reading the same window.
+ */
+export const serviceEndpointsSummary = defineQuery({
+	id: "serviceEndpoints",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceOperationsRequest, orgId: string) =>
+		CH.compile(
+			CH.serviceEndpointsSummaryQuery(serviceOperationsSummaryOptions(payload)),
+			serviceOperationsParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointsSummaryRowSchema },
+		),
+})
+
+export const serviceEndpointsSummaryRaw = defineQuery({
+	id: "serviceEndpoints",
+	profile: "aggregation",
+	settings: SERVICE_OPERATIONS_RAW_SETTINGS,
+	cache: undefined,
+	compile: (payload: ServiceOperationsRequest, orgId: string) =>
+		CH.compile(
+			CH.serviceEndpointsSummaryRawQuery(serviceOperationsSummaryOptions(payload)),
+			serviceOperationsParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointsSummaryRowSchema },
+		),
+})
+
 // Derived after the summary; callers align buckets to the minute-grain rollup.
 type ServiceOperationsTimeseriesInput = ServiceOperationsRequest & {
 	readonly spanNames: ReadonlyArray<string>
@@ -967,11 +1345,10 @@ export const serviceOperationsTimeseries = defineQuery({
 	profile: "aggregation",
 	cache: undefined,
 	compile: (payload: ServiceOperationsTimeseriesInput, orgId: string) =>
-		CH.compile(
-			CH.serviceOperationsTimeseriesQuery(serviceOperationsTimeseriesOptions(payload)),
-			{ ...serviceOperationsParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
-			{ rowSchema: CH.serviceOperationsTimeseriesRowSchema },
-		),
+		CH.compile(CH.serviceOperationsTimeseriesQuery(serviceOperationsTimeseriesOptions(payload)), {
+			...serviceOperationsParams(payload, orgId),
+			bucketSeconds: payload.bucketSeconds,
+		}),
 })
 
 export const serviceOperationsTimeseriesRaw = defineQuery({
@@ -980,9 +1357,8 @@ export const serviceOperationsTimeseriesRaw = defineQuery({
 	settings: SERVICE_OPERATIONS_RAW_SETTINGS,
 	cache: undefined,
 	compile: (payload: ServiceOperationsTimeseriesInput, orgId: string) =>
-		CH.compile(
-			CH.serviceOperationsTimeseriesRawQuery(serviceOperationsTimeseriesOptions(payload)),
-			{ ...serviceOperationsParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
-			{ rowSchema: CH.serviceOperationsTimeseriesRowSchema },
-		),
+		CH.compile(CH.serviceOperationsTimeseriesRawQuery(serviceOperationsTimeseriesOptions(payload)), {
+			...serviceOperationsParams(payload, orgId),
+			bucketSeconds: payload.bucketSeconds,
+		}),
 })

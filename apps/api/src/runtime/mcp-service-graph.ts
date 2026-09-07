@@ -1,8 +1,9 @@
-import { EdgeCacheService } from "@maple/cache"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { Layer } from "effect"
 import { McpToolExecutor } from "@/mcp/dispatcher"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
+import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
+import { AuditLogLive, OrgClickHouseSettingsLive, WarehouseLive } from "./warehouse-layer"
+import { VcsSourceServiceLayer } from "./vcs-source-layer"
 import { EmailService } from "@/platform/EmailService"
 import { Env } from "@/platform/Env"
 import { AlertRuntime, AlertsService } from "@/services/alerts/AlertsService"
@@ -17,36 +18,24 @@ import { ErrorIssueReadModelsService } from "@/services/errors/ErrorIssueReadMod
 import { ErrorIssueWorkflowService } from "@/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@/services/errors/ErrorsService"
+import { IssueFixVerificationService } from "@/services/errors/IssueFixVerificationService"
 import { InvestigationService } from "@/services/errors/InvestigationService"
 import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
-import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgTokenService"
-import { VcsProviderRegistry } from "@/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@/services/integrations/vcs/VcsRepository"
-import { VcsSourceService } from "@/services/integrations/vcs/VcsSourceService"
-import { GithubAppClient } from "@/services/integrations/vcs/vendor/github/GithubAppClient"
-import { GithubHttp } from "@/services/integrations/vcs/vendor/github/GithubHttp"
-import { GithubProvider } from "@/services/integrations/vcs/vendor/github/GithubProvider"
-import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
+import { PullRequestLookupLive } from "@/services/errors/pull-request-lookup-live"
 import { OrgMembersService } from "@/services/org/OrgMembersService"
 import { SetupAuditService } from "@/services/org/SetupAuditService"
 import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 
 const InfraLive = Env.layer
-const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 
 // MCP handlers use a finite service context (see runtime-requirements.ts).
 // Keep this graph independent from the HTTP composition root so headless
 // entrypoints do not evaluate or acquire route-only product services.
-const OrgClickHouseSettingsServiceLive = OrgClickHouseSettingsService.layer.pipe(
-	Layer.provide(Layer.mergeAll(InfraLive, EdgeCacheServiceLive)),
-)
-const TinybirdOrgTokenServiceLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(InfraLive))
+const OrgClickHouseSettingsServiceLive = OrgClickHouseSettingsLive.pipe(Layer.provide(InfraLive))
 const HazelOAuthServiceLive = HazelOAuthService.layer.pipe(Layer.provide(InfraLive))
-
-const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-	Layer.provide(Layer.mergeAll(InfraLive, OrgClickHouseSettingsServiceLive, TinybirdOrgTokenServiceLive)),
-)
+const WarehouseQueryServiceLive = WarehouseLive.pipe(Layer.provide(InfraLive))
+const AuditLogServiceLive = AuditLogLive.pipe(Layer.provide(InfraLive))
 
 const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheServiceLive))
 
@@ -102,11 +91,28 @@ const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
 
 const ErrorActorsServiceLive = ErrorActorsService.layer
 const ErrorIssueWorkflowServiceLive = ErrorIssueWorkflowService.layer.pipe(
-	Layer.provide(ErrorActorsServiceLive),
+	Layer.provide(Layer.mergeAll(ErrorActorsServiceLive, AuditLogServiceLive)),
 )
 const ErrorPolicyServiceLive = ErrorPolicyService.layer
 const ErrorIssueReadModelsServiceLive = ErrorIssueReadModelsService.layer.pipe(
 	Layer.provide(Layer.mergeAll(WarehouseQueryServiceLive, ErrorIssueWorkflowServiceLive)),
+)
+
+const VcsSourceServiceLive = VcsSourceServiceLayer.pipe(Layer.provide(InfraLive))
+
+// Lets `propose_fix` and `link_pull_request` attach a PR with its real title
+// and state, and open a verification window for one that already merged.
+const PullRequestLookupServiceLive = PullRequestLookupLive.pipe(Layer.provide(VcsSourceServiceLive))
+
+const IssueFixVerificationServiceLive = IssueFixVerificationService.layer.pipe(
+	Layer.provide(
+		Layer.mergeAll(
+			InfraLive,
+			ErrorActorsServiceLive,
+			ErrorIssueWorkflowServiceLive,
+			PullRequestLookupServiceLive,
+		),
+	),
 )
 
 const ErrorsServiceLive = ErrorsService.layer.pipe(
@@ -117,9 +123,12 @@ const ErrorsServiceLive = ErrorsService.layer.pipe(
 			EdgeCacheServiceLive,
 			NotificationDispatcherLive,
 			ErrorActorsServiceLive,
-			ErrorIssueReadModelsServiceLive,
 			ErrorIssueWorkflowServiceLive,
 			ErrorPolicyServiceLive,
+			// Lets `propose_fix` turn its `pr_url` into a durable link. Optional in
+			// the service, so an graph that omits it still works — but this is the
+			// agent's primary path, so it is wired here deliberately.
+			IssueFixVerificationServiceLive,
 		),
 	),
 )
@@ -130,26 +139,18 @@ const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 
 const SetupAuditServiceLive = SetupAuditService.layer.pipe(Layer.provide(WarehouseQueryServiceLive))
 
-const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))
-const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClientLive))
-const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
-
-const VcsSourceServiceLive = VcsSourceService.layer.pipe(
-	Layer.provide(
-		Layer.mergeAll(VcsRepository.layer, VcsProviderRegistryLive).pipe(Layer.provideMerge(InfraLive)),
-	),
-)
-
 const McpRuntimeServicesLive = Layer.mergeAll(
 	AlertReadModelsServiceLive,
 	AlertRulesServiceLive,
 	AlertsServiceLive,
+	AuditLogServiceLive,
 	DashboardPersistenceService.layer,
 	ErrorActorsServiceLive,
 	ErrorIssueReadModelsServiceLive,
 	ErrorIssueWorkflowServiceLive,
 	ErrorPolicyServiceLive,
 	ErrorsServiceLive,
+	IssueFixVerificationServiceLive,
 	QueryEngineServiceLive,
 	RecommendationIssueServiceLive,
 	SetupAuditServiceLive,

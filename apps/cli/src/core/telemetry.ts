@@ -43,10 +43,10 @@ const resolveEnvironment = (): string => {
  */
 export const TelemetryLayer = Maple.layer({
 	serviceName: "maple-cli",
-	serviceNamespace: "backend",
+	serviceNamespace: "core",
 	serviceVersion: MAPLE_VERSION,
 	environment: resolveEnvironment(),
-	repositoryUrl: "https://github.com/Makisuo/maple",
+	repositoryUrl: "https://github.com/MapleTechLabs/maple",
 	ingestKey: process.env.MAPLE_INGEST_KEY ?? DEFAULT_INGEST_KEY,
 	shutdownTimeout: "3 seconds",
 	// NOTE: expected user outcomes ("maple is already running", `--help`) no

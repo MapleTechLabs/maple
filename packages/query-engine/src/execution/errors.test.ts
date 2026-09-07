@@ -3,6 +3,7 @@ import {
 	WarehouseAuthError,
 	WarehouseClientError,
 	WarehouseConfigError,
+	WarehouseInvalidSqlError,
 	WarehouseMalformedQueryError,
 	WarehouseQueryError,
 	WarehouseQuotaExceededError,
@@ -66,7 +67,7 @@ describe("mapWarehouseError", () => {
 			it("does not blame Maple for a type error in raw SQL", () => {
 				const mapped = mapWarehouseError("rawSqlQuery", { message: noCommonType }, "caller")
 				expect(mapped).not.toBeInstanceOf(WarehouseMalformedQueryError)
-				expect(mapped).toBeInstanceOf(WarehouseQueryError)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
 			})
 
 			it("keeps the database's own message so the author can act on it", () => {
@@ -78,12 +79,42 @@ describe("mapWarehouseError", () => {
 					},
 					"caller",
 				)
-				expect(mapped).toBeInstanceOf(WarehouseQueryError)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
 				expect(mapped.message).toContain("Illegal type String of argument")
 			})
 
+			// A plain typo used to fall past every authorship-guarded rule into the
+			// generic 502 "Database query failed. Contact support", which hid the one
+			// thing the author needed: ClickHouse's own explanation.
+			it("surfaces a caller's syntax error as invalid SQL rather than a 502", () => {
+				const mapped = mapWarehouseError(
+					"rawSqlQuery",
+					{ message: "Syntax error near FROM", type: "SYNTAX_ERROR" },
+					"caller",
+				)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+				expect(mapped).not.toBeInstanceOf(WarehouseQueryError)
+			})
+
+			// The stale `FROM web_events` left in a saved raw_sql widget by the
+			// product_events rename: the author's to fix, not a Maple 5xx.
+			it("reports a table dropped out from under a saved widget to the author", () => {
+				const mapped = mapWarehouseError(
+					"rawSqlQuery",
+					{
+						message: "Unknown table expression identifier 'web_events' in scope SELECT",
+						type: "UNKNOWN_TABLE",
+					},
+					"caller",
+				)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+				expect(mapped.message).toContain("web_events")
+			})
+
 			it("defaults to caller authorship, the conservative reading", () => {
-				expect(mapWarehouseError("p", { message: noCommonType })).toBeInstanceOf(WarehouseQueryError)
+				expect(mapWarehouseError("p", { message: noCommonType })).toBeInstanceOf(
+					WarehouseInvalidSqlError,
+				)
 			})
 		})
 
@@ -100,13 +131,13 @@ describe("mapWarehouseError", () => {
 			).toBeInstanceOf(WarehouseSchemaDriftError)
 		})
 
-		it("classifies an unknown identifier in caller-authored SQL as malformed, not drift", () => {
+		it("classifies an unknown identifier in caller-authored SQL as invalid SQL, not drift", () => {
 			const mapped = mapWarehouseError(
 				"p",
 				{ message: "Missing columns: t.OrgId", type: "UNKNOWN_IDENTIFIER" },
 				"caller",
 			)
-			expect(mapped).toBeInstanceOf(WarehouseMalformedQueryError)
+			expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
 			expect(mapped).not.toBeInstanceOf(WarehouseSchemaDriftError)
 		})
 
@@ -160,14 +191,41 @@ describe("mapWarehouseError", () => {
 	})
 
 	describe("config", () => {
-		it("classifies an unknown-database ClickHouse type", () => {
-			expect(mapWarehouseError("p", { message: "x", type: "UNKNOWN_DATABASE" })).toBeInstanceOf(
+		// Authorship decides who a missing table indicts. Maple-generated SQL can
+		// testify that the warehouse is pointed somewhere wrong; the same complaint
+		// about SQL the caller wrote is a typo in their query.
+		it("classifies an unknown-database ClickHouse type in Maple-authored SQL", () => {
+			expect(
+				mapWarehouseError("p", { message: "x", type: "UNKNOWN_DATABASE" }, "maple"),
+			).toBeInstanceOf(WarehouseConfigError)
+		})
+
+		it("classifies an unknown-database message in Maple-authored SQL", () => {
+			expect(mapWarehouseError("p", "Code: 81. unknown database 'foo'", "maple")).toBeInstanceOf(
 				WarehouseConfigError,
 			)
 		})
 
-		it("classifies an unknown-database message", () => {
-			expect(mapWarehouseError("p", "Code: 81. unknown database 'foo'")).toBeInstanceOf(
+		it("blames the author, not the warehouse, for a table the caller invented", () => {
+			// `maple query "SELECT … FROM spans"` used to come back as a config
+			// error, telling someone who mistyped a table name that their warehouse
+			// was misconfigured.
+			expect(mapWarehouseError("p", { message: "x", type: "UNKNOWN_TABLE" }, "caller")).toBeInstanceOf(
+				WarehouseInvalidSqlError,
+			)
+			expect(
+				mapWarehouseError("p", "Code: 60. DB::Exception: Table default.spans does not exist."),
+			).toBeInstanceOf(WarehouseInvalidSqlError)
+		})
+
+		it("still reads a missing datasource and a bad URL as configuration", () => {
+			// Neither names a table the caller chose, so both stay config errors
+			// regardless of who wrote the SQL.
+			expect(mapWarehouseError("p", "Resource 'product_events' not found")).toBeInstanceOf(
+				WarehouseConfigError,
+			)
+			expect(mapWarehouseError("p", "Invalid URL")).toBeInstanceOf(WarehouseConfigError)
+			expect(mapWarehouseError("p", { message: "x", type: "UNKNOWN_SETTING" })).toBeInstanceOf(
 				WarehouseConfigError,
 			)
 		})
@@ -208,7 +266,7 @@ describe("mapWarehouseError", () => {
 	})
 
 	it("defaults unrecognized errors to the generic query error", () => {
-		const mapped = mapWarehouseError("p", "DB::Exception: Syntax error near FROM")
+		const mapped = mapWarehouseError("p", "DB::Exception: something we have never seen")
 		expect(mapped).toBeInstanceOf(WarehouseQueryError)
 		expect(mapped._tag).toBe("@maple/http/errors/WarehouseQueryError")
 	})
@@ -232,6 +290,27 @@ describe("mapWarehouseError", () => {
 })
 
 describe("cleanErrorMessage", () => {
+	it("retains the authentication diagnostic without the echoed token", () => {
+		const message =
+			"invalid authentication token. Invalid token b'opaque-secret': Signature verification failed"
+		expect(cleanErrorMessage(message)).toBe(
+			"invalid authentication token. Invalid token b'[redacted]': Signature verification failed",
+		)
+		const classified = mapWarehouseError("alertRawQuery", new Error(message))
+		expect(classified).toBeInstanceOf(WarehouseAuthError)
+		expect(classified.message).not.toContain("opaque-secret")
+		expect(String(classified.cause)).not.toContain("opaque-secret")
+	})
+
+	it("redacts JWTs from both generic failures and HTML fallbacks", () => {
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature"
+		const cause = new Error(`Request failed with bearer ${jwt}`)
+		const error = toWarehouseQueryError("alertRawQuery", cause)
+		expect(error.message).toBe("Request failed with bearer [redacted]")
+		expect(String(error.cause)).not.toContain(jwt)
+		expect(cleanErrorMessage(`<html>${jwt}</html>`)).not.toContain(jwt)
+	})
+
 	it("strips a leaked nginx HTML body", () => {
 		const cleaned = cleanErrorMessage(
 			"Request failed with status 503: <html><head><title>503 Service Temporarily Unavailable</title></head><body><center><h1>503</h1></center></body></html>",

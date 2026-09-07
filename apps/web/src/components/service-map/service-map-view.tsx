@@ -3,6 +3,8 @@ import { LatencyLineChart, QueryBuilderBarChart } from "@maple/ui/components/cha
 import { ChartTooltipSuppressionProvider } from "@maple/ui/components/plot"
 import { LinkedCursorOverlay, linkedCursorChartProps, useLinkedCursor } from "@/hooks/use-linked-cursor"
 import {
+	lazy,
+	Suspense,
 	useCallback,
 	useDeferredValue,
 	useEffect,
@@ -24,6 +26,7 @@ import {
 import "@xyflow/react/dist/style.css"
 
 import { Result, useAtom, useAtomValue } from "@/lib/effect-atom"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { serviceMapLayoutAtomFamily, upsertSnapshot } from "@/atoms/service-map-layout-atoms"
@@ -85,7 +88,7 @@ import { ServiceMapControls } from "./service-map-controls"
 import { ServiceMapMiniMap } from "./service-map-minimap"
 import { applyDeclutter, type DeclutterFocus, type DeclutterState } from "./service-map-declutter"
 import { NamespaceGroupNode, type NamespaceGroupData } from "./service-map-namespace-group"
-import { layoutServiceMapWithElk, type ElkLayoutResult } from "./service-map-elk"
+import { layoutServiceMapWithElk, type ElkLayoutResult, type PreviousPositions } from "./service-map-elk"
 import {
 	createParticleRegistry,
 	ParticleRegistryProvider,
@@ -121,6 +124,8 @@ import type { HyperdriveConfigInput, HyperdriveNodeInfo } from "./service-map-hy
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 
+const LiveServiceMap3D = lazy(() => import("./three/live-view"))
+
 const nodeTypes = {
 	serviceNode: ServiceMapNode,
 	namespaceGroup: NamespaceGroupNode,
@@ -131,6 +136,11 @@ const nsGroupId = (namespace: string) => `${NAMESPACE_GROUP_PREFIX}${encodeURICo
 
 // Fallback node dimensions used before ReactFlow has measured a node, so the
 // dotted boxes appear on first paint and refine once real sizes arrive.
+// Long enough to swallow a wheel-zoom's burst of gesture-end events and the
+// programmatic fit that follows a layout, short enough that a camera is never
+// meaningfully at risk of being lost.
+const VIEWPORT_PERSIST_DEBOUNCE_MS = 400
+
 const FALLBACK_NODE_WIDTH = 220
 const FALLBACK_NODE_HEIGHT = 70
 
@@ -792,12 +802,18 @@ function formatQueryLabel(value: string): string {
  * Database query volume and latency over the same window.
  *
  * TWO plots, joined by the linked cursor, where this used to be one chart with a
- * left "count" axis and a right "latency" axis. `@tanstack/charts` carries a
- * single y scale per chart — `StoredChartSpec` has exactly `x` and `y`, and no
- * mark can select a scale of its own — so a second axis is not expressible.
+ * left "count" axis and a right "latency" axis.
  *
- * That constraint landed somewhere better than a workaround. Every other place
- * in the product that shows volume beside latency already does it this way:
+ * That was once forced: `@tanstack/charts` carried a single y scale per chart
+ * until 0.16.0, which added named scales (`scales: { …, latency: { channel: "y",
+ * side: "right" } }` with marks binding `yScale`). So this is now a CHOICE.
+ *
+ * It stays split, and a right-hand axis was tried and backed out elsewhere on
+ * the same reasoning: on a card this size a second axis means the shape of a
+ * line says nothing until the reader has worked out which axis it belongs to.
+ * The split landed somewhere better than the workaround it replaced, and every
+ * other place in the product that shows volume beside latency already does it
+ * this way:
  * `MetricsGrid` on the service detail page, host detail, infra correlation, the
  * Cloudflare zone panels. This chart was the outlier. Two plots also give each
  * series a full readable range instead of one axis squashing the other, and the
@@ -1177,7 +1193,10 @@ function DatabaseDetailPanel({
 	const errorRate = totalCalls > 0 ? totalErrors / totalCalls : 0
 	const avgLatencyMs =
 		totalCalls > 0 ? callers.reduce((sum, e) => sum + e.avgDurationMs * e.callCount, 0) / totalCalls : 0
-	const p95LatencyMs = callers.reduce((max, e) => Math.max(max, e.p95DurationMs), 0)
+	// Sample-weighted, to match the summary this stands in for. Summing the raw
+	// `callCount` here put a raw number under the same tile that shows an
+	// estimate once the summary lands, so the headline jumped by the sample rate.
+	const estimatedCalls = callers.reduce((sum, e) => sum + e.estimatedCallCount, 0)
 	const bucketSeconds = pickDbSummaryBucketSeconds(durationSeconds)
 	const summaryResult = useRefreshableAtomValue(
 		getServiceDbQuerySummaryResultAtom({
@@ -1194,12 +1213,16 @@ function DatabaseDetailPanel({
 	)
 	const summaryResponse = Result.isSuccess(summaryResult) ? summaryResult.value : null
 	const summary = summaryResponse?.summary ?? null
-	const metricQueryCount = summary?.estimatedQueryCount ?? totalCalls
+	const metricQueryCount = summary?.estimatedQueryCount ?? estimatedCalls
 	const metricCallsPerSecond = metricQueryCount / Math.max(durationSeconds, 1)
 	const metricErrorRate = summary?.errorRate ?? errorRate
 	const metricAvgLatencyMs = summary?.avgDurationMs ?? avgLatencyMs
-	const metricP50LatencyMs = summary?.p50DurationMs ?? avgLatencyMs
-	const metricP95LatencyMs = summary?.p95DurationMs ?? p95LatencyMs
+	// Quantiles have NO edge-level fallback, on purpose. The edges carry a max and
+	// a mean, and substituting either renders a different statistic under a "P50" /
+	// "P95" label until the summary resolves — which is how this panel showed 3s
+	// beside the same node's real 7ms p95. Null renders as an em dash instead.
+	const metricP50LatencyMs = summary?.p50DurationMs ?? null
+	const metricP95LatencyMs = summary?.p95DurationMs ?? null
 	const metricHasSampling = summary
 		? summary.estimatedQueryCount > summary.queryCount + 1
 		: callers.some((caller) => caller.hasSampling)
@@ -1281,10 +1304,12 @@ function DatabaseDetailPanel({
 								<p
 									className={cn(
 										"text-xl font-semibold tabular-nums font-mono",
-										latencyToneClass(metricP50LatencyMs, "p50"),
+										metricP50LatencyMs === null
+											? "text-muted-foreground"
+											: latencyToneClass(metricP50LatencyMs, "p50"),
 									)}
 								>
-									{formatLatency(metricP50LatencyMs)}
+									{metricP50LatencyMs === null ? "—" : formatLatency(metricP50LatencyMs)}
 								</p>
 							</div>
 							<div className="space-y-0.5">
@@ -1292,14 +1317,17 @@ function DatabaseDetailPanel({
 								<p
 									className={cn(
 										"text-xl font-semibold tabular-nums font-mono",
-										// A p95 far above this node's own p50 is a tail problem
-										// worth flagging even at a fine absolute magnitude.
-										metricP95LatencyMs > metricP50LatencyMs * 3
-											? "text-severity-warn"
-											: latencyToneClass(metricP95LatencyMs, "p95"),
+										metricP95LatencyMs === null
+											? "text-muted-foreground"
+											: // A p95 far above this node's own p50 is a tail problem
+												// worth flagging even at a fine absolute magnitude.
+												metricP50LatencyMs !== null &&
+												  metricP95LatencyMs > metricP50LatencyMs * 3
+												? "text-severity-warn"
+												: latencyToneClass(metricP95LatencyMs, "p95"),
 									)}
 								>
-									{formatLatency(metricP95LatencyMs)}
+									{metricP95LatencyMs === null ? "—" : formatLatency(metricP95LatencyMs)}
 								</p>
 							</div>
 							<div className="space-y-0.5">
@@ -1470,6 +1498,7 @@ function DatabaseDetailPanel({
 }
 
 interface ServiceMapViewProps {
+	viewMode?: "2d" | "3d"
 	startTime: string
 	endTime: string
 	/** Deployment environment to scope the map to; `undefined` = all environments. */
@@ -1603,7 +1632,10 @@ interface ElkLayoutStore {
  * After two seconds the synchronous layout is revealed; a late ELK result still
  * replaces it once available.
  */
-function createElkLayoutStore(request: LayoutRequest): ElkLayoutStore {
+function createElkLayoutStore(
+	request: LayoutRequest,
+	getPrevious: () => PreviousPositions | undefined,
+): ElkLayoutStore {
 	let snapshot = ELK_PENDING
 	let started = false
 	const listeners = new Set<() => void>()
@@ -1619,7 +1651,10 @@ function createElkLayoutStore(request: LayoutRequest): ElkLayoutStore {
 		started = true
 		const graceTimer = setTimeout(() => publish(ELK_FALLBACK), 2000)
 
-		layoutServiceMapWithElk(request.nodes, request.edges, request.config)
+		// Read the previous layout at START time, not at store-creation time: the
+		// store is memoized on the request, so a captured value could be a layout
+		// older than the one currently on screen.
+		layoutServiceMapWithElk(request.nodes, request.edges, request.config, getPrevious())
 			.then((layout) => {
 				clearTimeout(graceTimer)
 				publish({ status: "ready", layout })
@@ -1642,12 +1677,29 @@ function createElkLayoutStore(request: LayoutRequest): ElkLayoutStore {
 	}
 }
 
-function useElkLayout(request: LayoutRequest): ElkLayoutSnapshot {
-	const store = useMemo(() => createElkLayoutStore(request), [request])
+/**
+ * Runs ELK for `request`, anchored to the layout currently on screen.
+ *
+ * `lastLayout` is the shared anchor — the positions most recently APPLIED to the
+ * canvas, whichever engine produced them. Anchoring ELK on the synchronous
+ * layout's output matters as much as the reverse: on a machine where the worker
+ * is slow, the fallback is what the user is looking at, and ELK landing later
+ * should adjust that rather than replace it.
+ *
+ * It is read through a stable getter rather than folded into the request, which
+ * would change the request's identity and re-run the layout it exists to steady.
+ */
+function useElkLayout(
+	request: LayoutRequest,
+	lastLayout: React.RefObject<PreviousPositions | undefined>,
+): ElkLayoutSnapshot {
+	const getPrevious = useCallback(() => lastLayout.current, [lastLayout])
+	const store = useMemo(() => createElkLayoutStore(request, getPrevious), [request, getPrevious])
 	return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot)
 }
 
 export function ServiceMapCanvas({
+	viewMode = "2d",
 	edges: serviceEdges,
 	dbEdges,
 	cloudflareServices,
@@ -1668,6 +1720,7 @@ export function ServiceMapCanvas({
 	onFocusChange,
 	minTrafficPctOverride,
 }: {
+	viewMode?: "2d" | "3d"
 	edges: ServiceEdge[]
 	dbEdges: ServiceDbEdge[]
 	cloudflareServices: CloudflareService[]
@@ -1869,7 +1922,23 @@ export function ServiceMapCanvas({
 	// ELK's layered layout runs in a worker. The deterministic synchronous layout
 	// remains the timeout/error fallback, so a worker failure never blanks the map.
 	const layoutRequest = useLayoutRequest(effectiveNodes, effectiveEdges, layoutConfig, layoutSignature)
-	const elkSnapshot = useElkLayout(layoutRequest)
+	// The layout currently on screen, and the anchor every later layout is built
+	// from. Written by an effect once positions are actually applied.
+	const lastLayoutRef = useRef<PreviousPositions | undefined>(undefined)
+	const elkSnapshot = useElkLayout(layoutRequest, lastLayoutRef)
+	// Snapshot the anchor ONCE per layout signature rather than reading the ref
+	// during render. Reading it live fed the ref's own writes back into the
+	// `layoutedNodes` memo — each write produced a fresh Map, which invalidated
+	// the memo, which re-ran the effect — an idle render loop that cost ~50fps and
+	// ~700ms of blocking time per 4s while the map just sat there.
+	const [carriedSnapshot, setCarriedSnapshot] = useState<{
+		signature: string
+		positions: PreviousPositions | undefined
+	}>(() => ({ signature: layoutSignature, positions: undefined }))
+	if (carriedSnapshot.signature !== layoutSignature) {
+		setCarriedSnapshot({ signature: layoutSignature, positions: lastLayoutRef.current })
+	}
+	const carriedPositions = carriedSnapshot.positions
 	// Wait for the first final/fallback layout so the initial graph never jumps.
 	// Once revealed, keep the current map visible during later ELK recomputes,
 	// matching the previous behavior for filter and topology changes.
@@ -1877,14 +1946,52 @@ export function ServiceMapCanvas({
 	const currentLayoutSettled = elkSnapshot.status !== "pending"
 	if (!layoutHasEverSettled && currentLayoutSettled) setLayoutHasEverSettled(true)
 	const layoutRevealed = layoutHasEverSettled || currentLayoutSettled
+	// Anchored to the last layout for the same reason ELK is: the synchronous
+	// layout is what a slow or worker-less client actually sees, and without the
+	// anchor a one-edge delta re-ranks connected components and slides the whole
+	// graph. `carriedPositions` is a ref read, so it is deliberately not a dep —
+	// the memo re-runs on `layoutRequest`, which is exactly when a new layout is
+	// wanted.
 	const fallbackPositions = useMemo(
-		() => computeNodePositions(layoutRequest.nodes, layoutRequest.edges, layoutRequest.config),
+		() =>
+			computeNodePositions(
+				layoutRequest.nodes,
+				layoutRequest.edges,
+				layoutRequest.config,
+				lastLayoutRef.current,
+			),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[layoutRequest],
 	)
 	const layoutedNodes = useMemo(() => {
-		const positions = elkSnapshot.layout?.positions ?? fallbackPositions
-		return effectiveNodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position }))
-	}, [effectiveNodes, elkSnapshot.layout, fallbackPositions])
+		// While a NEW layout is computing, hold every node the previous ELK layout
+		// knew about exactly where it is. Falling straight through to the
+		// synchronous layout meant a topology change moved the whole graph twice —
+		// once to the fallback coordinates the instant the request changed, then
+		// again when ELK landed a second or two later.
+		//
+		// The carry covers `pending` only. Once ELK gives up (`fallback`), switch to
+		// the synchronous layout rather than holding indefinitely: it is now anchored
+		// on the same previous positions, so it lands near where the graph already
+		// was AND places this topology's new nodes coherently. Holding forever would
+		// keep old nodes pinned while new ones arrived at un-reconciled coordinates,
+		// which is worse than a small settled adjustment.
+		const bridge =
+			elkSnapshot.layout?.positions ?? (elkSnapshot.status === "pending" ? carriedPositions : undefined)
+		return effectiveNodes.map((node) => ({
+			...node,
+			position: bridge?.get(node.id) ?? fallbackPositions.get(node.id) ?? node.position,
+		}))
+	}, [effectiveNodes, elkSnapshot.layout, elkSnapshot.status, carriedPositions, fallbackPositions])
+
+	// Record what was actually applied, so the next layout — from either engine —
+	// is anchored on it. Nodes bridged from the previous layout keep their old
+	// coordinates here, which is the point: the anchor tracks the screen.
+	useEffect(() => {
+		const applied = new Map<string, { x: number; y: number }>()
+		for (const node of layoutedNodes) applied.set(node.id, node.position)
+		lastLayoutRef.current = applied
+	}, [layoutedNodes])
 
 	// Merge layout positions with selection + color-mode + focus-dim state.
 	// Persisted drag positions (keyed by node id) override the deterministic
@@ -1950,45 +2057,55 @@ export function ServiceMapCanvas({
 		setViewportSnapshot({ signature: layoutSignature, viewport: savedViewport })
 	}
 	const hasSavedViewport = savedViewport != null
+	// Camera-gate key, NOT a React key. It carries the ELK status so a late ELK
+	// result re-fits the camera onto the final layout, but the canvas itself is
+	// never remounted for it — see the `key`-less <ReactFlow> below.
 	const flowLayoutKey = `${layoutSignature}:${elkSnapshot.status === "ready" ? "ready" : "fallback"}`
 	const fitViewState = useRef({ signature: flowLayoutKey, fitted: hasSavedViewport })
+	// The very first fit snaps (nothing was on screen to shift); every later one
+	// animates, because it is moving a map the user is already looking at.
+	const hasFittedOnce = useRef(false)
 
-	const fitCheckPending = useRef(false)
+	// React Flow used to be keyed by `flowLayoutKey`, so every topology delta and
+	// every fallback→ELK flip tore the canvas down and rebuilt it: camera reset to
+	// `defaultViewport`, full re-measure, then a deferred fit — the visible
+	// "paint, jump, reframe" shift. Positions now flow through `nodes` instead, so
+	// the fit has to be driven from an effect: on a position-only update React Flow
+	// emits no `dimensions` change to hang it off.
+	//
+	// Runs after every commit; `nodes` gaining measurements re-triggers it. An
+	// unmeasured node is excluded from fitView's bounds, so wait for all of them.
+	useEffect(() => {
+		if (fitViewState.current.signature !== flowLayoutKey) {
+			fitViewState.current = { signature: flowLayoutKey, fitted: hasSavedViewport }
+		}
+		if (fitViewState.current.fitted) return
+		if (nodes.length === 0 || !nodes.every((n) => n.measured?.width && n.measured?.height)) return
+		fitViewState.current.fitted = true
+		const animate = hasFittedOnce.current
+		hasFittedOnce.current = true
+		const raf = requestAnimationFrame(() =>
+			rfInstance.current?.fitView(animate ? { duration: 300 } : undefined),
+		)
+		return () => cancelAnimationFrame(raf)
+	}, [flowLayoutKey, nodes, hasSavedViewport])
+
+	// `defaultViewport` only applies at mount, so restoring a saved camera for a
+	// signature that becomes live later (previously a side effect of the remount)
+	// is now explicit.
+	const restoredViewportSignature = useRef<string | null>(null)
+	useEffect(() => {
+		if (restoredViewportSignature.current === layoutSignature) return
+		restoredViewportSignature.current = layoutSignature
+		if (savedViewport) rfInstance.current?.setViewport(savedViewport)
+	}, [layoutSignature, savedViewport])
+
 	const onNodesChange = useCallback(
 		(changes: NodeChange[]) => {
-			// React Flow is keyed by signature. Reset the camera gate in this external
-			// measurement event instead of mutating a ref during React render.
-			if (fitViewState.current.signature !== flowLayoutKey) {
-				fitViewState.current = { signature: flowLayoutKey, fitted: hasSavedViewport }
-			}
-
 			setNodeState((current) => ({
 				...current,
 				nodes: applyNodeChanges(changes, current.nodes) as typeof current.nodes,
 			}))
-
-			if (
-				!fitViewState.current.fitted &&
-				!fitCheckPending.current &&
-				rfInstance.current &&
-				changes.some((change) => change.type === "dimensions")
-			) {
-				fitCheckPending.current = true
-				const requestedSignature = flowLayoutKey
-				requestAnimationFrame(() => {
-					fitCheckPending.current = false
-					if (fitViewState.current.signature !== requestedSignature) return
-					const measuredNodes = rfInstance.current?.getNodes() ?? []
-					if (
-						!fitViewState.current.fitted &&
-						measuredNodes.length > 0 &&
-						measuredNodes.every((node) => node.measured?.width && node.measured?.height)
-					) {
-						fitViewState.current.fitted = true
-						rfInstance.current?.fitView()
-					}
-				})
-			}
 
 			// Persist finished drags only (dragging === false), keyed by node id.
 			const dragEnds = changes.filter(
@@ -2007,15 +2124,43 @@ export function ServiceMapCanvas({
 				)
 			}
 		},
-		[flowLayoutKey, hasSavedViewport, layoutSignature, setLayout],
+		[layoutSignature, setLayout],
 	)
+
+	// Persisting the camera JSON-encodes the whole snapshot LRU — every node
+	// position across four layouts — into localStorage, so writing on each
+	// gesture-end turned a burst of them into a burst of long tasks. A wheel zoom
+	// emits many; so does a programmatic fit. Measured on CI, an otherwise idle map
+	// that had just been re-framed spent ~600ms blocked across 6 React commits and
+	// 3-6 long tasks in a 4s window.
+	//
+	// Only the last camera in a burst is worth keeping, so coalesce them. The
+	// cleanup flushes on unmount and before the layout signature changes, using
+	// that render's signature, so a camera is never written under the wrong layout
+	// or dropped on navigation.
+	const pendingViewport = useRef<Viewport | null>(null)
+	const viewportWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const flushViewport = useCallback(() => {
+		if (viewportWriteTimer.current !== null) {
+			clearTimeout(viewportWriteTimer.current)
+			viewportWriteTimer.current = null
+		}
+		const viewport = pendingViewport.current
+		pendingViewport.current = null
+		if (!viewport) return
+		setLayout((prev) => upsertSnapshot(prev, layoutSignature, (snap) => ({ ...snap, viewport })))
+	}, [layoutSignature, setLayout])
 
 	const onMoveEnd = useCallback(
 		(_: unknown, viewport: Viewport) => {
-			setLayout((prev) => upsertSnapshot(prev, layoutSignature, (snap) => ({ ...snap, viewport })))
+			pendingViewport.current = viewport
+			if (viewportWriteTimer.current !== null) clearTimeout(viewportWriteTimer.current)
+			viewportWriteTimer.current = setTimeout(flushViewport, VIEWPORT_PERSIST_DEBOUNCE_MS)
 		},
-		[layoutSignature, setLayout],
+		[flushViewport],
 	)
+
+	useEffect(() => flushViewport, [flushViewport])
 
 	const handleNodeClick = useCallback(
 		(_: React.MouseEvent, node: Node) => {
@@ -2178,159 +2323,220 @@ export function ServiceMapCanvas({
 		return <ServiceMapEmptyState />
 	}
 
-	if (!layoutRevealed) {
+	if (!layoutRevealed && viewMode === "2d") {
 		return <ServiceMapLoading />
 	}
 
 	return (
-		<div className="flex flex-col h-full">
+		// `data-elk-status` reports whether the positions on screen are ELK's final
+		// answer ("ready") or the synchronous stand-in it publishes after a 2s grace
+		// ("fallback"). The perf bench needs the difference: edges exist in the DOM
+		// as soon as the fallback lands, so "the map has rendered" is true well
+		// before "the map has stopped moving", and on a slow runner ELK finished
+		// INSIDE the idle measurement window and billed its commits as a render
+		// loop. Cheap enough to keep in production, where it also says which layout
+		// a screenshot or a bug report was taken against.
+		<div className="flex flex-col h-full" data-elk-status={elkSnapshot.status}>
 			<ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
 				<ResizablePanel defaultSize={selectedServiceId ? 65 : 100} minSize={40}>
 					<div className="flex flex-col h-full">
+						<ServiceMapToolbar
+							showPresentationControls={viewMode === "2d"}
+							colorMode={colorMode}
+							onColorModeChange={setColorMode}
+							onResort={handleResort}
+							services={services}
+							focus={focus}
+							onFocusChange={setFocus}
+							minTrafficPct={minTrafficPct}
+							onMinTrafficPctChange={(pct) =>
+								setViewPrefs((prev) => ({ ...prev, minTrafficPct: pct }))
+							}
+							hiddenNodeCount={declutter.hiddenNodeCount}
+							hiddenEdgeCount={declutter.hiddenEdgeCount}
+						/>
 						<div className="flex-1 min-h-0 relative">
-							<LayoutDebugPanel config={layoutConfig} onChange={setLayoutConfig} />
-							<ServiceMapToolbar
-								colorMode={colorMode}
-								onColorModeChange={setColorMode}
-								onResort={handleResort}
-								services={services}
-								focus={focus}
-								onFocusChange={setFocus}
-								minTrafficPct={minTrafficPct}
-								onMinTrafficPctChange={(pct) =>
-									setViewPrefs((prev) => ({ ...prev, minTrafficPct: pct }))
-								}
-								hiddenNodeCount={declutter.hiddenNodeCount}
-								hiddenEdgeCount={declutter.hiddenEdgeCount}
-							/>
-							<ParticleRegistryProvider value={registry}>
-								<ReactFlow
-									key={flowLayoutKey}
-									nodes={renderedNodes}
-									edges={renderedEdges}
-									onNodesChange={onNodesChange}
-									onNodeClick={handleNodeClick}
-									onPaneClick={handlePaneClick}
-									onMoveEnd={onMoveEnd}
-									defaultViewport={savedViewport ?? undefined}
-									onInit={(instance) => {
-										// SAFETY: this ref intentionally erases the node/edge generics after ReactFlow initialization.
-										rfInstance.current = instance as unknown as ReactFlowInstance
-									}}
-									nodeTypes={nodeTypes}
-									edgeTypes={edgeTypes}
-									nodesDraggable
-									nodesConnectable={false}
-									connectOnClick={false}
-									elementsSelectable={false}
-									// 0.05 lets fitView frame very large graphs (hundreds of
-									// services) instead of clipping at the zoom floor.
-									minZoom={0.05}
-									maxZoom={2}
-									proOptions={{ hideAttribution: true }}
-								>
-									<ServiceMapParticleCanvas />
-									<ServiceMapControls />
-									<ServiceMapMiniMap key={colorMode} colorMode={colorMode} />
-									<ServiceMapBackground />
-								</ReactFlow>
-							</ParticleRegistryProvider>
+							{viewMode === "3d" ? (
+								<Suspense fallback={<ServiceMapLoading />}>
+									<LiveServiceMap3D
+										nodes={effectiveNodes}
+										edges={effectiveEdges}
+										dimmedNodeIds={declutter.dimmedNodeIds}
+										dimmedEdgeIds={declutter.dimmedEdgeIds}
+										selectedId={selectedServiceId}
+										onSelect={(id) => {
+											if (id && isNsAggregateId(id)) {
+												const ns = decodeURIComponent(
+													id.slice(NS_AGGREGATE_PREFIX.length),
+												)
+												setViewPrefs((prev) => ({
+													...prev,
+													collapsedNamespaces: prev.collapsedNamespaces.filter(
+														(n) => n !== ns,
+													),
+												}))
+											} else setSelectedServiceId(id)
+										}}
+									/>
+								</Suspense>
+							) : (
+								<>
+									{/* Dev-only: the sliders write `layoutConfig`, which is part of
+							    `layoutSignature`, so every tick re-runs ELK. Compiled out of
+							    production builds. */}
+									{import.meta.env.DEV && (
+										<LayoutDebugPanel config={layoutConfig} onChange={setLayoutConfig} />
+									)}
+									<ParticleRegistryProvider value={registry}>
+										<ReactFlow
+											nodes={renderedNodes}
+											edges={renderedEdges}
+											onNodesChange={onNodesChange}
+											onNodeClick={handleNodeClick}
+											onPaneClick={handlePaneClick}
+											onMoveEnd={onMoveEnd}
+											defaultViewport={savedViewport ?? undefined}
+											onInit={(instance) => {
+												// SAFETY: this ref intentionally erases the node/edge generics after ReactFlow initialization.
+												rfInstance.current = instance as unknown as ReactFlowInstance
+											}}
+											nodeTypes={nodeTypes}
+											edgeTypes={edgeTypes}
+											nodesDraggable
+											nodesConnectable={false}
+											connectOnClick={false}
+											elementsSelectable={false}
+											// 0.05 lets fitView frame very large graphs (hundreds of
+											// services) instead of clipping at the zoom floor.
+											minZoom={0.05}
+											maxZoom={2}
+											proOptions={{ hideAttribution: true }}
+										>
+											<ServiceMapParticleCanvas />
+											<ServiceMapControls />
+											<ServiceMapMiniMap key={colorMode} colorMode={colorMode} />
+											<ServiceMapBackground />
+										</ReactFlow>
+									</ParticleRegistryProvider>
+								</>
+							)}
 						</div>
 
-						{/* Legend */}
-						<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground shrink-0">
-							<span className="font-medium">Drag nodes to arrange</span>
-							<span className="text-foreground/30">|</span>
-							<span className="font-medium">Scroll to zoom</span>
-							{colorMode === "service" && services.length > 0 && (
-								<>
-									<span className="text-foreground/30">|</span>
-									{services.slice(0, 3).map((service) => (
-										<div key={service} className="flex items-center gap-1.5">
-											<div
-												className="size-2.5 rounded-sm shrink-0"
-												style={{
-													backgroundColor: getServiceMapNodeColor(
-														{ label: service, kind: "service", errorRate: 0 },
-														"service",
-													),
-												}}
-											/>
-											<span className="font-medium">{service}</span>
-										</div>
-									))}
-									{services.length > 3 && (
-										<Popover>
-											<PopoverTrigger className="font-medium hover:text-foreground transition-colors cursor-pointer">
-												+{services.length - 3} more
-											</PopoverTrigger>
-											<PopoverContent align="start" className="w-64 p-3" side="top">
-												<div className="grid grid-cols-2 gap-2 text-[11px]">
-													{services.map((service) => (
-														<div
-															key={service}
-															className="flex items-center gap-1.5 min-w-0"
-														>
-															<div
-																className="size-2.5 rounded-sm shrink-0"
-																style={{
-																	backgroundColor: getServiceMapNodeColor(
-																		{
-																			label: service,
-																			kind: "service",
-																			errorRate: 0,
-																		},
-																		"service",
-																	),
-																}}
-															/>
-															<span className="truncate font-medium">
-																{service}
-															</span>
-														</div>
-													))}
+						{viewMode === "2d" && (
+							<>
+								{/* Legend */}
+								<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground shrink-0">
+									{/* Pointer hints only: on touch the gestures are different, and the
+							    two lines they cost are the whole legend's height on a phone. */}
+									<span className="font-medium max-sm:hidden">Drag nodes to arrange</span>
+									<span className="text-foreground/30 max-sm:hidden">|</span>
+									<span className="font-medium max-sm:hidden">Scroll to zoom</span>
+									{colorMode === "service" && services.length > 0 && (
+										<>
+											<span className="text-foreground/30 max-sm:hidden">|</span>
+											{services.slice(0, 3).map((service) => (
+												<div key={service} className="flex items-center gap-1.5">
+													<div
+														className="size-2.5 rounded-sm shrink-0"
+														style={{
+															backgroundColor: getServiceMapNodeColor(
+																{
+																	label: service,
+																	kind: "service",
+																	errorRate: 0,
+																},
+																"service",
+															),
+														}}
+													/>
+													<span className="font-medium">{service}</span>
 												</div>
-											</PopoverContent>
-										</Popover>
+											))}
+											{services.length > 3 && (
+												<Popover>
+													<PopoverTrigger className="font-medium hover:text-foreground transition-colors cursor-pointer">
+														+{services.length - 3} more
+													</PopoverTrigger>
+													<PopoverContent
+														align="start"
+														className="w-64 p-3"
+														side="top"
+													>
+														<div className="grid grid-cols-2 gap-2 text-[11px]">
+															{services.map((service) => (
+																<div
+																	key={service}
+																	className="flex items-center gap-1.5 min-w-0"
+																>
+																	<div
+																		className="size-2.5 rounded-sm shrink-0"
+																		style={{
+																			backgroundColor:
+																				getServiceMapNodeColor(
+																					{
+																						label: service,
+																						kind: "service",
+																						errorRate: 0,
+																					},
+																					"service",
+																				),
+																		}}
+																	/>
+																	<span className="truncate font-medium">
+																		{service}
+																	</span>
+																</div>
+															))}
+														</div>
+													</PopoverContent>
+												</Popover>
+											)}
+										</>
 									)}
-								</>
-							)}
-							{colorMode === "platform" && (
-								<>
-									<span className="text-foreground/30">|</span>
-									{(["kubernetes", "cloudflare", "lambda", "web", "unknown"] as const).map(
-										(p) => (
-											<div key={p} className="flex items-center gap-1.5">
-												<div
-													className="size-2.5 rounded-sm shrink-0"
-													style={{
-														backgroundColor: getPlatformColor(
-															p === "unknown" ? undefined : p,
-														),
-													}}
-												/>
-												<span className="font-medium capitalize">{p}</span>
-											</div>
-										),
+									{colorMode === "platform" && (
+										<>
+											<span className="text-foreground/30">|</span>
+											{(
+												[
+													"kubernetes",
+													"cloudflare",
+													"lambda",
+													"web",
+													"unknown",
+												] as const
+											).map((p) => (
+												<div key={p} className="flex items-center gap-1.5">
+													<div
+														className="size-2.5 rounded-sm shrink-0"
+														style={{
+															backgroundColor: getPlatformColor(
+																p === "unknown" ? undefined : p,
+															),
+														}}
+													/>
+													<span className="font-medium capitalize">{p}</span>
+												</div>
+											))}
+										</>
 									)}
-								</>
-							)}
-							<span className="flex-1" />
-							<div className="flex items-center gap-3">
-								<div className="flex items-center gap-1.5">
-									<div className="size-2 rounded-full bg-severity-info" />
-									<span>Healthy</span>
+									<span className="flex-1" />
+									<div className="flex items-center gap-3">
+										<div className="flex items-center gap-1.5">
+											<div className="size-2 rounded-full bg-severity-info" />
+											<span>Healthy</span>
+										</div>
+										<div className="flex items-center gap-1.5">
+											<div className="size-2 rounded-full bg-severity-warn" />
+											<span>Degraded</span>
+										</div>
+										<div className="flex items-center gap-1.5">
+											<div className="size-2 rounded-full bg-severity-error" />
+											<span>Error</span>
+										</div>
+									</div>
 								</div>
-								<div className="flex items-center gap-1.5">
-									<div className="size-2 rounded-full bg-severity-warn" />
-									<span>Degraded</span>
-								</div>
-								<div className="flex items-center gap-1.5">
-									<div className="size-2 rounded-full bg-severity-error" />
-									<span>Error</span>
-								</div>
-							</div>
-						</div>
+							</>
+						)}
 					</div>
 				</ResizablePanel>
 
@@ -2379,6 +2585,7 @@ export function ServiceMapCanvas({
 }
 
 export function ServiceMapView({
+	viewMode = "2d",
 	startTime,
 	endTime,
 	deploymentEnv,
@@ -2426,8 +2633,38 @@ export function ServiceMapView({
 	// Node DATA that streams in after the canvas mounts and refines nodes in place
 	// (colors, icons, pod badges, detail-panel overlays) without moving them —
 	// topology-determining results (edges, db edges, overviews) are gated below.
-	const overviews = Result.isSuccess(bundleResult) ? bundleResult.value.overview : []
-	const dbEdges = Result.isSuccess(bundleResult) ? bundleResult.value.dbEdges : []
+	const allOverviews = Result.isSuccess(bundleResult) ? bundleResult.value.overview : []
+
+	// Client-side scoping for the org-global namespace pin: the bundle still
+	// fetches every namespace (a server-side service.namespace filter is a
+	// follow-up), so drop out-of-namespace services and everything that only
+	// they touch. serviceNamespace is blanked because a map where every node
+	// shares one namespace has nothing left to group.
+	const pinnedNamespace = useGlobalNamespace()
+	const memberServices = useMemo(() => {
+		if (pinnedNamespace === null) return null
+		return new Set(
+			allOverviews.filter((o) => o.serviceNamespace === pinnedNamespace).map((o) => o.serviceName),
+		)
+	}, [pinnedNamespace, allOverviews])
+	const overviews = useMemo(
+		() =>
+			memberServices === null
+				? allOverviews
+				: allOverviews
+						.filter((o) => memberServices.has(o.serviceName))
+						.map((o) => ({ ...o, serviceNamespace: "" })),
+		[allOverviews, memberServices],
+	)
+
+	const allDbEdges = Result.isSuccess(bundleResult) ? bundleResult.value.dbEdges : []
+	const dbEdges = useMemo(
+		() =>
+			memberServices === null
+				? allDbEdges
+				: allDbEdges.filter((edge) => memberServices.has(edge.sourceService)),
+		[allDbEdges, memberServices],
+	)
 	const cloudflareServices = Result.isSuccess(cloudflareResult) ? cloudflareResult.value.services : []
 	const planetscaleStats = Result.isSuccess(planetscaleStatsResult)
 		? planetscaleStatsResult.value.databases
@@ -2503,7 +2740,14 @@ export function ServiceMapView({
 		return map
 	}, [bundleResult])
 
-	const workloads = Result.isSuccess(bundleResult) ? bundleResult.value.workloads : []
+	const allWorkloads = Result.isSuccess(bundleResult) ? bundleResult.value.workloads : []
+	const workloads = useMemo(
+		() =>
+			memberServices === null
+				? allWorkloads
+				: allWorkloads.filter((workload) => memberServices.has(workload.serviceName)),
+		[allWorkloads, memberServices],
+	)
 
 	return Result.builder(bundleResult)
 		.onInitial(() => <ServiceMapLoading />)
@@ -2520,7 +2764,16 @@ export function ServiceMapView({
 		})
 		.onSuccess((mapResponse) => (
 			<ServiceMapCanvas
-				edges={mapResponse.edges}
+				viewMode={viewMode}
+				edges={
+					memberServices === null
+						? mapResponse.edges
+						: mapResponse.edges.filter(
+								(edge) =>
+									memberServices.has(edge.sourceService) &&
+									memberServices.has(edge.targetService),
+							)
+				}
 				dbEdges={dbEdges}
 				cloudflareServices={cloudflareServices}
 				faasNames={faasNames}

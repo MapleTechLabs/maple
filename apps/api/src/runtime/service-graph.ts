@@ -1,8 +1,7 @@
-import { EdgeCacheService } from "@maple/cache"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { Layer } from "effect"
 import { McpToolExecutor } from "@/mcp/dispatcher"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
+import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { EmailService } from "@/platform/EmailService"
 import { Env } from "@/platform/Env"
 import { AlertRuntime, AlertsService } from "@/services/alerts/AlertsService"
@@ -20,6 +19,7 @@ import { McpOAuthService } from "@/services/auth/McpOAuthService"
 import { OAuthStateRepository } from "@/services/auth/OAuthStateRepository"
 import { DailySpendService } from "@/services/billing/DailySpendService"
 import { AutumnClient } from "@/services/billing/autumn-http"
+import { StripeClient } from "@/services/billing/stripe-http"
 import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@/services/dashboards/DashboardWidgetDataService"
@@ -28,6 +28,8 @@ import { AiTriageService } from "@/services/errors/AiTriageService"
 import { ErrorActorsService } from "@/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "@/services/errors/ErrorIssueWorkflowService"
+import { PullRequestLookupLive } from "@/services/errors/pull-request-lookup-live"
+import { IssueFixVerificationService } from "@/services/errors/IssueFixVerificationService"
 import { ErrorPolicyService } from "@/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@/services/errors/ErrorsService"
 import { InvestigationService } from "@/services/errors/InvestigationService"
@@ -41,15 +43,12 @@ import { SlackIntegrationService } from "@/services/integrations/SlackIntegratio
 import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@/services/integrations/planetscale/PlanetScaleWebhookQueue"
 import { VcsCommitService } from "@/services/integrations/vcs/VcsCommitService"
-import { VcsProviderRegistry } from "@/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@/services/integrations/vcs/VcsRepository"
-import { VcsSourceService } from "@/services/integrations/vcs/VcsSourceService"
 import { VcsSyncQueue } from "@/services/integrations/vcs/VcsSyncQueue"
-import { GithubAppClient } from "@/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
-import { GithubHttp } from "@/services/integrations/vcs/vendor/github/GithubHttp"
-import { GithubProvider } from "@/services/integrations/vcs/vendor/github/GithubProvider"
+import { GithubAppClientLive, VcsProviderRegistryLive, VcsSourceServiceLayer } from "./vcs-source-layer"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { DemoService } from "@/services/org/DemoService"
 import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
 import { OnboardingService } from "@/services/org/OnboardingService"
@@ -60,6 +59,7 @@ import { OrganizationService } from "@/services/org/OrganizationService"
 import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@/services/push/MobileDevicesService"
 import { SetupAuditService } from "@/services/org/SetupAuditService"
+import { ProductEventsService } from "@/services/product-events/ProductEventsService"
 import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 
@@ -74,8 +74,6 @@ const PlanetScaleDiscoveryLive = PlanetScaleDiscoveryService.layer.pipe(Layer.pr
 const ScrapeTargetsLive = ScrapeTargetsService.layer.pipe(
 	Layer.provide(Layer.mergeAll(PlanetScaleDiscoveryLive, PlanetScaleOAuthLive)),
 )
-
-const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 
 const CoreServicesLive = Layer.mergeAll(
 	AuthService.layer,
@@ -105,6 +103,13 @@ const CoreServicesLive = Layer.mergeAll(
 ).pipe(Layer.provideMerge(InfraLive))
 
 const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
+
+/**
+ * Audit entries are warehouse rows (Tinybird-pinned `ingest`), so the service
+ * composes after the warehouse rather than inside CoreServicesLive. Exported
+ * for the auth layers in `http-graph.ts`, which record denials and reads.
+ */
+export const AuditLogServiceLive = AuditLogService.layer.pipe(Layer.provide(WarehouseQueryServiceLive))
 
 // Serves the integration page's per-zone collection status; the poll loop itself
 // runs in the alerting worker's cron, not here.
@@ -172,6 +177,7 @@ const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
 
 const ErrorActorsServiceLive = ErrorActorsService.layer
 const ErrorIssueWorkflowServiceLive = ErrorIssueWorkflowService.layer.pipe(
+	Layer.provide(AuditLogServiceLive),
 	Layer.provideMerge(ErrorActorsServiceLive),
 )
 const ErrorPolicyServiceLive = ErrorPolicyService.layer
@@ -186,6 +192,32 @@ const SlackIntegrationServiceLive = SlackIntegrationService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, OAuthStateRepository.layer)),
 )
 
+// VCS service wiring for the fetch-path worker. VcsSyncService (the sync
+// orchestrator) lives only in vcs-sync-runtime.ts — not here. Database /
+// WorkerEnvironment are provided at worker scope (like CoreServicesLive). The
+// provider chain is `vcs-source-layer.ts`'s, so the errors side hydrates a
+// pull-request link from the same instance.
+const VcsDataLive = Layer.mergeAll(VcsRepository.layer, OAuthStateRepository.layer, VcsSyncQueue.layer)
+
+const VcsSourceServiceLive = VcsSourceServiceLayer
+
+// Lets a pull-request link be attached with the PR's real title and state, and
+// lets one attached to an already-merged PR open its verification window — a
+// webhook for a merge that happened in the past is never coming.
+const PullRequestLookupServiceLive = PullRequestLookupLive.pipe(
+	Layer.provide(VcsSourceServiceLive.pipe(Layer.provideMerge(InfraLive))),
+)
+
+// Issue⇄pull-request links and post-merge fix verification. Depends only on the
+// issue kernel (workflow + actors), never on the VCS services: the webhook
+// reaches it through `PullRequestEventSink`, which points the other way.
+const IssueFixVerificationServiceLive = IssueFixVerificationService.layer.pipe(
+	Layer.provide(PullRequestLookupServiceLive),
+	Layer.provideMerge(
+		Layer.mergeAll(CoreServicesLive, ErrorActorsServiceLive, ErrorIssueWorkflowServiceLive),
+	),
+)
+
 const ErrorsServiceLive = ErrorsService.layer.pipe(
 	Layer.provideMerge(
 		Layer.mergeAll(
@@ -194,9 +226,10 @@ const ErrorsServiceLive = ErrorsService.layer.pipe(
 			EdgeCacheServiceLive,
 			NotificationDispatcherLive,
 			ErrorActorsServiceLive,
-			ErrorIssueReadModelsServiceLive,
 			ErrorIssueWorkflowServiceLive,
 			ErrorPolicyServiceLive,
+			// Lets `propose_fix` turn its `pr_url` into a durable link.
+			IssueFixVerificationServiceLive,
 		),
 	),
 )
@@ -224,16 +257,6 @@ const DigestServiceLive = DigestService.layer.pipe(
 	),
 )
 
-// VCS service wiring for the fetch-path worker. VcsSyncService (the sync
-// orchestrator) lives only in vcs-sync-runtime.ts — not here. Database /
-// WorkerEnvironment are provided at worker scope (like CoreServicesLive).
-const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))
-const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClientLive))
-
-const VcsDataLive = Layer.mergeAll(VcsRepository.layer, OAuthStateRepository.layer, VcsSyncQueue.layer)
-
-const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
-
 const VcsServicesLive = Layer.mergeAll(
 	VcsDataLive,
 	VcsProviderRegistryLive,
@@ -241,7 +264,7 @@ const VcsServicesLive = Layer.mergeAll(
 	GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, GithubAppClientLive))),
 	// Routed via VcsProviderRegistry so no provider module is imported directly.
 	VcsCommitService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive))),
-	VcsSourceService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive))),
+	VcsSourceServiceLive,
 ).pipe(Layer.provideMerge(InfraLive))
 
 // Warehouse-backed daily volume for the billing spend chart.
@@ -253,11 +276,24 @@ const DailySpendServiceLive = DailySpendService.layer.pipe(Layer.provideMerge(Wa
 // configured"), so an unconfigured local worker still boots.
 const AutumnClientLive = AutumnClient.layer.pipe(Layer.provide(InfraLive))
 
+// Stripe's customer + tax-ID routes for the billing-details card. Same shape
+// and the same boot posture as AutumnClient: no `STRIPE_SECRET_KEY` means each
+// call fails as "not configured", never the layer.
+const StripeClientLive = StripeClient.layer.pipe(Layer.provide(InfraLive))
+
+// Server-side product events (signup/plan funnel) — the Clerk/Autumn webhook
+// receivers and the billing `attach` route emit through it. Builds without an
+// ingest key (every `track` is then a logged no-op).
+const ProductEventsServiceLive = ProductEventsService.layer.pipe(Layer.provide(InfraLive))
+
 const MainServicesLive = Layer.mergeAll(
 	CoreServicesLive,
 	AutumnClientLive,
+	StripeClientLive,
+	ProductEventsServiceLive,
 	DailySpendServiceLive,
 	CloudflareAnalyticsServiceLive,
+	AuditLogServiceLive,
 	WarehouseQueryServiceLive,
 	EdgeCacheServiceLive,
 	QueryEngineServiceLive,
@@ -273,6 +309,7 @@ const MainServicesLive = Layer.mergeAll(
 	ErrorPolicyServiceLive,
 	ErrorIssueReadModelsServiceLive,
 	ErrorsServiceLive,
+	IssueFixVerificationServiceLive,
 	RecommendationIssueServiceLive,
 	SetupAuditServiceLive,
 	DigestServiceLive,

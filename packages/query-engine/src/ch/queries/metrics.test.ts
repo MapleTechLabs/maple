@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/clickhouse-builder"
 import {
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
@@ -22,9 +22,9 @@ const baseParams = {
 describe("metricsTimeseriesQuery", () => {
 	it("compiles value timeseries (sum)", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_sum")
-		expect(sql).toContain("avg(Value) AS avgValue")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue")
 		expect(sql).toContain("min(Value) AS minValue")
 		expect(sql).toContain("max(Value) AS maxValue")
 		expect(sql).toContain("sum(Value) AS sumValue")
@@ -39,7 +39,7 @@ describe("metricsTimeseriesQuery", () => {
 		// Metrics tables carry no pre-extracted DeploymentEnv column, so the env
 		// scope reads the resource-attribute map directly.
 		const q = metricsTimeseriesQuery({ metricType: "sum", environments: ["production"] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
 			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
 		)
@@ -47,36 +47,38 @@ describe("metricsTimeseriesQuery", () => {
 
 	it("omits the environment predicate when no environments are selected", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum", environments: [] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("deployment.environment")
 	})
 
 	it("compiles value timeseries (gauge)", () => {
 		const q = metricsTimeseriesQuery({ metricType: "gauge" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
 	})
 
 	it("compiles histogram timeseries", () => {
 		const q = metricsTimeseriesQuery({ metricType: "histogram" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_histogram")
 		expect(sql).toContain("sum(Sum) / sum(Count)")
-		expect(sql).toContain("min(Min) AS minValue")
-		expect(sql).toContain("max(Max) AS maxValue")
+		// Nullable extrema fall back to 0 so an all-NULL bucket still decodes
+		// through the non-null Float64 row contract.
+		expect(sql).toContain("ifNull(min(Min), 0) AS minValue")
+		expect(sql).toContain("ifNull(max(Max), 0) AS maxValue")
 		expect(sql).toContain("sum(Sum) AS sumValue")
 		expect(sql).toContain("sum(Count) AS dataPointCount")
 	})
 
 	it("compiles exponential_histogram timeseries", () => {
 		const q = metricsTimeseriesQuery({ metricType: "exponential_histogram" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_exponential_histogram")
 	})
 
 	it("applies groupByAttributeKey", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum", groupByAttributeKey: "region" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region']")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
 	})
@@ -87,14 +89,14 @@ describe("metricsTimeseriesQuery", () => {
 			groupBy: ["service"],
 			seriesLimit: 7,
 		})
-		const { sql } = compileCH(q, baseParams)
-		expect(sql).toContain("WITH __series_base AS")
-		expect(sql).toContain("LIMIT 7")
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("max(dataPointCount) OVER (PARTITION BY groupName)")
+		expect(sql).toContain("__series_rank <= 7")
 	})
 
 	it("applies serviceName filter", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum", serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
@@ -104,19 +106,19 @@ describe("metricsTimeseriesQuery", () => {
 			attributeKey: "region",
 			attributeValue: "us-east-1",
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
 	})
 
 	it("shows empty string as attributeValue when no groupByAttributeKey", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("'' AS attributeValue")
 	})
 
 	it("applies groupByResourceAttributeKey against ResourceAttributes", () => {
 		const q = metricsTimeseriesQuery({ metricType: "gauge", groupByResourceAttributeKey: "host.name" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ResourceAttributes['host.name'] AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
 	})
@@ -126,7 +128,7 @@ describe("metricsTimeseriesQuery", () => {
 			metricType: "gauge",
 			resourceAttributeFilters: [{ key: "k8s.cluster.name", mode: "equals", value: "prod-us-east" }],
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ResourceAttributes['k8s.cluster.name'] = 'prod-us-east'")
 	})
 })
@@ -136,14 +138,14 @@ describe("metricsTimeseriesQuery", () => {
 describe("metricsTimeseriesRateQuery", () => {
 	it("caps grouped rate timeseries before returning the long tail", () => {
 		const q = metricsTimeseriesRateQuery({ groupBy: ["service"], seriesLimit: 7 })
-		const { sql } = compileCH(q, baseParams)
-		expect(sql).toContain("WITH __series_base AS")
-		expect(sql).toContain("LIMIT 7")
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("max(dataPointCount) OVER (PARTITION BY groupName)")
+		expect(sql).toContain("__series_rank <= 7")
 	})
 
 	it("compiles CTE-based rate query", () => {
 		const q = metricsTimeseriesRateQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("WITH with_deltas AS")
 		expect(sql).toContain("lagInFrame")
 		// Partition must isolate each pod/series (ResourceAttributes) and
@@ -167,7 +169,7 @@ describe("metricsTimeseriesRateQuery", () => {
 
 	it("applies serviceName filter in CTE", () => {
 		const q = metricsTimeseriesRateQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
@@ -176,20 +178,20 @@ describe("metricsTimeseriesRateQuery", () => {
 			attributeKey: "region",
 			attributeValue: "us-east-1",
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
 	})
 
 	it("applies groupByAttributeKey", () => {
 		const q = metricsTimeseriesRateQuery({ groupByAttributeKey: "host" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['host']")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
 	})
 
 	it("applies groupByResourceAttributeKey through the deltas CTE", () => {
 		const q = metricsTimeseriesRateQuery({ groupByResourceAttributeKey: "k8s.pod.name" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] AS resourceAttributeValue")
 		expect(sql).toContain("resourceAttributeValue AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
@@ -199,7 +201,7 @@ describe("metricsTimeseriesRateQuery", () => {
 		const q = metricsTimeseriesRateQuery({
 			resourceAttributeFilters: [{ key: "host.name", mode: "equals", value: "web-01" }],
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ResourceAttributes['host.name'] = 'web-01'")
 	})
 
@@ -209,7 +211,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			bucketSeconds: 3600,
 			groupByResourceAttributeKey: "host.name",
 		})
-		expect(compileCH(withGroup, { ...baseParams, metricName: "span.metrics.calls" }).sql).toContain(
+		expect(compileUnsafe(withGroup, { ...baseParams, metricName: "span.metrics.calls" }).sql).toContain(
 			"FROM metrics_sum",
 		)
 
@@ -218,7 +220,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			bucketSeconds: 3600,
 			resourceAttributeFilters: [{ key: "host.name", mode: "equals", value: "web-01" }],
 		})
-		expect(compileCH(withFilter, { ...baseParams, metricName: "span.metrics.calls" }).sql).toContain(
+		expect(compileUnsafe(withFilter, { ...baseParams, metricName: "span.metrics.calls" }).sql).toContain(
 			"FROM metrics_sum",
 		)
 	})
@@ -228,7 +230,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			metricName: "span.metrics.calls",
 			bucketSeconds: 3600,
 		})
-		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("FROM span_metrics_calls_hourly")
 		expect(sql).toContain("argMaxMerge(LastValue) AS Value")
 		expect(sql).toContain("WITH hourly_values AS")
@@ -246,7 +248,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			attributeValue: "SPAN_KIND_SERVER",
 			groupByAttributeKey: "span.kind",
 		})
-		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
 		expect(sql).toContain("SpanKind AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
@@ -254,7 +256,7 @@ describe("metricsTimeseriesRateQuery", () => {
 
 	it("applies an environment filter in the CTE", () => {
 		const q = metricsTimeseriesRateQuery({ environments: ["production", "staging"] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
 			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production', 'staging')",
 		)
@@ -268,7 +270,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			bucketSeconds: 3600,
 			environments: ["production"],
 		})
-		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
@@ -279,7 +281,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			bucketSeconds: 3600,
 			attributeValue: "SPAN_KIND_SERVER",
 		})
-		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
@@ -289,7 +291,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			metricName: "span.metrics.calls",
 			bucketSeconds: 60,
 		})
-		const { sql } = compileCH(q, {
+		const { sql } = compileUnsafe(q, {
 			...baseParams,
 			metricName: "span.metrics.calls",
 			bucketSeconds: 60,
@@ -304,7 +306,7 @@ describe("metricsTimeseriesRateQuery", () => {
 			metricNames: ["span.metrics.calls", "calls"],
 			bucketSeconds: 3600,
 		})
-		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		// A multi-name IN(...) can't be served from the single-name hourly rollup,
 		// so it stays on the raw path with an IN filter (no scalar equality).
 		expect(sql).toContain("MetricName IN ('span.metrics.calls', 'calls')")
@@ -324,11 +326,11 @@ describe("metricsSparklinesQuery", () => {
 			metricType: "gauge",
 			metricNames: ["cpu.utilization", "memory.usage"],
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("MetricName IN ('cpu.utilization', 'memory.usage')")
 		expect(sql).toContain("MetricName AS metricName")
-		expect(sql).toContain("avg(Value) AS avgValue")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue")
 		expect(sql).toContain("sum(Value) AS sumValue")
 		expect(sql).toContain("count() AS dataPointCount")
 		expect(sql).toContain("GROUP BY bucket, metricName")
@@ -341,7 +343,7 @@ describe("metricsSparklinesQuery", () => {
 			metricType: "histogram",
 			metricNames: ["http.server.duration"],
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_histogram")
 		expect(sql).toContain("sum(Sum) / sum(Count)")
 		expect(sql).toContain("sum(Count) AS dataPointCount")
@@ -349,7 +351,7 @@ describe("metricsSparklinesQuery", () => {
 
 	it("scopes to org and time range", () => {
 		const q = metricsSparklinesQuery({ metricType: "sum", metricNames: ["calls"] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("TimeUnix >=")
 		expect(sql).toContain("TimeUnix <=")
@@ -359,10 +361,10 @@ describe("metricsSparklinesQuery", () => {
 describe("metricsBreakdownQuery", () => {
 	it("compiles value breakdown", () => {
 		const q = metricsBreakdownQuery({ metricType: "sum" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain("ServiceName AS name")
-		expect(sql).toContain("avg(Value) AS avgValue")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 10")
@@ -371,7 +373,7 @@ describe("metricsBreakdownQuery", () => {
 
 	it("compiles histogram breakdown", () => {
 		const q = metricsBreakdownQuery({ metricType: "histogram" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_histogram")
 		expect(sql).toContain("sum(Sum)")
 		expect(sql).toContain("sum(Count)")
@@ -379,13 +381,13 @@ describe("metricsBreakdownQuery", () => {
 
 	it("applies custom limit", () => {
 		const q = metricsBreakdownQuery({ metricType: "sum", limit: 25 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("LIMIT 25")
 	})
 
 	it("breaks down by resource attribute when groupByResourceAttributeKey is set", () => {
 		const q = metricsBreakdownQuery({ metricType: "sum", groupByResourceAttributeKey: "host.name" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ResourceAttributes['host.name'] AS name")
 		// Drops datapoints missing the resource label.
 		expect(sql).toContain("ResourceAttributes['host.name'] != ''")
@@ -396,13 +398,13 @@ describe("metricsBreakdownQuery", () => {
 			metricType: "sum",
 			resourceAttributeFilters: [{ key: "k8s.namespace.name", mode: "equals", value: "default" }],
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ResourceAttributes['k8s.namespace.name'] = 'default'")
 	})
 
 	it("breaks down by attribute label instead of service when groupByAttributeKey is set", () => {
 		const q = metricsBreakdownQuery({ metricType: "sum", groupByAttributeKey: "region" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		// Groups by the label value, not ServiceName...
 		expect(sql).toContain("Attributes['region'] AS name")
 		expect(sql).not.toContain("ServiceName AS name")
@@ -417,7 +419,7 @@ describe("metricsBreakdownQuery", () => {
 describe("listMetricsQuery", () => {
 	it("reads the metric_catalog rollup", () => {
 		const q = listMetricsQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
 		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("GROUP BY metricName, metricType, serviceName")
@@ -429,25 +431,25 @@ describe("listMetricsQuery", () => {
 
 	it("filters by metricType", () => {
 		const q = listMetricsQuery({ metricType: "sum" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("MetricType = 'sum'")
 	})
 
 	it("applies search filter", () => {
 		const q = listMetricsQuery({ search: "http" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ILIKE '%http%'")
 	})
 
 	it("applies serviceName filter", () => {
 		const q = listMetricsQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
 	it("applies custom limit and offset", () => {
 		const q = listMetricsQuery({ limit: 50, offset: 10 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).toContain("OFFSET 10")
 	})
@@ -458,7 +460,7 @@ describe("listMetricsQuery", () => {
 describe("metricsSummaryQuery", () => {
 	it("aggregates the metric_catalog rollup by metric type", () => {
 		const q = metricsSummaryQuery()
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
 		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("GROUP BY metricType")
@@ -468,7 +470,7 @@ describe("metricsSummaryQuery", () => {
 
 	it("applies serviceName filter", () => {
 		const q = metricsSummaryQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 })

@@ -15,7 +15,7 @@ observability tools. See [Multi-workspace architecture](#multi-workspace-archite
 | ---------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Framework  | eve `0.25.x` (durable agent runtime, Nitro HTTP host)                                                 | filesystem-first agents                                                                                                                                                                           |
 | Host       | **Railway** container running `eve start` (long-running Node)                                         | eve's supported self-host model; edge Workers is blocked today by a workflow-world protocol gap                                                                                                   |
-| Model      | **OpenRouter** via REST (`@openrouter/ai-sdk-provider`), `openai/gpt-5.6-luna`                        | `createOpenRouter({ apiKey })` → an AI-SDK model; streams structured tool calls (see Notes)                                                                                                       |
+| Model      | **OpenRouter** via REST (`@openrouter/ai-sdk-provider`), `z-ai/glm-5.3-flash:nitro`                   | `createOpenRouter({ apiKey })` → an AI-SDK model; streams structured tool calls (see Notes)                                                                                                       |
 | Durability | **`@workflow/world-postgres`** (`5.0.0-beta.27`) + Railway Postgres                                   | protocol-compatible with eve's vendored `@workflow/*` 5.0.0-beta line                                                                                                                             |
 | Slack      | **self-managed, multi-workspace** (`slackChannel()` + custom `webhookVerifier` + per-team `botToken`) | one public app across many workspaces; static signing secret verifies inbound, per-team bot token resolved from the Maple API — see [Multi-workspace architecture](#multi-workspace-architecture) |
 | Maple      | **resolve endpoint** (`/internal/slack/workspaces/:teamId`) + **MCP** (`/mcp`)                        | per-team install lookup (TTL-cached) and observability tools scoped per org                                                                                                                       |
@@ -301,6 +301,14 @@ before eve's 200, so anything it fetches is spent out of Slack's ~3s delivery bu
 is parse-only and optimistic; the mention handler confirms it afterwards, against the thread it loads
 for turn context anyway.
 
+Being engaged in a thread is necessary but not sufficient: a confirmed follow-up still passes a
+**relevance gate** — one tiny RESPOND/PASS classifier call (`agent/lib/follow-up-relevance.ts`,
+model via `OPENROUTER_GATE_MODEL`) asking whether the reply is actually directed at the bot. Humans
+talking to each other in a thread the bot answered once no longer trigger a turn for every message;
+the pass is silent (no reaction, no reply), and the next message that _is_ for the bot gets
+answered. Real `@mentions` and DMs skip the gate — an explicit address answers the question itself —
+and the gate fails open, so a classifier outage means an extra answer, never a silent drop.
+
 Changing a request URL does **not** require reinstalling the app; only changing _scopes_ does. (If
 you did edit scopes, the sidebar shows a yellow reinstall banner — follow it, and note that
 reinstalling issues a **new** `SLACK_BOT_TOKEN` that you must copy back into Railway.)
@@ -366,7 +374,7 @@ eve's native idiom:
   source of truth for both.
 - **Telemetry:** `agent/instrumentation.ts` exports AI SDK spans to Maple's ingest as service
   `maple-slack-agent` when `MAPLE_INGEST_KEY` is set (no-op otherwise), with `service.version` +
-  `deployment.commit_sha` from Railway's `RAILWAY_GIT_COMMIT_SHA` so releases show up in the
+  `vcs.ref.head.revision` from Railway's `RAILWAY_GIT_COMMIT_SHA` so releases show up in the
   commit-hover UI. Model inputs/outputs are never recorded; Slack team/channel/thread/user land as
   `maple.slack.*` span attributes (omitted rather than empty-string when absent).
   `agent/hooks/outcome-log.ts` logs turn outcomes + tool failures unconditionally, through
@@ -489,9 +497,10 @@ and **activate public distribution** so the app can be installed into any worksp
     (We hit exactly this on Workers AI's `@cf/meta/llama-3.3-70b-instruct-fp8-fast` before moving
     to OpenRouter — proper `tool_calls` array non-streaming, JSON-as-text when streamed.)
 
-    The current default is `openai/gpt-5.6-luna` via OpenRouter, which streams OpenAI-shaped
-    incremental `delta.tool_calls` chunks that `@openrouter/ai-sdk-provider` maps correctly. When
-    switching `OPENROUTER_MODEL`, verify the streaming shape directly:
+    The current default is `z-ai/glm-5.3-flash:nitro` via OpenRouter. `:nitro` routes to the
+    fastest providers rather than all of them, so the pool serving it is narrower and the streamed
+    tool-call shape is worth re-checking after any provider shift. When switching `OPENROUTER_MODEL`
+    — or before trusting a new default — verify the streaming shape directly:
 
     ```bash
     curl https://openrouter.ai/api/v1/chat/completions \

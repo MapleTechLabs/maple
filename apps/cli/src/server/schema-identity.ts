@@ -9,6 +9,15 @@ import schemaV7Sql from "./schema/local-schema-v7.sql" with { type: "text" }
 import schemaV8Sql from "./schema/local-schema-v8.sql" with { type: "text" }
 import schemaV9Sql from "./schema/local-schema-v9.sql" with { type: "text" }
 import schemaV10Sql from "./schema/local-schema-v10.sql" with { type: "text" }
+import schemaV11Sql from "./schema/local-schema-v11.sql" with { type: "text" }
+import schemaV12Sql from "./schema/local-schema-v12.sql" with { type: "text" }
+import schemaV13Sql from "./schema/local-schema-v13.sql" with { type: "text" }
+import schemaV14Sql from "./schema/local-schema-v14.sql" with { type: "text" }
+import schemaV15Sql from "./schema/local-schema-v15.sql" with { type: "text" }
+import schemaV16Sql from "./schema/local-schema-v16.sql" with { type: "text" }
+import schemaV17Sql from "./schema/local-schema-v17.sql" with { type: "text" }
+import schemaV18Sql from "./schema/local-schema-v18.sql" with { type: "text" }
+import schemaV19Sql from "./schema/local-schema-v19.sql" with { type: "text" }
 import { schemaDigest as digestSchema, schemaFingerprint as fingerprintSchema } from "./store-version"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LOCAL_SCHEMA_VERSION } from "./local-schema-version"
@@ -32,7 +41,7 @@ export const LEGACY_SCHEMA_PROJECT_REVISION =
 export const LEGACY_SCHEMA_FINGERPRINT = "428701854f9fd30e"
 
 export const CURRENT_SCHEMA_PROJECT_REVISION =
-	"5b4c3a0d3aa0962b062689605ad5cf075f47403df04e851ce58133f16fc692e3"
+	"ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a"
 /** Revision recorded by the issue-297 recovery report. The refreshed upstream
  * generator currently emits CURRENT_SCHEMA_PROJECT_REVISION; the structural
  * fingerprint is the compatibility identity used by the migration. */
@@ -63,6 +72,15 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV8Sql,
 	schemaV9Sql,
 	schemaV10Sql,
+	schemaV11Sql,
+	schemaV12Sql,
+	schemaV13Sql,
+	schemaV14Sql,
+	schemaV15Sql,
+	schemaV16Sql,
+	schemaV17Sql,
+	schemaV18Sql,
+	schemaV19Sql,
 ]
 
 export interface LocalSchemaSnapshot {
@@ -89,34 +107,42 @@ const snapshotAt = (version: number): LocalSchemaSnapshot => {
 
 export const LOCAL_SCHEMA_V1_SQL = snapshotAt(1).sql
 export const LOCAL_SCHEMA_V1_MANIFEST = snapshotAt(1).manifest
-export const LOCAL_SCHEMA_V1_MANIFEST_DIGEST = snapshotAt(1).manifestDigest
 export const LOCAL_SCHEMA_V2_SQL = snapshotAt(2).sql
 export const LOCAL_SCHEMA_V2_MANIFEST = snapshotAt(2).manifest
-export const LOCAL_SCHEMA_V2_MANIFEST_DIGEST = snapshotAt(2).manifestDigest
 export const LOCAL_SCHEMA_V3_SQL = snapshotAt(3).sql
 export const LOCAL_SCHEMA_V3_MANIFEST = snapshotAt(3).manifest
-export const LOCAL_SCHEMA_V3_MANIFEST_DIGEST = snapshotAt(3).manifestDigest
 export const LOCAL_SCHEMA_V4_SQL = snapshotAt(4).sql
 export const LOCAL_SCHEMA_V4_MANIFEST = snapshotAt(4).manifest
-export const LOCAL_SCHEMA_V4_MANIFEST_DIGEST = snapshotAt(4).manifestDigest
 export const LOCAL_SCHEMA_V5_SQL = snapshotAt(5).sql
 export const LOCAL_SCHEMA_V5_MANIFEST = snapshotAt(5).manifest
-export const LOCAL_SCHEMA_V5_MANIFEST_DIGEST = snapshotAt(5).manifestDigest
 export const LOCAL_SCHEMA_V6_SQL = snapshotAt(6).sql
 export const LOCAL_SCHEMA_V6_MANIFEST = snapshotAt(6).manifest
-export const LOCAL_SCHEMA_V6_MANIFEST_DIGEST = snapshotAt(6).manifestDigest
 export const LOCAL_SCHEMA_V7_SQL = snapshotAt(7).sql
 export const LOCAL_SCHEMA_V7_MANIFEST = snapshotAt(7).manifest
-export const LOCAL_SCHEMA_V7_MANIFEST_DIGEST = snapshotAt(7).manifestDigest
 export const LOCAL_SCHEMA_V8_SQL = snapshotAt(8).sql
 export const LOCAL_SCHEMA_V8_MANIFEST = snapshotAt(8).manifest
-export const LOCAL_SCHEMA_V8_MANIFEST_DIGEST = snapshotAt(8).manifestDigest
 export const LOCAL_SCHEMA_V9_SQL = snapshotAt(9).sql
 export const LOCAL_SCHEMA_V9_MANIFEST = snapshotAt(9).manifest
-export const LOCAL_SCHEMA_V9_MANIFEST_DIGEST = snapshotAt(9).manifestDigest
 export const LOCAL_SCHEMA_V10_SQL = snapshotAt(10).sql
 export const LOCAL_SCHEMA_V10_MANIFEST = snapshotAt(10).manifest
-export const LOCAL_SCHEMA_V10_MANIFEST_DIGEST = snapshotAt(10).manifestDigest
+export const LOCAL_SCHEMA_V11_SQL = snapshotAt(11).sql
+export const LOCAL_SCHEMA_V11_MANIFEST = snapshotAt(11).manifest
+export const LOCAL_SCHEMA_V12_SQL = snapshotAt(12).sql
+export const LOCAL_SCHEMA_V12_MANIFEST = snapshotAt(12).manifest
+export const LOCAL_SCHEMA_V13_SQL = snapshotAt(13).sql
+export const LOCAL_SCHEMA_V13_MANIFEST = snapshotAt(13).manifest
+export const LOCAL_SCHEMA_V14_SQL = snapshotAt(14).sql
+export const LOCAL_SCHEMA_V14_MANIFEST = snapshotAt(14).manifest
+export const LOCAL_SCHEMA_V15_SQL = snapshotAt(15).sql
+export const LOCAL_SCHEMA_V15_MANIFEST = snapshotAt(15).manifest
+export const LOCAL_SCHEMA_V16_SQL = snapshotAt(16).sql
+export const LOCAL_SCHEMA_V16_MANIFEST = snapshotAt(16).manifest
+export const LOCAL_SCHEMA_V17_SQL = snapshotAt(17).sql
+export const LOCAL_SCHEMA_V17_MANIFEST = snapshotAt(17).manifest
+export const LOCAL_SCHEMA_V18_SQL = snapshotAt(18).sql
+export const LOCAL_SCHEMA_V18_MANIFEST = snapshotAt(18).manifest
+export const LOCAL_SCHEMA_V19_SQL = snapshotAt(19).sql
+export const LOCAL_SCHEMA_V19_MANIFEST = snapshotAt(19).manifest
 
 export interface LocalSchemaIdentity {
 	readonly version: number
@@ -157,6 +183,15 @@ export const LOCAL_SCHEMA_V7 = identityAt(7)
 export const LOCAL_SCHEMA_V8 = identityAt(8)
 export const LOCAL_SCHEMA_V9 = identityAt(9)
 export const LOCAL_SCHEMA_V10 = identityAt(10)
+export const LOCAL_SCHEMA_V11 = identityAt(11)
+export const LOCAL_SCHEMA_V12 = identityAt(12)
+export const LOCAL_SCHEMA_V13 = identityAt(13)
+export const LOCAL_SCHEMA_V14 = identityAt(14)
+export const LOCAL_SCHEMA_V15 = identityAt(15)
+export const LOCAL_SCHEMA_V16 = identityAt(16)
+export const LOCAL_SCHEMA_V17 = identityAt(17)
+export const LOCAL_SCHEMA_V18 = identityAt(18)
+export const LOCAL_SCHEMA_V19 = identityAt(19)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

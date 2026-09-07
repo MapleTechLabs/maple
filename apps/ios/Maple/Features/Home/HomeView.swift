@@ -6,9 +6,14 @@ import SwiftUI
 struct HomeView: View {
 	@Environment(SessionController.self) private var session
 	@Environment(AppNavigation.self) private var navigation
+	@Environment(EnvironmentController.self) private var environments
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var model: HomeModel?
 	@State private var showsNotificationSettings = false
+
+	private var scope: SessionController.DataScope {
+		.init(generation: session.dataGeneration, environment: environments.selected)
+	}
 
 	var body: some View {
 		NavigationStack {
@@ -33,6 +38,9 @@ struct HomeView: View {
 				ToolbarItem(placement: .topBarLeading) {
 					OrganizationSwitcherButton()
 				}
+				ToolbarItem(placement: .topBarLeading) {
+					EnvironmentPickerView()
+				}
 				ToolbarItem(placement: .topBarTrailing) {
 					Button {
 						showsNotificationSettings = true
@@ -50,14 +58,20 @@ struct HomeView: View {
 			.mapleDestinations()
 			.mapleScreen(Screen.home)
 		}
-		.task(id: session.dataGeneration) {
-			// A new org means a new model: the old board is dropped rather than
-			// left on screen until the new one arrives, and any refresh still
-			// running against the old org has nowhere to write.
-			let model = model?.generation == session.dataGeneration
-				? model! : HomeModel(api: session.api, session: session)
+		.task(id: scope) {
+			// A new org or environment means a new model: the old board is
+			// dropped rather than left on screen until the new one arrives, and
+			// any refresh still running against the old scope has nowhere to
+			// write.
+			let model = model?.scope == scope
+				? model!
+				: HomeModel(
+					api: session.api.scoped(toEnvironment: scope.environment),
+					session: session,
+					scope: scope
+				)
 			self.model = model
-			await model.loader.loadIfNeeded()
+			await model.start()
 			// Home is a status board: keep it current while it's on screen.
 			// `.task` is cancelled when the tab goes away, so this never runs
 			// off-tab; the scene-phase check keeps it from running off-screen.
@@ -130,8 +144,8 @@ private struct HomeContent: View {
 						count: snapshot.newIssues,
 						singular: "new error issue",
 						plural: "new error issues",
-						detail: snapshot.activeIssues > 0 ? "\(snapshot.activeIssues) still active" : nil,
-						tint: snapshot.newIssues > 0 ? Token.foreground : Token.mutedForeground
+						detail: (snapshot.activeIssues ?? 0) > 0 ? "\(snapshot.activeIssues ?? 0) still active" : nil,
+						tint: (snapshot.newIssues ?? 0) > 0 ? Token.foreground : Token.mutedForeground
 					) { navigation.open(.errors) }
 					Hairline()
 					CountRow(
@@ -139,7 +153,7 @@ private struct HomeContent: View {
 						singular: "anomaly open",
 						plural: "anomalies open",
 						detail: nil,
-						tint: snapshot.openAnomalies > 0 ? Token.foreground : Token.mutedForeground
+						tint: (snapshot.openAnomalies ?? 0) > 0 ? Token.foreground : Token.mutedForeground
 					) { navigation.open(.anomalies) }
 					Hairline()
 				}
@@ -358,7 +372,9 @@ private struct AttentionRow: View {
 }
 
 private struct CountRow: View {
-	let count: Int
+	/// `nil` while the second pass is still loading — drawn as an em dash,
+	/// because "0" would be a claim the data hasn't made yet.
+	let count: Int?
 	let singular: String
 	let plural: String
 	let detail: String?
@@ -368,10 +384,10 @@ private struct CountRow: View {
 	var body: some View {
 		Button(action: action) {
 			HStack(alignment: .firstTextBaseline, spacing: 8) {
-				Text("\(count)")
+				Text(count.map(String.init) ?? "—")
 					.font(Typo.statValue)
 					.tabularNumbers()
-					.foregroundStyle(tint)
+					.foregroundStyle(count == nil ? Token.mutedForeground.opacity(0.5) : tint)
 					.frame(minWidth: 36, alignment: .leading)
 				Text(count == 1 ? singular : plural)
 					.font(Typo.body)

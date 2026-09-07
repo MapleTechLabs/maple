@@ -6,6 +6,7 @@ import { V2AlertIncidentsApiGroup } from "./alert-incidents"
 import { V2AlertRulesApiGroup } from "./alert-rules"
 import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
+import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
 import { V2SlackIntegrationsApiGroup } from "./integrations"
@@ -22,6 +23,7 @@ import { V2SharePublicApiGroup } from "./share"
 import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
 import { V2WidgetSummaryApiGroup } from "./widget-summary"
 import {
+	V2EnvironmentsApiGroup,
 	V2LogsApiGroup,
 	V2MetricsApiGroup,
 	V2ServiceMapApiGroup,
@@ -93,6 +95,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2PlanetScaleIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
+	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
 	.add(V2InstrumentationAuditApiGroup)
@@ -106,6 +109,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2MetricsApiGroup)
 	.add(V2ServicesApiGroup)
 	.add(V2ServiceMapApiGroup)
+	.add(V2EnvironmentsApiGroup)
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
 	.add(V2WidgetCredentialsApiGroup)

@@ -69,7 +69,19 @@ export interface ServiceNodeData {
 	samplingWeight: number
 	errorRate: number
 	avgLatencyMs: number
+	/**
+	 * A real merged-tDigest p95: from `serviceOverview` on a service node, from the
+	 * edge rollup's digest on a database node. Undefined on a database node whose
+	 * window predates migration 0022 and therefore has no digest to merge.
+	 */
 	p95LatencyMs?: number
+	/**
+	 * Database nodes only: the window's slowest call. Deliberately a separate field
+	 * from `p95LatencyMs` — sharing one is what let a max render under a "p95"
+	 * label for months. It is the fallback when no digest exists, and the card
+	 * relabels itself to "max" when it shows this instead.
+	 */
+	maxLatencyMs?: number
 	selected: boolean
 	infra?: ServiceNodeInfra
 	platform?: ServicePlatform
@@ -151,7 +163,8 @@ export interface ServiceEdgeData {
 	errorCount: number
 	errorRate: number
 	avgDurationMs: number
-	p95DurationMs: number
+	/** Slowest call on this edge, not a percentile. */
+	maxDurationMs: number
 	hasSampling: boolean
 	/** Rendered near-invisible (focus mode dims edges leaving the neighborhood). */
 	dimmed?: boolean
@@ -309,9 +322,13 @@ export function buildFlowElements({
 			dbSystem: string
 			dbNamespace: string
 			callCount: number
+			estimatedCallCount: number
 			errorCount: number
 			durationSumMs: number
-			maxP95: number
+			maxLatencyMs: number
+			p95LatencyMs: number
+			hasSampling: boolean
+			samplingWeight: number
 		}
 	>()
 	for (const e of dbEdges) {
@@ -321,14 +338,30 @@ export function buildFlowElements({
 			dbSystem: e.dbSystem,
 			dbNamespace: e.dbNamespace,
 			callCount: 0,
+			estimatedCallCount: 0,
 			errorCount: 0,
 			durationSumMs: 0,
-			maxP95: 0,
+			maxLatencyMs: 0,
+			p95LatencyMs: 0,
+			hasSampling: false,
+			samplingWeight: 1,
 		}
 		existing.callCount += e.callCount
+		existing.estimatedCallCount += e.estimatedCallCount
 		existing.errorCount += e.errorCount
 		existing.durationSumMs += e.avgDurationMs * e.callCount
-		existing.maxP95 = Math.max(existing.maxP95, e.p95DurationMs)
+		existing.maxLatencyMs = Math.max(existing.maxLatencyMs, e.maxDurationMs)
+		// The WORST CALLER's p95, not the node's true p95 — merging the callers'
+		// t-digests is a server-side operation and this is a client-side fold. It is
+		// an upper bound on the real figure and is itself a p95, so it stays the same
+		// KIND of number; the exact node-level p95, merged across every caller, is
+		// what the detail panel shows when you open the node. Most database nodes
+		// have one or two callers, where the two coincide.
+		existing.p95LatencyMs = Math.max(existing.p95LatencyMs, e.p95DurationMs)
+		// One sampled caller makes the node's number an estimate. The weight shown
+		// is the heaviest contributing edge's, which is what the "~" prefix means.
+		existing.hasSampling = existing.hasSampling || e.hasSampling
+		existing.samplingWeight = Math.max(existing.samplingWeight, e.samplingWeight)
 		dbAgg.set(nodeId, existing)
 	}
 
@@ -400,13 +433,23 @@ export function buildFlowElements({
 				// Hyperdrive-fronted databases collapse to a single "Hyperdrive" node.
 				label: resolveDbNodePresentation(agg.dbSystem, agg.dbNamespace).title,
 				kind: "database",
-				throughput: agg.callCount / safeDuration,
+				// Sample-weighted, like every service node beside it. This divided the
+				// RAW count and hardcoded `hasSampling: false`, so at a sample rate of
+				// 10 the node read 3k/s under a drill-down panel reading 30k/s off the
+				// same edges — the panel had always used the estimate.
+				throughput: agg.estimatedCallCount / safeDuration,
 				tracedThroughput: agg.callCount / safeDuration,
-				hasSampling: false,
-				samplingWeight: 1,
+				hasSampling: agg.hasSampling,
+				samplingWeight: agg.samplingWeight,
 				errorRate: agg.callCount > 0 ? agg.errorCount / agg.callCount : 0,
 				avgLatencyMs: agg.callCount > 0 ? agg.durationSumMs / agg.callCount : 0,
-				p95LatencyMs: agg.maxP95,
+				// Both, because they answer different questions and because the p95 is
+				// unavailable for windows sealed before migration 0022 — the card falls
+				// back to the max and relabels itself rather than showing one as the
+				// other. `p95LatencyMs` means the same thing on a service node (a real
+				// merged tDigest, there off `serviceOverview`).
+				maxLatencyMs: agg.maxLatencyMs,
+				p95LatencyMs: agg.p95LatencyMs > 0 ? agg.p95LatencyMs : undefined,
 				selected: false,
 				dbSystem: agg.dbSystem,
 				dbNamespace: agg.dbNamespace,
@@ -452,7 +495,7 @@ export function buildFlowElements({
 			errorCount: edge.errorCount,
 			errorRate: edge.errorRate,
 			avgDurationMs: edge.avgDurationMs,
-			p95DurationMs: edge.p95DurationMs,
+			maxDurationMs: edge.maxDurationMs,
 			hasSampling: edge.hasSampling,
 		},
 	}))
@@ -471,7 +514,7 @@ export function buildFlowElements({
 				errorCount: e.errorCount,
 				errorRate: e.errorRate,
 				avgDurationMs: e.avgDurationMs,
-				p95DurationMs: e.p95DurationMs,
+				maxDurationMs: e.maxDurationMs,
 				hasSampling: e.hasSampling,
 			},
 		})
@@ -513,7 +556,7 @@ export function buildFlowElements({
 						errorCount: 0,
 						errorRate: 0,
 						avgDurationMs: 0,
-						p95DurationMs: 0,
+						maxDurationMs: 0,
 						hasSampling: false,
 						relation: "hyperdrive-origin",
 					},
@@ -572,6 +615,7 @@ function findConnectedComponents(nodes: Node<ServiceNodeData>[], edges: Edge<Ser
 function computeLayers(
 	nodes: Node<ServiceNodeData>[],
 	edges: Edge<ServiceEdgeData>[],
+	previous?: PreviousPositions,
 ): Map<string, { layer: number; indexInLayer: number; layerSize: number }> {
 	const adjacency = new Map<string, string[]>()
 	const reverseAdj = new Map<string, string[]>()
@@ -693,6 +737,37 @@ function computeLayers(
 		}
 	}
 
+	// Anchor in-layer order to the layout already on screen. Barycenter order is
+	// a function of the whole edge set, so adding or dropping one edge could
+	// reshuffle a column and move every node in it. Nodes the previous layout
+	// didn't have keep their barycenter position relative to the ones it did.
+	if (previous) {
+		for (const group of layerGroups.values()) {
+			const priorY = new Map<string, number>()
+			for (const id of group) {
+				const at = previous.get(id)
+				if (at) priorY.set(id, at.y)
+			}
+			if (priorY.size < 2) continue
+			const baryIndex = new Map(group.map((id, i) => [id, i]))
+			// Known nodes sort by where they were; unknown ones interpolate from
+			// their barycenter neighbours so they land in a sensible gap.
+			const sortKey = (id: string): number => {
+				const known = priorY.get(id)
+				if (known !== undefined) return known
+				const i = baryIndex.get(id) ?? 0
+				for (let step = 1; step < group.length; step++) {
+					const before = priorY.get(group[i - step] ?? "")
+					if (before !== undefined) return before + 0.5
+					const after = priorY.get(group[i + step] ?? "")
+					if (after !== undefined) return after - 0.5
+				}
+				return 0
+			}
+			group.sort((a, b) => sortKey(a) - sortKey(b) || (baryIndex.get(a) ?? 0) - (baryIndex.get(b) ?? 0))
+		}
+	}
+
 	const result = new Map<string, { layer: number; indexInLayer: number; layerSize: number }>()
 	for (const [layer, group] of layerGroups) {
 		for (let i = 0; i < group.length; i++) {
@@ -719,10 +794,26 @@ export function topologyKey(nodes: Node[], edges: Edge[]): string {
  * Compute node positions using pure hierarchical layout, ignoring namespaces.
  * Positions are deterministic: same input always produces same output.
  */
+/** A layout already on screen, used to keep a re-layout anchored to it. */
+export type PreviousPositions = ReadonlyMap<string, { x: number; y: number }>
+
+/** Median previous Y of the members a previous layout knew, or undefined. */
+function priorCentroidY(ids: string[], previous: PreviousPositions): number | undefined {
+	const ys: number[] = []
+	for (const id of ids) {
+		const at = previous.get(id)
+		if (at) ys.push(at.y)
+	}
+	if (ys.length === 0) return undefined
+	ys.sort((a, b) => a - b)
+	return ys[Math.floor(ys.length / 2)]
+}
+
 export function computeFlatPositions(
 	nodes: Node<ServiceNodeData>[],
 	edges: Edge<ServiceEdgeData>[],
 	config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
+	previous?: PreviousPositions,
 ): Map<string, { x: number; y: number }> {
 	if (nodes.length === 0) return new Map<string, { x: number; y: number }>()
 
@@ -756,6 +847,22 @@ export function computeFlatPositions(
 		}
 	}
 
+	// Stack components in the vertical order they already had. `findConnectedComponents`
+	// returns them in graph-traversal order, so a single added or dropped edge could
+	// merge, split or re-rank components and slide every one of them up or down the
+	// canvas. Components the previous layout didn't know keep their traversal order,
+	// after the ones it did.
+	if (previous) {
+		const rank = new Map<string[], number>()
+		for (const comp of connectedComponents) {
+			rank.set(comp, priorCentroidY(comp, previous) ?? Number.POSITIVE_INFINITY)
+		}
+		const traversalOrder = new Map(connectedComponents.map((c, i) => [c, i]))
+		connectedComponents.sort(
+			(a, b) => rank.get(a)! - rank.get(b)! || traversalOrder.get(a)! - traversalOrder.get(b)!,
+		)
+	}
+
 	let currentYOffset = 0
 	const nodeById = new Map(nodes.map((n) => [n.id, n]))
 
@@ -767,7 +874,7 @@ export function computeFlatPositions(
 		const componentSet = new Set(component)
 		const compEdges = edges.filter((e) => componentSet.has(e.source) && componentSet.has(e.target))
 
-		const layers = computeLayers(compNodes, compEdges)
+		const layers = computeLayers(compNodes, compEdges, previous)
 
 		let maxLayerSize = 0
 		for (const { layerSize } of layers.values()) {
@@ -829,18 +936,19 @@ export function computeNodePositions(
 	nodes: Node<ServiceNodeData>[],
 	edges: Edge<ServiceEdgeData>[],
 	config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
+	previous?: PreviousPositions,
 ): Map<string, { x: number; y: number }> {
 	if (nodes.length === 0) return new Map<string, { x: number; y: number }>()
 
 	const hasNamespaces = nodes.some((n) => nodeNamespace(n) !== undefined)
-	if (!hasNamespaces) return computeFlatPositions(nodes, edges, config)
+	if (!hasNamespaces) return computeFlatPositions(nodes, edges, config, previous)
 
 	const { nodeHeight, layerGapX, nodeGapY } = config
 	const cellHeight = nodeHeight + nodeGapY
 
 	// One global layering over the WHOLE graph → shared column (x) per node, plus a
 	// crossing-minimized within-column order (indexInLayer) we reuse inside lanes.
-	const layers = computeLayers(nodes, edges)
+	const layers = computeLayers(nodes, edges, previous)
 
 	// Partition into one lane per namespace + an ungrouped lane (db nodes and
 	// namespace-less services).
@@ -890,8 +998,26 @@ export function computeNodePositions(
 		return laneHeight
 	}
 
+	// Lanes are alphabetical by default; with a previous layout, keep them in the
+	// vertical order the user last saw so a renamed or newly-appearing namespace
+	// doesn't push every other lane down the canvas.
+	const laneOrder = Array.from(lanes.keys()).sort()
+	if (previous) {
+		const rank = new Map<string, number>()
+		for (const ns of laneOrder) {
+			rank.set(
+				ns,
+				priorCentroidY(
+					lanes.get(ns)!.map((n) => n.id),
+					previous,
+				) ?? Number.POSITIVE_INFINITY,
+			)
+		}
+		laneOrder.sort((a, b) => rank.get(a)! - rank.get(b)! || a.localeCompare(b))
+	}
+
 	let yOffset = 0
-	for (const ns of Array.from(lanes.keys()).sort()) {
+	for (const ns of laneOrder) {
 		const laneTop = yOffset + NS_LABEL_HEIGHT + NS_PADDING_Y
 		const laneHeight = placeLane(lanes.get(ns)!, laneTop)
 		yOffset = laneTop + laneHeight + NS_PADDING_Y + NS_CLUSTER_GAP

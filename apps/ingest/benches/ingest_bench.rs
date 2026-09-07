@@ -117,6 +117,8 @@ impl BenchFixture {
                 org_queue_max_bytes: u64::MAX,
                 queue_channel_capacity: 100_000,
                 wal_shards: 4,
+                wal_segment_max_bytes: maple_ingest::telemetry::WAL_SEGMENT_MAX_BYTES,
+                wal_store_heartbeat_interval: maple_ingest::wal_store::DEFAULT_HEARTBEAT_INTERVAL,
                 batch_max_rows: 5_000,
                 batch_max_bytes: 4 * 1024 * 1024,
                 batch_max_wait: Duration::from_millis(10),
@@ -128,6 +130,7 @@ impl BenchFixture {
                 datasource_session_replays: "session_replays".to_owned(),
                 datasource_session_replay_events: "session_replay_events".to_owned(),
                 datasource_session_events: "session_events".to_owned(),
+                datasource_product_events: "product_events".to_owned(),
             },
             Client::builder()
                 .timeout(Duration::from_secs(5))

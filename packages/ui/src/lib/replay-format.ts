@@ -3,18 +3,27 @@
 // two can't drift. Warehouse-coupled helpers (partition windows) stay in the
 // web app: this package doesn't depend on @maple/query-engine.
 
+import { Option, Schema } from "effect"
+
+const decodeUrl = Schema.decodeUnknownOption(Schema.URLFromString)
+
 /**
- * `1m 23s` / `45s`, or `—` for missing/zero durations.
+ * `6h 12m` / `1m 23s` / `45s`, or `—` for missing/zero durations — a replay
+ * with no measurable duration is unmeasured, not instantaneous.
  *
  * Named for the session it measures rather than `formatDuration`: this renders a
- * wall-clock span in minutes and seconds, which is a different job from the
- * μs→h ladder in `./format`. Sharing the name meant the two got imported
- * interchangeably.
+ * wall-clock span in clock units, which is a different job from the μs→h ladder
+ * in `./format`. Sharing the name meant the two got imported interchangeably.
+ *
+ * Minutes roll over at an hour: agent sessions that wait on a human run for
+ * hours, and "360m 0s" is not a duration anyone reads as six.
  */
+
 export function formatSessionDuration(ms: number | null): string {
 	if (ms == null || ms <= 0) return "—"
 	const totalSeconds = Math.round(ms / 1000)
 	const minutes = Math.floor(totalSeconds / 60)
+	if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 	const seconds = totalSeconds % 60
 	return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
@@ -30,15 +39,13 @@ export function formatClock(ms: number): string {
 
 /** Host + path for compact URL display; returns the raw input if unparseable. */
 export function hostFromUrl(url: string): string {
-	try {
-		const u = new URL(url)
-		return `${u.host}${u.pathname === "/" ? "" : u.pathname}`
-	} catch {
-		return url
-	}
+	const parsed = decodeUrl(url)
+	if (Option.isNone(parsed)) return url
+	const { host, pathname } = parsed.value
+	return `${host}${pathname === "/" ? "" : pathname}`
 }
 
-const AVATAR_GRADIENTS = [
+const AVATAR_GRADIENTS: readonly [string, ...string[]] = [
 	"from-rose-500/80 to-orange-400/80",
 	"from-violet-500/80 to-fuchsia-400/80",
 	"from-sky-500/80 to-cyan-400/80",
@@ -51,7 +58,7 @@ const AVATAR_GRADIENTS = [
 export function gradientFor(seed: string): string {
 	let hash = 0
 	for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
-	return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]!
+	return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length] ?? AVATAR_GRADIENTS[0]
 }
 
 /** `true` for handheld device-type strings as reported by the browser SDK. */

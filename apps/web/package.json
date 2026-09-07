@@ -3,8 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "portless",
-		"dev:app": "vite dev --port ${PORT:-3471} --host ${HOST:-127.0.0.1}",
+		"dev": "vite dev --port ${PORT:-3471} --host ${HOST:-127.0.0.1}",
 		"build": "vite build",
 		"preview": "vite preview",
 		"test": "vitest run --passWithNoTests",
@@ -40,6 +39,7 @@
 		"@maple/ui": "workspace:*",
 		"@maple/unitflow": "workspace:*",
 		"@maple/widgets": "workspace:*",
+		"@react-three/fiber": "^9.3.0",
 		"@rrweb/replay": "^2.0.1",
 		"@rrweb/types": "^2.0.1",
 		"@streamdown/cjk": "^1.0.3",
@@ -49,12 +49,12 @@
 		"@tailwindcss/vite": "catalog:tailwind",
 		"@takumi-rs/helpers": "2.9.2",
 		"@takumi-rs/wasm": "2.9.2",
-		"@tanstack/charts": "0.14.0",
-		"@tanstack/charts-scales": "0.14.0",
-		"@tanstack/react-db": "0.1.91",
+		"@tanstack/charts": "catalog:charts",
+		"@tanstack/charts-scales": "catalog:charts",
+		"@tanstack/react-db": "0.3.5",
 		"@tanstack/react-hotkeys": "0.10.0",
 		"@tanstack/react-router": "^1.170.16",
-		"@tanstack/react-table": "^8.21.3",
+		"@tanstack/react-table": "^9.2.4",
 		"@tanstack/react-virtual": "^3.14.3",
 		"@xyflow/react": "catalog:ui",
 		"class-variance-authority": "catalog:ui",
@@ -72,6 +72,7 @@
 		"streamdown": "^2.5.0",
 		"sugar-high": "^1.2.1",
 		"tailwindcss": "catalog:tailwind",
+		"three": "^0.181.0",
 		"tw-animate-css": "catalog:tailwind",
 		"uqr": "^0.1.3",
 		"web-vitals": "^5.3.0"
@@ -88,15 +89,13 @@
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
+		"@types/three": "^0.181.0",
 		"@vitejs/plugin-react": "^6.0.2",
+		"dialkit": "1.4.3",
 		"jsdom": "^29.1.1",
 		"typescript": "catalog:tooling",
 		"vite": "catalog:",
 		"vitest": "catalog:",
 		"woff2-encoder": "^2.0.0"
-	},
-	"portless": {
-		"name": "web",
-		"script": "dev:app"
 	}
 }

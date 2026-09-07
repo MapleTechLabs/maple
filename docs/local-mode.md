@@ -18,9 +18,10 @@ brew install Makisuo/tap/maple
 
 Homebrew downloads the matching release bundle, verifies its checksum, installs
 `maple` and `libchdb.so` together in the Homebrew Cellar, and links `maple` onto
-your PATH. macOS Apple Silicon and Linux (x86_64 & arm64) are supported. If
-Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap`
-once and retry the install.
+your PATH. If Homebrew asks you to trust the third-party tap, run
+`brew trust Makisuo/tap` once and retry the install. The tap lives in
+`Makisuo/homebrew-tap`, not this repo, so its platform coverage is set there —
+Intel macOS currently installs via the manual installer below.
 
 Manual installer:
 
@@ -30,12 +31,21 @@ curl -fsSL https://maple.dev/cli/install | sh
 
 (`maple.dev/cli/install` is [scripts/install.sh](../scripts/install.sh) served by
 `apps/landing` — the build copies it to `public/cli/install`. The raw GitHub URL
-`https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh` works too.)
+`https://raw.githubusercontent.com/MapleTechLabs/maple/main/scripts/install.sh` works too.)
 
 The manual installer detects your OS/arch, downloads the matching bundle from
 the latest GitHub release, verifies its checksum, installs the two files into
 `~/.maple/bin`, clears the macOS Gatekeeper quarantine, and symlinks `maple`
-onto your PATH. Then:
+onto your PATH.
+
+Released targets: macOS (Apple Silicon & Intel) and Linux (x86_64 & arm64).
+Intel macOS builds on GitHub's `macos-15-intel` runner, which is the scarcest
+capacity in the pool — its tarball can land minutes after the others on a
+release. Each build job publishes independently, so the rest of the release is
+never held up. GitHub retires Intel macOS in Fall 2027; the target goes away
+with it.
+
+Then:
 
 ```bash
 maple start            # OTLP ingest + embedded ClickHouse on :4318; UI from local.maple.dev
@@ -261,6 +271,16 @@ entries in CI, and requires every historical identity to reach the current one
 through registered migration edges. Changing a schema digest or manifest
 therefore requires a new versioned entry and executable edge together.
 
+Everything that pairing demands except the DDL is derived from the new version
+number, so `bun run local-schema:bump <slug>` writes it: the retained snapshot,
+the version constant, the `schema-identity.ts` edit sites, the history entry's
+hashes, the registry entry, and the identities pinned in
+`apps/cli/test/local-store-migrations.test.ts` and the native probe. It
+scaffolds the edge from the previous module and leaves `apply` to be written.
+When the gate fails because the schema moved without a bump, it names that
+command; when a hand-bump left the history behind, it prints the entry to
+append.
+
 The Linux native probe `apps/cli/test/native-local-store-migration.sh` uses a
 native chDB setup helper to create a stopped historical raw-table fixture,
 applies the legacy marker, runs the public migration command, checks rebuilt
@@ -410,16 +430,21 @@ as one meant every CLI binary pinned the server's query catalog.
 **Some commands are local-only.** Where v2 has no equivalent, the command fails
 with the reason rather than returning a narrower answer:
 
-| Command                             | Why it needs local mode                                                                                          |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `maple query "<sql>"`               | A raw-SQL passthrough against the multi-tenant warehouse would let a client read other orgs' data.               |
-| `maple attributes keys` / `values`  | v2 exposes no attribute-discovery surface (`/v2/attribute_mappings` is mapping config, not observed keys).       |
-| `maple slow-traces`                 | `/v2/traces/search` filters by minimum duration but cannot order by it.                                          |
-| `maple top-ops`                     | Needs count, latency and error rate ranked together; `/v2/traces/breakdown` returns one aggregation per request. |
-| `maple traces --span-name`          | v2 search returns root-based summaries, not matched spans. `--root-only` works remotely.                         |
-| `maple errors` / `maple error <fp>` | v2 keys errors by an opaque `erris_…` issue id with no lookup from a fingerprint hash.                           |
-| `maple compare`                     | v2 has no window-comparison endpoint.                                                                            |
-| `maple diagnose`                    | Its error breakdown depends on the exception-type aggregates above.                                              |
+| Command                            | Why it needs local mode                                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `maple query "<sql>"`              | A raw-SQL passthrough against the multi-tenant warehouse would let a client read other orgs' data.               |
+| `maple attributes keys` / `values` | v2 exposes no attribute-discovery surface (`/v2/attribute_mappings` is mapping config, not observed keys).       |
+| `maple slow-traces`                | `/v2/traces/search` filters by minimum duration but cannot order by it.                                          |
+| `maple top-ops`                    | Needs count, latency and error rate ranked together; `/v2/traces/breakdown` returns one aggregation per request. |
+| `maple traces --span-name`         | v2 search returns root-based summaries matched on an exact name, not spans matched by substring.                 |
+| `maple errors`                     | `/v2/error_issues` holds one issue per fingerprint, so it cannot report how many services an error spans.        |
+| `maple compare`                    | v2 has no window-comparison endpoint.                                                                            |
+| `maple diagnose`                   | Its error breakdown depends on the exception-type aggregates above.                                              |
+
+`maple error <fp>` **does** work remotely: `/v2/error_issues?fingerprint_hash=`
+resolves the hash to an issue, and the issue detail carries the timeseries and
+sample traces. It reads Maple's triage issues rather than raw error events, so a
+fingerprint no sweep has turned into an issue fails instead of showing traces.
 
 Remote mode also inherits v2's pagination: lists cap at 100 rows per page and
 seek by opaque cursor, so `--offset` is rejected rather than silently ignored.

@@ -37,7 +37,7 @@ type HubView = "active" | "history"
 
 const searchSchema = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["active", "history"])),
-	kind: Schema.optional(Schema.Literals(["alert", "error", "anomaly", "question"])),
+	kind: Schema.optional(Schema.Literals(["alert", "error", "anomaly", "question", "verification"])),
 	sort: Schema.optional(Schema.Literals(["updated", "severity", "confidence"])),
 	dir: Schema.optional(Schema.Literals(["asc", "desc"])),
 	q: Schema.optional(Schema.String),
@@ -64,6 +64,7 @@ const KIND_FILTER_LABEL: Record<InvestigationKindKey | "all", string> = {
 	error: "Errors",
 	anomaly: "Anomalies",
 	question: "Questions",
+	verification: "Fix checks",
 } satisfies Record<InvestigationKindKey | "all", string>
 
 const KIND_FILTER_VALUES = Object.keys(KIND_FILTER_LABEL) as ReadonlyArray<InvestigationKindKey | "all">
@@ -281,7 +282,10 @@ function InvestigationsHub() {
 								<InvestigateBar onSubmit={handleCreate} busy={creating} />
 							</DashboardLayout.Sticky>
 							<DashboardLayout.Scroll>
-								<div className="overflow-hidden rounded-xl border">
+								{/* `shrink-0`, or the flex column shrinks this below its
+								    content height and `overflow-hidden` clips the rows the
+								    scroller then thinks it doesn't need to scroll to. */}
+								<div className="shrink-0 overflow-hidden rounded-xl border">
 									{toolbar}
 									{Result.builder(result)
 										.onInitial(() => <InvestigationTableSkeleton />)

@@ -7,7 +7,7 @@ import { useMemo } from "react"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneDnsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
 import { ColumnHead, DataTable } from "../primitives/data-table"
 import { formatPercent } from "@maple/ui/lib/format"
@@ -46,7 +46,7 @@ export function CloudflareZoneDnsSection({
 	syncId?: string
 }) {
 	// Retained for the same reason as the security section: an empty result hides the whole panel.
-	const result = useRetainedRefreshableResultValue(
+	const result = useRefreshableAtomValue(
 		cloudflareZoneDnsResultAtom({
 			data: { serviceName, startTime, endTime, bucketSeconds, ...filters },
 		}),
@@ -94,7 +94,7 @@ function DnsNamesTable({
 	return (
 		<DataTable.Root ariaLabel="Top DNS query names" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead label="Query name" width="flex-1 min-w-[220px]" />
+				<ColumnHead label="Query name" width="w-0 flex-1 min-w-[220px]" />
 				<ColumnHead label="Queries" align="right" width="w-[100px]" />
 				<ColumnHead label="NXDOMAIN" align="right" width="w-[110px]" />
 			</DataTable.Head>
@@ -102,7 +102,7 @@ function DnsNamesTable({
 
 			{rows.map((row) => (
 				<div key={row.queryName} className={ROW_CLASS}>
-					<div className="min-w-[220px] flex-1 truncate font-mono text-[13px] text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] text-foreground">
 						{row.queryName}
 					</div>
 					<div className="w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80">

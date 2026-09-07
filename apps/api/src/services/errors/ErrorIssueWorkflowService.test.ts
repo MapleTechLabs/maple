@@ -1,20 +1,39 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Clock, Effect, Layer, Schema } from "effect"
-import { ErrorIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
-import { errorIncidents, errorIssues, errorIssueEvents, errorIssueStates } from "@maple/db"
+import {
+	ErrorIncidentId,
+	ErrorIssueId,
+	ErrorIssuePullRequestId,
+	OrgId,
+	UserId,
+} from "@maple/domain/primitives"
+import {
+	errorIncidents,
+	errorIssues,
+	errorIssueEvents,
+	errorIssuePullRequests,
+	errorIssueStates,
+	issueEscalations,
+} from "@maple/db"
+import type { MapleDatabaseTransaction } from "@maple/db/client"
 import { and, eq } from "drizzle-orm"
-import { Database } from "@/platform/DatabaseLive"
+import { Database, type DatabaseApi, type DatabaseClient } from "@/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 
 // Compile-time guard: broadening this service to warehouse, cache, Env,
 // notifications, or WorkerEnvironment makes this assignment fail.
-const databaseAndActorsOnly: Layer.Layer<ErrorIssueWorkflowService, never, Database | ErrorActorsService> =
-	ErrorIssueWorkflowService.layer
+const databaseAndActorsOnly: Layer.Layer<
+	ErrorIssueWorkflowService,
+	never,
+	Database | ErrorActorsService | AuditLogService
+> = ErrorIssueWorkflowService.layer
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
+const asPullRequestId = Schema.decodeUnknownSync(ErrorIssuePullRequestId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const asIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
@@ -29,8 +48,61 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const makeLayer = () => {
 	const database = createTestDb(createdDbs).layer
 	const actors = ErrorActorsService.layer.pipe(Layer.provide(database))
-	const workflow = databaseAndActorsOnly.pipe(Layer.provide(Layer.mergeAll(database, actors)))
+	const audit = AuditLogService.layerMemory
+	const workflow = databaseAndActorsOnly.pipe(Layer.provide(Layer.mergeAll(database, actors, audit)))
 	return Layer.mergeAll(workflow, actors).pipe(Layer.provideMerge(database))
+}
+
+/**
+ * The client with one table's inserts sabotaged, inside and outside
+ * transactions — a stand-in for the connection dying mid-write, which is what
+ * the workflow's multi-statement operations must survive atomically.
+ */
+const failInsertOf = <T extends object>(client: T, failTable: unknown): T =>
+	new Proxy(client, {
+		get(target, property) {
+			// SAFETY: a Proxy get trap receives a key for its target; indexed access preserves
+			// the target's own property type while the runtime branch below validates callability.
+			const value = target[property as keyof T]
+			if (typeof value !== "function") return value
+			if (property === "insert") {
+				return (table: unknown) => {
+					if (table === failTable) throw new Error("injected insert failure")
+					return value.call(target, table)
+				}
+			}
+			if (property === "transaction") {
+				return <Result>(
+					callback: (tx: MapleDatabaseTransaction) => Promise<Result>,
+					...rest: ReadonlyArray<unknown>
+				) =>
+					value.call(
+						target,
+						(tx: MapleDatabaseTransaction) => callback(failInsertOf(tx, failTable)),
+						...rest,
+					)
+			}
+			return value.bind(target)
+		},
+	})
+
+const makeFaultyLayer = (failTable: unknown) => {
+	const database = createTestDb(createdDbs).layer
+	const faulty = Layer.effect(
+		Database,
+		Effect.gen(function* () {
+			const real = yield* Database
+			return {
+				execute: <T>(fn: (db: DatabaseClient) => Promise<T>) =>
+					real.execute((db) => fn(failInsertOf(db, failTable))),
+			} satisfies DatabaseApi
+		}),
+	).pipe(Layer.provide(database))
+	const actors = ErrorActorsService.layer.pipe(Layer.provide(faulty))
+	const workflow = databaseAndActorsOnly.pipe(
+		Layer.provide(Layer.mergeAll(faulty, actors, AuditLogService.layerMemory)),
+	)
+	return Layer.mergeAll(workflow, actors).pipe(Layer.provideMerge(faulty))
 }
 
 const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.$inferInsert> = {}) =>
@@ -160,6 +232,127 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.strictEqual(stateChange?.actor?.id, actor.id)
 			assert.strictEqual(stateChange?.fromState, "in_review")
 			assert.strictEqual(stateChange?.toState, "done")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("rolls the whole done transition back when the timeline event cannot commit", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const actors = yield* ErrorActorsService
+			const database = yield* Database
+			const actor = yield* actors.ensureUserActor(ORG, USER)
+			const issueId = asIssueId(randomUUID())
+			const incidentId = asIncidentId(randomUUID())
+			const now = yield* Clock.currentTimeMillis
+			yield* seedIssue(issueId, { workflowState: "in_review" })
+			yield* database.execute((db) =>
+				db.insert(errorIncidents).values({
+					id: incidentId,
+					orgId: ORG,
+					issueId,
+					status: "open",
+					reason: "first_seen",
+					firstTriggeredAt: new Date(now),
+					lastTriggeredAt: new Date(now),
+					createdAt: new Date(now),
+					updatedAt: new Date(now),
+				}),
+			)
+
+			const current = yield* workflow.requireIssue(ORG, issueId)
+			const failure = yield* Effect.flip(workflow.applyTransition(ORG, actor.id, current, "done"))
+			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorPersistenceError")
+
+			// Nothing may commit without the event: a done issue with an open
+			// incident and no audit trail is unrepairable, because a retry sees the
+			// target state already stored and returns early.
+			const after = yield* workflow.requireIssue(ORG, issueId)
+			assert.strictEqual(after.workflowState, "in_review")
+			assert.isNull(after.resolvedAt)
+			const [incident] = yield* database.execute((db) =>
+				db.select().from(errorIncidents).where(eq(errorIncidents.id, incidentId)),
+			)
+			assert.strictEqual(incident?.status, "open")
+		}).pipe(Effect.provide(makeFaultyLayer(errorIssueEvents))),
+	)
+
+	it.effect("rolls the severity change back when the escalation outbox insert fails", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const actors = yield* ErrorActorsService
+			const database = yield* Database
+			const actor = yield* actors.ensureUserActor(ORG, USER)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId)
+
+			const failure = yield* Effect.flip(
+				workflow.setSeverity(ORG, actor.id, issueId, "critical", { source: "manual" }),
+			)
+			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorPersistenceError")
+
+			// The severity must not outlive its escalation row: committed alone, a
+			// retried setSeverity observes "nothing changed" and returns before
+			// enqueueing, so the page for this severity is permanently lost.
+			const [issue] = yield* database.execute((db) =>
+				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+			)
+			assert.isNull(issue?.severity)
+			const events = yield* database.execute((db) =>
+				db
+					.select()
+					.from(errorIssueEvents)
+					.where(and(eq(errorIssueEvents.orgId, ORG), eq(errorIssueEvents.issueId, issueId))),
+			)
+			assert.deepStrictEqual(events, [])
+		}).pipe(Effect.provide(makeFaultyLayer(issueEscalations))),
+	)
+
+	it.effect("hydrates activity rollups: comments, agent notes, and non-abandoned PR links", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const actors = yield* ErrorActorsService
+			const database = yield* Database
+			const actor = yield* actors.ensureUserActor(ORG, USER)
+			const busyId = asIssueId(randomUUID())
+			const quietId = asIssueId(randomUUID())
+			const now = yield* Clock.currentTimeMillis
+			yield* seedIssue(busyId)
+			yield* seedIssue(quietId)
+
+			yield* workflow.commentOnIssue(ORG, actor.id, busyId, "looking into this")
+			yield* workflow.commentOnIssue(ORG, actor.id, busyId, "root cause found", {
+				kind: "agent_note",
+			})
+			const seedPullRequest = (number: number, state: "open" | "merged" | "closed") =>
+				database.execute((db) =>
+					db.insert(errorIssuePullRequests).values({
+						id: asPullRequestId(randomUUID()),
+						orgId: ORG,
+						issueId: busyId,
+						provider: "github",
+						repoFullName: "maple/maple",
+						number,
+						url: `https://github.com/maple/maple/pull/${number}`,
+						state,
+						linkSource: "user",
+						createdAt: new Date(now),
+						updatedAt: new Date(now),
+					}),
+				)
+			yield* seedPullRequest(1, "open")
+			yield* seedPullRequest(2, "merged")
+			yield* seedPullRequest(3, "closed")
+
+			const busyRow = yield* workflow.requireIssue(ORG, busyId)
+			const quietRow = yield* workflow.requireIssue(ORG, quietId)
+			const [busy, quiet] = yield* workflow.hydrateIssueRows(ORG, [busyRow, quietRow])
+
+			assert.strictEqual(busy?.commentCount, 2)
+			assert.strictEqual(busy?.openPullRequestCount, 1)
+			assert.strictEqual(busy?.mergedPullRequestCount, 1)
+			assert.strictEqual(quiet?.commentCount, 0)
+			assert.strictEqual(quiet?.openPullRequestCount, 0)
+			assert.strictEqual(quiet?.mergedPullRequestCount, 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

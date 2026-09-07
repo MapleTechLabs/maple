@@ -2,6 +2,7 @@ import {
 	optionalBooleanParam,
 	optionalNumberParam,
 	optionalStringParam,
+	optionalTimeParam,
 	requiredStringParam,
 	validationError,
 	type McpToolRegistrar,
@@ -51,8 +52,8 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 			fingerprint: requiredStringParam(
 				'The error FingerprintHash from find_errors — a decimal UInt64 string, e.g. "11640295108927840024". Not a list_error_issues issue id (those are UUIDs).',
 			),
-			start_time: optionalStringParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalStringParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
+			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
+			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
 			service: optionalStringParam("Filter by service name"),
 			include_timeseries: optionalBooleanParam(
 				"Include error count over time to see if the error is trending up or down",
@@ -111,7 +112,20 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 					`  Services: ${t.services.join(", ")}`,
 					`  Time: ${t.startTime}`,
 				)
-				if (t.errorMessage) {
+				// The failing span first: name, service, status and the attributes that say what it
+				// was doing. That is the line an investigator needs; the logs below are context.
+				if (t.errorSpan) {
+					lines.push(
+						`  Error span: ${t.errorSpan.name} — ${t.errorSpan.serviceName}  span=${t.errorSpan.spanId}`,
+					)
+					if (t.errorSpan.statusMessage) {
+						lines.push(`    Status: "${truncate(t.errorSpan.statusMessage, 160)}"`)
+					}
+					const attrs = Object.entries(t.errorSpan.attributes)
+					if (attrs.length > 0) {
+						lines.push(`    {${attrs.map(([k, v]) => `${k}=${truncate(v, 60)}`).join(", ")}}`)
+					}
+				} else if (t.errorMessage) {
 					lines.push(`  Error: ${truncate(t.errorMessage, 120)}`)
 				}
 				if (t.logs.length > 0) {
@@ -136,9 +150,10 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				lines.push(``)
 			}
 
-			const nextSteps = Arr.map(
-				Arr.take(result.traces, 3),
-				(t) => `\`inspect_trace trace_id="${t.traceId}"\` — full span tree`,
+			const nextSteps = Arr.map(Arr.take(result.traces, 3), (t) =>
+				t.errorSpan
+					? `\`inspect_span trace_id="${t.traceId}" span_id="${t.errorSpan.spanId}"\` — the failing span's full attributes`
+					: `\`inspect_trace trace_id="${t.traceId}" errors_only=true\` — the failing spans only`,
 			)
 			nextSteps.push(
 				`\`search_logs service="${service ?? ""}" severity="ERROR"\` — search for related error logs`,
@@ -159,6 +174,9 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 							services: [...t.services],
 							startTime: t.startTime,
 							errorMessage: t.errorMessage || undefined,
+							errorSpan: t.errorSpan
+								? { ...t.errorSpan, attributes: { ...t.errorSpan.attributes } }
+								: undefined,
 							logs: Arr.map(t.logs, (l) => ({ ...l })),
 						})),
 					},

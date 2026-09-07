@@ -100,9 +100,36 @@ export const V2InvestigationFreeformSubject = Schema.Struct({
 	description: "An ad-hoc investigation into a user-supplied question with optional context.",
 })
 
+/**
+ * Read-only on purpose: a fix verification is opened by the verification tick
+ * when a linked pull request merges, never by a caller. It is absent from
+ * {@link V2InvestigationCreateSubject} for that reason.
+ */
+export const V2InvestigationFixVerificationSubject = Schema.Struct({
+	type: Schema.Literal("fix_verification").annotate({
+		description: 'Discriminator — always `"fix_verification"` for a post-merge fix check.',
+	}),
+	issue_id: ErrorIssuePublicId.annotate({
+		description: "The `iss_…` error issue whose fix is being verified.",
+	}),
+	pull_request_url: Schema.String.annotate({
+		description: "The merged pull request the verification is checking.",
+	}),
+	baseline_versions: Schema.Array(Schema.String).annotate({
+		description:
+			"Builds the issue was known to affect when the fix merged. An occurrence from a build outside this set means the fix did not work.",
+	}),
+	merged_at: Schema.String.annotate({ description: "When the pull request merged (ISO 8601)." }),
+}).annotate({
+	identifier: "InvestigationFixVerificationSubject",
+	title: "Fix verification subject",
+	description: "An investigation that checks whether a merged pull request actually stopped an error.",
+})
+
 export const V2InvestigationSubject = Schema.Union([
 	V2InvestigationIncidentSubject,
 	V2InvestigationFreeformSubject,
+	V2InvestigationFixVerificationSubject,
 ]).annotate({
 	identifier: "InvestigationSubject",
 	title: "Investigation subject",
@@ -133,7 +160,13 @@ const V2AiTriageEvidence = Schema.Struct({
 const V2AiTriageResult = Schema.Struct({
 	summary: Schema.String,
 	suspectedCause: Schema.String,
-	severityAssessment: IssueSeverity,
+	/**
+	 * `optionalKey`, mirroring the internal report: a partial has no cause to
+	 * assess, and reports stored before the field became optional still decode.
+	 * A client reading a run's severity wants the investigation's own `severity`,
+	 * which is null on a partial by design.
+	 */
+	severityAssessment: Schema.optionalKey(IssueSeverity),
 	affectedScope: Schema.String,
 	evidence: Schema.Array(V2AiTriageEvidence),
 	suggestedActions: Schema.Array(Schema.String),

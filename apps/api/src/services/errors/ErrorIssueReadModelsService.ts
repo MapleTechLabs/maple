@@ -9,6 +9,7 @@ import {
 	ErrorIssueSampleTrace,
 	ErrorIssuesListResponse,
 	ErrorIssueTimeseriesPoint,
+	ErrorIssueEnvironment,
 	ErrorPersistenceError,
 	IssueListCursor,
 	type IssueListCursorFields,
@@ -351,19 +352,27 @@ const make: Effect.Effect<
 					})
 				: Effect.succeed([])
 
-			const samplesCompiled = CH.compile(
-				CH.errorIssueSampleTracesQuery({ limit: sampleLimit }),
-				{
-					orgId,
-					fingerprintHash: issueRow.fingerprintHash,
-					startTime: formatWarehouseDateTime(startMs),
-					endTime: formatWarehouseDateTime(endMs),
-				},
-				{ rowSchema: CH.ErrorIssueSampleTracesOutputSchema },
-			)
+			const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
+				orgId,
+				fingerprintHash: issueRow.fingerprintHash,
+				startTime: formatWarehouseDateTime(startMs),
+				endTime: formatWarehouseDateTime(endMs),
+			})
 			const samplesEffect = isErrorKind
 				? warehouse.compiledQuery(tenant, samplesCompiled, {
 						context: "errorIssueSampleTraces",
+					})
+				: Effect.succeed([])
+
+			const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery(), {
+				orgId,
+				fingerprintHash: issueRow.fingerprintHash,
+				startTime: formatWarehouseDateTime(startMs),
+				endTime: formatWarehouseDateTime(endMs),
+			})
+			const environmentsEffect = isErrorKind
+				? warehouse.compiledQuery(tenant, environmentsCompiled, {
+						context: "errorIssueEnvironments",
 					})
 				: Effect.succeed([])
 
@@ -376,9 +385,9 @@ const make: Effect.Effect<
 					.limit(50),
 			)
 
-			const [timeseriesRows, sampleRows, incidentRows] = yield* Effect.all(
-				[timeseriesEffect, samplesEffect, incidentsEffect],
-				{ concurrency: 3 },
+			const [timeseriesRows, sampleRows, environmentRows, incidentRows] = yield* Effect.all(
+				[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
+				{ concurrency: 4 },
 			)
 			const issue = (yield* workflow.hydrateIssueRows(orgId, [issueRow]))[0]!
 			const timeseries = timeseriesRows.map(
@@ -400,11 +409,16 @@ const make: Effect.Effect<
 					}),
 			)
 
+			const environments = environmentRows.map(
+				(row) => new ErrorIssueEnvironment({ name: row.name, count: Number(row.count ?? 0) }),
+			)
+
 			return new ErrorIssueDetailResponse({
 				issue,
 				timeseries,
 				sampleTraces,
 				incidents: incidentRows.map(rowToIncident),
+				environments,
 			})
 		},
 	)

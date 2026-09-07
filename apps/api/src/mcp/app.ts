@@ -1,3 +1,4 @@
+import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
 import { McpProtocol, McpServer } from "effect/unstable/ai"
 import { Cause, Effect, Layer } from "effect"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -9,8 +10,15 @@ import { InstructionsResource } from "./resources/instructions"
 import { sessionStore } from "./lib/session-store"
 import type { McpToolExecutor } from "./dispatcher"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
+import { type AuditActorInfo, CurrentAuditActor } from "@/services/auth/audit-actor"
+import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "@/services/auth/AuthService"
+import {
+	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
+	MCP_TOOLS_RATE_LIMIT_REQUESTS,
+	McpToolRateLimiter,
+} from "@/services/auth/McpToolRateLimiter"
 import { Env } from "@/platform/Env"
 
 const MCP_PROTOCOL_VERSION_HEADER = "mcp-protocol-version"
@@ -92,11 +100,46 @@ const mcpUnavailable = () =>
 		),
 	)
 
+/**
+ * Which credential an MCP request presented, as far as the transport can tell.
+ * Mirrors the branches in `resolveMcpTenantContext`: an internal service token
+ * is Maple acting on its own behalf, any other bearer is an API key or OAuth
+ * token, and no bearer at all means a forwarded dashboard session.
+ */
+const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorInfo => {
+	const authorization = headers["authorization"] ?? headers["Authorization"]
+	if (authorization?.toLowerCase().startsWith("bearer ") !== true) {
+		return { type: "user", source: "mcp" }
+	}
+	const bearer = authorization.slice("bearer ".length).trim()
+	return bearer.startsWith(INTERNAL_SERVICE_PREFIX)
+		? { type: "system", source: "system" }
+		: { type: "api_key", source: "mcp" }
+}
+
+// Wording mirrors the v2 envelope's `V2RateLimited`; the body stays in this
+// surface's `{ error, message }` shape like the 401/503 responses above.
+const mcpRateLimited = () =>
+	HttpServerResponse.jsonUnsafe(
+		{
+			error: "rate_limited",
+			message: "Too many requests. Retry after the interval in the Retry-After header.",
+		},
+		{
+			status: 429,
+			headers: {
+				"retry-after": String(MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS),
+				"cache-control": "no-store",
+			},
+		},
+	)
+
 const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpTenant }>()(
 	Effect.gen(function* () {
 		const apiKeys = yield* ApiKeysService
 		const auth = yield* AuthService
 		const env = yield* Env
+		const rateLimiter = yield* McpToolRateLimiter
 		return (httpEffect) =>
 			Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
@@ -105,9 +148,26 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 					Effect.provideService(AuthService, auth),
 					Effect.provideService(Env, env),
 					Effect.flatMap((tenant) =>
-						Effect.provideService(httpEffect, CurrentMcpTenant, tenant).pipe(
-							Effect.provideService(CurrentMcpRequestTenant, tenant),
-						),
+						Effect.gen(function* () {
+							if (tenant.rateLimitCredentialId !== undefined) {
+								const outcome = yield* rateLimiter.check(tenant.rateLimitCredentialId)
+								yield* Effect.annotateCurrentSpan({
+									"maple.rate_limit.outcome": outcome,
+									"maple.rate_limit.limit": MCP_TOOLS_RATE_LIMIT_REQUESTS,
+									"maple.rate_limit.period_seconds": MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
+								})
+								if (outcome === "limited") return mcpRateLimited()
+							}
+							return yield* Effect.provideService(httpEffect, CurrentMcpTenant, tenant).pipe(
+								Effect.provideService(CurrentMcpRequestTenant, tenant),
+								// Without this an MCP mutation reads the reference's `undefined`
+								// default and is audited as a dashboard session. The credential
+								// kind is all this layer can see — `resolveMcpTenantContext`
+								// returns the tenant, not the key it resolved — so the key id is
+								// deliberately absent rather than guessed.
+								Effect.provideService(CurrentAuditActor, mcpAuditActor(request.headers)),
+							)
+						}),
 					),
 					Effect.catchTags({
 						"@maple/mcp/errors/McpAuthMissingError": () => mcpChallenge(false),
@@ -126,7 +186,8 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 
 const McpHttpLive = McpServer.layerHttp({
 	name: "maple-observability",
-	version: "1.0.0",
+	// Kept equal to the public `server.json` manifest (`@maple/domain/mcp-manifest`).
+	version: MAPLE_MCP_SERVER_VERSION,
 	path: "/mcp",
 	protocols: MCP_PROTOCOLS,
 	clientSessions: sessionStore,
@@ -135,7 +196,7 @@ const McpHttpLive = McpServer.layerHttp({
 export const McpLive: Layer.Layer<
 	never,
 	Cause.IllegalArgumentError,
-	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor
+	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor | McpToolRateLimiter
 > = Layer.mergeAll(
 	McpToolsLive,
 	DebugErrorsPrompt,

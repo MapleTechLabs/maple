@@ -1,6 +1,6 @@
 import { Effect, Layer, Metric } from "effect"
-import { WorkersCache } from "@maple/effect-cloudflare/workers-cache"
-import { CacheBackend, type EdgeCacheBackend, makeMemoryBackend } from "@maple/cache"
+import { WorkersCache } from "@maple/infra/workers-cache"
+import { CacheBackend, type EdgeCacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import * as QueryEngineMetrics from "@/observability/QueryEngineMetrics"
 
 // Concrete `CacheBackend` implementation for the API runtime.
@@ -9,7 +9,7 @@ import * as QueryEngineMetrics from "@/observability/QueryEngineMetrics"
 // `@maple/cache`; only the Cloudflare Workers backend lives here,
 // so the Workers runtime API never enters the query-engine package (and thus
 // never the web/cli bundles). The default cache is obtained via the
-// `WorkersCache` Effect service from `@maple/effect-cloudflare` — prod gets the
+// `WorkersCache` Effect service from `@maple/infra/workers-cache` — prod gets the
 // Workers cache; tests/dev get `null` and fall back to the in-memory backend.
 
 const SYNTHETIC_HOST = "https://maple-api.internal"
@@ -69,3 +69,10 @@ export const CacheBackendLive = Layer.effect(
 		return CacheBackend.of(makeWorkersBackend(cache))
 	}),
 ).pipe(Layer.provide(WorkersCache.layer))
+
+/**
+ * The edge cache over that backend, composed once: every graph in the Worker
+ * shares this reference, so the read breaker behind it sees all the traffic
+ * rather than a per-graph slice.
+ */
+export const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))

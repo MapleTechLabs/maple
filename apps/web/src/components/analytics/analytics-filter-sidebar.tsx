@@ -3,7 +3,7 @@ import { Result } from "@/lib/effect-atom"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { cn } from "@maple/ui/lib/utils"
 
-import type { WebAnalyticsBreakdowns } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	FilterSection,
@@ -21,15 +21,21 @@ import {
 } from "@/components/filters/filter-sidebar"
 import {
 	FILTER_SECTION_LABEL as FILTER_SECTION_LABEL_TEXT,
+	hasActiveFilters,
+	toggleTraffic,
+	trafficIncludes,
 	type AnalyticsFilterKey,
 	type AnalyticsFilters,
 } from "./filters"
-import { countryLabel, languageLabel } from "./labels"
+import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
 import { Favicon, isHostLike } from "./row-icon"
+import { ArrowThroughLineRightIcon } from "@/components/icons"
 import { browserIconFor, deviceIconFor } from "@/components/replays/session-icons"
 
 interface AnalyticsFilterSidebarProps {
 	breakdownsResult: Result.Result<WebAnalyticsBreakdowns, QueryAtomFailure>
+	eventsResult: Result.Result<{ data: ReadonlyArray<WebAnalyticsEvent> }, QueryAtomFailure>
 	filters: AnalyticsFilters
 	onFilterChange: (key: AnalyticsFilterKey, value: string | undefined) => void
 	onClearFilters: () => void
@@ -45,11 +51,20 @@ const toOptions = (rows: ReadonlyArray<{ name: string; count: number }>): Readon
  */
 const hostIcon = (name: string) => <Favicon host={name} className="size-3.5" />
 
+/** The referrer list's direct-traffic row gets the same mark as its breakdown row. */
+const referrerIcon = (name: string) =>
+	name === WEB_ANALYTICS_UNSET ? (
+		<ArrowThroughLineRightIcon className="size-3.5 shrink-0 text-foreground" />
+	) : (
+		hostIcon(name)
+	)
+
 /** `utm_source` is free text — only give it a favicon when it is actually a domain. */
 const utmSourceIcon = (name: string) => (isHostLike(name) ? hostIcon(name) : null)
 
 export function AnalyticsFilterSidebar({
 	breakdownsResult,
+	eventsResult,
 	filters,
 	onFilterChange,
 	onClearFilters,
@@ -60,6 +75,11 @@ export function AnalyticsFilterSidebar({
 		.onSuccess((breakdowns, result) => (
 			<AnalyticsFilterSidebarView
 				breakdowns={breakdowns}
+				// Decorative beside the breakdowns: a slow or failed events query
+				// drops the Event section rather than blanking the whole sidebar.
+				events={Result.builder(eventsResult)
+					.onSuccess((rows) => rows.data)
+					.orElse(() => [])}
 				waiting={result.waiting}
 				filters={filters}
 				onFilterChange={onFilterChange}
@@ -71,12 +91,14 @@ export function AnalyticsFilterSidebar({
 
 function AnalyticsFilterSidebarView({
 	breakdowns,
+	events,
 	waiting,
 	filters,
 	onFilterChange,
 	onClearFilters,
 }: {
 	breakdowns: WebAnalyticsBreakdowns
+	events: ReadonlyArray<WebAnalyticsEvent>
 	waiting: boolean
 	filters: AnalyticsFilters
 	onFilterChange: (key: AnalyticsFilterKey, value: string | undefined) => void
@@ -97,12 +119,94 @@ function AnalyticsFilterSidebarView({
 		},
 	})
 
-	const canClear = Object.values(filters).some(Boolean)
+	// Not `some(Boolean)`: `traffic` is always set now, so that would offer to
+	// clear a page that has nothing narrowed on it.
+	const canClear = hasActiveFilters(filters)
 
 	return (
 		<FilterSidebarFrame waiting={waiting}>
 			<FilterSidebarHeader canClear={canClear} onClear={onClearFilters} />
 			<FilterSidebarBody>
+				{/* Ahead of the four groups, because it is not one of their dimensions:
+				    every section below slices a population, and this chooses which
+				    population that is. Same two-exclusive-checkboxes shape as Visitor and
+				    for the same reason — no per-option count exists, since the counts in
+				    this rail come from facet branches that are themselves narrowed by
+				    whichever of these is picked. Humans alone is checked on load — see
+				    DEFAULT_TRAFFIC. */}
+				<div className="py-1">
+					<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>
+						{FILTER_SECTION_LABEL_TEXT.traffic}
+					</h4>
+					{/* Additive, not exclusive: both ticked is "all", which is what two
+					    checkboxes look like they should do. `toggleTraffic` owns the
+					    mapping, including that unticking the last one widens rather than
+					    selecting an empty page. */}
+					<SingleCheckboxFilter
+						title="Humans"
+						checked={trafficIncludes(filters.traffic, "humans")}
+						onChange={(on) =>
+							onFilterChange("traffic", toggleTraffic(filters.traffic, "humans", on))
+						}
+					/>
+					<SingleCheckboxFilter
+						title="Bots"
+						checked={trafficIncludes(filters.traffic, "bots")}
+						onChange={(on) =>
+							onFilterChange("traffic", toggleTraffic(filters.traffic, "bots", on))
+						}
+					/>
+				</div>
+				<Separator className="my-1" />
+				<SearchableFilterSection
+					title={FILTER_SECTION_LABEL_TEXT.host}
+					options={toOptions(breakdowns.hosts)}
+					renderOptionIcon={hostIcon}
+					{...single("host")}
+				/>
+				<SearchableFilterSection
+					title={FILTER_SECTION_LABEL_TEXT.pagePath}
+					options={toOptions(breakdowns.entryPaths)}
+					{...single("pagePath")}
+				/>
+				{/* Counts are sessions that fired the event, matching every other count
+				    in this rail; firings live on the card. Hidden outright when nothing
+				    is tracked — an empty "Event" section would read as a broken filter. */}
+				{events.length > 0 || filters.eventName ? (
+					<SearchableFilterSection
+						title={FILTER_SECTION_LABEL_TEXT.eventName}
+						options={events.map((event) => ({ name: event.name, count: event.sessions }))}
+						{...single("eventName")}
+					/>
+				) : null}
+				<Separator className="my-1" />
+				<SearchableFilterSection
+					title={FILTER_SECTION_LABEL_TEXT.referrerHost}
+					options={toOptions(breakdowns.referrerHosts)}
+					getOptionLabel={referrerLabel}
+					renderOptionIcon={referrerIcon}
+					{...single("referrerHost")}
+				/>
+				<SearchableFilterSection
+					title={FILTER_SECTION_LABEL_TEXT.utmSource}
+					options={toOptions(breakdowns.utmSources)}
+					getOptionLabel={utmLabel}
+					renderOptionIcon={utmSourceIcon}
+					{...single("utmSource")}
+				/>
+				<FilterSection
+					title={FILTER_SECTION_LABEL_TEXT.utmMedium}
+					options={toOptions(breakdowns.utmMediums)}
+					getOptionLabel={utmLabel}
+					{...single("utmMedium")}
+				/>
+				<SearchableFilterSection
+					title={FILTER_SECTION_LABEL_TEXT.utmCampaign}
+					options={toOptions(breakdowns.utmCampaigns)}
+					getOptionLabel={utmLabel}
+					{...single("utmCampaign")}
+				/>
+				<Separator className="my-1" />
 				{/* Two exclusive checkboxes rather than a FilterSection: that component
 				    requires a `count` per option and always renders it, and this filter has
 				    no per-option count to give — the sidebar's other counts come from
@@ -124,30 +228,19 @@ function AnalyticsFilterSidebarView({
 						onChange={(on) => onFilterChange("visitorType", on ? "returning" : undefined)}
 					/>
 				</div>
-				<Separator className="my-1" />
-				<SearchableFilterSection
-					title={FILTER_SECTION_LABEL_TEXT.host}
-					options={toOptions(breakdowns.hosts)}
-					renderOptionIcon={hostIcon}
-					{...single("host")}
-				/>
-				<SearchableFilterSection
-					title={FILTER_SECTION_LABEL_TEXT.pagePath}
-					options={toOptions(breakdowns.entryPaths)}
-					{...single("pagePath")}
-				/>
-				<SearchableFilterSection
-					title={FILTER_SECTION_LABEL_TEXT.referrerHost}
-					options={toOptions(breakdowns.referrerHosts)}
-					renderOptionIcon={hostIcon}
-					{...single("referrerHost")}
-				/>
 				<SearchableFilterSection
 					title={FILTER_SECTION_LABEL_TEXT.country}
 					options={toOptions(breakdowns.countries)}
 					getOptionLabel={countryLabel}
 					{...single("country")}
 				/>
+				<SearchableFilterSection
+					title={FILTER_SECTION_LABEL_TEXT.language}
+					options={toOptions(breakdowns.languages)}
+					getOptionLabel={languageLabel}
+					{...single("language")}
+				/>
+				<Separator className="my-1" />
 				<FilterSection
 					title={FILTER_SECTION_LABEL_TEXT.deviceType}
 					options={toOptions(breakdowns.deviceTypes)}
@@ -164,29 +257,6 @@ function AnalyticsFilterSidebarView({
 					title={FILTER_SECTION_LABEL_TEXT.osName}
 					options={toOptions(breakdowns.operatingSystems)}
 					{...single("osName")}
-				/>
-				<SearchableFilterSection
-					title={FILTER_SECTION_LABEL_TEXT.language}
-					options={toOptions(breakdowns.languages)}
-					getOptionLabel={languageLabel}
-					{...single("language")}
-				/>
-				<Separator className="my-1" />
-				<SearchableFilterSection
-					title={FILTER_SECTION_LABEL_TEXT.utmSource}
-					options={toOptions(breakdowns.utmSources)}
-					renderOptionIcon={utmSourceIcon}
-					{...single("utmSource")}
-				/>
-				<FilterSection
-					title={FILTER_SECTION_LABEL_TEXT.utmMedium}
-					options={toOptions(breakdowns.utmMediums)}
-					{...single("utmMedium")}
-				/>
-				<SearchableFilterSection
-					title={FILTER_SECTION_LABEL_TEXT.utmCampaign}
-					options={toOptions(breakdowns.utmCampaigns)}
-					{...single("utmCampaign")}
 				/>
 			</FilterSidebarBody>
 		</FilterSidebarFrame>

@@ -12,7 +12,7 @@ import InstallTabs from "../../components/local/InstallTabs.astro"
 
 <LocalHero />
 
-Local mode is the fastest way to look at OpenTelemetry data — point any OTLP exporter at `localhost`, open the dashboard, and explore traces, logs, and metrics with no account and nothing to deploy. It's the same query engine and UI as hosted Maple, running entirely on your machine. Everything is single-tenant: every row is stored under `org_id = "local"`.
+Maple Local is a free, standalone observability stack for local development — point any OTLP exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors, sessions, and a service map with no account, no containers, and nothing to deploy. It is the complete product running on your machine, not a client for the hosted service; the same CLI can talk to a hosted workspace, but nothing here requires one. Everything is single-tenant: every row is stored under `org_id = "local"`.
 
 ## Install
 
@@ -20,7 +20,7 @@ Pick your package manager. Homebrew is the easiest path on macOS and Linux; the 
 
 <InstallTabs />
 
-> Prefer to do it by hand? Download a release bundle (both `maple` + `libchdb`) from [GitHub Releases](https://github.com/Makisuo/maple/releases), or read [`scripts/install.sh`](https://github.com/Makisuo/maple/blob/main/scripts/install.sh) first before piping it to a shell.
+> Prefer to do it by hand? Download a release bundle (both `maple` + `libchdb`) from [GitHub Releases](https://github.com/MapleTechLabs/maple/releases), or read [`scripts/install.sh`](https://github.com/MapleTechLabs/maple/blob/main/scripts/install.sh) first before piping it to a shell.
 
 ## Start the server
 
@@ -82,4 +82,4 @@ The same CLI talks to either your local server or a hosted Maple workspace. The 
 
 ## How it works
 
-One Bun-compiled binary is both the CLI and the server, talking to ClickHouse in-process via `bun:ffi` → `libchdb` (no subprocess, no second language). For the architecture, the `/local/query` contract, the UI-origin model, and the release bundle, see the [local-mode design doc](https://github.com/Makisuo/maple/blob/main/docs/local-mode.md).
+One Bun-compiled binary is both the CLI and the server, talking to ClickHouse in-process via `bun:ffi` → `libchdb` (no subprocess, no second language). For the architecture, the `/local/query` contract, the UI-origin model, and the release bundle, see the [local-mode design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-mode.md).

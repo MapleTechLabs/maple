@@ -12,6 +12,7 @@ import {
 	type WarehouseQueryServiceApi,
 } from "@/services/warehouse/WarehouseQueryService"
 import { AnomalyDetectionService } from "./AnomalyDetectionService"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asIncidentId = Schema.decodeUnknownSync(AnomalyIncidentId)
@@ -44,7 +45,7 @@ const warehouseStub: WarehouseQueryServiceApi = {
 	query: () => Effect.die(new Error("unexpected pipe query")),
 	sqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
 	rawSqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
-	compiledQuery: (_tenant, compiled) => compiled.decodeRows([]),
+	compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]),
 	compiledQueryFirst: () => Effect.die(new Error("unexpected first-row query")),
 	ingest: () => Effect.void,
 	asExecutor: () => {
@@ -94,7 +95,10 @@ const seedIncident = (
 		[
 			asIncidentId(`00000000-0000-4000-8000-0000000000${String(incident.n).padStart(2, "0")}`),
 			incident.orgId,
-			`${incident.signalType}:${incident.serviceName}:${incident.deploymentEnv}`,
+			// Suffixed with n: `anomaly_incidents_open_detector_idx` allows one OPEN
+			// incident per detector, so same-group rows model distinct detectors
+			// (the error-spike shape, where the fingerprint is part of the key).
+			`${incident.signalType}:${incident.serviceName}:${incident.deploymentEnv}:${incident.n}`,
 			incident.signalType,
 			incident.serviceName,
 			incident.deploymentEnv,

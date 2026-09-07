@@ -100,7 +100,18 @@ const fullDisplay = {
 	listLimit: 50,
 	listRootOnly: true,
 	pie: { donut: true, innerRadius: 2, showLabels: true, showPercent: true },
-	funnel: { showStepPercent: true },
+	funnel: {
+		showStepPercent: true,
+		steps: [
+			{ kind: "session", dimension: "utmSource", value: "twitter" },
+			{ kind: "page", pagePath: "/pricing", host: "example.com" },
+			{ kind: "event", eventName: "signup_completed", attributeEquals: { plan: "pro" } },
+		],
+		keyBy: "person",
+		windowSeconds: 86400,
+		breakdownBy: "attribute:plan",
+		filters: { country: "DE", utmSource: "twitter", visitorType: "new" },
+	},
 	histogram: { bucketCount: 10, bucketWidth: 2, logScaleY: false },
 	heatmap: { colorScale: "amber", scaleType: "linear" },
 	gauge: { min: 0, max: 100, style: "radial" },
@@ -139,7 +150,19 @@ describe("the v2 widget display mirrors the stored one", () => {
 			pie: { inner_radius: 2, show_labels: true, show_percent: true },
 			histogram: { bucket_count: 10, bucket_width: 2, log_scale_y: false },
 			heatmap: { color_scale: "amber", scale_type: "linear" },
-			funnel: { show_step_percent: true },
+			funnel: {
+				show_step_percent: true,
+				key_by: "person",
+				window_seconds: 86400,
+				breakdown_by: "attribute:plan",
+				filters: { country: "DE", utm_source: "twitter", visitor_type: "new" },
+				// Steps are the query-engine contract and stay camelCase inside.
+				steps: [
+					{ kind: "session", dimension: "utmSource", value: "twitter" },
+					{ kind: "page", pagePath: "/pricing", host: "example.com" },
+					{ kind: "event", eventName: "signup_completed", attributeEquals: { plan: "pro" } },
+				],
+			},
 			sparkline: { data_source: { kind: "route", endpoint: "list_traces" } },
 			list_where_clause: "service.name = $service",
 			list_root_only: true,
@@ -224,12 +247,35 @@ describe("the v2 data source covers every stored kind", () => {
 	it.each(WIDGET_DATA_SOURCE_KINDS)("declares an arm for kind %s", (kind) => {
 		const fixture: Record<string, unknown> = {
 			query: { kind: "query", result_shape: "timeseries", queries: [] },
-			raw_sql: { kind: "raw_sql", sql: "SELECT 1" },
+			// The arm validates its SQL now, so the fixture has to be a query the
+			// engine would accept — this asserts arm coverage, not SQL leniency.
+			raw_sql: { kind: "raw_sql", sql: "SELECT count() FROM logs WHERE $__orgFilter" },
 			route: { kind: "route", endpoint: "list_traces" },
 			static: { kind: "static" },
 		}[kind]!
 
 		expect(() => decode(fixture)).not.toThrow()
+	})
+
+	// Raw SQL has one door. The route arm could carry it under the pre-v3
+	// endpoint name, which was a second unvalidated way in; production held 193
+	// raw-SQL widgets and none used this form, so it is refused rather than
+	// validated.
+	it("refuses raw SQL smuggled through the legacy route endpoint", () => {
+		expect(() =>
+			decode({
+				kind: "route",
+				endpoint: "raw_sql_chart",
+				params: { sql: "SELECT count() FROM logs WHERE $__orgFilter" },
+			}),
+		).toThrow(/raw_sql/)
+	})
+
+	it("leaves every other route endpoint open", () => {
+		expect(() => decode({ kind: "route", endpoint: "list_traces" })).not.toThrow()
+		// Unknown route names must keep decoding: closing the set would lock a
+		// dashboard naming a route this build does not know out of editing.
+		expect(() => decode({ kind: "route", endpoint: "some_future_route" })).not.toThrow()
 	})
 
 	it("snake_cases the scalar fields the union added", () => {

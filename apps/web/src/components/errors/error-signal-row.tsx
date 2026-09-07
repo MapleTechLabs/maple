@@ -1,19 +1,23 @@
+import { useRef } from "react"
 import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueId } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { normalizeTimestampInput } from "@/lib/timezone-format"
-import type { ErrorSignal } from "@/lib/models/error-signal"
+import type { ErrorSignal, InvestigationSummary } from "@/lib/models/error-signal"
 import { densifySpark, surgeRatio } from "@/lib/models/error-signal"
+
+import { BranchForkIcon, ChatBubbleIcon } from "@/components/icons"
 
 import { ActorAvatar } from "./actor-chip"
 import { IssueContextMenu } from "./issue-context-menu"
-import { SeverityBadge } from "./severity-badge"
+import { SeverityPicker, StatePicker } from "./issue-pickers"
 import { SignalSpark } from "./signal-spark"
-import { SignalStateChip } from "./signal-state-chip"
+import { InvestigationChip } from "./signal-state-chip"
 import type { IssueMutations } from "./use-issue-mutations"
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
@@ -38,18 +42,90 @@ function formatLastSeen(iso: string): string {
 const SURGE_THRESHOLD = 2.5
 
 /**
+ * What is happening around a row: a live investigation, then comment and PR
+ * marks. All of it answers "is anyone on this?", and a row nobody has touched
+ * draws nothing rather than a line of zeros.
+ *
+ * They ride at the end of the identity lane rather than in a column of their
+ * own. As a column they held 64px on every row to say something about roughly
+ * a third of them, and that 64px was taken from the error message — the lane
+ * the list is actually read by.
+ *
+ * No incident mark. An incident is a flare-up rather than a decision, it opens
+ * on the first occurrence and only auto-resolves after 30 quiet minutes, so in
+ * a busy org it is true of nearly every open row at once — a mark that never
+ * varies separates nothing and only costs the message width.
+ */
+function SignalActivity({
+	investigation,
+	commentCount,
+	openPullRequestCount,
+	mergedPullRequestCount,
+}: {
+	investigation: InvestigationSummary | null
+	commentCount: number
+	openPullRequestCount: number
+	mergedPullRequestCount: number
+}) {
+	const prCount = openPullRequestCount + mergedPullRequestCount
+	if (investigation === null && commentCount === 0 && prCount === 0) return null
+	return (
+		<span className="ml-auto flex shrink-0 items-center gap-2 pl-3">
+			{investigation !== null ? (
+				<InvestigationChip investigation={investigation} withConfidence={false} compact />
+			) : null}
+			{commentCount > 0 ? (
+				<span
+					className="flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground"
+					title={`${commentCount} comment${commentCount === 1 ? "" : "s"} on the timeline`}
+				>
+					<ChatBubbleIcon size={11} />
+					{commentCount}
+				</span>
+			) : null}
+			{prCount > 0 ? (
+				<span
+					className={cn(
+						"flex items-center gap-1 text-[11px] tabular-nums",
+						mergedPullRequestCount > 0 ? "text-foreground/70" : "text-muted-foreground",
+					)}
+					title={
+						mergedPullRequestCount > 0
+							? `${prCount} pull request${prCount === 1 ? "" : "s"} · ${mergedPullRequestCount} merged`
+							: `${prCount} open pull request${prCount === 1 ? "" : "s"}`
+					}
+				>
+					<BranchForkIcon size={11} />
+					{prCount}
+				</span>
+			) : null}
+		</span>
+	)
+}
+
+/**
  * Lane geometry, shared by the header and the rows so the two cannot drift.
  * Width and container-query breakpoint only — each use adds its own display,
  * because the row's service lane needs `flex` for the dot while the header's
  * does not.
  */
 const LANE = {
-	severity: "w-[60px] shrink-0",
+	severity: "w-6 shrink-0",
+	/** The lane that grows, and the last one to give ground. Every other lane
+	 *  now switches on at the width where the identity can still afford it —
+	 *  at 600px this row used to truncate `TypeError` to `Type…` while a 56px
+	 *  sparkline and a mostly-empty activity column kept their space. */
 	identity: "min-w-0 flex-1",
-	spark: "hidden w-[56px] shrink-0 @lg/page:block",
-	count: "hidden w-[52px] shrink-0 @xl/page:block",
-	service: "hidden w-[92px] shrink-0 @md/page:block",
-	state: "hidden w-[92px] shrink-0 @2xl/page:block",
+	/** Trend and count are one fact — "how much, and in what shape" — so they
+	 *  share a lane and read as a pair. The count arrives first (@lg); the
+	 *  shape needs real width to say anything, so it waits for @2xl. */
+	volume: "hidden w-[52px] shrink-0 items-center justify-end gap-2 @lg/page:flex @2xl/page:w-[148px]",
+	spark: "hidden min-w-0 flex-1 @2xl/page:block",
+	count: "w-[52px] shrink-0 text-right",
+	service: "hidden w-[92px] shrink-0 @xl/page:block",
+	// Sized to the longest label: "Open incident"/"Investigating" run ~98px in
+	// 11px Geist Mono plus the dot — 92px forced them onto two lines.
+	state: "hidden w-[104px] shrink-0 @3xl/page:block",
 	actor: "w-5 shrink-0",
 	lastSeen: "w-[64px] shrink-0",
 } as const
@@ -79,8 +155,10 @@ export function ErrorSignalHeader() {
 		>
 			<span className={LANE.severity} />
 			<span className={LANE.identity}>Error</span>
-			<span className={LANE.spark}>Trend</span>
-			<span className={cn(LANE.count, "text-right")}>Events</span>
+			<span className={LANE.volume}>
+				<span className={LANE.spark}>Trend · 24h</span>
+				<span className={LANE.count}>Events</span>
+			</span>
 			<span className={LANE.service}>Service</span>
 			<span className={LANE.state}>Status</span>
 			<span className={LANE.actor} />
@@ -89,6 +167,54 @@ export function ErrorSignalHeader() {
 	)
 }
 
+/**
+ * A row that has not arrived yet.
+ *
+ * Lives here, next to `LANE`, because a placeholder drawn to different geometry
+ * than the thing it stands in for is what makes a list jump when it loads. Six
+ * full-width bars said "something is coming"; these say "these columns are
+ * coming", and every lane lands in the pixel column it will occupy.
+ */
+export function ErrorSignalRowSkeleton({ index }: { index: number }) {
+	// Fixed widths rather than random ones: a list that reshuffles its own
+	// placeholder on every render reads as activity, and there is none.
+	const identityWidth = ["72%", "48%", "61%", "39%", "55%", "44%"][index % 6]
+
+	return (
+		<div className={cn(ROW_SHELL, "h-11")} aria-hidden="true">
+			<span className={cn(LANE.severity, "flex items-center justify-center")}>
+				<Skeleton className="size-3.5 rounded-sm" />
+			</span>
+			<span className={LANE.identity}>
+				<Skeleton className="h-3.5" style={{ width: identityWidth }} />
+			</span>
+			<span className={LANE.volume}>
+				<span className={LANE.spark}>
+					<Skeleton className="h-4 w-full" />
+				</span>
+				<span className={LANE.count}>
+					<Skeleton className="ml-auto h-3 w-8" />
+				</span>
+			</span>
+			<span className={LANE.service}>
+				<Skeleton className="h-3 w-16" />
+			</span>
+			<span className={LANE.state}>
+				<Skeleton className="h-3 w-20" />
+			</span>
+			<span className={LANE.actor}>
+				<Skeleton className="size-5 rounded-full" />
+			</span>
+			<span className={cn(LANE.lastSeen, "flex justify-end")}>
+				<Skeleton className="h-3 w-7" />
+			</span>
+		</div>
+	)
+}
+
+/** The inline pickers a row can have open. One at a time, and only on one row. */
+export type RowPicker = "severity" | "state"
+
 export interface ErrorSignalRowProps {
 	signal: ErrorSignal
 	sparkWindow: { readonly startMs: number; readonly endMs: number; readonly bucketMs: number }
@@ -96,6 +222,10 @@ export interface ErrorSignalRowProps {
 	selected: boolean
 	focused: boolean
 	onFocus: (id: ErrorIssueId) => void
+	/** Which picker is open on this row, if any. Owned by the list so a hotkey
+	 *  on the focused row can open one without the row's button being clicked. */
+	picker: RowPicker | null
+	onPickerChange: (picker: RowPicker | null) => void
 }
 
 /**
@@ -117,8 +247,11 @@ export function ErrorSignalRow({
 	selected,
 	focused,
 	onFocus,
+	picker,
+	onPickerChange,
 }: ErrorSignalRowProps) {
 	const href = `/errors/issues/${signal.id}`
+	const rowRef = useRef<HTMLAnchorElement | null>(null)
 	const dense = densifySpark(signal.spark, sparkWindow)
 	const surge = surgeRatio(dense)
 	const isSurging = surge !== null && surge >= SURGE_THRESHOLD
@@ -131,6 +264,7 @@ export function ErrorSignalRow({
 			onOpenInNewTab={() => window.open(href, "_blank", "noopener,noreferrer")}
 		>
 			<Link
+				ref={rowRef}
 				to="/errors/issues/$issueId"
 				params={{ issueId: signal.id }}
 				data-issue-id={signal.id}
@@ -146,69 +280,84 @@ export function ErrorSignalRow({
 					"transition-colors",
 				)}
 			>
-				<span className={cn(LANE.severity, "flex items-center")}>
-					<SeverityBadge
-						severity={signal.severity}
-						className="h-5 max-w-full truncate px-1.5 text-[10px]"
+				<span className={cn(LANE.severity, "flex items-center justify-center")}>
+					<SeverityPicker
+						value={signal.severity}
+						onChange={(severity) => void mutations.setSeverity(signal.id, severity)}
+						open={picker === "severity"}
+						onOpenChange={(open) => onPickerChange(open ? "severity" : null)}
+						fallbackAnchor={rowRef}
 					/>
 				</span>
 
-				{/* Identity dominates. The type holds its width up to 60% of the lane
-				    and the message gives way first — a row whose title truncates to
-				    "Connect…" has lost the only thing you scan for. */}
+				{/* Identity dominates. The message only appears once the lane is wide
+				    enough for both (@4xl); below that the type takes the whole lane,
+				    because a row whose title truncates to "Connect…" has lost the only
+				    thing you scan for, and a half-truncated pair loses both. Where both
+				    fit, the type holds up to 60% and the message gives way first. */}
 				<span className={cn(LANE.identity, "flex items-baseline gap-2")}>
 					<span
-						className="max-w-[60%] shrink-0 truncate font-medium text-foreground"
+						className="min-w-0 truncate font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0"
 						title={signal.title}
 					>
 						{signal.title}
 					</span>
 					{signal.detail ? (
 						<span
-							className="hidden min-w-0 flex-1 truncate text-muted-foreground @md/page:inline"
+							className="hidden min-w-0 flex-1 truncate text-muted-foreground @4xl/page:inline"
 							title={signal.detail}
 						>
 							{signal.detail}
 						</span>
 					) : null}
-				</span>
-
-				<span className={LANE.spark}>
-					<SignalSpark
-						values={dense}
-						severity={signal.severity}
-						surging={isSurging}
-						label={
-							isSurging
-								? `Surging — ${formatNumber(signal.windowCount ?? 0)} occurrences, concentrated at the end of the window`
-								: `${formatNumber(signal.windowCount ?? 0)} occurrences over the window`
-						}
+					<SignalActivity
+						investigation={signal.investigation}
+						commentCount={signal.commentCount}
+						openPullRequestCount={signal.openPullRequestCount}
+						mergedPullRequestCount={signal.mergedPullRequestCount}
 					/>
 				</span>
 
-				<span
-					className={cn(LANE.count, "text-right text-xs tabular-nums")}
-					title={
-						signal.windowCount === null
-							? `No occurrences in this window · ${signal.totalCount.toLocaleString()} all time`
-							: `${signal.windowCount.toLocaleString()} in this window · ${signal.totalCount.toLocaleString()} all time`
-					}
-				>
-					{signal.windowCount === null ? (
-						<span className="text-muted-foreground/50">—</span>
-					) : (
-						<span
-							className={isSurging ? "font-medium text-destructive" : "text-muted-foreground"}
-						>
-							{formatNumber(signal.windowCount)}
-						</span>
-					)}
+				<span className={LANE.volume}>
+					<span className={LANE.spark}>
+						<SignalSpark
+							values={dense}
+							severity={signal.severity}
+							surging={isSurging}
+							label={
+								isSurging
+									? `Surging — ${formatNumber(signal.windowCount ?? 0)} occurrences in the last 24 hours, concentrated at the end`
+									: `${formatNumber(signal.windowCount ?? 0)} occurrences in the last 24 hours`
+							}
+						/>
+					</span>
+
+					<span
+						className={cn(LANE.count, "text-xs tabular-nums")}
+						title={
+							signal.windowCount === null
+								? `None in the last 24 hours · ${signal.totalCount.toLocaleString()} all time`
+								: `${signal.windowCount.toLocaleString()} in the last 24 hours · ${signal.totalCount.toLocaleString()} all time`
+						}
+					>
+						{signal.windowCount === null ? (
+							<span className="text-muted-foreground/50">—</span>
+						) : (
+							<span
+								className={
+									isSurging ? "font-medium text-destructive" : "text-muted-foreground"
+								}
+							>
+								{formatNumber(signal.windowCount)}
+							</span>
+						)}
+					</span>
 				</span>
 
 				<span
 					className={cn(
 						LANE.service,
-						"items-center gap-1.5 text-xs text-muted-foreground @md/page:flex",
+						"items-center gap-1.5 text-xs text-muted-foreground @xl/page:flex",
 					)}
 					title={signal.serviceName}
 				>
@@ -217,7 +366,13 @@ export function ErrorSignalRow({
 				</span>
 
 				<span className={LANE.state}>
-					<SignalStateChip state={signal.state} />
+					<StatePicker
+						current={signal.issue.workflowState}
+						onChange={(next) => void mutations.transitionTo(signal.id, next)}
+						open={picker === "state"}
+						onOpenChange={(open) => onPickerChange(open ? "state" : null)}
+						fallbackAnchor={rowRef}
+					/>
 				</span>
 
 				<span className={LANE.actor}>

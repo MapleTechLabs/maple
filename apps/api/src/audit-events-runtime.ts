@@ -1,0 +1,152 @@
+import type { Message } from "@cloudflare/workers-types"
+import type { OrgId } from "@maple/domain/primitives"
+import { Cause, Clock, Effect, Layer } from "effect"
+import { summarizeCause } from "@/platform/describe-cause"
+import { EventBaseLive } from "@/platform/DatabasePgLive"
+import type { QueueBatch } from "@/platform/queue-batch"
+import { systemTenant } from "@/services/alerts/system-tenant"
+import { AUDIT_LOG_DATASOURCE } from "@/services/audit/AuditLogService"
+import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { WarehouseLive } from "@/runtime/warehouse-layer"
+import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./services/audit/audit-event"
+
+/**
+ * The consumer writes through `WarehouseQueryService.ingest`, which pins every
+ * write to the managed Tinybird pipeline. The service's read-side dependencies
+ * (org ClickHouse settings, the per-org JWT minter) come along because the
+ * layer requires them, not because a write ever consults them. Its spans are
+ * `maple-api`'s, through the telemetry the bridge builds into the event.
+ */
+export const AuditEventsLive = WarehouseLive.pipe(Layer.provide(EventBaseLive))
+
+/**
+ * Must match `maxRetries` on the audit-events consumer in `worker.ts`.
+ * Cloudflare routes the message to the DLQ after this many retries without
+ * telling us; the check below is what makes the hand-off visible in logs at
+ * the moment it happens.
+ */
+const AUDIT_EVENTS_MAX_RETRIES = 5
+
+/**
+ * Best-effort identity for the exhaustion log. The body reached us as queue
+ * JSON and may be anything at all, so these read defensively rather than
+ * decoding — a drop must still be reported when the payload is the problem.
+ */
+const auditEventField = (body: unknown, field: string): string => {
+	if (typeof body !== "object" || body === null || !(field in body)) return "<unknown>"
+	// SAFETY: `field in body` established the key exists on this object.
+	const value = (body as Record<string, unknown>)[field]
+	return typeof value === "string" ? value : "<unknown>"
+}
+const auditEventOrgId = (body: unknown) => auditEventField(body, "orgId")
+const auditEventAction = (body: unknown) => auditEventField(body, "action")
+
+interface DecodedMessage {
+	readonly message: Message<unknown>
+	readonly event: AuditLogEvent
+}
+
+/**
+ * Retrying past the limit is what hands the message to the DLQ; acking there
+ * would silently discard it instead.
+ */
+const retryOrExhaust = (message: Message<unknown>, cause: unknown) => {
+	const isFinalAttempt = message.attempts > AUDIT_EVENTS_MAX_RETRIES
+	return Effect.annotateCurrentSpan({
+		"audit.queue.message.outcome": isFinalAttempt ? "exhausted_dlq" : "retry",
+	}).pipe(
+		Effect.flatMap(() =>
+			isFinalAttempt
+				? Effect.logError("Audit event exhausted retries; routed to dead letter queue").pipe(
+						Effect.annotateLogs({
+							attempt: message.attempts,
+							orgId: auditEventOrgId(message.body),
+							action: auditEventAction(message.body),
+							error: String(cause),
+						}),
+					)
+				: Effect.logWarning("Audit event write failed; retrying").pipe(
+						Effect.annotateLogs({ attempt: message.attempts, error: String(cause) }),
+					),
+		),
+		Effect.flatMap(() => Effect.sync(() => message.retry())),
+	)
+}
+
+/**
+ * Audit events queue consumer: lowers each event to its `audit_log` row and
+ * writes one batch per org through the managed ingest pipeline. The table is a
+ * ReplacingMergeTree on the entry id, so queue redelivery collapses at merge
+ * time; write failures retry through the queue's policy and, once exhausted,
+ * land in `audit-events-dlq` rather than disappearing.
+ */
+export const processAuditEventsBatch = (batch: QueueBatch) =>
+	Effect.gen(function* () {
+		const warehouse = yield* WarehouseQueryService
+		const now = yield* Clock.currentTimeMillis
+
+		const decoded: Array<DecodedMessage> = []
+		for (const message of batch.messages) {
+			const event = yield* decodeAuditLogEvent(message.body).pipe(
+				Effect.matchEffect({
+					// Undecodable now means undecodable on every redelivery, so retrying
+					// only burns attempts. Acked, but at Error: an audit entry that
+					// never reaches a row is lost evidence, not routine noise.
+					onFailure: (error) =>
+						Effect.logError("Discarding malformed audit event queue message").pipe(
+							Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
+							Effect.flatMap(() => Effect.sync(() => message.ack())),
+							Effect.as(undefined),
+						),
+					onSuccess: (event) => Effect.succeed(event),
+				}),
+			)
+			if (event !== undefined) decoded.push({ message, event })
+		}
+
+		// One `ingest` per org so the write span names the tenant it belongs to.
+		const byOrg = new Map<OrgId, Array<DecodedMessage>>()
+		for (const entry of decoded) {
+			const group = byOrg.get(entry.event.orgId)
+			if (group === undefined) byOrg.set(entry.event.orgId, [entry])
+			else group.push(entry)
+		}
+
+		yield* Effect.forEach(
+			byOrg,
+			([orgId, group]) =>
+				warehouse
+					.ingest(
+						systemTenant(orgId),
+						AUDIT_LOG_DATASOURCE,
+						group.map(({ event }) => auditEventToRow(event, now)),
+					)
+					.pipe(
+						Effect.flatMap(() =>
+							Effect.sync(() => {
+								for (const { message } of group) message.ack()
+							}),
+						),
+						Effect.withSpan("auditEvents.writeOrgBatch", {
+							attributes: { orgId, rows: group.length },
+						}),
+						// A failure or a defect is a failed attempt and retries. Interruption
+						// is not: an interrupted batch (a deploy, an isolate torn down)
+						// counted as an attempt would push messages toward the DLQ for
+						// something that never failed. Re-raised, it leaves the batch
+						// unacked and the platform redelivers it.
+						Effect.catchCause((cause) =>
+							Cause.hasInterruptsOnly(cause)
+								? Effect.interrupt
+								: Effect.forEach(
+										group,
+										({ message }) => retryOrExhaust(message, summarizeCause(cause)),
+										{
+											discard: true,
+										},
+									),
+						),
+					),
+			{ concurrency: 3, discard: true },
+		)
+	}).pipe(Effect.withSpan("auditEvents.processBatch"))

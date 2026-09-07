@@ -2,8 +2,29 @@ import { Data } from "effect"
 
 // ClickHouse string escaping
 
+// `;` is emitted as its hex escape: some ClickHouse-compatible HTTP gateways
+// split statements on the raw byte even inside string literals, truncating the
+// query mid-literal. The server unescapes `\x3B` back to `;`, so results are
+// byte-identical.
+//
+// `__PARAM_` gets the same treatment, for the same reason one layer up: params
+// are resolved by rewriting `__PARAM_<kind>_<name>__` across the *finished* SQL
+// (see `resolveParams`), which cannot tell an executable placeholder from one
+// that happens to sit inside an already-escaped literal. A value of
+// `__PARAM_string_serviceName__` used to be replaced with that param's rendered
+// literal — quotes included — and those quotes closed the literal it landed in,
+// letting a second user-controlled param continue as SQL. Escaping one `_` here
+// means no user value can ever spell a placeholder, so the rewrite can only
+// ever see the real ones. `\x5F` unescapes to `_`, so values stay byte-identical.
+//
+// Order matters: this runs after the backslash escape, or the `\` it introduces
+// would itself be escaped.
 export function escapeClickHouseString(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+	return value
+		.replace(/\\/g, "\\\\")
+		.replace(/'/g, "\\'")
+		.replace(/;/g, "\\x3B")
+		.replace(/__PARAM_/g, "\\x5F_PARAM_")
 }
 
 // SQL Fragment AST
@@ -23,6 +44,17 @@ export type SqlFragment = Data.TaggedEnum<{
 	As: { readonly expr: SqlFragment; readonly alias: string }
 	/** A conditional fragment — included only when the condition is true */
 	When: { readonly condition: boolean; readonly fragment: SqlFragment }
+	/**
+	 * SQL assembled only when the fragment is compiled, not when it is built.
+	 *
+	 * The point is *where the failure lands*. A fragment that splices an inner
+	 * query's SQL has to compile that query, and compiling it eagerly puts the
+	 * failure in whatever function built the fragment — outside the `Effect` the
+	 * outer `compile` runs in, so a bad value reaches production as a synchronous
+	 * throw rather than a typed failure. Deferring the work to compile time puts
+	 * it back inside.
+	 */
+	Lazy: { readonly render: () => string }
 }>
 
 const Frag = Data.taggedEnum<SqlFragment>()
@@ -38,6 +70,7 @@ export const join = (separator: string, ...fragments: ReadonlyArray<SqlFragment>
 export const as_ = (expr: SqlFragment, alias: string): SqlFragment => Frag.As({ expr, alias })
 export const when = (condition: boolean, fragment: SqlFragment): SqlFragment =>
 	Frag.When({ condition, fragment })
+export const lazy = (render: () => string): SqlFragment => Frag.Lazy({ render })
 
 // Compiler
 
@@ -49,4 +82,5 @@ export const compile: (fragment: SqlFragment) => string = Frag.$match({
 	Join: ({ separator, fragments }) => fragments.map(compile).filter(Boolean).join(separator),
 	As: ({ expr, alias }) => `${compile(expr)} AS ${alias}`,
 	When: ({ condition, fragment }) => (condition ? compile(fragment) : ""),
+	Lazy: ({ render }) => render(),
 })

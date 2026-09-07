@@ -1,6 +1,5 @@
 import { areaY, d3Curve, defineChart, lineY, stack } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scalePoint } from "@tanstack/charts-scales/point"
 import { curveMonotoneX } from "d3-shape"
 import { useMemo, type ReactNode } from "react"
 
@@ -28,6 +27,7 @@ import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import {
 	CHART_EMPTY_MESSAGE,
 	formatValueWithUnit,
+	makeBucketAxis,
 	transformRows,
 	UNNAMED_SERIES_KEY,
 	type ChartUnit,
@@ -56,6 +56,16 @@ export interface InfraMetricChartProps {
 	showThreshold?: boolean
 	/** Joins the linked hover cursor. Omit to opt out. */
 	linkedChartId?: string
+	/**
+	 * An explicit x domain, as bucket ISO strings; the axis spans their extent.
+	 *
+	 * Without it each chart domains over its OWN rows, so two charts stacked to
+	 * be read down a vertical line silently disagree about where a given minute
+	 * sits whenever one series is shorter or coarser than the other. Pass the
+	 * union of every sibling's buckets to make the shared axis real rather than
+	 * apparent.
+	 */
+	xDomain?: ReadonlyArray<string>
 	/**
 	 * The last-value summary above the plot.
 	 *
@@ -132,6 +142,7 @@ export function InfraMetricChart({
 	stacked = false,
 	showThreshold = false,
 	linkedChartId,
+	xDomain,
 	header,
 	waiting = false,
 	height,
@@ -150,6 +161,10 @@ export function InfraMetricChart({
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 
 	const { data, series } = useMemo(() => transformRows(rows), [rows])
+
+	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
+	// label point scale this replaced folded a 24h window onto itself.
+	const axis = useMemo(() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket)), [xDomain, data])
 
 	/**
 	 * Series names carry dots and slashes (container names, mount points), which
@@ -176,7 +191,18 @@ export function InfraMetricChart({
 		return out
 	}, [data, series])
 
-	const tickFormatter = useMemo(() => (value: number) => formatValueWithUnit(value, unit), [unit])
+	/**
+	 * Axis ticks only. "0.5 cores" does not fit the pinned 56px gutter and was
+	 * clipping to "5 cores" — a wrong number, not a short one. The header chip
+	 * and the tooltip still print the unit, so the axis can carry the bare value.
+	 */
+	const tickFormatter = useMemo(
+		() => (value: number) =>
+			unit === "cores"
+				? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+				: formatValueWithUnit(value, unit),
+		[unit],
+	)
 
 	/**
 	 * One domain for the axis and the threshold alike.
@@ -208,7 +234,7 @@ export function InfraMetricChart({
 	)
 
 	const definition = useMemo(() => {
-		const at = (point: TransformedPoint) => point.time
+		const at = (point: TransformedPoint) => point.date
 		const valueOf = (name: string) => (point: TransformedPoint) => {
 			const value = point[name]
 			return typeof value === "number" ? value : null
@@ -234,7 +260,7 @@ export function InfraMetricChart({
 		const bands = stacked
 			? [
 					areaY(cells, {
-						x: (cell: InfraCell) => cell.point.time,
+						x: (cell: InfraCell) => cell.point.date,
 						y: (cell: InfraCell) => cell.value,
 						z: (cell: InfraCell) => cell.name,
 						fill: (cell: InfraCell) => `url(#${gradientFor(cell.name)})`,
@@ -261,23 +287,21 @@ export function InfraMetricChart({
 				: [],
 			marks: [
 				dashedGridY(),
-				...thresholdRules(thresholds, { labelX: data.at(-1)?.time }),
+				// Labels sit at the domain's right end, whether that is the last row
+				// or a shared domain that outruns this chart's rows.
+				...thresholdRules(thresholds, {
+					labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined,
+				}),
 				...bands,
 				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), chromeColors)),
 				focusCrosshair(chromeColors),
 			],
-			x: {
-				// Categorical: these charts plot bucket LABELS, not timestamps.
-				scale: scalePoint,
-				axis: {
-					line: false,
-					ticks: { size: 0, padding: 8 },
-					tickLabels: { thin: { minGap: 12 } },
+			scales: {
+				x: axis.x,
+				y: {
+					scale: scaleLinear().domain(yDomain),
+					axis: { line: false, ticks: { size: 0, padding: 8, format: tickFormatter } },
 				},
-			},
-			y: {
-				scale: scaleLinear().domain(yDomain),
-				axis: { line: false, ticks: { size: 0, padding: 8, format: tickFormatter } },
 			},
 			// A pinned left margin so sibling charts on the page share a plot edge.
 			// `bottom` is left unset: an authored side is a hard lock, and `bottom: 0`
@@ -292,6 +316,7 @@ export function InfraMetricChart({
 	}, [
 		data,
 		series,
+		axis,
 		stacked,
 		colors,
 		chromeColors,
@@ -331,7 +356,7 @@ export function InfraMetricChart({
 								points={points}
 								series={tooltipSeries}
 								focusStore={focusStore}
-								heading={(datum: InfraDatum) => rowOf(datum).time}
+								heading={(datum: InfraDatum) => axis.heading(rowOf(datum).bucket)}
 							/>
 						)}
 					/>

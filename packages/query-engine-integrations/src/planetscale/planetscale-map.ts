@@ -17,6 +17,7 @@
 // the frontend matches rows to existing trace-derived DB nodes by database
 // name and attaches the numbers.
 
+import { finiteOrZero } from "@maple/query-engine/ch/format"
 import { Schema } from "effect"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
@@ -114,23 +115,6 @@ export interface PlanetScaleBranchConnectionsOutput extends PlanetScaleConnectio
 	readonly branch: string
 }
 
-export const planetscaleDatabaseStatsRowSchema: CompiledQueryRowSchema<PlanetScaleDatabaseStatsOutput> =
-	Schema.Struct({
-		database: Schema.String,
-		cpuMaxPercent: CHNumber,
-		memMaxPercent: CHNumber,
-		replicaLagMaxSeconds: CHNumber,
-	})
-
-export const planetscaleBranchStatsRowSchema: CompiledQueryRowSchema<PlanetScaleBranchStatsOutput> =
-	Schema.Struct({
-		database: Schema.String,
-		branch: Schema.String,
-		cpuMaxPercent: CHNumber,
-		memMaxPercent: CHNumber,
-		replicaLagMaxSeconds: CHNumber,
-	})
-
 export const planetscaleStorageRowSchema: CompiledQueryRowSchema<PlanetScaleStorageOutput> = Schema.Struct({
 	database: Schema.String,
 	storageUsedPercent: CHNumber,
@@ -145,21 +129,6 @@ export const planetscaleBranchStorageRowSchema: CompiledQueryRowSchema<PlanetSca
 		storageCapacityBytes: CHNumber,
 		storageAvailableBytes: CHNumber,
 		storageSamples: CHNumber,
-	})
-
-export const planetscaleConnectionsRowSchema: CompiledQueryRowSchema<PlanetScaleConnectionsOutput> =
-	Schema.Struct({
-		database: Schema.String,
-		connectionsAvg: CHNumber,
-		connectionsMax: CHNumber,
-	})
-
-export const planetscaleBranchConnectionsRowSchema: CompiledQueryRowSchema<PlanetScaleBranchConnectionsOutput> =
-	Schema.Struct({
-		database: Schema.String,
-		branch: Schema.String,
-		connectionsAvg: CHNumber,
-		connectionsMax: CHNumber,
 	})
 
 /**
@@ -185,8 +154,8 @@ export function planetscaleGaugesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).neq(""),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("database")
 		.limit(500)
@@ -216,8 +185,8 @@ export function planetscaleBranchGaugesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("database", "branch")
 		.limit(500)
@@ -280,8 +249,8 @@ export function planetscaleStorageSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).neq(""),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("database", "branch")
 
@@ -319,8 +288,8 @@ export function planetscaleBranchStorageSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("database", "branch")
 
@@ -360,15 +329,15 @@ export function planetscaleConnectionsSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).neq(""),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("database", "t")
 
 	return fromQuery(inner, "conn")
 		.select(($) => ({
 			database: $.database,
-			connectionsAvg: CH.avg($.totalConnections),
+			connectionsAvg: finiteOrZero(CH.avg($.totalConnections)),
 			connectionsMax: CH.max_($.totalConnections),
 		}))
 		.groupBy("database")
@@ -398,8 +367,8 @@ export function planetscaleBranchConnectionsSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("database", "branch", "t")
 
@@ -407,7 +376,7 @@ export function planetscaleBranchConnectionsSQL() {
 		.select(($) => ({
 			database: $.database,
 			branch: $.branch,
-			connectionsAvg: CH.avg($.totalConnections),
+			connectionsAvg: finiteOrZero(CH.avg($.totalConnections)),
 			connectionsMax: CH.max_($.totalConnections),
 		}))
 		.groupBy("database", "branch")

@@ -2,8 +2,9 @@ import {
 	MAX_DISCOVERY_RANGE_SECONDS,
 	MAX_LIST_RANGE_SECONDS,
 	MAX_LOG_PATTERN_RANGE_SECONDS,
-	formatWarehouseDateTime,
 	parseWarehouseDateTime,
+	warehouseDateTime,
+	type WarehouseDateTime,
 } from "@maple/query-engine"
 
 // Tool-facing caps, expressed in hours to match `ResolveTimeRangeOptions`. The
@@ -17,27 +18,13 @@ export const MCP_DISCOVERY_MAX_HOURS = MAX_DISCOVERY_RANGE_SECONDS / 3600
 /** Log-pattern clustering — scans raw message bodies. */
 export const MCP_LOG_PATTERN_MAX_HOURS = MAX_LOG_PATTERN_RANGE_SECONDS / 3600
 
-/**
- * Normalizes a time string to the `YYYY-MM-DD HH:mm:ss` UTC format expected
- * by Tinybird's `DateTime()` SQL function.
- *
- * Handles ISO 8601 (with T, Z, timezone offsets, milliseconds) and the
- * already-correct `YYYY-MM-DD HH:mm:ss` format — which the shared parser reads
- * as UTC rather than local. Returns the input trimmed if it can't be parsed.
- */
-export function normalizeTime(input: string): string {
-	const trimmed = input.trim()
-	const ms = parseWarehouseDateTime(trimmed)
-	return Number.isNaN(ms) ? trimmed : formatWarehouseDateTime(ms)
-}
-
 const DEFAULT_HOURS = 6
 
 function defaultTimeRange(hours = DEFAULT_HOURS) {
 	const nowMs = Date.now()
 	return {
-		startTime: formatWarehouseDateTime(nowMs - hours * 3_600_000),
-		endTime: formatWarehouseDateTime(nowMs),
+		startTime: warehouseDateTime(nowMs - hours * 3_600_000),
+		endTime: warehouseDateTime(nowMs),
 	}
 }
 
@@ -49,19 +36,25 @@ export interface ResolveTimeRangeOptions {
 }
 
 export interface ResolvedTimeRange {
-	readonly st: string
-	readonly et: string
+	readonly st: WarehouseDateTime
+	readonly et: WarehouseDateTime
 	/** True when the agent-supplied range is wider than `maxHours`. */
 	readonly exceeded: boolean
 	/** The `maxHours` cap that applies (if any). Included so callers can surface it. */
 	readonly maxHours: number | undefined
-	/** Width of the agent-supplied window in hours, when both bounds parsed. */
-	readonly requestedHours: number | undefined
+	/** Width of the resolved window in hours. */
+	readonly requestedHours: number
 }
 
 /**
- * Resolves the time range for an MCP tool call.
- * Normalizes user-provided values to UTC and falls back to a default window.
+ * Resolves the time range for an MCP tool call, falling back to a default window
+ * for bounds the agent didn't supply.
+ *
+ * Both bounds are {@link WarehouseDateTime}, so this function has no parsing to
+ * do and no malformed case to handle: `optionalTimeParam` decoded and
+ * canonicalized them at the tool's parameter boundary, or the call didn't
+ * typecheck. That is the whole reason the brand exists — a tool cannot reach
+ * this function with a raw string it forgot to validate.
  *
  * When `maxHours` is set and the resolved window is wider, the range is returned
  * *unchanged* with `exceeded: true` — callers must reject it. This used to clamp
@@ -71,23 +64,20 @@ export interface ResolvedTimeRange {
  * Back-compat: the third arg also accepts a bare number (treated as `defaultHours`).
  */
 export function resolveTimeRange(
-	startTime: string | undefined,
-	endTime: string | undefined,
+	startTime: WarehouseDateTime | undefined,
+	endTime: WarehouseDateTime | undefined,
 	opts: ResolveTimeRangeOptions | number = {},
 ): ResolvedTimeRange {
 	const { defaultHours = DEFAULT_HOURS, maxHours } =
 		typeof opts === "number" ? { defaultHours: opts, maxHours: undefined } : opts
 
 	const defaults = defaultTimeRange(defaultHours)
-	const st = startTime ? normalizeTime(startTime) : defaults.startTime
-	const et = endTime ? normalizeTime(endTime) : defaults.endTime
+	const st = startTime ?? defaults.startTime
+	const et = endTime ?? defaults.endTime
 
-	const stMs = parseWarehouseDateTime(st)
-	const etMs = parseWarehouseDateTime(et)
-	const requestedHours = Number.isNaN(stMs) || Number.isNaN(etMs) ? undefined : (etMs - stMs) / 3_600_000
+	const requestedHours = (parseWarehouseDateTime(et) - parseWarehouseDateTime(st)) / 3_600_000
 
-	const exceeded =
-		maxHours !== undefined && maxHours > 0 && requestedHours !== undefined && requestedHours > maxHours
+	const exceeded = maxHours !== undefined && maxHours > 0 && requestedHours > maxHours
 
 	return { st, et, exceeded, maxHours, requestedHours }
 }
@@ -111,12 +101,9 @@ export function rangeExceededMessage(
 	toolName: string,
 ): string {
 	const cap = range.maxHours === undefined ? "the supported range" : formatHours(range.maxHours)
-	const requested = range.requestedHours === undefined ? undefined : formatHours(range.requestedHours)
 	return [
 		`Time range too large for \`${toolName}\`.`,
-		requested === undefined
-			? `Maximum supported range is ${cap}.`
-			: `Requested ${requested}, maximum supported range is ${cap}.`,
+		`Requested ${formatHours(range.requestedHours)}, maximum supported range is ${cap}.`,
 		`Narrow start_time/end_time to ${cap} or less. For wider trends use \`query_data\` with a timeseries query, which aggregates instead of scanning raw rows.`,
 	].join(" ")
 }

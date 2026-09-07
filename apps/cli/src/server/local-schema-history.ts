@@ -93,4 +93,137 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "7c975d2547ccdedb55f5b5fe2360fa72a4e6b9b7fd1935611e257e207c5694fd",
 		projectRevision: "5b4c3a0d3aa0962b062689605ad5cf075f47403df04e851ce58133f16fc692e3",
 	}),
+	Object.freeze({
+		version: 11,
+		fingerprint: "5642766fc2dced4f",
+		digest: "5642766fc2dced4f7ddf4c0f8c4470d0f20641e23a7c3ad31d3a410c55062a7d",
+		manifestDigest: "221f2e37bf61b08b87b9cac21acde9c18f1c0bb04625eea6ca2450e280581a1e",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// The DurationQuantiles columns on the two service-map edge rollups
+		// (ClickHouse migration 0022). Additive and metadata-only: no part is
+		// rewritten and no row moves, which is why the v11 -> v12 edge is two
+		// `ADD COLUMN` statements and a verify rather than a backfill.
+		//
+		// projectRevision is unchanged from v11 on purpose — it is a hardcoded
+		// constant (`CURRENT_SCHEMA_PROJECT_REVISION`) that no longer tracks what
+		// the generator stamps into the file header, and the identity this gate
+		// actually compares is the fingerprint/digest pair.
+		version: 12,
+		fingerprint: "e9888b70dde4f661",
+		digest: "e9888b70dde4f661d38d6b48fa7e15845ed2f24a4a2208ab3d27a1cc495f7367",
+		manifestDigest: "693be62c03142596a4fe081c20d22e0c72f002ee1725d5a900d51055a8f069a7",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// The three discriminator counters on both service-operations rollups
+		// (ClickHouse migration 0023). Additive and metadata-only, exactly like
+		// v11 -> v12: no part is rewritten and no row moves, so the edge is six
+		// `ADD COLUMN` statements, a view recreation and a verify.
+		//
+		// projectRevision stays pinned to the v11/v12 value for the same reason
+		// recorded there — it is a hardcoded constant that no longer tracks the
+		// generator's header, and the identity this gate compares is the
+		// fingerprint/digest pair.
+		version: 13,
+		fingerprint: "7c44772116706420",
+		digest: "7c4477211670642086313b71593d848cbadefc24142a1c6e0fe5fd93a8dd7a6e",
+		manifestDigest: "353715a6b6c7a05f3227215b072ac95a8bd5ee67d5eec35f8c2b4c86839a1187",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// `ai_trace_index` + `ai_trace_index_mv` (ClickHouse migration 0024): the
+		// filtered projection of GenAI agent spans that serves Agent Sessions
+		// detection and facets. Purely additive — a new empty table and the view
+		// that fills it forward — so the v13 -> v14 edge is two CREATEs and a
+		// verify, no data movement.
+		//
+		// projectRevision stays the hardcoded constant, as for v12 and v13 — the
+		// identity this gate compares is the fingerprint/digest pair.
+		version: 14,
+		fingerprint: "c46a599e1bfe417c",
+		digest: "c46a599e1bfe417c1e6f50d123779c6ca9c5f5f375ef9c6fe329c8a9676e3b5b",
+		manifestDigest: "faf78f67abd5901351ce6632cee59f22fadb3c1f7eb9b195dc2f9702d4c9c9bd",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v15 rebuilds the three service-overview views so `CommitSha` reads the
+		// semconv `vcs.ref.head.revision` instead of the retired vendor key
+		// `deployment.commit_sha` (ClickHouse migration 0025). View bodies only:
+		// no table or column changes, no row moves, and nothing is backfilled —
+		// rollup rows materialized with an empty commit age out with their TTL.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 15,
+		fingerprint: "24710426938d7b4a",
+		digest: "24710426938d7b4adf615f87f78315c2a5c6145a0029c4f244a339888b25f6d3",
+		manifestDigest: "65f0bc9e91171fbefd4452373ad15f8139b56111ffff27f65ffa4a09ba82cdb2",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// `ai_trace_index` widened with the sidebar's filter dimensions
+		// (`DeploymentEnv`, `Model`, `AgentName`, `ToolName`) and the per-span
+		// measures the page ranks on (`IsError`, `IsLlmCall`, `IsToolCall`,
+		// `Tokens`, `Cost`, plus `SpanId`/`ParentSpanId`/`Duration`), and
+		// `ai_trace_index_mv` recreated to fill them (ClickHouse migration
+		// 0026). Metadata-only ALTERs plus a view swap — no part is rewritten and
+		// no row moves. Rows materialized under v15 keep ''/0 in the new columns;
+		// nothing is backfilled.
+		//
+		// projectRevision stays the hardcoded constant, as for v12 to v15 — the
+		// identity this gate compares is the fingerprint/digest pair.
+		version: 16,
+		fingerprint: "d975e674ce66af41",
+		digest: "d975e674ce66af417e4398d8ca336d41340c9c1aa7b26082a6c55ecd02effe38",
+		manifestDigest: "f7d559f0db216379db02bc78c4e50f180f40588e124adf65665bf7eaaf556735",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v17: `audit_log` table added (ClickHouse migration 0027). Purely
+		// additive — nothing is rewritten, no row moves, nothing is backfilled.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 17,
+		fingerprint: "b3800f55258f0ae3",
+		digest: "b3800f55258f0ae37a52bec6e4fe38be8fa9daebe3c912db2aa6885a4d73fa20",
+		manifestDigest: "f19b88567770ee1b67f77d5734de61adbfd3ba907ce8ae28ce65a4da4e544533",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v18: `product_events` gains `TraceId`/`SpanId` plus a bloom filter, and
+		// `product_events_traces_mv` projects annotated spans in (ClickHouse
+		// migration 0028). Metadata-only ALTERs plus a view swap — no part is
+		// rewritten and no row moves. The trace half IS backfilled from whatever
+		// `traces` still retains; annotated spans older than that are not.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 18,
+		fingerprint: "09ee43045937c44e",
+		digest: "09ee43045937c44e89cf65001569497fb2e2d5b3356a8ddc2d81e0a8551bf1b2",
+		manifestDigest: "2a7d05f4fb19422404264521f06ea9ca2f2106cdce2165899f00433215aca8b0",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v19: `ai_trace_index` gains `ResponseId`, and `ai_trace_index_mv` is
+		// recreated to fill it and to count `Tokens` under the reporter's usage
+		// convention (ClickHouse migration 0029). Nothing is rewritten and no
+		// row moves; rows materialized under v18 keep their over-counted
+		// `Tokens` and an empty `ResponseId` until raw retention ages them out.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 19,
+		fingerprint: "778888eceae9d6b7",
+		digest: "778888eceae9d6b717004bf2b7cf8b0db84fb0d65c81e2cb72d7cb39a9c3bd74",
+		manifestDigest: "7887f63cadd66a33e495dc3277dc55059285799a1d044a1f1d9bb614f38af3bd",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)

@@ -34,11 +34,10 @@ import {
 	type InvestigationLensRunRow,
 	type InvestigationRow,
 } from "@maple/db"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Duration, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
-import { trackTokenUsage } from "@/services/billing/autumn-tracker"
-import { applyDiagnosisWrites } from "@/services/errors/apply-diagnosis"
+import { applyDiagnosisWrites, subjectTypeOf } from "@/services/errors/apply-diagnosis"
 import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@/workflows/incident-context"
 import { routeInvestigation, type InvestigationRoute } from "@/services/errors/investigation-route"
 import { FanoutStartError } from "@/services/errors/investigation-fanout-error"
@@ -55,9 +54,9 @@ import { summarizeCause } from "@/platform/describe-cause"
 /**
  * Cloudflare Workflow binding that runs a fan-out. Named here rather than read
  * off `Env` because the binding is only present inside a Worker isolate — the
- * same reason `CHAT_SESSION` is resolved this way.
+ * same reason `ChatSession` is resolved this way.
  */
-export const FANOUT_WORKFLOW_BINDING = "INVESTIGATION_FANOUT_WORKFLOW"
+import { INVESTIGATION_FANOUT_BINDING as FANOUT_WORKFLOW_BINDING } from "@maple/domain/investigation-fanout"
 
 interface FanoutWorkflowBinding {
 	readonly create: (options: { id: string; params: unknown }) => Promise<{ id: string }>
@@ -236,7 +235,9 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					title:
 						subject.type === "freeform"
 							? subject.title
-							: `${subject.incidentKind[0]?.toUpperCase() ?? ""}${subject.incidentKind.slice(1)} incident`,
+							: subject.type === "fix_verification"
+								? "Fix verification"
+								: `${subject.incidentKind[0]?.toUpperCase() ?? ""}${subject.incidentKind.slice(1)} incident`,
 					scope: null,
 					status: "open",
 					severity: null,
@@ -248,7 +249,14 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 										value: subject.incidentId,
 									}),
 								]
-							: [],
+							: subject.type === "fix_verification"
+								? [
+										new InvestigationSnapshotFact({
+											label: "Pull request",
+											value: subject.pullRequestUrl,
+										}),
+									]
+								: [],
 					references: [],
 					incidentStartedAt: null,
 					incidentEndedAt: null,
@@ -985,46 +993,34 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// Shared with the fan-out workflow's `persist` step so a diagnosis means
 				// the same thing whichever path produced it — same status transition, same
 				// severity application, same deterministically-keyed timeline event.
-				yield* dbExecute((db) =>
-					applyDiagnosisWrites(db, {
-						orgId,
-						investigationId: id,
-						report: result,
-						issueId: row.issueId ?? null,
-						model: request.model ?? row.model ?? null,
-						inputTokens: request.inputTokens ?? row.inputTokens ?? null,
-						outputTokens: request.outputTokens ?? row.outputTokens ?? null,
-						nowMs,
-						// A human follow-up that re-diagnoses a ranked fan-out orphans the lens
-						// verdicts: they explain a cause that is no longer on screen.
-						...(row.fanoutState === "ranked"
-							? { fanoutState: "superseded" as const }
-							: undefined),
-					}),
-				)
+				// `provideService(Database, database)`: the shared writer carries Database
+				// in R, while this service's API effects are R = never. `mapError` keeps
+				// this method's persistence-error channel — the writer stays neutral
+				// because the fan-out workflow maps it differently.
+				yield* applyDiagnosisWrites({
+					orgId,
+					investigationId: id,
+					report: result,
+					issueId: row.issueId ?? null,
+					subjectType: subjectTypeOf(row.subjectJson),
+					model: request.model ?? row.model ?? null,
+					inputTokens: request.inputTokens ?? row.inputTokens ?? null,
+					outputTokens: request.outputTokens ?? row.outputTokens ?? null,
+					nowMs,
+					// A human follow-up that re-diagnoses a ranked fan-out orphans the lens
+					// verdicts: they explain a cause that is no longer on screen.
+					...(row.fanoutState === "ranked" ? { fanoutState: "superseded" as const } : undefined),
+				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
 
-				const env = Option.getOrUndefined(workerEnv)
-				if (env && (request.inputTokens || request.outputTokens)) {
-					// Keyed on the investigation id (one diagnosis per investigation): a
-					// re-diagnosis updates the report but is intentionally NOT re-billed,
-					// matching the once-per-investigation timeline event above. A tracking
-					// failure must not fail the diagnosis write, but is surfaced as a log.
-					yield* Effect.tryPromise(() =>
-						trackTokenUsage(env, {
-							orgId,
-							inputTokens: request.inputTokens ?? 0,
-							outputTokens: request.outputTokens ?? 0,
-							idempotencyKey: id,
-							source: "triage",
-						}),
-					).pipe(
-						Effect.catchCause((cause) =>
-							Effect.logWarning("token usage tracking failed").pipe(
-								Effect.annotateLogs({ investigationId: id, cause: summarizeCause(cause) }),
-							),
-						),
-					)
-				}
+				// Deliberately does NOT meter. `request.inputTokens`/`outputTokens` are persisted onto
+				// the row above for display, but the charge is raised per *turn* in
+				// `chat/turn-runner.ts` — see `meterTurn`. Every caller that supplies usage here is a
+				// chat-session turn, and the runner meters that turn in full, including whatever it
+				// spends after this call. Metering here as well double-billed the turn; metering here
+				// *instead* under-billed it, because this key is the investigation id: a superseding
+				// diagnosis deduplicates against the first, so every follow-up turn (and every turn
+				// that failed before reaching this tool) was free. This path also carries no usage at
+				// all when reached over internal RPC, which never populates those fields.
 
 				const updated = yield* loadRow(orgId, id)
 				return yield* documentFor(orgId, updated ?? row)

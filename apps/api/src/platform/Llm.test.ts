@@ -7,10 +7,10 @@
  * and the attribution headers exist together is the outgoing HTTP request — so the test swaps
  * `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
  *
- * The fake responds 400, which `@maple/llm` classifies as non-retryable. That keeps the run to a
+ * The fake responds 400, which `@opencode-ai/ai` classifies as non-retryable. That keeps the run to a
  * single request with no backoff; the resulting failure is expected and ignored.
  */
-import { LLM, type Model } from "@maple/llm"
+import { LLM, type LanguageModel } from "@opencode-ai/ai"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"
@@ -40,7 +40,7 @@ interface CapturedRequest {
 const captureRequest = (
 	env: LlmEnv,
 	tags?: LlmCallTags,
-	resolve: (env: LlmEnv, tags?: LlmCallTags) => Model = resolveTriageModel,
+	resolve: (env: LlmEnv, tags?: LlmCallTags) => LanguageModel = resolveTriageModel,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -78,6 +78,9 @@ const captureRequest = (
 	})
 
 const openRouterEnv: LlmEnv = { OPENROUTER_API_KEY: "test-key" }
+
+/** `DEFAULT_MODEL_LIMITS.context` in Llm.ts — what a model absent from the table falls back to. */
+const DEFAULT_MODEL_LIMITS_CONTEXT = 128_000
 
 const tags: LlmCallTags = { surface: "chat", orgId: "org_123", sessionId: "chat_abc" }
 
@@ -223,13 +226,30 @@ describe("reasoning effort", () => {
 })
 
 describe("resolveTriageModel — context limits", () => {
-	it("attaches the configured model's window, which the vendored provider leaves unset", () => {
-		// `@maple/llm` declares `ModelLimits` but no provider populates it, so before this every
+	it("attaches the configured model's window, which upstream leaves unstated", () => {
+		// `@opencode-ai/ai` declares `ModelLimits` but no provider populates it, so before this every
 		// model reported `undefined` and nothing could tell when a transcript was near the wall.
-		const model = resolveTriageModel(openRouterEnv)
+		//
+		// The model is NAMED rather than left to the default: this asserts that a model in the table
+		// gets that table's window, which is a fact about the mechanism. Reading it off whatever
+		// `DEFAULT_OPENROUTER_MODEL` happens to be made a routine model swap fail here instead —
+		// which is exactly what happened when the default moved to glm-5.3-flash.
+		const model = resolveTriageModel({
+			...openRouterEnv,
+			MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
+		})
 
 		expect(contextLimitOf(model)).toBe(1_050_000)
 		expect(outputLimitOf(model)).toBe(128_000)
+	})
+
+	it("attaches the default model's window without it having to be named", () => {
+		// The pair above and below pin a model on purpose; this one is the check that
+		// DEFAULT_OPENROUTER_MODEL is itself in the table. A default that is missing from it silently
+		// takes DEFAULT_MODEL_LIMITS and compacts earlier than it needs to.
+		const model = resolveTriageModel(openRouterEnv)
+
+		expect(contextLimitOf(model)).not.toBe(DEFAULT_MODEL_LIMITS_CONTEXT)
 	})
 
 	it("falls back to a conservative window for a model it does not know", () => {
@@ -255,8 +275,14 @@ describe("resolveTriageModel — context limits", () => {
 
 	it("ignores an unparseable or nonsensical override rather than trusting it", () => {
 		// A zero or negative window would make every turn look overflowed on its first step.
+		// Model named for the same reason as above — the assertion is that the bad override is
+		// discarded in favour of the TABLE, not that the default happens to be this model.
 		for (const bad of ["", "not-a-number", "0", "-5", "1.5"]) {
-			const model = resolveTriageModel({ ...openRouterEnv, MAPLE_TRIAGE_MODEL_CONTEXT: bad })
+			const model = resolveTriageModel({
+				...openRouterEnv,
+				MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
+				MAPLE_TRIAGE_MODEL_CONTEXT: bad,
+			})
 			expect(contextLimitOf(model)).toBe(1_050_000)
 		}
 	})

@@ -10,6 +10,7 @@ import {
 	WorkflowState,
 } from "../errors"
 import { SpanId, TraceId, UserId } from "../../primitives"
+import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2CursorInvalid, V2CursorSortMismatch } from "./errors"
@@ -65,6 +66,11 @@ export const V2ErrorIssue = Schema.Struct({
 	snooze_until: Schema.NullOr(Timestamp),
 	archived_at: Schema.NullOr(Timestamp),
 	has_open_incident: Schema.Boolean,
+	// Activity rollups: comments include agent notes; closed-unmerged PRs are
+	// counted by neither PR field.
+	comment_count: Schema.Number,
+	open_pull_request_count: Schema.Number,
+	merged_pull_request_count: Schema.Number,
 }).annotate({
 	identifier: "ErrorIssue",
 	title: "Error issue",
@@ -88,6 +94,16 @@ export const V2ErrorIssueSampleTrace = Schema.Struct({
 }).annotate({ identifier: "ErrorIssueSampleTrace" })
 export type V2ErrorIssueSampleTrace = Schema.Schema.Type<typeof V2ErrorIssueSampleTrace>
 
+export const V2ErrorIssueEnvironment = Schema.Struct({
+	name: Schema.String,
+	count: Schema.Number,
+}).annotate({
+	identifier: "ErrorIssueEnvironment",
+	description:
+		"A deployment environment the issue was observed in over the requested window, with its occurrence count.",
+})
+export type V2ErrorIssueEnvironment = Schema.Schema.Type<typeof V2ErrorIssueEnvironment>
+
 export const V2ErrorIncident = Schema.Struct({
 	id: ErrorIncidentPublicId,
 	object: Schema.Literal("error_incident"),
@@ -106,10 +122,12 @@ export const V2ErrorIssueDetail = Schema.Struct({
 	timeseries: Schema.Array(V2ErrorIssueTimeseriesPoint),
 	sample_traces: Schema.Array(V2ErrorIssueSampleTrace),
 	incidents: Schema.Array(V2ErrorIncident),
+	environments: Schema.Array(V2ErrorIssueEnvironment),
 }).annotate({
 	identifier: "ErrorIssueDetail",
 	title: "Error issue detail",
-	description: "The issue resource with its requested timeseries window, sample traces, and incidents.",
+	description:
+		"The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in.",
 })
 export type V2ErrorIssueDetail = Schema.Schema.Type<typeof V2ErrorIssueDetail>
 
@@ -225,6 +243,7 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 	)
 	.prefix("/v2/error_issues")
 	.middleware(AuthorizationV2)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Error Issues",

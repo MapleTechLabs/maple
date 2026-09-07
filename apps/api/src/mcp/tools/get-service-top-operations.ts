@@ -1,6 +1,7 @@
 import {
 	optionalNumberParam,
 	optionalStringParam,
+	optionalTimeParam,
 	requiredStringParam,
 	validationError,
 	type McpToolRegistrar,
@@ -29,8 +30,8 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			metric: optionalStringParam(
 				"Metric to sort by: count (request volume), error_rate, avg_duration, p95_duration (default: count)",
 			),
-			start_time: optionalStringParam("Start of time range (YYYY-MM-DD HH:mm:ss UTC)"),
-			end_time: optionalStringParam("End of time range (YYYY-MM-DD HH:mm:ss UTC)"),
+			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss UTC)"),
+			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss UTC)"),
 			limit: optionalNumberParam("Max operations to return (default 20)"),
 		}),
 		Effect.fn("McpTool.getServiceTopOperations")(function* ({

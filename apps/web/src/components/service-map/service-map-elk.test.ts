@@ -33,7 +33,7 @@ const edge = (source: string, target: string): Edge<ServiceEdgeData> => ({
 		errorCount: 0,
 		errorRate: 0,
 		avgDurationMs: 1,
-		p95DurationMs: 1,
+		maxDurationMs: 1,
 		hasSampling: false,
 	},
 })
@@ -77,5 +77,59 @@ describe("buildElkGraph", () => {
 		const graph = buildElkGraph([node("a")], [], DEFAULT_LAYOUT_CONFIG)
 		expect(graph.layoutOptions!["elk.layered.cycleBreaking.strategy"]).toBe("GREEDY_MODEL_ORDER")
 		expect(graph.layoutOptions!["elk.layered.considerModelOrder.strategy"]).toBe("NODES_AND_EDGES")
+	})
+})
+
+describe("layout anchoring", () => {
+	const graph = (count: number) => {
+		const nodes = Array.from({ length: count }, (_, i) => node(`s${i}`))
+		const edges = Array.from({ length: count - 1 }, (_, i) => edge(`s${i}`, `s${i + 1}`))
+		return { nodes, edges }
+	}
+
+	it("lays out from model order when there is no previous layout", () => {
+		const { nodes, edges } = graph(10)
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG)
+
+		expect(g.layoutOptions?.["elk.layered.considerModelOrder.strategy"]).toBe("NODES_AND_EDGES")
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBeUndefined()
+		expect((g.children ?? []).every((child) => child.x === undefined)).toBe(true)
+	})
+
+	it("seeds coordinates and switches to interactive when a previous layout covers the graph", () => {
+		const { nodes, edges } = graph(10)
+		const previous = new Map(nodes.map((n, i) => [n.id, { x: i * 100, y: i * 10 }]))
+
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
+
+		expect(g.layoutOptions?.["elk.layered.layering.strategy"]).toBe("INTERACTIVE")
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBe("INTERACTIVE")
+		expect(g.layoutOptions?.["elk.layered.cycleBreaking.strategy"]).toBe("INTERACTIVE")
+		// Model order competes with the positional hints for the same decision.
+		expect(g.layoutOptions?.["elk.layered.considerModelOrder.strategy"]).toBeUndefined()
+		const seeded = (g.children ?? []).find((child) => child.id === "s3")
+		expect(seeded).toMatchObject({ x: 300, y: 30 })
+	})
+
+	it("ignores a previous layout that covers too little of the graph", () => {
+		const { nodes, edges } = graph(10)
+		const previous = new Map([["s0", { x: 5, y: 5 }]])
+
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
+
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBeUndefined()
+		expect((g.children ?? []).every((child) => child.x === undefined)).toBe(true)
+	})
+
+	it("still seeds when the topology gained a node the previous layout never saw", () => {
+		const { nodes, edges } = graph(10)
+		const previous = new Map(nodes.slice(0, 9).map((n, i) => [n.id, { x: i * 100, y: i * 10 }]))
+
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
+
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBe("INTERACTIVE")
+		// The known nodes carry hints; the new one is left for ELK to place.
+		expect((g.children ?? []).find((child) => child.id === "s8")?.x).toBe(800)
+		expect((g.children ?? []).find((child) => child.id === "s9")?.x).toBeUndefined()
 	})
 })

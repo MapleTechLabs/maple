@@ -42,6 +42,7 @@ const LANDING_EVENTS = [
 	"pricing_calculator_changed",
 	"install_command_copied",
 	"docs_search",
+	"docs_snippet_copied",
 	"brand_asset_copied",
 	"brand_asset_downloaded",
 ] as const
@@ -69,7 +70,7 @@ export function startLandingTelemetry(): void {
 		ingestKey: INGEST_KEY,
 		endpoint: ENDPOINT,
 		serviceName: "maple-landing",
-		serviceNamespace: "client",
+		serviceNamespace: "core",
 		environment: import.meta.env.MODE,
 		replay: { enabled: true },
 		privacy: {

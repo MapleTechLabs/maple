@@ -1,9 +1,9 @@
-import { Effect, Option, Schema } from "effect"
+import { Duration, Effect, Option, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/unstable/cli/Command"
 import * as Flag from "effect/unstable/cli/Flag"
 import { HttpClient } from "effect/unstable/http"
-import { openSync } from "node:fs"
+import { closeSync, openSync, writeSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { startServer } from "../server/serve"
@@ -21,14 +21,29 @@ import {
 	writeBackupConfig,
 } from "../server/checkpoints"
 import { resolveUiAssets } from "../server/ui-assets"
+import { debugLog } from "../lib/debug"
+import {
+	BackgroundServerSpawnError,
+	BackgroundServerTimeoutError,
+	CheckpointUnavailableError,
+	LocalStoreDirtyError,
+	LocalStoreIncompatibleError,
+	LocalStoreMigrationError,
+	LocalStoreSchemaStaleError,
+	CheckpointChildError,
+	ServerOptionError,
+	ServerStopTimeoutError,
+} from "./server-errors"
 import { amber, bold, cyan, dim, green, MARK_LINES, MARK_WIDTH, underline } from "../lib/style"
 import {
+	buildCheckpointChildArgs,
 	buildDetachedChildArgs,
 	canonicalUrlHostname,
 	connectionHostForBindHost,
 	type DirtyStorePolicy,
 	hostedDashboardUrl,
 	hostedUiOrigin,
+	isProcessAlive,
 	resolveAdvertiseHost,
 	resolveBindHost,
 	serverProbeUrl,
@@ -36,20 +51,13 @@ import {
 	validateHost,
 } from "./server-args"
 
-/** A `maple start`/`maple stop` failure. The message is shown to the user and
- *  the process exits non-zero — same role the old `process.exit(1)` paths had,
- *  but typed and handled by the CLI runtime (matches `ModeError`). */
-class ServerError extends Schema.TaggedError<ServerError>()("@maple/cli/ServerError", {
-	message: Schema.String,
-}) {}
-
 /**
  * A refused command whose precondition simply wasn't met — the server is already
  * running, or isn't running at all. The message and the non-zero exit are
- * identical to `ServerError`; the separate tag exists so `bin.ts` can close the
- * root span `Ok` for these without also swallowing genuine start failures
- * ("failed to bind …", "did not come up within 10s"), which stay on
- * `ServerError`. Same rule the ingest gateway follows for expected 4xx.
+ * identical to a genuine failure; the separate tag exists so `bin.ts` can close
+ * the root span `Ok` for these without also swallowing real start failures
+ * (`ServerBindError`, `BackgroundServerTimeoutError`, `LocalStoreDirtyError`).
+ * Same rule the ingest gateway follows for expected 4xx.
  */
 export class ServerStateError extends Schema.TaggedError<ServerStateError>()("@maple/cli/ServerStateError", {
 	message: Schema.String,
@@ -67,7 +75,7 @@ const prettyPath = (p: string): string => {
  *  testing against staging (`local-staging.maple.dev`). */
 const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
 
-const remoteUiUrl = (): Effect.Effect<string, ServerError> => {
+const remoteUiUrl = (): Effect.Effect<string, ServerOptionError> => {
 	const configured = process.env.MAPLE_LOCAL_UI_URL?.trim() || DEFAULT_REMOTE_UI_URL
 	return Effect.try({
 		try: () => {
@@ -75,17 +83,19 @@ const remoteUiUrl = (): Effect.Effect<string, ServerError> => {
 			return configured
 		},
 		catch: (error) =>
-			new ServerError({
+			new ServerOptionError({
+				source: "MAPLE_LOCAL_UI_URL",
 				message: `invalid MAPLE_LOCAL_UI_URL: ${error instanceof Error ? error.message : String(error)}`,
 			}),
 	})
 }
 
-const validatedHost = (source: string, value: string): Effect.Effect<string, ServerError> =>
+const validatedHost = (source: string, value: string): Effect.Effect<string, ServerOptionError> =>
 	Effect.try({
 		try: () => validateHost(value),
 		catch: (error) =>
-			new ServerError({
+			new ServerOptionError({
+				source,
 				message: `invalid ${source}: ${error instanceof Error ? error.message : String(error)}`,
 			}),
 	})
@@ -144,6 +154,24 @@ const startBanner = (
 // `maple stop` finds it without knowing the full data path.
 const pidFilePath = (dataDir: string): string => join(dirname(dataDir), "maple.pid")
 
+/** Exclusively create the PID file (O_EXCL) so exactly one `maple start` can
+ * proceed past the liveness guard. Exported for the start-serialization test. */
+export const claimPidFileExclusive = (pidPath: string): Effect.Effect<void, ServerStateError> =>
+	Effect.try({
+		try: () => {
+			const fd = openSync(pidPath, "wx", 0o600)
+			writeSync(fd, String(process.pid))
+			closeSync(fd)
+		},
+		catch: (error) =>
+			new ServerStateError({
+				message:
+					(error as NodeJS.ErrnoException).code === "EEXIST"
+						? "maple is already running or starting — stop it with `maple stop`"
+						: `could not claim the PID file at ${pidPath}: ${error instanceof Error ? error.message : String(error)}`,
+			}),
+	})
+
 /** Read the PID file, returning `none` when it is missing or unparseable. */
 const readPid = (fs: FileSystem, pidPath: string): Effect.Effect<Option.Option<number>> =>
 	fs.readFileString(pidPath).pipe(
@@ -153,17 +181,6 @@ const readPid = (fs: FileSystem, pidPath: string): Effect.Effect<Option.Option<n
 		}),
 		Effect.orElseSucceed(() => Option.none<number>()),
 	)
-
-/** Liveness probe via signal 0 — a process primitive with no FileSystem
- *  equivalent. Never throws (errors mean "not alive"). */
-const isProcessAlive = (pid: number): boolean => {
-	try {
-		process.kill(pid, 0)
-		return true
-	} catch {
-		return false
-	}
-}
 
 const port = Flag.integer("port").pipe(
 	Flag.withDescription("Port for OTLP/HTTP ingest, the query API, and the bundled UI"),
@@ -218,6 +235,16 @@ const resetFlag = Flag.boolean("reset").pipe(
 		"Wipe live chDB data before starting while preserving checkpoints — use after an incompatible upgrade",
 	),
 	Flag.withDefault(false),
+)
+
+/** Default refresh cadence. A crash costs at most this much telemetry. */
+const CHECKPOINT_INTERVAL_DEFAULT = "30m"
+
+const checkpointIntervalFlag = Flag.string("checkpoint-interval").pipe(
+	Flag.withDescription(
+		"How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; `off` to disable)",
+	),
+	Flag.withDefault(CHECKPOINT_INTERVAL_DEFAULT),
 )
 
 const onDirtyStoreFlag = Flag.choice("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
@@ -329,6 +356,211 @@ const probeHealth = (addr: string) =>
  * file; we poll `/health` until it binds, then print a summary and return so the
  * parent process exits.
  */
+/** How long `maple start --background` waits for the detached child to answer
+ *  its health probe, and how often it checks. Reported by
+ *  `BackgroundServerTimeoutError` so the budget and the message cannot drift. */
+const BACKGROUND_READY_POLL_MS = 100
+const BACKGROUND_READY_ATTEMPTS = 100
+const BACKGROUND_READY_TIMEOUT_MS = BACKGROUND_READY_POLL_MS * BACKGROUND_READY_ATTEMPTS
+
+/**
+ * Parse `--checkpoint-interval`. `off`/`0` disables refreshing and returns
+ * `undefined`; anything unparseable is rejected rather than silently defaulted,
+ * because a typo that quietly turned checkpointing off would reintroduce exactly
+ * the data loss this exists to prevent.
+ */
+export const parseCheckpointInterval = (value: string): Duration.Duration | undefined | "invalid" => {
+	const raw = value.trim().toLowerCase()
+	if (raw === "off" || raw === "0" || raw === "none") return undefined
+	const match = raw.match(/^(\d+)\s*(s|m|h)$/)
+	if (!match) return "invalid"
+	const amount = Number(match[1])
+	if (amount <= 0) return undefined
+	return match[2] === "s"
+		? Duration.seconds(amount)
+		: match[2] === "m"
+			? Duration.minutes(amount)
+			: Duration.hours(amount)
+}
+
+/**
+ * Should `maple start` take an opening checkpoint? Only ever the first one, and
+ * only for a store that actually holds something.
+ *
+ * A store that already has a checkpoint — and one whose registry is present but
+ * *unusable* — is one the user is already managing. Taking another on every
+ * start would be a background BACKUP nobody asked for, and overwriting an
+ * unusable registry would destroy the evidence of why it broke.
+ *
+ * `hasLiveData` is what keeps this honest. Backing up an empty store produces a
+ * checkpoint that restores to nothing, which is `maple start --reset` wearing a
+ * kinder word — it would cost a BACKUP on every first run and buy the user no
+ * data back. The case worth protecting is the store that already has telemetry
+ * and has never been checkpointed, which is every existing install on the first
+ * start after upgrading.
+ */
+export const needsInitialCheckpoint = (availability: CheckpointAvailability, hasLiveData: boolean): boolean =>
+	hasLiveData && !availability.available && availability.reason === "none"
+
+/**
+ * Does the store hold live data, as opposed to just the preserved checkpoint
+ * registry? `backups` is skipped for the same reason it is skipped when the
+ * live store is reset — it is not part of the data being protected.
+ */
+const storeHasLiveData = (fs: FileSystem, dataDir: string): Effect.Effect<boolean> =>
+	fs.readDirectory(dataDir).pipe(
+		Effect.map((entries) => entries.some((entry) => entry !== "backups")),
+		Effect.orElseSucceed(() => false),
+	)
+
+/**
+ * Take the store's FIRST checkpoint, once the server is up, if it has none.
+ *
+ * Nothing used to create a checkpoint except someone typing `maple checkpoint`.
+ * So for almost every store `checkpointAvailability` was `{available: false,
+ * reason: "none"}`, and an unclean shutdown — a laptop sleeping, an OOM kill —
+ * left `maple start` with only one honest thing to say: wipe it and start over.
+ * That dead end is the CLI's single largest source of real errors, and every one
+ * of them is a user losing all of their local telemetry.
+ *
+ * One BACKUP per store lifetime, of a store that by definition has never had
+ * one, buys a restore point for exactly that case. It runs AFTER the banner, so
+ * it delays nothing the user is waiting on, and it is entirely non-fatal: a
+ * store that cannot be checkpointed (no `<backups>` stanza, a read-only volume)
+ * is still a store that should serve telemetry. Failure leaves the old
+ * behaviour, which is the behaviour we already had.
+ */
+const ensureInitialCheckpoint = (
+	dataDir: string,
+	host: string,
+	port: number,
+	hadLiveData: boolean,
+): Effect.Effect<void> =>
+	Effect.gen(function* () {
+		const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
+		if (!needsInitialCheckpoint(availability, hadLiveData)) return
+
+		yield* Effect.sync(() =>
+			process.stderr.write(dim("◌ taking the store's first checkpoint (restore point)…\n")),
+		)
+		yield* takeCheckpointQuietly(dataDir, host, port, "initial")
+	})
+
+/**
+ * Take a checkpoint without ever letting it end the server.
+ *
+ * Spawned as a CHILD process, never taken in-process. `createCheckpoint` opens
+ * its own chDB connection to drive `BACKUP DATABASE`, and chDB allows one per
+ * process — the server already holds it, so an in-process call returns
+ * `chdb_connect returned NULL` on every attempt. Spawning `maple checkpoint` is
+ * the same thing a user does by hand, against the same running server.
+ *
+ * Quiet on stderr but never silent: the child's own output carries the cause
+ * under `--debug`, because a failing loop is otherwise indistinguishable from a
+ * working one with nothing to do — and the only symptom would be a store that
+ * turns out to have no restore point when it finally matters.
+ *
+ * `root: true` on the span is load-bearing for the refresh loop. A forked fiber
+ * keeps the ambient parent span it was forked under FOREVER, so without it every
+ * checkpoint this process ever takes would hang off the one root `maple` span
+ * and collapse into a single, ever-growing trace.
+ */
+const takeCheckpointQuietly = (
+	dataDir: string,
+	host: string,
+	port: number,
+	reason: "initial" | "refresh",
+): Effect.Effect<void> =>
+	Effect.flatMap(
+		Effect.tryPromise({
+			try: async () => {
+				const child = Bun.spawn(
+					[
+						process.execPath,
+						...buildCheckpointChildArgs({ entry: process.argv[1], host, port, dataDir }),
+					],
+					{ stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+				)
+				const [exitCode, stderr] = await Promise.all([
+					child.exited,
+					new Response(child.stderr).text(),
+				])
+				return { exitCode, stderr: stderr.trim() }
+			},
+			catch: (error): CheckpointChildError =>
+				new CheckpointChildError({
+					reason,
+					exitCode: -1,
+					message: `could not spawn maple checkpoint: ${error instanceof Error ? error.message : String(error)}`,
+				}),
+		}),
+		({ exitCode, stderr }) =>
+			exitCode === 0
+				? Effect.void
+				: Effect.fail(
+						new CheckpointChildError({
+							reason,
+							exitCode,
+							message: stderr || `maple checkpoint exited ${exitCode}`,
+						}),
+					),
+	).pipe(
+		Effect.matchEffect({
+			onSuccess: () =>
+				Effect.sync(() =>
+					process.stderr.write(
+						reason === "initial"
+							? `${green("✓")} checkpoint taken — recover an unclean shutdown with ` +
+									`${bold("maple restore --yes")}\n`
+							: dim("◌ checkpoint refreshed\n"),
+					),
+				),
+			onFailure: (error) =>
+				Effect.sync(() => {
+					debugLog(`checkpoint (${reason}) failed`, error.message)
+					process.stderr.write(
+						reason === "initial"
+							? dim(
+									`◌ could not take an initial checkpoint — run ${bold("maple checkpoint")} to retry\n`,
+								)
+							: dim("◌ could not refresh the checkpoint — the previous one still stands\n"),
+					)
+				}),
+		}),
+		Effect.withSpan("cli.checkpoint", {
+			root: true,
+			attributes: { "maple.checkpoint.reason": reason },
+		}),
+	)
+
+/**
+ * Refresh the store's restore point on an interval for as long as the server
+ * runs.
+ *
+ * The opening checkpoint only covers data that already existed at start. The
+ * case that actually strands people is the ordinary one: install Maple, send it
+ * telemetry, lose the process to a SIGKILL or an OOM. Nothing had ever
+ * checkpointed that store, so `maple start` could only offer to wipe it.
+ *
+ * Bounded by the interval, a crash now costs at most that much telemetry
+ * instead of all of it. This is the same operation `maple checkpoint` performs
+ * against a live server — already exercised concurrently with ingest — just on
+ * a timer, and the registry keeps a rotating current/previous pair rather than
+ * accumulating.
+ */
+const checkpointRefreshLoop = (
+	dataDir: string,
+	host: string,
+	port: number,
+	interval: Duration.Duration,
+): Effect.Effect<never> =>
+	Effect.gen(function* () {
+		while (true) {
+			yield* Effect.sleep(interval)
+			yield* takeCheckpointQuietly(dataDir, host, port, "refresh")
+		}
+	})
+
 const startDetached = (
 	host: string,
 	advertiseHost: string,
@@ -338,6 +570,7 @@ const startDetached = (
 	chdbConfigFile: string | undefined,
 	onDirtyStore: DirtyStorePolicy,
 	minimumRawTelemetryRetentionDays: number | undefined,
+	checkpointInterval: string,
 ) =>
 	Effect.gen(function* () {
 		const logPath = logFilePath(dataDir)
@@ -355,6 +588,7 @@ const startDetached = (
 			chdbConfigFile,
 			onDirtyStore,
 			minimumRawTelemetryRetentionDays,
+			checkpointInterval,
 		})
 
 		const child = yield* Effect.try({
@@ -369,7 +603,8 @@ const startDetached = (
 				return proc
 			},
 			catch: (e) =>
-				new ServerError({
+				new BackgroundServerSpawnError({
+					logPath,
 					message: `failed to spawn background server: ${e instanceof Error ? e.message : String(e)}`,
 				}),
 		})
@@ -382,10 +617,10 @@ const startDetached = (
 		// single `server.wait_ready` carrying how many attempts it took — instead of
 		// ~10 `Error` client spans for the ECONNREFUSEDs that are the expected
 		// answer while the child is still binding. The span succeeds either way;
-		// missing the deadline is reported by the `ServerError` below, once.
+		// missing the deadline is reported by the timeout error below, once.
 		const up = yield* Effect.gen(function* () {
-			for (let attempt = 1; attempt <= 100; attempt++) {
-				yield* Effect.sleep("100 millis")
+			for (let attempt = 1; attempt <= BACKGROUND_READY_ATTEMPTS; attempt++) {
+				yield* Effect.sleep(`${BACKGROUND_READY_POLL_MS} millis`)
 				if (yield* probeHealth(probeAddr)) {
 					yield* Effect.annotateCurrentSpan({ "maple.server.probe_attempt": attempt })
 					return true
@@ -399,12 +634,14 @@ const startDetached = (
 					return false
 				}
 			}
-			yield* Effect.annotateCurrentSpan({ "maple.server.probe_attempt": 100 })
+			yield* Effect.annotateCurrentSpan({ "maple.server.probe_attempt": BACKGROUND_READY_ATTEMPTS })
 			return false
 		}).pipe(Effect.withSpan("server.wait_ready", { attributes: { "server.address": probeAddr } }))
 		if (!up) {
-			return yield* new ServerError({
-				message: `background server did not come up within 10s — check ${prettyPath(logPath)}`,
+			return yield* new BackgroundServerTimeoutError({
+				logPath,
+				timeoutMs: BACKGROUND_READY_TIMEOUT_MS,
+				message: `background server did not come up within ${BACKGROUND_READY_TIMEOUT_MS / 1000}s — check ${prettyPath(logPath)}`,
 			})
 		}
 
@@ -430,6 +667,7 @@ export const start = Command.make("start", {
 	offline: offlineFlag,
 	reset: resetFlag,
 	onDirtyStore: onDirtyStoreFlag,
+	checkpointInterval: checkpointIntervalFlag,
 }).pipe(
 	Command.withDescription("Start the local ingest + query server (embedded ClickHouse via chDB)"),
 	Command.withHandler(
@@ -437,6 +675,18 @@ export const start = Command.make("start", {
 			const fs = yield* FileSystem
 			const dataDir = Option.getOrUndefined(a.dataDir) ?? defaultDataDir()
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
+			// Rejected up front, before anything is opened: a typo that quietly fell
+			// back to the default — or worse, to off — would reintroduce the data loss
+			// the refresh loop exists to prevent.
+			const checkpointInterval = parseCheckpointInterval(a.checkpointInterval)
+			if (checkpointInterval === "invalid") {
+				return yield* new ServerOptionError({
+					source: "--checkpoint-interval",
+					message:
+						`invalid --checkpoint-interval: ${a.checkpointInterval} — ` +
+						"expected a duration like 45s, 30m or 2h, or `off`",
+				})
+			}
 			const hostedUiUrl = a.offline ? DEFAULT_REMOTE_UI_URL : yield* remoteUiUrl()
 			const advertiseHost = yield* validatedHost(
 				"--advertise-host / MAPLE_LOCAL_ADVERTISE_HOST",
@@ -459,19 +709,21 @@ export const start = Command.make("start", {
 
 			// A restore transaction lives beside dataDir and must be reconciled
 			// before reset, compatibility, dirty-store, or directory creation logic.
-			yield* reconcileCheckpointRecovery(dataDir).pipe(
-				Effect.mapError((e) => new ServerError({ message: e.message })),
-			)
+			yield* reconcileCheckpointRecovery(dataDir)
 
 			const migrationIncomplete = yield* Effect.tryPromise({
 				try: () => localMigrationIsIncomplete(dataDir),
 				catch: (error) =>
-					new ServerError({
+					new LocalStoreMigrationError({
+						dataDir,
+						phase: "read-journal",
 						message: `cannot read the local migration journal: ${error instanceof Error ? error.message : String(error)}`,
 					}),
 			})
 			if (migrationIncomplete && !a.reset) {
-				return yield* new ServerError({
+				return yield* new LocalStoreMigrationError({
+					dataDir,
+					phase: "resume",
 					message:
 						`the local store has an unfinished schema migration. ` +
 						`Resume or inspect it with \`${bold("maple schema migrate --yes")}\`; ordinary startup remains fail-closed.`,
@@ -481,7 +733,9 @@ export const start = Command.make("start", {
 				yield* Effect.tryPromise({
 					try: () => abandonLocalStoreMigration(dataDir),
 					catch: (error) =>
-						new ServerError({
+						new LocalStoreMigrationError({
+							dataDir,
+							phase: "preserve",
 							message: `could not preserve the unfinished migration before reset: ${error instanceof Error ? error.message : String(error)}`,
 						}),
 				})
@@ -490,10 +744,14 @@ export const start = Command.make("start", {
 			// `--reset`: wipe the store (and its version marker) so we bootstrap fresh.
 			// Preserve the checkpoint registry under dataDir/backups.
 			if (a.reset) {
-				yield* resetLiveStorePreservingCheckpoints(dataDir).pipe(
-					Effect.mapError((e) => new ServerError({ message: e.message })),
-				)
+				yield* resetLiveStorePreservingCheckpoints(dataDir)
 			}
+
+			// Sampled HERE, not at the point of use: `ensureInitialCheckpoint` runs
+			// after `startServer`, and by then chDB has bootstrapped its schema into
+			// dataDir, so every store — including one created seconds ago — looks
+			// like it holds data.
+			const storeHadLiveData = yield* storeHasLiveData(fs, dataDir)
 
 			yield* fs.makeDirectory(dataDir, { recursive: true })
 
@@ -502,7 +760,10 @@ export const start = Command.make("start", {
 			// (SIGTRAP), which we cannot catch. Fresh/matching stores pass through.
 			const compat = checkStoreCompatible(dataDir)
 			if (!compat.compatible) {
-				return yield* new ServerError({
+				return yield* new LocalStoreIncompatibleError({
+					dataDir,
+					storeBuild: compat.found,
+					currentBuild: compat.current,
 					message:
 						`the local store at ${prettyPath(dataDir)} is incompatible with this build's chDB ` +
 						`(store: ${compat.found}; build: ${compat.current}) — loading it would crash chDB. ` +
@@ -523,7 +784,10 @@ export const start = Command.make("start", {
 				// either message named a command that would work.
 				const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
 				if (a.onDirtyStore === "fail") {
-					return yield* new ServerError({
+					return yield* new LocalStoreDirtyError({
+						dataDir,
+						policy: "fail",
+						checkpointAvailable: availability.available,
 						message:
 							`the local store at ${prettyPath(dataDir)} was not cleanly closed. ` +
 							dirtyStoreRecoveryAdvice(availability),
@@ -531,7 +795,10 @@ export const start = Command.make("start", {
 				}
 				if (a.onDirtyStore === "restore-checkpoint") {
 					if (!availability.available) {
-						return yield* new ServerError({
+						return yield* new LocalStoreDirtyError({
+							dataDir,
+							policy: "restore-checkpoint",
+							checkpointAvailable: false,
 							message:
 								`the local store at ${prettyPath(dataDir)} was not cleanly closed and ` +
 								`--on-dirty-store=restore-checkpoint cannot proceed. ` +
@@ -546,9 +813,7 @@ export const start = Command.make("start", {
 							),
 						),
 					)
-					const restored = yield* restoreCheckpoint(dataDir).pipe(
-						Effect.mapError((e) => new ServerError({ message: e.message })),
-					)
+					const restored = yield* restoreCheckpoint(dataDir)
 					yield* Effect.sync(() =>
 						process.stderr.write(
 							`${green("✓")} restored checkpoint; quarantined dirty store at ${prettyPath(restored.quarantinePath)}\n`,
@@ -563,9 +828,7 @@ export const start = Command.make("start", {
 							),
 						),
 					)
-					yield* resetLiveStorePreservingCheckpoints(dataDir).pipe(
-						Effect.mapError((e) => new ServerError({ message: e.message })),
-					)
+					yield* resetLiveStorePreservingCheckpoints(dataDir)
 					yield* fs.makeDirectory(dataDir, { recursive: true })
 				}
 			}
@@ -577,7 +840,8 @@ export const start = Command.make("start", {
 			// current schema. Do not silently delete telemetry or checkpoints:
 			// require an explicit reset, which preserves the checkpoint registry.
 			if (isSchemaIdentityStale(dataDir, CURRENT_LOCAL_SCHEMA)) {
-				return yield* new ServerError({
+				return yield* new LocalStoreSchemaStaleError({
+					dataDir,
 					message:
 						`the local store at ${prettyPath(dataDir)} was built from a different schema identity. ` +
 						`Maple preserved it and its checkpoints. Inspect the supported path with ` +
@@ -604,6 +868,7 @@ export const start = Command.make("start", {
 					chdbConfigFile,
 					a.onDirtyStore,
 					requestedRetentionDays,
+					a.checkpointInterval,
 				)
 
 			yield* Effect.sync(() =>
@@ -631,6 +896,16 @@ export const start = Command.make("start", {
 						}),
 					)
 
+					// Claim the PID file EXCLUSIVELY before chDB or the listener opens.
+					// The liveness guard above is check-then-act: two concurrent starts
+					// could both pass it and open the same store natively, and the
+					// second would read the first's open sentinel as an unclean
+					// shutdown. O_EXCL makes exactly one start win; the loser exits
+					// with the ordinary already-running error before touching the store.
+					yield* Effect.acquireRelease(claimPidFileExclusive(pidPath), () =>
+						fs.remove(pidPath, { force: true }).pipe(Effect.ignore),
+					)
+
 					const { port: boundPort } = yield* startServer({
 						hostname: bindHost,
 						browserHosts: Array.from(
@@ -646,14 +921,8 @@ export const start = Command.make("start", {
 						configFile: chdbConfigFile,
 						minimumRawTelemetryRetentionDays: requestedRetentionDays,
 						assets,
-					}).pipe(
-						Effect.mapError((e) => new ServerError({ message: `failed to start: ${e.message}` })),
-					)
+					})
 					started = true
-
-					yield* Effect.acquireRelease(fs.writeFileString(pidPath, String(process.pid)), () =>
-						fs.remove(pidPath, { force: true }).pipe(Effect.ignore),
-					)
 
 					const bindAddr = serverUrl(bindHost, boundPort)
 					const connectAddr = serverUrl(advertiseHost, boundPort)
@@ -670,6 +939,28 @@ export const start = Command.make("start", {
 							startBanner(bindAddr, connectAddr, dataDir, dashboardUrl, a.offline),
 						),
 					)
+
+					// After the banner, never before it: the server is already listening
+					// and the user has their URL. See `ensureInitialCheckpoint`.
+					yield* ensureInitialCheckpoint(
+						dataDir,
+						connectionHostForBindHost(bindHost),
+						boundPort,
+						storeHadLiveData,
+					)
+
+					// Forked into the server's scope, so shutdown interrupts it with
+					// everything else rather than leaving a BACKUP racing chDB's close.
+					if (checkpointInterval !== undefined) {
+						yield* Effect.forkChild(
+							checkpointRefreshLoop(
+								dataDir,
+								connectionHostForBindHost(bindHost),
+								boundPort,
+								checkpointInterval,
+							),
+						)
+					}
 
 					return yield* Effect.never
 				}),
@@ -729,7 +1020,9 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 					return
 				}
 			}
-			return yield* new ServerError({
+			return yield* new ServerStopTimeoutError({
+				pid,
+				timeoutMs: STOP_TIMEOUT_MS,
 				message: `\nmaple did not stop within ${STOP_TIMEOUT_MS / 1000}s — force-kill with \`kill -9 ${pid}\``,
 			})
 		}),
@@ -768,13 +1061,13 @@ export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag 
 			const abandonedMigration = yield* Effect.tryPromise({
 				try: () => abandonLocalStoreMigration(dataDir),
 				catch: (error) =>
-					new ServerError({
+					new LocalStoreMigrationError({
+						dataDir,
+						phase: "preserve",
 						message: `could not preserve the unfinished migration before reset: ${error instanceof Error ? error.message : String(error)}`,
 					}),
 			})
-			yield* resetLiveStorePreservingCheckpoints(dataDir).pipe(
-				Effect.mapError((e) => new ServerError({ message: e.message })),
-			)
+			yield* resetLiveStorePreservingCheckpoints(dataDir)
 			yield* Effect.sync(() =>
 				process.stderr.write(
 					`${green("✓")} reset — cleared live data and preserved checkpoints at ${prettyPath(dataDir)}\n` +
@@ -796,17 +1089,7 @@ export const checkpoint = Command.make("checkpoint", { dataDir: dataDirFlag, hos
 				dataDir,
 				host: connectionHostForBindHost(a.host),
 				port: a.port,
-			}).pipe(
-				// Only genuine create failures become a `ServerError`. A refused
-				// precondition (`CheckpointPreconditionError`) passes straight through
-				// to `bin.ts`, which recovers it like any other expected outcome —
-				// re-wrapping it here is what billed a second error event per refusal.
-				Effect.mapError((e) =>
-					e._tag === "@maple/cli/CheckpointPreconditionError"
-						? e
-						: new ServerError({ message: e.message }),
-				),
-			)
+			})
 			yield* Effect.sync(() =>
 				process.stdout.write(
 					`${green("✓")} checkpoint created\n` +
@@ -857,7 +1140,9 @@ export const restore = Command.make("restore", {
 			// advice sent people.
 			const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
 			if (!availability.available) {
-				return yield* new ServerError({
+				return yield* new CheckpointUnavailableError({
+					dataDir,
+					reason: availability.reason,
 					message:
 						availability.reason === "none"
 							? `no checkpoint exists under ${prettyPath(dataDir)} — nothing to restore. ` +
@@ -872,11 +1157,12 @@ export const restore = Command.make("restore", {
 			const checkpointId = yield* Effect.try({
 				try: () => (rawCheckpointId === undefined ? "current" : parseCheckpointId(rawCheckpointId)),
 				catch: (error) =>
-					new ServerError({ message: error instanceof Error ? error.message : String(error) }),
+					new ServerOptionError({
+						source: "--checkpoint-id",
+						message: error instanceof Error ? error.message : String(error),
+					}),
 			})
-			const result = yield* restoreCheckpoint(dataDir, checkpointId).pipe(
-				Effect.mapError((e) => new ServerError({ message: e.message })),
-			)
+			const result = yield* restoreCheckpoint(dataDir, checkpointId)
 			yield* Effect.sync(() =>
 				process.stderr.write(
 					`${green("✓")} restored checkpoint\n` +

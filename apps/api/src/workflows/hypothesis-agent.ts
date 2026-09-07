@@ -9,9 +9,10 @@
  * diagnosis would let any one of several rivals declare itself the answer before
  * the validator ran.
  */
+import { makeChatSessionId } from "@maple/domain/chat-session"
 import { AiTriageResult, LensCandidate } from "@maple/domain/http"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { Model } from "@maple/llm"
+import type { LanguageModel } from "@opencode-ai/ai"
 import { Effect, Option } from "effect"
 import { hypothesisAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
@@ -26,10 +27,12 @@ export interface HypothesisAgentInput {
 	readonly scopeSummary: string
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
-	readonly model: Model
+	readonly model: LanguageModel
 	readonly tenant: TenantContext
 	/** Wall-clock budget; the turn spends one last step submitting past it. */
 	readonly deadlineAtMs: number
+	/** The workflow step re-ran after its result was lost to a retry boundary. */
+	readonly rerun: boolean
 }
 
 export interface HypothesisAgentOutput {
@@ -53,10 +56,13 @@ export const runHypothesisAgent = Effect.fn("investigation.hypothesis")(function
 	yield* Effect.annotateCurrentSpan({
 		"maple.investigation.id": input.investigationId,
 		"maple.hypothesis.id": input.hypothesis.id,
+		...(input.rerun ? { "maple.hypothesis.rerun": true } : undefined),
 	})
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_${input.hypothesis.id}`,
+		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
+		workflowName: "investigation",
 		agent: hypothesisAgent(input.hypothesis),
 		tenant: input.tenant,
 		model: input.model,
@@ -122,10 +128,13 @@ export const runSoloHypothesisAgent = Effect.fn("investigation.solo")(function* 
 		"maple.investigation.id": input.investigationId,
 		"maple.hypothesis.id": input.hypothesis.id,
 		"maple.investigation.collapsed": true,
+		...(input.rerun ? { "maple.hypothesis.rerun": true } : undefined),
 	})
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_${input.hypothesis.id}`,
+		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
+		workflowName: "investigation",
 		agent: hypothesisAgent(input.hypothesis),
 		tenant: input.tenant,
 		model: input.model,

@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { MetricName, ServiceName, SpanId, TraceId } from "../../primitives"
+import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
@@ -765,6 +766,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 	)
 	.prefix("/v2/traces")
 	.middleware(AuthorizationV2)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Traces",
@@ -867,6 +869,7 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 	)
 	.prefix("/v2/logs")
 	.middleware(AuthorizationV2)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Logs",
@@ -947,6 +950,7 @@ export class V2MetricsApiGroup extends HttpApiGroup.make("metrics")
 	)
 	.prefix("/v2/metrics")
 	.middleware(AuthorizationV2)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Metrics",
@@ -1059,6 +1063,60 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 		OpenApi.annotations({
 			title: "Services",
 			description: "Observed service health summaries.",
+		}),
+	) {}
+
+export const V2Environment = Schema.Struct({
+	object: Schema.Literal("environment"),
+	name: Schema.String,
+}).annotate({
+	identifier: "Environment",
+	title: "Environment",
+	description: "One deployment environment telemetry has been observed in.",
+	examples: [wireExample({ object: "environment", name: "production" })],
+})
+export type V2Environment = Schema.Schema.Type<typeof V2Environment>
+
+const EnvironmentList = ListOf(V2Environment).annotate({
+	identifier: "EnvironmentList",
+	title: "Environment list",
+})
+
+/**
+ * The values every other endpoint's `deployment_environment` filter accepts.
+ *
+ * Its own resource family rather than a field on the service listing: an
+ * environment picker is organization-wide, and a client that derived the list
+ * from a page of `/v2/services` would silently miss an environment that only
+ * appears past that page's `limit`. Reading the rollups grouped by environment
+ * is also the cheaper question — it does not aggregate per-service health
+ * nobody asked for.
+ *
+ * The empty environment is never returned. Downstream the DSL reads `''` as
+ * "no filter", so a caller who selected it would get every environment back
+ * under a label claiming otherwise.
+ */
+export class V2EnvironmentsApiGroup extends HttpApiGroup.make("environments")
+	.add(
+		HttpApiEndpoint.get("list", "/", {
+			query: V2TelemetryWindowQuery,
+			success: EnvironmentList,
+			error: warehouseWindowErrors,
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listEnvironments",
+				summary: "List deployment environments",
+				description:
+					"Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
+			}),
+		),
+	)
+	.prefix("/v2/environments")
+	.middleware(AuthorizationV2)
+	.annotateMerge(
+		OpenApi.annotations({
+			title: "Environments",
+			description: "The deployment environments telemetry has been observed in.",
 		}),
 	) {}
 

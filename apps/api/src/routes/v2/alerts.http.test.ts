@@ -18,6 +18,7 @@ import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@/platfor
 import type { WarehouseQueryServiceApi } from "@/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "@/services/auth/AuthService"
 import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
@@ -41,6 +42,7 @@ import {
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 import { InvestigationService } from "@/services/errors/InvestigationService"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -66,7 +68,7 @@ const testConfig = () =>
 const warehouseStub = makeWarehouseServiceStub({
 	query: () => Effect.die(new Error("unexpected warehouse pipe query")),
 	rawSqlQuery: () => Effect.succeed([]),
-	compiledQuery: (_tenant, compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
+	compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: () => Effect.die(new Error("unexpected compiled query")),
 	ingest: () => Effect.void,
 })
@@ -163,6 +165,7 @@ const makeHarness = (
 		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -667,17 +670,18 @@ describe("v2 alerts over HTTP", () => {
 		const pagedWarehouse: WarehouseQueryServiceApi = {
 			...warehouseStub,
 			compiledQuery: (_tenant, compiled, options) => {
-				if (options?.context !== "listAlertChecks") return compiled.decodeRows([]).pipe(Effect.orDie)
-				const limit = Number(/LIMIT\s+(\d+)/i.exec(compiled.sql)?.[1] ?? 100)
-				const before = /Timestamp < '([^']+)'/i.exec(compiled.sql)?.[1]
-				const status = /Status = '([^']+)'/i.exec(compiled.sql)?.[1]
+				if (options?.context !== "listAlertChecks")
+					return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
+				const limit = Number(/LIMIT\s+(\d+)/i.exec(compiledQueryOf(compiled).sql)?.[1] ?? 100)
+				const before = /Timestamp < '([^']+)'/i.exec(compiledQueryOf(compiled).sql)?.[1]
+				const status = /Status = '([^']+)'/i.exec(compiledQueryOf(compiled).sql)?.[1]
 				const beforeMs = before === undefined ? undefined : Date.parse(`${before.replace(" ", "T")}Z`)
 				const rows = checkRows.filter(
 					(row) =>
 						(beforeMs === undefined || Date.parse(row.timestamp) < beforeMs) &&
 						(status === undefined || row.status === status),
 				)
-				return compiled.decodeRows(rows.slice(0, limit)).pipe(Effect.orDie)
+				return compiledQueryOf(compiled).decodeRows(rows.slice(0, limit)).pipe(Effect.orDie)
 			},
 		}
 		const harness = makeHarness(pagedWarehouse)

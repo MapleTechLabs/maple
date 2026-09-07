@@ -2,6 +2,7 @@ import {
 	optionalBooleanParam,
 	optionalNumberParam,
 	optionalStringParam,
+	optionalTimeParam,
 	validationError,
 	type McpToolRegistrar,
 } from "./types"
@@ -21,8 +22,8 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 		"search_traces",
 		"Search traces by service, duration, error status, HTTP method, span name, or custom attributes. When span_name is provided, searches at the span level (not just root spans) for accurate results. Use inspect_trace on interesting trace_ids. Use explore_attributes to discover attribute keys.",
 		Schema.Struct({
-			start_time: optionalStringParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalStringParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
+			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
+			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
 			service: optionalStringParam(
 				"Filter by service name (searches all spans in the trace, not just root)",
 			),

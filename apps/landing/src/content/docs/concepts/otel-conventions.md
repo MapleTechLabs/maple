@@ -2,14 +2,14 @@
 title: "OpenTelemetry Conventions"
 description: "Maple's expected OpenTelemetry attributes, status codes, span kinds, and data model conventions."
 group: "Concepts"
-order: 2
+order: 1
 ---
 
 Maple is fully compatible with the OpenTelemetry Protocol (OTLP). This document describes the conventions and attributes that Maple uses to power its dashboards, service maps, and analytics.
 
 Maple stores every OTel attribute you send verbatim, but a curated set get special treatment — pre-extracted into fast columns at ingest, exposed as short filter aliases, rendered as colored badges, used to draw the service map, or scored higher in the attribute chip strip. Most of these follow the [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/) — if your SDK emits standard attributes you usually don't need to do anything extra.
 
-> **Audit with Claude Code:** `maple-audit` reviews an existing setup against these conventions — per service, with severities — and fixes the gaps. See the [maple-audit skill](https://github.com/Makisuo/maple/tree/main/skills/maple-audit).
+> **Audit with Claude Code:** `maple-audit` reviews an existing setup against these conventions — per service, with severities — and fixes the gaps. See the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Ingest Endpoints
 
@@ -68,7 +68,7 @@ Tag every span with these and you get per-environment and per-version slices for
 | `vcs.ref.head.revision`       | `c0b92f68`                    | Git commit SHA. Enables release markers on charts and per-version metrics.                          |
 | `vcs.repository.url.full`     | `https://github.com/acme/api` | Canonical repo URL. Links telemetry to source.                                                      |
 
-`vcs.repository.url.full` and `vcs.ref.head.revision` are the OpenTelemetry semantic-convention keys — prefer them over legacy names like `deployment.commit_sha`, `git.repo`, or `app.repo_url`.
+`vcs.repository.url.full` and `vcs.ref.head.revision` are the OpenTelemetry semantic-convention keys — use them exactly as named; legacy spellings like `deployment.commit_sha`, `git.repo`, or `app.repo_url` are not read.
 
 Set resource attributes via environment variable:
 
@@ -307,12 +307,19 @@ These set the platform badge and runtime icon next to a service on the service m
 | `cloud.provider`       | `aws`, `gcp`, `azure`, `cloudflare`, `vercel`, `railway` | Provider icon / badge resolution.                     |
 | `cloud.platform`       | `aws_lambda`, `cloudflare.workers`, `gcp_cloud_run`      | More granular platform badge.                         |
 | `cloud.region`         | `us-west-2`, `iad1`                                      | Promoted to log chips (see Kubernetes section above). |
-| `process.runtime.name` | `nodejs`, `bun`, `deno`, `workerd`, `rust`, `jvm`        | Runtime icon on the service map.                      |
+| `process.runtime.name` | `nodejs`, `bun`, `deno`, `workerd`, `rust`, `jvm`        | Runtime mark on the service map.                      |
 | `faas.name`            | Lambda function name, Cloud Run service name             | Function-name badge on FaaS deployments.              |
 | `faas.version`         | Function version / revision                              | Per-version slicing on FaaS.                          |
 | `faas.instance`        | Function execution / instance ID                         | Replica identifier on FaaS.                           |
 
-Keep `process.runtime.name` values consistent across services running the same runtime — don't have one service emit `nodejs` and another `node`, or you'll get two runtime icons for the same fleet.
+`nodejs`, `bun`, `deno`, `workerd`, `rust`, `python` (or `cpython`), `ruby`, and the JVM
+(`jvm`, `java`, or the OTel-canonical `OpenJDK Runtime Environment`) render as their logo next to
+the service name; `go`, `dotnet`, `php` and anything unrecognized render as a short text chip
+instead, since their logos are wordmarks that don't survive being drawn at icon size. A runtime the
+platform badge already implies — `workerd` on a Cloudflare service — is dropped rather than shown
+twice.
+
+Common aliases are folded together (`node`/`nodejs`, `go`/`golang`), but keep the value consistent across services on the same runtime anyway — an unlisted variant falls through to the text chip and one fleet ends up wearing two different marks.
 
 ## Filter aliases
 
@@ -323,7 +330,7 @@ In Maple's WHERE-clause search bar (trace list, log search, dashboard widgets), 
 | `service`            | `service.name`                                     |
 | `span`               | `span.name`                                        |
 | `environment`, `env` | `deployment.environment`                           |
-| `commit_sha`         | `deployment.commit_sha`                            |
+| `commit_sha`         | `vcs.ref.head.revision`                            |
 | `root.only`          | `root_only` (synthetic boolean — root spans only)  |
 | `errors_only`        | `has_error` (synthetic boolean — error spans only) |
 

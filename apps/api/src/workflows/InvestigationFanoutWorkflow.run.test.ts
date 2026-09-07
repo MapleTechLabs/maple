@@ -1,20 +1,19 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { randomUUID } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-	errorIssueEvents,
-	errorIssues,
-	investigationLensRuns,
-	investigations,
-	runMigrations,
-} from "@maple/db"
-import { createMaplePgliteClient, type MaplePgClient } from "@maple/db/client"
+import { errorIssueEvents, errorIssues, investigationLensRuns, investigations } from "@maple/db"
+import { runMigrations } from "@maple/db/migrate"
+import { createMaplePgliteClient, type MaplePgliteClient } from "@maple/db/pglite"
+import type { ChatEventInput } from "@maple/domain/chat-session"
 import type { AiTriageResult } from "@maple/domain/http"
 import { ErrorIssueId, InvestigationId, OrgId } from "@maple/domain/primitives"
+import { LLMClient } from "@opencode-ai/ai"
+import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
-import { Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
+import { McpToolExecutor } from "@/mcp/dispatcher"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import type { WorkflowStepLike } from "./ClickHouseSchemaApplyWorkflow.run"
 import {
 	runInvestigationFanout,
 	type InvestigationFanoutDeps,
@@ -24,11 +23,21 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(async () => cleanupTestDbs(createdDbs))
 
-/** Pass-through step harness handling both `do` overloads. */
-const fakeStep: WorkflowStepLike = {
-	do: (async (_name: string, configOrCb: unknown, cb?: () => Promise<unknown>) =>
-		(cb ?? (configOrCb as () => Promise<unknown>))()) as WorkflowStepLike["do"],
+/** The step's Effect as `task` hands it over, with the body context already provided. */
+const stepEffect = <T>(options: Cloudflare.WorkflowTaskOptions<T, any, any>): Effect.Effect<T> =>
+	// SAFETY: alchemy's own step wrapper makes the same narrowing before it runs the Effect.
+	options.effect as Effect.Effect<T>
+
+/** Pass-through step service: every step runs once, in place, as Cloudflare would on a first run. */
+const fakeStep: Cloudflare.WorkflowStep["Service"] = {
+	do: (options) => stepEffect(options),
+	sleep: () => Effect.void,
+	sleepUntil: () => Effect.void,
+	waitForEvent: () => Effect.die("unused"),
 }
+
+/** A pass that failed for a reason the run must record but never propagate. */
+class PassFailure extends Schema.TaggedError<PassFailure>()("PassFailure", { message: Schema.String }) {}
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
@@ -91,7 +100,8 @@ const hypothesisOutput = (id: string) => ({
 })
 
 interface Harness {
-	readonly db: MaplePgClient
+	readonly db: MaplePgliteClient
+	readonly testDb: TestDb
 	readonly investigationId: InvestigationId
 	readonly issueId: ErrorIssueId
 	readonly payload: InvestigationFanoutWorkflowPayload
@@ -102,7 +112,7 @@ let harness: Harness
 beforeEach(async () => {
 	const testDb = createTestDb(createdDbs)
 	await runMigrations(testDb.pglite)
-	const db = createMaplePgliteClient(testDb.pglite) as MaplePgClient
+	const db = createMaplePgliteClient(testDb.pglite)
 	const investigationId = asInvestigationId(randomUUID())
 	const issueId = asIssueId(randomUUID())
 	const now = new Date(FIXED_NOW)
@@ -151,6 +161,7 @@ beforeEach(async () => {
 
 	harness = {
 		db,
+		testDb,
 		investigationId,
 		issueId,
 		payload: { orgId: ORG, investigationId, maxWidth: 5, reservedPasses: 7, attempt: 0 },
@@ -159,39 +170,57 @@ beforeEach(async () => {
 
 const env = { MAPLE_DB: undefined }
 
+/** The agents' graph, never reached: every test stubs the three passes. */
+const noAgents = Layer.mergeAll(Layer.mock(LLMClient.Service)({}), Layer.mock(McpToolExecutor)({}))
+
 const baseDeps = (overrides: Partial<InvestigationFanoutDeps> = {}): InvestigationFanoutDeps => ({
-	db: harness.db,
-	now: () => FIXED_NOW,
-	makeRuntime: async () => ({ runPromise: async () => undefined, dispose: async () => undefined }) as never,
-	seedTranscript: async () => undefined,
-	invokePlanner: async () => ({
-		plan: plan(),
-		model: "strong-model",
-		inputTokens: 400,
-		outputTokens: 60,
-		toolCount: 4,
-	}),
-	invokeHypothesis: async ({ hypothesis }) => hypothesisOutput(hypothesis.id),
-	invokeValidator: async ({ candidates }) => ({
-		promotedLensId: HYPOTHESIS_IDS[0]!,
-		report,
-		rivals: candidates
-			.filter((candidate) => candidate.lensId !== HYPOTHESIS_IDS[0])
-			.map((candidate) => ({
-				lensId: candidate.lensId,
-				verdict: "ruled_out" as const,
-				reason: `${candidate.lensId} did not explain the onset.`,
-			})),
-		note: "1 promoted · 0 merged · 2 ruled out",
-		model: "strong-model",
-		inputTokens: 900,
-		outputTokens: 150,
-	}),
+	agentServices: noAgents,
+	seedTranscript: () => Effect.void,
+	invokePlanner: () =>
+		Effect.succeed({
+			plan: plan(),
+			model: "strong-model",
+			inputTokens: 400,
+			outputTokens: 60,
+			toolCount: 4,
+		}),
+	invokeHypothesis: ({ hypothesis }) => Effect.succeed(hypothesisOutput(hypothesis.id)),
+	invokeValidator: ({ candidates }) =>
+		Effect.succeed({
+			promotedLensId: HYPOTHESIS_IDS[0]!,
+			report,
+			rivals: candidates
+				.filter((candidate) => candidate.lensId !== HYPOTHESIS_IDS[0])
+				.map((candidate) => ({
+					lensId: candidate.lensId,
+					verdict: "ruled_out" as const,
+					reason: `${candidate.lensId} did not explain the onset.`,
+				})),
+			note: "1 promoted · 0 merged · 2 ruled out",
+			model: "strong-model",
+			inputTokens: 900,
+			outputTokens: 150,
+		}),
 	...overrides,
 })
 
-const run = (deps: InvestigationFanoutDeps) =>
-	runInvestigationFanout(env, { payload: harness.payload }, fakeStep, deps)
+/**
+ * Run the body as the Workflow class would: `Database` over the test instance,
+ * the step service, the env record, a fresh run Scope — and a pinned clock, so
+ * every timestamp a step reads is `FIXED_NOW`.
+ */
+const run = (deps: InvestigationFanoutDeps, step: Cloudflare.WorkflowStep["Service"] = fakeStep) =>
+	Effect.runPromise(
+		Effect.gen(function* () {
+			yield* TestClock.setTime(FIXED_NOW)
+			return yield* runInvestigationFanout(harness.payload, deps)
+		}).pipe(
+			Effect.provideService(Cloudflare.WorkflowStep, step),
+			Effect.provideService(Cloudflare.WorkerEnvironment, env),
+			Effect.provide([harness.testDb.layer, TestClock.layer()]),
+			Effect.scoped,
+		),
+	)
 
 const loadInvestigation = async () => {
 	const rows = await harness.db
@@ -235,6 +264,36 @@ describe("runInvestigationFanout", () => {
 	})
 
 	/**
+	 * The engine can re-run a lane step whose result was lost to a retry boundary,
+	 * minutes later and with no failure recorded anywhere. The second execution
+	 * must know it is one, so its span does not read as new work after a silent
+	 * gap in the session view.
+	 */
+	it("flags a re-executed lane step as a rerun", async () => {
+		const seen: Array<{ id: string; rerun: boolean }> = []
+		const doubleStep: Cloudflare.WorkflowStep["Service"] = {
+			...fakeStep,
+			do: (options) =>
+				options.name.startsWith("hypothesis-")
+					? Effect.andThen(stepEffect(options), stepEffect(options))
+					: stepEffect(options),
+		}
+		await run(
+			baseDeps({
+				invokeHypothesis: ({ hypothesis, rerun }) =>
+					Effect.sync(() => {
+						seen.push({ id: hypothesis.id, rerun })
+						return hypothesisOutput(hypothesis.id)
+					}),
+			}),
+			doubleStep,
+		)
+		for (const id of HYPOTHESIS_IDS) {
+			expect(seen.filter((entry) => entry.id === id).map((entry) => entry.rerun)).toEqual([false, true])
+		}
+	})
+
+	/**
 	 * The reservation is made before the planner runs, so it is deliberately high.
 	 * Left unreconciled, an org's daily pass budget drains at the ceiling rather
 	 * than at what its investigations actually cost.
@@ -255,9 +314,7 @@ describe("runInvestigationFanout", () => {
 	it("falls back to the seed catalogue when the planner produces nothing", async () => {
 		const result = await run(
 			baseDeps({
-				invokePlanner: async () => {
-					throw new Error("planner exploded")
-				},
+				invokePlanner: () => Effect.die(new Error("planner exploded")),
 			}),
 		)
 		expect(result.status).toBe("ranked")
@@ -278,24 +335,34 @@ describe("runInvestigationFanout", () => {
 		let validatorCalls = 0
 		const result = await run(
 			baseDeps({
-				invokePlanner: async () => ({
-					plan: plan(
-						[HYPOTHESIS_IDS[0]!],
-						"One exception type, one service, visible in the trace.",
+				invokePlanner: () =>
+					Effect.succeed({
+						plan: plan(
+							[HYPOTHESIS_IDS[0]!],
+							"One exception type, one service, visible in the trace.",
+						),
+						model: "strong-model",
+						inputTokens: 400,
+						outputTokens: 60,
+						toolCount: 4,
+					}),
+				invokeHypothesis: ({ hypothesis, solo }) =>
+					Effect.succeed({
+						...hypothesisOutput(hypothesis.id),
+						report: solo ? report : null,
+					}),
+				invokeValidator: () =>
+					Effect.sync(() => {
+						validatorCalls += 1
+					}).pipe(
+						Effect.andThen(
+							Effect.fail(
+								new PassFailure({
+									message: "the validator must not run on a collapsed plan",
+								}),
+							),
+						),
 					),
-					model: "strong-model",
-					inputTokens: 400,
-					outputTokens: 60,
-					toolCount: 4,
-				}),
-				invokeHypothesis: async ({ hypothesis, solo }) => ({
-					...hypothesisOutput(hypothesis.id),
-					report: solo ? report : null,
-				}),
-				invokeValidator: async () => {
-					validatorCalls += 1
-					throw new Error("the validator must not run on a collapsed plan")
-				},
 			}),
 		)
 		expect(result.status).toBe("ranked")
@@ -322,22 +389,24 @@ describe("runInvestigationFanout", () => {
 		let sawCutShort = false
 		await run(
 			baseDeps({
-				invokeHypothesis: async ({ hypothesis }) => ({
-					...hypothesisOutput(hypothesis.id),
-					deadlineHit: hypothesis.id === HYPOTHESIS_IDS[1],
-				}),
-				invokeValidator: async ({ candidates }) => {
-					sawCutShort = candidates.some((candidate) => candidate.deadlineHit)
-					return {
-						promotedLensId: HYPOTHESIS_IDS[0]!,
-						report,
-						rivals: [],
-						note: "ok",
-						model: "strong-model",
-						inputTokens: 900,
-						outputTokens: 150,
-					}
-				},
+				invokeHypothesis: ({ hypothesis }) =>
+					Effect.succeed({
+						...hypothesisOutput(hypothesis.id),
+						deadlineHit: hypothesis.id === HYPOTHESIS_IDS[1],
+					}),
+				invokeValidator: ({ candidates }) =>
+					Effect.sync(() => {
+						sawCutShort = candidates.some((candidate) => candidate.deadlineHit)
+						return {
+							promotedLensId: HYPOTHESIS_IDS[0]!,
+							report,
+							rivals: [],
+							note: "ok",
+							model: "strong-model",
+							inputTokens: 900,
+							outputTokens: 150,
+						}
+					}),
 			}),
 		)
 		expect(sawCutShort).toBe(true)
@@ -346,17 +415,17 @@ describe("runInvestigationFanout", () => {
 	})
 
 	/**
-	 * The regression this file exists for. `Promise.all` rejects if any member
-	 * rejects, so a lane that throws would otherwise take the whole instance with
-	 * it — losing the healthy passes to one bad one.
+	 * The regression this file exists for. A failing lane would otherwise fail the
+	 * whole fan-out and take the instance with it — losing the healthy passes to
+	 * one bad one.
 	 */
-	it("completes the run when a single hypothesis throws", async () => {
+	it("completes the run when a single hypothesis fails", async () => {
 		const result = await run(
 			baseDeps({
-				invokeHypothesis: async ({ hypothesis }) => {
-					if (hypothesis.id === HYPOTHESIS_IDS[1]) throw new Error("model exploded")
-					return hypothesisOutput(hypothesis.id)
-				},
+				invokeHypothesis: ({ hypothesis }) =>
+					hypothesis.id === HYPOTHESIS_IDS[1]
+						? Effect.fail(new PassFailure({ message: "model exploded" }))
+						: Effect.succeed(hypothesisOutput(hypothesis.id)),
 			}),
 		)
 		expect(result.status).toBe("ranked")
@@ -371,6 +440,25 @@ describe("runInvestigationFanout", () => {
 	})
 
 	/**
+	 * The second belt: a lane step that spent its retries dies at the step
+	 * boundary. That is the engine's signal, and it must become an empty lane
+	 * rather than the end of the run.
+	 */
+	it("completes the run when a lane step itself has exhausted its retries", async () => {
+		const dyingLaneStep: Cloudflare.WorkflowStep["Service"] = {
+			...fakeStep,
+			do: (options) =>
+				options.name === "hypothesis-1"
+					? Effect.die(new Error("step retries exhausted"))
+					: stepEffect(options),
+		}
+		const result = await run(baseDeps(), dyingLaneStep)
+		expect(result.status).toBe("ranked")
+		const lanes = await loadLanes()
+		expect(lanes.filter((lane) => lane.status === "reported")).toHaveLength(2)
+	})
+
+	/**
 	 * Nothing held up, and the validator said so *with* a partial.
 	 *
 	 * The row must not read as a defect: no `failed`, no raw error string, no
@@ -380,24 +468,25 @@ describe("runInvestigationFanout", () => {
 	it("publishes a partial result when the validator promotes nothing", async () => {
 		const result = await run(
 			baseDeps({
-				invokeValidator: async ({ candidates }) => ({
-					promotedLensId: null,
-					report: {
-						...report,
-						suspectedCause: "Most likely the payments-api pool, but unconfirmed.",
-						confidence: "medium",
-						ruledOut: ["Deploy: service.version unchanged across 41k spans"],
-					},
-					rivals: candidates.map((candidate) => ({
-						lensId: candidate.lensId,
-						verdict: "rejected" as const,
-						reason: "contradicted by another candidate",
-					})),
-					note: "no candidate survived",
-					model: "strong-model",
-					inputTokens: 500,
-					outputTokens: 80,
-				}),
+				invokeValidator: ({ candidates }) =>
+					Effect.succeed({
+						promotedLensId: null,
+						report: {
+							...report,
+							suspectedCause: "Most likely the payments-api pool, but unconfirmed.",
+							confidence: "medium",
+							ruledOut: ["Deploy: service.version unchanged across 41k spans"],
+						},
+						rivals: candidates.map((candidate) => ({
+							lensId: candidate.lensId,
+							verdict: "rejected" as const,
+							reason: "contradicted by another candidate",
+						})),
+						note: "no candidate survived",
+						model: "strong-model",
+						inputTokens: 500,
+						outputTokens: 80,
+					}),
 			}),
 		)
 		expect(result.status).toBe("inconclusive")
@@ -430,23 +519,26 @@ describe("runInvestigationFanout", () => {
 	it("synthesises the partial from the lanes when the validator submits nothing", async () => {
 		const result = await run(
 			baseDeps({
-				invokeHypothesis: async ({ hypothesis }) =>
-					hypothesis.id === HYPOTHESIS_IDS[2]
-						? { ...hypothesisOutput(hypothesis.id), claim: null, deadlineHit: true }
-						: hypothesisOutput(hypothesis.id),
-				invokeValidator: async ({ candidates }) => ({
-					promotedLensId: null,
-					report: null,
-					rivals: candidates.map((candidate) => ({
-						lensId: candidate.lensId,
-						verdict: "ruled_out" as const,
-						reason: `nothing in ${candidate.lensId} explained the onset`,
-					})),
-					note: "The validator did not return a ranking.",
-					model: "strong-model",
-					inputTokens: 500,
-					outputTokens: 80,
-				}),
+				invokeHypothesis: ({ hypothesis }) =>
+					Effect.succeed(
+						hypothesis.id === HYPOTHESIS_IDS[2]
+							? { ...hypothesisOutput(hypothesis.id), claim: null, deadlineHit: true }
+							: hypothesisOutput(hypothesis.id),
+					),
+				invokeValidator: ({ candidates }) =>
+					Effect.succeed({
+						promotedLensId: null,
+						report: null,
+						rivals: candidates.map((candidate) => ({
+							lensId: candidate.lensId,
+							verdict: "ruled_out" as const,
+							reason: `nothing in ${candidate.lensId} explained the onset`,
+						})),
+						note: "The validator did not return a ranking.",
+						model: "strong-model",
+						inputTokens: 500,
+						outputTokens: 80,
+					}),
 			}),
 		)
 		expect(result.status).toBe("inconclusive")
@@ -474,15 +566,16 @@ describe("runInvestigationFanout", () => {
 	it("does not touch the linked issue when the run is inconclusive", async () => {
 		await run(
 			baseDeps({
-				invokeValidator: async () => ({
-					promotedLensId: null,
-					report: null,
-					rivals: [],
-					note: "no candidate survived",
-					model: "strong-model",
-					inputTokens: 500,
-					outputTokens: 80,
-				}),
+				invokeValidator: () =>
+					Effect.succeed({
+						promotedLensId: null,
+						report: null,
+						rivals: [],
+						note: "no candidate survived",
+						model: "strong-model",
+						inputTokens: 500,
+						outputTokens: 80,
+					}),
 			}),
 		)
 
@@ -504,9 +597,7 @@ describe("runInvestigationFanout", () => {
 	it("still bills the hypothesis passes when the validator dies", async () => {
 		const result = await run(
 			baseDeps({
-				invokeValidator: async () => {
-					throw new Error("validator exploded")
-				},
+				invokeValidator: () => Effect.fail(new PassFailure({ message: "validator exploded" })),
 			}),
 		)
 		expect(result.status).toBe("failed")
@@ -514,6 +605,7 @@ describe("runInvestigationFanout", () => {
 		const row = await loadInvestigation()
 		expect(row.status).toBe("failed")
 		expect(row.error).toContain("validation_failed")
+		expect(row.error).toContain("validator exploded")
 		// Three lanes at 100/20 each plus the planner's 400/60; no validator tokens
 		// because it never answered.
 		expect(row.inputTokens).toBe(3 * 100 + 400)
@@ -547,6 +639,16 @@ describe("runInvestigationFanout", () => {
 		expect(await loadLanes()).toHaveLength(HYPOTHESIS_IDS.length)
 	})
 
+	it("stamps every step timestamp from the clock read inside the step", async () => {
+		await run(baseDeps())
+		const row = await loadInvestigation()
+		expect(row.updatedAt?.getTime()).toBe(FIXED_NOW)
+		for (const lane of await loadLanes()) {
+			expect(lane.startedAt?.getTime()).toBe(FIXED_NOW)
+			expect(lane.rankedAt?.getTime()).toBe(FIXED_NOW)
+		}
+	})
+
 	/**
 	 * The review caught this dead: the step called `append({ events: [...] })` with
 	 * an `assistant-message` type, neither of which exists — `append` takes one
@@ -558,25 +660,20 @@ describe("runInvestigationFanout", () => {
 	 * checked rather than stubbed away.
 	 */
 	it("seeds a valid turn into the chat session", async () => {
-		const appended: Array<Record<string, unknown>> = []
-		const namespace = {
-			idFromName: (name: string) => name,
-			get: () => ({
-				history: async () => [],
-				append: async (event: Record<string, unknown>) => {
-					appended.push(event)
-					return appended.length
-				},
+		const appended: Array<ChatEventInput> = []
+		const chatSessions = {
+			getByName: () => ({
+				history: () => Effect.succeed([]),
+				append: (event: ChatEventInput) =>
+					Effect.sync(() => {
+						appended.push(event)
+						return appended.length
+					}),
 			}),
 		}
 		const { seedTranscript, ...rest } = baseDeps()
 		void seedTranscript
-		await runInvestigationFanout(
-			{ ...env, CHAT_SESSION: namespace },
-			{ payload: harness.payload },
-			fakeStep,
-			rest,
-		)
+		await run({ ...rest, chatSessions })
 
 		expect(appended.map((event) => event.type)).toEqual([
 			"user-message",
@@ -597,6 +694,22 @@ describe("runInvestigationFanout", () => {
 			.set({ status: "resolved" })
 			.where(eq(investigations.id, harness.investigationId))
 		expect((await run(baseDeps())).status).toBe("skipped")
+		expect(await loadLanes()).toHaveLength(0)
+	})
+
+	it("stands down a stale attempt instead of publishing over a restart", async () => {
+		// A restart bumped the fence and re-queued the row; the terminated-but-alive
+		// attempt-0 instance replays its claim. Termination is best-effort, so this
+		// check is the only thing keeping the old workflow from overwriting the new
+		// attempt's status, report, and lanes' parent state.
+		await harness.db
+			.update(investigations)
+			.set({ fanoutAttempt: 1, fanoutState: "queued" })
+			.where(eq(investigations.id, harness.investigationId))
+		expect((await run(baseDeps())).status).toBe("skipped")
+		const row = await loadInvestigation()
+		expect(row.status).toBe("investigating")
+		expect(row.reportJson).toBeNull()
 		expect(await loadLanes()).toHaveLength(0)
 	})
 })

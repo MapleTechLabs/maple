@@ -10,14 +10,33 @@
 //! - `maple_ai.vendor.version` — identified vendor version, currently always `"0"`
 //! - `maple_ai.session.id` — the vendor's own session identifier, verbatim
 //!
-//! Any customer-supplied `maple_ai.*` keys are stripped first; the gateway is
-//! the authority for this namespace, like it is for `maple_org_id`.
+//! Any customer-supplied `maple_ai.*` key is stripped first, except the few
+//! the gateway does not own (`PRESERVED_ATTRS`); the gateway is the authority
+//! for the rest of this namespace, like it is for `maple_org_id`.
+//!
+//! The whole AI surface lives under `maple_ai.`, including the keys an emitter
+//! writes itself. The native opt-in used to be a bare `maple.session.id`, which
+//! is the browser-session/replay SDK's own key — the replay read routes
+//! annotate their spans with the session they are reading, so every replay read
+//! surfaced as an agent session. `maple_*` is now uniformly Maple-internal
+//! (like `maple_org_id`) and `maple.*` belongs to the SDKs, so the two can
+//! never collide again.
 //!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
 //! matched vendor. Vendors without a session-level identifier (their
 //! instrumentation only emits run/user-scoped IDs, or nothing) get no
 //! `maple_ai.session.id`.
+//!
+//! One vendor is not a framework: `maple` matches any span carrying a
+//! `maple_ai.session.id` attribute. That is the one key an emitter both writes
+//! and reads back — the gateway strips it and re-stamps it verbatim. It is
+//! Maple's own native convention — `apps/api`'s chat and investigation agents
+//! emit it — and doubles as the
+//! documented opt-in for a generic OTel GenAI emitter that no framework
+//! predicate recognises, which would otherwise land in the unknown tier where
+//! no session is ever stamped. It sits first because it is the only predicate
+//! that expresses deliberate intent rather than a fingerprint.
 //!
 //! # Performance shape
 //!
@@ -43,6 +62,22 @@ pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";
 pub const VENDOR_VERSION_ATTR: &str = "maple_ai.vendor.version";
 pub const SESSION_ID_ATTR: &str = "maple_ai.session.id";
 pub const VENDOR_VERSION: &str = "0";
+/// Maple's native session key. Since the whole AI surface moved under
+/// `maple_ai.`, this *is* [`SESSION_ID_ATTR`]: an emitter writes it as the
+/// deliberate opt-in, the gateway strips it with the rest of the namespace and
+/// re-stamps it verbatim. Must match `MAPLE_NATIVE_SESSION_ID_ATTR` in
+/// `packages/domain/src/gen-ai.ts`.
+const MAPLE_SESSION_KEY: &str = SESSION_ID_ATTR;
+/// Keys inside the namespace the gateway does *not* own: an emitter writes
+/// them and nothing here re-stamps them, so the strip must let them through.
+/// Must match `MAPLE_NATIVE_TURN_ID_ATTR`,
+/// `MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR` and
+/// `MAPLE_GENAI_MODEL_DURATION_MS_ATTR` in `packages/domain/src/gen-ai.ts`.
+const PRESERVED_ATTRS: [&str; 3] = [
+    "maple_ai.turn.id",
+    "maple_ai.input_messages_dropped",
+    "maple_ai.model_duration_ms",
+];
 
 #[derive(Debug, PartialEq)]
 pub struct AiClassification {
@@ -92,7 +127,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 {
                     continue;
                 }
-                let (classification, has_maple_ai) = {
+                let (classification, has_ai_namespace) = {
                     let mut ev = SpanEvidence::default();
                     collect_evidence(&mut ev, &span.attributes, &span.events);
                     let classification =
@@ -101,11 +136,13 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                         } else {
                             None
                         };
-                    (classification, ev.has_maple_ai)
+                    (classification, ev.has_ai_namespace)
                 };
-                if has_maple_ai {
-                    span.attributes
-                        .retain(|attr| !attr.key.starts_with(ATTR_NAMESPACE));
+                if has_ai_namespace {
+                    span.attributes.retain(|attr| {
+                        !attr.key.starts_with(ATTR_NAMESPACE)
+                            || PRESERVED_ATTRS.contains(&attr.key.as_str())
+                    });
                 }
                 let Some(classification) = classification else {
                     continue;
@@ -206,6 +243,7 @@ struct ScopeFacts {
     agent_framework: bool,
     openai_agents: bool,
     openinference_openai: bool,
+    openrouter: bool,
     crewai: bool,
     openinference_foreign: bool,
     pydantic: bool,
@@ -235,6 +273,7 @@ const SCOPE_NAMES: &[&str] = &[
     "@mastra/otel-exporter",
     "agent_framework",
     "agent_runtime ",
+    "openrouter",
     "crewai.telemetry",
     "pydantic-ai",
     "strands.telemetry.tracer",
@@ -278,6 +317,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         // openai" is a string prefix of the agents scope.
         "openinference.instrumentation.openai_agents" => facts.openai_agents = true,
         "openinference.instrumentation.openai" => facts.openinference_openai = true,
+        "openrouter" => facts.openrouter = true,
         "openinference.instrumentation.crewai" | "crewai.telemetry" => facts.crewai = true,
         "openinference.instrumentation.smolagents" => facts.smolagents = true,
         "pydantic-ai" => facts.pydantic = true,
@@ -311,6 +351,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         || facts.agent_framework
         || facts.openai_agents
         || facts.openinference_openai
+        || facts.openrouter
         || facts.crewai
         || facts.pydantic
         || facts.semantic_kernel
@@ -328,9 +369,14 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
 )]
 #[derive(Default)]
 struct SpanEvidence<'a> {
-    /// Any field below (except `has_maple_ai`) is set.
+    /// Any field below (except `has_ai_namespace`) is set.
     any: bool,
-    has_maple_ai: bool,
+    has_ai_namespace: bool,
+    /// A gateway-owned `maple_ai.vendor.id` was present on the way in, i.e.
+    /// this payload has already been stamped once. Clears `maple_session` so a
+    /// re-ingest re-derives its original vendor instead of collapsing to
+    /// `maple` off the session id the previous pass wrote.
+    has_vendor_stamp: bool,
     // Value slots.
     span_type: &'a str,
     has_span_type: bool,
@@ -363,6 +409,7 @@ struct SpanEvidence<'a> {
     llm: bool,
     traceloop: bool,
     // Exact-key presence bits.
+    maple_session: bool,
     task_key: bool,
     tool_result_as_answer: bool,
     tool_description_updated: bool,
@@ -577,8 +624,16 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
                 ev.message = true;
             } else if key == "model_request_parameters" {
                 ev.model_request_parameters = true;
+            } else if key == MAPLE_SESSION_KEY {
+                // Also arms the strip: this key is re-stamped verbatim below,
+                // and without the strip the span would carry it twice.
+                ev.maple_session = true;
+                ev.has_ai_namespace = true;
             } else if key.starts_with(ATTR_NAMESPACE) {
-                ev.has_maple_ai = true;
+                ev.has_ai_namespace = true;
+                if key == VENDOR_ID_ATTR {
+                    ev.has_vendor_stamp = true;
+                }
                 return;
             } else {
                 return;
@@ -653,6 +708,11 @@ fn collect_evidence<'a>(
         if ev.llamaindex_event {
             break;
         }
+    }
+    if ev.has_vendor_stamp {
+        // Re-ingest: the session key on this span is the previous pass's
+        // stamp, not a deliberate opt-in. Both get stripped and re-derived.
+        ev.maple_session = false;
     }
 }
 
@@ -749,10 +809,16 @@ struct Vendor {
     session_keys: &'static [&'static str],
 }
 
-/// Ordered: first match wins. Vendors with a dedicated instrumentation scope
-/// come first; the three detected purely from span evidence (`effect_ai`,
-/// `spring_ai`, `vercel_ai_sdk`) come last.
+/// Ordered: first match wins. `maple` leads because its key is an explicit
+/// opt-in rather than a framework fingerprint (see the module doc). Then
+/// vendors with a dedicated instrumentation scope; the three detected purely
+/// from span evidence (`effect_ai`, `spring_ai`, `vercel_ai_sdk`) come last.
 static VENDORS: &[Vendor] = &[
+    Vendor {
+        id: "maple",
+        detect: detect_maple,
+        session_keys: &[MAPLE_SESSION_KEY],
+    },
     Vendor {
         id: "claude_agent_sdk",
         detect: detect_claude_agent_sdk,
@@ -792,6 +858,11 @@ static VENDORS: &[Vendor] = &[
         id: "litellm",
         detect: detect_litellm,
         session_keys: &[],
+    },
+    Vendor {
+        id: "openrouter",
+        detect: detect_openrouter,
+        session_keys: &["session.id"],
     },
     Vendor {
         id: "llamaindex",
@@ -940,6 +1011,10 @@ fn session_value(span_attrs: &[KeyValue], key: &str) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+fn detect_maple(c: &Ctx) -> bool {
+    c.ev.maple_session
+}
+
 fn detect_claude_agent_sdk(c: &Ctx) -> bool {
     const SPAN_TYPES: [&str; 7] = [
         "interaction",
@@ -989,6 +1064,14 @@ fn detect_litellm(c: &Ctx) -> bool {
     // No `litellm.` attr-prefix clause: that would steal the host framework's
     // spans (litellm.call_id rides along inside other frameworks' spans).
     c.scope.litellm
+}
+
+fn detect_openrouter(c: &Ctx) -> bool {
+    // OpenRouter's own OTLP export (scope and service.name are both
+    // "openrouter"). Its `session.id` span attribute echoes the caller-supplied
+    // session tag, so calls tagged by a framework the gateway also stamps join
+    // that framework's session.
+    c.scope.openrouter
 }
 
 fn detect_llamaindex(c: &Ctx) -> bool {
@@ -1235,6 +1318,13 @@ mod tests {
                 &[("session.id", "oo-1")],
                 "openinference-openai",
                 "oo-1",
+            ),
+            (
+                "openrouter",
+                "LLM Generation",
+                &[("session.id", "or-1"), ("gen_ai.operation.name", "chat")],
+                "openrouter",
+                "or-1",
             ),
             (
                 "crewai.telemetry",
@@ -1535,6 +1625,56 @@ mod tests {
     }
 
     #[test]
+    fn maple_detected_from_its_session_key_alone() {
+        classified(
+            "",
+            "invoke_agent default",
+            &[("maple_ai.session.id", "org_1:tab-1")],
+            &[],
+            "maple",
+            Some("org_1:tab-1"),
+        );
+    }
+
+    #[test]
+    fn maple_session_key_lifts_a_generic_genai_span_out_of_the_unknown_tier() {
+        // Without the key this exact span is `unknown:genai` with no session
+        // (see `unknown_tier_buckets`); the key is the opt-in that makes it
+        // groupable.
+        classified(
+            "",
+            "chat openai/gpt-5.6-luna",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.usage.input_tokens", "123"),
+                ("maple_ai.session.id", "org_1:inv-abc"),
+            ],
+            &[],
+            "maple",
+            Some("org_1:inv-abc"),
+        );
+    }
+
+    #[test]
+    fn a_gateway_vendor_stamp_disarms_the_maple_session_key() {
+        // Re-ingest: a payload that already carries our stamps must re-derive
+        // its original vendor, not collapse to `maple` off the session id the
+        // previous pass wrote. The forged vendor id is stripped either way.
+        classified(
+            "@mastra/otel-exporter",
+            "agent.generate",
+            &[
+                ("gen_ai.conversation.id", "conv-42"),
+                ("maple_ai.vendor.id", "mastra"),
+                ("maple_ai.session.id", "conv-42"),
+            ],
+            &[],
+            "mastra",
+            Some("conv-42"),
+        );
+    }
+
+    #[test]
     fn unknown_tier_buckets() {
         classified(
             "",
@@ -1605,6 +1745,58 @@ mod tests {
                 other => panic!("expected string value for {key}, got {other:?}"),
             }
         })
+    }
+
+    #[test]
+    fn the_strip_preserves_the_keys_the_gateway_does_not_own() {
+        let mut request = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: Some(Resource::default()),
+                scope_spans: vec![ScopeSpans {
+                    scope: Some(InstrumentationScope::default()),
+                    spans: vec![Span {
+                        name: "invoke_agent default".to_owned(),
+                        attributes: attrs(&[
+                            ("maple_ai.session.id", "org_1:tab-1"),
+                            ("maple_ai.turn.id", "msg_1"),
+                            ("maple_ai.input_messages_dropped", "2"),
+                        ]),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        stamp_trace_request(&mut request);
+
+        let span = &request.resource_spans[0].scope_spans[0].spans[0];
+        assert_eq!(
+            attr_value(&span.attributes, VENDOR_ID_ATTR).as_deref(),
+            Some("maple")
+        );
+        // Stripped and re-stamped verbatim - once, not twice.
+        assert_eq!(
+            span.attributes
+                .iter()
+                .filter(|kv| kv.key == SESSION_ID_ATTR)
+                .count(),
+            1
+        );
+        assert_eq!(
+            attr_value(&span.attributes, SESSION_ID_ATTR).as_deref(),
+            Some("org_1:tab-1")
+        );
+        // Emitter-owned: never stripped, never re-stamped.
+        assert_eq!(
+            attr_value(&span.attributes, "maple_ai.turn.id").as_deref(),
+            Some("msg_1")
+        );
+        assert_eq!(
+            attr_value(&span.attributes, "maple_ai.input_messages_dropped").as_deref(),
+            Some("2")
+        );
     }
 
     #[test]

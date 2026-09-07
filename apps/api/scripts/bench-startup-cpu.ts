@@ -12,8 +12,8 @@
 //
 // Cloudflare error 10021 ("Script startup exceeded CPU time limit") fires during
 // upload validation, which runs ONLY the worker's top-level module scope against
-// a fixed budget (~400ms documented; behaved like ~1s here). So the only thing
-// that matters is: how much CPU does *constructing* these schemas burn at import?
+// a fixed 1s budget. The relevant question is therefore: how much CPU does
+// *constructing* these schemas burn at import?
 //
 //   bun run scripts/bench-startup-cpu.ts                 # micro (default)
 //   bun run scripts/bench-startup-cpu.ts micro --json
@@ -30,14 +30,37 @@
 // `wrangler check startup`, which profiles the real worker on workerd).
 
 import { spawnSync } from "node:child_process"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Predicate, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 
-const CF_STARTUP_BUDGET_MS = 400 // documented startup CPU ceiling
+/**
+ * The entry alchemy generates for the api Worker, for `wrangler check startup`:
+ * the bridge around `src/worker.ts`'s default export plus a stub per Durable
+ * Object / Workflow class the init yields. Kept in step with `makeEffectVirtualEntry`
+ * in alchemy's `Cloudflare/Workers/Sources/Rolldown.ts` by hand — it is not
+ * reachable through alchemy's exports map.
+ */
+const startupCheckEntry = (workerPath: string): string => `
+import { DurableObject, WorkerEntrypoint, WorkflowEntrypoint } from "cloudflare:workers";
+import { makeDurableObjectBridge, makeWorkerBridge, makeWorkflowBridge } from "alchemy/Cloudflare";
+import entrypoint from ${JSON.stringify(workerPath)};
+
+const meta = { entrypoint, stack: { name: "maple", stage: "startup-check" } };
+
+export default makeWorkerBridge(WorkerEntrypoint, meta);
+
+const DurableObjectBridge = makeDurableObjectBridge(DurableObject, meta);
+export class ChatSession extends DurableObjectBridge("ChatSession") {}
+const WorkflowBridgeFn = makeWorkflowBridge(WorkflowEntrypoint, meta);
+export class ClickHouseSchemaApplyWorkflow extends WorkflowBridgeFn("ClickHouseSchemaApplyWorkflow") {}
+export class InvestigationFanoutWorkflow extends WorkflowBridgeFn("InvestigationFanoutWorkflow") {}
+`
+
+// https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
+const CF_STARTUP_BUDGET_MS = 1_000
 const OBSERVED_BLOWUP_MS = 1000 // what the team saw blow up (per the fix session)
-const POST_FIX_STARTUP_MS = 25 // post lazy-import startup CPU (per memory)
 
 type Sample = { wallMs: number; cpuMs: number }
 
@@ -224,10 +247,10 @@ const runMicro = (opts: {
 		`  evaluating the ENTIRE static import graph (all of @maple/domain + MCP tool/JSON-schema` +
 			` derivation + OpenApi.fromApi), not the error taxonomy — which is why the fix was deferring`,
 	)
+	console.log(`  ./app behind a dynamic import, not trimming error classes.`)
 	console.log(
-		`  ./app behind a dynamic import, not trimming error classes. Post-fix startup is ~${POST_FIX_STARTUP_MS} ms.`,
+		`  Use \`bun run scripts/bench-startup-cpu.ts worker\` for the current authoritative V8/workerd number.\n`,
 	)
-	console.log(`  Authoritative V8/workerd number: \`bun run scripts/bench-startup-cpu.ts worker\`.\n`)
 }
 
 type CpuProfile = {
@@ -354,13 +377,37 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 	}
 	const since = Date.now() - 1000
 	const outfile = join(process.cwd(), "worker-startup.cpuprofile")
+	// The repo has no wrangler config and no entry file: alchemy generates the
+	// bundle entry around `src/worker.ts` at deploy. Startup validation only
+	// evaluates module scope, so a throwaway config naming a copy of that entry
+	// (mirrors `makeEffectVirtualEntry` in alchemy's Rolldown source) is enough.
+	// The check dir sits under this package's node_modules: wrangler runs its
+	// autoconfig detection against the cwd (and refuses a dir without a config
+	// as "not a Workers project"), while esbuild resolves the entry's imports
+	// upward from the entry file — so the dir must both hold the config and
+	// live inside the package tree.
+	const checkDir = join(process.cwd(), "node_modules", ".cache", "maple-startup-check")
+	mkdirSync(checkDir, { recursive: true })
+	const entryPath = join(checkDir, "entry.ts")
+	writeFileSync(entryPath, startupCheckEntry(join(process.cwd(), "src", "worker.ts")))
+	const configPath = join(checkDir, "wrangler.json")
+	writeFileSync(
+		configPath,
+		JSON.stringify({
+			name: "maple-api-startup-check",
+			main: "./entry.ts",
+			compatibility_date: "2026-04-08",
+			compatibility_flags: ["nodejs_compat"],
+		}),
+	)
 	console.error("→ running `wrangler check startup` (this builds the worker)…\n")
 	// Repo-pinned wrangler (not @latest); deterministic --outfile so we parse the
 	// exact file rather than guessing.
-	const res = spawnSync("bunx", ["wrangler", "check", "startup", "--outfile", outfile], {
-		stdio: "inherit",
-		cwd: process.cwd(),
-	})
+	const res = spawnSync(
+		"bunx",
+		["wrangler", "check", "startup", "--config", configPath, "--outfile", outfile],
+		{ stdio: "inherit", cwd: checkDir },
+	)
 	if (res.status !== 0) {
 		console.error(
 			`\nwrangler exited ${res.status ?? "?"}. If it produced a .cpuprofile anyway, parse it with:` +

@@ -118,6 +118,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/api_keys/{id}",
 			"GET /v2/attribute_mappings",
 			"GET /v2/attribute_mappings/{id}",
+			"GET /v2/audit_log",
 			"GET /v2/dashboards",
 			"GET /v2/dashboards/templates",
 			"GET /v2/dashboards/{id}",
@@ -126,6 +127,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/dashboards/{id}/versions",
 			"GET /v2/dashboards/{id}/versions/{version_id}",
 			"GET /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"GET /v2/environments",
 			"GET /v2/error_issues",
 			"GET /v2/error_issues/service_counts",
 			"GET /v2/error_issues/{id}",
@@ -998,7 +1000,11 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("documents the public-ID and Scope primitives with examples", () => {
 		expect(schemas["_maple_ApiKeyId"].description).toContain("public object ID")
 		expect(schemas["_maple_ApiKeyId"].examples?.[0]).toMatch(/^key_/)
-		expect(schemas["Scope"].allOf?.[0]?.examples).toEqual(expect.arrayContaining(["*"]))
+		// effect rc.111 renders a plain checked string flat instead of wrapping it in
+		// a single-branch `allOf`, so read the examples from wherever they land.
+		const scope = schemas["Scope"]
+		const scopeExamples = [scope, ...(scope.allOf ?? [])].flatMap((part: any) => part.examples ?? [])
+		expect(scopeExamples).toEqual(expect.arrayContaining(["*"]))
 	})
 
 	it("generates syntactically valid examples for every public-ID primitive", () => {

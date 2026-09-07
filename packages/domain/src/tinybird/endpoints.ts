@@ -12,13 +12,15 @@ export interface ListTracesOutput {
 	readonly endTime: string
 	readonly durationMicros: number
 	readonly spanCount: number
-	readonly services: string[]
+	readonly services: readonly string[]
 	readonly rootSpanName: string
 	readonly rootSpanKind: string
 	readonly rootSpanStatusCode: string
 	readonly rootHttpMethod: string
 	readonly rootHttpRoute: string
 	readonly rootHttpStatusCode: string
+	/** The root span's projected attribute map, JSON-encoded. */
+	readonly rootSpanAttributes: string
 	readonly hasError: number
 }
 
@@ -84,6 +86,8 @@ export interface ListLogsOutput {
 	readonly body: string
 	readonly traceId: string
 	readonly spanId: string
+	/** Stable per-row identity (`hex(MD5(tuple(…)))`), the list's pagination cursor. */
+	readonly recordIdentity: string
 	readonly logAttributes: string
 	readonly resourceAttributes: string
 }
@@ -123,6 +127,8 @@ export interface LogsCountParams {
 export interface LogsFacetsOutput {
 	readonly severityText: string
 	readonly serviceName: string
+	readonly deploymentEnv: string
+	readonly namespace: string
 	readonly count: number
 	readonly facetType: string
 }
@@ -172,6 +178,7 @@ export interface GetServiceUsageOutput {
 export interface GetServiceUsageParams {
 	org_id: string
 	service?: string
+	services?: string
 	start_time?: string
 	end_time?: string
 }
@@ -185,6 +192,9 @@ export type GetServiceUsageComparedOutput = GetServiceUsageOutput & {
 export interface GetServiceUsageCompareParams {
 	org_id: string
 	service?: string
+	/** Comma-separated. `service_usage` has no env/namespace column, so a scoped
+	 * caller passes its resolved service membership here instead. */
+	services?: string
 	current_start_time: string
 	current_end_time: string
 	previous_start_time: string
@@ -351,6 +361,7 @@ export interface ServiceOverviewCompareParams {
 	previous_start_time: string
 	previous_end_time: string
 	environments?: string
+	namespaces?: string
 	commit_shas?: string
 }
 
@@ -374,6 +385,7 @@ export interface ServiceReleasesTimelineOutput {
 	readonly bucket: string
 	readonly commitSha: string
 	readonly count: number
+	readonly errorCount: number
 }
 
 export interface ServiceReleasesTimelineParams {
@@ -406,6 +418,9 @@ export interface ErrorsByTypeParams {
 	limit?: number
 	exclude_spam_patterns?: string
 	root_only?: boolean
+	/** "unexpected" keeps only identities outside `namespace_prefix` plus the 5xx/unexpected-envelope markers. */
+	identity?: string
+	namespace_prefix?: string
 }
 
 // errors_timeseries
@@ -432,9 +447,18 @@ export interface ErrorDetailTracesOutput {
 	readonly startTime: string
 	readonly durationMicros: number
 	readonly spanCount: number
-	readonly services: string[]
+	readonly services: readonly string[]
 	readonly rootSpanName: string
 	readonly errorMessage: string
+	readonly errorSpanId: string
+	readonly errorSpanName: string
+	readonly errorServiceName: string
+	readonly errorModel: string
+	readonly errorToolName: string
+	readonly errorHttpMethod: string
+	readonly errorHttpRoute: string
+	readonly errorQueryContext: string
+	readonly errorType: string
 }
 
 export interface ErrorDetailTracesParams {
@@ -661,6 +685,14 @@ export interface CustomTracesBreakdownParams {
 	service_name?: string
 	span_name?: string
 	limit?: number
+	/** Collapse to a single row for the whole window — the only shape that yields
+	 * a true org-wide quantile, since per-group quantiles cannot be merged. */
+	group_by_all?: string
+	/** True `service.namespace` / `deployment.environment` grain. Needed because
+	 * `service_overview`'s namespace column is a dominant-value `argMax`, not a
+	 * grouping key, so per-namespace totals cannot be summed out of it. */
+	group_by_namespace?: string
+	group_by_environment?: string
 	group_by_service?: string
 	group_by_span_name?: string
 	group_by_status_code?: string
@@ -668,6 +700,7 @@ export interface CustomTracesBreakdownParams {
 	group_by_attribute?: string
 	root_only?: boolean
 	environments?: string
+	namespaces?: string
 	commit_shas?: string
 	errors_only?: boolean
 	apdex_threshold_ms?: number
@@ -715,7 +748,8 @@ export interface ServiceDependenciesOutput {
 	readonly callCount: number
 	readonly errorCount: number
 	readonly avgDurationMs: number
-	readonly p95DurationMs: number
+	/** Slowest call in the window, not a percentile — the edge rollup stores a max. */
+	readonly maxDurationMs: number
 	readonly estimatedSpanCount: number
 }
 

@@ -3,7 +3,9 @@
 ## `unionAll`
 
 `unionAll` combines queries that share an output shape. TypeScript enforces the shape match,
-so a branch that selects different keys is a compile error.
+and compilation also rejects mismatched keys at runtime. Each branch is emitted in the first
+branch's alias order, so object insertion order cannot swap values. Nullable codecs are merged
+across every branch, including when selecting through `fromUnion`.
 
 ```ts
 const recent = CH.from(Events)
@@ -16,7 +18,7 @@ const archived = CH.from(Events)
 
 const combined = CH.unionAll(recent, archived).orderBy(["name", "asc"]).limit(100)
 
-const compiled = CH.compileUnion(combined, {})
+const compiled = CH.compileUnionUnsafe(combined, {})
 // SELECT * FROM ( … UNION ALL … ) ORDER BY name ASC LIMIT 100
 ```
 
@@ -43,7 +45,7 @@ const outer = CH.fromUnion(combined, "branches")
 ```
 
 Like [`fromQuery`](./joins-and-subqueries.md#subquery-in-from), accessors are flat (`$.name`),
-and the outer query inherits the union's tenant scope — a union of scoped branches stays
+and the outer query inherits the union's tenant scope — a union of branches bound to the same tenant stays
 scoped.
 
 The classic use is stitching a sealed hourly rollup onto a live raw-table branch for the
@@ -65,10 +67,10 @@ const query = CH.from(Recent)
 	.withCTE("recent", cte)
 	.select(($) => ({ name: $.Name }))
 
-const compiled = CH.compile(query, {})
+const compiled = CH.compileUnsafe(query, {})
 // WITH recent AS ( SELECT Name AS Name FROM events WHERE OrgId = 'org_123' )
 // SELECT Name AS name FROM recent
-compiled.tenantScope // "org" — read off the CTE, not declared
+compiled.tenantScope // "single-tenant" — read off the CTE, not declared
 ```
 
 To _read_ a CTE, declare a table whose name matches it and start the query there. That is what
@@ -85,18 +87,18 @@ all you have:
 const cteSql = "SELECT Name FROM events WHERE OrgId = 'org_123'"
 
 CH.from(CH.table("recent", { Name: T.string }))
-	.withCTE("recent", cteSql, { tenantScope: "org" })
+	.withCTE("recent", cteSql, { tenantScope: "single-tenant" })
 	.select(($) => ({ name: $.Name }))
 ```
 
 The body is opaque here, so the builder cannot see the `OrgId` filter inside it. If the CTE is
-the query's row source and you omit `tenantScope`, the compiled query reads as `"cross-org"`
+the query's row source and you omit `tenantScope`, the compiled query reads as `"cross-tenant"`
 even though its SQL is perfectly well filtered.
 
 Two caveats worth internalising:
 
 - The declaration is an **assertion you are making**, not something that gets verified. Passing
-  `tenantScope: "org"` for a CTE that does not filter by tenant defeats the mechanism. This is
+  `tenantScope: "single-tenant"` for a CTE that does not filter by tenant defeats the mechanism. This is
   the reason to prefer the query form.
 - It only takes effect when the query's `FROM` **names that CTE**. A CTE attached to a query
   that reads from a different table contributes nothing to the scope.

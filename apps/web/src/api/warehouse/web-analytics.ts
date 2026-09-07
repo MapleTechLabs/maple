@@ -1,4 +1,4 @@
-// One filter schema shared by all five queries, so the /analytics route builds a
+// One filter schema shared by all six queries, so the /analytics route builds a
 // single filter object and every panel narrows identically. See
 // packages/query-engine/src/ch/queries/web-analytics.ts for why the page reads
 // two tables and what each half covers.
@@ -6,6 +6,8 @@
 import { Effect, Schema } from "effect"
 import {
 	WebAnalyticsBreakdownsRequest,
+	WebAnalyticsEventsRequest,
+	WebAnalyticsLiveRequest,
 	WebAnalyticsPagesRequest,
 	WebAnalyticsPageviewsRequest,
 	WebAnalyticsSummaryRequest,
@@ -14,7 +16,7 @@ import {
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
-const WebAnalyticsFilterFields = {
+export const WebAnalyticsFilterFields = {
 	host: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
 	referrerHost: Schema.optional(Schema.String),
@@ -27,9 +29,11 @@ const WebAnalyticsFilterFields = {
 	utmMedium: Schema.optional(Schema.String),
 	utmCampaign: Schema.optional(Schema.String),
 	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
+	traffic: Schema.optional(Schema.Literals(["all", "humans", "bots"])),
+	eventName: Schema.optional(Schema.String),
 } as const
 
-const TimeWindowFields = {
+export const TimeWindowFields = {
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
 } as const
@@ -38,6 +42,13 @@ const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 
 const WebAnalyticsSummaryInputSchema = Schema.Struct({
 	...TimeWindowFields,
+	...WebAnalyticsFilterFields,
+})
+
+// No time window: the server resolves "now" per request so the counter cannot
+// freeze at the moment the page mounted. Filters only, which also keeps the
+// atom key stable across polls.
+const WebAnalyticsLiveInputSchema = Schema.Struct({
 	...WebAnalyticsFilterFields,
 })
 
@@ -53,6 +64,12 @@ const WebAnalyticsPagesInputSchema = Schema.Struct({
 	limit: Schema.optional(PositiveInt),
 })
 
+const WebAnalyticsEventsInputSchema = Schema.Struct({
+	...TimeWindowFields,
+	...WebAnalyticsFilterFields,
+	limit: Schema.optional(PositiveInt),
+})
+
 const WebAnalyticsBreakdownsInputSchema = Schema.Struct({
 	...TimeWindowFields,
 	...WebAnalyticsFilterFields,
@@ -60,8 +77,10 @@ const WebAnalyticsBreakdownsInputSchema = Schema.Struct({
 })
 
 export type GetWebAnalyticsSummaryInput = (typeof WebAnalyticsSummaryInputSchema)["Encoded"]
+export type GetWebAnalyticsLiveInput = (typeof WebAnalyticsLiveInputSchema)["Encoded"]
 export type GetWebAnalyticsTimeseriesInput = (typeof WebAnalyticsTimeseriesInputSchema)["Encoded"]
 export type GetWebAnalyticsPagesInput = (typeof WebAnalyticsPagesInputSchema)["Encoded"]
+export type GetWebAnalyticsEventsInput = (typeof WebAnalyticsEventsInputSchema)["Encoded"]
 export type GetWebAnalyticsBreakdownsInput = (typeof WebAnalyticsBreakdownsInputSchema)["Encoded"]
 
 export interface WebAnalyticsSummary {
@@ -71,6 +90,14 @@ export interface WebAnalyticsSummary {
 	bouncedSessions: number
 	identifiedSessions: number
 	avgDurationMs: number
+	/** Sessions from crawlers, headless browsers and other non-human agents. */
+	botSessions: number
+	/**
+	 * `botSessions / sessions`, 0–1, or `null` when the `traffic` filter has
+	 * already partitioned the window — under `humans` or `bots` the ratio is a
+	 * tautology (0 or 1), and reporting it as a share would read as a finding.
+	 */
+	botShare: number | null
 	/**
 	 * Share of sessions whose SDK build posts the analytics block, i.e. the share
 	 * of traffic every visitor-level number on the page actually describes. The
@@ -84,6 +111,13 @@ export interface WebAnalyticsSummary {
 	 * views — the honest answer there is "unknown", not 0% and not 100%.
 	 */
 	bounceRate: number | null
+}
+
+/** Who is on the site right now, and over what window that was measured. */
+export interface WebAnalyticsLive {
+	visitors: number
+	sessions: number
+	windowSeconds: number
 }
 
 export interface WebAnalyticsTimeseriesPoint {
@@ -112,6 +146,13 @@ export interface WebAnalyticsPage {
 	host: string
 	pagePath: string
 	pageViews: number
+	sessions: number
+}
+
+/** One `track()` event name, with firings and the distinct sessions that fired it. */
+export interface WebAnalyticsEvent {
+	name: string
+	events: number
 	sessions: number
 }
 
@@ -159,11 +200,36 @@ const getWebAnalyticsSummaryEffect = Effect.fn("QueryEngine.getWebAnalyticsSumma
 	)
 
 	const row = result.data
+	const partitioned = input.traffic === "humans" || input.traffic === "bots"
 	return {
 		...row,
 		coverage: ratio(row.identifiedSessions, row.sessions),
 		bounceRate: row.identifiedSessions > 0 ? row.bouncedSessions / row.identifiedSessions : null,
+		botShare: partitioned ? null : ratio(row.botSessions, row.sessions),
 	} satisfies WebAnalyticsSummary
+})
+
+export function getWebAnalyticsLive({ data }: { data: GetWebAnalyticsLiveInput }) {
+	return getWebAnalyticsLiveEffect({ data })
+}
+
+const getWebAnalyticsLiveEffect = Effect.fn("QueryEngine.getWebAnalyticsLive")(function* ({
+	data,
+}: {
+	data: GetWebAnalyticsLiveInput
+}) {
+	const input = yield* decodeInput(WebAnalyticsLiveInputSchema, data, "getWebAnalyticsLive")
+
+	const result = yield* runWarehouseQuery("webAnalyticsLive", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.webAnalyticsLive({
+				payload: new WebAnalyticsLiveRequest(input),
+			})
+		}),
+	)
+
+	return result.data satisfies WebAnalyticsLive
 })
 
 export function getWebAnalyticsTimeseries({ data }: { data: GetWebAnalyticsTimeseriesInput }) {
@@ -233,6 +299,29 @@ const getWebAnalyticsPagesEffect = Effect.fn("QueryEngine.getWebAnalyticsPages")
 	)
 
 	return { data: result.data satisfies ReadonlyArray<WebAnalyticsPage> }
+})
+
+export function getWebAnalyticsEvents({ data }: { data: GetWebAnalyticsEventsInput }) {
+	return getWebAnalyticsEventsEffect({ data })
+}
+
+const getWebAnalyticsEventsEffect = Effect.fn("QueryEngine.getWebAnalyticsEvents")(function* ({
+	data,
+}: {
+	data: GetWebAnalyticsEventsInput
+}) {
+	const input = yield* decodeInput(WebAnalyticsEventsInputSchema, data, "getWebAnalyticsEvents")
+
+	const result = yield* runWarehouseQuery("webAnalyticsEvents", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.webAnalyticsEvents({
+				payload: new WebAnalyticsEventsRequest(input),
+			})
+		}),
+	)
+
+	return { data: result.data satisfies ReadonlyArray<WebAnalyticsEvent> }
 })
 
 export function getWebAnalyticsBreakdowns({ data }: { data: GetWebAnalyticsBreakdownsInput }) {

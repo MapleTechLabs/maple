@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
+import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
 	CommitSha,
@@ -19,9 +20,44 @@ import {
 	QueryEngineExecuteResponse,
 	TinybirdDateTime,
 } from "../query-engine"
+import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseHttpErrors } from "./warehouse"
+import { FunnelBreakdownBy, FunnelKeyBy, FunnelStep } from "@maple/query-model"
+
+/**
+ * A timeseries bucket width.
+ *
+ * Checked as a positive integer because that is what it has to be by the time
+ * it reaches the warehouse: `param.int` rejects a fraction, and the query
+ * builder raises that while the query is still being built. Declaring it as a
+ * bare `Schema.Number` made a request with `bucket_seconds: 1.5` a 500 instead
+ * of a 400. `packages/domain/src/query-engine.ts` already had this right; these
+ * declarations did not.
+ */
+const BucketSeconds = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)).pipe(
+	Schema.annotate({
+		identifier: "BucketSeconds",
+		description: "Timeseries bucket width in whole seconds, greater than zero.",
+	}),
+)
+
+/**
+ * A `LIMIT` a client may ask for. The builder INLINES it into the SQL text, so
+ * `-1` or `1e21` would be a syntax error (a 500) and `1e9` an unbounded scan;
+ * the ceiling lives here because the internal API is reachable by any client.
+ */
+const RowLimit = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThan(0),
+	Schema.isLessThanOrEqualTo(1000),
+).pipe(
+	Schema.annotate({
+		identifier: "RowLimit",
+		description: "Maximum rows to return: a whole number between 1 and 1000.",
+	}),
+)
 
 // Dedicated endpoint schemas
 
@@ -96,6 +132,10 @@ export class ErrorsByTypeRequest extends Schema.Class<ErrorsByTypeRequest>("Erro
 	fingerprintHashes: OptionalFingerprintHashes,
 	errorLabels: OptionalErrorLabels,
 	serviceVersions: OptionalServiceVersions,
+	excludedServices: OptionalServiceNames,
+	excludedDeploymentEnvs: OptionalDeploymentEnvs,
+	excludedErrorLabels: OptionalErrorLabels,
+	excludedServiceVersions: OptionalServiceVersions,
 	limit: Schema.optional(Schema.Number),
 }) {}
 
@@ -119,7 +159,7 @@ export class ErrorsTimeseriesRequest extends Schema.Class<ErrorsTimeseriesReques
 		endTime: TinybirdDateTime,
 		fingerprintHash: FingerprintHash,
 		services: OptionalServiceNames,
-		bucketSeconds: Schema.optional(Schema.Number),
+		bucketSeconds: Schema.optional(BucketSeconds),
 	},
 ) {}
 
@@ -147,7 +187,11 @@ export class ErrorsSparkRequest extends Schema.Class<ErrorsSparkRequest>("Errors
 	deploymentEnvs: OptionalDeploymentEnvs,
 	errorLabels: OptionalErrorLabels,
 	serviceVersions: OptionalServiceVersions,
-	bucketSeconds: Schema.optional(Schema.Number),
+	excludedServices: OptionalServiceNames,
+	excludedDeploymentEnvs: OptionalDeploymentEnvs,
+	excludedErrorLabels: OptionalErrorLabels,
+	excludedServiceVersions: OptionalServiceVersions,
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class ErrorsSparkResponse extends Schema.Class<ErrorsSparkResponse>("ErrorsSparkResponse")({
@@ -236,6 +280,9 @@ export class ServiceOverviewRequest extends Schema.Class<ServiceOverviewRequest>
 	environments: OptionalDeploymentEnvs,
 	namespaces: OptionalServiceNamespaces,
 	commitShas: OptionalCommitShas,
+	excludedEnvironments: OptionalDeploymentEnvs,
+	excludedNamespaces: OptionalServiceNamespaces,
+	excludedCommitShas: OptionalCommitShas,
 }) {}
 
 export class ServiceOverviewResponse extends Schema.Class<ServiceOverviewResponse>("ServiceOverviewResponse")(
@@ -294,7 +341,7 @@ export class ServiceApdexRequest extends Schema.Class<ServiceApdexRequest>("Serv
 	endTime: TinybirdDateTime,
 	serviceName: ServiceName,
 	apdexThresholdMs: Schema.optional(Schema.Number),
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class ServiceApdexResponse extends Schema.Class<ServiceApdexResponse>("ServiceApdexResponse")({
@@ -379,7 +426,7 @@ export class PlanetScaleInfraTimeseriesRequest extends Schema.Class<PlanetScaleI
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	database: Schema.String,
 	/**
 	 * Narrows the series to one branch. Worth doing: a PlanetScale database is
@@ -449,7 +496,7 @@ export class CloudflareInfraZoneTimeseriesRequest extends Schema.Class<Cloudflar
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	...CloudflareZoneFilterFields,
 }) {}
 
@@ -469,7 +516,7 @@ export class CloudflareInfraZoneDetailRequest extends Schema.Class<CloudflareInf
 	serviceName: Schema.String,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	...CloudflareZoneFilterFields,
 }) {}
 
@@ -509,7 +556,7 @@ export class CloudflareInfraZoneSecurityRequest extends Schema.Class<CloudflareI
 	serviceName: Schema.String,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	...CloudflareZoneFilterFields,
 }) {}
 
@@ -527,7 +574,7 @@ export class CloudflareInfraZoneDnsRequest extends Schema.Class<CloudflareInfraZ
 	serviceName: Schema.String,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	...CloudflareZoneFilterFields,
 }) {}
 
@@ -561,7 +608,7 @@ export class CloudflareInfraZoneBreakdownRequest extends Schema.Class<Cloudflare
 	dimension: CloudflareZoneDimension,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	limit: Schema.optionalKey(Schema.Number),
 	...CloudflareZoneFilterFields,
 }) {}
@@ -668,8 +715,9 @@ export class ServiceDetailOverviewRequest extends Schema.Class<ServiceDetailOver
 	// `queryEngine.execute` rather than reconstructing it server-side.
 	timeseries: QueryEngineExecuteRequest,
 	// Bucket size for the releases-timeline sub-query (client-computed alongside
-	// the timeseries bucket).
-	releasesBucketSeconds: Schema.optional(Schema.Number),
+	// the timeseries bucket). `BucketSeconds`, not a bare number, for the reason
+	// on that schema: it reaches `param.int`, which rejects a fraction.
+	releasesBucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class ServiceDetailOverviewResponse extends Schema.Class<ServiceDetailOverviewResponse>(
@@ -690,6 +738,86 @@ export class ServiceDetailOverviewResponse extends Schema.Class<ServiceDetailOve
 	// window — feeds the environment switcher dropdown (previously an all-services
 	// overview scan).
 	environments: Schema.Array(Schema.String),
+}) {}
+
+// Releases
+//
+// A release is a commit the moment it starts serving traffic: the
+// service-overview rollups key on `vcs.ref.head.revision`, and the first bucket
+// a commit appears in is its deploy time. Both endpoints read those rollups; the
+// detail additionally bridges to the errors tables through `service.version`.
+
+const ReleaseRow = Schema.Struct({
+	serviceName: ServiceName,
+	environment: Schema.String,
+	commitSha: CommitSha,
+	/** Warehouse datetime of the earliest span this version served in the window. */
+	firstSeen: Schema.String,
+	spanCount: Schema.Number,
+	errorCount: Schema.Number,
+	p50LatencyMs: Schema.Number,
+	p95LatencyMs: Schema.Number,
+	p99LatencyMs: Schema.Number,
+	apdexScore: Schema.Number,
+})
+export type ReleaseRow = Schema.Schema.Type<typeof ReleaseRow>
+
+const ReleaseTimelinePoint = Schema.Struct({
+	bucket: Schema.String,
+	serviceName: ServiceName,
+	commitSha: CommitSha,
+	count: Schema.Number,
+})
+export type ReleaseTimelinePoint = Schema.Schema.Type<typeof ReleaseTimelinePoint>
+
+export class ReleasesListRequest extends Schema.Class<ReleasesListRequest>("ReleasesListRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: OptionalDeploymentEnvs,
+	namespaces: OptionalServiceNamespaces,
+	services: OptionalServiceNames,
+	excludedEnvironments: OptionalDeploymentEnvs,
+	// Bucket for the swimlane timeline. Whole minutes at least: the rollup tiers
+	// cannot place a row inside a minute, and the list is org-wide.
+	bucketSeconds: BucketSeconds,
+}) {}
+
+export class ReleasesListResponse extends Schema.Class<ReleasesListResponse>("ReleasesListResponse")({
+	/** One row per (service, environment, commit), newest first. */
+	releases: Schema.Array(ReleaseRow),
+	timeline: Schema.Array(ReleaseTimelinePoint),
+	/** True when the row cap cut older releases off the end. */
+	truncated: Schema.Boolean,
+}) {}
+
+export class ReleaseDetailRequest extends Schema.Class<ReleaseDetailRequest>("ReleaseDetailRequest")({
+	serviceName: ServiceName,
+	commitSha: CommitSha,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: OptionalDeploymentEnvs,
+	// Pre-built all-metrics timeseries for this version and for every other
+	// version of the service, forwarded verbatim to `queryEngine.execute` like
+	// the service-detail bundle does.
+	timeseries: QueryEngineExecuteRequest,
+	baselineTimeseries: QueryEngineExecuteRequest,
+	bucketSeconds: BucketSeconds,
+}) {}
+
+export class ReleaseDetailResponse extends Schema.Class<ReleaseDetailResponse>("ReleaseDetailResponse")({
+	/** Every version of this service in the window, this one included. */
+	versions: Schema.Array(ReleaseRow),
+	timeline: Schema.Array(ReleaseTimelinePoint),
+	timeseries: QueryEngineExecuteResponse,
+	baselineTimeseries: QueryEngineExecuteResponse,
+	/** Error fingerprints whose occurrences carried this version as `service.version`. */
+	errorFingerprints: Schema.Array(
+		Schema.Struct({
+			fingerprintHash: FingerprintHash,
+			count: Schema.Number,
+			firstSeen: Schema.String,
+		}),
+	),
 }) {}
 
 export class ServiceDependenciesBundleRequest extends Schema.Class<ServiceDependenciesBundleRequest>(
@@ -720,7 +848,7 @@ export class ServiceDbQuerySummaryRequest extends Schema.Class<ServiceDbQuerySum
 	endTime: TinybirdDateTime,
 	sourceService: Schema.optional(ServiceName),
 	deploymentEnv: Schema.optional(DeploymentEnvironment),
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 	topN: Schema.optional(Schema.Number),
 }) {}
 
@@ -868,7 +996,7 @@ export class ServiceOperationsRequest extends Schema.Class<ServiceOperationsRequ
 	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	// Bucket size for the per-operation sparkline sub-query (client-computed,
 	// like ServiceDetailOverviewRequest.releasesBucketSeconds).
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 	limit: Schema.optional(Schema.Number),
 }) {}
 
@@ -889,6 +1017,7 @@ export class ServiceOperationsResponse extends Schema.Class<ServiceOperationsRes
 			avgDurationMs: Schema.Number,
 			p50DurationMs: Schema.Number,
 			p95DurationMs: Schema.Number,
+			p99DurationMs: Schema.Number,
 			// Sampling-weighted per-bucket counts, joined per operation server-side.
 			sparkline: Schema.Array(
 				Schema.Struct({
@@ -900,20 +1029,81 @@ export class ServiceOperationsResponse extends Schema.Class<ServiceOperationsRes
 	),
 }) {}
 
+export class ServiceEndpointsRequest extends Schema.Class<ServiceEndpointsRequest>("ServiceEndpointsRequest")(
+	{
+		serviceName: ServiceName,
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+		environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+		limit: Schema.optional(Schema.Number),
+	},
+) {}
+
+/**
+ * The HTTP slice of {@link ServiceOperationsResponse}, with the normalized name
+ * pre-split into method and route so the table does not re-derive it per render,
+ * and p99 alongside p50/p95.
+ */
+export class ServiceEndpointsResponse extends Schema.Class<ServiceEndpointsResponse>(
+	"ServiceEndpointsResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			// Normalized name ("GET /api/users") — the /traces spanNames filter
+			// accepts it, so a row click drills straight through.
+			spanName: Schema.String,
+			method: Schema.String,
+			route: Schema.String,
+			spanCount: Schema.Number,
+			estimatedSpanCount: Schema.Number,
+			errorCount: Schema.Number,
+			estimatedErrorCount: Schema.Number,
+			// 0–1 ratio, sampling-weighted.
+			errorRate: Schema.Number,
+			avgDurationMs: Schema.Number,
+			p50DurationMs: Schema.Number,
+			p95DurationMs: Schema.Number,
+			p99DurationMs: Schema.Number,
+		}),
+	),
+}) {}
+
 export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	service: Schema.optional(ServiceName),
 	severity: Schema.optional(Schema.String),
+	/**
+	 * Multi-value spellings of `service` / `severity`, and the values each facet filters *out*.
+	 *
+	 * The scalars came first and stay for the dashboard read-model plans that select exactly one.
+	 * The arrays exist because the logs sidebar has always rendered multi-select checkboxes: before
+	 * these, it sent `services[0]` and silently dropped every other ticked value.
+	 */
+	services: Schema.optional(Schema.Array(ServiceName)),
+	severities: Schema.optional(Schema.Array(Schema.String)),
+	excludedServices: Schema.optional(Schema.Array(ServiceName)),
+	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
+	excludedDeploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	minSeverity: Schema.optional(Schema.Number),
 	traceId: Schema.optional(Schema.String),
 	spanId: Schema.optional(Schema.String),
-	cursor: Schema.optional(Schema.String),
+	/**
+	 * The `timestamp` of the last row of the previous page, so it is a warehouse
+	 * DateTime by contract. Checked as one, because the query builder compares it
+	 * against `Timestamp` while the query is still being *built* — before
+	 * `CH.compile`, and so outside the Effect that turns a bad literal into a
+	 * value. An arbitrary string here was a 500 rather than a 400.
+	 */
+	cursor: Schema.optional(TinybirdDateTime),
 	search: Schema.optional(Schema.String),
 	deploymentEnv: Schema.optional(DeploymentEnvironment),
 	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
+	deploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	namespace: Schema.optional(ServiceNamespace),
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	limit: Schema.optional(Schema.Number),
 }) {}
 
@@ -922,11 +1112,16 @@ export class ListLogsResponse extends Schema.Class<ListLogsResponse>("ListLogsRe
 }) {}
 
 // Exact-match lookup of one log by its composite key (logs have no primary id).
-// `timestamp` is the raw ClickHouse DateTime64 string. It remains a plain
-// string because older stored rows and upstream drivers can vary their
-// fractional-second rendering.
+//
+// `timestamp` is the raw ClickHouse DateTime64 string, and `TinybirdDateTime`
+// is what that shape is: it allows 1-9 fractional digits or none, which is the
+// rendering variance across stored rows and upstream drivers that kept this a
+// bare `Schema.String`. It cannot stay one, because the value reaches
+// `partitionWindowAround` (`Date.parse` → NaN → a thrown RangeError) and then
+// `param.dateTimeString`, both under the query runner's `orDie` — so an
+// unparseable timestamp was a 500 rather than a 400.
 export class GetLogRequest extends Schema.Class<GetLogRequest>("GetLogRequest")({
-	timestamp: Schema.String,
+	timestamp: TinybirdDateTime,
 	serviceName: ServiceName,
 	traceId: Schema.optional(Schema.String),
 	spanId: Schema.optional(Schema.String),
@@ -993,6 +1188,30 @@ export class ListHostsResponse extends Schema.Class<ListHostsResponse>("ListHost
 	data: Schema.Array(HostRow),
 }) {}
 
+/**
+ * Which Infrastructure surfaces an org actually reports. Drives the sidebar's
+ * Infrastructure section, so it is requested on every page load — the query
+ * behind it is five short-circuiting existence checks, not five list queries.
+ */
+export class InfraPresenceRequest extends Schema.Class<InfraPresenceRequest>("InfraPresenceRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export const InfraSurfaceLiteral = Schema.Literals([
+	"hosts",
+	"containers",
+	"k8sPods",
+	"k8sNodes",
+	"k8sWorkloads",
+])
+export type InfraSurfaceLiteral = typeof InfraSurfaceLiteral.Type
+
+export class InfraPresenceResponse extends Schema.Class<InfraPresenceResponse>("InfraPresenceResponse")({
+	/** Only the surfaces that reported in the window — absent means nothing to show. */
+	surfaces: Schema.Array(InfraSurfaceLiteral),
+}) {}
+
 export class HostDetailSummaryRequest extends Schema.Class<HostDetailSummaryRequest>(
 	"HostDetailSummaryRequest",
 )({
@@ -1028,7 +1247,7 @@ export class HostInfraTimeseriesRequest extends Schema.Class<HostInfraTimeseries
 	endTime: TinybirdDateTime,
 	hostName: Schema.String,
 	metric: Schema.Literals(["cpu", "memory", "filesystem", "network", "load15"]),
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeseriesResponse>(
@@ -1050,7 +1269,7 @@ export class FleetUtilizationTimeseriesRequest extends Schema.Class<FleetUtiliza
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class FleetUtilizationTimeseriesResponse extends Schema.Class<FleetUtilizationTimeseriesResponse>(
@@ -1085,7 +1304,14 @@ const PodSortKeyLiteral = Schema.Literals([
 const SortDirectionLiteral = Schema.Literals(["asc", "desc"])
 
 /** One-click fleet scopes from the browse summary band. */
-const PodScopeLiteral = Schema.Literals(["saturated", "elevated", "unbounded", "stale"])
+const PodScopeLiteral = Schema.Literals(["saturated", "elevated", "unbounded"])
+
+/**
+ * Which slice of the window's pods to return. A windowed list is the union of
+ * everything that reported at any point in it, so on an autoscaled fleet most
+ * of those pods no longer exist. Defaults to `live` server-side.
+ */
+const PodLifecycleLiteral = Schema.Literals(["live", "ended", "all"])
 
 export class ListPodsRequest extends Schema.Class<ListPodsRequest>("ListPodsRequest")({
 	startTime: TinybirdDateTime,
@@ -1101,9 +1327,20 @@ export class ListPodsRequest extends Schema.Class<ListPodsRequest>("ListPodsRequ
 	jobs: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
 	computeTypes: Schema.optional(StringArray),
+	excludedPodNames: Schema.optional(StringArray),
+	excludedNamespaces: Schema.optional(StringArray),
+	excludedNodeNames: Schema.optional(StringArray),
+	excludedClusters: Schema.optional(StringArray),
+	excludedDeployments: Schema.optional(StringArray),
+	excludedStatefulsets: Schema.optional(StringArray),
+	excludedDaemonsets: Schema.optional(StringArray),
+	excludedJobs: Schema.optional(StringArray),
+	excludedEnvironments: Schema.optional(StringArray),
+	excludedComputeTypes: Schema.optional(StringArray),
 	workloadKind: Schema.optional(WorkloadKindLiteral),
 	workloadName: Schema.optional(Schema.String),
 	scope: Schema.optional(PodScopeLiteral),
+	lifecycle: Schema.optional(PodLifecycleLiteral),
 	sortBy: Schema.optional(PodSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
 	limit: Schema.optional(Schema.Number),
@@ -1154,11 +1391,181 @@ export class PodsSummaryRequest extends Schema.Class<PodsSummaryRequest>("PodsSu
 }) {}
 
 export class PodsSummaryResponse extends Schema.Class<PodsSummaryResponse>("PodsSummaryResponse")({
-	totalPods: Schema.Number,
+	/** Still reporting at the window's end — the fleet as it stands. */
+	livePods: Schema.Number,
+	/** Reported earlier in the window and stopped: scale-in, a rollout, a cycled task. */
+	endedPods: Schema.Number,
 	saturatedPods: Schema.Number,
 	elevatedPods: Schema.Number,
 	unboundedPods: Schema.Number,
-	stalePods: Schema.Number,
+}) {}
+
+// Containers (Docker) — docker_stats receiver rows, identity (container.name,
+// host.name). All percentages are on the 0..1 scale (the queries normalize
+// docker's 0..100 gauges) so the web severity toning matches the pod pages.
+
+const ContainerSortKeyLiteral = Schema.Literals([
+	"saturation",
+	"cpuPct",
+	"memoryPct",
+	"containerName",
+	"lastSeen",
+])
+
+/**
+ * No `unbounded` scope: running without limits is the norm in plain Docker,
+ * so the pod "burning CPU with nothing capping it" bucket doesn't transfer.
+ */
+const ContainerScopeLiteral = Schema.Literals(["saturated", "elevated", "stale"])
+
+const ContainerFilterFields = {
+	search: Schema.optional(Schema.String),
+	containerNames: Schema.optional(StringArray),
+	hostNames: Schema.optional(StringArray),
+	images: Schema.optional(StringArray),
+	composeProjects: Schema.optional(StringArray),
+	composeServices: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+	excludedContainerNames: Schema.optional(StringArray),
+	excludedHostNames: Schema.optional(StringArray),
+	excludedImages: Schema.optional(StringArray),
+	excludedComposeProjects: Schema.optional(StringArray),
+	excludedComposeServices: Schema.optional(StringArray),
+	excludedEnvironments: Schema.optional(StringArray),
+} as const
+
+export class ListContainersRequest extends Schema.Class<ListContainersRequest>("ListContainersRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...ContainerFilterFields,
+	scope: Schema.optional(ContainerScopeLiteral),
+	sortBy: Schema.optional(ContainerSortKeyLiteral),
+	sortDir: Schema.optional(SortDirectionLiteral),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
+}) {}
+
+const ContainerRow = Schema.Struct({
+	containerName: Schema.String,
+	hostName: Schema.String,
+	containerId: Schema.String,
+	imageName: Schema.String,
+	composeProject: Schema.String,
+	composeService: Schema.String,
+	runtime: Schema.String,
+	environment: Schema.String,
+	lastSeen: Schema.String,
+	cpuPct: Schema.Number,
+	memoryPct: Schema.Number,
+	cpuPctPeak: Schema.Number,
+	memoryPctPeak: Schema.Number,
+	cpuLimitCores: Schema.Number,
+	uptimeSeconds: Schema.Number,
+	saturation: Schema.Number,
+})
+
+export class ListContainersResponse extends Schema.Class<ListContainersResponse>("ListContainersResponse")({
+	data: Schema.Array(ContainerRow),
+	/** Total containers matching the filters, before limit/offset (see ListPodsResponse). */
+	totalCount: Schema.Number,
+}) {}
+
+export class ContainersSummaryRequest extends Schema.Class<ContainersSummaryRequest>(
+	"ContainersSummaryRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	hostNames: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+}) {}
+
+export class ContainersSummaryResponse extends Schema.Class<ContainersSummaryResponse>(
+	"ContainersSummaryResponse",
+)({
+	totalContainers: Schema.Number,
+	saturatedContainers: Schema.Number,
+	elevatedContainers: Schema.Number,
+	staleContainers: Schema.Number,
+}) {}
+
+export class ContainerFacetsRequest extends Schema.Class<ContainerFacetsRequest>("ContainerFacetsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...ContainerFilterFields,
+}) {}
+
+export class ContainerFacetsResponse extends Schema.Class<ContainerFacetsResponse>("ContainerFacetsResponse")(
+	{
+		data: Schema.Struct({
+			containers: Schema.Array(FacetRow),
+			hosts: Schema.Array(FacetRow),
+			images: Schema.Array(FacetRow),
+			composeProjects: Schema.Array(FacetRow),
+			composeServices: Schema.Array(FacetRow),
+			environments: Schema.Array(FacetRow),
+		}),
+	},
+) {}
+
+export class ContainerDetailSummaryRequest extends Schema.Class<ContainerDetailSummaryRequest>(
+	"ContainerDetailSummaryRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	containerName: Schema.String,
+	/** Optional narrowing — container names collide across hosts. */
+	hostName: Schema.optional(Schema.String),
+}) {}
+
+export class ContainerDetailSummaryResponse extends Schema.Class<ContainerDetailSummaryResponse>(
+	"ContainerDetailSummaryResponse",
+)({
+	data: Schema.NullOr(
+		Schema.Struct({
+			containerName: Schema.String,
+			hostName: Schema.String,
+			containerId: Schema.String,
+			imageName: Schema.String,
+			composeProject: Schema.String,
+			composeService: Schema.String,
+			runtime: Schema.String,
+			firstSeen: Schema.String,
+			lastSeen: Schema.String,
+			cpuPct: Schema.Number,
+			memoryPct: Schema.Number,
+			cpuLimitCores: Schema.Number,
+			uptimeSeconds: Schema.Number,
+			// Counter-side complements from metrics_sum.
+			memoryBytesAvg: Schema.Number,
+			memoryLimitBytes: Schema.Number,
+			restartsDelta: Schema.Number,
+			pidsAvg: Schema.Number,
+		}),
+	),
+}) {}
+
+export class ContainerInfraTimeseriesRequest extends Schema.Class<ContainerInfraTimeseriesRequest>(
+	"ContainerInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	containerName: Schema.String,
+	hostName: Schema.optional(Schema.String),
+	metric: Schema.Literals(["cpu", "memory_percent", "memory_bytes", "network", "disk_io", "uptime"]),
+	bucketSeconds: Schema.optional(BucketSeconds),
+}) {}
+
+export class ContainerInfraTimeseriesResponse extends Schema.Class<ContainerInfraTimeseriesResponse>(
+	"ContainerInfraTimeseriesResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			attributeValue: Schema.String,
+			value: Schema.Number,
+		}),
+	),
+	unit: Schema.Literals(["percent", "bytes", "seconds"]),
 }) {}
 
 // Web Analytics
@@ -1181,6 +1588,11 @@ const WebAnalyticsFilterFields = {
 	utmMedium: Schema.optional(Schema.String),
 	utmCampaign: Schema.optional(Schema.String),
 	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
+	// Which agents count. Absent means `all` — the page splits humans from
+	// crawlers rather than silently restating every figure on it.
+	traffic: Schema.optional(Schema.Literals(["all", "humans", "bots"])),
+	// Sessions in which a `track(eventName)` call fired.
+	eventName: Schema.optional(Schema.String),
 } as const
 
 export class WebAnalyticsSummaryRequest extends Schema.Class<WebAnalyticsSummaryRequest>(
@@ -1204,6 +1616,33 @@ export class WebAnalyticsSummaryResponse extends Schema.Class<WebAnalyticsSummar
 		// visitor count that covers a fraction of traffic never reads as the whole.
 		identifiedSessions: Schema.Number,
 		avgDurationMs: Schema.Number,
+		// Sessions from crawlers, headless browsers and other non-human agents,
+		// counted within the same filters as every field above — so it is only a
+		// share of traffic under the default `traffic: 'all'`.
+		botSessions: Schema.Number,
+	}),
+}) {}
+
+export class WebAnalyticsLiveRequest extends Schema.Class<WebAnalyticsLiveRequest>("WebAnalyticsLiveRequest")(
+	{
+		// No time range on purpose: "live" is always the window ending now, and a
+		// client-pinned one would freeze the counter at the moment the page mounted.
+		// The handler resolves it per request, which also keeps the cache key stable
+		// across polls — see the `webAnalyticsLive` query definition.
+		...WebAnalyticsFilterFields,
+	},
+) {}
+
+export class WebAnalyticsLiveResponse extends Schema.Class<WebAnalyticsLiveResponse>(
+	"WebAnalyticsLiveResponse",
+)({
+	data: Schema.Struct({
+		/** Distinct visitor ids active in the window. 0 on SDK builds with no analytics block. */
+		visitors: Schema.Number,
+		/** Distinct active sessions — what the badge falls back to when no visitor ids are reported. */
+		sessions: Schema.Number,
+		/** The window the two counts cover, so the badge's copy comes from the server. */
+		windowSeconds: Schema.Number,
 	}),
 }) {}
 
@@ -1212,7 +1651,7 @@ export class WebAnalyticsTimeseriesRequest extends Schema.Class<WebAnalyticsTime
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -1240,7 +1679,7 @@ export class WebAnalyticsPageviewsRequest extends Schema.Class<WebAnalyticsPagev
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -1278,6 +1717,27 @@ export class WebAnalyticsPagesResponse extends Schema.Class<WebAnalyticsPagesRes
 	),
 }) {}
 
+export class WebAnalyticsEventsRequest extends Schema.Class<WebAnalyticsEventsRequest>(
+	"WebAnalyticsEventsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	limit: Schema.optional(Schema.Number),
+	...WebAnalyticsFilterFields,
+}) {}
+
+export class WebAnalyticsEventsResponse extends Schema.Class<WebAnalyticsEventsResponse>(
+	"WebAnalyticsEventsResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			name: Schema.String,
+			events: Schema.Number,
+			sessions: Schema.Number,
+		}),
+	),
+}) {}
+
 export class WebAnalyticsBreakdownsRequest extends Schema.Class<WebAnalyticsBreakdownsRequest>(
 	"WebAnalyticsBreakdownsRequest",
 )({
@@ -1306,6 +1766,149 @@ export class WebAnalyticsBreakdownsResponse extends Schema.Class<WebAnalyticsBre
 	}),
 }) {}
 
+// Product events — funnels
+//
+// Step-based conversion funnels over `product_events` (browser page views and
+// `track()` calls, server- and mobile-emitted events). The definition schemas
+// (`FunnelStep`, `FunnelKeyBy`, `FunnelBreakdownBy`) live in
+// `@maple/query-model` so the dashboard widget schema (below `@maple/domain`)
+// can store the same shape; they are re-exported here for HTTP consumers. Every
+// request keeps the web-analytics filter surface so the `/analytics` sidebar
+// narrows a funnel exactly the way it narrows the page-view panels.
+
+export {
+	FUNNEL_MAX_STEPS,
+	FunnelBreakdownBy,
+	FunnelEventStep,
+	FunnelKeyBy,
+	FunnelPageStep,
+	FunnelSessionDimension,
+	FunnelSessionStep,
+	FunnelStep,
+} from "@maple/query-model"
+
+const ProductEventsFunnelFields = {
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** 1–10 steps, in order. */
+	steps: Schema.Array(FunnelStep),
+	keyBy: FunnelKeyBy,
+	/** The whole chain must complete within this many seconds of the step-1 event. */
+	windowSeconds: Schema.Number,
+	...WebAnalyticsFilterFields,
+} as const
+
+export class ProductEventsFunnelRequest extends Schema.Class<ProductEventsFunnelRequest>(
+	"ProductEventsFunnelRequest",
+)(ProductEventsFunnelFields) {}
+
+export class ProductEventsFunnelResponse extends Schema.Class<ProductEventsFunnelResponse>(
+	"ProductEventsFunnelResponse",
+)({
+	/** Exactly one row per step, in step order (1-based `step`). */
+	data: Schema.Array(Schema.Struct({ step: Schema.Number, count: Schema.Number })),
+}) {}
+
+export class ProductEventsFunnelBreakdownRequest extends Schema.Class<ProductEventsFunnelBreakdownRequest>(
+	"ProductEventsFunnelBreakdownRequest",
+)({
+	...ProductEventsFunnelFields,
+	breakdownBy: FunnelBreakdownBy,
+	/** Groups to keep, ranked by step-1 count. Default 10, max 20. */
+	limit: Schema.optional(Schema.Number),
+}) {}
+
+export class ProductEventsFunnelBreakdownResponse extends Schema.Class<ProductEventsFunnelBreakdownResponse>(
+	"ProductEventsFunnelBreakdownResponse",
+)({
+	data: Schema.Array(Schema.Struct({ group: Schema.String, step: Schema.Number, count: Schema.Number })),
+}) {}
+
+export class ProductEventNamesRequest extends Schema.Class<ProductEventNamesRequest>(
+	"ProductEventNamesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Default 100. */
+	limit: Schema.optional(Schema.Number),
+	...WebAnalyticsFilterFields,
+}) {}
+
+export class ProductEventNamesResponse extends Schema.Class<ProductEventNamesResponse>(
+	"ProductEventNamesResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			eventName: Schema.String,
+			/** `navigation` for page views, `custom` for `track()` calls, `screen` for mobile screens. */
+			kind: Schema.String,
+			count: Schema.Number,
+			sessions: Schema.Number,
+			persons: Schema.Number,
+		}),
+	),
+}) {}
+
+/**
+ * The product events one trace produced. `traceId` is the branded `TraceId`:
+ * it rejects `""`, which would otherwise match every non-trace row in the window.
+ */
+export class ProductEventsForTraceRequest extends Schema.Class<ProductEventsForTraceRequest>(
+	"ProductEventsForTraceRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	traceId: TraceId,
+	/** Default 50, max 1000. */
+	limit: Schema.optional(RowLimit),
+}) {}
+
+export class ProductEventsForTraceResponse extends Schema.Class<ProductEventsForTraceResponse>(
+	"ProductEventsForTraceResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			timestamp: Schema.String,
+			eventName: Schema.String,
+			/** The annotated span within the trace. */
+			spanId: Schema.String,
+			serviceName: Schema.String,
+			userId: Schema.String,
+			groupId: Schema.String,
+			visitorId: Schema.String,
+			sessionId: Schema.String,
+			/** The span's attributes as projected by `maple.product_event.include` / `prop.*`. */
+			attributes: Schema.Record(Schema.String, Schema.String),
+		}),
+	),
+}) {}
+
+/** Recent traces behind one event name — the analytics side of the same link. */
+export class ProductEventTraceSamplesRequest extends Schema.Class<ProductEventTraceSamplesRequest>(
+	"ProductEventTraceSamplesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	eventName: Schema.String,
+	/** Default 20, max 1000. */
+	limit: Schema.optional(RowLimit),
+}) {}
+
+export class ProductEventTraceSamplesResponse extends Schema.Class<ProductEventTraceSamplesResponse>(
+	"ProductEventTraceSamplesResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			spanId: Schema.String,
+			timestamp: Schema.String,
+			serviceName: Schema.String,
+			userId: Schema.String,
+			visitorId: Schema.String,
+		}),
+	),
+}) {}
+
 export class PodFacetsRequest extends Schema.Class<PodFacetsRequest>("PodFacetsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
@@ -1320,6 +1923,16 @@ export class PodFacetsRequest extends Schema.Class<PodFacetsRequest>("PodFacetsR
 	jobs: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
 	computeTypes: Schema.optional(StringArray),
+	excludedPodNames: Schema.optional(StringArray),
+	excludedNamespaces: Schema.optional(StringArray),
+	excludedNodeNames: Schema.optional(StringArray),
+	excludedClusters: Schema.optional(StringArray),
+	excludedDeployments: Schema.optional(StringArray),
+	excludedStatefulsets: Schema.optional(StringArray),
+	excludedDaemonsets: Schema.optional(StringArray),
+	excludedJobs: Schema.optional(StringArray),
+	excludedEnvironments: Schema.optional(StringArray),
+	excludedComputeTypes: Schema.optional(StringArray),
 }) {}
 
 export class PodFacetsResponse extends Schema.Class<PodFacetsResponse>("PodFacetsResponse")({
@@ -1380,7 +1993,7 @@ export class PodInfraTimeseriesRequest extends Schema.Class<PodInfraTimeseriesRe
 	podName: Schema.String,
 	namespace: Schema.optional(Schema.String),
 	metric: Schema.Literals(["cpu_usage", "cpu_limit", "cpu_request", "memory_limit", "memory_request"]),
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class PodInfraTimeseriesResponse extends Schema.Class<PodInfraTimeseriesResponse>(
@@ -1471,7 +2084,7 @@ export class NodeInfraTimeseriesRequest extends Schema.Class<NodeInfraTimeseries
 	endTime: TinybirdDateTime,
 	nodeName: Schema.String,
 	metric: Schema.Literals(["cpu_usage", "uptime"]),
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class NodeInfraTimeseriesResponse extends Schema.Class<NodeInfraTimeseriesResponse>(
@@ -1577,7 +2190,7 @@ export class WorkloadInfraTimeseriesRequest extends Schema.Class<WorkloadInfraTi
 	namespace: Schema.optional(Schema.String),
 	metric: Schema.Literals(["cpu_usage", "cpu_limit", "memory_limit"]),
 	groupByPod: Schema.optional(Schema.Boolean),
-	bucketSeconds: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
 export class WorkloadInfraTimeseriesResponse extends Schema.Class<WorkloadInfraTimeseriesResponse>(
@@ -1617,12 +2230,16 @@ export {
 // re-exported here so `@maple/domain/http` keeps its existing surface.
 export { RawSqlDisplayType }
 
-export const MAX_RAW_SQL_LENGTH = 32_768
-export const MAX_RAW_SQL_RESULT_ROWS = 1_000
-export const MAX_RAW_SQL_RESULT_BYTES = 5_000_000
-export const MAX_RAW_SQL_CELL_LENGTH = 64_000
-export const MAX_RAW_SQL_ALERT_GROUPS = 100
-export const MAX_RAW_SQL_GROUP_KEY_LENGTH = 256
+// Defined alongside the static validator that enforces them; re-exported here
+// so `@maple/domain/http` keeps its existing surface.
+export {
+	MAX_RAW_SQL_ALERT_GROUPS,
+	MAX_RAW_SQL_CELL_LENGTH,
+	MAX_RAW_SQL_GROUP_KEY_LENGTH,
+	MAX_RAW_SQL_LENGTH,
+	MAX_RAW_SQL_RESULT_BYTES,
+	MAX_RAW_SQL_RESULT_ROWS,
+} from "../raw-sql"
 
 export class RawSqlExecuteRequest extends Schema.Class<RawSqlExecuteRequest>("RawSqlExecuteRequest")({
 	sql: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_RAW_SQL_LENGTH)),
@@ -1648,6 +2265,7 @@ export class RawSqlValidationError extends Schema.TaggedError<RawSqlValidationEr
 			"MissingOrgFilter",
 			"InvalidMacro",
 			"DisallowedStatement",
+			"DisallowedFunction",
 			"MultipleStatements",
 			"UnresolvedMacro",
 			"ResourceLimit",
@@ -1939,6 +2557,21 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("releasesList", "/releases", {
+			payload: ReleasesListRequest,
+			success: ReleasesListResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("releaseDetail", "/release-detail", {
+			payload: ReleaseDetailRequest,
+			success: ReleaseDetailResponse,
+			// Embeds `execute` sub-queries, so it can also surface QueryEngineValidationError.
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("serviceDependenciesBundle", "/service-dependencies-bundle", {
 			payload: ServiceDependenciesBundleRequest,
 			success: ServiceDependenciesBundleResponse,
@@ -1981,6 +2614,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("serviceEndpoints", "/service-endpoints", {
+			payload: ServiceEndpointsRequest,
+			success: ServiceEndpointsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("listLogs", "/list-logs", {
 			payload: ListLogsRequest,
 			success: ListLogsResponse,
@@ -2005,6 +2645,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("metricsSummary", "/metrics-summary", {
 			payload: MetricsSummaryRequest,
 			success: MetricsSummaryResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("infraPresence", "/infra-presence", {
+			payload: InfraPresenceRequest,
+			success: InfraPresenceResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
@@ -2107,6 +2754,41 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("listContainers", "/list-containers", {
+			payload: ListContainersRequest,
+			success: ListContainersResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("containersSummary", "/containers-summary", {
+			payload: ContainersSummaryRequest,
+			success: ContainersSummaryResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("containerDetailSummary", "/container-detail-summary", {
+			payload: ContainerDetailSummaryRequest,
+			success: ContainerDetailSummaryResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("containerInfraTimeseries", "/container-infra-timeseries", {
+			payload: ContainerInfraTimeseriesRequest,
+			success: ContainerInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("containerFacets", "/container-facets", {
+			payload: ContainerFacetsRequest,
+			success: ContainerFacetsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("podFacets", "/pod-facets", {
 			payload: PodFacetsRequest,
 			success: PodFacetsResponse,
@@ -2135,6 +2817,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("webAnalyticsLive", "/web-analytics-live", {
+			payload: WebAnalyticsLiveRequest,
+			success: WebAnalyticsLiveResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("webAnalyticsTimeseries", "/web-analytics-timeseries", {
 			payload: WebAnalyticsTimeseriesRequest,
 			success: WebAnalyticsTimeseriesResponse,
@@ -2156,9 +2845,53 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("webAnalyticsEvents", "/web-analytics-events", {
+			payload: WebAnalyticsEventsRequest,
+			success: WebAnalyticsEventsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("webAnalyticsBreakdowns", "/web-analytics-breakdowns", {
 			payload: WebAnalyticsBreakdownsRequest,
 			success: WebAnalyticsBreakdownsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventsFunnel", "/product-events-funnel", {
+			payload: ProductEventsFunnelRequest,
+			success: ProductEventsFunnelResponse,
+			// A funnel the builder rejects (no steps, >10, session step past step 1,
+			// non-positive window) is a 400, not a warehouse failure.
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventsFunnelBreakdown", "/product-events-funnel-breakdown", {
+			payload: ProductEventsFunnelBreakdownRequest,
+			success: ProductEventsFunnelBreakdownResponse,
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventNames", "/product-event-names", {
+			payload: ProductEventNamesRequest,
+			success: ProductEventNamesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventsForTrace", "/product-events-for-trace", {
+			payload: ProductEventsForTraceRequest,
+			success: ProductEventsForTraceResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventTraceSamples", "/product-event-trace-samples", {
+			payload: ProductEventTraceSamplesRequest,
+			success: ProductEventTraceSamplesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
@@ -2175,4 +2908,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.prefix("/internal/query-engine")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Every endpoint here reads telemetry for the dashboard.
+	.annotate(AuditedRead, "telemetry.read") {}

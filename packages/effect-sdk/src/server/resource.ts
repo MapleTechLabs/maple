@@ -1,5 +1,6 @@
 import { Effect, Option, Redacted } from "effect"
 import * as EnvConfig from "./config.js"
+import { getContainerAttributes } from "./container.js"
 import { getAutoPlatformAttributes } from "./platform.js"
 
 /**
@@ -125,6 +126,10 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 
 	const attributes: Record<string, unknown> = {}
 	Object.assign(attributes, getAutoPlatformAttributes())
+	// Best-effort Docker identity (container.runtime / container.id) so app
+	// telemetry correlates with docker_stats metrics. Lowest precedence — an
+	// explicit OTEL_RESOURCE_ATTRIBUTES container.id overrides it below.
+	Object.assign(attributes, getContainerAttributes())
 	attributes["maple.sdk.type"] = config.sdkType ?? "server"
 	attributes["service.instance.id"] = getServiceInstanceId()
 	if (environment) {
@@ -136,7 +141,6 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 		attributes["deployment.environment"] = environment
 		attributes["deployment.environment.name"] = environment
 	}
-	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
 	if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
 	if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
@@ -216,7 +220,6 @@ export const resolveResourceFromEnv = (
 		attributes["deployment.environment"] = environment
 		attributes["deployment.environment.name"] = environment
 	}
-	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
 	if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
 	if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace

@@ -59,6 +59,9 @@ export const toV2Issue = (issue: ErrorIssueDocument): V2ErrorIssue => ({
 	snooze_until: issue.snoozeUntil,
 	archived_at: issue.archivedAt,
 	has_open_incident: issue.hasOpenIncident,
+	comment_count: issue.commentCount,
+	open_pull_request_count: issue.openPullRequestCount,
+	merged_pull_request_count: issue.mergedPullRequestCount,
 })
 
 const toV2Incident = (incident: ErrorIncidentDocument): V2ErrorIncident => ({
@@ -88,6 +91,7 @@ export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueD
 		duration_micros: trace.durationMicros,
 	})),
 	incidents: detail.incidents.map(toV2Incident),
+	environments: detail.environments.map((env) => ({ name: env.name, count: env.count })),
 })
 
 const decodeCursor = (

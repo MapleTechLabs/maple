@@ -10,7 +10,13 @@
 //
 // An `ErrorSignal` is those three joined on the fingerprint hash.
 
-import type { ErrorIssueDocument, ErrorIssueId, IssueSeverity, WorkflowState } from "@maple/domain/http"
+import type {
+	ErrorIssueDocument,
+	ErrorIssueId,
+	IssueKind,
+	IssueSeverity,
+	WorkflowState,
+} from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 
 import type { ErrorByType } from "@/api/warehouse/errors"
@@ -45,7 +51,11 @@ export interface ErrorSignal {
 	readonly detail: string
 	readonly serviceName: string
 	readonly severity: IssueSeverity | null
-	readonly state: SignalState
+	/** A live investigation, if one is running or has landed. The row draws this
+	 *  on its own rather than through {@link resolveSignalState} — that precedence
+	 *  exists for the issue header, which has one slot to fill, and it would hide
+	 *  every investigation behind an open incident in a list. */
+	readonly investigation: InvestigationSummary | null
 	/** Occurrences in the selected window, from the warehouse. `null` when the
 	 *  fingerprint had none — an issue that has gone quiet, which is a fact worth
 	 *  drawing rather than a zero to hide. */
@@ -57,6 +67,12 @@ export interface ErrorSignal {
 	readonly lastSeenAt: string
 	readonly firstSeenAt: string
 	readonly assignee: ErrorIssueDocument["assignedActor"]
+	/** Comments + agent notes on the issue's timeline. */
+	readonly commentCount: number
+	/** Linked PRs that still mean something: open ones and merged ones.
+	 *  Closed-unmerged links are abandoned and counted by neither. */
+	readonly openPullRequestCount: number
+	readonly mergedPullRequestCount: number
 	readonly issue: ErrorIssueDocument
 }
 
@@ -127,6 +143,22 @@ export function resolveSignalState(
 }
 
 /**
+ * The fingerprints a sparkline can actually be drawn for.
+ *
+ * Only `kind === "error"` issues carry a real ClickHouse fingerprint (a decimal
+ * UInt64 string). Alert and integration issues reuse the column for a synthetic
+ * key — `alert:{ruleId}:{groupKey}`, `planetscale:{database}:{event}` — which
+ * `toUInt64()` rejects, failing the whole batched spark query for every row on
+ * screen. `ErrorIssueReadModelsService.getIssue` skips the warehouse for the
+ * same reason.
+ */
+export function sparkFingerprintHashes(
+	issues: ReadonlyArray<{ readonly kind: IssueKind; readonly fingerprintHash: string }>,
+): ReadonlyArray<string> {
+	return issues.filter((issue) => issue.kind === "error").map((issue) => issue.fingerprintHash)
+}
+
+/**
  * Join issues (the spine) with warehouse volume and trend.
  *
  * Issue-first rather than warehouse-first: the issue table covers every
@@ -152,7 +184,7 @@ export function buildErrorSignals(input: {
 			detail: issue.exceptionMessage ?? "",
 			serviceName: issue.serviceName,
 			severity: issue.severity,
-			state: resolveSignalState(issue, input.investigations.get(issue.id)),
+			investigation: liveInvestigationSummary(input.investigations.get(issue.id) ?? null) ?? null,
 			windowCount: volume ? volume.count : null,
 			totalCount: issue.occurrenceCount,
 			affectedServicesCount: volume ? volume.affectedServicesCount : null,
@@ -160,6 +192,9 @@ export function buildErrorSignals(input: {
 			lastSeenAt: issue.lastSeenAt,
 			firstSeenAt: issue.firstSeenAt,
 			assignee: issue.leaseHolder ?? issue.assignedActor,
+			commentCount: issue.commentCount,
+			openPullRequestCount: issue.openPullRequestCount,
+			mergedPullRequestCount: issue.mergedPullRequestCount,
 			issue,
 		}
 	})

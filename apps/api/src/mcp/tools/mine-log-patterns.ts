@@ -1,4 +1,4 @@
-import { optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
+import { optionalNumberParam, optionalStringParam, optionalTimeParam, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "@/mcp/lib/map-warehouse-error"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
 import { resolveTimeRange, rangeExceededResult, MCP_LOG_PATTERN_MAX_HOURS } from "@/mcp/lib/time"
@@ -14,8 +14,8 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 		"mine_log_patterns",
 		"Cluster log messages into templates (e.g. 'GET /api/users/<*> 200 in <*>ms') with counts. Use this when search_logs would return too many rows to be useful — pattern mining collapses N matched logs into K distinct templates plus a per-template severity/service breakdown. Pair with a tight time range and selective filters: this samples up to 10 000 recent logs from the matched set, so a wide range with no filters will scan a lot of data.",
 		Schema.Struct({
-			start_time: optionalStringParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalStringParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
+			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
+			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
 			service: optionalStringParam("Filter by service name"),
 			severity: optionalStringParam(
 				"Filter by severity (TRACE/DEBUG/INFO/WARN/ERROR/FATAL — case-insensitive)",

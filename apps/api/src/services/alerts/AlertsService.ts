@@ -7,7 +7,7 @@ import {
 	planAlertLifecycle,
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
-import { formatWarehouseDateTime, snapAlertWindowEndMs } from "@maple/query-engine"
+import { formatWarehouseDateTime, snapAlertWindowEndMs, warehouseDateTime64 } from "@maple/query-engine"
 import { MapleCloudEventSchema } from "@maple/eventing-core"
 import {
 	AlertComparator as AlertComparatorSchema,
@@ -89,7 +89,8 @@ import * as AlertingMetrics from "@/observability/AlertingMetrics"
 import { INVESTIGATION_FANOUT_BINDING } from "@/services/errors/ai-triage-enqueue"
 import { upsertAlertIssue } from "@/services/errors/issue-hub"
 import { probeLiveness } from "@/services/alerts/telemetry-liveness"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { simulateFiringSpans } from "./alert-firing-spans"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Database, type DatabaseClient } from "@/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
@@ -97,10 +98,10 @@ import { EmailService } from "@/platform/EmailService"
 import { Env } from "@/platform/Env"
 import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
 import { makeDbExecute } from "@/platform/db-execute"
-import { dateToMs, msToDate } from "@/platform/time"
+import { dateToMs, msToDate, msToSqlTimestamp } from "@/platform/time"
 import { makePersistenceError } from "./alert-persistence"
 import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import type { GroupedAlertObservation } from "@maple/query-engine/runtime"
+import { withAlertEvaluationScope, type GroupedAlertObservation } from "@maple/query-engine/runtime"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-series"
 import { systemTenant } from "./system-tenant"
@@ -116,11 +117,11 @@ import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from
 import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import {
-	compileRulePlan,
 	decodeStoredAlertRuleMetadata,
 	isGroupedPlan,
 	toStorageGroupKey,
 	makeAlertValidationError as makeValidationError,
+	perServiceRules,
 	planEvaluateSource,
 	type NormalizedRule,
 } from "./AlertRuleModel"
@@ -255,21 +256,26 @@ const resolveServiceLinkName = (
 	}
 	return null
 }
-// Cap on how many evaluation windows a structured rule preview replays.
-const MAX_PREVIEW_BUCKETS = 200
+/**
+ * Cap on how many evaluation windows a rule preview replays.
+ *
+ * One bucket is one evaluation window, so the cap is what decides whether the
+ * preview covers the range the user picked. At 200 it did not: the create
+ * form's default (5-minute window, last 24h) needs 288 and the 1-minute window
+ * needs 1440, so the common case silently charted only the newest slice of a
+ * full-width axis. 1500 covers every window/range pair the pickers can produce
+ * up to 24h, plus the coarser windows over 7d and 30d, and still bounds the
+ * response for the pathological combinations (1-minute windows over 30 days),
+ * which clamp and say so via `truncatedToStart`.
+ */
+const MAX_PREVIEW_BUCKETS = 1500
 
 /** Preserve each org's oldest-first order while preventing one org from monopolizing a tick. */
 export const interleaveAlertRulesByOrg = <T extends { readonly orgId: string }>(
 	rows: ReadonlyArray<T>,
 ): ReadonlyArray<T> => interleaveAlertRulesByTenant(rows, (row) => row.orgId)
 
-// Tinybird DateTime64(3) wire format for alert_checks ingest:
-// "YYYY-MM-DD HH:MM:SS.SSS" (UTC, no timezone).
-const toIngestDateTime64 = (epochMs: number) => {
-	const d = new Date(epochMs)
-	const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
-	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
-}
+const toIngestDateTime64 = warehouseDateTime64
 
 const makeDeliveryError = (message: string, destinationType?: AlertDestinationType, cause?: unknown) =>
 	new AlertDeliveryError({
@@ -444,6 +450,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					warehouse,
 					tenant: systemTenant(orgId),
 					serviceNames: livenessServicesFor(normalized),
+					environments: normalized.environments,
 					windowStartMs: timestamp - windowMs,
 					windowEndMs: timestamp,
 					baselineStartMs: incidentOpenedAtMs - windowMs,
@@ -887,18 +894,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				let evaluation: EvaluatedRule
 				if (normalized.serviceNames.length > 1) {
 					const results = yield* Effect.forEach(
-						normalized.serviceNames,
-						(svcName) =>
+						yield* perServiceRules(normalized),
+						({ rule }) =>
 							Effect.gen(function* () {
-								const perServicePlan = yield* compileRulePlan({
-									...normalized,
-									serviceName: svcName,
-								})
-								const observations = yield* evaluateRule(orgId, {
-									...normalized,
-									serviceName: svcName,
-									compiledPlan: perServicePlan,
-								})
+								const observations = yield* evaluateRule(orgId, rule)
 								return (
 									observations[0]?.evaluation ?? {
 										status: "skipped" as const,
@@ -1107,26 +1106,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// Mirror the scheduler's multi-service mode: independent per-service
 					// plans, groupKey = service name.
 					yield* Effect.forEach(
-						normalized.serviceNames,
-						(svcName) =>
+						yield* perServiceRules(normalized),
+						({ groupKey, rule }) =>
 							Effect.gen(function* () {
-								const perServicePlan = yield* compileRulePlan({
-									...normalized,
-									serviceName: svcName,
-								})
-								const perServiceSource = yield* planEvaluateSource(
-									perServicePlan,
-									normalized.windowMinutes,
-								)
 								const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
 									startTime: formatWarehouseDateTime(startMs),
 									endTime: formatWarehouseDateTime(queryEndMs),
-									source: perServiceSource,
-									reducer: perServicePlan.reducer,
-									sampleCountStrategy: perServicePlan.sampleCountStrategy,
+									source: yield* planEvaluateSource(rule.compiledPlan, rule.windowMinutes),
+									reducer: rule.compiledPlan.reducer,
+									sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
 								})
 								for (const obs of observations) {
-									record(svcName, Date.parse(obs.bucket), {
+									record(groupKey, Date.parse(obs.bucket), {
 										value: obs.value,
 										sampleCount: obs.sampleCount,
 										hasData: obs.sampleCount > 0,
@@ -1178,59 +1169,48 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const series: AlertRulePreviewSeries[] = []
 				const wouldFire: AlertRulePreviewFiringSpan[] = []
 				for (const [groupKey, buckets] of obsByGroup) {
-					const points: AlertRulePreviewPoint[] = []
-					// Simulate the scheduler's saturating counters (skipped freezes both —
-					// same as processEvaluation).
-					let breaches = 0
-					let healthy = 0
-					let openStart: number | null = null
-					for (const bucketMs of pointBuckets) {
+					// Every window in the grid, judged by the same `applyEvaluationLogic`
+					// the scheduler runs per tick — no-data windows included, filled from
+					// `NO_DATA` so a gap is an evaluated skip rather than a missing point.
+					const evaluations = pointBuckets.map((bucketMs) => {
 						const obs = buckets.get(bucketMs) ?? NO_DATA
 						const evaluation = applyEvaluationLogic(normalized, obs)
-						const provisional = hasPartialBucket && bucketMs === endMs
-						points.push(
-							new AlertRulePreviewPoint({
-								bucket: iso(bucketMs),
-								value: evaluation.value,
-								sampleCount: obs.sampleCount,
-								status: evaluation.status,
-								...(provisional ? { provisional } : undefined),
-							}),
-						)
-						// The in-progress window charts but doesn't feed the incident
-						// simulation — the scheduler hasn't evaluated it yet.
-						if (provisional) continue
-						if (evaluation.status === "breached") {
-							breaches = Math.min(breaches + 1, normalized.consecutiveBreachesRequired)
-							healthy = 0
-						} else if (evaluation.status === "healthy") {
-							healthy = Math.min(healthy + 1, normalized.consecutiveHealthyRequired)
-							breaches = 0
+						return {
+							bucketMs,
+							status: evaluation.status,
+							value: evaluation.value,
+							sampleCount: obs.sampleCount,
+							provisional: hasPartialBucket && bucketMs === endMs,
 						}
-						if (openStart == null && breaches >= normalized.consecutiveBreachesRequired) {
-							// Shade from the start of the run's first breached window.
-							openStart = bucketMs - (normalized.consecutiveBreachesRequired - 1) * windowMs
-						} else if (openStart != null && healthy >= normalized.consecutiveHealthyRequired) {
-							wouldFire.push(
-								new AlertRulePreviewFiringSpan({
-									groupKey,
-									start: iso(openStart),
-									end: iso(bucketMs + windowMs),
-								}),
-							)
-							openStart = null
-						}
-					}
-					if (openStart != null) {
+					})
+
+					series.push(
+						new AlertRulePreviewSeries({
+							groupKey,
+							points: evaluations.map(
+								({ bucketMs, status, value, sampleCount, provisional }) =>
+									new AlertRulePreviewPoint({
+										bucket: iso(bucketMs),
+										value,
+										sampleCount,
+										status,
+										...(provisional ? { provisional } : undefined),
+									}),
+							),
+						}),
+					)
+
+					// The would-fire shading is the scheduler's own state machine replayed
+					// over the series — not a second implementation of it.
+					for (const span of yield* simulateFiringSpans(evaluations, normalized, windowMs)) {
 						wouldFire.push(
 							new AlertRulePreviewFiringSpan({
 								groupKey,
-								start: iso(openStart),
-								end: iso(endMs),
+								start: iso(span.startMs),
+								end: iso(span.endMs),
 							}),
 						)
 					}
-					series.push(new AlertRulePreviewSeries({ groupKey, points }))
 				}
 
 				yield* Effect.annotateCurrentSpan({
@@ -1360,11 +1340,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * Count a terminal (`retry: "never"`) failure against the destination and
 			 * disable it once the streak reaches the threshold.
 			 *
-			 * The increment and the disable are two statements on purpose: the
-			 * increment is conditional on the row still being enabled, which makes it
-			 * idempotent against two workers finishing failed deliveries at once —
+			 * One atomic statement on purpose. Conditioning on `enabled = true` makes
+			 * it idempotent against two workers finishing failed deliveries at once —
 			 * whoever crosses the threshold second finds `enabled = false` and counts
-			 * nothing.
+			 * nothing. Folding the disable into the same statement means a concurrent
+			 * success (which zeroes the streak) or an admin repair can never lose to
+			 * a stale disable decision taken from a streak that no longer exists.
 			 */
 			const noteTerminalDestinationFailure = Effect.fn("AlertsService.noteTerminalDestinationFailure")(
 				function* (
@@ -1373,6 +1354,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					currentTime: number,
 					failure: DeliveryAttemptFailure,
 				) {
+					const reason = failure.message.slice(0, DISABLED_REASON_MAX_LENGTH)
+					const crossesThreshold = sql`${alertDestinations.consecutiveFailures} + 1 >= ${DESTINATION_DISABLE_AFTER_FAILURES}`
 					const counted = yield* dbExecute((db) =>
 						db
 							.update(alertDestinations)
@@ -1380,6 +1363,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								consecutiveFailures: sql`${alertDestinations.consecutiveFailures} + 1`,
 								lastFailureAt: msToDate(currentTime),
 								updatedAt: msToDate(currentTime),
+								enabled: sql`case when ${crossesThreshold} then false else ${alertDestinations.enabled} end`,
+								// The timestamp rides as an ISO string: a raw `sql` fragment has
+								// no column type behind it, so a Date param would be rejected by
+								// the deployed postgres.js driver — see `msToSqlTimestamp`.
+								disabledAt: sql`case when ${crossesThreshold} then ${msToSqlTimestamp(currentTime)}::timestamptz else ${alertDestinations.disabledAt} end`,
+								disabledReason: sql`case when ${crossesThreshold} then ${reason} else ${alertDestinations.disabledReason} end`,
 							})
 							.where(
 								and(
@@ -1387,24 +1376,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									eq(alertDestinations.enabled, true),
 								),
 							)
-							.returning({ consecutiveFailures: alertDestinations.consecutiveFailures }),
+							.returning({
+								consecutiveFailures: alertDestinations.consecutiveFailures,
+								enabled: alertDestinations.enabled,
+							}),
 					)
 
-					const streak = counted[0]?.consecutiveFailures
-					if (streak === undefined || streak < DESTINATION_DISABLE_AFTER_FAILURES) return
-
-					const reason = failure.message.slice(0, DISABLED_REASON_MAX_LENGTH)
-					yield* dbExecute((db) =>
-						db
-							.update(alertDestinations)
-							.set({
-								enabled: false,
-								disabledAt: msToDate(currentTime),
-								disabledReason: reason,
-								updatedAt: msToDate(currentTime),
-							})
-							.where(eq(alertDestinations.id, row.destinationId)),
-					)
+					// None: the `enabled = true` predicate matched no row (already
+					// disabled elsewhere) or the update left the destination enabled.
+					const disabled = Option.filter(Arr.head(counted), (row) => !row.enabled)
+					if (Option.isNone(disabled)) return
+					const streak = disabled.value.consecutiveFailures
 
 					// The in-product signal is the setup audit: a disabled destination
 					// makes every rule that selects it fail CFG-ALERT-03 ("will evaluate
@@ -1487,7 +1469,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const processOneDelivery = Effect.fn("AlertsService.processOneDelivery")(function* (
 					row: AlertDeliveryEventRow,
 				) {
-					const claimed = yield* claimDeliveryEvent(row.id, currentTime)
+					// A fresh read, NOT the batch timestamp: rows run sequentially, so
+					// by the time a later row is reached the batch time can be older
+					// than DELIVERY_LEASE_TTL_MS — a lease dated from it would be born
+					// expired and an overlapping tick could reclaim and re-send the
+					// event while this worker is still delivering it.
+					const claimTime = yield* now
+					const claimed = yield* claimDeliveryEvent(row.id, claimTime)
 					if (claimed.length === 0) return
 
 					processedCount += 1
@@ -1505,7 +1493,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (!destinationRow) {
 						failureCount += 1
 						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-						yield* recordDeliveryFailure(row, currentTime, {
+						yield* recordDeliveryFailure(row, claimTime, {
 							message: "Destination not found",
 							kind: "destination",
 							retryable: false,
@@ -1516,7 +1504,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (!destinationRow.enabled) {
 						failureCount += 1
 						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-						yield* recordDeliveryFailure(row, currentTime, {
+						yield* recordDeliveryFailure(row, claimTime, {
 							message: "Destination disabled",
 							kind: "destination",
 							retryable: false,
@@ -1591,16 +1579,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 					yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, 1)
 
-					yield* finalizeClaimedDelivery(row.id, currentTime, {
+					yield* finalizeClaimedDelivery(row.id, claimTime, {
 						status: "success",
-						attemptedAt: new Date(currentTime),
+						attemptedAt: new Date(claimTime),
 						providerMessage: result.providerMessage,
 						providerReference: result.providerReference,
 						responseCode: result.responseCode,
 						errorMessage: null,
 					})
 
-					yield* clearDestinationFailureStreak(row.destinationId, currentTime)
+					yield* clearDestinationFailureStreak(row.destinationId, claimTime)
 
 					if (row.incidentId) {
 						yield* dbExecute((db) =>
@@ -1608,8 +1596,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								.update(alertIncidents)
 								.set({
 									lastDeliveredEventType: row.eventType,
-									lastNotifiedAt: new Date(currentTime),
-									updatedAt: new Date(currentTime),
+									lastNotifiedAt: new Date(claimTime),
+									updatedAt: new Date(claimTime),
 								})
 								.where(eq(alertIncidents.id, row.incidentId!)),
 						)
@@ -1636,11 +1624,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						| AlertRuleStoredConfigInvalidError,
 				) {
 					const failure = toDeliveryAttemptFailure(error)
+					// Fresh for the same reason as the claim in `processOneDelivery`:
+					// retry scheduling from the batch timestamp would date the backoff
+					// from before this attempt even started.
+					const failedAt = yield* now
 					failureCount += 1
 					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-					yield* finalizeClaimedDelivery(row.id, currentTime, {
+					yield* finalizeClaimedDelivery(row.id, failedAt, {
 						status: "failed",
-						attemptedAt: new Date(currentTime),
+						attemptedAt: new Date(failedAt),
 						errorMessage: failure.message,
 					})
 
@@ -1663,7 +1655,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							row.destinationId,
 							decodeAlertEventTypeSync(row.eventType),
 							retryPayload,
-							currentTime + (yield* computeRetryDelayMs(row.attemptNumber)),
+							failedAt + (yield* computeRetryDelayMs(row.attemptNumber)),
 							row.deliveryKey,
 							row.attemptNumber + 1,
 						)
@@ -1676,7 +1668,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						yield* noteTerminalDestinationFailure(
 							row,
 							destinationMap.get(row.destinationId)?.type ?? null,
-							currentTime,
+							failedAt,
 							failure,
 						)
 					}
@@ -1924,7 +1916,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							updatedAt: new Date(timestamp),
 						}
 
-						yield* dbExecute((db) => db.insert(alertIncidents).values(incident))
+						// `alert_incidents_open_group_idx` allows one open incident per
+						// (org, rule, group). The scheduler claim already serializes rules
+						// in the common case; this is the backstop for an expired claim —
+						// a chunk that outran SCHEDULER_LOCK_TTL_MS being re-claimed by the
+						// next tick, both working from tick-head prefetch that saw no open
+						// incident. The loser lands here and must not notify.
+						const inserted = yield* dbExecute((db) =>
+							db.insert(alertIncidents).values(incident).onConflictDoNothing().returning({
+								id: alertIncidents.id,
+							}),
+						)
+						if (inserted.length === 0) {
+							yield* Effect.logWarning(
+								"Skipped duplicate incident open: another worker won the race",
+							).pipe(Effect.annotateLogs({ ruleId: row.id, groupKey }))
+							return {
+								transition: "none" as const,
+								incidentId: carriedIncidentId,
+								openedIncidentId: null,
+								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
+								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+							}
+						}
 						if (lifecycle.notificationSuppression === "flapping") {
 							yield* Effect.logInfo("Skipping trigger notification for flapping incident").pipe(
 								Effect.annotateLogs({
@@ -3011,36 +3025,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										const normalized = yield* normalizeRuleRow(row)
 
 										if (normalized.serviceNames.length > 1) {
-											yield* Effect.forEach(normalized.serviceNames, (svcName) =>
-												Effect.gen(function* () {
-													const perServicePlan = yield* compileRulePlan({
-														...normalized,
-														serviceName: svcName,
-													})
-													const perService = {
-														...normalized,
-														serviceName: svcName,
-														compiledPlan: perServicePlan,
-													}
-													const observations = yield* evaluateRule(
-														row.orgId,
-														perService,
-													)
-													const evaluation = observations[0]?.evaluation
-													if (evaluation == null) return
-													yield* recordEvaluationStatus(evaluation)
-													yield* processEvaluation(
-														row,
-														normalized,
-														evaluation,
-														svcName,
-														timestamp,
-														pendingChecks,
-														issueBudget,
-														pushBudget,
-														prefetch,
-													)
-												}),
+											yield* Effect.forEach(
+												yield* perServiceRules(normalized),
+												({ groupKey, rule }) =>
+													Effect.gen(function* () {
+														const observations = yield* evaluateRule(
+															row.orgId,
+															rule,
+														)
+														const evaluation = observations[0]?.evaluation
+														if (evaluation == null) return
+														yield* recordEvaluationStatus(evaluation)
+														yield* processEvaluation(
+															row,
+															normalized,
+															evaluation,
+															groupKey,
+															timestamp,
+															pendingChecks,
+															issueBudget,
+															pushBudget,
+															prefetch,
+														)
+													}),
 											)
 
 											yield* resolveOrphanedGroupIncidents(
@@ -3263,7 +3270,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					evaluationFailureCount: yield* Ref.get(evaluationFailureCount),
 					deliveryFailureCount: deliveryResult.failureCount,
 				}
-			})
+			}, withAlertEvaluationScope)
 
 			// `AlertsService.of(...)` can't be used here — referencing the class inside
 			// its own `make` is a TS2506 circular base-expression error.

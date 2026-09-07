@@ -84,12 +84,20 @@ export const TracesFilters = Schema.Struct({
 	excludedSpanNames: Schema.optional(Schema.Array(SpanName)),
 	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 })
 export type TracesFilters = Schema.Schema.Type<typeof TracesFilters>
 
 export const LogsFilters = Schema.Struct({
 	serviceName: Schema.optional(ServiceName),
 	severity: Schema.optional(Schema.String),
+	/**
+	 * Multi-value spellings of `serviceName` / `severity`, compiled to `IN (...)`. The scalar fields
+	 * stay for the dashboard DSL, MCP tools and alert rules that only ever select one; the array
+	 * wins when present. Same contract as `TracesFilters.serviceNames`.
+	 */
+	serviceNames: Schema.optional(Schema.Array(ServiceName)),
+	severities: Schema.optional(Schema.Array(Schema.String)),
 	minSeverity: Schema.optional(Schema.Number),
 	traceId: Schema.optional(TraceId),
 	spanId: Schema.optional(Schema.String),
@@ -100,6 +108,10 @@ export const LogsFilters = Schema.Struct({
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	excludedServiceNames: Schema.optional(Schema.Array(ServiceName)),
+	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 export type LogsFilters = Schema.Schema.Type<typeof LogsFilters>
 
@@ -112,6 +124,10 @@ export const ErrorsFilters = Schema.Struct({
 	errorLabels: Schema.optional(Schema.Array(Schema.String)),
 	// The sidebar's "Version" facet, matched against ServiceVersion.
 	serviceVersions: Schema.optional(Schema.Array(Schema.String)),
+	excludedServices: Schema.optional(Schema.Array(ServiceName)),
+	excludedDeploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedErrorLabels: Schema.optional(Schema.Array(Schema.String)),
+	excludedServiceVersions: Schema.optional(Schema.Array(Schema.String)),
 })
 export type ErrorsFilters = Schema.Schema.Type<typeof ErrorsFilters>
 
@@ -630,3 +646,26 @@ export class CompiledAlertQueryPlan extends Schema.Class<CompiledAlertQueryPlan>
 	sampleCountStrategy: Schema.NullOr(QueryEngineSampleCountStrategy),
 	noDataBehavior: QueryEngineNoDataBehavior,
 }) {}
+
+/**
+ * The value the web-analytics acquisition breakdowns (`referrerHost`, `utm*`)
+ * emit for a session whose column is empty — direct traffic for the referrer,
+ * an untagged visit for UTM — and the value a filter sends back to select that
+ * group.
+ *
+ * A sentinel rather than the raw `''` because the value has to survive a round
+ * trip as a filter through a URL search param, the HTTP payload and an MCP tool
+ * argument, and an empty string is dropped or defaulted at every one of those
+ * boundaries. Parenthesised so it cannot collide with a real hostname and reads
+ * as a marker wherever it shows up unlabelled.
+ */
+export const WEB_ANALYTICS_UNSET = "(none)"
+
+/**
+ * How far back "live" reaches: a visitor counts as on the site now if their
+ * session showed activity within this many seconds.
+ *
+ * Shared so the badge's own copy ("in the last 5 minutes") and the window the
+ * query actually applies cannot drift apart.
+ */
+export const WEB_ANALYTICS_LIVE_WINDOW_SECONDS = 300
