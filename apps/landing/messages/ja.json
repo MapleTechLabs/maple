@@ -967,6 +967,8 @@
 	"cmp_hub_matrix_title": "\u7d4c\u7406\u304c\u6700\u521d\u306b\u805e\u304f\u8cea\u554f",
 	"cmp_hub_pages_eyebrow": "\u6bd4\u8f03",
 	"cmp_hub_pages_title": "\u30d9\u30f3\u30c0\u30fc\u3092\u9078\u3076",
+	"cmp_hub_card_tally": "{total}\u4ef6\u306e\u76f8\u9055\u70b9 \u00b7 {name}\u304c\u512a\u308c\u3066\u3044\u308b\u70b9 {ahead}\u4ef6",
+	"cmp_hub_card_cta": "\u6bd4\u8f03\u3092\u8aad\u3080",
 	"cmp_nav_differences": "\u9055\u3044",
 	"cmp_nav_price": "\u4fa1\u683c",
 	"cmp_nav_migration": "\u79fb\u884c",

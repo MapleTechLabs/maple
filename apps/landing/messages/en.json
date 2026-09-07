@@ -1051,6 +1051,8 @@
 	"cmp_hub_matrix_title": "The questions finance asks first",
 	"cmp_hub_pages_eyebrow": "Comparisons",
 	"cmp_hub_pages_title": "Pick a vendor",
+	"cmp_hub_card_tally": "{total} differences · {name} ahead on {ahead}",
+	"cmp_hub_card_cta": "Read the comparison",
 	"cmp_nav_differences": "Differences",
 	"cmp_nav_price": "Price",
 	"cmp_nav_migration": "Migration",

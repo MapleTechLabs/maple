@@ -20,4 +20,5 @@ const mark = brandMark(id);
     aria-hidden="true"
 >
     <path d={mark.path}></path>
+    {mark.overlay && <path d={mark.overlay.path} fill={mark.overlay.fill} fill-rule={mark.overlay.fillRule}></path>}
 </svg>
