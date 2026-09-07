@@ -50,20 +50,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { renamedFrom } from "alchemy/Rename"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import {
-	Cause,
-	Clock,
-	Duration,
-	Effect,
-	Exit,
-	FileSystem,
-	Layer,
-	Path,
-	Predicate,
-	Schema,
-	Scope,
-	Stream,
-} from "effect"
+import { Cause, Clock, Effect, Exit, FileSystem, Layer, Path, Predicate, Schema, Scope, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import type { HttpEffect } from "alchemy/Http"
 import * as Etag from "effect/unstable/http/Etag"
@@ -74,6 +61,7 @@ import { ApiObservabilityLive } from "./http/api-observability"
 import { v2WorkerUnavailableResponse } from "./http/v2-worker-unavailable"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
+import { cachedRecoverable } from "./platform/cached-recoverable"
 
 /**
  * Everything in the api worker's env that comes from configuration rather than
@@ -377,17 +365,6 @@ const WorkerPlatformLive = Layer.mergeAll(
 	WorkerFileSystemLive,
 	WorkerHttpPlatformLive,
 )
-
-/**
- * `Effect.cached`, except a failed build is forgotten: `cached` pins its exit,
- * failure included, for the isolate, and a build that failed on a transient
- * cause (a binding briefly unavailable) must be retried by a later event
- * rather than answer 503 until the isolate is replaced.
- */
-const cachedRecoverable = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<Effect.Effect<A, E, R>> =>
-	Effect.map(Effect.cachedInvalidateWithTTL(self, Duration.infinity), ([cached, invalidate]) =>
-		cached.pipe(Effect.onError(() => invalidate)),
-	)
 
 /** A layer built for the isolate: its scope is never closed (workerd has no teardown), except when the build itself fails. */
 const buildForIsolate = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
