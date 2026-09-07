@@ -9,9 +9,10 @@ import { UserIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
 import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
-import { shortTarget } from "@/lib/agent-sessions/span-filters"
+import { useDetectedModels } from "@/hooks/use-detected-models"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
+import { ModelLabel } from "../model-label"
 
 /**
  * The page's heading: what ran, when, on what — the facts a reader needs to
@@ -34,8 +35,11 @@ export function SessionHeader({
 	turns: readonly SessionTurn[]
 }) {
 	const identity = sessionIdentity(summary)
+	// The same model set the rail resolves, so both share one batch.
+	const detect = useDetectedModels(summary.models.map((model) => model.model))
 	const VendorIcon = vendorIcon(summary.vendorIds[0] ?? "")
 	const turnWord = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
+	const firstModel = summary.models[0]
 
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
@@ -66,9 +70,14 @@ export function SessionHeader({
 				<Fact label={turns.length === 1 ? capitalize(turnWord) : `${capitalize(turnWord)}s`}>
 					{turns.length}
 				</Fact>
-				{summary.models.length > 0 && (
-					<Fact label="Model" title={summary.models.map((model) => model.model).join(", ")} mono>
-						{firstPlusRest(summary.models.map((model) => shortTarget(model.model)))}
+				{firstModel !== undefined && (
+					<Fact label="Model" title={summary.models.map((model) => model.model).join(", ")}>
+						<ModelLabel
+							detected={detect(firstModel.model)}
+							moreCount={summary.models.length - 1}
+							size={12}
+							title={summary.models.map((model) => model.model).join(", ")}
+						/>
 					</Fact>
 				)}
 				{summary.serviceNames.length > 0 && (

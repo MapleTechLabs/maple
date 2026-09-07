@@ -8,9 +8,20 @@ import { SessionAuthorization } from "./current-tenant"
 // is the dashboard's to pick from `vendorSlug` / `family`, so it never
 // crosses the wire.
 
+/** Trimmed, then bounded: matched against a catalog, never stored — nothing legitimate is longer. */
+const ModelString = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(500))
+
 export class DetectAiModelRequest extends Schema.Class<DetectAiModelRequest>("DetectAiModelRequest")({
-	/** Trimmed, then bounded: matched against a catalog, never stored — nothing legitimate is longer. */
-	model: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(500)),
+	model: ModelString,
+}) {}
+
+export class DetectAiModelsRequest extends Schema.Class<DetectAiModelsRequest>("DetectAiModelsRequest")({
+	/**
+	 * The distinct model strings a page needs to render, deduped by the caller.
+	 * Bounded because a page that needs more than this many marks has stopped
+	 * being a page; the sessions list pages 50 rows at a time.
+	 */
+	models: Schema.Array(ModelString).check(Schema.isMaxLength(200)),
 }) {}
 
 export const AiModelDetectionSource = Schema.Literals(["openrouter", "heuristic", "unknown"])
@@ -41,6 +52,15 @@ export class AiModelsInternalApiGroup extends HttpApiGroup.make("aiModelsInterna
 		HttpApiEndpoint.post("detect", "/detect", {
 			payload: DetectAiModelRequest,
 			success: DetectAiModelResponse,
+		}),
+	)
+	.add(
+		// One request per page rather than one per model: the sessions list would
+		// otherwise open a connection per distinct model in the viewport.
+		// Results come back in request order, so the caller can zip them.
+		HttpApiEndpoint.post("detectMany", "/detect-many", {
+			payload: DetectAiModelsRequest,
+			success: Schema.Array(DetectAiModelResponse),
 		}),
 	)
 	.prefix("/internal/ai-models")
