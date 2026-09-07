@@ -270,6 +270,7 @@ export const layerStatelessMcpHttp = (options: {
 					supportsTransferables: false,
 					supportsSpanPropagation: false,
 					supportsNotifications: false,
+					codecFor: serialization.codecFor,
 				})
 			})
 		}),

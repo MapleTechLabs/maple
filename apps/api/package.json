@@ -48,7 +48,7 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/safe-fetch": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@opencode-ai/ai": "0.0.0-beta-18050",
+		"@opencode-ai/ai": "0.0.0-beta-19192",
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"@typeonce/effect-machine": "0.24.0",
 		"drizzle-orm": "^0.45.1",

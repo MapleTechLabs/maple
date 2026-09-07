@@ -386,17 +386,15 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LLMClientService> =>
  * should handle differently (shrink the transcript) from a transport blip (retry as-is).
  */
 export const toLlmCallError = (operation: string, error: AIError): LlmCallError => {
-	// Provider output that fails to decode carries the offending frame on `reason.raw`. It is the
-	// only thing that makes provider drift diagnosable — without it the failure is just "invalid
-	// stream event" — but it is upstream text, so it goes to the log, never to the client error.
-	const raw = Predicate.hasProperty(error.reason, "raw") ? error.reason.raw : undefined
-	if (typeof raw === "string" && raw !== "") {
-		console.error(`[llm] ${operation}: ${error.message}; frame=${raw.slice(0, 500)}`)
+	// A failing provider response carries its offending payload on `reason.body`. It is the only
+	// thing that makes provider drift diagnosable — without it the failure is just "invalid stream
+	// event" — but it is upstream text, so it goes to the log, never to the client error.
+	const body = Predicate.hasProperty(error.reason, "body") ? error.reason.body : undefined
+	if (typeof body === "string" && body !== "") {
+		console.error(`[llm] ${operation}: ${error.message}; body=${body.slice(0, 500)}`)
 	}
 	return new LlmCallError({
 		operation,
-		module: error.module,
-		method: error.method,
 		reason: error.reason._tag,
 		message: error.message,
 		retryable: RETRYABLE_REASONS.has(error.reason._tag),
