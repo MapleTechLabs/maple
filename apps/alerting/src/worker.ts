@@ -32,8 +32,9 @@ import {
 	selfObservabilityEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
+import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Effect, Ref } from "effect"
+import { Cause, Effect, Layer, Ref } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
 
 /**
@@ -176,7 +177,6 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 	"alerting",
 	props,
 	Effect.gen(function* () {
-		const exec = yield* Cloudflare.WorkerExecutionContext
 		// Imported on the first fire and kept for the isolate: `./scheduled`
 		// carries the whole api layer graph, which has no business in startup
 		// validation or in the deploy process.
@@ -201,7 +201,9 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 					}
 					return
 				}
-				const { runScheduled, telemetry } = yield* scheduled
+				const { runScheduled } = yield* scheduled
+				// The tick's spans and logs go to the SDK the bridge built into this
+				// fire's scope; the flush is that scope's finalizer, after the fire.
 				yield* runScheduled(controller.cron, env).pipe(
 					// Interrupts are isolate teardown: the schedule re-fires anyway, and
 					// they must not be logged as a failed run (same rule as the ticks').
@@ -212,8 +214,6 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 									Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
 								),
 					),
-					// Drain spans and logs once the fire has settled.
-					Effect.ensuring(exec.waitUntil(Effect.promise(() => telemetry.flush(env)))),
 				)
 			})
 
@@ -224,8 +224,16 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		return {
 			fetch: Effect.succeed(HttpServerResponse.text("maple-alerting: scheduled only", { status: 404 })),
 		}
-		// The Worker's init IS the entry point: the cron source needs the host Worker,
-		// which only exists here.
+	}).pipe(
+		// The Worker's init IS the entry point: the cron source needs the host
+		// Worker, which only exists here, and the bridge builds the telemetry
+		// into each event's scope — a cron fire included — and flushes it after.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	}).pipe(Effect.provide(Cloudflare.Workers.CronEventSourceLive)),
+		Effect.provide(
+			Layer.mergeAll(
+				Cloudflare.Workers.CronEventSourceLive,
+				WorkerTelemetry({ serviceName: "alerting" }),
+			),
+		),
+	),
 ) {}

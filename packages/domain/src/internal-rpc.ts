@@ -2,6 +2,7 @@
 import type * as Effect from "effect/Effect"
 import { Schema } from "effect"
 import type {
+	InvestigationDataCorruptionError,
 	InvestigationDocument,
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
@@ -70,6 +71,9 @@ export interface MapleApiRpcContract {
 		request: unknown,
 	) => Effect.Effect<
 		InvestigationDocument,
-		InternalRpcInvalidInputError | InvestigationNotFoundError | InvestigationPersistenceError
+		| InternalRpcInvalidInputError
+		| InvestigationNotFoundError
+		| InvestigationPersistenceError
+		| InvestigationDataCorruptionError
 	>
 }

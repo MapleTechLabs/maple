@@ -6130,7 +6130,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- pipe:errors_by_type:unexpected-identity:baseline  [1457ff9b]
+-- pipe:errors_by_type:unexpected-identity:baseline  [6d0a8ce0]
 SELECT
           toString(FingerprintHash) AS fingerprintHash,
           any(ErrorLabel) AS errorLabel,
@@ -6143,7 +6143,7 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND (ErrorLabel NOT LIKE '@maple/%' OR ErrorLabel IN ('@maple/api/http/Http5xxResponseError', '@maple/http/v2/UnexpectedError', '@maple/http/v1/V1UnexpectedError'))
+          AND (ErrorLabel NOT LIKE '@maple/%' OR ErrorLabel IN ('HttpServerErrorResponse', '@maple/api/http/Http5xxResponseError', '@maple/http/v2/UnexpectedError', '@maple/http/v1/V1UnexpectedError'))
         GROUP BY fingerprintHash
         ORDER BY count DESC
         LIMIT 50
