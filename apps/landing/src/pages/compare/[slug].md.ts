@@ -109,11 +109,9 @@ export const GET: APIRoute = ({ props, site }) => {
 
 	const related = blocks(
 		`## ${m.cmp_related_title()}`,
-		competitor.related
-			.map((slug) => {
-				const entry = competitorBySlug(slug)
-				return entry ? `- [${entry.navLabel()}](${absolute(site, `/compare/${slug}.md`)})` : ""
-			})
+		competitors
+			.filter((entry) => entry.slug !== competitor.slug)
+			.map((entry) => `- [${entry.navLabel()}](${absolute(site, `/compare/${entry.slug}.md`)})`)
 			.join("\n"),
 	)
 

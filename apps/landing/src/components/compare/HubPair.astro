@@ -1,7 +1,8 @@
 ---
 /**
- * HubPair — ComparePair for the hub: Maple on the left, the four vendors it
- * is compared against on the right, each mark linking to its page.
+ * HubPair — ComparePair for the hub: Maple on the left, the five vendors it
+ * is compared against on the right, each mark linking to its page. Five don't
+ * fit one row in the hero's aside, so the list wraps to 3 + 2, centred.
  */
 import { MapleMark } from "@maple/ui/components/icons/maple-mark";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
@@ -22,19 +23,19 @@ const locale = Astro.currentLocale ?? "en";
 			<div class="mt-1 font-mono text-[11px] text-fg-muted">maple.dev</div>
 		</div>
 	</div>
-	<ul class="pair-cell grid grid-cols-2 gap-x-4 gap-y-6 px-6 py-8 sm:grid-cols-4 sm:gap-x-2 md:py-10" style="--pair: var(--muted-foreground)">
+	<ul class="pair-cell flex flex-wrap content-center justify-center gap-x-3 gap-y-5 px-4 py-8 md:py-10" style="--pair: var(--muted-foreground)">
 		{
 			competitors.map((competitor) => (
-				<li>
+				<li class="w-[4.75rem]">
 					<a
 						href={comparePath(locale, competitor.slug)}
-						class="group flex flex-col items-center gap-3 text-center"
+						class="group flex flex-col items-center gap-2.5 text-center"
 						aria-label={competitor.navLabel()}
 					>
-						<span class="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-bg-elevated transition-colors group-hover:border-fg-muted">
-							<BrandMarkIcon id={competitor.mark} class="h-6 w-6" />
+						<span class="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-bg-elevated transition-colors group-hover:border-fg-muted">
+							<BrandMarkIcon id={competitor.mark} class="h-[22px] w-[22px]" />
 						</span>
-						<span class="text-[12px] text-fg-muted transition-colors group-hover:text-fg">{competitor.name}</span>
+						<span class="whitespace-nowrap text-[11px] text-fg-muted transition-colors group-hover:text-fg">{competitor.name}</span>
 					</a>
 				</li>
 			))

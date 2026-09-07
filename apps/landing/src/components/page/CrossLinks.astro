@@ -21,6 +21,10 @@ interface Props {
 }
 
 const { eyebrow, title, links, class: className = "" } = Astro.props;
+
+// Three per row for the feature and use-case pages, four for the compare
+// pages (every other vendor), so a 1px-gap grid never shows an empty cell.
+const columns = links.length % 4 === 0 ? "lg:grid-cols-4" : "lg:grid-cols-3";
 ---
 
 <section class={`bg-bg-deep ${className}`}>
@@ -33,7 +37,7 @@ const { eyebrow, title, links, class: className = "" } = Astro.props;
 		</h2>
 
 		<div
-			class="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2 lg:grid-cols-3"
+			class:list={["mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2", columns]}
 		>
 			{
 				links.map((link, i) => (
