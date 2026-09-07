@@ -554,11 +554,14 @@ describe("SessionOverview", () => {
 		expect(screen.getByText("Reported once for the whole session")).toBeTruthy()
 	})
 
+	// Detection resolves the name from the API; until it answers — and in this
+	// test, which mounts no client — the rail still names the model, and the
+	// gateway-prefixed id it was reported under stays one hover away.
 	it("shows the last path segment of a gateway model id, full id in the title", () => {
 		render(<Overview turns={gatewayTurns} summary={gateway} />)
 
 		const name = screen.getByText("gpt-4o-mini")
-		expect(name.getAttribute("title")).toBe("openrouter/openai/gpt-4o-mini")
+		expect(name.closest("[title]")?.getAttribute("title")).toBe("openrouter/openai/gpt-4o-mini")
 	})
 })
 

@@ -54,7 +54,7 @@ export interface UpsertAlertIssueInput {
 	readonly incidentId: AlertIncidentId
 	readonly serviceName: string
 	readonly timestamp: number
-	/** `INVESTIGATION_FANOUT_WORKFLOW`, for incidents whose severity earns a fan-out. */
+	/** `InvestigationFanoutWorkflow`, for incidents whose severity earns a fan-out. */
 	readonly fanoutBinding?: unknown
 }
 

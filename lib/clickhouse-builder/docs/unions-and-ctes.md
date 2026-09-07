@@ -3,7 +3,9 @@
 ## `unionAll`
 
 `unionAll` combines queries that share an output shape. TypeScript enforces the shape match,
-so a branch that selects different keys is a compile error.
+and compilation also rejects mismatched keys at runtime. Each branch is emitted in the first
+branch's alias order, so object insertion order cannot swap values. Nullable codecs are merged
+across every branch, including when selecting through `fromUnion`.
 
 ```ts
 const recent = CH.from(Events)
@@ -43,7 +45,7 @@ const outer = CH.fromUnion(combined, "branches")
 ```
 
 Like [`fromQuery`](./joins-and-subqueries.md#subquery-in-from), accessors are flat (`$.name`),
-and the outer query inherits the union's tenant scope — a union of scoped branches stays
+and the outer query inherits the union's tenant scope — a union of branches bound to the same tenant stays
 scoped.
 
 The classic use is stitching a sealed hourly rollup onto a live raw-table branch for the

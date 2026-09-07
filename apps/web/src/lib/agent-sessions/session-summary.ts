@@ -443,9 +443,7 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 			: reportedInput,
 		cacheRead,
 		cacheWrite,
-		output: convention.outputIncludesReasoning
-			? Math.max(0, reportedOutput - reasoning)
-			: reportedOutput,
+		output: convention.outputIncludesReasoning ? Math.max(0, reportedOutput - reasoning) : reportedOutput,
 		reasoning,
 	})
 }

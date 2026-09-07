@@ -11,7 +11,6 @@
 		"./config-helpers": "./src/config-helpers.ts",
 		"./dev-urls": "./src/dev-urls.ts",
 		"./env": "./src/env.ts",
-		"./r2": "./src/cloudflare/r2.ts",
 		"./worker-runtime": "./src/cloudflare/worker-runtime.ts",
 		"./worker-telemetry": "./src/cloudflare/worker-telemetry.ts",
 		"./workers-cache": "./src/cloudflare/workers-cache.ts"

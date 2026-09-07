@@ -18,17 +18,12 @@ import { GithubProvider } from "@/services/integrations/vcs/vendor/github/Github
  *
  * Requires `Env` and `Database` from the caller's own base layer.
  */
+export const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))
+
+export const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(
+	Layer.provide(GithubProvider.layer.pipe(Layer.provide(GithubAppClientLive))),
+)
+
 export const VcsSourceServiceLayer = VcsSourceService.layer.pipe(
-	Layer.provide(
-		Layer.mergeAll(
-			VcsRepository.layer,
-			VcsProviderRegistry.layer.pipe(
-				Layer.provide(
-					GithubProvider.layer.pipe(
-						Layer.provide(GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))),
-					),
-				),
-			),
-		),
-	),
+	Layer.provide(Layer.mergeAll(VcsRepository.layer, VcsProviderRegistryLive)),
 )

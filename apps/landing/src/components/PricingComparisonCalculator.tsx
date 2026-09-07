@@ -1,7 +1,36 @@
 import { useState } from "react"
+import { brandMark, markColor, type BrandMarkId } from "../lib/brand-marks"
 import { competitorConfigs, PricingCalculator, type Competitor } from "./PricingCalculator"
 
 const COMPETITORS: Competitor[] = ["datadog", "grafana", "new-relic", "dash0", "openobserve", "signoz"]
+
+const MARKS = {
+	datadog: "datadog",
+	grafana: "grafana",
+	"new-relic": "newrelic",
+	dash0: "dash0",
+	openobserve: "openobserve",
+	signoz: "signoz",
+} satisfies Record<Competitor, BrandMarkId>
+
+/** The vendor's mark in its brand colour; on the active (amber) tab it takes the tab's foreground instead. */
+function VendorMark({ id, active }: { id: BrandMarkId; active: boolean }) {
+	const mark = brandMark(id)
+	return (
+		<svg
+			viewBox={mark.viewBox ?? "0 0 24 24"}
+			className="h-3.5 w-3.5 shrink-0"
+			style={active ? undefined : { color: markColor(mark) }}
+			fill="currentColor"
+			aria-hidden="true"
+		>
+			<path d={mark.path} />
+			{mark.overlay && (
+				<path d={mark.overlay.path} fill={mark.overlay.fill} fillRule={mark.overlay.fillRule} />
+			)}
+		</svg>
+	)
+}
 
 /**
  * Wraps PricingCalculator with a competitor switcher so the /pricing page can
@@ -26,12 +55,13 @@ export function PricingComparisonCalculator() {
 								role="tab"
 								aria-selected={active}
 								onClick={() => setCompetitor(c)}
-								className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${
+								className={`inline-flex h-8 items-center gap-2 rounded-lg pl-2.5 pr-3 text-xs font-medium transition-colors ${
 									active
 										? "bg-primary text-primary-foreground"
 										: "border border-border bg-bg text-fg-muted hover:bg-bg-elevated hover:text-fg"
 								}`}
 							>
+								<VendorMark id={MARKS[c]} active={active} />
 								{competitorConfigs[c].name}
 							</button>
 						)

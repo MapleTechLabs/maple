@@ -403,8 +403,12 @@
 	background-image:
 		radial-gradient(var(--pair) 0.9px, transparent 1.1px),
 		radial-gradient(var(--pair) 0.9px, transparent 1.1px);
-	background-size: 6px 6px, 6px 6px;
-	background-position: 0 0, 3px 3px;
+	background-size:
+		6px 6px,
+		6px 6px;
+	background-position:
+		0 0,
+		3px 3px;
 	opacity: 0.42;
 	-webkit-mask-image: radial-gradient(ellipse 90% 85% at 50% 45%, black 20%, transparent 72%);
 	mask-image: radial-gradient(ellipse 90% 85% at 50% 45%, black 20%, transparent 72%);

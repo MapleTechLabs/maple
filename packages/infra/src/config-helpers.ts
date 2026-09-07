@@ -1,8 +1,8 @@
 // Small effect `Config` helpers shared by worker env schemas (apps/api's `Env`,
 // apps/electric-sync's `SyncConfig`). Kept in a standalone module — NOT the
-// package index — because the index barrel statically imports `cloudflare:workers`,
-// which would break non-Worker/test consumers (e.g. apps/api's Env, imported by
-// vitest). This module imports only `effect`, so it's safe everywhere.
+// package index, whose deploy-side graph (alchemy, portless) has no business in
+// a Worker bundle or a test. This module imports only `effect`, so it's safe
+// everywhere.
 import { Config, Option, Redacted } from "effect"
 
 /** `Config.string(key)` with a fallback when the env var is unset. */

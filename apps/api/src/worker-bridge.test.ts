@@ -4,9 +4,12 @@ import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unav
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Effect, Exit, Layer, Schema, Scope } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
-import { makeFetch } from "./worker"
+import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { type KeyValueStore, MapleDbConnection, McpSessionStore } from "./platform/bindings"
+import { cachedRecoverable } from "./platform/cached-recoverable"
+import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
 
 /**
  * One request the way alchemy's bridge runs it — `makeRequestHandler` is the
@@ -59,7 +62,21 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 	return value === undefined ? undefined : Number(Object.values(value)[0])
 }
 
-const env = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
+/** No MCP session lands in these requests and no stage database exists, so neither port is reached. */
+const noSessions: KeyValueStore = {
+	getJson: () => Effect.succeed(Option.none()),
+	put: () => Effect.void,
+}
+const noPorts = Layer.mergeAll(
+	Layer.succeed(McpSessionStore, noSessions),
+	Layer.succeed(MapleDbConnection, Option.none()),
+)
+
+const env = {
+	MAPLE_INGEST_KEY: "maple_sk_test",
+	MAPLE_ENDPOINT: "http://ingest.test",
+	COMMIT_SHA: "deadbeefcafe",
+}
 
 class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBuildFailure", {
 	message: Schema.String,
@@ -70,7 +87,28 @@ const notFoundApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 })),
 )
 
-const event = (method: string, path: string, app: Effect.Effect<HttpEffect, unknown>) =>
+/** One route that answers with the bearer it was called with — the header a leaked request would get wrong. */
+const EchoGroup = HttpApiGroup.make("echo").add(
+	HttpApiEndpoint.get("echo", "/echo", { success: Schema.String }),
+)
+class EchoApi extends HttpApi.make("EchoApi").add(EchoGroup) {}
+const EchoHandlersLive = HttpApiBuilder.group(EchoApi, "echo", (handlers) =>
+	Effect.succeed(
+		handlers.handle("echo", () =>
+			Effect.map(
+				HttpServerRequest.HttpServerRequest,
+				(request) => request.headers["authorization"] ?? "",
+			),
+		),
+	),
+)
+
+const event = (
+	method: string,
+	path: string,
+	app: Effect.Effect<HttpEffect, unknown>,
+	headers?: Record<string, string>,
+) =>
 	Effect.gen(function* () {
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
@@ -90,13 +128,13 @@ const event = (method: string, path: string, app: Effect.Effect<HttpEffect, unkn
 			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
 			request,
 		)
-		const fetchEvent = Cloudflare.Workers.makeRequestHandler(makeFetch(app))({
+		const fetchEvent = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
 			kind: "Cloudflare.Workers.WorkerEvent",
 			type: "fetch",
-			input: new Request(`http://api.maple.test${path}`, { method }),
+			input: new Request(`http://api.maple.test${path}`, { method, headers }),
 		})
 		assert.isDefined(fetchEvent)
-		const response: Response = yield* fetchEvent!.pipe(Effect.provide(services), Scope.provide(request))
+		const response: Response = yield* fetchEvent.pipe(Effect.provide(services), Scope.provide(request))
 		const body = yield* Effect.promise(() => response.text())
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)
@@ -114,6 +152,8 @@ describe("the api Worker through alchemy's bridge", () => {
 			assert.strictEqual(response.status, 200)
 			assert.strictEqual(body, "OK")
 			assert.strictEqual(response.headers.get("access-control-allow-origin"), "*")
+			// What `deploy-prd.yml` asserts against to catch a partial deploy.
+			assert.strictEqual(response.headers.get("x-maple-revision"), "deadbeefcafe")
 		}),
 	)
 
@@ -142,6 +182,30 @@ describe("the api Worker through alchemy's bridge", () => {
 			const v1 = yield* event("GET", "/api/errors", broken)
 			assert.strictEqual(v1.response.status, 504)
 			assert.strictEqual(v1.body, "The API worker is temporarily unavailable.")
+		}),
+	)
+
+	it.effect("a graph built on the first request serves the second request with ITS headers", () =>
+		Effect.gen(function* () {
+			// A lazily built graph, exactly as `buildApp` builds it: the first
+			// event's fiber runs the build. Without `buildIsolateHandler`, the HttpApi
+			// group layer captured that fiber's context and every later request ran
+			// under the first request's `HttpServerRequest`.
+			const app = yield* cachedRecoverable(
+				buildIsolateHandler(
+					Context.empty(),
+					HttpApiBuilder.layer(EchoApi).pipe(
+						Layer.provide(EchoHandlersLive),
+						Layer.provide(WorkerPlatformLive),
+					),
+				),
+			)
+			const first = yield* event("GET", "/echo", app, { authorization: "Bearer first" })
+			assert.strictEqual(first.response.status, 200)
+			assert.strictEqual(first.body, JSON.stringify("Bearer first"))
+			const second = yield* event("GET", "/echo", app, { authorization: "Bearer second" })
+			assert.strictEqual(second.response.status, 200)
+			assert.strictEqual(second.body, JSON.stringify("Bearer second"))
 		}),
 	)
 

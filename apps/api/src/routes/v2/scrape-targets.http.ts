@@ -193,7 +193,11 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 					// reflect a state this update never saw. Accepted for audit purposes.
 					yield* recordHttpAudit("scrape_target.updated", {
 						resourceId: updated.id,
-						changes: targetAuditDiff(payload, toV2ScrapeTarget(current), toV2ScrapeTarget(updated)),
+						changes: targetAuditDiff(
+							payload,
+							toV2ScrapeTarget(current),
+							toV2ScrapeTarget(updated),
+						),
 						metadata: { name: updated.name },
 					})
 

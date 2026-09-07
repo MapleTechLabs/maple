@@ -46,7 +46,10 @@ export const AuditResources = {
 	 * `metadata`; a tool that also mutates a resource records that action too.
 	 */
 	mcp_tool: { verbs: ["called"] },
-	investigation: { prefix: PublicIdPrefixes.investigation, verbs: ["created", "restarted", "status_changed"] },
+	investigation: {
+		prefix: PublicIdPrefixes.investigation,
+		verbs: ["created", "restarted", "status_changed"],
+	},
 	/**
 	 * Org-singleton connections. `*_started` is the admin action Maple sees; the
 	 * OAuth round trip completes at the provider's callback.

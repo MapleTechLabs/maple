@@ -20,6 +20,7 @@ import {
 	estimateMaple,
 	estimateVendor,
 	formatCurrency,
+	formatLineAmount,
 	MAPLE_PRICING_NOTE,
 	PRICES_VERIFIED,
 	vendorCaveat,
@@ -53,7 +54,7 @@ const verifiedLabel = new Date(`${PRICES_VERIFIED}-15T00:00:00Z`).toLocaleDateSt
 	timeZone: "UTC",
 });
 
-const money = (amount: number) => (amount === 0 ? m.cmp_price_free() : `$${Math.round(amount).toLocaleString()}`);
+const money = (amount: number) => (amount === 0 ? m.cmp_price_free() : formatLineAmount(amount));
 ---
 
 <section id="price" class="scroll-mt-28 border-t border-border bg-bg">

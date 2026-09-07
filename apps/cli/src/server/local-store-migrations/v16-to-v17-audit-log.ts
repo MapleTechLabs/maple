@@ -212,10 +212,7 @@ const dispositions: ReadonlyArray<StateDispositionEntry> = [
 	},
 ]
 
-export const v16ToV17AuditLogModule: LocalStoreMigrationModule<
-	V16ToV17State,
-	V16ToV17Progress
-> = {
+export const v16ToV17AuditLogModule: LocalStoreMigrationModule<V16ToV17State, V16ToV17Progress> = {
 	id: MODULE_ID,
 	moduleVersion: 1,
 	description: "Add the audit_log table",

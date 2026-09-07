@@ -394,7 +394,10 @@ describe("POST /internal/ai-sessions/list", () => {
 		agentStart,
 		agentEnd,
 		models: ["claude-sonnet-5"],
-		agentNames: ["slack-agent"],
+		// Deliberately not `agentNames[0]`: the query resolves the heading name in
+		// span order, the set is unordered, and the route must carry the former.
+		agentNames: ["web-fetcher", "slack-agent"],
+		firstAgentName: "slack-agent",
 		llmCalls: "4",
 		toolCalls: "2",
 		errorAgentSpans: "0",
@@ -530,7 +533,8 @@ describe("POST /internal/ai-sessions/list", () => {
 			expect(data[0]).toMatchObject({
 				spanCount: 12,
 				models: ["claude-sonnet-5"],
-				agentNames: ["slack-agent"],
+				agentNames: ["web-fetcher", "slack-agent"],
+				firstAgentName: "slack-agent",
 				llmCalls: 4,
 				toolCalls: 2,
 				totalTokens: 18_400,

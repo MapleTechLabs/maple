@@ -24,7 +24,7 @@
  * already says it row by row, and the user didn't want it said twice.
  */
 import * as m from "../../paraglide/messages.js";
-import { comparePath, competitorBySlug } from "../../lib/competitors";
+import { comparePath, competitorBySlug, competitors } from "../../lib/competitors";
 import Layout from "../../layouts/Layout.astro";
 import FAQ from "../FAQ.astro";
 import Footer from "../Footer.astro";
@@ -62,10 +62,10 @@ const rows = competitor.differences.map((row) => ({
 	competitor: row.competitor(),
 }));
 
-const crossLinks = competitor.related.flatMap((related) => {
-	const entry = competitorBySlug(related);
-	return entry ? [{ href: comparePath(locale, entry.slug), name: entry.navLabel(), desc: entry.navDesc() }] : [];
-});
+// Every other comparison, in registry order: the hub decides the order once.
+const crossLinks = competitors
+	.filter((entry) => entry.slug !== competitor.slug)
+	.map((entry) => ({ href: comparePath(locale, entry.slug), name: entry.navLabel(), desc: entry.navDesc() }));
 
 const faqItems = competitor.faqs.map((faq) => ({ question: faq.question(), answer: faq.answer() }));
 

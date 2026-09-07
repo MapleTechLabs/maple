@@ -1,14 +1,13 @@
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer } from "effect"
-import { layerPg } from "@/platform/DatabasePgLive"
+import { EventBaseLive } from "@/platform/DatabasePgLive"
 import { Env } from "@/platform/Env"
 import { ApiKeysService } from "./services/org/ApiKeysService"
 import { OAuthStateRepository } from "./services/auth/OAuthStateRepository"
 import { SlackIntegrationService } from "./services/integrations/SlackIntegrationService"
 
 // Slack workspace reconciliation's cron layer graph — mirrors
-// vcs-sync-runtime.ts's `buildScrapeRetentionLayer`, its own light graph
+// vcs-sync-runtime.ts's `ScrapeRetentionLive`, its own light graph
 // (NOT the fetch path's MainLive) so the tick stays within the startup CPU
 // budget. `SlackIntegrationService` needs `ApiKeysService` (to revoke the
 // minted bot key) and `OAuthStateRepository` (unused by this tick, but a
@@ -29,11 +28,8 @@ import { SlackIntegrationService } from "./services/integrations/SlackIntegratio
  */
 export const slackReconcileTelemetry = eventTelemetry({ serviceName: "maple-slack-reconcile" })
 
-export const buildSlackReconcileLayer = () => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive, workerEnvironmentLayer)
+export const SlackReconcileLive = (() => {
+	const Base = EventBaseLive
 
 	const ApiKeysServiceLive = ApiKeysService.layer.pipe(Layer.provide(Base))
 	const OAuthStateRepositoryLive = OAuthStateRepository.layer.pipe(Layer.provide(Base))
@@ -41,11 +37,8 @@ export const buildSlackReconcileLayer = () => {
 		Layer.provide(Layer.mergeAll(Base, ApiKeysServiceLive, OAuthStateRepositoryLive)),
 	)
 
-	return SlackIntegrationServiceLive.pipe(
-		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(ConfigLive),
-	)
-}
+	return SlackIntegrationServiceLive
+})()
 
 /** The cron program: probe every active Slack workspace, revoke locally any Slack confirms are dead. */
 export const runSlackReconciliation = Effect.gen(function* () {

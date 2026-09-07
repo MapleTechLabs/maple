@@ -1,6 +1,6 @@
 import { Effect, Layer, Metric } from "effect"
 import { WorkersCache } from "@maple/infra/workers-cache"
-import { CacheBackend, type EdgeCacheBackend, makeMemoryBackend } from "@maple/cache"
+import { CacheBackend, type EdgeCacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import * as QueryEngineMetrics from "@/observability/QueryEngineMetrics"
 
 // Concrete `CacheBackend` implementation for the API runtime.
@@ -69,3 +69,10 @@ export const CacheBackendLive = Layer.effect(
 		return CacheBackend.of(makeWorkersBackend(cache))
 	}),
 ).pipe(Layer.provide(WorkersCache.layer))
+
+/**
+ * The edge cache over that backend, composed once: every graph in the Worker
+ * shares this reference, so the read breaker behind it sees all the traffic
+ * rather than a per-graph slice.
+ */
+export const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))

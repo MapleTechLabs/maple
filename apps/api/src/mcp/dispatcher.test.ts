@@ -18,7 +18,9 @@ const TENANT: TenantContext = {
 // These cases stop at registry lookup/schema decoding, before a tool service is read.
 const makeValidationExecutor = McpToolExecutor.make.pipe(
 	// Every tool call is audited, so the executor needs the audit service even here.
-	Effect.provide(Context.make(AuditLogService, makeMemoryAuditLog()) as Context.Context<McpToolRuntimeRequirements>),
+	Effect.provide(
+		Context.make(AuditLogService, makeMemoryAuditLog()) as Context.Context<McpToolRuntimeRequirements>,
+	),
 )
 
 const makeRecordingTracer = () => {

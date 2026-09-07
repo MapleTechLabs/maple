@@ -29,7 +29,6 @@
 			// import off the CLI's --suite argument), so knip cannot see the edge.
 			"entry": [
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"autumn.config.ts",
 				"scripts/cold-path/*.mjs",
 				"scripts/bench-suites/*.ts"
@@ -67,9 +66,8 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		"packages/infra": {
-			// `cloudflare:workers` is a Workers runtime module, not a package.
-			"ignoreDependencies": ["cloudflare"]
+		"lib/ai-model-catalog": {
+			"entry": ["scripts/**/*.ts"]
 		},
 		"lib/alchemy-portless": {
 			// The dev-sidecar entry alchemy loads by URL, not by import.

@@ -56,10 +56,9 @@ export type AuditReadAction = Schema.Schema.Type<typeof AuditReadAction>
  * nothing on reads. Declared here, next to the contracts, so "which endpoints
  * expose telemetry" is visible where the endpoints are.
  */
-export class AuditedRead extends Context.Reference<AuditReadAction | undefined>(
-	"@maple/http/AuditedRead",
-	{ defaultValue: () => undefined },
-) {}
+export class AuditedRead extends Context.Reference<AuditReadAction | undefined>("@maple/http/AuditedRead", {
+	defaultValue: () => undefined,
+}) {}
 
 export class AuditLogPersistenceError extends HttpTaggedError<AuditLogPersistenceError>()(
 	"@maple/http/errors/AuditLogPersistenceError",

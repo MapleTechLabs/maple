@@ -6,7 +6,7 @@
  *
  * PR-preview stages get an alchemy-managed Hyperdrive config named
  * `maple-db-pr-<n>` (packages/infra/src/cloudflare/stage.ts,
- * resolveHyperdriveName). `alchemy destroy --stage pr-<n>` deletes it on PR
+ * `resolveWorkerName("db", stage)`). `alchemy destroy --stage pr-<n>` deletes it on PR
  * close — but the close-event teardown is best-effort (see
  * cleanup-preview-orphans.yml), and worse than the other resources: close
  * runs execute the PR branch's OWN workflow/alchemy.run.ts version, and

@@ -22,7 +22,7 @@ describe("responseIdentityFromSse", () => {
 	})
 
 	it("finds nothing in a stream with no complete data frame yet", () => {
-		assert.strictEqual(responseIdentityFromSse(": OPENROUTER PROCESSING\n\ndata: {\"id\":\"gen-"), undefined)
+		assert.strictEqual(responseIdentityFromSse(': OPENROUTER PROCESSING\n\ndata: {"id":"gen-'), undefined)
 		assert.strictEqual(responseIdentityFromSse("data: [DONE]\n"), undefined)
 	})
 
@@ -30,10 +30,15 @@ describe("responseIdentityFromSse", () => {
 		assert.deepStrictEqual(responseIdentityFromSse('data: {"choices":[]}\ndata: {"id":"gen-2"}\n'), {
 			id: "gen-2",
 		})
-		assert.deepStrictEqual(responseIdentityFromSse('data: not json\ndata: {"id":"gen-2"}\n'), { id: "gen-2" })
-		assert.deepStrictEqual(responseIdentityFromSse('data: {"id":null,"model":null}\ndata: {"id":"gen-3"}\n'), {
-			id: "gen-3",
+		assert.deepStrictEqual(responseIdentityFromSse('data: not json\ndata: {"id":"gen-2"}\n'), {
+			id: "gen-2",
 		})
+		assert.deepStrictEqual(
+			responseIdentityFromSse('data: {"id":null,"model":null}\ndata: {"id":"gen-3"}\n'),
+			{
+				id: "gen-3",
+			},
+		)
 	})
 })
 
@@ -50,17 +55,22 @@ const sseFetch =
 				controller.close()
 			},
 		})
-		return Promise.resolve(new Response(stream, { status, headers: { "content-type": "text/event-stream" } }))
+		return Promise.resolve(
+			new Response(stream, { status, headers: { "content-type": "text/event-stream" } }),
+		)
 	}
 
 const jsonFetch: typeof globalThis.fetch = () =>
-	Promise.resolve(new Response('{"id":"resp-1"}', { status: 200, headers: { "content-type": "application/json" } }))
+	Promise.resolve(
+		new Response('{"id":"resp-1"}', { status: 200, headers: { "content-type": "application/json" } }),
+	)
 
 const layer = layerResponseIdentity.pipe(Layer.provide(FetchHttpClient.layer))
 
 /** The stack with `fetch` as the transport: `Fetch` is a reference the client
  *  reads off the requesting fiber, so it is provided to the effect, not the layer. */
-const withTransport = (fetch: typeof globalThis.fetch) =>
+const withTransport =
+	(fetch: typeof globalThis.fetch) =>
 	<A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(Effect.provideService(FetchHttpClient.Fetch, fetch), Effect.provide(layer))
 
@@ -130,7 +140,9 @@ describe("layerResponseIdentity", () => {
 			yield* Effect.sleep("10 millis")
 			assert.strictEqual(span.attributes.has("gen_ai.response.id"), false)
 		}).pipe(
-			Effect.withSpan("execute_tool search_traces", { attributes: { "gen_ai.operation.name": "execute_tool" } }),
+			Effect.withSpan("execute_tool search_traces", {
+				attributes: { "gen_ai.operation.name": "execute_tool" },
+			}),
 			withTransport(sseFetch(SSE)),
 		),
 	)
@@ -147,7 +159,9 @@ describe("modelCallSpan", () => {
 			assert.strictEqual(modelCallSpan(inner)?.name, "chat inner")
 			const outer = yield* Effect.currentSpan.pipe(
 				Effect.withSpan("http.client POST"),
-				Effect.withSpan("invoke_agent a", { attributes: { "gen_ai.operation.name": "invoke_agent" } }),
+				Effect.withSpan("invoke_agent a", {
+					attributes: { "gen_ai.operation.name": "invoke_agent" },
+				}),
 			)
 			assert.strictEqual(modelCallSpan(outer), undefined)
 		}),

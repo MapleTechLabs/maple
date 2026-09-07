@@ -23,7 +23,8 @@ import {
 import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
 import type { SessionToolResults } from "@/lib/agent-sessions/span-detail"
-import { shortTarget } from "@/lib/agent-sessions/span-filters"
+import { useDetectedModels } from "@/hooks/use-detected-models"
+import { ModelLabel } from "../model-label"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
 import { OCCUPANCY_DOT_FILL, OCCUPANCY_FILL, OCCUPANCY_LABEL } from "./span-visuals"
@@ -425,6 +426,8 @@ function longestGapText(gaps: readonly IdleGap[], turns: readonly SessionTurn[])
 /* -------------------------------------------------------------------------- */
 
 function Rail({ summary }: { summary: SessionSummary }) {
+	// The header resolves the same set, so the two share one batch.
+	const detect = useDetectedModels(summary.models.map((model) => model.model))
 	const tokenBuckets = TOKEN_BUCKETS.filter((bucket) => summary.tokens[bucket.key] > 0)
 	const topModelCost = Math.max(...summary.models.map((model) => model.cost ?? 0), 0)
 	const topToolCalls = summary.tools[0]?.calls ?? 0
@@ -445,9 +448,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 					summary.models.map((model) => (
 						<div key={model.model} className="space-y-1.5">
 							<div className="flex items-baseline justify-between gap-2">
-								<span className="min-w-0 truncate font-mono text-xs" title={model.model}>
-									{shortTarget(model.model)}
-								</span>
+								<ModelLabel detected={detect(model.model)} size={12} className="text-xs" />
 								<span className="shrink-0 font-mono text-muted-foreground text-xs">
 									{model.cost === undefined ? "no cost" : formatCost(model.cost)} ·{" "}
 									{model.llmCalls} {model.llmCalls === 1 ? "call" : "calls"}

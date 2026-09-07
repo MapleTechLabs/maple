@@ -44,8 +44,8 @@ function assumeNotNull<T>(value: CH.Expr<T | null>): CH.Expr<T> {
 
 // ifNotFinite(x, fallback) — avg() over an empty set yields nan, which would
 // then decode as null through a numeric row schema.
-function ifNotFinite(value: CH.Expr<number>, fallback: number): CH.Expr<number> {
-	return compileFnCall<number>("ifNotFinite", value, CH.lit(fallback))
+function ifNotFinite(value: CH.Expr<number | null>, fallback: number): CH.Expr<number> {
+	return CH.ifNull(CH.ifNotFinite(value, fallback), CH.lit(fallback))
 }
 
 // Shared filter surface

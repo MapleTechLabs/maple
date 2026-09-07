@@ -6,6 +6,7 @@ import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { API_CORS_OPTIONS } from "@/http/api-cors"
 import { McpLive } from "@/mcp/app"
 import { Env } from "@/platform/Env"
+import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
@@ -68,8 +69,7 @@ import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer
 import { SessionAuthorizationLayer } from "@/services/auth/SessionAuthorizationLayer"
 import { ApiV2RateLimiter } from "@/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
-import { EdgeCacheService } from "@maple/cache"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
+import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { OrgMembershipService } from "@/services/auth/OrgMembershipService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 
@@ -110,7 +110,12 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
  */
 const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 	Layer.provide(
-		Layer.mergeAll(HttpQueryEngineLive, HttpSessionReplaysInternalLive, HttpAiSessionsInternalLive),
+		Layer.mergeAll(
+			HttpQueryEngineLive,
+			HttpSessionReplaysInternalLive,
+			HttpAiSessionsInternalLive,
+			HttpAiModelsInternalLive,
+		),
 	),
 	Layer.provide(
 		Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpChatLive, HttpDemoLive, HttpDigestLive),
@@ -192,10 +197,6 @@ export const ApiAuthLive = Layer.mergeAll(
 	// Membership verification for `x-maple-org-id`. Only the v2 layer asks for
 	// it; without it that layer cannot build, which is deliberate — the header
 	// must never end up silently ignored in a runtime that forgot to wire this.
-	Layer.provideMerge(
-		OrgMembershipService.layer.pipe(
-			Layer.provide(EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))),
-		),
-	),
+	Layer.provideMerge(OrgMembershipService.layer.pipe(Layer.provide(EdgeCacheServiceLive))),
 	Layer.provideMerge(Env.layer),
 )

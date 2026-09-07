@@ -315,7 +315,9 @@ const byConvention = (
 		spellings: (name: string) => ReadonlyArray<string>,
 	) => {
 		const names = (holds: boolean) =>
-			[...table].filter(([, convention]) => convention[axis] === holds).flatMap(([name]) => spellings(name))
+			[...table]
+				.filter(([, convention]) => convention[axis] === holds)
+				.flatMap(([name]) => spellings(name))
 		const yes = names(true)
 		const no = names(false)
 		if (yes.length > 0) branches.push([CH.inList(column, yes), nested])
@@ -324,7 +326,9 @@ const byConvention = (
 	split(attrs.get(MAPLE_AI_VENDOR_ID_ATTR), GENAI_VENDOR_USAGE_CONVENTIONS, (name) => [name])
 	split(genAiProviderNameExpr(attrs), GENAI_PROVIDER_USAGE_CONVENTIONS, (name) => [
 		name,
-		...GENAI_PROVIDER_LEGACY_VALUES.filter(([canonical]) => canonical === name).map(([, legacy]) => legacy),
+		...GENAI_PROVIDER_LEGACY_VALUES.filter(([canonical]) => canonical === name).map(
+			([, legacy]) => legacy,
+		),
 	])
 	return CH.multiIf(branches, GENAI_DEFAULT_USAGE_CONVENTION[axis] ? nested : apart)
 }

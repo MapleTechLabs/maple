@@ -106,6 +106,17 @@ jobs:
             # including the ingest gateway, which reaches Postgres through PSBouncer as
             # a role that does NOT inherit `postgres`.
 
+            # One-shot for #787 (2026-09-07): the api's chat Durable Object moved
+            # from the `CHAT_SESSION` binding to alchemy's class form, which keys
+            # the class by its own name. The script tag alchemy reads on upload
+            # still says `CHAT_SESSION=ChatSession`, so the deploy planned a
+            # delete AND a create of the same class — rejected by Cloudflare
+            # ("cannot be the target of more than one migration"), and it would
+            # have destroyed the namespace. Re-key the tag once; a no-op after.
+            # Delete this step and the script once stg and prd have deployed past it.
+            - name: Retag the api Worker's Durable Object logical ids (one-shot, #787)
+              run: bun scripts/retag-durable-object-logical-ids.ts maple-api
+
             # alchemy's env-credential path (CI=true) otherwise discovers the account
             # with an STS GetCallerIdentity issued while its own AWSEnvironment is
             # still being built, and that call waits on the half-built environment
@@ -126,6 +137,52 @@ jobs:
               run: bun run alchemy:deploy:prd
               env:
                   AWS_ACCOUNT_ID: ${{ steps.aws.outputs.aws-account-id }}
+
+            # Alchemy isolates per-resource failures on purpose: a Worker that
+            # fails to upload never interrupts its siblings, so a deploy can
+            # leave production serving two commits at once. It did on
+            # 2026-09-07 — `api` was rejected with `ScriptStartupError` while
+            # `app`, `landing`, `alerting` and `ingest` all shipped, and prod
+            # ran a 6h-old api behind a current web until someone read the log.
+            #
+            # `always()`: when the deploy step fails this is exactly when the
+            # answer matters — it names which Worker is stale instead of
+            # leaving it in a 4000-line log. It also catches the quieter case
+            # the deploy cannot report at all, where alchemy succeeds but the
+            # script serving traffic is not the one we just uploaded.
+            #
+            # Liveness only. Every other prod Worker is covered by the
+            # "Prod revision skew" alert, which compares
+            # `vcs.ref.head.revision` across services from their own telemetry.
+            # Which services that is, and the fact that it assumes they always
+            # deploy together, is pinned in `PRD_LOCKSTEP_REVISION_SERVICES`
+            # (`packages/infra/src/env.ts`) — change what this workflow deploys
+            # and `env.test.ts` will tell you the rule needs editing too.
+            - name: Verify the deployed api serves this commit
+              if: ${{ always() && steps.deploy.outcome != 'skipped' }}
+              env:
+                  EXPECTED: ${{ env.COMMIT_SHA }}
+              run: |
+                  set -uo pipefail
+                  # Cloudflare propagates a new script over a few seconds, so a
+                  # single probe races the rollout rather than testing it.
+                  for attempt in 1 2 3 4 5 6; do
+                      served=$(curl -fsS --max-time 10 -D - -o /dev/null https://api.maple.dev/health 2>/dev/null \
+                          | tr -d '\r' | awk 'tolower($1) == "x-maple-revision:" { print $2 }')
+                      [ "$served" = "$EXPECTED" ] && break
+                      echo "attempt $attempt: api serves '${served:-<none>}', expected '$EXPECTED'"
+                      sleep 10
+                  done
+                  if [ "$served" = "$EXPECTED" ]; then
+                      echo "api is serving $EXPECTED"
+                      exit 0
+                  fi
+                  if [ -z "$served" ]; then
+                      echo "::error::api /health returned no x-maple-revision header. Either the Worker predates this check or it is not answering — check the deploy log for a resource that reported 'fail'."
+                  else
+                      echo "::error::PARTIAL DEPLOY — api is serving $served but this run deployed $EXPECTED. The api Worker did not update; other Workers likely did. Find the resource that reported 'fail' in the deploy log above."
+                  fi
+                  exit 1
 
     # A skipped job does not fail its run, so with CI red this workflow reported
     # SUCCESS while nothing deployed — which is how a broken `main` looked like a
