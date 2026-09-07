@@ -69,6 +69,29 @@ describe("detectAiModel", () => {
 		expect(detectAiModel("publishers/google/models/gemini-2.5-pro").openRouterId).toBe(
 			"google/gemini-2.5-pro",
 		)
+		// The vendor is not the segment next to the model on Vertex; an unlisted
+		// model still gets it from the path.
+		expect(detectAiModel("publishers/google/models/text-bison-001")).toMatchObject({
+			vendorSlug: "google",
+			source: "heuristic",
+		})
+		expect(detectAiModel("eu.anthropic.claude-3-5-sonnet-20241022-v2:0").vendorSlug).toBe("anthropic")
+		expect(detectAiModel("us-gov.amazon.nova-pro-v1:0")).toMatchObject({
+			vendorSlug: "amazon",
+			slug: "nova-pro",
+		})
+	})
+
+	it("keeps a rolling alias's id as OpenRouter serves it, and names it without the vendor", () => {
+		expect(detectAiModel("claude-sonnet-latest")).toMatchObject({
+			openRouterId: "~anthropic/claude-sonnet-latest",
+			vendorSlug: "anthropic",
+		})
+	})
+
+	it("names a variant after its plain listing", () => {
+		expect(detectAiModel("anthropic/claude-opus-5:batch").displayName).toBe("Claude Opus 5")
+		expect(detectAiModel("z-ai/glm-5.3-flash:free").displayName).toBe("GLM 5.3 Flash")
 	})
 
 	it("places an unlisted model with its vendor by prefix", () => {
@@ -76,7 +99,7 @@ describe("detectAiModel", () => {
 			slug: "llama3.1:8b",
 			vendorSlug: "meta-llama",
 			vendorName: "Meta",
-			family: "llama",
+			family: null,
 			source: "heuristic",
 		})
 		expect(detectAiModel("grok-4")).toMatchObject({
@@ -85,6 +108,28 @@ describe("detectAiModel", () => {
 			family: "grok",
 		})
 		expect(detectAiModel("gemini-1.5-pro-002").displayName).toBe("Gemini 1.5 Pro")
+		expect(detectAiModel("palmyra-fin-70b").vendorSlug).toBe("writer")
+		expect(detectAiModel("phind-codellama-34b").vendorSlug).not.toBe("microsoft")
+	})
+
+	it("derives a readable name from a slug", () => {
+		expect(detectAiModel("deepseek-r1-70b-custom").displayName).toBe("Deepseek R1 70B Custom")
+		expect(detectAiModel("o9-mini-turbo-custom").displayName).toBe("o9 Mini Turbo Custom")
+		expect(detectAiModel("glm-9-air-custom").displayName).toBe("GLM 9 Air Custom")
+	})
+
+	it("never throws: prototype keys and punctuation are unknown models", () => {
+		// An unknown path segment is ignored like any other gateway prefix.
+		expect(detectAiModel("__proto__/gpt-4o")).toMatchObject({
+			vendorSlug: "openai",
+			source: "openrouter",
+		})
+		for (const input of ["constructor/foo", "constructor.foo", "__proto__/foo", "-", "anthropic/"]) {
+			const detected = detectAiModel(input)
+			expect(detected.source).toBe("unknown")
+			expect(typeof detected.vendorName === "string" || detected.vendorName === null).toBe(true)
+			expect(detected.displayName.length).toBeGreaterThan(0)
+		}
 	})
 
 	it("gives an unrecognised string a readable name and nothing else", () => {

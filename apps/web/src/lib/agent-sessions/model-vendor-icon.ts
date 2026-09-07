@@ -103,7 +103,12 @@ export function modelVendorIcon(detected: {
 	readonly vendorSlug: string | null
 	readonly family: string | null
 }): IconComponent {
-	if (detected.family !== null && detected.family in FAMILY_ICONS) return FAMILY_ICONS[detected.family]!
-	if (detected.vendorSlug === null) return ChatBubbleSparkleIcon
-	return VENDOR_ICONS[detected.vendorSlug] ?? ChatBubbleSparkleIcon
+	// `hasOwn`, not `in`: the slugs come off the wire, and `constructor` is not a vendor.
+	if (detected.family !== null && Object.hasOwn(FAMILY_ICONS, detected.family)) {
+		return FAMILY_ICONS[detected.family] ?? ChatBubbleSparkleIcon
+	}
+	if (detected.vendorSlug !== null && Object.hasOwn(VENDOR_ICONS, detected.vendorSlug)) {
+		return VENDOR_ICONS[detected.vendorSlug] ?? ChatBubbleSparkleIcon
+	}
+	return ChatBubbleSparkleIcon
 }

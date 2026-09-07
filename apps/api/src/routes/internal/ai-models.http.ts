@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { detectAiModel } from "@maple/ai-model-catalog"
-import { DetectAiModelResponse, MapleInternalApi } from "@maple/domain/http"
+import { CurrentTenant, DetectAiModelResponse, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 
 /**
@@ -13,6 +13,18 @@ export const HttpAiModelsInternalLive = HttpApiBuilder.group(
 	"aiModelsInternal",
 	(handlers) =>
 		handlers.handle("detect", ({ payload }) =>
-			Effect.sync(() => new DetectAiModelResponse(detectAiModel(payload.model))),
+			Effect.gen(function* () {
+				const tenant = yield* CurrentTenant.Context
+				const detected = detectAiModel(payload.model)
+				// Attributes on the server span, never a child span: this is one call
+				// per model string on a list page. `source: unknown` is the signal that
+				// the catalog wants regenerating.
+				yield* Effect.annotateCurrentSpan({
+					orgId: tenant.orgId,
+					"maple.ai_model.source": detected.source,
+					"maple.ai_model.vendor_slug": detected.vendorSlug ?? "",
+				})
+				return new DetectAiModelResponse(detected)
+			}),
 		),
 )

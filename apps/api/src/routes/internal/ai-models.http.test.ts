@@ -12,6 +12,12 @@ import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
 import { V1ErrorBoundaryLive } from "../v1/error-boundary"
 import { HttpAiModelsInternalLive } from "./ai-models.http"
 
+// The wire shape is a hand-written mirror of the resolver's. Assignability at
+// the constructor already catches a renamed or removed field; this catches a
+// field the resolver gained that the wire would silently drop.
+type MissingOnTheWire = Exclude<keyof DetectedAiModel, keyof DetectAiModelResponse>
+const _everyFieldIsOnTheWire: MissingOnTheWire extends never ? true : never = true
+
 class AiModelsOnlyApi extends HttpApi.make("MapleInternalApi")
 	.add(AiModelsInternalApiGroup)
 	.middleware(V1SchemaErrors)
@@ -57,17 +63,20 @@ const makeHarness = () => {
 }
 
 describe("POST /internal/ai-models/detect", () => {
-	it("answers with the resolved vendor and display name", async () => {
+	it("puts every resolved field on the wire", async () => {
 		const harness = makeHarness()
 		try {
-			const response = await harness.post({ model: "z-ai/glm-5.3-flash:nitro" })
+			const response = await harness.post({ model: "  z-ai/glm-5.3-flash:nitro " })
 			expect(response.status).toBe(200)
-			expect(response.body).toMatchObject({
+			expect(response.body).toEqual({
+				model: "z-ai/glm-5.3-flash:nitro",
 				slug: "glm-5.3-flash:nitro",
 				normalizedSlug: "glm-5.3-flash",
+				openRouterId: "z-ai/glm-5.3-flash",
 				displayName: "GLM 5.3 Flash",
 				vendorSlug: "z-ai",
 				vendorName: "Z.ai",
+				family: null,
 				source: "openrouter",
 			})
 		} finally {
@@ -75,13 +84,47 @@ describe("POST /internal/ai-models/detect", () => {
 		}
 	})
 
-	it("rejects an empty model as a schema error rather than resolving it", async () => {
+	it("carries an unrecognised model's nulls as JSON null, which the icon lookup branches on", async () => {
 		const harness = makeHarness()
 		try {
-			const response = await harness.post({ model: "" })
-			expect(response.status).toBe(400)
+			const response = await harness.post({ model: "my-azure-deployment" })
+			expect(response.status).toBe(200)
+			expect(response.body).toMatchObject({
+				openRouterId: null,
+				vendorSlug: null,
+				vendorName: null,
+				family: null,
+				source: "unknown",
+			})
 		} finally {
 			await harness.dispose()
 		}
 	})
+
+	it("answers a prototype key as an unknown model, not a 500", async () => {
+		const harness = makeHarness()
+		try {
+			for (const model of ["constructor/foo", "constructor.foo", "__proto__/foo"]) {
+				const response = await harness.post({ model })
+				expect(response.status).toBe(200)
+				expect(response.body.source).toBe("unknown")
+			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it.each(["", "   ", "x".repeat(501)])(
+		"rejects %j as a schema error rather than resolving it",
+		async (model) => {
+			const harness = makeHarness()
+			try {
+				const response = await harness.post({ model })
+				expect(response.status).toBe(400)
+				expect(response.body._tag).toBe("@maple/http/v1/V1RequestValidationError")
+			} finally {
+				await harness.dispose()
+			}
+		},
+	)
 })

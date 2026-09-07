@@ -14,7 +14,11 @@ export interface DetectedAiModel {
 	 * lists as its own snapshot (`gpt-4o-2024-08-06`) keeps its date.
 	 */
 	readonly normalizedSlug: string
-	/** `vendorSlug/normalizedSlug` when OpenRouter lists the model, else `null`. */
+	/**
+	 * The id OpenRouter serves when it lists the model, else `null`. A rolling
+	 * alias keeps its `~` (`~anthropic/claude-sonnet-latest`), so the id is
+	 * always one OpenRouter answers to; `vendorSlug` never carries it.
+	 */
 	readonly openRouterId: string | null
 	/** `GLM 5.3 Flash` — OpenRouter's name, or one derived from the slug. */
 	readonly displayName: string
@@ -22,17 +26,23 @@ export interface DetectedAiModel {
 	readonly vendorSlug: string | null
 	/** `Z.ai` */
 	readonly vendorName: string | null
-	/** A product family with a mark of its own (`claude`, `gemini`), else `null`. */
+	/** A product family with a mark of its own (`claude`, `gemini`, `grok`, `kimi`), else `null`. */
 	readonly family: string | null
 	/** How the vendor was found. `unknown` means only `slug` and `displayName` are meaningful. */
 	readonly source: "openrouter" | "heuristic" | "unknown"
 }
 
 interface CatalogEntry {
+	/** The id OpenRouter serves, author segment verbatim — `~` aliases keep their `~`. */
+	readonly openRouterId: string
 	readonly vendorSlug: string
 	readonly modelSlug: string
 	readonly name: string
 }
+
+/** A record read that ignores the prototype: `constructor` is not a vendor. */
+const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
+	Object.hasOwn(record, key) ? record[key] : undefined
 
 const splitId = (id: string): readonly [vendor: string, model: string] => {
 	const slash = id.indexOf("/")
@@ -56,13 +66,15 @@ const BEDROCK_ID = /^(?:(?:us|eu|apac|global|jp|au|ca|us-gov)\.)?([a-z0-9]+)\.(.
  * that carries a date (`gpt-5-2025-08-07`) still lands on its entry.
  */
 const byModelSlug = new Map<string, CatalogEntry>()
-const byName = new Map<string, string>()
 
-/** `Z.ai: GLM 5.3 Flash (batch)` → `GLM 5.3 Flash`. */
+/**
+ * `Z.ai: GLM 5.3 Flash (batch)` → `GLM 5.3 Flash`. The parenthetical only
+ * reaches here for a model OpenRouter lists solely as a variant; a plain id
+ * owns its entry (see the ordering below), variant names never replace it.
+ */
 const displayNameOf = (name: string): string => {
 	const separator = name.indexOf(": ")
 	const display = separator === -1 ? name : name.slice(separator + 2)
-	// `:batch` and `:free` variants carry their variant in the name.
 	return display.replace(/\s*\((batch|free|beta)\)$/i, "")
 }
 
@@ -80,20 +92,13 @@ for (const [id, canonicalSlug, name] of ordered) {
 	const [author, model] = splitId(id)
 	const vendorSlug = author.replace(/^~/, "")
 	const modelSlug = stripVariant(model)
-	const entry: CatalogEntry = { vendorSlug, modelSlug, name }
-	byName.set(`${vendorSlug}/${modelSlug}`, name)
+	const entry: CatalogEntry = { openRouterId: `${author}/${modelSlug}`, vendorSlug, modelSlug, name }
 	const [, canonicalModel] = splitId(canonicalSlug)
 	for (const key of [modelSlug, canonicalModel, canonicalModel.replace(DATE_SUFFIX, "")]) {
 		add(key, entry)
 		add(`${vendorSlug}/${key}`, entry)
 	}
 }
-
-const vendorNameOf = (vendorSlug: string): string =>
-	VENDOR_NAME_OVERRIDES[vendorSlug] ?? OPENROUTER_VENDORS[vendorSlug] ?? titleCase(vendorSlug)
-
-const familyOf = (normalizedSlug: string): string | null =>
-	FAMILY_RULES.find(([pattern]) => pattern.test(normalizedSlug))?.[1] ?? null
 
 /** Short tokens that are initialisms rather than words. */
 const ACRONYMS = new Set(["gpt", "glm", "lfm", "ai", "mpt", "dbrx", "qwq", "qvq", "tts", "hy"])
@@ -105,13 +110,23 @@ const titleCase = (slug: string): string =>
 		.filter(Boolean)
 		.map((word) => {
 			if (ACRONYMS.has(word)) return word.toUpperCase()
-			// `r1`, `v3`, `k2` — but not OpenAI's `o3`.
-			if (/^[a-np-z]\d+$/.test(word)) return word.toUpperCase()
+			// `r1`, `v3`, `k2` — but OpenAI's `o3` stays lowercase.
+			if (/^o\d+$/.test(word)) return word
+			if (/^[a-z]\d+$/.test(word)) return word.toUpperCase()
 			// Parameter counts: `70b`, `8b`, `1.5b`.
 			if (/^\d+(\.\d+)?[bkm]$/.test(word)) return word.toUpperCase()
 			return word.charAt(0).toUpperCase() + word.slice(1)
 		})
 		.join(" ")
+
+const vendorNameOf = (vendorSlug: string): string =>
+	own(VENDOR_NAME_OVERRIDES, vendorSlug) ?? own(OPENROUTER_VENDORS, vendorSlug) ?? titleCase(vendorSlug)
+
+const isKnownVendor = (slug: string): boolean =>
+	Object.hasOwn(OPENROUTER_VENDORS, slug) || Object.hasOwn(VENDOR_NAME_OVERRIDES, slug)
+
+const familyOf = (normalizedSlug: string): string | null =>
+	FAMILY_RULES.find(([pattern]) => pattern.test(normalizedSlug))?.[1] ?? null
 
 /**
  * Progressively less specific spellings of a model segment, most specific
@@ -133,8 +148,9 @@ const candidates = (modelSlug: string): ReadonlyArray<string> => {
 		// `claude-3-5-sonnet` → `claude-3.5-sonnet`, leaving `llama3-1-70b`'s `1-70b` alone.
 		const dotted = undated.replace(/(\d)-(\d)(?=[-.]|$)/g, "$1.$2")
 		const unchanneled = dotted.replace(CHANNEL_SUFFIX, "")
-		// `llama3.1` (Ollama, Bedrock) → `llama-3.1`, the spelling OpenRouter uses.
-		const hyphenated = unchanneled.replace(/^([a-z]+)(\d)/, "$1-$2")
+		// `llama3.1` (Ollama, Bedrock) → `llama-3.1`, the spelling OpenRouter uses;
+		// a single letter stays put, OpenAI's `o3` is not `o-3`.
+		const hyphenated = unchanneled.replace(/^([a-z]{2,})(\d)/, "$1-$2")
 		push(undated)
 		push(dotted)
 		push(unchanneled)
@@ -157,22 +173,22 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 
 	// Path-shaped ids: `openrouter/anthropic/claude-3.5-sonnet`,
 	// `publishers/google/models/gemini-2.5-pro`. The model is the last segment;
-	// the segment before it names the vendor only when it is one we know.
+	// the nearest earlier segment that names a vendor we know is the vendor.
 	const segments = lower.split("/").filter(Boolean)
 	let slug = segments.at(-1) ?? lower
-	let pathVendor = segments.length > 1 ? (segments[segments.length - 2] ?? "").replace(/^~/, "") : null
-	if (
-		pathVendor !== null &&
-		!(pathVendor in OPENROUTER_VENDORS) &&
-		!(pathVendor in VENDOR_NAME_OVERRIDES)
-	) {
-		pathVendor = null
+	let pathVendor: string | null = null
+	for (let index = segments.length - 2; index >= 0; index--) {
+		const segment = (segments[index] ?? "").replace(/^~/, "")
+		if (isKnownVendor(segment)) {
+			pathVendor = segment
+			break
+		}
 	}
 
 	// Bedrock: `us.anthropic.claude-3-5-sonnet-20241022-v2:0`.
 	const [, bedrockVendor = "", bedrockModel = ""] =
 		(pathVendor === null ? BEDROCK_ID.exec(slug) : null) ?? []
-	const bedrockSlug = BEDROCK_VENDORS[bedrockVendor]
+	const bedrockSlug = own(BEDROCK_VENDORS, bedrockVendor)
 	if (bedrockSlug !== undefined) {
 		pathVendor = bedrockSlug
 		slug = bedrockModel
@@ -182,29 +198,28 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 	// however the segment reads, so the lookup is vendor-qualified and an
 	// unlisted pairing falls through to the heuristic path with that vendor.
 	const base = stripVariant(slug)
+	const spellings = candidates(base)
 	let entry: CatalogEntry | undefined
-	for (const candidate of candidates(base)) {
+	for (const candidate of spellings) {
 		entry = byModelSlug.get(pathVendor === null ? candidate : `${pathVendor}/${candidate}`)
 		if (entry) break
 	}
 
 	if (entry) {
-		const vendorName = vendorNameOf(entry.vendorSlug)
-		const name = byName.get(`${entry.vendorSlug}/${entry.modelSlug}`) ?? entry.name
 		return {
 			model,
 			slug,
 			normalizedSlug: entry.modelSlug,
-			openRouterId: `${entry.vendorSlug}/${entry.modelSlug}`,
-			displayName: displayNameOf(name),
+			openRouterId: entry.openRouterId,
+			displayName: displayNameOf(entry.name),
 			vendorSlug: entry.vendorSlug,
-			vendorName,
+			vendorName: vendorNameOf(entry.vendorSlug),
 			family: familyOf(entry.modelSlug),
 			source: "openrouter",
 		}
 	}
 
-	const normalizedSlug = candidates(base).at(-1) ?? base
+	const normalizedSlug = spellings.at(-1) ?? base
 	const vendorSlug =
 		pathVendor ?? VENDOR_PREFIX_RULES.find(([pattern]) => pattern.test(normalizedSlug))?.[1] ?? null
 	return {
@@ -212,7 +227,8 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 		slug,
 		normalizedSlug,
 		openRouterId: null,
-		displayName: titleCase(normalizedSlug),
+		// `titleCase` has nothing to say about a punctuation-only string.
+		displayName: titleCase(normalizedSlug) || model,
 		vendorSlug,
 		vendorName: vendorSlug === null ? null : vendorNameOf(vendorSlug),
 		family: familyOf(normalizedSlug),

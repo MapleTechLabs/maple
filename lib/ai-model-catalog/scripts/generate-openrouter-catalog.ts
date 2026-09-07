@@ -20,9 +20,19 @@ interface OpenRouterModel {
 
 const response = await fetch(SOURCE)
 if (!response.ok) throw new Error(`${SOURCE} answered ${response.status}`)
-const { data } = (await response.json()) as { data: ReadonlyArray<OpenRouterModel> }
+const { data } = (await response.json()) as { data?: ReadonlyArray<Partial<OpenRouterModel>> }
+if (!Array.isArray(data) || data.length === 0) throw new Error(`${SOURCE} answered without a model list`)
+for (const model of data) {
+	if (
+		typeof model.id !== "string" ||
+		typeof model.canonical_slug !== "string" ||
+		typeof model.name !== "string"
+	) {
+		throw new Error(`${SOURCE} lists a model without id/canonical_slug/name: ${JSON.stringify(model)}`)
+	}
+}
 
-const models = [...data].sort((a, b) => a.id.localeCompare(b.id))
+const models = [...(data as ReadonlyArray<OpenRouterModel>)].sort((a, b) => a.id.localeCompare(b.id))
 
 // The vendor's display name is the prefix OpenRouter puts before ": " in the
 // model name. Ids under `~` are OpenRouter's rolling aliases of a real vendor.

@@ -10,7 +10,6 @@
 export const VENDOR_NAME_OVERRIDES: Readonly<Record<string, string>> = {
 	"01-ai": "01.AI",
 	ai21: "AI21",
-	cognitivecomputations: "Cognitive Computations",
 	databricks: "Databricks",
 	"ibm-granite": "IBM",
 	inflection: "Inflection",
@@ -22,13 +21,15 @@ export const VENDOR_NAME_OVERRIDES: Readonly<Record<string, string>> = {
 
 /**
  * Model-name prefix → vendor slug, for ids that reach us without a vendor
- * segment (`claude-sonnet-4-5-20250929`, `gpt-4o`, `llama3.1:8b`). Order
- * matters only where prefixes overlap; none do today. Matched against the
- * lowercased model segment with its variant stripped.
+ * segment (`claude-sonnet-4-5-20250929`, `gpt-4o`, `llama3.1:8b`). Matched in
+ * order against the lowercased model segment with its variant stripped, so a
+ * longer prefix goes before the shorter one it extends (`palmyra` before
+ * `palm`).
  */
 export const VENDOR_PREFIX_RULES: ReadonlyArray<readonly [pattern: RegExp, vendorSlug: string]> = [
 	[/^claude/, "anthropic"],
 	[/^(gpt|chatgpt|o[1-9](-|$)|codex|davinci|text-embedding|dall-e|whisper|tts-)/, "openai"],
+	[/^palmyra/, "writer"],
 	[/^(gemini|gemma|palm|bison|gecko|imagen|veo)/, "google"],
 	[/^(llama|codellama)/, "meta-llama"],
 	[/^(mistral|mixtral|codestral|ministral|magistral|devstral|pixtral)/, "mistralai"],
@@ -40,7 +41,7 @@ export const VENDOR_PREFIX_RULES: ReadonlyArray<readonly [pattern: RegExp, vendo
 	[/^kimi/, "moonshotai"],
 	[/^(minimax|abab)/, "minimax"],
 	[/^(nova|titan)/, "amazon"],
-	[/^(phi|orca|wizardlm)/, "microsoft"],
+	[/^(phi[-\d]|orca|wizardlm)/, "microsoft"],
 	[/^nemotron/, "nvidia"],
 	[/^(sonar|pplx)/, "perplexity"],
 	[/^hunyuan/, "tencent"],
@@ -52,7 +53,6 @@ export const VENDOR_PREFIX_RULES: ReadonlyArray<readonly [pattern: RegExp, vendo
 	[/^step-/, "stepfun"],
 	[/^jamba/, "ai21"],
 	[/^mimo/, "xiaomi"],
-	[/^palmyra/, "writer"],
 	[/^reka/, "rekaai"],
 	[/^solar/, "upstage"],
 	[/^yi-/, "01-ai"],
@@ -72,7 +72,6 @@ export const FAMILY_RULES: ReadonlyArray<readonly [pattern: RegExp, family: stri
 	[/^claude/, "claude"],
 	[/^gemini/, "gemini"],
 	[/^grok/, "grok"],
-	[/^(llama|codellama)/, "llama"],
 	[/^kimi/, "kimi"],
 ]
 

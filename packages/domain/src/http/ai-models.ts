@@ -9,7 +9,7 @@ import { SessionAuthorization } from "./current-tenant"
 // crosses the wire.
 
 export class DetectAiModelRequest extends Schema.Class<DetectAiModelRequest>("DetectAiModelRequest")({
-	/** Bounded because it is matched against a catalog, never stored — nothing legitimate is longer. */
+	/** Trimmed, then bounded: matched against a catalog, never stored — nothing legitimate is longer. */
 	model: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(500)),
 }) {}
 
@@ -31,7 +31,7 @@ export class DetectAiModelResponse extends Schema.Class<DetectAiModelResponse>("
 	vendorSlug: Schema.NullOr(Schema.String),
 	/** `Z.ai` */
 	vendorName: Schema.NullOr(Schema.String),
-	/** A product family with a mark of its own (`claude`, `gemini`, `grok`, `llama`, `kimi`). */
+	/** A product family with a mark of its own (`claude`, `gemini`, `grok`, `kimi`). */
 	family: Schema.NullOr(Schema.String),
 	source: AiModelDetectionSource,
 }) {}
