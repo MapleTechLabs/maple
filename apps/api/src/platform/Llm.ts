@@ -20,7 +20,7 @@
  * Providers are deep-imported for the same reason — never the `providers/index.ts` barrel.
  */
 import { LlmCallError } from "@maple/domain/llm"
-import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare"
+import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare-workers-ai"
 import * as OpenRouter from "@opencode-ai/ai/providers/openrouter"
 import { LLMClient, RequestExecutor } from "@opencode-ai/ai/route"
 import { isContextOverflowFailure, LanguageModel } from "@opencode-ai/ai"

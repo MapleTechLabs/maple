@@ -17,7 +17,7 @@ import {
 	type LLMRequest,
 	type LanguageModel,
 } from "@opencode-ai/ai"
-import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare"
+import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare-workers-ai"
 import {
 	makeTurnObservability,
 	makeTurnUsage,
