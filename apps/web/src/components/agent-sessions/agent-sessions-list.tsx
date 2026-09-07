@@ -19,13 +19,13 @@ import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { sessionRowId } from "@/lib/agent-sessions/session-window"
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
+import { sessionIdentity } from "./session-detail/session-header"
 import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 
 /** The wire row from `listAiSessions` — one AI agent session, newest first. */
 export interface AgentSessionRow {
 	readonly sessionId: string
 	readonly vendorId: string
-	readonly vendorVersion: string
 	readonly traceCount: number
 	readonly spanCount: number
 	readonly errorSpanCount: number
@@ -152,7 +152,10 @@ export function AgentSessionsList({
 				const hasErrors = session.errorSpanCount > 0
 				const VendorIcon = vendorIcon(session.vendorId)
 				const vendor = vendorLabel(session.vendorId)
-				const hasVersion = session.vendorVersion !== "" && session.vendorVersion !== "0"
+				const { heading } = sessionIdentity({
+					agentNames: session.agentNames,
+					vendorIds: [session.vendorId],
+				})
 				return (
 					<Link
 						key={session.sessionId}
@@ -170,16 +173,20 @@ export function AgentSessionsList({
 							<span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-destructive" />
 						)}
 
-						{/* Identity lane: session id, framework mark underneath. The mark
-						    names the framework on its own (the name is in the title); only
-						    the version is spelled out, since no logo carries one. */}
+						{/* Identity lane: what the session IS on the first line — the agent
+						    it ran, beside the framework's mark — and what it is CALLED on
+						    the second. The id is how you cite a session, not how you
+						    recognise one, so it reads as metadata under the name. */}
 						<div className="min-w-0 flex-1 overflow-hidden">
 							<div className="flex items-center gap-2">
 								<span
-									className="min-w-0 truncate font-mono text-sm font-medium"
-									title={session.sessionId}
+									className="flex shrink-0 items-center text-muted-foreground"
+									title={vendor}
 								>
-									{sessionRowId(session.sessionId)}
+									<VendorIcon size={15} aria-hidden />
+								</span>
+								<span className="min-w-0 truncate text-sm font-medium" title={heading}>
+									{heading}
 								</span>
 								{/* On phones the right-hand lanes are gone, so the timestamp
 								    anchors the top-right corner of the stacked row. */}
@@ -191,11 +198,10 @@ export function AgentSessionsList({
 								</span>
 							</div>
 							<div
-								className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground"
-								title={hasVersion ? `${vendor} v${session.vendorVersion}` : vendor}
+								className="mt-0.5 truncate font-mono text-xs text-muted-foreground"
+								title={session.sessionId}
 							>
-								<VendorIcon size={13} className="shrink-0" aria-hidden />
-								{hasVersion && <span className="truncate">v{session.vendorVersion}</span>}
+								{sessionRowId(session.sessionId)}
 							</div>
 							{hasErrors && (
 								<div className="mt-1.5 flex flex-wrap items-center gap-1.5 @2xl:hidden">
@@ -205,7 +211,7 @@ export function AgentSessionsList({
 						</div>
 
 						{/* Services lane */}
-						<div className="hidden w-[11rem] shrink-0 overflow-hidden @2xl:block">
+						<div className="hidden w-[10rem] shrink-0 overflow-hidden @2xl:block">
 							<span
 								className="block truncate text-xs text-muted-foreground"
 								title={session.serviceNames.join(", ")}
@@ -214,9 +220,11 @@ export function AgentSessionsList({
 							</span>
 						</div>
 
-						{/* Model lane: what the session ran on — the first filter most
-						    readers reach for, so it is visible before they open the rail. */}
-						<div className="hidden w-[10rem] shrink-0 overflow-hidden @4xl:block">
+						{/* Model lane: what the session ran on. Last lane in, because it is
+						    the one a reader can also get from the filter rail — every lane's
+						    breakpoint is set so the identity lane keeps a legible ~180px
+						    even at the width where the lane appears. */}
+						<div className="hidden w-[9rem] shrink-0 overflow-hidden @7xl:block">
 							<span
 								className="block truncate font-mono text-xs text-muted-foreground"
 								title={session.models.join(", ")}
@@ -230,7 +238,7 @@ export function AgentSessionsList({
 						    tooltip — they describe ingestion, calls and tools describe the
 						    agent. */}
 						<div
-							className="hidden w-[13.5rem] shrink-0 items-center gap-2.5 overflow-hidden whitespace-nowrap @3xl:flex"
+							className="hidden w-[15.25rem] shrink-0 grid-cols-[4.25rem_5.5rem_5.5rem] items-center overflow-hidden whitespace-nowrap @4xl:grid"
 							title={`${plural(session.traceCount, "trace")} · ${plural(session.spanCount, "span")}`}
 						>
 							<span className="font-mono text-[13px] font-semibold tabular-nums">
@@ -253,24 +261,24 @@ export function AgentSessionsList({
 						{/* Usage lane: the token buckets as a bar, the total and the cost.
 						    Blank where nothing was reported — a "0" here would read as
 						    "measured, and it was free". */}
-						<div className="hidden w-[13rem] shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap @5xl:flex">
-							{session.totalTokens > 0 && <TokenBar session={session} />}
-							{session.cost > 0 && (
-								<span className="font-mono text-xs tabular-nums text-muted-foreground">
-									{formatCost(session.cost)}
-								</span>
-							)}
+						<div className="hidden w-[12rem] shrink-0 grid-cols-[4rem_4.25rem_1fr] items-center gap-2 overflow-hidden whitespace-nowrap @6xl:grid">
+							<TokenBar session={session} />
+							<span className="text-right font-mono text-xs tabular-nums text-muted-foreground">
+								{session.cost > 0 ? formatCost(session.cost) : ""}
+							</span>
 						</div>
 
 						{/* Signal lane: what failed, tools apart from turns */}
-						<div className="hidden w-[7.75rem] shrink-0 flex-col items-start justify-center gap-1 overflow-hidden @2xl:flex">
+						<div className="hidden w-[7.5rem] shrink-0 flex-col items-start justify-center gap-1 overflow-hidden @2xl:flex">
 							{hasErrors && <ErrorChips session={session} />}
 						</div>
 
-						{/* Time lane */}
-						<div className="hidden shrink-0 items-center @2xl:flex">
+						{/* Time lane. Fixed width and right-aligned: sized to its content it
+						    is a lane whose width changes per row, which drags every lane to
+						    its left out of column with the row above. */}
+						<div className="hidden w-[4.5rem] shrink-0 items-center justify-end @2xl:flex">
 							<span
-								className="whitespace-nowrap text-xs text-muted-foreground"
+								className="truncate text-right text-xs text-muted-foreground"
 								title={absoluteTs(session.startTime)}
 							>
 								{formatRelativeTimeOrDate(session.startTime)}
@@ -312,10 +320,16 @@ function WorkCount({
 	count: number
 	noun: string
 }) {
+	// Compact: a busy session runs to four and five figures, and the lane's slot
+	// is sized for the label, not for the widest count it will ever hold.
 	return (
-		<span className={cn("inline-flex items-center gap-1 text-xs tabular-nums", tone)}>
+		<span
+			className={cn("inline-flex items-center gap-1 text-xs tabular-nums", tone)}
+			title={plural(count, noun)}
+		>
 			<Icon size={12} className="shrink-0" aria-hidden />
-			{plural(count, noun)}
+			{formatCount(count)} {noun}
+			{count === 1 ? "" : "s"}
 		</span>
 	)
 }
@@ -338,25 +352,35 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 		`${total.toLocaleString()} tokens`,
 		...drawn.map((bucket) => `${bucket.label}: ${buckets[bucket.key].toLocaleString()}`),
 	].join("\n")
+	// The bar and the figure are two of the lane's grid slots rather than a
+	// nested flex row: every row's track then starts at the same x, which is the
+	// only way segment widths can be read down the list.
 	return (
-		<span className="inline-flex items-center gap-2" title={title}>
-			{/* A session that reported only a total draws no bar — an empty track
-			    would read as "measured, and it was nothing". */}
-			{bucketTotal > 0 && (
-				<span aria-hidden className="flex h-1.5 w-16 gap-px overflow-hidden rounded-xs bg-muted">
-					{drawn.map((bucket) => (
-						<span
-							key={bucket.key}
-							className={bucket.fill}
-							style={{ width: `${(buckets[bucket.key] / bucketTotal) * 100}%` }}
-						/>
-					))}
-				</span>
-			)}
-			<span className="font-mono text-xs tabular-nums text-muted-foreground">
-				{formatCount(total)} tok
+		<>
+			<span className="flex h-1.5 items-center" title={title}>
+				{/* A session that reported only a total draws no bar — an empty track
+				    would read as "measured, and it was nothing". */}
+				{bucketTotal > 0 && (
+					<span
+						aria-hidden
+						className="flex h-1.5 w-full gap-px overflow-hidden rounded-xs bg-muted"
+					>
+						{drawn.map((bucket) => (
+							<span
+								key={bucket.key}
+								className={bucket.fill}
+								style={{
+									width: `${(buckets[bucket.key] / bucketTotal) * 100}%`,
+								}}
+							/>
+						))}
+					</span>
+				)}
 			</span>
-		</span>
+			<span className="text-right font-mono text-xs tabular-nums text-muted-foreground" title={title}>
+				{total > 0 ? `${formatCount(total)} tok` : ""}
+			</span>
+		</>
 	)
 }
 
@@ -422,7 +446,17 @@ function ErrorChip({
 			) : (
 				<span className="size-1 rounded-full bg-current" aria-hidden />
 			)}
-			{plural(count, noun)}
+			{/* Two digits of room, and the noun always as wide as its plural: a
+			    row's "1 tool error" above the next row's "12 tool errors"
+			    otherwise makes two chips that never line up. Past 99 the chip does
+			    widen — a third digit costs every row space for a count almost no
+			    session reaches. */}
+			<span>
+				<span className="inline-block min-w-[2ch] text-right">{count}</span>{" "}
+				<span className="inline-block" style={{ minWidth: `${noun.length + 1}ch` }}>
+					{count === 1 ? noun : `${noun}s`}
+				</span>
+			</span>
 		</span>
 	)
 }

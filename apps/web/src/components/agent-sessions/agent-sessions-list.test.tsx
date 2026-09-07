@@ -14,7 +14,6 @@ vi.mock("@tanstack/react-router", () => ({
 const session: AgentSessionRow = {
 	sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
 	vendorId: "eve",
-	vendorVersion: "1",
 	traceCount: 2,
 	spanCount: 12,
 	errorSpanCount: 0,
@@ -92,7 +91,6 @@ describe("AgentSessionsList pagination observer", () => {
 				sessions={[
 					{
 						...session,
-						vendorVersion: "2.4.0",
 						errorSpanCount: 5,
 						toolErrorCount: 2,
 						turnErrorCount: 1,
@@ -100,16 +98,21 @@ describe("AgentSessionsList pagination observer", () => {
 				]}
 			/>,
 		)
-		// The version is the only text under the id; the name lives in the title.
-		expect(view.getAllByText("v2.4.0")).toHaveLength(1)
+		// The agent names the row, the id sits under it, and the framework is the
+		// mark's title rather than more text.
+		expect(view.getAllByText("slack-agent")).toHaveLength(1)
 		expect(view.queryByText(/^eve/)).toBeNull()
-		expect(view.getByTitle("eve v2.4.0")).toBeTruthy()
+		expect(view.getAllByTitle("eve").length).toBeGreaterThan(0)
 		// Two chips in two tones — one per lane that shows them (phone + desktop).
-		expect(view.getAllByText("2 tool errors")).toHaveLength(2)
-		expect(view.getAllByText("1 turn error")).toHaveLength(2)
+		// The chip splits its count and noun into fixed-width slots, so match on
+		// the whole chip's text rather than a single text node.
+		const chip = (label: string) => (_: string, element: Element | null) =>
+			element?.classList.contains("rounded-full") === true && element.textContent === label
+		expect(view.getAllByText(chip("2 tool errors"))).toHaveLength(2)
+		expect(view.getAllByText(chip("1 turn error"))).toHaveLength(2)
 		// The buckets are the bar's title (one per line; the matcher collapses
 		// whitespace), the total the text beside it.
-		expect(view.getByTitle(/18,400 tokens Input: 12,000 Cache read: 4,000/)).toBeTruthy()
+		expect(view.getAllByTitle(/18,400 tokens Input: 12,000 Cache read: 4,000/)).toHaveLength(2)
 		expect(view.getByText("18.4k tok")).toBeTruthy()
 	})
 

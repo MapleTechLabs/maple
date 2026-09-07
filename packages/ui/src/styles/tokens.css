@@ -42,6 +42,17 @@
 	--chart-error: oklch(0.577 0.245 27.325);
 	--chart-throughput: oklch(0.58 0.14 285);
 	--chart-apdex: oklch(0.6 0.17 155);
+	/* Token usage buckets. A fixed set of five that is always drawn together, in
+	   one bar, at 6px tall — so they get designated hues 72° apart rather than
+	   chart-1..5 slots, whose spacing is tuned per theme and put input next to
+	   reasoning at a distance the eye cannot resolve at that size. Warm for what
+	   the model produced, cool for what it was given, magenta for what it
+	   thought. Same hues in both themes; only lightness moves. */
+	--chart-tok-input: oklch(0.6 0.15 246);
+	--chart-tok-cache-read: oklch(0.62 0.13 174);
+	--chart-tok-cache-write: oklch(0.62 0.15 102);
+	--chart-tok-output: oklch(0.6 0.18 30);
+	--chart-tok-reasoning: oklch(0.6 0.19 318);
 	--radius: 8px;
 	--sidebar: oklch(0.985 0 0);
 	--sidebar-foreground: oklch(0.141 0.005 285.823);
@@ -186,6 +197,11 @@
 	   tuned slightly lighter for the dark canvas. */
 	--chart-throughput: oklch(0.66 0.14 290);
 	--chart-apdex: oklch(0.658 0.134 151);
+	--chart-tok-input: oklch(0.69 0.15 246);
+	--chart-tok-cache-read: oklch(0.72 0.12 174);
+	--chart-tok-cache-write: oklch(0.73 0.15 102);
+	--chart-tok-output: oklch(0.7 0.16 30);
+	--chart-tok-reasoning: oklch(0.7 0.17 318);
 	--sidebar: oklch(0.185 0.007 56);
 	--sidebar-foreground: oklch(0.91 0.016 74);
 	--sidebar-primary: oklch(0.714 0.154 59);
@@ -290,6 +306,11 @@
 	--color-chart-error: var(--chart-error);
 	--color-chart-throughput: var(--chart-throughput);
 	--color-chart-apdex: var(--chart-apdex);
+	--color-chart-tok-input: var(--chart-tok-input);
+	--color-chart-tok-cache-read: var(--chart-tok-cache-read);
+	--color-chart-tok-cache-write: var(--chart-tok-cache-write);
+	--color-chart-tok-output: var(--chart-tok-output);
+	--color-chart-tok-reasoning: var(--chart-tok-reasoning);
 	--color-ring: var(--ring);
 	--color-input: var(--input);
 	--color-border: var(--border);
