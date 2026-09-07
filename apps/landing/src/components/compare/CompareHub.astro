@@ -25,9 +25,18 @@ const locale = Astro.currentLocale ?? "en";
 const title = m.cmp_hub_seo_title();
 const description = m.cmp_hub_seo_desc();
 
-/** The tally each card prints: how many rows the two differ on, and how many the vendor wins. */
-const cards = competitors.map((competitor) => ({
+/**
+ * The tally each card prints: how many rows the two differ on, and how many
+ * the vendor wins. `span` lays five cards out as 3 + 2 on a six-column grid:
+ * a full row of three takes two columns each, and whatever is left on the
+ * last row stretches to fill it, so the 1px-gap grid never shows a hole.
+ */
+const PER_ROW = 3;
+const SPAN = { 1: "lg:col-span-6", 2: "lg:col-span-3", 3: "lg:col-span-2" } as const;
+const lastRowCount = competitors.length % PER_ROW || PER_ROW;
+const cards = competitors.map((competitor, i) => ({
 	competitor,
+	span: SPAN[i >= competitors.length - lastRowCount ? (lastRowCount as 1 | 2 | 3) : 3],
 	tint: markColor(brandMark(competitor.mark)),
 	total: competitor.differences.length,
 	ahead: competitor.differences.filter((row) => row.edge === "competitor").length,
@@ -54,12 +63,12 @@ const cards = competitors.map((competitor) => ({
 				{m.cmp_hub_pages_title()}
 			</h2>
 
-			<div class="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+			<div class="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-6">
 				{
-					cards.map(({ competitor, tint, total, ahead }) => (
+					cards.map(({ competitor, span, tint, total, ahead }) => (
 						<a
 							href={comparePath(locale, competitor.slug)}
-							class="group relative flex flex-col gap-4 bg-bg p-6 transition-colors hover:bg-bg-elevated md:p-7"
+							class:list={["group relative flex flex-col gap-4 bg-bg p-6 transition-colors hover:bg-bg-elevated md:p-7", span]}
 							style={`--mark: ${tint}`}
 						>
 							<span
@@ -67,8 +76,8 @@ const cards = competitors.map((competitor) => ({
 								aria-hidden="true"
 							/>
 
-							<span class="flex items-center justify-between">
-								<span class="flex items-center gap-1.5">
+							<span class="flex items-center justify-between gap-3">
+								<span class="flex shrink-0 items-center gap-1.5">
 									<span class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-bg-elevated">
 										<MapleMark size={18} className="text-primary" />
 									</span>
@@ -77,7 +86,7 @@ const cards = competitors.map((competitor) => ({
 										<BrandMarkIcon id={competitor.mark} class="h-[18px] w-[18px]" />
 									</span>
 								</span>
-								<span class="font-mono text-[11px] text-fg-muted/70">{competitor.site}</span>
+								<span class="min-w-0 truncate font-mono text-[11px] text-fg-muted/70">{competitor.site}</span>
 							</span>
 
 							<span class="flex flex-col gap-1.5">

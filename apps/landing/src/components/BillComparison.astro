@@ -47,6 +47,7 @@ const {
 							<th class="text-left font-medium px-4 py-3 border-b border-border">New Relic</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Grafana Cloud</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Dash0</th>
+							<th class="text-left font-medium px-4 py-3 border-b border-border">SigNoz</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -57,6 +58,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_bundled()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_bundled()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_seat()}</td>
@@ -64,6 +66,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_enterprise()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$99–349 / full-user / mo</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$8+ / active-user / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
@@ -73,6 +76,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.40 / GB</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.45 / GB</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.60 / M spans or logs</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.30 / GB · $0.10 / M samples</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_retention()}</td>
@@ -81,6 +85,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">30d logs · 8d traces</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">30d logs/traces · 13mo metrics</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">Per plan tier</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">15d logs/traces · 1mo metrics</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_otel()}</td>
@@ -88,6 +93,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_partial()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 						</tr>
 						<tr>
@@ -97,6 +103,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">AGPL components</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">MIT + commercial ee/</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_selfhost()}</td>
@@ -105,10 +112,12 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_oss_only()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_supported()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 text-fg-muted">{m.bill_row_mcp()}</td>
 							<td class="px-4 py-3 bg-primary/8 text-primary font-medium">{m.bill_v_first_class()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
@@ -138,6 +147,9 @@ const {
 			</a>
 			<a href="/compare/dash0" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
 				{m.bill_link_vs_dash0()}
+			</a>
+			<a href="/compare/signoz" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
+				{m.bill_link_vs_signoz()}
 			</a>
 		</div>}
 	</div>

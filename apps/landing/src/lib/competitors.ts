@@ -88,11 +88,12 @@ export interface Competitor {
 	migrationDiff: string
 	faqs: Faq[]
 	sources: Source[]
-	related: string[]
 	locales: readonly Locale[]
 }
 
 const CHECKED = "2026-08"
+/** SigNoz was added a month after the others and checked separately. */
+const CHECKED_SIGNOZ = "2026-09"
 
 const MAPLE_EXPORTER = `  otlphttp/maple:
     endpoint: https://ingest.maple.dev
@@ -178,7 +179,6 @@ export const competitors: Competitor[] = [
 			{ label: "Datadog integrations", url: "https://docs.datadoghq.com/integrations/", checked: CHECKED },
 			{ label: "Datadog Trust Center", url: "https://www.datadoghq.com/security/", checked: CHECKED },
 		],
-		related: ["new-relic", "grafana", "dash0"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -233,7 +233,6 @@ export const competitors: Competitor[] = [
 			{ label: "Grafana plugins catalog", url: "https://grafana.com/grafana/plugins/", checked: CHECKED },
 			{ label: "Grafana IRM", url: "https://grafana.com/products/cloud/irm/", checked: CHECKED },
 		],
-		related: ["datadog", "dash0", "new-relic"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -290,7 +289,6 @@ export const competitors: Competitor[] = [
 			{ label: "New Relic AI", url: "https://newrelic.com/platform/new-relic-ai", checked: CHECKED },
 			{ label: "New Relic instant observability", url: "https://newrelic.com/instant-observability", checked: CHECKED },
 		],
-		related: ["datadog", "grafana", "dash0"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -340,7 +338,65 @@ export const competitors: Competitor[] = [
 			{ label: "Dash0 on GitHub", url: "https://github.com/dash0hq", checked: CHECKED },
 			{ label: "Dash0 documentation", url: "https://www.dash0.com/documentation", checked: CHECKED },
 		],
-		related: ["grafana", "datadog", "new-relic"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "signoz",
+		name: "SigNoz",
+		vendor: "signoz",
+		mark: "signoz",
+		site: "signoz.io",
+		navLabel: m.nav_vs_signoz,
+		navDesc: m.nav_desc_vs_signoz,
+		seoTitle: m.cmp_sn_seo_title,
+		seoDescription: m.cmp_sn_seo_desc,
+		heroTitle: m.cmp_sn_hero_title,
+		heroLede: m.cmp_sn_hero_lede,
+		differences: [
+			{ id: "retention", topic: m.cmp_topic_retention, maple: m.cmp_sn_retention_maple, competitor: m.cmp_sn_retention_them, edge: "maple", source: 0 },
+			{ id: "pricing", topic: m.cmp_topic_pricing, maple: m.cmp_sn_pricing_maple, competitor: m.cmp_sn_pricing_them, edge: "maple", source: 0 },
+			{ id: "errors", topic: m.cmp_topic_errors, maple: m.cmp_sn_errors_maple, competitor: m.cmp_sn_errors_them, edge: "maple", source: 4 },
+			{ id: "rum", topic: m.cmp_topic_rum, maple: m.cmp_sn_rum_maple, competitor: m.cmp_sn_rum_them, edge: "maple" },
+			{ id: "local", topic: m.cmp_topic_local, maple: m.cmp_sn_local_maple, competitor: m.cmp_sn_local_them, edge: "maple", source: 2 },
+			{ id: "source", topic: m.cmp_topic_source, maple: m.cmp_sn_source_maple, competitor: m.cmp_sn_source_them, edge: "even", source: 1 },
+			{ id: "ai", topic: m.cmp_topic_ai, maple: m.cmp_sn_ai_maple, competitor: m.cmp_sn_ai_them, edge: "even", source: 6 },
+			{ id: "selfhost", topic: m.cmp_topic_selfhost, maple: m.cmp_sn_selfhost_maple, competitor: m.cmp_sn_selfhost_them, edge: "competitor", source: 3 },
+			{ id: "promql", topic: m.cmp_topic_promql, maple: m.cmp_sn_promql_maple, competitor: m.cmp_sn_promql_them, edge: "competitor", source: 7 },
+			{ id: "cost-controls", topic: m.cmp_topic_cost_controls, maple: m.cmp_sn_cost_controls_maple, competitor: m.cmp_sn_cost_controls_them, edge: "competitor", source: 8 },
+			{ id: "channels", topic: m.cmp_topic_channels, maple: m.cmp_sn_channels_maple, competitor: m.cmp_sn_channels_them, edge: "competitor", source: 9 },
+		],
+		parity: [...CORE_PARITY, m.cmp_parity_otel],
+		migration: [
+			{ title: m.cmp_sn_mig_1_title, body: m.cmp_sn_mig_1_body },
+			{ title: m.cmp_sn_mig_2_title, body: m.cmp_sn_mig_2_body },
+		],
+		migrationDiff: collectorDiff(
+			"otlp",
+			`  otlp:
+    endpoint: ingest.us.signoz.cloud:443
+    headers:
+      signoz-ingestion-key: \${env:SIGNOZ_INGESTION_KEY}`,
+		),
+		faqs: [
+			{ question: m.cmp_sn_faq_1_q, answer: m.cmp_sn_faq_1_a },
+			{ question: m.cmp_sn_faq_2_q, answer: m.cmp_sn_faq_2_a },
+			{ question: m.cmp_sn_faq_3_q, answer: m.cmp_sn_faq_3_a },
+			{ question: m.cmp_sn_faq_4_q, answer: m.cmp_sn_faq_4_a },
+			{ question: m.cmp_sn_faq_5_q, answer: m.cmp_sn_faq_5_a },
+		],
+		sources: [
+			{ label: "SigNoz pricing", url: "https://signoz.io/pricing/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz on GitHub (MIT core, ee/ under the SigNoz Enterprise License)", url: "https://github.com/SigNoz/signoz", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: Docker install", url: "https://signoz.io/docs/install/docker/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: single sign-on by edition", url: "https://signoz.io/docs/manage/administrator-guide/sso/overview/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: Exceptions", url: "https://signoz.io/docs/userguide/exceptions/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: retention periods", url: "https://signoz.io/docs/userguide/retention-period/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: Noz, MCP server and agent skills", url: "https://signoz.io/docs/ai/overview/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: querying (Query Builder, ClickHouse SQL, PromQL)", url: "https://signoz.io/docs/querying/overview/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: ingestion limits (Ingest Guard)", url: "https://signoz.io/docs/cost-control/ingestion-limits/", checked: CHECKED_SIGNOZ },
+			{ label: "SigNoz: notification channels", url: "https://signoz.io/docs/setup-alerts-notification/", checked: CHECKED_SIGNOZ },
+		],
 		locales: ["en", "ja", "ko"],
 	},
 ]
