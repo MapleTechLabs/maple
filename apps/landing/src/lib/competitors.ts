@@ -88,7 +88,6 @@ export interface Competitor {
 	migrationDiff: string
 	faqs: Faq[]
 	sources: Source[]
-	related: string[]
 	locales: readonly Locale[]
 }
 
@@ -180,7 +179,6 @@ export const competitors: Competitor[] = [
 			{ label: "Datadog integrations", url: "https://docs.datadoghq.com/integrations/", checked: CHECKED },
 			{ label: "Datadog Trust Center", url: "https://www.datadoghq.com/security/", checked: CHECKED },
 		],
-		related: ["new-relic", "grafana", "dash0"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -235,7 +233,6 @@ export const competitors: Competitor[] = [
 			{ label: "Grafana plugins catalog", url: "https://grafana.com/grafana/plugins/", checked: CHECKED },
 			{ label: "Grafana IRM", url: "https://grafana.com/products/cloud/irm/", checked: CHECKED },
 		],
-		related: ["datadog", "dash0", "new-relic"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -292,7 +289,6 @@ export const competitors: Competitor[] = [
 			{ label: "New Relic AI", url: "https://newrelic.com/platform/new-relic-ai", checked: CHECKED },
 			{ label: "New Relic instant observability", url: "https://newrelic.com/instant-observability", checked: CHECKED },
 		],
-		related: ["datadog", "grafana", "dash0"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -342,7 +338,6 @@ export const competitors: Competitor[] = [
 			{ label: "Dash0 on GitHub", url: "https://github.com/dash0hq", checked: CHECKED },
 			{ label: "Dash0 documentation", url: "https://www.dash0.com/documentation", checked: CHECKED },
 		],
-		related: ["grafana", "datadog", "new-relic"],
 		locales: ["en", "ja", "ko"],
 	},
 
@@ -402,7 +397,6 @@ export const competitors: Competitor[] = [
 			{ label: "SigNoz: ingestion limits (Ingest Guard)", url: "https://signoz.io/docs/cost-control/ingestion-limits/", checked: CHECKED_SIGNOZ },
 			{ label: "SigNoz: notification channels", url: "https://signoz.io/docs/setup-alerts-notification/", checked: CHECKED_SIGNOZ },
 		],
-		related: ["grafana", "dash0", "datadog"],
 		locales: ["en", "ja", "ko"],
 	},
 ]
