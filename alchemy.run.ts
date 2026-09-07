@@ -131,12 +131,6 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 		},
 	})
 
-type StackProviderServices =
-	| Layer.Services<ReturnType<typeof Cloudflare.providers>>
-	| Layer.Services<ReturnType<typeof AWS.providers>>
-	| Layer.Services<ReturnType<typeof Portless.providers>>
-	| Layer.Services<ReturnType<typeof Acm.providers>>
-
 /**
  * Both clouds, unconditionally.
  *
@@ -146,7 +140,7 @@ type StackProviderServices =
  * creates no AWS resource. Whether a stage actually gets an ingest fleet is
  * `stageDeploysIngest`, below.
  */
-const providers: Layer.Layer<StackProviderServices, never, Alchemy.StackServices> =
+const providers =
 	// `Acm.providers()` (the ACM-via-Cloudflare validation reads) requires the
 	// AWS credentials and HTTP client, so it is the layer being provided TO —
 	// `X.pipe(provideMerge(Y))` feeds Y into X, not the other way round.

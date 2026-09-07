@@ -242,7 +242,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			const publish = (event: AuditLogEvent) =>
 				Option.isNone(queue)
 					? writeDirect(event)
-					: queue.value.send(encodeAuditLogEventSync(event)).pipe(
+					: queue.value.sendBatch([{ body: encodeAuditLogEventSync(event) }]).pipe(
 							Effect.mapError(
 								(cause) =>
 									new AuditQueueSendError({ message: "Audit queue send failed", cause }),

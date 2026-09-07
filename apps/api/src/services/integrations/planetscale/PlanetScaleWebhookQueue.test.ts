@@ -32,11 +32,10 @@ describe("PlanetScaleWebhookQueue", () => {
 			assert.deepStrictEqual(sent, [job])
 		}).pipe(
 			provideQueue({
-				send: (body) =>
+				sendBatch: (messages) =>
 					Effect.sync(() => {
-						sent.push(body)
+						for (const message of messages) sent.push(message.body)
 					}),
-				sendBatch: () => Effect.void,
 			}),
 		)
 	})
@@ -51,7 +50,7 @@ describe("PlanetScaleWebhookQueue", () => {
 			assert.strictEqual(attempts, 1)
 		}).pipe(
 			provideQueue({
-				send: () =>
+				sendBatch: () =>
 					Effect.sync(() => {
 						attempts += 1
 					}).pipe(
@@ -61,7 +60,6 @@ describe("PlanetScaleWebhookQueue", () => {
 							),
 						),
 					),
-				sendBatch: () => Effect.void,
 			}),
 		)
 	})

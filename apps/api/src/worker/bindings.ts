@@ -43,9 +43,6 @@ import {
 import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
-/** The env key the stage partition every limiter scopes its keys under is bound as. */
-export const RATE_LIMIT_PARTITION_ENV = "API_V2_RATE_LIMIT_PARTITION"
-
 /**
  * The clients the init obtains. Each `yield*` binds its resource to the
  * Worker at plan time; in the isolate it resolves the binding from the env.
@@ -102,34 +99,23 @@ const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effe
  * client's option type omits `delaySeconds`, which the VCS producer needs to
  * park a rate-limited continuation until the provider's budget is back.
  */
-const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => {
-	const raw = runtime(client.raw)
-	const sendError = (cause: unknown, fallback: string) =>
-		new QueueSendError({ message: cause instanceof Error ? cause.message : fallback, cause })
-	return {
-		send: (body, options) =>
-			raw.pipe(
-				Effect.flatMap((queue) =>
-					Effect.tryPromise({
-						try: () => queue.send(body, options),
-						catch: (cause) => sendError(cause, "queue send failed"),
-					}),
-				),
+const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => ({
+	sendBatch: (messages) =>
+		runtime(client.raw).pipe(
+			Effect.flatMap((queue) =>
+				Effect.tryPromise({
+					try: () => queue.sendBatch(messages),
+					catch: (cause) =>
+						new QueueSendError({
+							message: cause instanceof Error ? cause.message : "queue sendBatch failed",
+							cause,
+						}),
+				}),
 			),
-		sendBatch: (messages) =>
-			raw.pipe(
-				Effect.flatMap((queue) =>
-					Effect.tryPromise({
-						try: () => queue.sendBatch(messages),
-						catch: (cause) => sendError(cause, "queue sendBatch failed"),
-					}),
-				),
-			),
-	}
-}
+		),
+})
 
-const limiter = (client: Cloudflare.Workers.RateLimitClient, partition: string | undefined): RateLimiter => ({
-	partition,
+const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
 		runtime(client.limit({ key })).pipe(
 			Effect.mapError(
@@ -171,23 +157,21 @@ const keyValueStore = (client: Cloudflare.KV.ReadWriteNamespaceClient): KeyValue
 /**
  * The ports the service graph depends on, over the clients the init bound,
  * plus the env itself as `WorkerEnvironment` and the `ConfigProvider` — the
- * one place a graph in this Worker gets its env from. `env` carries the stage
- * partition the props bind and the `MAPLE_DB` binding — real in the isolate,
- * empty at plan time, where nothing reads them.
+ * one place a graph in this Worker gets its env from. `env` carries the
+ * `MAPLE_DB` binding — real in the isolate, empty at plan time, where nothing
+ * reads it.
  */
 export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) => {
-	const partitionValue = env[RATE_LIMIT_PARTITION_ENV]
-	const partition = typeof partitionValue === "string" ? partitionValue : undefined
 	const mcpSessions = keyValueStore(clients.mcpSessions)
 	const database = mapleDbConnectionLayer(env)
 	const layer = Layer.mergeAll(
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
-		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit, partition)),
-		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit, partition)),
-		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit, partition)),
-		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit, partition)),
+		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
+		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
+		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
+		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.succeed(McpSessionStore, mcpSessions),
 		database,

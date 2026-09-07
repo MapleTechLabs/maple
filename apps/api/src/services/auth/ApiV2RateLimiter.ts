@@ -1,6 +1,7 @@
 import type { ApiKeyId } from "@maple/domain/http"
 import { Context, Effect, Layer, Option } from "effect"
 import { ApiV2RateLimit, type RateLimiter } from "@/platform/bindings"
+import { Env } from "@/platform/Env"
 
 export const API_V2_RATE_LIMIT_REQUESTS = 600
 export const API_V2_RATE_LIMIT_PERIOD_SECONDS = 60
@@ -41,16 +42,15 @@ export const shareOgRateLimitKey = (shareKeyPrefix: string): string => `shareog:
 /**
  * The one fail-open check implementation behind every limiter service: allow /
  * limited from the binding, `failed_open` (with `maple.rate_limit.outcome`
- * telemetry, never a silent pass) when the binding or partition is unavailable.
+ * telemetry, never a silent pass) when the binding is unavailable. `partition`
+ * is the deployment (`MAPLE_ENVIRONMENT`), so counters never cross stages.
  */
 export const makeRateLimitCheck = (
 	limiter: Option.Option<RateLimiter>,
+	partition: string,
 	config: { readonly spanName: string; readonly failOpenMessage: string },
 ): RateLimiterApi["check"] => {
-	const warnFailedOpen = (
-		reason: "binding_missing" | "partition_missing" | "binding_error",
-		cause?: unknown,
-	) =>
+	const warnFailedOpen = (reason: "binding_missing" | "binding_error", cause?: unknown) =>
 		Effect.logWarning(config.failOpenMessage).pipe(
 			Effect.annotateLogs({
 				"maple.rate_limit.outcome": "failed_open",
@@ -62,12 +62,6 @@ export const makeRateLimitCheck = (
 	return Effect.fn(config.spanName)(function* (key: string) {
 		if (Option.isNone(limiter)) {
 			yield* warnFailedOpen("binding_missing")
-			return "failed_open" as const
-		}
-
-		const partition = limiter.value.partition
-		if (partition === undefined) {
-			yield* warnFailedOpen("partition_missing")
 			return "failed_open" as const
 		}
 
@@ -85,7 +79,8 @@ export class ApiV2RateLimiter extends Context.Service<ApiV2RateLimiter, RateLimi
 	{
 		make: Effect.gen(function* () {
 			const limiter = yield* Effect.serviceOption(ApiV2RateLimit)
-			const check = makeRateLimitCheck(limiter, {
+			const env = yield* Env
+			const check = makeRateLimitCheck(limiter, env.MAPLE_ENVIRONMENT, {
 				spanName: "ApiV2RateLimiter.check",
 				failOpenMessage: "API v2 rate limiter unavailable; allowing request",
 			})

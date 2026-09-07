@@ -18,7 +18,6 @@ type CapturedMessage = { readonly body: unknown }
 const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 	const chunks: CapturedMessage[][] = []
 	const producer: QueueProducer = {
-		send: () => Effect.void,
 		sendBatch: (messages) =>
 			opts?.reject
 				? Effect.fail(new QueueSendError({ message: "simulated queue outage", cause: undefined }))

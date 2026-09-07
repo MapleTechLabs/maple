@@ -4,7 +4,6 @@ import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import {
-	assertBindingParity,
 	CLOUDFLARE_WORKER_PLACEMENT,
 	resolveWorkerName,
 	type MapleDomains,
@@ -31,6 +30,24 @@ const makeWorkerEnv = ({ api, apiUrl }: { api: MapleApiWorker; apiUrl: string })
 	...(apiUrl === "" ? undefined : { MAPLE_API_BASE_URL: apiUrl }),
 	API: api,
 })
+
+/**
+ * Compile-time drift gate between a worker factory's declared bindings and the
+ * runtime env type its worker code reads (the app's `src/worker-env.ts`).
+ *
+ * `Declared` is `Cloudflare.InferEnv` over the factory's binding map. The
+ * constraint proves every declared binding satisfies the runtime type — a
+ * retyped binding fails on the offending property — and the rest parameter
+ * proves every key the worker knows is still declared: dropping one makes the
+ * call demand an argument whose type names the missing keys.
+ *
+ * Purely a type assertion; the call does nothing at runtime.
+ */
+export const assertBindingParity = <Runtime, Declared extends Runtime>(
+	..._proof: keyof Runtime extends keyof Declared
+		? []
+		: [{ undeclaredBindings: Exclude<keyof Runtime, keyof Declared> }]
+): void => {}
 
 // Drift gate for `src/worker-env.ts`, whose Env is structural because the SPA's
 // tsconfig cannot see `@cloudflare/workers-types` (see the note there). This

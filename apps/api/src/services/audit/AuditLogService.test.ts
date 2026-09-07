@@ -123,11 +123,10 @@ describe("AuditLogService (warehouse-backed)", () => {
 						Layer.provide(warehouse.layer),
 						Layer.provide(
 							Layer.succeed(AuditEventsQueueProducer, {
-								send: (message) =>
+								sendBatch: (messages) =>
 									Effect.sync(() => {
-										sent.push(message)
+										for (const message of messages) sent.push(message.body)
 									}),
-								sendBatch: () => Effect.void,
 							}),
 						),
 					),
@@ -157,11 +156,10 @@ describe("AuditLogService (warehouse-backed)", () => {
 						Layer.provide(warehouse.layer),
 						Layer.provide(
 							Layer.succeed(AuditEventsQueueProducer, {
-								send: () =>
+								sendBatch: () =>
 									Effect.fail(
 										new QueueSendError({ message: "broker down", cause: undefined }),
 									),
-								sendBatch: () => Effect.void,
 							}),
 						),
 					),

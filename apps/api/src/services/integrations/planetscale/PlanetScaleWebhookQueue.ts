@@ -40,7 +40,7 @@ export class PlanetScaleWebhookQueue extends Context.Service<
 				orgId: job.orgId,
 			})
 			yield* queue
-				.send(encodeJob(job))
+				.sendBatch([{ body: encodeJob(job) }])
 				.pipe(
 					Effect.mapError(
 						(error) =>

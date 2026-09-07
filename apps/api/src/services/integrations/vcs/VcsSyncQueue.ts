@@ -70,12 +70,12 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 			})(function* (job: VcsSyncJob, options?: { readonly delaySeconds?: number }) {
 				yield* Effect.annotateCurrentSpan({ "vcs.job.kind": job.kind, "vcs.provider": job.provider })
 				const body = encodeJob(job)
-				const sendOptions =
+				const delay =
 					options?.delaySeconds === undefined
 						? undefined
 						: { delaySeconds: clampQueueDelaySeconds(options.delaySeconds) }
 				yield* queue
-					.send(body, sendOptions)
+					.sendBatch([{ body, ...delay }])
 					.pipe(Effect.mapError((error) => new VcsQueueError({ message: error.message })))
 			})
 

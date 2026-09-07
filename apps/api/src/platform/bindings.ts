@@ -27,12 +27,8 @@ export class QueueSendError extends Schema.TaggedError<QueueSendError>()(
  * carries JSON it never inspects.
  */
 export interface QueueProducer {
-	readonly send: (
-		body: unknown,
-		options?: { readonly delaySeconds?: number | undefined },
-	) => Effect.Effect<void, QueueSendError>
 	readonly sendBatch: (
-		messages: ReadonlyArray<{ readonly body: unknown }>,
+		messages: ReadonlyArray<{ readonly body: unknown; readonly delaySeconds?: number | undefined }>,
 	) => Effect.Effect<void, QueueSendError>
 }
 
@@ -62,10 +58,8 @@ export class RateLimitBindingError extends Schema.TaggedError<RateLimitBindingEr
 	},
 ) {}
 
-/** One Cloudflare rate-limit binding, plus the stage partition its keys are scoped under. */
+/** One Cloudflare rate-limit binding. Callers scope keys under `MAPLE_ENVIRONMENT` so counters never cross deployments. */
 export interface RateLimiter {
-	/** `API_V2_RATE_LIMIT_PARTITION` — the stage, so counters never cross deployments. */
-	readonly partition: string | undefined
 	readonly limit: (key: string) => Effect.Effect<{ readonly success: boolean }, RateLimitBindingError>
 }
 

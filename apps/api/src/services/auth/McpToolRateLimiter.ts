@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { McpToolsRateLimit } from "@/platform/bindings"
+import { Env } from "@/platform/Env"
 import { makeRateLimitCheck, type RateLimiterApi } from "./ApiV2RateLimiter"
 
 export const MCP_TOOLS_RATE_LIMIT_REQUESTS = 120
@@ -15,7 +16,8 @@ export class McpToolRateLimiter extends Context.Service<McpToolRateLimiter, Rate
 	{
 		make: Effect.gen(function* () {
 			const limiter = yield* Effect.serviceOption(McpToolsRateLimit)
-			const check = makeRateLimitCheck(limiter, {
+			const env = yield* Env
+			const check = makeRateLimitCheck(limiter, env.MAPLE_ENVIRONMENT, {
 				spanName: "McpToolRateLimiter.check",
 				failOpenMessage: "MCP tool rate limiter unavailable; allowing request",
 			})
