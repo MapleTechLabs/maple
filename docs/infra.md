@@ -263,7 +263,7 @@ shard (`ci.yml`). Measured on the pilot (#745, local workerd A/B): +15ms startup
 list of yields. What it composes lives beside it:
 
 - `src/resources/*` — one file per resource the Worker binds, declared at module scope and
-  inert until yielded (`queues.ts`, `mcp-sessions.ts`, `replay-blobs.ts`, `env.ts` for the
+  inert until yielded (`queues.ts`, `replay-blobs.ts`, `env.ts` for the
   `Config` catalog). Stage-derived physical names come from `stageNamed` / `stageProps`
   (`@maple/infra/cloudflare`), which read alchemy's own `Stage` — one of the platform
   services a Worker's init may require, unlike `MapleStack` — behind the same
@@ -275,8 +275,7 @@ list of yields. What it composes lives beside it:
   binding is read back off the host), `events.ts`, `modules.ts` (the dynamic imports), and
   `bindings.ts`.
 - **Bindings are alchemy capabilities, read as Maple ports.** The init yields
-  `Queues.WriteQueue(VcsSyncQueue)`, `KV.ReadWriteNamespace(McpSessions)`,
-  `R2.ReadBucket(ReplayBlobs)` and the four `Cloudflare.RateLimit(...)`s
+  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadBucket(ReplayBlobs)` and the four `Cloudflare.RateLimit(...)`s
   (`worker/bindings.ts`); each yield attaches the native binding at plan time — under the
   resource's logical id, so the queue and bucket bindings are `vcs-sync`, `replay-blobs`, … —
   and resolves it from the env in the isolate. The clients become the ports in
