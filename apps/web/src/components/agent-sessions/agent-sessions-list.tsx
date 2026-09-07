@@ -13,12 +13,13 @@ import {
 	SquareSparkleIcon,
 	type IconComponent,
 } from "@/components/icons"
+import { useDetectedModels } from "@/hooks/use-detected-models"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
-import { shortTarget } from "@/lib/agent-sessions/span-filters"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { sessionRowId } from "@/lib/agent-sessions/session-window"
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
+import { ModelLabel } from "./model-label"
 import { sessionIdentity } from "./session-detail/session-header"
 import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 
@@ -59,15 +60,6 @@ function absoluteTs(startTime: string): string {
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
-
-/** "claude-sonnet-5 +1": the first model short, the rest as a count — the full
- *  list goes in the title. Gateways prefix models with a provider path that
- *  would truncate two different models to the same string. */
-function modelsLabel(models: ReadonlyArray<string>): string {
-	const [first, ...rest] = models
-	if (first === undefined) return ""
-	return rest.length > 0 ? `${shortTarget(first)} +${rest.length}` : shortTarget(first)
-}
 
 /** The row's buckets under the detail page's keys, so one palette serves both. */
 function rowTokenBuckets(session: AgentSessionRow): Record<TokenBucketKey, number> {
@@ -149,6 +141,10 @@ export function AgentSessionsList({
 		)
 	}
 
+	// One batch for the whole page, re-asked only when paging brings a model
+	// the list has not seen. Before it lands every row still names its model.
+	const detect = useDetectedModels(sessions.flatMap((session) => session.models))
+
 	return (
 		<div className="@container">
 			{sessions.map((session) => {
@@ -162,6 +158,7 @@ export function AgentSessionsList({
 					agentNames: session.firstAgentName === "" ? [] : [session.firstAgentName],
 					vendorIds: [session.vendorId],
 				})
+				const [firstModel, ...otherModels] = session.models
 				return (
 					<Link
 						key={session.sessionId}
@@ -229,14 +226,18 @@ export function AgentSessionsList({
 						{/* Model lane: what the session ran on. Last lane in, because it is
 						    the one a reader can also get from the filter rail — every lane's
 						    breakpoint is set so the identity lane keeps a legible ~180px
-						    even at the width where the lane appears. */}
-						<div className="hidden w-[9rem] shrink-0 overflow-hidden @7xl:block">
-							<span
-								className="block truncate font-mono text-xs text-muted-foreground"
-								title={session.models.join(", ")}
-							>
-								{modelsLabel(session.models)}
-							</span>
+						    even at the width where the lane appears. The first model by
+						    name and mark, the rest as a count; the raw ids gateways report
+						    stay in the title, where two models that truncate alike are
+						    still told apart. */}
+						<div className="hidden w-[9rem] shrink-0 overflow-hidden text-xs text-muted-foreground @7xl:block">
+							{firstModel !== undefined && (
+								<ModelLabel
+									detected={detect(firstModel)}
+									moreCount={otherModels.length}
+									title={session.models.join(", ")}
+								/>
+							)}
 						</div>
 
 						{/* Activity lane: duration + the work done, in the session page's

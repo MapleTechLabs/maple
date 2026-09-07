@@ -45,7 +45,17 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // and main had reached 651.7 KB by then. The 33 vendor marks it added cost
 // nothing: the icons chunk hash did not move, they are tree-shaken until a
 // surface renders them.
-const maxGzipBytes = 653 * 1024
+// 682 KB from #783 (2026-09-07): the vendor marks stopped being free. The 33
+// added with the detect contract cost nothing while nothing rendered them;
+// the Agent Sessions list, header, rail and waterfall now do, and the mark
+// table retains all forty in the `icons` chunk startup already loads. Measured
+// against one base, the marks are +27.6 KB (651.5 → 679.1) and the rest of
+// this page is ~0.3; main had reached 652.7 by then, so the honest number is
+// the 680.3 this branch builds. Splitting the marks out was tried and does not
+// work: `@/components/icons` re-exports them, so the barrel's own chunk keeps
+// a static edge to them however they are reached. Dropping the marks from the
+// model lanes is what buys the 27 KB back, not a lazy import.
+const maxGzipBytes = 682 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

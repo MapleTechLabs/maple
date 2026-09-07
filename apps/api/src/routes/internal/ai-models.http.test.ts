@@ -45,11 +45,11 @@ const makeHarness = () => {
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 
-	const post = async (body: unknown) => {
+	const postTo = async (path: string, body: unknown) => {
 		// SAFETY: the handler's second argument is the Worker environment context,
 		// and this route reads nothing out of it.
 		const response = await handler(
-			new Request("http://maple.test/internal/ai-models/detect", {
+			new Request(`http://maple.test/internal/ai-models/${path}`, {
 				method: "POST",
 				headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 				body: JSON.stringify(body),
@@ -59,7 +59,14 @@ const makeHarness = () => {
 		return { status: response.status, body: JSON.parse(await response.text()) as Record<string, unknown> }
 	}
 
-	return { post, dispose }
+	const post = (body: unknown) => postTo("detect", body)
+	const postMany = async (body: unknown) => {
+		const response = await postTo("detect-many", body)
+		// SAFETY: same as the file header — the array is the route's own output.
+		return { status: response.status, body: response.body as unknown as Array<Record<string, unknown>> }
+	}
+
+	return { post, postMany, dispose }
 }
 
 describe("POST /internal/ai-models/detect", () => {
@@ -127,4 +134,34 @@ describe("POST /internal/ai-models/detect", () => {
 			}
 		},
 	)
+})
+
+describe("POST /internal/ai-models/detect-many", () => {
+	it("answers in request order, one entry per model", async () => {
+		const harness = makeHarness()
+		try {
+			const response = await harness.postMany({
+				models: ["claude-sonnet-4-5-20250929", "my-azure-deployment", "gpt-4o-mini"],
+			})
+			expect(response.status).toBe(200)
+			expect(response.body.map((model) => model.displayName)).toEqual([
+				"Claude Sonnet 4.5",
+				"My Azure Deployment",
+				"GPT-4o-mini",
+			])
+			expect(response.body.map((model) => model.family)).toEqual(["claude", null, null])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("rejects a batch past the cap rather than resolving it", async () => {
+		const harness = makeHarness()
+		try {
+			const response = await harness.postMany({ models: Array.from({ length: 201 }, () => "gpt-4o") })
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
 })
