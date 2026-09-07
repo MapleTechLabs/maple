@@ -57,12 +57,12 @@ export const isChatSessionNamespace = (value: unknown): value is ChatSessionName
 	typeof (value as { get?: unknown }).get === "function" &&
 	typeof (value as { idFromName?: unknown }).idFromName === "function"
 
-/** Resolve the `CHAT_SESSION` binding off a worker env record, or `undefined` if it is missing. */
+/** Resolve the `ChatSession` binding (the Durable Object's alchemy name) off a worker env record, or `undefined` if it is missing. */
 export const chatSessionStub = (
 	env: Record<string, unknown>,
 	sessionId: string,
 ): ChatSessionStub | undefined => {
-	const namespace = env.CHAT_SESSION
+	const namespace = env.ChatSession
 	if (!isChatSessionNamespace(namespace)) return undefined
 	return namespace.get(namespace.idFromName(sessionId))
 }

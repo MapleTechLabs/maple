@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { AuditEventsQueueProducer, QueueSendError } from "@/platform/bindings"
 import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
@@ -122,12 +122,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 					AuditLogService.layer.pipe(
 						Layer.provide(warehouse.layer),
 						Layer.provide(
-							Layer.succeed(WorkerEnvironment, {
-								AUDIT_EVENTS_QUEUE: {
-									send: async (message: unknown) => {
-										sent.push(message)
-									},
-								},
+							Layer.succeed(AuditEventsQueueProducer, {
+								sendBatch: (messages) =>
+									Effect.sync(() => {
+										for (const message of messages) sent.push(message.body)
+									}),
 							}),
 						),
 					),
@@ -156,12 +155,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 					AuditLogService.layer.pipe(
 						Layer.provide(warehouse.layer),
 						Layer.provide(
-							Layer.succeed(WorkerEnvironment, {
-								AUDIT_EVENTS_QUEUE: {
-									send: async () => {
-										throw new Error("broker down")
-									},
-								},
+							Layer.succeed(AuditEventsQueueProducer, {
+								sendBatch: () =>
+									Effect.fail(
+										new QueueSendError({ message: "broker down", cause: undefined }),
+									),
 							}),
 						),
 					),
@@ -200,7 +198,9 @@ describe("AuditLogService (warehouse-backed)", () => {
 
 	it.effect("an entry without a diff lists with null changed fields", () =>
 		Effect.gen(function* () {
-			const warehouse = recordingWarehouse([storedRow({ changes: "", changedFields: [], metadata: "" })])
+			const warehouse = recordingWarehouse([
+				storedRow({ changes: "", changedFields: [], metadata: "" }),
+			])
 			const rows = yield* Effect.gen(function* () {
 				const audit = yield* AuditLogService
 				return yield* audit.list(ORG, { limit: 10, offset: 0 })
@@ -338,7 +338,11 @@ describe("AuditLogService.layerMemory", () => {
 			const rows = yield* audit.list(ORG, { changedField: "name", limit: 10, offset: 0 })
 			expect(rows.map((row) => row.action)).toEqual(["dashboard.updated"])
 			expect(rows[0]!.changedFields).toEqual(["name"])
-			expect(rows[0]!.changes).toEqual({ fields: ["name"], before: { name: "a" }, after: { name: "b" } })
+			expect(rows[0]!.changes).toEqual({
+				fields: ["name"],
+				before: { name: "a" },
+				after: { name: "b" },
+			})
 			expect(yield* audit.list(ORG, { changedField: "description", limit: 10, offset: 0 })).toEqual([])
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)

@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
+import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
@@ -18,11 +20,12 @@ import {
 	resolveIngestScaling,
 	resolveIngestTaskSize,
 	stageDeploysCollector,
+	stageEnablesReplayBlobs,
 } from "@maple/infra/aws"
-import type { ReplayBlobCredentials } from "../api/alchemy.run.ts"
+import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
 import { issueCertificateViaCloudflare } from "@maple/infra/acm"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveDeploymentEnvironment } from "@maple/infra/cloudflare"
+import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 // Only the primitives. The grouped helpers in that module return Worker-binding
 // shapes (Redacted secrets inline); these values feed ECS `env:` and Secrets
 // Manager ARNs instead, so the gateway composes them itself.
@@ -93,13 +96,58 @@ export interface CreateMapleIngestOptions {
 	domains: MapleDomains
 	/** Geographic instance. Every AWS resource here is scoped to it. */
 	region: MapleRegion
-	/**
-	 * Stack-minted R2 credentials for the replay payload store, or `undefined`
-	 * on a stage that keeps payloads inline. See `createReplayBlobStore` in
-	 * `apps/api/alchemy.run.ts` — the gate is `stageEnablesReplayBlobs`.
-	 */
-	replayBlobs: ReplayBlobCredentials | undefined
 }
+
+/** R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value. */
+const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) =>
+	Output.map(value, (token) =>
+		Redacted.make(createHash("sha256").update(Redacted.value(token)).digest("hex")),
+	)
+
+/**
+ * The gateway's write credentials for the replay payload store
+ * (`apps/api/src/resources/replay-blobs.ts`, which the api Worker reads): a
+ * bucket-scoped token, or `undefined` on a stage that keeps payloads inline
+ * (`stageEnablesReplayBlobs`) — the bucket stays bound on the api side either
+ * way, so anything already written keeps playing back.
+ */
+const replayBlobWriterCredentials = (stage: MapleStage) =>
+	Effect.gen(function* () {
+		if (!stageEnablesReplayBlobs(stage)) return undefined
+		// Yielded so the token is ordered behind the bucket.
+		yield* ReplayBlobs
+		const bucketName = resolveWorkerName("replay-blobs", stage)
+
+		// Plan-time: it keys the policy map and the endpoint, neither of which
+		// can take a lazy value.
+		const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
+
+		// Bucket-scoped, not account-wide. Minting it needs the DEPLOY token to
+		// carry account-level `API Tokens > Write`, or the deploy fails outright.
+		const token = yield* Cloudflare.ApiToken.AccountApiToken("replay-blobs-writer", {
+			name: `${bucketName}-writer`,
+			accountId,
+			policies: [
+				{
+					effect: "allow",
+					permissionGroups: ["Workers R2 Storage Bucket Item Write"],
+					// `<account>_<jurisdiction>_<bucket>`, `default` = non-jurisdictional.
+					resources: {
+						[`com.cloudflare.edge.r2.bucket.${accountId}_default_${bucketName}`]: "*",
+					},
+				},
+			],
+		})
+
+		return {
+			/** Account-scoped S3 endpoint. A plan-time string — the account id is env-supplied. */
+			endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+			bucket: bucketName,
+			/** The API token's id. Only known after the token exists, hence an Output. */
+			accessKeyId: Output.asOutput(token.tokenId),
+			secretAccessKey: deriveSecretAccessKey(Output.asOutput(token.value)),
+		}
+	})
 
 /**
  * The Rust OTLP gateway (`apps/ingest`) on ECS Fargate.
@@ -127,8 +175,9 @@ export interface CreateMapleIngestOptions {
  * has no load balancer: an internal ALB would bill the same bytes again for a
  * single private consumer, and Cloud Map costs a private hosted zone.
  */
-export const createMapleIngest = ({ stage, domains, region, replayBlobs }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
+		const replayBlobs = yield* replayBlobWriterCredentials(stage)
 		const taskSize = resolveIngestTaskSize(stage)
 		const scaling = resolveIngestScaling(stage)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
@@ -245,8 +294,8 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 		const autumnSecret = autumnKey ? yield* secret("autumn-secret-key", autumnKey) : undefined
 
 		// Second Tinybird workspace to mirror writes into during a workspace
-		// Both halves are stack-minted (`createReplayBlobStore`), so there is no
-		// half-set config left to guard against. The access key id is not secret,
+		// Both halves are stack-minted (`replayBlobWriterCredentials`), so there is
+		// no half-set config left to guard against. The access key id is not secret,
 		// but it only exists once the token does and `env` takes plan-time strings
 		// only — ECS injects `secrets` as env vars, so the Rust side is unchanged.
 		const replayR2Secret = replayBlobs

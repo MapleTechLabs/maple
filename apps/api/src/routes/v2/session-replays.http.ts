@@ -26,7 +26,7 @@ import type {
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Layer, Option, Schema } from "effect"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { ReplayBlobStore, ReplayBlobStoreLive } from "@/platform/ReplayBlobStore"
+import { ReplayBlobStore } from "@/platform/ReplayBlobStore"
 
 const decodeSessionId = Schema.decodeSync(SessionId)
 const decodeTraceId = Schema.decodeSync(TraceId)
@@ -544,4 +544,4 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 // rather than pushed onto every caller that builds this group — the v2 route
 // tests construct their own layer stack and would otherwise have to know about
 // a storage detail of one handler.
-export const HttpV2SessionReplaysLive = HttpV2SessionReplaysGroup.pipe(Layer.provide(ReplayBlobStoreLive))
+export const HttpV2SessionReplaysLive = HttpV2SessionReplaysGroup.pipe(Layer.provide(ReplayBlobStore.layer))

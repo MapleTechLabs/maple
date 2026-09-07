@@ -6,8 +6,6 @@
  * not bound here — `selfObservabilityEnv(stage)` puts them in the Worker's env
  * from the stage, with the PR-preview rules, and the SDK reads them there.
  *
- * Only for Workers alchemy bundles (`Cloudflare.Worker<Self>()(…)`) — the
- * alchemy import is fine there and nowhere else, see `worker-env.ts`.
  */
 import { Telemetry, type TelemetrySdkOptions } from "@maple-dev/alchemy/telemetry"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
@@ -53,6 +51,6 @@ export const eventTelemetry = (
 	options: WorkerTelemetryOptions,
 ): Layer.Layer<never, never, WorkerEnvironment> =>
 	MapleCloudflareSDK.make(workerTelemetryConfig(options)).requestLayer.pipe(
-		// The SDK's tag is alchemy's under another type; the bridge provides it.
+		// Same key as alchemy's tag; a type bridge only.
 		Layer.provide(Layer.effect(MapleCloudflareSDK.WorkerEnvironment, WorkerEnvironment)),
 	)

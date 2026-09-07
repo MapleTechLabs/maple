@@ -25,7 +25,7 @@ import { revokeRefreshFamily } from "./mcp-oauth-family"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@/platform/DatabaseLive"
 import { Env } from "@/platform/Env"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { McpOAuthRateLimit } from "@/platform/bindings"
 
 const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
@@ -40,18 +40,6 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
  */
 const REFRESH_FAMILY_ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const MCP_SCOPE = "mcp:tools"
-const MCP_OAUTH_RATE_LIMIT_BINDING = "MCP_OAUTH_RATE_LIMITER"
-
-interface RateLimitBinding {
-	readonly limit: (options: { readonly key: string }) => Promise<{ readonly success: boolean }>
-}
-
-const isRateLimitBinding = (value: unknown): value is RateLimitBinding =>
-	typeof value === "object" &&
-	value !== null &&
-	"limit" in value &&
-	typeof (value as { limit?: unknown }).limit === "function"
-
 export class McpOAuthProtocolError extends Schema.TaggedError<McpOAuthProtocolError>()(
 	"@maple/api/errors/McpOAuthProtocolError",
 	{
@@ -301,20 +289,19 @@ export class McpOAuthService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
-		const workerEnvironment = yield* Effect.serviceOption(WorkerEnvironment)
+		// Absent outside the api Worker (tests): the check then passes.
+		const rateLimit = yield* Effect.serviceOption(McpOAuthRateLimit)
 		const apiKeyHmacKey = yield* Effect.try({
 			try: () => parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY)),
 			catch: persistenceError,
 		}).pipe(Effect.orDie)
 
 		const checkRateLimit = Effect.fn("McpOAuthService.checkRateLimit")(function* (key: string) {
-			if (Option.isNone(workerEnvironment)) return
-			const binding = workerEnvironment.value[MCP_OAUTH_RATE_LIMIT_BINDING]
-			if (!isRateLimitBinding(binding)) return
-			const outcome = yield* Effect.tryPromise({
-				try: () => binding.limit({ key: `${env.MAPLE_ENVIRONMENT}:mcp-oauth:${key}` }),
-				catch: persistenceError,
-			}).pipe(Effect.orElseSucceed(() => undefined))
+			if (Option.isNone(rateLimit)) return
+			// A limiter outage fails open: the flow is not refused for it.
+			const outcome = yield* rateLimit.value
+				.limit(`${env.MAPLE_ENVIRONMENT}:mcp-oauth:${key}`)
+				.pipe(Effect.orElseSucceed(() => undefined))
 			if (outcome && !outcome.success) {
 				return yield* new McpOAuthRateLimitError({
 					message: "Too many OAuth requests. Wait a minute and try again.",

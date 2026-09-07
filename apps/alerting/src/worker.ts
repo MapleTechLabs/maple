@@ -14,7 +14,7 @@
  */
 import {
 	CLOUDFLARE_WORKER_PLACEMENT,
-	ManagedMapleDb,
+	MapleDb,
 	MapleStack,
 	type MapleStage,
 	resolveWorkerName,
@@ -33,6 +33,10 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import {
+	INVESTIGATION_FANOUT_BINDING,
+	type InvestigationFanoutWorkflowPayload,
+} from "@maple/domain/investigation-fanout"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -41,30 +45,21 @@ import { HttpServerResponse } from "effect/unstable/http"
  * The alerting worker's resource bindings, split from the `Config`-sourced env
  * so `InferEnv` can derive `AlertingWorkerEnv` below.
  */
-const makeWorkerBindings = ({
-	stage,
-	mapleDb,
-}: {
-	stage: MapleStage
-	mapleDb: Cloudflare.Hyperdrive.Connection | undefined
-}) => ({
-	// Ref stages attach MAPLE_DB via `bindMapleDbRef` in the root stack.
-	...(mapleDb ? { MAPLE_DB: mapleDb } : undefined),
-	// Cross-script binding to the investigation fan-out Workflow hosted by the
-	// api worker. Alert, error, and anomaly ticks start investigations when
-	// incidents open. The first arg is the physical workflow name; `scriptName`
-	// makes this a reference-only binding (the api worker owns the workflow
-	// resource).
-	INVESTIGATION_FANOUT_WORKFLOW: Cloudflare.Workflow<{
-		orgId: string
-		investigationId: string
-		maxWidth: number
-		reservedPasses: number
-		attempt: number
-	}>(resolveWorkerName("investigation-fanout", stage), {
-		className: "InvestigationFanoutWorkflow",
-		scriptName: resolveWorkerName("api", stage),
-	}),
+const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
+	// Cross-script binding to the investigation fan-out Workflow the api Worker
+	// hosts as an alchemy class. Alert, error, and anomaly ticks start
+	// investigations when incidents open. Bound under the CLASS name because the
+	// api services shared with these ticks read it there
+	// (`INVESTIGATION_FANOUT_BINDING`, one constant for both). The
+	// physical workflow name derives from `scriptName` + `className` on both
+	// sides; `scriptName` makes this a reference-only binding.
+	[INVESTIGATION_FANOUT_BINDING]: Cloudflare.Workflow<InvestigationFanoutWorkflowPayload>(
+		INVESTIGATION_FANOUT_BINDING,
+		{
+			className: INVESTIGATION_FANOUT_BINDING,
+			scriptName: resolveWorkerName("api", stage),
+		},
+	),
 	// Production only: preview/stg workers run the same email crons against
 	// their own DB branches, so a binding here means every live stage sends
 	// its own copy of onboarding/digest/alert emails to real users.
@@ -85,7 +80,7 @@ const makeWorkerBindings = ({
  * attach MAPLE_DB after the Worker exists, EMAIL is prd-only, and `alchemy
  * dev` emulation does not cover every binding. The configuration vars stay
  * `unknown` on purpose: config is read through the Effect ConfigProvider
- * (`layerFromEnv` → the shared `Env` service), never off `env` directly.
+ * (`workerEnvLayer` → the shared `Env` service), never off `env` directly.
  */
 export type AlertingWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWorkerBindings>>> &
 	Record<string, unknown>
@@ -112,7 +107,7 @@ const configuredEnv = (stage: MapleStage) =>
 		// Non-prod stages skip all crons (they share live org data via the prod DB);
 		// set to "1" on a stage to deliberately exercise crons there.
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
-		// Dev-only escape hatch from per-org BYO rows (see apps/api/alchemy.run.ts).
+		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		optionalSecret("AUTUMN_SECRET_KEY"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
@@ -134,10 +129,6 @@ const configuredEnv = (stage: MapleStage) =>
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, workerDev, devEnv } = yield* MapleStack
-	// Dev stages only; stg/prd bind their own Hyperdrive config by id in the
-	// root stack — `alerting` issues ~97% of the workers' Postgres traffic and
-	// was starving the api's connection pool when the two shared one.
-	const mapleDb = yield* ManagedMapleDb
 	const env = yield* configuredEnv(stage)
 	return {
 		main: import.meta.url,
@@ -148,7 +139,7 @@ const props = Effect.gen(function* () {
 		dev: workerDev("alerting"),
 		workersDev: false,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
-		env: { ...makeWorkerBindings({ stage, mapleDb }), ...env, ...devEnv },
+		env: { ...makeWorkerBindings({ stage }), ...env, ...devEnv },
 	}
 })
 
@@ -181,6 +172,11 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// carries the whole api layer graph, which has no business in startup
 		// validation or in the deploy process.
 		const scheduled = yield* Effect.cached(Effect.promise(() => import("./scheduled")))
+		// `MAPLE_DB` in the stage's flavor — on stg/prd its own dashboard-managed
+		// config: `alerting` issues ~97% of the workers' Postgres traffic and was
+		// starving the api's connection pool when the two shared one. The ticks
+		// read it off the fire's env.
+		yield* MapleDb("alerting")
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 
@@ -231,6 +227,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
+				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				WorkerTelemetry({ serviceName: "alerting" }),
 			),

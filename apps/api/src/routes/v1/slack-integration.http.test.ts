@@ -2,7 +2,7 @@ import { createCipheriv, randomBytes } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import { layerFromEnvRecord } from "@maple/infra/worker-runtime"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Env } from "@/platform/Env"
 import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } from "@/platform/test-pglite"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
@@ -111,7 +111,9 @@ const makeRouterLayer = (
 	)
 	// The usage route reads WorkerEnvironment via serviceOption — absent means
 	// "no Autumn config, skip tracking", which is what every non-usage test wants.
-	return workerEnv === undefined ? layer : layer.pipe(Layer.provide(layerFromEnvRecord(workerEnv)))
+	return workerEnv === undefined
+		? layer
+		: layer.pipe(Layer.provide(Layer.succeed(WorkerEnvironment, workerEnv)))
 }
 
 const TEAM_PATH = "/internal/slack/workspaces"

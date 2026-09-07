@@ -1,7 +1,5 @@
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
-import { Effect, Layer, Schema } from "effect"
-import { layerPg } from "@/platform/DatabasePgLive"
+import { Effect, Schema } from "effect"
 import type { Database, DatabaseError } from "@/platform/DatabaseLive"
 import type { QueueBatch } from "@/platform/queue-batch"
 import {
@@ -19,14 +17,6 @@ import { PlanetScaleWebhookJob } from "./services/integrations/planetscale/Plane
  * Worker around the event; the layer below carries no tracer of its own.
  */
 export const planetScaleWebhookTelemetry = eventTelemetry({ serviceName: "maple-planetscale-webhooks" })
-
-export const buildPlanetScaleWebhookLayer = () => {
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-	return DatabaseLive.pipe(
-		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(WorkerConfigProviderLayer),
-	)
-}
 
 const decodeJob = Schema.decodeUnknownEffect(PlanetScaleWebhookJob)
 

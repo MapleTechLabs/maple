@@ -1,18 +1,13 @@
 import type { Message } from "@cloudflare/workers-types"
-import { EdgeCacheService } from "@maple/cache"
 import type { OrgId } from "@maple/domain/primitives"
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { Cause, Clock, Effect, Layer } from "effect"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
 import { summarizeCause } from "@/platform/describe-cause"
-import { layerPg } from "@/platform/DatabasePgLive"
-import { Env } from "@/platform/Env"
+import { EventBaseLive } from "@/platform/DatabasePgLive"
 import type { QueueBatch } from "@/platform/queue-batch"
 import { systemTenant } from "@/services/alerts/system-tenant"
 import { AUDIT_LOG_DATASOURCE } from "@/services/audit/AuditLogService"
-import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
-import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgTokenService"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { WarehouseLive } from "@/runtime/warehouse-layer"
 import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./services/audit/audit-event"
 
 /**
@@ -22,22 +17,7 @@ import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./serv
  * layer requires them, not because a write ever consults them. Its spans are
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const buildAuditEventsLayer = () => {
-	const EnvLive = Env.layer.pipe(Layer.provide(WorkerConfigProviderLayer))
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
-	const OrgClickHouseSettingsLive = OrgClickHouseSettingsService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, DatabaseLive, EdgeCacheServiceLive)),
-	)
-	const TinybirdOrgTokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(EnvLive))
-	const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
-	)
-	return WarehouseQueryServiceLive.pipe(
-		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(WorkerConfigProviderLayer),
-	)
-}
+export const AuditEventsLive = WarehouseLive.pipe(Layer.provide(EventBaseLive))
 
 /**
  * Must match `maxRetries` on the audit-events consumer in `worker.ts`.

@@ -24,18 +24,18 @@ import {
 	stageDeploysIngest,
 } from "@maple/infra/aws"
 import {
-	bindMapleDbRef,
 	formatMapleStage,
+	ManagedMapleDb,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleStage,
+	resolveDatabaseMode,
 	resolveMapleDomains,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import Alerting from "./apps/alerting/src/worker.ts"
-import { createReplayBlobStore } from "./apps/api/alchemy.run.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
@@ -76,12 +76,6 @@ const isDevServer = process.env.ALCHEMY_DEV === "true"
 
 /** The apps this dev run serves; undefined on a deploy, which is never partial. */
 const devApps = isDevServer ? selectedDevApps() : undefined
-
-/**
- * A child process is handed its route's port. A Worker binds its port in
- * `precreate`, before Outputs resolve, so its route follows the Worker instead.
- */
-const createDevRoute = (app: DevApp) => Portless.Route(`${app}-route`, { name: app })
 
 /** Every resource is declared on every run; a subset run only leaves the others unserved. */
 const workerDev = (app: DevApp) =>
@@ -132,17 +126,10 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 		cwd: path.join(import.meta.dirname, "apps", app),
 		env: {
 			PORT: Output.map(Output.asOutput(route.port), String),
-			HOST: "127.0.0.1",
 			PORTLESS_URL: Portless.routeUrl(app),
 			MAPLE_API_URL: Portless.routeUrl("api"),
 		},
 	})
-
-type StackProviderServices =
-	| Layer.Services<ReturnType<typeof Cloudflare.providers>>
-	| Layer.Services<ReturnType<typeof AWS.providers>>
-	| Layer.Services<ReturnType<typeof Portless.providers>>
-	| Layer.Services<ReturnType<typeof Acm.providers>>
 
 /**
  * Both clouds, unconditionally.
@@ -153,7 +140,7 @@ type StackProviderServices =
  * creates no AWS resource. Whether a stage actually gets an ingest fleet is
  * `stageDeploysIngest`, below.
  */
-const providers: Layer.Layer<StackProviderServices, never, Alchemy.StackServices> =
+const providers =
 	// `Acm.providers()` (the ACM-via-Cloudflare validation reads) requires the
 	// AWS credentials and HTTP client, so it is the layer being provided TO —
 	// `X.pipe(provideMerge(Y))` feeds Y into X, not the other way round.
@@ -185,12 +172,6 @@ export default Alchemy.Stack(
 	Effect.gen(function* () {
 		const { stage, domains, urls } = yield* MapleStack
 
-		// Child-process routes; the Workers' routes follow their Workers below.
-		const routes = new Map<DevApp, Portless.Route>()
-		for (const app of DEV_PROCESS_APPS) {
-			if (devApps?.has(app)) routes.set(app, yield* createDevRoute(app))
-		}
-
 		// Geographic instance this deploy belongs to. `us` today; an EU instance is
 		// the same stack deployed with MAPLE_REGION=eu against that instance's own
 		// Tinybird workspace and application database. Guarded here because a
@@ -212,28 +193,18 @@ export default Alchemy.Stack(
 		// via a Cloudflare CNAME at the ALB, so the URL below stays a plain string
 		// and does not depend on the service resource; a PR preview gets no ingest
 		// domain, so its ALB answers plain HTTP on 80 at `ingest.serviceUrl`.
-		// Yielded here first for the gateway's write credentials; the api Worker's
-		// props yield the same declaration for its read binding and get this
-		// registration back. `credentials` is undefined on stages that keep replay
-		// payloads inline (`stageEnablesReplayBlobs`).
-		const replayBlobStore = yield* createReplayBlobStore({ stage })
-
 		const ingest = stageDeploysIngest(stage)
-			? yield* createMapleIngest({
-					stage,
-					domains,
-					region,
-					replayBlobs: replayBlobStore.credentials,
-				})
+			? yield* createMapleIngest({ stage, domains, region })
 			: undefined
 
-		// Chat and AI triage run inside the api worker (ChatSession Durable Object),
-		// so there is no separate chat worker to sequence against any more. A
-		// single module like the Workers below: its props read `MapleStack`.
+		// The application database. Each Worker binds `MAPLE_DB` from its own init
+		// (`MapleDb` in `@maple/infra/cloudflare`: the managed Hyperdrive on dev
+		// stages, a dashboard-managed config by id on stg/prd, nothing on previews).
+		// The managed declaration is yielded here first so its `MAPLE_PG_URL` read
+		// happens outside any Worker init, where alchemy would bind it as a secret.
+		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
+
 		const api = yield* MapleApi
-		// stg/prd: the dashboard-managed Hyperdrive, by id — attached after the
-		// Worker exists (see the alerting note below).
-		yield* bindMapleDbRef(api, stage, "api")
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the
@@ -277,16 +248,15 @@ export default Alchemy.Stack(
 		const localUi = isDevServer ? undefined : yield* LocalUi
 
 		const alerting = yield* Alerting
-		// stg/prd: the dashboard-managed Hyperdrive, by id. Not a prop — alchemy has
-		// no `env` form for a binding it did not create — so it is attached here,
-		// after the Worker exists.
-		yield* bindMapleDbRef(alerting, stage, "alerting")
 		yield* serveWorker("alerting", alerting)
 
-		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper.
+		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each
+		// handed its route's port. (A Worker binds its port in `precreate`, before
+		// Outputs resolve, so a Worker's route follows the Worker instead.)
 		for (const app of DEV_PROCESS_APPS) {
-			const route = routes.get(app)
-			if (route) yield* createDevProcess(app, route)
+			if (!devApps?.has(app)) continue
+			const route = yield* Portless.Route(`${app}-route`, { name: app })
+			yield* createDevProcess(app, route)
 		}
 
 		const summary = {
@@ -308,12 +278,10 @@ export default Alchemy.Stack(
 				`web_url=${summary.webUrl}`,
 				`api_url=${summary.apiUrl}`,
 				`sync_url=${summary.electricSyncUrl}`,
-				`landing_url=${summary.landingUrl}`,
 			]),
 		)
 
-		// Reference the remaining workers so nothing is tree-shaken out of the plan
-		// and the summary carries their identity for the CLI output.
+		// The Workers' names, for the CLI summary.
 		return {
 			...summary,
 			// ALB hostname to CNAME `domains.ingest` at, plus the one-time ACM

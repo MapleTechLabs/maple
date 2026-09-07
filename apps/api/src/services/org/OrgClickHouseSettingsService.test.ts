@@ -1037,7 +1037,7 @@ describe("applySchema claim lifecycle", () => {
 			const second = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
 			expect(second.status).toBe("started")
 			expect(attempts).toBe(2)
-		}).pipe(Effect.provide(buildApplyLayer(testDb, { CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: binding })))
+		}).pipe(Effect.provide(buildApplyLayer(testDb, { ClickHouseSchemaApplyWorkflow: binding })))
 	})
 
 	it.effect("a missing workflow binding fails before any claim is written", () => {
@@ -1090,6 +1090,6 @@ describe("applySchema claim lifecycle", () => {
 			const third = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
 			expect(third.status).toBe("started")
 			expect(creates).toBe(2)
-		}).pipe(Effect.provide(buildApplyLayer(testDb, { CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: binding })))
+		}).pipe(Effect.provide(buildApplyLayer(testDb, { ClickHouseSchemaApplyWorkflow: binding })))
 	})
 })

@@ -32,7 +32,7 @@ import { summarizeCause } from "@/platform/describe-cause"
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
 /** Cloudflare Workflow binding that runs a fan-out. Present only in a Worker isolate. */
-export const INVESTIGATION_FANOUT_BINDING = "INVESTIGATION_FANOUT_WORKFLOW"
+export { INVESTIGATION_FANOUT_BINDING } from "@maple/domain/investigation-fanout"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 
@@ -181,7 +181,7 @@ export interface MaybeEnqueueTriageInput {
 	readonly issueId?: ErrorIssueId
 	readonly context: Record<string, unknown>
 	/**
-	 * The `INVESTIGATION_FANOUT_WORKFLOW` binding, read off the worker env by the
+	 * The `InvestigationFanoutWorkflow` binding, read off the worker env by the
 	 * caller. Absent means the investigation cannot run and the row records why —
 	 * it does NOT silently fall back to one shallow pass, because a run that was
 	 * planned and quietly ran as a single agent is a lie in the boards.

@@ -19,7 +19,6 @@
  *     thread the worker env through.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@/mcp/expected-failures"
 import {
 	decodeChatTurnTenant,
@@ -27,7 +26,8 @@ import {
 	type ChatMessage,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import { layerFromEnvRecord, WorkerConfigProviderLayer } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { LLM, Message, type LanguageModel, type LLMClientService } from "@opencode-ai/ai"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Stream } from "effect"
 import type { ChatSession } from "./ChatSession"
@@ -37,14 +37,14 @@ import { summarizeCause } from "@/platform/describe-cause"
 import { trackTokenUsage } from "@/services/billing/autumn-tracker"
 import { InvestigationId } from "@maple/domain/primitives"
 
-const telemetry = MapleCloudflareSDK.make({
-	// Deliberately not `maple-api`: background work sharing the request-facing
-	// service's name skewed its percentiles (p99 32s, 2026-09-04).
-	serviceName: "maple-chat",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS, ...MCP_ANTICIPATED_ERROR_IDENTIFIERS],
-})
+// Deliberately not `maple-api`: background work sharing the request-facing
+// service's name skewed its percentiles (p99 32s, 2026-09-04).
+const telemetry = MapleCloudflareSDK.make(
+	workerTelemetryConfig({
+		serviceName: "maple-chat",
+		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+	}),
+)
 
 export interface RunChatSessionTurnInput {
 	/** The Durable Object itself. Appends are direct calls, not stub RPC. */
@@ -344,6 +344,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const [
 		{ InvestigationServicesLive },
 		{ layerPg },
+		{ mapleDbConnectionLayer },
 		{ layerLlm, resolveTriageModel },
 		loop,
 		{ buildDiagnosisCompletion },
@@ -351,6 +352,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("../platform/DatabasePgLive"),
+		import("../platform/pg-connection-source"),
 		import("../platform/Llm"),
 		import("./loop"),
 		import("./tools"),
@@ -362,9 +364,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerLlm(input.env)),
 			Layer.provideMerge(layerPg),
-			Layer.provideMerge(layerFromEnvRecord(input.env)),
+			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(workerEnvLayer(input.env)),
 			Layer.provideMerge(telemetry.layer),
-			Layer.provideMerge(WorkerConfigProviderLayer),
 		),
 	)
 
