@@ -106,17 +106,6 @@ jobs:
             # including the ingest gateway, which reaches Postgres through PSBouncer as
             # a role that does NOT inherit `postgres`.
 
-            # One-shot for #787 (2026-09-07): the api's chat Durable Object moved
-            # from the `CHAT_SESSION` binding to alchemy's class form, which keys
-            # the class by its own name. The script tag alchemy reads on upload
-            # still says `CHAT_SESSION=ChatSession`, so the deploy planned a
-            # delete AND a create of the same class — rejected by Cloudflare
-            # ("cannot be the target of more than one migration"), and it would
-            # have destroyed the namespace. Re-key the tag once; a no-op after.
-            # Delete this step and the script once stg and prd have deployed past it.
-            - name: Retag the api Worker's Durable Object logical ids (one-shot, #787)
-              run: bun scripts/retag-durable-object-logical-ids.ts maple-api
-
             # alchemy's env-credential path (CI=true) otherwise discovers the account
             # with an STS GetCallerIdentity issued while its own AWSEnvironment is
             # still being built, and that call waits on the half-built environment
