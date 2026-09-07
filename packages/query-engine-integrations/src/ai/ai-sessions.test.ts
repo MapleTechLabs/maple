@@ -208,7 +208,8 @@ describe("aiSessionPageQuery", () => {
 					agentStart: "2026-08-19 10:33:25.825000000",
 					agentEnd: "2026-08-19 10:33:36.242000000",
 					models: ["claude-sonnet-5"],
-					agentNames: ["slack-agent"],
+					agentNames: ["web-fetcher", "slack-agent"],
+					firstAgentName: "slack-agent",
 					llmCalls: "12",
 					toolCalls: "7",
 					errorAgentSpans: "1",
@@ -225,7 +226,8 @@ describe("aiSessionPageQuery", () => {
 				agentStart: "2026-08-19 10:33:25.825000000",
 				agentEnd: "2026-08-19 10:33:36.242000000",
 				models: ["claude-sonnet-5"],
-				agentNames: ["slack-agent"],
+				agentNames: ["web-fetcher", "slack-agent"],
+				firstAgentName: "slack-agent",
 				llmCalls: 12,
 				toolCalls: 7,
 				errorAgentSpans: 1,
@@ -304,6 +306,23 @@ describe("aiSessionPageQuery", () => {
 		)
 		// Still index-only: none of it reaches for the fan-out table.
 		expect(sql).not.toContain("trace_detail_spans")
+	})
+
+	it("names the session by its earliest named agent, not by the unordered set", () => {
+		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
+		const [outer, inner] = sql.split("FROM (SELECT")
+
+		// Per trace: a span with no agent name sorts to the sentinel and can never
+		// win the argMin, so a trace that has one always resolves to it.
+		const agentOrder = "if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))"
+		expect(inner).toContain(`argMin(AgentName, ${agentOrder}) AS firstAgentName`)
+		expect(inner).toContain(`min(${agentOrder}) AS firstAgentAt`)
+		// Across traces: the same column ranks the traces, so a trace that named
+		// no agent carries the sentinel and loses to any trace that did.
+		expect(outer).toContain("argMin(firstAgentName, firstAgentAt) AS firstAgentName")
+		// The set is still the set — it feeds the filter rail and the overview, and
+		// says nothing about which name comes first.
+		expect(outer).toContain("groupUniqArrayArray(agentNames) AS agentNames")
 	})
 
 	it("splits the failures into tool and turn, deepest failed span counted", () => {
@@ -627,7 +646,9 @@ describe("aiSessionListQuery", () => {
 		expect(sql).toContain(
 			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, ",
 		)
-		expect(sql).toContain("IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']")
+		expect(sql).toContain(
+			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
 		expect(sql).toContain(
 			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
 		)

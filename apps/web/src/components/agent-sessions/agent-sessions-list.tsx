@@ -36,6 +36,9 @@ export interface AgentSessionRow {
 	readonly serviceNames: ReadonlyArray<string>
 	readonly models: ReadonlyArray<string>
 	readonly agentNames: ReadonlyArray<string>
+	/** The agent on the session's earliest-starting named span; `""` when none
+	 *  did. `agentNames` is an unordered set, so it cannot name the row. */
+	readonly firstAgentName: string
 	readonly llmCalls: number
 	readonly toolCalls: number
 	readonly totalTokens: number
@@ -152,8 +155,11 @@ export function AgentSessionsList({
 				const hasErrors = session.errorSpanCount > 0
 				const VendorIcon = vendorIcon(session.vendorId)
 				const vendor = vendorLabel(session.vendorId)
+				// `sessionIdentity` reads the first name, so it is handed the one
+				// name the warehouse resolved in span order rather than the
+				// unordered `agentNames` set — see `firstAgentName`.
 				const { heading } = sessionIdentity({
-					agentNames: session.agentNames,
+					agentNames: session.firstAgentName === "" ? [] : [session.firstAgentName],
 					vendorIds: [session.vendorId],
 				})
 				return (
