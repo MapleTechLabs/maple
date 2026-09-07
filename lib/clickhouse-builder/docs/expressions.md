@@ -65,9 +65,8 @@ Each accepts a raw value or another `Expr<T>`. String literals are escaped; bool
 `.and()` / `.or()` parenthesise their result, so precedence is explicit. `not(condition)` wraps
 in `NOT (…)` and is available from the `/expr` subpath.
 
-Prefer listing predicates as separate array entries over `.and()`-chaining them — the array is
-AND-joined anyway, and [tenant scoping](./tenant-scoping.md) is only detected on top-level
-entries.
+The `where` array is AND-joined. [Tenant scoping](./tenant-scoping.md) preserves evidence
+through both separate entries and `.and()`; `.or()` discards it.
 
 _(Backed by `docs/expressions.md > Combining conditions with and/or`.)_
 
@@ -115,27 +114,26 @@ _(Backed by `docs/expressions.md > Arithmetic does not parenthesise`.)_
 `inf` and `0 / 0` as `nan`, and both come back as JSON `null` — so a division that meets a zero
 denominator returns a null the column type has to accept, or the row fails to decode.
 
-That costs nothing at the type level: the result is `Expr<number>` either way, exactly as it
-already was for a division with a nullable operand. What it buys is that an unguarded division
-which hits a zero in production is the `null` the wire actually carried, rather than a decode
-failure on a query that ran fine.
+Both operators return `Expr<number | null>` — unless the divisor is a non-zero numeric literal.
+`$.Duration.div(1_000_000)` cannot manufacture a null from a finite dividend, so it stays as
+nullable as `$.Duration` (and is exactly rounded, where `.mul(0.000001)` drifts by an ulp on
+a third of integer inputs). A zero literal, a plain `number`, or another expression as the
+divisor makes the result nullable. Modulo by zero can also raise a ClickHouse error; nullable
+decoding does not suppress server errors.
 
-When you want a number rather than a null, guard it in SQL:
+When the output must be numeric, guard both non-finite numbers and SQL NULL:
 
 ```ts
 .select(($) => ({
-	// ifNotFinite(sum(Errors) / sum(Total), 0) AS errorRate
-	errorRate: CH.ifNotFinite(CH.sum($.Errors).div(CH.sum($.Total)), 0),
+	errorRate: CH.ifNull(CH.ifNotFinite(CH.sum($.Errors).div(CH.sum($.Total)), 0), CH.lit(0)),
 }))
 ```
 
-`CH.ifNotFinite(expr, fallback)` is `expr` unless it is `nan`/`inf`, in which case it is
-`fallback` — and its result is non-nullable, because the guard is in the SQL. The other standard
-shape, `CH.sum(x).div(CH.nullIf(CH.sum(y), 0))`, deliberately keeps the null: "an average, or
-nothing when there is nothing to average over".
+`CH.ifNotFinite(expr, fallback)` replaces `nan`/`inf`, but SQL NULL passes through unchanged.
+`CH.ifNull` supplies the remaining fallback. `CH.nullIf(expr, value)` returns `Expr<T | null>`;
+for example, `CH.sum(x).div(CH.nullIf(CH.sum(y), 0))` keeps a null for an absent denominator.
 
-The other four operators stay strict. `+`, `-`, `*` and unary use cannot manufacture a null out
-of two finite operands, so the looseness is bought only where it is paid for.
+Addition, subtraction, and multiplication preserve nullable operands in their types and codecs.
 
 _(Backed by `docs/expressions.md > division decodes nullably and ifNotFinite guards it`.)_
 
@@ -186,6 +184,9 @@ CH.sequenceMatch("(?1)(?t<3600)(?2)")($.Timestamp, $.Name.eq("view"), $.Name.eq(
 (not `DateTime64`) and the window is in that column's unit.
 
 _(Backed by `docs/expressions.md > Conditional aggregation`.)_
+
+`avg`, `avgIf`, and `quantile` return `Expr<number | null>` because empty input produces NaN,
+which ClickHouse serializes as JSON null. Use the guards above when the empty result should be zero.
 
 ## Conditionals
 

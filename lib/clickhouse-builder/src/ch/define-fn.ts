@@ -5,7 +5,8 @@
 // 2. compileFnCall / compileFnCallCond — thin wrappers for generic/variadic functions
 // 3. makeExpr / makeCond (from expr.ts) — escape hatch for custom SQL syntax
 
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
+import { CHNumber } from "./types"
 import { raw, compile } from "../sql/sql-fragment"
 import type { Expr, Condition } from "./expr"
 import { makeExpr, makeUntypedExpr, makeCond, toFragment } from "./expr"
@@ -201,3 +202,9 @@ export const arrayOfArg =
 export function defineCondFn<Args extends unknown[]>(name: string): (...args: Args) => Condition {
 	return (...args: Args): Condition => compileFnCallCond(name, ...args)
 }
+
+/** Numeric functions preserve SQL NULL while promoting the numeric type. */
+export const numericResultSchema = <T>(expr: Expr<T>): Schema.Codec<number | Extract<T, null>, any> =>
+	(expr.schema !== undefined && Result.isSuccess(Schema.decodeUnknownResult(expr.schema)(null))
+		? Schema.NullOr(CHNumber)
+		: CHNumber) as Schema.Codec<number | Extract<T, null>, any>

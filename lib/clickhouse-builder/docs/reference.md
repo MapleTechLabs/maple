@@ -114,7 +114,9 @@ time; see [Params and compilation](./params-and-compilation.md#what-each-kind-ac
 
 `Expr<T>` methods: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in_`, `notIn`, `like`, `notLike`,
 `ilike` (string-only), and `add`, `sub`, `mul`, `div`, `mod` (number-only, **no parentheses**). `div` and `mod` decode
-nullably — ClickHouse sends `inf`/`nan` as JSON `null`; guard with `ifNotFinite`.
+as `number | null` — ClickHouse sends `inf`/`nan` as JSON `null` — except by a non-zero numeric
+literal (`Quotient<L, R>`), which keeps the dividend's nullability; use
+`ifNull(ifNotFinite(expr, 0), lit(0))` for a guaranteed number otherwise.
 
 ### Spliced sub-SELECTs
 
@@ -201,7 +203,8 @@ _(both curried; `WindowFunnelMode` is the mode union)_.
 
 `if_(cond, then, else)`, `multiIf([[cond, value], …], fallback)`, `coalesce(...exprs)`,
 `nullIf(expr, value)`, `ifNotFinite(expr, fallback)` (`expr` unless it is `nan`/`inf` — the SQL-side
-guard for division).
+guard for division; preserves SQL NULL). `nullIf` returns `Expr<T | null>`.
+`avg`, `avgIf`, and `quantile` return `Expr<number | null>` for empty input.
 
 ### Array
 

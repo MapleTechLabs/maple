@@ -175,6 +175,13 @@ const toStartOfFiveMinute = defineFn<[CH.Expr<DateTime.Utc>], DateTime.Utc>("toS
 const anyLast = defineFn<[CH.Expr<string>], string>("anyLast", sameAs(0))
 ```
 
+## Validation
+
+Run `bun run typecheck` and `bun run test` from this package. Tests include regressions for
+nullable results, UNION column alignment, tenant scoping, custom parameters, and DateTime64 precision.
+To include the live ClickHouse cases, set `CLICKHOUSE_BUILDER_TEST_URL` and, if needed,
+`CLICKHOUSE_BUILDER_TEST_USER` and `CLICKHOUSE_BUILDER_TEST_PASSWORD`. They use only SELECTs and CTEs.
+
 ## License
 
 MIT

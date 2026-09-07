@@ -19,6 +19,7 @@ import { PARAM_MARKER_PREFIX, PARAM_PLACEHOLDER_PATTERN, paramSchema, type Param
 import { encodeLiteral } from "./literal"
 import { Effect, Option, Schema } from "effect"
 import { QueryBuilderDefect, QueryBuilderError } from "./errors"
+import { tenantBoundOf, tenantPredicatesOf, withTenantBound, type TenantPredicate } from "./tenant"
 
 // `QueryBuilderError` moved to ./errors so `expr.ts` can raise it too; still
 // exported from here, which is where every caller imports it from.
@@ -70,9 +71,9 @@ const orderByClause = (specs: ReadonlyArray<[string, "asc" | "desc"]>): Array<st
 /**
  * How widely a compiled query reads across tenants.
  *
- * `"single-tenant"` means a top-level `WHERE` predicate pins the table's
- * declared tenant column, or every row source the query reads is already
- * confined to one tenant. `"cross-tenant"` means the table HAS a tenant column
+ * `"single-tenant"` means every tenanted source is confined to the same
+ * tenant through constant bindings, tenant-key equalities, or scoped subqueries.
+ * `"cross-tenant"` means a source has a tenant column
  * and this query did not pin it, so the read spans every tenant the credentials
  * can see. Executors are expected to refuse `"cross-tenant"` on their normal
  * read path and require an explicit privileged entry point instead — which is
@@ -93,6 +94,7 @@ interface ResolvedCte {
 	readonly name: string
 	readonly sql: string
 	readonly tenantScope: TenantScope | undefined
+	readonly tenantBound?: string
 }
 
 interface CompiledQueryBase<Output> {
@@ -520,6 +522,7 @@ function compileInner<
 	query: CHQuery<Cols, Output, Joins, Route>,
 	params: Params,
 	options?: {
+		selectKeys?: ReadonlyArray<string>
 		skipFormat?: boolean
 		rowSchema?: CompiledQueryRowSchema<Decoded>
 		/** Leave `__PARAM_…__` placeholders in the SQL instead of resolving them.
@@ -533,9 +536,7 @@ function compileInner<
 		 * reads an earlier sibling — the usual `WITH a AS (…), b AS (SELECT … FROM a)`
 		 * chain — inherits that sibling's scope instead of reading as
 		 * `"cross-tenant"` because it names a table this compilation cannot see.
-		 * A CTE's own FROM-subquery or join is not threaded, so one reaching a
-		 * sibling from there still derives `"cross-tenant"` — the safe direction,
-		 * and the reason this is a scope hint rather than a resolver.
+		 * FROM-subqueries and joins receive the same visible CTE scopes.
 		 * There is no reason to pass it by hand.
 		 */
 		enclosingCtes?: ReadonlyArray<ResolvedCte>
@@ -554,7 +555,17 @@ function compileInner<
 
 	// SELECT
 	const selectExprs = state.selectFn ? state.selectFn($) : {}
-	const selectFragments = Object.entries(selectExprs).map(([alias, expr]) => aliased(expr, alias))
+	const keys = Object.keys(selectExprs)
+	if (
+		options?.selectKeys &&
+		(keys.length !== options.selectKeys.length ||
+			options.selectKeys.some((key) => !Object.hasOwn(selectExprs, key)))
+	) {
+		throw new QueryBuilderDefect({
+			message: "unionAll: every branch must select the same column aliases",
+		})
+	}
+	const selectFragments = (options?.selectKeys ?? keys).map((alias) => aliased(selectExprs[alias], alias))
 
 	if (selectFragments.length === 0) {
 		throw new QueryBuilderDefect({ message: "CHQuery: select() is required" })
@@ -565,13 +576,6 @@ function compileInner<
 	const whereFragments = whereConditions
 		.filter((c): c is NonNullable<typeof c> => c != null)
 		.map((c) => c.toFragment())
-
-	// Tenant scope is read off THIS query's top-level predicates only. A filter
-	// inside `fromQuery`/`fromUnion`/a join that the outer query doesn't repeat
-	// does not scope the result — that is precisely the shape (an inner-scoped
-	// subquery joined to an unscoped outer) this is meant to catch. The
-	// top-level list is AND-joined below, so one marked entry is sufficient.
-	const hasOwnTenantPredicate = whereConditions.some((c) => c?.scopesTenant === true)
 
 	// CTEs — resolved before the FROM below, which reads their scope. A CTE given
 	// as a query is compiled here and its scope derived; one given as a string
@@ -587,95 +591,100 @@ function compileInner<
 				deferParams,
 				enclosingCtes: [...(options?.enclosingCtes ?? []), ...resolvedCtes],
 			})
-			resolvedCtes.push({ name: c.name, sql: compiled.sql, tenantScope: compiled.tenantScope })
+			resolvedCtes.push({
+				name: c.name,
+				sql: compiled.sql,
+				tenantScope: compiled.tenantScope,
+				tenantBound: tenantBoundOf(compiled),
+			})
 		} else {
 			resolvedCtes.push({ name: c.name, sql: c.sql ?? "", tenantScope: c.tenantScope })
 		}
 	}
 
-	// FROM clause
+	const visibleCtes = [...resolvedCtes, ...(options?.enclosingCtes ?? [])]
+	const sourceForTable = (name: string, column?: string): TenantSource => {
+		const cte = visibleCtes.find((c) => c.name === name)
+		return {
+			// A projected CTE column need not be the original tenant key.
+			column: cte ? undefined : column,
+			scope: cte ? (cte.tenantScope ?? "cross-tenant") : column ? "cross-tenant" : "untenanted",
+			bound: cte?.tenantBound,
+		}
+	}
+	const sourceOf = (compiled: CompiledQuery<any>): TenantSource => ({
+		scope: compiled.tenantScope,
+		bound: tenantBoundOf(compiled),
+	})
+	const mainAlias = state.tableAlias ?? state.fromQueryAlias ?? state.tableName
+	const mainColumn =
+		state.tenantColumn === undefined
+			? undefined
+			: state.typedJoins.length > 0
+				? `${mainAlias}.${state.tenantColumn}`
+				: state.tenantColumn
 	let fromFragment
-	// Whether the row source is itself tenant-confined. A query reading only from
-	// a scoped subquery cannot see another tenant's rows even with no WHERE of
-	// its own — that is the `SELECT sum(total) FROM (scoped UNION scoped)` shape.
-	let fromSourceScope: TenantScope = "untenanted"
+	let fromSource: TenantSource
 	if (state.fromQuery) {
-		// Compile the inner query lazily
-		const innerCompiled = compileInner(state.fromQuery, params, { skipFormat: true, deferParams })
-		fromSourceScope = innerCompiled.tenantScope
-		fromFragment = raw(`(${innerCompiled.sql}) AS ${state.fromQueryAlias}`)
+		const inner = compileInner(state.fromQuery, params, {
+			skipFormat: true,
+			deferParams,
+			enclosingCtes: visibleCtes,
+		})
+		fromSource = sourceOf(inner)
+		fromFragment = raw(`(${inner.sql}) AS ${state.fromQueryAlias}`)
 	} else if (state.fromUnion) {
-		// Compile the inner union without an outer FORMAT — the outer query
-		// owns formatting. Strips a trailing `\nFORMAT <fmt>` defensively.
-		const innerCompiled = compileUnionUnsafe(state.fromUnion, params, { deferParams })
-		fromSourceScope = innerCompiled.tenantScope
-		const innerSql = splitTerminalClauses(innerCompiled.sql).body
-		fromFragment = raw(`(\n${innerSql}\n) AS ${state.fromQueryAlias}`)
-	} else if (state.tableAlias) {
-		fromFragment = raw(`${state.tableName} AS ${state.tableAlias}`)
+		const inner = compileUnionUnsafe(state.fromUnion, params, { deferParams })
+		fromSource = sourceOf(inner)
+		fromFragment = raw(`(\n${splitTerminalClauses(inner.sql).body}\n) AS ${state.fromQueryAlias}`)
 	} else {
-		fromFragment = ident(state.tableName)
+		fromSource = sourceForTable(state.tableName, mainColumn)
+		fromFragment = state.tableAlias
+			? raw(`${state.tableName} AS ${state.tableAlias}`)
+			: ident(state.tableName)
 	}
 
-	// Whether any source this query reads MIGHT carry row-level tenancy. Only a
-	// query where the builder can see every source and none declares a tenant
-	// column is `"untenanted"`; anything it cannot see into — a CTE handed to it
-	// as a SQL string, a subquery over a tenanted table — counts as tenanted, so
-	// the unknown case stays `"cross-tenant"` and keeps being refused.
-	let anySourceMayBeTenanted = state.tenantColumn !== undefined
-
-	// A FROM that names a CTE inherits the CTE's scope — derived when the CTE was
-	// given as a query, declared by the caller when it arrived as a string.
-	//
-	// This query's OWN CTEs are searched first, because that is how SQL scopes
-	// them: an inner `WITH x AS (…)` shadows an enclosing one of the same name,
-	// verified against a server (`WITH x AS (SELECT 1), y AS (WITH x AS (SELECT 2)
-	// SELECT v FROM x) SELECT v FROM y` returns 2). Searching the enclosing list
-	// first read the scope off a CTE the query does not execute — and in the
-	// direction that matters, since it could certify a scan of every tenant as
-	// `"single-tenant"`.
-	if (!state.fromQuery && !state.fromUnion) {
-		const cte = [...resolvedCtes, ...(options?.enclosingCtes ?? [])].find(
-			(c) => c.name === state.tableName,
-		)
-		if (cte !== undefined && cte.tenantScope !== "untenanted") anySourceMayBeTenanted = true
-		if (cte?.tenantScope === "single-tenant") fromSourceScope = "single-tenant"
-	}
-
-	// JOINs
-	// Every joined source is another set of rows that can reach the output, so
-	// each must be tenant-confined for the join result to be. A bare table join
-	// is unconfined unless the outer query pins the tenant itself.
-	let allJoinSourcesScoped = true
-	const joins =
-		state.typedJoins.length > 0
-			? state.typedJoins.map((j) => {
-					let tableSql: string
-					if (j.tenantColumn !== undefined) anySourceMayBeTenanted = true
-					if (j.innerQuery) {
-						const compiled = compileInner(j.innerQuery, params, {
-							skipFormat: true,
-							deferParams,
-						})
-						if (compiled.tenantScope !== "untenanted") anySourceMayBeTenanted = true
-						if (compiled.tenantScope !== "single-tenant") allJoinSourcesScoped = false
-						tableSql = `(${compiled.sql})`
-					} else if (j.tableName) {
-						if (j.columns === undefined) anySourceMayBeTenanted = true
-						allJoinSourcesScoped = false
-						tableSql = j.tableName
-					} else {
-						throw new QueryBuilderDefect({ message: "TypedJoin: missing table or query" })
-					}
-
-					return {
-						type: j.type,
-						table: tableSql,
-						alias: j.alias,
-						on: j.on ? compileSqlFragment(j.on.toFragment()) : undefined,
-					}
+	const sources: TenantSource[] = [fromSource]
+	const wherePredicates = whereConditions.flatMap((c) => (c ? tenantPredicatesOf(c) : []))
+	const joinPredicates: Array<{ predicates: ReadonlyArray<TenantPredicate>; target?: string }> = []
+	const joins = state.typedJoins.map((j) => {
+		let tableSql: string
+		let source: TenantSource
+		if (j.innerQuery) {
+			const compiled = compileInner(j.innerQuery, params, {
+				skipFormat: true,
+				deferParams,
+				enclosingCtes: visibleCtes,
+			})
+			tableSql = `(${compiled.sql})`
+			source = sourceOf(compiled)
+		} else if (j.tableName) {
+			tableSql = j.tableName
+			source = sourceForTable(
+				j.tableName,
+				j.tenantColumn === undefined ? undefined : `${j.alias}.${j.tenantColumn}`,
+			)
+		} else {
+			throw new QueryBuilderDefect({ message: "TypedJoin: missing table or query" })
+		}
+		sources.push(source)
+		if (j.on) {
+			// A LEFT JOIN's ON clause can constrain only its right side. It
+			// cannot remove unmatched rows from the preserved left side.
+			if (j.type !== "LEFT" || source.column !== undefined) {
+				joinPredicates.push({
+					predicates: tenantPredicatesOf(j.on),
+					target: j.type === "LEFT" ? source.column : undefined,
 				})
-			: undefined
+			}
+		}
+		return {
+			type: j.type,
+			table: tableSql,
+			alias: j.alias,
+			on: j.on ? compileSqlFragment(j.on.toFragment()) : undefined,
+		}
+	})
 
 	const sqlQuery: SqlQuery = {
 		select: selectFragments,
@@ -683,7 +692,7 @@ function compileInner<
 		joins,
 		where: whereFragments,
 		groupBy: state.groupByKeys.map((k) => raw(k)),
-		// Deliberately not fed into `hasOwnTenantPredicate`: by HAVING time the
+		// Deliberately excluded from tenant evidence: by HAVING time the
 		// rows are already aggregated, so the scan that produced them crossed
 		// tenants no matter what this filters out.
 		having: (state.havingFn ? state.havingFn($) : [])
@@ -705,37 +714,80 @@ function compileInner<
 
 	if (!deferParams) sql = resolveParams(sql, params)
 
-	// Scoped when this query pins the tenant itself, or when every row source it
-	// reads from — the FROM and each join — is already confined to one tenant.
-	// A FROM-subquery or union that is itself untenanted contributes no tenancy;
-	// one that is scoped or unscoped does, because it read a table that declares
-	// a tenant column.
-	if ((state.fromQuery || state.fromUnion) && fromSourceScope !== "untenanted") {
-		anySourceMayBeTenanted = true
-	}
-
-	const tenantScope: TenantScope =
-		state.crossTenant === true
-			? "cross-tenant"
-			: hasOwnTenantPredicate || (fromSourceScope === "single-tenant" && allJoinSourcesScoped)
-				? "single-tenant"
-				: anySourceMayBeTenanted
-					? "cross-tenant"
-					: "untenanted"
+	const scope = deriveTenantScope(sources, [{ predicates: wherePredicates }, ...joinPredicates], (value) =>
+		deferParams ? compileSqlFragment(value) : resolveParams(compileSqlFragment(value), params),
+	)
+	const tenantScope = state.crossTenant === true ? "cross-tenant" : scope.scope
 
 	const derived = deriveRowSchema(selectExprs)
 	const derivedSchema = "schema" in derived ? derived.schema : undefined
 
-	return makeCompiledQuery<Decoded, Route>(
-		sql,
-		tenantScope,
-		options?.rowSchema !== undefined ? "declared" : derivedSchema ? "derived" : "none",
-		() => options?.rowSchema ?? (derivedSchema as CompiledQueryRowSchema<Decoded> | undefined),
-		state.routeValue as Route,
-		"untyped" in derived ? derived.untyped : [],
-		undefined,
-		options?.rowSchema === undefined ? undefined : compareRowSchemas(options.rowSchema, derivedSchema),
+	return withTenantBound(
+		makeCompiledQuery<Decoded, Route>(
+			sql,
+			tenantScope,
+			options?.rowSchema !== undefined ? "declared" : derivedSchema ? "derived" : "none",
+			() => options?.rowSchema ?? (derivedSchema as CompiledQueryRowSchema<Decoded> | undefined),
+			state.routeValue as Route,
+			"untyped" in derived ? derived.untyped : [],
+			undefined,
+			options?.rowSchema === undefined
+				? undefined
+				: compareRowSchemas(options.rowSchema, derivedSchema),
+		),
+		tenantScope === "single-tenant" ? scope.bound : undefined,
 	)
+}
+
+interface TenantSource {
+	readonly column?: string
+	readonly scope: TenantScope
+	readonly bound?: string
+}
+
+function deriveTenantScope(
+	sources: ReadonlyArray<TenantSource>,
+	conditions: ReadonlyArray<{ predicates: ReadonlyArray<TenantPredicate>; target?: string }>,
+	render: (value: import("../sql/sql-fragment").SqlFragment) => string,
+): { scope: TenantScope; bound?: string } {
+	const tenanted = sources.filter((source) => source.scope !== "untenanted")
+	if (tenanted.length === 0) return { scope: "untenanted" }
+	const columns = new Set(tenanted.flatMap((s) => (s.column === undefined ? [] : [s.column])))
+	const bounds = new Map<string, string>()
+	for (const source of tenanted) {
+		if (source.column !== undefined && source.bound !== undefined) bounds.set(source.column, source.bound)
+	}
+	const edges: Array<readonly [string, string]> = []
+	for (const { predicates, target } of conditions) {
+		for (const p of predicates) {
+			if ("column" in p) {
+				if (columns.has(p.column) && (target === undefined || target === p.column)) {
+					bounds.set(p.column, render(p.value))
+				}
+			} else if (columns.has(p.left) && columns.has(p.right)) {
+				if (target === undefined || target === p.right) edges.push([p.left, p.right])
+				if (target === undefined || target === p.left) edges.push([p.right, p.left])
+			}
+		}
+	}
+	let changed = true
+	while (changed) {
+		changed = false
+		for (const [left, right] of edges) {
+			const value = bounds.get(left)
+			if (value !== undefined && !bounds.has(right)) {
+				bounds.set(right, value)
+				changed = true
+			}
+		}
+	}
+	const values = new Set<string>()
+	for (const source of tenanted) {
+		const bound = source.column === undefined ? source.bound : (bounds.get(source.column) ?? source.bound)
+		if (source.scope !== "single-tenant" && bound === undefined) return { scope: "cross-tenant" }
+		if (bound !== undefined) values.add(bound)
+	}
+	return values.size > 1 ? { scope: "cross-tenant" } : { scope: "single-tenant", bound: [...values][0] }
 }
 
 /**
@@ -768,13 +820,23 @@ function makeAccessor(state: CHQueryState): any {
  * without this every `$.alias.field` off a joined subquery is untyped.
  */
 function joinColumnsOf(join: {
+	readonly type: "INNER" | "LEFT" | "CROSS"
 	readonly columns?: ColumnDefs
 	readonly innerQuery?: CHQuery<any, any, any>
 }): ColumnDefs | undefined {
-	if (join.columns !== undefined) return join.columns
-	if (join.innerQuery === undefined) return undefined
-	const exprs = selectExprsOf(join.innerQuery)
-	return exprs === undefined ? undefined : synthesizeColumns(exprs)
+	const exprs = join.innerQuery === undefined ? undefined : selectExprsOf(join.innerQuery)
+	const columns = join.columns ?? (exprs === undefined ? undefined : synthesizeColumns(exprs))
+	if (columns === undefined || join.type !== "LEFT") return columns
+	return Object.fromEntries(
+		Object.entries(columns).map(([name, type]) => [
+			name,
+			{
+				...type,
+				schema: Schema.NullOr(type.schema),
+				literalSchema: Schema.NullOr(type.literalSchema),
+			},
+		]),
+	)
 }
 
 /**
@@ -785,8 +847,11 @@ function joinColumnsOf(join: {
 function columnsOf(state: CHQueryState): ColumnDefs {
 	if (Object.keys(state.columns).length > 0) return state.columns
 
-	const inner = state.fromQuery ?? state.fromUnion?._state.queries[0]
-	const innerExprs = inner ? selectExprsOf(inner) : undefined
+	const innerExprs = state.fromUnion
+		? unionExprsOf(state.fromUnion._state.queries)
+		: state.fromQuery
+			? selectExprsOf(state.fromQuery)
+			: undefined
 	if (innerExprs === undefined) return state.columns
 
 	return synthesizeColumns(innerExprs)
@@ -845,9 +910,9 @@ const deriveRowSchema = (
  * becoming a one-member union, so the common case — every branch selecting the
  * same column type — costs nothing.
  */
-const deriveUnionRowSchema = (
+const unionExprsOf = (
 	branches: ReadonlyArray<CHQuery<any, any, any>>,
-): { readonly schema: Schema.Codec<any, any> } | { readonly untyped: ReadonlyArray<string> } | undefined => {
+): Record<string, { readonly schema?: Schema.Codec<any, any> }> | undefined => {
 	if (branches.length === 0) return undefined
 
 	const perColumn = new Map<string, Array<Schema.Codec<any, any>>>()
@@ -866,14 +931,13 @@ const deriveUnionRowSchema = (
 			perColumn.set(alias, seen)
 		}
 	}
-	if (untyped.size > 0) return { untyped: [...untyped] }
-
-	const fields: Record<string, Schema.Codec<any, any>> = {}
+	const fields: Record<string, { readonly schema?: Schema.Codec<any, any> }> = {}
+	for (const alias of untyped) fields[alias] = {}
 	for (const [alias, schemas] of perColumn) {
 		const only = schemas.length === 1 ? schemas[0] : undefined
-		fields[alias] = only ?? Schema.Union(schemas)
+		if (!untyped.has(alias)) fields[alias] = { schema: only ?? Schema.Union(schemas) }
 	}
-	return { schema: Schema.Struct(fields) }
+	return fields
 }
 
 // UNION ALL compilation
@@ -887,12 +951,25 @@ export function compileUnionUnsafe<Output extends Record<string, any>, Params ex
 	const deferParams = options?.deferParams === true
 
 	// Compile each sub-query without FORMAT
-	const subQueries = state.queries.map((q) => compileInner(q, params, { skipFormat: true, deferParams }))
+	const first = state.queries[0]
+	if (first === undefined) throw new QueryBuilderDefect({ message: "unionAll requires at least one query" })
+	const selectKeys = Object.keys(selectExprsOf(first) ?? {})
+	const subQueries = state.queries.map((q) =>
+		compileInner(q, params, { skipFormat: true, deferParams, selectKeys }),
+	)
+	const bounds = new Set(
+		subQueries.flatMap((q) => {
+			const bound = tenantBoundOf(q)
+			return bound === undefined ? [] : [bound]
+		}),
+	)
 
 	// UNION ALL is a disjunction: one unscoped branch leaks every tenant into the
 	// result regardless of how tightly the others are filtered.
 	const tenantScope: TenantScope =
-		subQueries.length > 0 && subQueries.every((q) => q.tenantScope === "single-tenant")
+		bounds.size <= 1 &&
+		subQueries.length > 0 &&
+		subQueries.every((q) => q.tenantScope === "single-tenant")
 			? "single-tenant"
 			: // All-untenanted branches read nothing tenanted, so the union does not
 				// either. Any other mix has at least one branch that spans tenants.
@@ -929,18 +1006,24 @@ export function compileUnionUnsafe<Output extends Record<string, any>, Params ex
 	// another resolves to `Nullable(String)` for the whole union. Deriving from
 	// branch 0 alone produced a schema that rejected rows the query can really
 	// return.
-	const derived = deriveUnionRowSchema(state.queries)
+	const exprs = unionExprsOf(state.queries)
+	const derived = exprs === undefined ? undefined : deriveRowSchema(exprs)
 	const derivedSchema = derived && "schema" in derived ? derived.schema : undefined
 
-	return makeCompiledQuery<Output, undefined>(
-		sql,
-		tenantScope,
-		options?.rowSchema !== undefined ? "declared" : derivedSchema ? "derived" : "none",
-		() => options?.rowSchema ?? (derivedSchema as CompiledQueryRowSchema<Output> | undefined),
-		undefined,
-		derived && "untyped" in derived ? derived.untyped : [],
-		undefined,
-		options?.rowSchema === undefined ? undefined : compareRowSchemas(options.rowSchema, derivedSchema),
+	return withTenantBound(
+		makeCompiledQuery<Output, undefined>(
+			sql,
+			tenantScope,
+			options?.rowSchema !== undefined ? "declared" : derivedSchema ? "derived" : "none",
+			() => options?.rowSchema ?? (derivedSchema as CompiledQueryRowSchema<Output> | undefined),
+			undefined,
+			derived && "untyped" in derived ? derived.untyped : [],
+			undefined,
+			options?.rowSchema === undefined
+				? undefined
+				: compareRowSchemas(options.rowSchema, derivedSchema),
+		),
+		tenantScope === "single-tenant" ? [...bounds][0] : undefined,
 	)
 }
 
