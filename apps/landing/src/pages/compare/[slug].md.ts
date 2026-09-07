@@ -18,6 +18,7 @@ import {
 	describeWorkload,
 	estimateMaple,
 	estimateVendor,
+	formatLineAmount,
 	MAPLE_PRICING_NOTE,
 	PRICES_VERIFIED,
 	vendorCaveat,
@@ -30,7 +31,7 @@ export const getStaticPaths: GetStaticPaths = () =>
 const monthLabel = (checked: string) =>
 	new Date(`${checked}-15T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
 
-const dollars = (amount: number) => `$${Math.round(amount).toLocaleString()}`
+const dollars = (amount: number) => formatLineAmount(amount)
 
 /** Pipes inside a cell would break the row. */
 const cell = (text: string) => text.replace(/\|/g, "\\|")

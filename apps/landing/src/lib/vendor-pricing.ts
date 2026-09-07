@@ -110,6 +110,10 @@ export const formatSliderValue = (config: SliderConfig, value: number): string =
 export const describeWorkload = (vendor: Vendor, values: Record<string, number>): string =>
 	vendorConfigs[vendor].sliders.map((slider) => `${slider.label} ${formatSliderValue(slider, values[slider.key])}`).join(" · ")
 
+/** A receipt line: "$49", or "−$49" for a credit. Callers render 0 as "Free". */
+export const formatLineAmount = (amount: number): string =>
+	`${amount < 0 ? "−" : ""}$${Math.round(Math.abs(amount)).toLocaleString()}`
+
 export const formatCurrency = (amount: number): string => {
 	if (amount >= 100000) return `$${(amount / 1000).toFixed(0)}k`
 	if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}k`
@@ -224,30 +228,31 @@ const openObserve = (values: Record<string, number>): Estimate => {
 const signoz = (values: Record<string, number>): Estimate => {
 	// SigNoz Cloud (Teams) published pricing: logs & traces $0.30/GB ingested at
 	// the default 15-day retention, metrics $0.10 per million samples at the
-	// default 1-month retention, and a $49/mo minimum that *includes* $49 of
-	// usage — the bill is max($49, usage), matching SigNoz's own calculator.
+	// default 1-month retention, and a $49/mo base fee that *includes* $49 of
+	// usage — so the receipt is base fee + usage − (up to) $49 of included
+	// usage, i.e. max($49, usage), matching SigNoz's own calculator.
 	// $49 is the standing base fee, not a promo: SigNoz cut it from $199 in
 	// May 2025 and the struck-through $199 on their page is the old anchor.
 	// Longer retention costs more and is not modeled ($/GB: 15d 0.30, 30d 0.40,
 	// 90d 0.60, 180d 0.80, 1y 1.40; $/mn metric samples: 1mo 0.10, 3mo 0.12,
 	// 6mo 0.15, 13mo 0.18), which biases the estimate in SigNoz's favor.
-	const MINIMUM = 49
+	const BASE_FEE = 49
+	const INCLUDED_USAGE = 49
 	const logCost = values.logVolume * 0.3
 	const traceCost = values.traceVolume * 0.3
 	const metricCost = values.metricSamples * 0.1
 	const usage = logCost + traceCost + metricCost
-	const minimumTopUp = Math.max(0, MINIMUM - usage)
+	const includedUsage = Math.min(INCLUDED_USAGE, usage)
 
 	return {
-		total: Math.max(MINIMUM, usage),
+		total: BASE_FEE + usage - includedUsage,
 		breakdown: [
+			{ label: "Base fee", value: BASE_FEE, detail: "$49/mo Teams plan base fee" },
 			{ label: "Logs", value: logCost, detail: `${values.logVolume} GB × $0.30` },
 			{ label: "Traces", value: traceCost, detail: `${values.traceVolume} GB × $0.30` },
 			{ label: "Metrics", value: metricCost, detail: `${values.metricSamples}M samples × $0.10/M` },
-			...(minimumTopUp > 0
-				? [{ label: "Minimum spend", value: minimumTopUp, detail: "$49/mo minimum includes $49 of usage" }]
-				: []),
-		].filter((item) => item.value > 0),
+			{ label: "Included usage", value: -includedUsage, detail: "$49 of usage included in the base fee" },
+		].filter((item) => item.value !== 0),
 	}
 }
 
@@ -343,7 +348,7 @@ export const vendorCaveat = {
 	openobserve:
 		"OpenObserve modeled at its headline $0.50/GB ingestion rate, which already includes the 30% annual-commitment discount; query fees ($0.01/GB scanned) and extended retention beyond the included 30 days for logs and traces ($0.02/GB per additional 30 days) are not included, which favors OpenObserve.",
 	signoz:
-		"SigNoz modeled on the Teams plan at its default retention (logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at 1 month) with the $49/mo minimum that includes $49 of usage; longer retention costs more (up to $1.40/GB at 1 year) and is not included, which favors SigNoz. Maple bills per GB, so the Maple estimate converts metric samples at roughly 0.1 KB per data point (0.1 GB per million samples).",
+		"SigNoz modeled on the Teams plan at its default retention (logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at 1 month) with the $49/mo base fee, from which $49 of usage is subtracted as included; longer retention costs more (up to $1.40/GB at 1 year) and is not included, which favors SigNoz. Maple bills per GB, so the Maple estimate converts metric samples at roughly 0.1 KB per data point (0.1 GB per million samples).",
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =
