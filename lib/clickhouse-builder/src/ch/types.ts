@@ -105,6 +105,12 @@ export const chDateTimeToIso = (value: string): string => {
 export const chDateTimeLiteral = (value: DateTime.Utc): string =>
 	new Date(DateTime.toEpochMillis(value)).toISOString().replace("T", " ").slice(0, 19)
 
+const chDateTime64Literal = (value: DateTime.Utc): string =>
+	new Date(DateTime.toEpochMillis(value))
+		.toISOString()
+		.replace("T", " ")
+		.replace(/(?:\.000)?Z$/, "")
+
 const isChDateTime = Schema.makeFilter(
 	(value: string) =>
 		Number.isNaN(Date.parse(chDateTimeToIso(value)))
@@ -168,6 +174,22 @@ export const CHDateTimeSecondsLiteral: Schema.Codec<string, string> = Schema.Str
  * `chDateTimeLiteral` or are already in its shape.
  */
 const CHDateTimeLiteral = Schema.Union([CHDateTimeUtc, CHDateTimeFromDate, CHDateTimeFromString])
+
+const CHDateTime64Utc: Schema.Codec<DateTime.Utc, string> = Schema.String.pipe(
+	Schema.check(isChDateTime),
+	Schema.decodeTo(Schema.DateTimeUtc, {
+		decode: SchemaGetter.transform((value: string) => DateTime.makeUnsafe(chDateTimeToIso(value))),
+		encode: SchemaGetter.transform(chDateTime64Literal),
+	}),
+)
+const CHDateTime64FromDate: Schema.Codec<Date, string> = Schema.String.pipe(
+	Schema.check(isChDateTime),
+	Schema.decodeTo(Schema.Date, {
+		decode: SchemaGetter.transform((value: string) => new Date(chDateTimeToIso(value))),
+		encode: SchemaGetter.transform((value: Date) => chDateTime64Literal(DateTime.makeUnsafe(value))),
+	}),
+)
+const CHDateTime64Literal = Schema.Union([CHDateTime64Utc, CHDateTime64FromDate, CHDateTimeFromString])
 
 // Primitive types
 
@@ -258,7 +280,12 @@ export const int32: CHInt32 = chType("Int32", "Int32", CHNumber)
 export const int64: CHInt64 = chType("Int64", "Int64", CHNumber)
 export const float64: CHFloat64 = chType("Float64", "Float64", CHNumber)
 export const dateTime: CHDateTime = chType("DateTime", "DateTime", CHDateTimeUtc, CHDateTimeLiteral)
-export const dateTime64: CHDateTime64 = chType("DateTime64", "DateTime64", CHDateTimeUtc, CHDateTimeLiteral)
+export const dateTime64: CHDateTime64 = chType(
+	"DateTime64",
+	"DateTime64",
+	CHDateTime64Utc,
+	CHDateTime64Literal,
+)
 export const bool: CHBool = chType("Bool", "Bool", CHBoolean)
 export const dateTimeString: CHDateTimeString = chType(
 	"DateTime",
@@ -270,7 +297,7 @@ export const dateTime64String: CHDateTime64String = chType(
 	"DateTime64",
 	"DateTime64",
 	Schema.String,
-	CHDateTimeLiteral,
+	CHDateTime64Literal,
 )
 
 export const map = <K extends CHType<string, string, any>, V extends CHType<string, any, any>>(
@@ -286,7 +313,13 @@ export const array = <E extends CHType<string, any, any>>(e: E): CHArray<E> =>
 	chType("Array", `Array(${e.sql})`, Schema.Array(e.schema), undefined, e) as CHArray<E>
 
 export const nullable = <T extends CHType<string, any, any>>(t: T): CHNullable<T> =>
-	chType("Nullable", `Nullable(${t.sql})`, Schema.NullOr(t.schema), undefined, t) as CHNullable<T>
+	chType(
+		"Nullable",
+		`Nullable(${t.sql})`,
+		Schema.NullOr(t.schema),
+		Schema.NullOr(t.literalSchema),
+		t,
+	) as CHNullable<T>
 
 /**
  * A column type of your own: a ClickHouse type name and the schema its wire

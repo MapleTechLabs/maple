@@ -46,7 +46,7 @@ type Q1Output = InferQueryOutput<typeof q1>
 expectTypeOf<Q1Output>().toEqualTypeOf<{
 	readonly bucket: DateTime.Utc
 	readonly count: number
-	readonly avgScore: number
+	readonly avgScore: number | null
 }>()
 
 // Select — shorthand overload infers Output from column names

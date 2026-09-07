@@ -27,8 +27,9 @@ _(Backed by `docs/joins-and-subqueries.md > Joining a table`.)_
 ### `leftJoin` nullability
 
 `leftJoin` wraps the joined side in `NullableColumnDefs`, so its columns infer as `T | null`
-in the output row. That is the type system telling you the truth about an unmatched row —
-handle it in your `rowSchema` rather than casting it away.
+in the output row. Derived codecs accept NULL when `join_use_nulls=1` and the column
+defaults ClickHouse emits with `join_use_nulls=0`. This applies to `leftJoinQuery` too.
+An explicitly declared `rowSchema` must also accept the nullable joined columns.
 
 ## Joining a subquery
 

@@ -11,6 +11,7 @@
 // the database-wide `max()` is dominated by whichever ephemeral branch spiked.
 // Scoping to a branch is what makes the chart mean anything.
 
+import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { from, fromQuery, param } from "@maple-dev/clickhouse-builder"
 import { MetricsGauge } from "@maple/query-engine/ch/tables"
@@ -68,7 +69,7 @@ const bucketOuter = (inner: ReturnType<typeof timeseriesInner>) =>
 	fromQuery(inner, "points")
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
-			connectionsAvg: CH.avg($.totalConnections),
+			connectionsAvg: finiteOrZero(CH.avg($.totalConnections)),
 			cpuMaxPercent: CH.max_($.cpuMax),
 			memMaxPercent: CH.max_($.memMax),
 			replicaLagMaxSeconds: CH.max_($.lagMax),

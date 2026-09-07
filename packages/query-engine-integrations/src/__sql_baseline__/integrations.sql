@@ -781,10 +781,10 @@ SELECT
 -- builder:cloudflare-infra-extended:cloudflareQueueGaugesSQL:default
 SELECT
           ServiceName AS serviceName,
-          if(countIf(MetricName = 'cloudflare.queue.backlog.messages') > 0, avgIf(Value, MetricName = 'cloudflare.queue.backlog.messages'), 0) AS backlogMessages,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'cloudflare.queue.backlog.messages'), 0), 0) AS backlogMessages,
           maxIf(Value, MetricName = 'cloudflare.queue.backlog.messages') AS backlogMessagesMax,
-          if(countIf(MetricName = 'cloudflare.queue.backlog.bytes') > 0, avgIf(Value, MetricName = 'cloudflare.queue.backlog.bytes'), 0) AS backlogBytes,
-          if(countIf(MetricName = 'cloudflare.queue.consumer.concurrency') > 0, avgIf(Value, MetricName = 'cloudflare.queue.consumer.concurrency'), 0) AS consumerConcurrency
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'cloudflare.queue.backlog.bytes'), 0), 0) AS backlogBytes,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'cloudflare.queue.consumer.concurrency'), 0), 0) AS consumerConcurrency
         FROM metrics_gauge
         WHERE OrgId = 'org_sql_catalog'
           AND MetricName IN ('cloudflare.queue.backlog.messages', 'cloudflare.queue.backlog.bytes', 'cloudflare.queue.consumer.concurrency')
@@ -878,10 +878,10 @@ SELECT
 -- builder:cloudflare-infra:cloudflareWorkerLatencySQL:default
 SELECT
           ServiceName AS serviceName,
-          if(countIf((MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.5')) > 0, avgIf(Value, (MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.5')), 0) AS cpuP50Ms,
-          if(countIf((MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.99')), 0) AS cpuP99Ms,
-          if(countIf((MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.5')) > 0, avgIf(Value, (MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.5')), 0) AS durationP50Ms,
-          if(countIf((MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.99')), 0) AS durationP99Ms
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.5')), 0), 0) AS cpuP50Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.99')), 0), 0) AS cpuP99Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.5')), 0), 0) AS durationP50Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.99')), 0), 0) AS durationP99Ms
         FROM metrics_gauge
         WHERE OrgId = 'org_sql_catalog'
           AND MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time')
@@ -947,12 +947,12 @@ SELECT
 -- builder:cloudflare-infra:cloudflareZoneLatencySQL:default
 SELECT
           ServiceName AS serviceName,
-          if(countIf((MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.5')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.5')), 0) AS ttfbP50Ms,
-          if(countIf((MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.95')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.95')), 0) AS ttfbP95Ms,
-          if(countIf((MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.99')), 0) AS ttfbP99Ms,
-          if(countIf((MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.5')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.5')), 0) AS originP50Ms,
-          if(countIf((MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.95')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.95')), 0) AS originP95Ms,
-          if(countIf((MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.99')), 0) AS originP99Ms
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.5')), 0), 0) AS ttfbP50Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.95')), 0), 0) AS ttfbP95Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.99')), 0), 0) AS ttfbP99Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.5')), 0), 0) AS originP50Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.95')), 0), 0) AS originP95Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.99')), 0), 0) AS originP99Ms
         FROM metrics_gauge
         WHERE OrgId = 'org_sql_catalog'
           AND MetricName IN ('cloudflare.http.edge.ttfb', 'cloudflare.http.origin.duration')
@@ -965,12 +965,12 @@ SELECT
 -- builder:cloudflare-infra:cloudflareZoneLatencyTimeseriesSQL:default
 SELECT
           formatDateTime(toStartOfInterval(TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
-          if(countIf((MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.5')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.5')), 0) AS ttfbP50Ms,
-          if(countIf((MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.95')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.95')), 0) AS ttfbP95Ms,
-          if(countIf((MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.99')), 0) AS ttfbP99Ms,
-          if(countIf((MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.5')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.5')), 0) AS originP50Ms,
-          if(countIf((MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.95')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.95')), 0) AS originP95Ms,
-          if(countIf((MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.99')), 0) AS originP99Ms
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.5')), 0), 0) AS ttfbP50Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.95')), 0), 0) AS ttfbP95Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.edge.ttfb' AND Attributes['quantile'] = '0.99')), 0), 0) AS ttfbP99Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.5')), 0), 0) AS originP50Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.95')), 0), 0) AS originP95Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.http.origin.duration' AND Attributes['quantile'] = '0.99')), 0), 0) AS originP99Ms
         FROM metrics_gauge
         WHERE OrgId = 'org_sql_catalog'
           AND ServiceName = 'cloudflare-zone-example-com'
@@ -1069,8 +1069,8 @@ SELECT
 -- builder:cloudflare-map:cloudflareServiceLatencySQL:default
 SELECT
           ServiceName AS serviceName,
-          if(countIf((MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.99')), 0) AS latencyP99Ms,
-          if(countIf((MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.99')) > 0, avgIf(Value, (MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.99')), 0) AS cpuP99Ms
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.worker.duration' AND Attributes['quantile'] = '0.99')), 0), 0) AS latencyP99Ms,
+          ifNull(ifNotFinite(avgIf(Value, (MetricName = 'cloudflare.worker.cpu_time' AND Attributes['quantile'] = '0.99')), 0), 0) AS cpuP99Ms
         FROM metrics_gauge
         WHERE OrgId = 'org_sql_catalog'
           AND MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time')
@@ -1114,9 +1114,9 @@ SELECT
           any(SpanAttributes['query.profile']) AS profile,
           any(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])) AS sampleSql,
           count() AS sampleCount,
-          quantile(0.5)(Duration) / 1000000 AS p50DurationMs,
-          quantile(0.95)(Duration) / 1000000 AS p95DurationMs,
-          quantile(0.99)(Duration) / 1000000 AS p99DurationMs,
+          ifNull(ifNotFinite(quantile(0.5)(Duration) / 1000000, 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(Duration) / 1000000, 0), 0) AS p95DurationMs,
+          ifNull(ifNotFinite(quantile(0.99)(Duration) / 1000000, 0), 0) AS p99DurationMs,
           max(Duration) / 1000000 AS maxDurationMs
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
@@ -1132,7 +1132,7 @@ SELECT
 -- builder:planetscale-infra:planetscaleBranchInfraTimeseriesSQL:default
 SELECT
           toStartOfInterval(t, INTERVAL 300 SECOND) AS bucket,
-          avg(totalConnections) AS connectionsAvg,
+          ifNull(ifNotFinite(avg(totalConnections), 0), 0) AS connectionsAvg,
           max(cpuMax) AS cpuMaxPercent,
           max(memMax) AS memMaxPercent,
           max(lagMax) AS replicaLagMaxSeconds,
@@ -1163,7 +1163,7 @@ SELECT
 -- builder:planetscale-infra:planetscaleInfraTimeseriesSQL:default
 SELECT
           toStartOfInterval(t, INTERVAL 300 SECOND) AS bucket,
-          avg(totalConnections) AS connectionsAvg,
+          ifNull(ifNotFinite(avg(totalConnections), 0), 0) AS connectionsAvg,
           max(cpuMax) AS cpuMaxPercent,
           max(memMax) AS memMaxPercent,
           max(lagMax) AS replicaLagMaxSeconds,
@@ -1194,7 +1194,7 @@ SELECT
 SELECT
           database AS database,
           branch AS branch,
-          avg(totalConnections) AS connectionsAvg,
+          ifNull(ifNotFinite(avg(totalConnections), 0), 0) AS connectionsAvg,
           max(totalConnections) AS connectionsMax
         FROM (SELECT
           coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) AS database,
@@ -1256,7 +1256,7 @@ SELECT
 -- builder:planetscale-map:planetscaleConnectionsSQL:default
 SELECT
           database AS database,
-          avg(totalConnections) AS connectionsAvg,
+          ifNull(ifNotFinite(avg(totalConnections), 0), 0) AS connectionsAvg,
           max(totalConnections) AS connectionsMax
         FROM (SELECT
           coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) AS database,

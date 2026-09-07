@@ -115,3 +115,7 @@ CH.from(Events, "e") // FROM events AS e, columns emit as e.Name
 ```
 
 See [Joins and subqueries](./joins-and-subqueries.md).
+
+`T.dateTime64` preserves milliseconds when encoding `Date`/`DateTime.Utc` comparison bounds
+and decoded rows. JavaScript timestamps have millisecond precision; use `T.dateTime64String`
+when forwarding microseconds or nanoseconds unchanged. `T.dateTime` encodes whole seconds.

@@ -95,7 +95,7 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
--- builder:containers:containerCountersSummaryQuery:default  [6bbc043d]
+-- builder:containers:containerCountersSummaryQuery:default  [2f09a107]
 SELECT
           avg(memoryBytesAvg) AS memoryBytesAvg,
           max(memoryLimitBytes) AS memoryLimitBytes,
@@ -103,10 +103,10 @@ SELECT
           avg(pidsAvg) AS pidsAvg
         FROM (SELECT
           ResourceAttributes['host.name'] AS hostName,
-          ifNotFinite(avgIf(Value, MetricName = 'container.memory.usage.total'), 0) AS memoryBytesAvg,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.memory.usage.total'), 0), 0) AS memoryBytesAvg,
           ifNotFinite(maxIf(Value, MetricName = 'container.memory.usage.limit'), 0) AS memoryLimitBytes,
           ifNotFinite(maxIf(Value, MetricName = 'container.restarts') - minIf(Value, MetricName = 'container.restarts'), 0) AS restartsDelta,
-          ifNotFinite(avgIf(Value, MetricName = 'container.pids.count'), 0) AS pidsAvg
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.pids.count'), 0), 0) AS pidsAvg
         FROM metrics_sum
         WHERE OrgId = 'org_sql_catalog'
           AND TimeUnix >= '2026-01-01 10:30:00'
@@ -118,7 +118,7 @@ SELECT
         GROUP BY hostName) AS hosts
         FORMAT JSON
 
--- builder:containers:containerDetailSummaryQuery:default  [58383940]
+-- builder:containers:containerDetailSummaryQuery:default  [e3e8c874]
 SELECT
           ResourceAttributes['container.name'] AS containerName,
           any(ResourceAttributes['host.name']) AS hostName,
@@ -129,9 +129,9 @@ SELECT
           any(coalesce(nullIf(ResourceAttributes['container.runtime.name'], ''), ResourceAttributes['container.runtime'])) AS runtime,
           min(TimeUnix) AS firstSeen,
           max(TimeUnix) AS lastSeen,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPct,
-          ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPct,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0) AS cpuLimitCores,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0), 0) / 100 AS memoryPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0), 0) AS cpuLimitCores,
           ifNotFinite(maxIf(Value, MetricName = 'container.uptime'), 0) AS uptimeSeconds
         FROM metrics_gauge
         WHERE OrgId = 'org_sql_catalog'
@@ -323,7 +323,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:containers:listContainersQuery:default  [df58f91f]
+-- builder:containers:listContainersQuery:default  [c0d1ff29]
 SELECT
           containerName AS containerName,
           hostName AS hostName,
@@ -351,11 +351,11 @@ SELECT
           any(coalesce(nullIf(ResourceAttributes['container.runtime.name'], ''), ResourceAttributes['container.runtime'])) AS runtime,
           any(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment'])) AS environment,
           max(TimeUnix) AS lastSeen,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPct,
-          ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0), 0) / 100 AS memoryPct,
           ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPctPeak,
           ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPctPeak,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0) AS cpuLimitCores,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0), 0) AS cpuLimitCores,
           ifNotFinite(maxIf(Value, MetricName = 'container.uptime'), 0) AS uptimeSeconds,
           greatest(ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100, ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100) AS saturation
         FROM metrics_gauge
@@ -371,7 +371,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:containers:listContainersQuery:filtered  [16c1f98d]
+-- builder:containers:listContainersQuery:filtered  [5333cd27]
 SELECT
           containerName AS containerName,
           hostName AS hostName,
@@ -399,11 +399,11 @@ SELECT
           any(coalesce(nullIf(ResourceAttributes['container.runtime.name'], ''), ResourceAttributes['container.runtime'])) AS runtime,
           any(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment'])) AS environment,
           max(TimeUnix) AS lastSeen,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPct,
-          ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0), 0) / 100 AS memoryPct,
           ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPctPeak,
           ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPctPeak,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0) AS cpuLimitCores,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0), 0) AS cpuLimitCores,
           ifNotFinite(maxIf(Value, MetricName = 'container.uptime'), 0) AS uptimeSeconds,
           greatest(ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100, ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100) AS saturation
         FROM metrics_gauge
@@ -424,7 +424,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:containers:listContainersQuery:scoped  [34d4c009]
+-- builder:containers:listContainersQuery:scoped  [5a6582b7]
 SELECT
           containerName AS containerName,
           hostName AS hostName,
@@ -452,11 +452,11 @@ SELECT
           any(coalesce(nullIf(ResourceAttributes['container.runtime.name'], ''), ResourceAttributes['container.runtime'])) AS runtime,
           any(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment'])) AS environment,
           max(TimeUnix) AS lastSeen,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPct,
-          ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.memory.percent'), 0), 0) / 100 AS memoryPct,
           ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPctPeak,
           ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPctPeak,
-          ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0) AS cpuLimitCores,
+          ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.limit'), 0), 0) AS cpuLimitCores,
           ifNotFinite(maxIf(Value, MetricName = 'container.uptime'), 0) AS uptimeSeconds,
           greatest(ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100, ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100) AS saturation
         FROM metrics_gauge
@@ -2061,14 +2061,14 @@ SELECT
         GROUP BY hourTs
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesForServiceQuery:default  [7adb3fed]
+-- builder:service-map:serviceDbEdgesForServiceQuery:default  [1c14b132]
 SELECT
           sourceService AS sourceService,
           dbSystem AS dbSystem,
           dbNamespace AS dbNamespace,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           if(sum(bucketCallCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bucketDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
@@ -2116,14 +2116,14 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesSQL:default  [e06f1809]
+-- builder:service-map:serviceDbEdgesSQL:default  [05e514a0]
 SELECT
           sourceService AS sourceService,
           dbSystem AS dbSystem,
           dbNamespace AS dbNamespace,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           if(sum(bucketCallCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bucketDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
@@ -2170,14 +2170,14 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesSQL:env-scoped  [64270f13]
+-- builder:service-map:serviceDbEdgesSQL:env-scoped  [44783be6]
 SELECT
           sourceService AS sourceService,
           dbSystem AS dbSystem,
           dbNamespace AS dbNamespace,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           if(sum(bucketCallCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bucketDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
@@ -2441,13 +2441,13 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesForServiceQuery:default  [1a386155]
+-- builder:service-map:serviceDependenciesForServiceQuery:default  [8aa4cfbe]
 SELECT
           sourceService AS sourceService,
           targetService AS targetService,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
         FROM (
@@ -2508,13 +2508,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:default  [d0522185]
+-- builder:service-map:serviceDependenciesSQL:default  [9703b8d6]
 SELECT
           sourceService AS sourceService,
           targetService AS targetService,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
         FROM (
@@ -2573,13 +2573,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:env-scoped  [89695720]
+-- builder:service-map:serviceDependenciesSQL:env-scoped  [ca12135f]
 SELECT
           sourceService AS sourceService,
           targetService AS targetService,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
         FROM (
@@ -2641,7 +2641,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:default  [1709b03d]
+-- builder:service-map:serviceExternalEdgesSQL:default  [bf9cb394]
 SELECT
           sourceService AS sourceService,
           targetType AS targetType,
@@ -2649,7 +2649,7 @@ SELECT
           targetName AS targetName,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           if(sum(bucketCallCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bucketDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
@@ -2710,7 +2710,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:env-scoped  [f137812a]
+-- builder:service-map:serviceExternalEdgesSQL:env-scoped  [d8f6ef2b]
 SELECT
           sourceService AS sourceService,
           targetType AS targetType,
@@ -2718,7 +2718,7 @@ SELECT
           targetName AS targetName,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           if(sum(bucketCallCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bucketDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
@@ -3313,7 +3313,7 @@ SELECT
         LIMIT 40
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:default  [028f5de8]
+-- builder:session-replays:sessionReplaysFacetsQuery:default  [9324b0b8]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -3393,7 +3393,7 @@ SELECT
 UNION ALL
 SELECT
           'p50' AS name,
-          toUInt64(ifNotFinite(round(quantile(0.5)(assumeNotNull(DurationMs))), 0)) AS count,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.5)(assumeNotNull(DurationMs))), 0), 0)) AS count,
           'durationStat' AS facetType
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
@@ -3403,7 +3403,7 @@ SELECT
 UNION ALL
 SELECT
           'p95' AS name,
-          toUInt64(ifNotFinite(round(quantile(0.95)(assumeNotNull(DurationMs))), 0)) AS count,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.95)(assumeNotNull(DurationMs))), 0), 0)) AS count,
           'durationStat' AS facetType
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
@@ -3422,7 +3422,7 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [92d30094]
+-- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [c57d1482]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -3513,7 +3513,7 @@ SELECT
 UNION ALL
 SELECT
           'p50' AS name,
-          toUInt64(ifNotFinite(round(quantile(0.5)(assumeNotNull(DurationMs))), 0)) AS count,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.5)(assumeNotNull(DurationMs))), 0), 0)) AS count,
           'durationStat' AS facetType
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
@@ -3525,7 +3525,7 @@ SELECT
 UNION ALL
 SELECT
           'p95' AS name,
-          toUInt64(ifNotFinite(round(quantile(0.95)(assumeNotNull(DurationMs))), 0)) AS count,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.95)(assumeNotNull(DurationMs))), 0), 0)) AS count,
           'durationStat' AS facetType
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
@@ -5413,7 +5413,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default  [9a0359fc]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default  [d8e6f91a]
 SELECT
           uniqIf(VisitorId, VisitorId != '') AS visitors,
           uniq(SessionId) AS sessions,
@@ -5421,14 +5421,14 @@ SELECT
           uniqIf(SessionId, VisitorId != '') - uniqIf(SessionId, (PageViews > 1 AND VisitorId != '')) AS bouncedSessions,
           uniqIf(SessionId, VisitorId != '') AS identifiedSessions,
           uniqIf(SessionId, multiSearchAnyCaseInsensitive(UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
-          round(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0)) AS avgDurationMs
+          round(ifNull(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
           AND StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [9a0359fc]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [d8e6f91a]
 SELECT
           uniqIf(VisitorId, VisitorId != '') AS visitors,
           uniq(SessionId) AS sessions,
@@ -5436,14 +5436,14 @@ SELECT
           uniqIf(SessionId, VisitorId != '') - uniqIf(SessionId, (PageViews > 1 AND VisitorId != '')) AS bouncedSessions,
           uniqIf(SessionId, VisitorId != '') AS identifiedSessions,
           uniqIf(SessionId, multiSearchAnyCaseInsensitive(UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
-          round(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0)) AS avgDurationMs
+          round(ifNull(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
           AND StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [7be4ede6]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [ce7da488]
 SELECT
           uniqIf(VisitorId, VisitorId != '') AS visitors,
           uniq(SessionId) AS sessions,
@@ -5451,7 +5451,7 @@ SELECT
           uniqIf(SessionId, VisitorId != '') - uniqIf(SessionId, (PageViews > 1 AND VisitorId != '')) AS bouncedSessions,
           uniqIf(SessionId, VisitorId != '') AS identifiedSessions,
           uniqIf(SessionId, multiSearchAnyCaseInsensitive(UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
-          round(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0)) AS avgDurationMs
+          round(ifNull(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -5487,7 +5487,7 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [81474d1b]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [f02606d1]
 SELECT
           uniqIf(VisitorId, VisitorId != '') AS visitors,
           uniq(SessionId) AS sessions,
@@ -5495,7 +5495,7 @@ SELECT
           uniqIf(SessionId, VisitorId != '') - uniqIf(SessionId, (PageViews > 1 AND VisitorId != '')) AS bouncedSessions,
           uniqIf(SessionId, VisitorId != '') AS identifiedSessions,
           uniqIf(SessionId, multiSearchAnyCaseInsensitive(UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
-          round(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0)) AS avgDurationMs
+          round(ifNull(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -5531,7 +5531,7 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [7ac5c3d6]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [4727ab34]
 SELECT
           toStartOfInterval(StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(VisitorId, VisitorId != '') AS visitors,
@@ -5539,7 +5539,7 @@ SELECT
           uniqIf(SessionId, VisitorIsNew = 1) AS newSessions,
           uniqIf(SessionId, VisitorId != '') - uniqIf(SessionId, (PageViews > 1 AND VisitorId != '')) AS bouncedSessions,
           uniqIf(SessionId, VisitorId != '') AS identifiedSessions,
-          round(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0)) AS avgDurationMs
+          round(ifNull(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -5548,7 +5548,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [7ac5c3d6]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [4727ab34]
 SELECT
           toStartOfInterval(StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(VisitorId, VisitorId != '') AS visitors,
@@ -5556,7 +5556,7 @@ SELECT
           uniqIf(SessionId, VisitorIsNew = 1) AS newSessions,
           uniqIf(SessionId, VisitorId != '') - uniqIf(SessionId, (PageViews > 1 AND VisitorId != '')) AS bouncedSessions,
           uniqIf(SessionId, VisitorId != '') AS identifiedSessions,
-          round(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0)) AS avgDurationMs
+          round(ifNull(ifNotFinite(avgIf(assumeNotNull(DurationMs), DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= '2026-01-01 10:30:00'
@@ -6056,12 +6056,12 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:error_rate_by_service:default:baseline  [915de03d]
+-- pipe:error_rate_by_service:default:baseline  [210e22cc]
 SELECT
           serviceName AS serviceName,
           sum(bucketTotalLogs) AS totalLogs,
           sum(bucketErrorLogs) AS errorLogs,
-          round(sum(bucketErrorLogs) / sum(bucketTotalLogs), 6) AS errorRate
+          ifNull(ifNotFinite(round(sum(bucketErrorLogs) / sum(bucketTotalLogs), 6), 0), 0) AS errorRate
         FROM (
 SELECT
           ServiceName AS serviceName,
@@ -6201,11 +6201,11 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- pipe:errors_summary:default:baseline  [e28ab64c]
+-- pipe:errors_summary:default:baseline  [49a76169]
 SELECT
           e.totalErrors AS totalErrors,
           s.totalSpans AS totalSpans,
-          if(s.totalSpans > 0, round(e.totalErrors / s.totalSpans, 6), 0) AS errorRate,
+          ifNull(ifNotFinite(round(e.totalErrors / s.totalSpans, 6), 0), 0) AS errorRate,
           e.affectedServicesCount AS affectedServicesCount,
           e.affectedTracesCount AS affectedTracesCount
         FROM (SELECT
@@ -7515,13 +7515,13 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- pipe:service_dependencies:default:baseline  [89695720]
+-- pipe:service_dependencies:default:baseline  [ca12135f]
 SELECT
           sourceService AS sourceService,
           targetService AS targetService,
           sum(bucketCallCount) AS callCount,
           sum(bucketErrorCount) AS errorCount,
-          sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+          ifNull(ifNotFinite(sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0), 0), 0) AS avgDurationMs,
           max(bucketMaxDurationMs) AS maxDurationMs,
           sum(bucketEstimatedSpanCount) AS estimatedSpanCount
         FROM (
@@ -8648,10 +8648,10 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:top_operations:default:baseline  [af24600b]
+-- pipe:top_operations:default:baseline  [6284a616]
 SELECT
           SpanName AS name,
-          quantile(0.95)(Duration) / 1000000 AS value
+          ifNull(ifNotFinite(quantile(0.95)(Duration) / 1000000, 0), 0) AS value
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
           AND ServiceName = 'api'
@@ -8662,12 +8662,12 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:traces_duration_stats:default:baseline  [cc9afeb5]
+-- pipe:traces_duration_stats:default:baseline  [dc834b4b]
 SELECT
           min(Duration) / 1000000 AS minDurationMs,
           max(Duration) / 1000000 AS maxDurationMs,
-          quantile(0.5)(Duration) / 1000000 AS p50DurationMs,
-          quantile(0.95)(Duration) / 1000000 AS p95DurationMs
+          ifNull(ifNotFinite(quantile(0.5)(Duration) / 1000000, 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(Duration) / 1000000, 0), 0) AS p95DurationMs
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -10047,10 +10047,10 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [35b2dc2d]
+-- spec:metrics-breakdown:baseline  [a0c39163]
 SELECT
           ServiceName AS name,
-          if(sum(Count) > 0, sum(Sum) / sum(Count), 0) AS avgValue,
+          ifNull(ifNotFinite(sum(Sum) / sum(Count), 0), 0) AS avgValue,
           sum(Sum) AS sumValue,
           sum(Count) AS count
         FROM metrics_histogram
@@ -10063,11 +10063,11 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- spec:metrics-sparklines:baseline  [377afd48]
+-- spec:metrics-sparklines:baseline  [8e54e769]
 SELECT
           toStartOfInterval(TimeUnix, INTERVAL 3600 SECOND) AS bucket,
           MetricName AS metricName,
-          avg(Value) AS avgValue,
+          ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue,
           sum(Value) AS sumValue,
           count() AS dataPointCount
         FROM metrics_sum
@@ -10079,13 +10079,13 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-attribute:baseline  [7f18f69a]
+-- spec:metrics-timeseries-grouped-by-attribute:baseline  [e9d0e250]
 SELECT
           toStartOfInterval(TimeUnix, INTERVAL 300 SECOND) AS bucket,
           ServiceName AS serviceName,
           Attributes['http.route'] AS attributeValue,
           Attributes['http.route'] AS groupName,
-          if(sum(Count) > 0, sum(Sum) / sum(Count), 0) AS avgValue,
+          ifNull(ifNotFinite(sum(Sum) / sum(Count), 0), 0) AS avgValue,
           ifNull(min(Min), 0) AS minValue,
           ifNull(max(Max), 0) AS maxValue,
           sum(Sum) AS sumValue,
@@ -10100,13 +10100,13 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-resource:baseline  [c0ea8282]
+-- spec:metrics-timeseries-grouped-by-resource:baseline  [aba4d1c8]
 SELECT
           toStartOfInterval(TimeUnix, INTERVAL 300 SECOND) AS bucket,
           ServiceName AS serviceName,
           ResourceAttributes['host.name'] AS attributeValue,
           ResourceAttributes['host.name'] AS groupName,
-          if(sum(Count) > 0, sum(Sum) / sum(Count), 0) AS avgValue,
+          ifNull(ifNotFinite(sum(Sum) / sum(Count), 0), 0) AS avgValue,
           ifNull(min(Min), 0) AS minValue,
           ifNull(max(Max), 0) AS maxValue,
           sum(Sum) AS sumValue,
@@ -10121,7 +10121,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [bc6c3438]
+-- spec:metrics-timeseries-rate:baseline  [2197c241]
 WITH with_deltas AS (
 SELECT
           TimeUnix AS TimeUnix,
@@ -10143,7 +10143,7 @@ SELECT
           ServiceName AS serviceName,
           '' AS attributeValue,
           ServiceName AS groupName,
-          sumIf(delta / time_delta, (delta >= 0 AND time_delta > 0)) AS rateValue,
+          ifNull(ifNotFinite(sumIf(delta / time_delta, (delta >= 0 AND time_delta > 0)), 0), 0) AS rateValue,
           sumIf(delta, delta >= 0) AS increaseValue,
           count() AS dataPointCount
         FROM with_deltas
@@ -10152,13 +10152,13 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries:baseline  [8a2c3b82]
+-- spec:metrics-timeseries:baseline  [e0eb6444]
 SELECT
           toStartOfInterval(TimeUnix, INTERVAL 3600 SECOND) AS bucket,
           ServiceName AS serviceName,
           '' AS attributeValue,
           ServiceName AS groupName,
-          if(sum(Count) > 0, sum(Sum) / sum(Count), 0) AS avgValue,
+          ifNull(ifNotFinite(sum(Sum) / sum(Count), 0), 0) AS avgValue,
           ifNull(min(Min), 0) AS minValue,
           ifNull(max(Max), 0) AS maxValue,
           sum(Sum) AS sumValue,
@@ -11184,12 +11184,12 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-stats:baseline  [e90761b3]
+-- spec:traces-stats:baseline  [333e79e5]
 SELECT
           min(Duration) / 1000000 AS minDurationMs,
           max(Duration) / 1000000 AS maxDurationMs,
-          quantile(0.5)(Duration) / 1000000 AS p50DurationMs,
-          quantile(0.95)(Duration) / 1000000 AS p95DurationMs
+          ifNull(ifNotFinite(quantile(0.5)(Duration) / 1000000, 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(Duration) / 1000000, 0), 0) AS p95DurationMs
         FROM trace_list_mv
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'

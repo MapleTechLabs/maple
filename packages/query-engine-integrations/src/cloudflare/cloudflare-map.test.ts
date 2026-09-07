@@ -38,7 +38,7 @@ describe("cloudflareServiceLatencySQL", () => {
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time')")
 		expect(sql).toContain("quantile'] = '0.99'")
-		expect(sql).toContain("if(countIf(")
+		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).not.toContain("cloudflare.http.edge.ttfb")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("FORMAT JSON")
