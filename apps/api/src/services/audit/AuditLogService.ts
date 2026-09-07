@@ -6,8 +6,7 @@ import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import type { Queue } from "@cloudflare/workers-types"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { AuditEventsQueueProducer } from "@/platform/bindings"
 import { warehouseDateTime64 } from "@maple/query-engine/datetime"
 import { systemTenant } from "@/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@/services/auth/audit-actor"
@@ -34,7 +33,6 @@ class AuditQueueSendError extends Schema.TaggedError<AuditQueueSendError>()(
 ) {}
 
 /** Producer binding name; the paired `*_NAME` var drives consumer dispatch. */
-export const AUDIT_EVENTS_QUEUE_BINDING = "AUDIT_EVENTS_QUEUE"
 
 /** The warehouse datasource every audit entry lands in. */
 export const AUDIT_LOG_DATASOURCE = "audit_log"
@@ -162,7 +160,9 @@ const logDenied = (event: AuditLogEvent) =>
 const neverFail = (action: string) => (write: Effect.Effect<void, unknown>) =>
 	write.pipe(
 		Effect.catch((error) => Effect.logWarning("Audit log write failed", { action, cause: error })),
-		Effect.catchDefect((defect) => Effect.logWarning("Audit log write failed", { action, cause: defect })),
+		Effect.catchDefect((defect) =>
+			Effect.logWarning("Audit log write failed", { action, cause: defect }),
+		),
 	)
 
 /** Which optional filters bind, and the parameter values behind them. */
@@ -210,17 +210,9 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
-			// Optional so tests and non-Worker runtimes fall back to direct writes
-			// without providing a WorkerEnvironment.
-			const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-			const queue = Option.match(workerEnv, {
-				onNone: () => undefined,
-				onSome: (env) => {
-					const binding = env[AUDIT_EVENTS_QUEUE_BINDING]
-					// SAFETY: the binding slot is owned by this service; anything present is the queue.
-					return binding === undefined ? undefined : (binding as Queue<unknown>)
-				},
-			})
+			// Optional so tests and hosts without the queue (the alerting Worker,
+			// the CLI) fall back to direct writes.
+			const queue = yield* Effect.serviceOption(AuditEventsQueueProducer)
 
 			// One row through the managed ingest pipeline. `ingest` is pinned to
 			// Tinybird regardless of the org's read backend, which is the point:
@@ -251,61 +243,64 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			 * serving a response.
 			 */
 			const publish = (event: AuditLogEvent) =>
-				queue === undefined
+				Option.isNone(queue)
 					? writeDirect(event)
-					: Effect.tryPromise({
-							try: () => queue.send(encodeAuditLogEventSync(event)),
-							catch: (cause) =>
-								new AuditQueueSendError({ message: "Audit queue send failed", cause }),
-						}).pipe(
+					: queue.value.send(encodeAuditLogEventSync(event)).pipe(
+							Effect.mapError(
+								(cause) =>
+									new AuditQueueSendError({ message: "Audit queue send failed", cause }),
+							),
 							// A Queues brown-out that stalls rather than rejects must not
 							// hang the response: 2s is far above a healthy send's latency
 							// yet bounds the worst case.
 							Effect.timeout(AUDIT_QUEUE_SEND_TIMEOUT),
 							Effect.catchTag("TimeoutError", (error) =>
 								Effect.fail(
-									new AuditQueueSendError({ message: "Audit queue send timed out", cause: error }),
+									new AuditQueueSendError({
+										message: "Audit queue send timed out",
+										cause: error,
+									}),
 								),
 							),
 						)
 
-			const record: AuditLogServiceApi["record"] = Effect.fn("AuditLogService.record")(function* (
-				input,
-			) {
-				const now = yield* Clock.currentTimeMillis
-				const event = makeEvent(input, now)
-				yield* logDenied(event)
-				yield* publish(event).pipe(neverFail(input.action))
-			})
+			const record: AuditLogServiceApi["record"] = Effect.fn("AuditLogService.record")(
+				function* (input) {
+					const now = yield* Clock.currentTimeMillis
+					const event = makeEvent(input, now)
+					yield* logDenied(event)
+					yield* publish(event).pipe(neverFail(input.action))
+				},
+			)
 
-			const list: AuditLogServiceApi["list"] = Effect.fn("AuditLogService.list")(function* (
-				orgId,
-				filters,
-			) {
-				const { opts, values } = listQueryInputs(orgId, filters)
-				const rows = yield* warehouse
-					.compiledQuery(
-						systemTenant(orgId),
-						CH.compile(CH.auditLogEntriesQuery(opts), values),
-						{ profile: "list", context: "auditLog.list" },
-					)
-					.pipe(Effect.mapError(toPersistenceError))
-				const entries = yield* Effect.forEach(rows, (row) =>
-					decodeStoredAuditLogEntry(row).pipe(
-						Effect.map((decoded) => storedRowToEntry(orgId, decoded)),
-						Effect.mapError((error) =>
-							new AuditLogPersistenceError({
-								message: "Stored audit entry failed to decode",
-								cause: error,
-							}),
+			const list: AuditLogServiceApi["list"] = Effect.fn("AuditLogService.list")(
+				function* (orgId, filters) {
+					const { opts, values } = listQueryInputs(orgId, filters)
+					const rows = yield* warehouse
+						.compiledQuery(
+							systemTenant(orgId),
+							CH.compile(CH.auditLogEntriesQuery(opts), values),
+							{ profile: "list", context: "auditLog.list" },
+						)
+						.pipe(Effect.mapError(toPersistenceError))
+					const entries = yield* Effect.forEach(rows, (row) =>
+						decodeStoredAuditLogEntry(row).pipe(
+							Effect.map((decoded) => storedRowToEntry(orgId, decoded)),
+							Effect.mapError(
+								(error) =>
+									new AuditLogPersistenceError({
+										message: "Stored audit entry failed to decode",
+										cause: error,
+									}),
+							),
 						),
-					),
-				)
-				// A redelivered event the ReplacingMergeTree has not merged yet is
-				// the same entry twice; one copy is enough.
-				const seen = new Set<string>()
-				return entries.filter((entry) => !seen.has(entry.id) && seen.add(entry.id) !== undefined)
-			})
+					)
+					// A redelivered event the ReplacingMergeTree has not merged yet is
+					// the same entry twice; one copy is enough.
+					const seen = new Set<string>()
+					return entries.filter((entry) => !seen.has(entry.id) && seen.add(entry.id) !== undefined)
+				},
+			)
 
 			return { record, list }
 		}),
@@ -355,7 +350,8 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 				)
 				.sort(
 					(a, b) =>
-						b.occurredAt.getTime() - a.occurredAt.getTime() || (b.id < a.id ? -1 : b.id > a.id ? 1 : 0),
+						b.occurredAt.getTime() - a.occurredAt.getTime() ||
+						(b.id < a.id ? -1 : b.id > a.id ? 1 : 0),
 				)
 				.slice(filters.offset, filters.offset + filters.limit),
 		)

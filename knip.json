@@ -29,7 +29,6 @@
 			// import off the CLI's --suite argument), so knip cannot see the edge.
 			"entry": [
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"autumn.config.ts",
 				"scripts/cold-path/*.mjs",
 				"scripts/bench-suites/*.ts"

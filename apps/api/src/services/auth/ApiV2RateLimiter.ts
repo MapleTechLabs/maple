@@ -1,17 +1,11 @@
 import type { ApiKeyId } from "@maple/domain/http"
-import { Context, Effect, Layer, Schema } from "effect"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { Context, Effect, Layer, Option } from "effect"
+import { ApiV2RateLimit, type RateLimiter } from "@/platform/bindings"
 
-export const API_V2_RATE_LIMIT_BINDING = "API_V2_RATE_LIMITER"
-export const API_V2_RATE_LIMIT_PARTITION = "API_V2_RATE_LIMIT_PARTITION"
 export const API_V2_RATE_LIMIT_REQUESTS = 600
 export const API_V2_RATE_LIMIT_PERIOD_SECONDS = 60
 
 export type RateLimitOutcome = "allowed" | "limited" | "failed_open"
-
-interface RateLimitBinding {
-	readonly limit: (options: { readonly key: string }) => Promise<{ readonly success: boolean }>
-}
 
 export interface RateLimiterApi {
 	/**
@@ -23,25 +17,6 @@ export interface RateLimiterApi {
 	 * prefix therefore belongs to the caller — see `makeApiV2RateLimitKey`.
 	 */
 	readonly check: (key: string) => Effect.Effect<RateLimitOutcome>
-}
-
-class RateLimitBindingError extends Schema.TaggedError<RateLimitBindingError>()(
-	"@maple/api/services/RateLimitBindingError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-const isRateLimitBinding = (value: unknown): value is RateLimitBinding =>
-	typeof value === "object" &&
-	value !== null &&
-	"limit" in value &&
-	typeof (value as { readonly limit?: unknown }).limit === "function"
-
-const readPartition = (environment: Record<string, unknown>): string | undefined => {
-	const value = environment[API_V2_RATE_LIMIT_PARTITION]
-	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined
 }
 
 export const makeApiV2RateLimitKey = (partition: string, key: string): string => `${partition}:${key}`
@@ -64,8 +39,6 @@ export const shareIpRateLimitKey = (ip: string): string => `shareip:${ip}`
 export const shareOgRateLimitKey = (shareKeyPrefix: string): string => `shareog:${shareKeyPrefix}`
 
 export interface RateLimitCheckConfig {
-	/** `WorkerEnvironment` name of the Cloudflare rate-limit binding to call. */
-	readonly bindingName: string
 	/** Span name for the check, e.g. `"ApiV2RateLimiter.check"`. */
 	readonly spanName: string
 	/** Warn log emitted when the limiter fails open. */
@@ -78,7 +51,7 @@ export interface RateLimitCheckConfig {
  * telemetry, never a silent pass) when the binding or partition is unavailable.
  */
 export const makeRateLimitCheck = (
-	environment: Record<string, unknown>,
+	limiter: Option.Option<RateLimiter>,
 	config: RateLimitCheckConfig,
 ): RateLimiterApi["check"] => {
 	const warnFailedOpen = (
@@ -94,26 +67,18 @@ export const makeRateLimitCheck = (
 		)
 
 	return Effect.fn(config.spanName)(function* (key: string) {
-		const binding = environment[config.bindingName]
-		if (!isRateLimitBinding(binding)) {
+		if (Option.isNone(limiter)) {
 			yield* warnFailedOpen("binding_missing")
 			return "failed_open" as const
 		}
 
-		const partition = readPartition(environment)
+		const partition = limiter.value.partition
 		if (partition === undefined) {
 			yield* warnFailedOpen("partition_missing")
 			return "failed_open" as const
 		}
 
-		return yield* Effect.tryPromise({
-			try: () => binding.limit({ key: makeApiV2RateLimitKey(partition, key) }),
-			catch: (cause) =>
-				new RateLimitBindingError({
-					message: "Cloudflare rate-limit binding call failed",
-					cause,
-				}),
-		}).pipe(
+		return yield* limiter.value.limit(makeApiV2RateLimitKey(partition, key)).pipe(
 			Effect.map(({ success }) => (success ? ("allowed" as const) : ("limited" as const))),
 			Effect.catchTag("@maple/api/services/RateLimitBindingError", (error) =>
 				warnFailedOpen("binding_error", error.cause).pipe(Effect.as<RateLimitOutcome>("failed_open")),
@@ -126,9 +91,8 @@ export class ApiV2RateLimiter extends Context.Service<ApiV2RateLimiter, RateLimi
 	"@maple/api/services/ApiV2RateLimiter",
 	{
 		make: Effect.gen(function* () {
-			const environment = yield* WorkerEnvironment
-			const check = makeRateLimitCheck(environment, {
-				bindingName: API_V2_RATE_LIMIT_BINDING,
+			const limiter = yield* Effect.serviceOption(ApiV2RateLimit)
+			const check = makeRateLimitCheck(limiter, {
 				spanName: "ApiV2RateLimiter.check",
 				failOpenMessage: "API v2 rate limiter unavailable; allowing request",
 			})

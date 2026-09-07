@@ -35,7 +35,6 @@ import * as Acm from "@maple/infra/acm"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import Alerting from "./apps/alerting/src/worker.ts"
-import { createReplayBlobStore } from "./apps/api/alchemy.run.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
@@ -212,19 +211,8 @@ export default Alchemy.Stack(
 		// via a Cloudflare CNAME at the ALB, so the URL below stays a plain string
 		// and does not depend on the service resource; a PR preview gets no ingest
 		// domain, so its ALB answers plain HTTP on 80 at `ingest.serviceUrl`.
-		// Yielded here first for the gateway's write credentials; the api Worker's
-		// props yield the same declaration for its read binding and get this
-		// registration back. `credentials` is undefined on stages that keep replay
-		// payloads inline (`stageEnablesReplayBlobs`).
-		const replayBlobStore = yield* createReplayBlobStore({ stage })
-
 		const ingest = stageDeploysIngest(stage)
-			? yield* createMapleIngest({
-					stage,
-					domains,
-					region,
-					replayBlobs: replayBlobStore.credentials,
-				})
+			? yield* createMapleIngest({ stage, domains, region })
 			: undefined
 
 		// Chat and AI triage run inside the api worker (ChatSession Durable Object),

@@ -13,6 +13,7 @@ import { Telemetry, type TelemetrySdkOptions } from "@maple-dev/alchemy/telemetr
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { WorkerEnvironment } from "alchemy/Cloudflare"
+import * as AlchemyTelemetry from "alchemy/Telemetry"
 import * as Layer from "effect/Layer"
 
 export const MAPLE_REPOSITORY_URL = "https://github.com/MapleTechLabs/maple"
@@ -23,6 +24,13 @@ export interface WorkerTelemetryOptions {
 	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
 	/** Span-name prefixes never exported. */
 	readonly dropSpanNames?: ReadonlyArray<string> | undefined
+	/**
+	 * A layer the bridge builds into every event beside the SDK — the
+	 * references `HttpMiddleware.tracer` reads (`TracerDisabledWhen`, the
+	 * redacted header names), which must sit outside the app graph because the
+	 * bridge's tracer runs outside it.
+	 */
+	readonly eventLayer?: Layer.Layer<never> | undefined
 }
 
 /** The SDK options every Maple Worker uses: `core` namespace, repo URL, anticipated 4xx. */
@@ -38,7 +46,12 @@ export const workerTelemetryConfig = (options: WorkerTelemetryOptions): Telemetr
 })
 
 export const WorkerTelemetry = (options: WorkerTelemetryOptions): Layer.Layer<never> =>
-	Telemetry(workerTelemetryConfig(options))
+	options.eventLayer === undefined
+		? Telemetry(workerTelemetryConfig(options))
+		: Layer.mergeAll(
+				Telemetry(workerTelemetryConfig(options)),
+				AlchemyTelemetry.layer(options.eventLayer),
+			)
 
 /**
  * The SDK under another service name, built into the event it is provided

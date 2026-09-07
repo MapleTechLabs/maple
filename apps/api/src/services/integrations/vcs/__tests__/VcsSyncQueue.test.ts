@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type VcsSyncJob } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { type QueueProducer, QueueSendError, VcsSyncQueueProducer } from "@/platform/bindings"
 import { Effect, Exit, Layer, Tracer } from "effect"
 import {
 	MESSAGING_DESTINATION,
@@ -13,23 +13,22 @@ import { findError } from "./harness"
 
 type CapturedMessage = { readonly body: unknown }
 
-// Fake Cloudflare Queue binding that captures each chunk passed to `sendBatch`.
-// `reject` makes every call throw so the VcsQueueError path can be exercised.
+// Fake queue producer that captures each chunk passed to `sendBatch`.
+// `reject` makes every call fail so the VcsQueueError path can be exercised.
 const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 	const chunks: CapturedMessage[][] = []
-	const binding = {
-		send: async () => {},
-		sendBatch: async (messages: ReadonlyArray<CapturedMessage>) => {
-			if (opts?.reject) throw new Error("simulated queue outage")
-			chunks.push([...messages])
-		},
+	const producer: QueueProducer = {
+		send: () => Effect.void,
+		sendBatch: (messages) =>
+			opts?.reject
+				? Effect.fail(new QueueSendError({ message: "simulated queue outage", cause: undefined }))
+				: Effect.sync(() => {
+						chunks.push([...messages])
+					}),
 	}
-	const layer = Layer.succeed(WorkerEnvironment, { VCS_SYNC_QUEUE: binding })
+	const layer = Layer.succeed(VcsSyncQueueProducer, producer)
 	return { layer, chunks }
 }
-
-// An env with NO queue binding, to exercise the "missing binding" guard.
-const noBindingEnv = () => Layer.succeed(WorkerEnvironment, {})
 
 const chunkSizes = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>): number[] =>
 	chunks.map((c) => c.length)
@@ -87,7 +86,7 @@ const pushJob = (i: number, messageBytes: number): VcsSyncJob => ({
 	],
 })
 
-const provideQueue = (layer: Layer.Layer<WorkerEnvironment>) =>
+const provideQueue = (layer: Layer.Layer<VcsSyncQueueProducer>) =>
 	Effect.provide(VcsSyncQueue.layer.pipe(Layer.provide(layer)))
 
 /** Records every span so the producer span's kind and messaging attributes are assertable. */
@@ -210,17 +209,6 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 })
 
 describe("VcsSyncQueue error paths", () => {
-	it.effect("fails with VcsQueueError when the queue binding is missing", () => {
-		return Effect.gen(function* () {
-			const queue = yield* VcsSyncQueue
-			const exit = yield* Effect.exit(queue.sendBatch([installSyncJob(1)]))
-			assert.ok(Exit.isFailure(exit), "sendBatch fails without a binding")
-			const error = findError(exit)
-			assert.ok(error instanceof VcsQueueError)
-			assert.match(error.message, /Missing queue binding/)
-		}).pipe(provideQueue(noBindingEnv()))
-	})
-
 	it.effect("maps a queue.sendBatch rejection to VcsQueueError", () => {
 		const { layer } = fakeQueueEnv({ reject: true })
 		return Effect.gen(function* () {

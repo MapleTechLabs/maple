@@ -16,7 +16,7 @@ put it here instead. Git blame does not survive a refactor of the line it annota
 - `apps/<app>/src/worker.ts` — a Worker as one module: the alchemy Worker class the root
   yields, whose props are an Effect over `MapleStack`, and the bundle alchemy deploys
   (`api`, `alerting`, `electric-sync`, `landing`, `local-ui`; see "Single-module Workers"
-  below — `api` deploys through `src/entry.ts`, see there).
+  below).
 - `apps/<app>/alchemy.run.ts` — a `create*` factory, only where the Worker still takes
   another resource as an argument (`web`) or the app is not a Worker (`ingest`, `electric`
   on ECS), plus `apps/api/alchemy.run.ts` for the one api resource the ingest gateway
@@ -170,13 +170,27 @@ What each kind of Worker keeps beside the module:
   so `maple-vcs-sync`, `maple-planetscale-webhooks` and `maple-slack-reconcile` keep their
   own service names — background work sharing `maple-api` skewed its p99 to 32s
   (2026-09-04). The layer graphs those events build carry no tracer or logger of their own.
-- **A hand-written entry** (`api`): `main` is `src/entry.ts`, not the module, and the props
-  carry `isExternal` so alchemy bundles that entry as-is. It is alchemy's generated entry
-  written out — `makeWorkerBridge` around the same init, the stack identity read from the
-  env alchemy binds — plus the exports a generated entry cannot carry: the chat Durable
-  Object and the two Workflows are still hand-written classes, and a generated entry
-  re-exports only what alchemy's own forms register. Once those three move to alchemy's
-  forms, delete `entry.ts` and `isExternal` and set `main: import.meta.url`.
+- **Durable Object and Workflows** (`api`): alchemy's Effect-native forms, yielded from the init.
+  `ChatSessionObject` (`src/chat/ChatSession.ts`) is `Cloudflare.DurableObject<Self>()("ChatSession",
+impl)` over the plain `ChatSession` class — the outer Effect resolves state and env (it also runs
+  at plan time against a mock state, so it must not touch storage), the inner one builds the
+  session and returns its methods as Effects, which alchemy's bridge runs per RPC call and hands
+  back as-is. `ClickHouseSchemaApplyWorkflow` and `InvestigationFanoutWorkflow`
+  (`src/workflows/*.ts`) are `Cloudflare.Workflow<Self>()(name, impl)` in the documented shape: the
+  init resolves what the run needs (the fan-out yields `ChatSessionObject` for typed stubs), then
+  returns an `Effect.fn` body. The bodies (`*.run.ts`) are Effects on alchemy's step API —
+  `durableStep` (`src/workflows/durable-step.ts`) is `Cloudflare.Workflows.task` over an Effect
+  whose failure rejects the step, so Cloudflare retries it per config — reading `Database`,
+  `Cloudflare.WorkerEnvironment` and `Cloudflare.WorkflowStep` as services. The class wraps a run
+  in `withPgConnectionScope` + `layerPg` (one Postgres connection per run) and the run's own
+  `eventTelemetry` (`maple-schema-apply`, `maple-investigations`), which flushes when alchemy
+  closes the run's scope. Everything is imported statically: the Worker evaluates in ~80 ms of
+  the 1 s startup-CPU budget on alchemy's bundle (`scripts/bench-startup-cpu.ts`, 2026-09-07).
+  The yield is the whole declaration: the binding (named after the class — `ChatSession`,
+  `ClickHouseSchemaApplyWorkflow`, `InvestigationFanoutWorkflow`, which is what the services read
+  off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
+  `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
+  hand-written entry.
 - **Assets** (`landing`, `local-ui`): the handler reads `Cloudflare.Workers.Request` and
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.
@@ -230,6 +244,42 @@ typecheck (`tsconfig.alchemy.json`) covers electric-sync's runtime graph and nee
 `@maple-dev/effect-sdk` built first and `@maple/electric-sync` installed in the quality
 shard (`ci.yml`). Measured on the pilot (#745, local workerd A/B): +15ms startup CPU
 (41→56ms, budget ~1s), ~+8ms cold first request, ~+0.2ms/request warm.
+
+### The api Worker's layout (2026-09-07)
+
+`apps/api/src/worker.ts` is the composition root only — props plus an init that reads as a
+list of yields. What it composes lives beside it:
+
+- `src/resources/*` — one file per resource the Worker binds, declared at module scope and
+  inert until yielded (`queues.ts`, `mcp-sessions.ts`, `replay-blobs.ts`, `env.ts` for the
+  `Config` catalog). Stage-derived physical names come from `stageNamed` / `stageProps`
+  (`@maple/infra/cloudflare`), which read alchemy's own `Stage` — one of the platform
+  services a Worker's init may require, unlike `MapleStack` — behind the same
+  `__ALCHEMY_RUNTIME__` guard as a Worker's props, because alchemy evaluates a resource's props
+  Effect wherever it is yielded, the bundle included. The ingest factory yields the same
+  `ReplayBlobs` declaration to mint the gateway's writer token; `apps/api/alchemy.run.ts` is
+  gone.
+- `src/worker/*` — the runtime shell: `http.ts` (the lazily built route graph and `fetch`),
+  `rpc.ts`, `crons.ts`, `consumers.ts` (`consumeQueueMessages` over the declarations, so no
+  binding is read back off the host), `events.ts`, `modules.ts` (the dynamic imports), and
+  `bindings.ts`.
+- **Bindings are alchemy capabilities, read as Maple ports.** The init yields
+  `Queues.WriteQueue(VcsSyncQueue)`, `KV.ReadWriteNamespace(McpSessions)`,
+  `R2.ReadBucket(ReplayBlobs)` and the four `Cloudflare.RateLimit(...)`s
+  (`worker/bindings.ts`); each yield attaches the native binding at plan time — under the
+  resource's logical id, so the queue and bucket bindings are `vcs-sync`, `replay-blobs`, … —
+  and resolves it from the env in the isolate. The clients become the ports in
+  `platform/bindings.ts` (`VcsSyncQueueProducer`, `ApiV2RateLimit`, `ReplayBlobBucket`,
+  `McpSessionStore`, …), which is what the services depend on: no service reads a binding off
+  `WorkerEnvironment` by name any more, tests provide fakes, and a host without the binding
+  (alerting, the CLI) provides nothing — the services that can degrade read the port through
+  `Effect.serviceOption`. The clients' methods are colored with alchemy's `RuntimeContext`, a
+  phantom that keeps them out of the init phase; the ports discharge it with
+  `RuntimeContext.phantom`, as alchemy's own runtime helpers do.
+- What stays on `env:`: `AI` (the Gateway resource, read by name by the LLM shim), `MAPLE_DB`
+  on dev stages (stg/prd still `bindMapleDbRef` from the root), the stage partition the rate
+  limiters key under, and `EMAIL` on prd — alchemy's capabilities have no "bound on some
+  stages" form, and the plan/runtime split makes a conditional yield lie on one side.
 
 ## The retired AWS opt-in flag (`MAPLE_DEPLOY_AWS_INGEST`)
 

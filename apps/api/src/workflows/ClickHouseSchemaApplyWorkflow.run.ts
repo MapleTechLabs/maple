@@ -1,20 +1,19 @@
-// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 /**
- * Schema-apply workflow logic (heavy import graph lives here, NOT in the thin
- * class shell, so the worker's module scope stays light — see the dynamic import
- * in `ClickHouseSchemaApplyWorkflow.ts` and the `buildHandler` note in
- * `apps/api/src/worker.ts`).
+ * Schema-apply workflow body, run by the alchemy Workflow class in
+ * `./ClickHouseSchemaApplyWorkflow.ts`, which provides `Database` over one
+ * Postgres connection per run and the run's own telemetry.
  *
  * Runs Maple's ClickHouse migrations against a customer's BYO cluster, splitting
- * each backfill into day-window chunks (one durable `step.do` each) so no single
+ * each backfill into day-window chunks (one durable step each) so no single
  * statement exceeds the Worker subrequest budget. Mirrors the bookkeeping in
  * `OrgClickHouseSettingsService`/`@maple/clickhouse-cli` (`_maple_schema_migrations`)
  * and writes UI progress to `org_clickhouse_schema_apply_runs`.
+ *
+ * Clocks are read inside steps only: the body replays, and a clock read there
+ * would differ on every replay.
  */
 import { createDecipheriv } from "node:crypto"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
-import type { MaplePgClient } from "@maple/db/client"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
 	clickHouseSchemaVersion,
 	clickHouseSchemaFeatures,
@@ -27,20 +26,22 @@ import {
 	performanceOnlySearchColumns,
 	qualifyStatementForDatabase,
 	type ActualTable,
+	type ApplyStep,
 	type DesiredTable,
 } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
+import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
-import { Effect, Layer, Schema } from "effect"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { resolveDbConnectionSource } from "@/platform/pg-connection-source"
-import { makePgConnectionScope, type PgConnectionScopeApi } from "@/platform/pg-connection-scope"
+import { Cause, Clock, Effect, Layer, Option, Schema } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@/platform/CacheBackendLive"
+import { Database, type DatabaseApi, type DatabaseError } from "@/platform/DatabaseLive"
+import { msToDate } from "@/platform/time"
 import {
 	invalidateOrgRuntimeConfigMemo,
 	ORG_CH_CONFIG_CACHE_BUCKET,
 } from "@/services/org/OrgClickHouseSettingsService"
+import { durableStep, type DurableStepConfig } from "./durable-step"
 
 /**
  * Bust the cached runtime config after the workflow writes to
@@ -58,43 +59,17 @@ import {
  * `Effect.ignore` covers the case where this isolate has no Cache API at all.
  * A missed eviction costs an annotation, never a routing decision.
  */
-const bustRuntimeConfigCache = (orgId: OrgId): Promise<void> =>
-	Effect.runPromise(
-		Effect.gen(function* () {
-			invalidateOrgRuntimeConfigMemo(orgId)
-			const cache = yield* EdgeCacheService
-			yield* cache.invalidate({ bucket: ORG_CH_CONFIG_CACHE_BUCKET, key: orgId })
-		}).pipe(
-			// Promise bridge for the standalone workflow isolate; no application
-			// runtime exists here to own this cache layer.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))),
-			Effect.ignore,
-		),
+const bustRuntimeConfigCache = (orgId: OrgId): Effect.Effect<void> =>
+	Effect.gen(function* () {
+		invalidateOrgRuntimeConfigMemo(orgId)
+		const cache = yield* EdgeCacheService
+		yield* cache.invalidate({ bucket: ORG_CH_CONFIG_CACHE_BUCKET, key: orgId })
+	}).pipe(
+		// The workflow isolate has no application runtime to own this cache layer.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))),
+		Effect.ignore,
 	)
-
-/**
- * This workflow runs outside the worker's layer graph, so it owns its telemetry
- * instance and drains it itself.
- * Module scope is safe because the file is only ever dynamically imported from
- * the thin shell in `ClickHouseSchemaApplyWorkflow.ts`, off the startup-CPU path.
- */
-const schemaApplyTelemetry = MapleCloudflareSDK.make({
-	// Deliberately not `maple-api`: background work sharing the request-facing
-	// service's name skewed its percentiles (p99 32s, 2026-09-04).
-	serviceName: "maple-schema-apply",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
-
-/** One unit of DB work, traced as a `Database.execute` client span. */
-type DbStep = <T>(fn: (db: MaplePgClient) => Promise<T>) => Promise<T>
-
-export interface SchemaApplyWorkflowEnv extends Record<string, unknown> {
-	readonly MAPLE_DB: unknown
-	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: string
-}
 
 export interface SchemaApplyWorkflowPayload {
 	readonly orgId: string
@@ -105,23 +80,13 @@ export interface SchemaApplyWorkflowResult {
 	readonly appliedVersions: ReadonlyArray<number>
 }
 
-// Minimal structural views of the Cloudflare Workflow primitives so this module
-// doesn't statically import `cloudflare:workers` (kept to the shell).
-interface StepConfig {
-	readonly retries?: { readonly limit: number; readonly delay: string | number; readonly backoff?: string }
-}
-export interface WorkflowStepLike {
-	do<T>(name: string, callback: () => Promise<T>): Promise<T>
-	do<T>(name: string, config: StepConfig, callback: () => Promise<T>): Promise<T>
-}
-export interface WorkflowEventLike<T> {
-	readonly payload: T
-}
+/** The one secret the run needs, read off alchemy's untyped Worker env. */
+const SchemaApplyEnv = Schema.Struct({ MAPLE_INGEST_KEY_ENCRYPTION_KEY: Schema.String })
 
-interface LoadOptionalFeatureStateOptions {
-	readonly ensureBookkeeping: () => Promise<void>
-	readonly readServerVersion: () => Promise<string>
-	readonly readAppliedFeatureRevisions: () => Promise<ReadonlyMap<string, number>>
+interface LoadOptionalFeatureStateOptions<R> {
+	readonly ensureBookkeeping: Effect.Effect<void, unknown, R>
+	readonly readServerVersion: Effect.Effect<string, unknown, R>
+	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, unknown, R>
 }
 
 export type OptionalFeatureState =
@@ -133,27 +98,35 @@ export type OptionalFeatureState =
 	| { readonly available: false; readonly reason: string }
 
 /**
+ * A durable step that failed surfaces as a defect (its retries are spent), so
+ * the reason is read off the whole cause, not the typed error channel.
+ */
+const causeMessage = (cause: Cause.Cause<unknown>): string => {
+	const error = Cause.squash(cause)
+	return error instanceof Error ? error.message : String(error)
+}
+
+/**
  * Optional feature metadata must never decide whether the correctness schema
  * is ready for ingest. Keeping this boundary explicit also makes the workflow
  * policy testable without a live durable-workflow runtime.
  */
-export async function loadOptionalFeatureState(
-	options: LoadOptionalFeatureStateOptions,
-): Promise<OptionalFeatureState> {
-	try {
-		await options.ensureBookkeeping()
-		const serverVersion = await options.readServerVersion()
-		const appliedFeatureRevisions = await options.readAppliedFeatureRevisions()
-		return { available: true, serverVersion, appliedFeatureRevisions }
-	} catch (error) {
-		return {
-			available: false,
-			reason: error instanceof Error ? error.message : String(error),
-		}
-	}
-}
+export const loadOptionalFeatureState = <R>(
+	options: LoadOptionalFeatureStateOptions<R>,
+): Effect.Effect<OptionalFeatureState, never, R> =>
+	Effect.gen(function* () {
+		yield* options.ensureBookkeeping
+		const serverVersion = yield* options.readServerVersion
+		const appliedFeatureRevisions = yield* options.readAppliedFeatureRevisions
+		const state: OptionalFeatureState = { available: true, serverVersion, appliedFeatureRevisions }
+		return state
+	}).pipe(
+		Effect.catchCause((cause) =>
+			Effect.succeed<OptionalFeatureState>({ available: false, reason: causeMessage(cause) }),
+		),
+	)
 
-const STEP: StepConfig = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } }
+const STEP: DurableStepConfig = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } }
 
 // --- ClickHouse exec --------------------------------------------------------
 
@@ -164,38 +137,94 @@ interface ChConfig {
 	readonly database: string
 }
 
-async function exec(cfg: ChConfig, sql: string): Promise<string> {
+/** A ClickHouse HTTP call that did not return 2xx; `status` is absent when the request never completed. */
+export class ClickHouseExecError extends Schema.TaggedError<ClickHouseExecError>()(
+	"@maple/api/workflows/ClickHouseExecError",
+	{ status: Schema.optionalKey(Schema.Number), message: Schema.String },
+) {}
+
+const toClickHouseExecError = (cause: unknown): ClickHouseExecError =>
+	cause instanceof ClickHouseExecError
+		? cause
+		: new ClickHouseExecError({ message: cause instanceof Error ? cause.message : String(cause) })
+
+/**
+ * The one ClickHouse HTTP implementation, Promise-shaped because
+ * `expandMigrationToSteps` takes a Promise `exec`; `execClickHouse` lifts it.
+ */
+const execClickHousePromise = (cfg: ChConfig, sql: string): Promise<string> => {
 	const url = `${cfg.url.replace(/\/$/, "")}/?database=${encodeURIComponent(cfg.database)}`
-	const headers: Record<string, string> = {
+	const headers = new Headers({
 		"Content-Type": "text/plain",
 		"X-ClickHouse-User": cfg.user,
 		"X-ClickHouse-Database": cfg.database,
-	} satisfies Record<string, string>
-	if (cfg.password.length > 0) headers["X-ClickHouse-Key"] = cfg.password
-	const response = await fetch(url, { method: "POST", headers, body: sql, redirect: "manual" })
-	const text = await response.text()
-	if (response.status >= 300 && response.status < 400) {
-		throw new Error(`ClickHouse redirect responses are not allowed (${response.status})`)
-	}
-	if (!response.ok) {
-		throw new Error(`ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`)
-	}
-	return text
+	})
+	if (cfg.password.length > 0) headers.set("X-ClickHouse-Key", cfg.password)
+	return fetch(url, { method: "POST", headers, body: sql, redirect: "manual" }).then((response) =>
+		response.text().then((text) => {
+			if (response.status >= 300 && response.status < 400) {
+				return Promise.reject(
+					new ClickHouseExecError({
+						status: response.status,
+						message: `ClickHouse redirect responses are not allowed (${response.status})`,
+					}),
+				)
+			}
+			if (!response.ok) {
+				return Promise.reject(
+					new ClickHouseExecError({
+						status: response.status,
+						message: `ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`,
+					}),
+				)
+			}
+			return text
+		}),
+	)
 }
 
-const parseJsonEachRow = <T>(text: string): ReadonlyArray<T> => {
-	const out: T[] = []
-	for (const line of text.split("\n")) {
-		const trimmed = line.trim()
-		if (trimmed.length === 0) continue
-		try {
-			out.push(JSON.parse(trimmed) as T)
-		} catch {
-			// controlled query
+const execClickHouse = (cfg: ChConfig, sql: string): Effect.Effect<string, ClickHouseExecError> =>
+	Effect.tryPromise({ try: () => execClickHousePromise(cfg, sql), catch: toClickHouseExecError })
+
+const planMigrationSteps = (
+	cfg: ChConfig,
+	migration: (typeof clickHouseMigrations)[number],
+): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError> =>
+	Effect.tryPromise({
+		try: () => expandMigrationToSteps(migration, cfg.database, (sql) => execClickHousePromise(cfg, sql)),
+		catch: toClickHouseExecError,
+	})
+
+/**
+ * The queries are ours and ask for JSONEachRow, so a line that does not decode
+ * is a warning or a blank the server interleaved — skip it.
+ */
+const parseJsonEachRow = <S extends Schema.ConstraintDecoder<unknown>>(rowSchema: S) => {
+	const decodeRow = Schema.decodeUnknownOption(Schema.fromJsonString(rowSchema))
+	return (text: string): ReadonlyArray<S["Type"]> => {
+		const out: Array<S["Type"]> = []
+		for (const line of text.split("\n")) {
+			const trimmed = line.trim()
+			if (trimmed.length === 0) continue
+			const row = decodeRow(trimmed)
+			if (Option.isSome(row)) out.push(row.value)
 		}
+		return out
 	}
-	return out
 }
+
+/** ClickHouse quotes UInt64 on the JSON wire; small counters arrive either way. */
+const WireNumber = Schema.Union([Schema.Number, Schema.NumberFromString])
+
+const parseVersionRows = parseJsonEachRow(Schema.Struct({ version: WireNumber }))
+const parseFeatureRevisionRows = parseJsonEachRow(Schema.Struct({ id: Schema.String, revision: WireNumber }))
+const parseTableRows = parseJsonEachRow(Schema.Struct({ name: Schema.String, engine: Schema.String }))
+const parseColumnRows = parseJsonEachRow(
+	Schema.Struct({ table: Schema.String, name: Schema.String, type: Schema.String }),
+)
+const parseSortingKeyRows = parseJsonEachRow(
+	Schema.Struct({ sorting_key: Schema.optionalKey(Schema.String) }),
+)
 
 // --- migration bookkeeping (mirrors the service + CLI) ----------------------
 
@@ -204,13 +233,13 @@ const FEATURES_TABLE = "_maple_schema_features"
 const quote = (name: string): string => `\`${name.replace(/`/g, "``")}\``
 
 const ensureMigrationsTable = (cfg: ChConfig) =>
-	exec(
+	execClickHouse(
 		cfg,
 		`CREATE TABLE IF NOT EXISTS ${quote(MIGRATIONS_TABLE)} (version UInt32, applied_at DateTime64(3) DEFAULT now64(3), description String) ENGINE = MergeTree ORDER BY version`,
-	)
+	).pipe(Effect.asVoid)
 
 const ensureFeaturesTable = (cfg: ChConfig) =>
-	exec(
+	execClickHouse(
 		cfg,
 		`CREATE TABLE IF NOT EXISTS ${quote(FEATURES_TABLE)} (
   id String,
@@ -218,79 +247,111 @@ const ensureFeaturesTable = (cfg: ChConfig) =>
   applied_at DateTime64(3) DEFAULT now64(3),
   description String
 ) ENGINE = ReplacingMergeTree(revision) ORDER BY id`,
-	)
+	).pipe(Effect.asVoid)
 
-const readAppliedVersions = async (cfg: ChConfig): Promise<Set<number>> => {
-	const text = await exec(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`)
-	return new Set(parseJsonEachRow<{ version: number }>(text).map((r) => Number(r.version)))
-}
+const readAppliedVersions = (cfg: ChConfig): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError> =>
+	execClickHouse(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`).pipe(
+		Effect.map((text) => [...new Set(parseVersionRows(text).map((r) => r.version))]),
+	)
 
 const recordVersion = (cfg: ChConfig, version: number, description: string) =>
-	exec(
+	execClickHouse(
 		cfg,
 		`INSERT INTO ${quote(MIGRATIONS_TABLE)} (version, description) VALUES (${version}, '${description.replace(/'/g, "''")}')`,
-	)
+	).pipe(Effect.asVoid)
 
-const readAppliedFeatureRevisions = async (cfg: ChConfig): Promise<Map<string, number>> => {
-	const text = await exec(
+/** Entries rather than a Map: a step's value must survive Cloudflare's JSON persistence. */
+const readAppliedFeatureRevisions = (
+	cfg: ChConfig,
+): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError> =>
+	execClickHouse(
 		cfg,
 		`SELECT id, max(revision) AS revision FROM ${quote(FEATURES_TABLE)} GROUP BY id FORMAT JSONEachRow`,
-	)
-	return new Map(
-		parseJsonEachRow<{ id: string; revision: string | number }>(text).map((row) => [
-			row.id,
-			Number(row.revision),
-		]),
-	)
-}
+	).pipe(Effect.map((text) => parseFeatureRevisionRows(text).map((row) => [row.id, row.revision] as const)))
 
 const recordFeature = (cfg: ChConfig, id: string, revision: number, description: string) =>
-	exec(
+	execClickHouse(
 		cfg,
 		`INSERT INTO ${quote(FEATURES_TABLE)} (id, revision, description) VALUES ('${id.replace(/'/g, "''")}', ${revision}, '${description.replace(/'/g, "''")}')`,
-	)
+	).pipe(Effect.asVoid)
 
 const normalizeExpression = (value: string): string =>
 	value.replace(/`/g, "").replace(/\s+/g, "").toLowerCase()
 
-// --- config load + decrypt (imperative mirror of the service helper) --------
+// --- config load + decrypt (mirror of the service helper) -------------------
 
-const loadConfig = async (dbStep: DbStep, orgId: OrgId, encryptionKey: Buffer): Promise<ChConfig> => {
-	const rows = await dbStep((db) =>
-		db.select().from(orgClickHouseSettings).where(eq(orgClickHouseSettings.orgId, orgId)).limit(1),
-	)
-	const row = rows[0]
-	if (!row) throw new Error(`No ClickHouse settings configured for org ${orgId}`)
-	let password = ""
-	if (row.chPasswordCiphertext && row.chPasswordIv && row.chPasswordTag) {
-		const decipher = createDecipheriv(
-			"aes-256-gcm",
-			encryptionKey,
-			Buffer.from(row.chPasswordIv, "base64"),
+/** A settings row that cannot be turned into a usable ClickHouse target. */
+export class SchemaApplyConfigError extends Schema.TaggedError<SchemaApplyConfigError>()(
+	"@maple/api/workflows/SchemaApplyConfigError",
+	{ message: Schema.String },
+) {}
+
+const decryptPassword = (
+	encryptionKey: Buffer,
+	ciphertext: string,
+	iv: string,
+	tag: string,
+): Effect.Effect<string, SchemaApplyConfigError> =>
+	Effect.try({
+		try: () => {
+			const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(iv, "base64"))
+			decipher.setAuthTag(Buffer.from(tag, "base64"))
+			return Buffer.concat([
+				decipher.update(Buffer.from(ciphertext, "base64")),
+				decipher.final(),
+			]).toString("utf8")
+		},
+		catch: (cause) =>
+			new SchemaApplyConfigError({
+				message: `Stored ClickHouse password could not be decrypted: ${cause instanceof Error ? cause.message : String(cause)}`,
+			}),
+	})
+
+const loadConfig = (
+	database: DatabaseApi,
+	orgId: OrgId,
+	encryptionKey: Buffer,
+): Effect.Effect<ChConfig, SchemaApplyConfigError | DatabaseError> =>
+	Effect.gen(function* () {
+		const rows = yield* database.execute((db) =>
+			db.select().from(orgClickHouseSettings).where(eq(orgClickHouseSettings.orgId, orgId)).limit(1),
 		)
-		decipher.setAuthTag(Buffer.from(row.chPasswordTag, "base64"))
-		password = Buffer.concat([
-			decipher.update(Buffer.from(row.chPasswordCiphertext, "base64")),
-			decipher.final(),
-		]).toString("utf8")
-	}
-	let parsedUrl: URL
-	try {
-		parsedUrl = new URL(row.chUrl)
-	} catch {
-		throw new Error("Stored ClickHouse URL is invalid")
-	}
-	if (parsedUrl.username.length > 0 || parsedUrl.password.length > 0) {
-		throw new Error("Stored ClickHouse credentials must not be embedded in the URL")
-	}
-	if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-		throw new Error("Stored ClickHouse URL must use HTTP or HTTPS")
-	}
-	if (password.length > 0 && parsedUrl.protocol !== "https:") {
-		throw new Error("Stored ClickHouse URL must use HTTPS when a password is configured")
-	}
-	return { url: row.chUrl, user: row.chUser, password, database: row.chDatabase }
-}
+		const row = rows[0]
+		if (!row) {
+			return yield* new SchemaApplyConfigError({
+				message: `No ClickHouse settings configured for org ${orgId}`,
+			})
+		}
+		const password =
+			row.chPasswordCiphertext && row.chPasswordIv && row.chPasswordTag
+				? yield* decryptPassword(
+						encryptionKey,
+						row.chPasswordCiphertext,
+						row.chPasswordIv,
+						row.chPasswordTag,
+					)
+				: ""
+		const parsedUrl = yield* Effect.try({
+			try: () => new URL(row.chUrl),
+			catch: () => new SchemaApplyConfigError({ message: "Stored ClickHouse URL is invalid" }),
+		})
+		if (parsedUrl.username.length > 0 || parsedUrl.password.length > 0) {
+			return yield* new SchemaApplyConfigError({
+				message: "Stored ClickHouse credentials must not be embedded in the URL",
+			})
+		}
+		if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+			return yield* new SchemaApplyConfigError({
+				message: "Stored ClickHouse URL must use HTTP or HTTPS",
+			})
+		}
+		if (password.length > 0 && parsedUrl.protocol !== "https:") {
+			return yield* new SchemaApplyConfigError({
+				message: "Stored ClickHouse URL must use HTTPS when a password is configured",
+			})
+		}
+		return { url: row.chUrl, user: row.chUser, password, database: row.chDatabase }
+	})
 
 // --- run-row progress (org_clickhouse_schema_apply_runs) --------------------
 
@@ -307,14 +368,17 @@ type RunPatch = Partial<{
 	finishedAt: Date | null
 }>
 
-const updateRun = async (dbStep: DbStep, orgId: OrgId, patch: RunPatch, now: number): Promise<void> => {
-	await dbStep((db) =>
-		db
-			.update(orgClickHouseSchemaApplyRuns)
-			.set({ ...patch, updatedAt: new Date(now) })
-			.where(eq(orgClickHouseSchemaApplyRuns.orgId, orgId)),
-	)
-}
+/** Stamps `updatedAt` from the clock, so it only ever runs inside a step (or on the failure path). */
+const updateRun = (database: DatabaseApi, orgId: OrgId, patch: RunPatch) =>
+	Effect.gen(function* () {
+		const now = yield* Clock.currentTimeMillis
+		yield* database.execute((db) =>
+			db
+				.update(orgClickHouseSchemaApplyRuns)
+				.set({ ...patch, updatedAt: msToDate(now) })
+				.where(eq(orgClickHouseSchemaApplyRuns.orgId, orgId)),
+		)
+	})
 
 // --- snapshot-diff additive (mirror of OrgClickHouseSettingsService) --------
 
@@ -339,250 +403,270 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	return out
 }
 
-const fetchActualSchema = async (cfg: ChConfig): Promise<Map<string, ActualTable>> => {
-	const dbLit = cfg.database.replace(/'/g, "''")
-	const tableRows = parseJsonEachRow<{ name: string; engine: string }>(
-		await exec(
-			cfg,
-			`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
-		),
-	)
-	const columnRows = parseJsonEachRow<{ table: string; name: string; type: string }>(
-		await exec(
-			cfg,
-			`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
-		),
-	)
-	const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
-	for (const r of columnRows) {
-		const list = colsByTable.get(r.table) ?? []
-		list.push({ name: r.name, type: r.type })
-		colsByTable.set(r.table, list)
-	}
-	const result = new Map<string, ActualTable>()
-	for (const t of tableRows) {
-		result.set(t.name, {
-			name: t.name,
-			kind: t.engine === "MaterializedView" ? "materialized_view" : "table",
-			columns: colsByTable.get(t.name) ?? [],
-		})
-	}
-	return result
-}
+const fetchActualSchema = (cfg: ChConfig): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError> =>
+	Effect.gen(function* () {
+		const dbLit = cfg.database.replace(/'/g, "''")
+		const tableRows = parseTableRows(
+			yield* execClickHouse(
+				cfg,
+				`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
+			),
+		)
+		const columnRows = parseColumnRows(
+			yield* execClickHouse(
+				cfg,
+				`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
+			),
+		)
+		const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
+		for (const r of columnRows) {
+			const list = colsByTable.get(r.table) ?? []
+			list.push({ name: r.name, type: r.type })
+			colsByTable.set(r.table, list)
+		}
+		const result = new Map<string, ActualTable>()
+		for (const t of tableRows) {
+			result.set(t.name, {
+				name: t.name,
+				kind: t.engine === "MaterializedView" ? "materialized_view" : "table",
+				columns: colsByTable.get(t.name) ?? [],
+			})
+		}
+		return result
+	})
+
+const reconcileSchemaSnapshot = (cfg: ChConfig): Effect.Effect<void, ClickHouseExecError> =>
+	Effect.gen(function* () {
+		const desired = parseDesiredTables()
+		const desiredByName = new Map(desired.map((t) => [t.name, t]))
+		const actual = yield* fetchActualSchema(cfg)
+		for (const entry of computeSchemaDiff({ tables: desired }, actual)) {
+			if (entry.status === "missing") {
+				const table = desiredByName.get(entry.name)
+				if (table) {
+					yield* execClickHouse(
+						cfg,
+						qualifyStatementForDatabase(table.createStatement, cfg.database),
+					)
+				}
+			} else if (entry.status === "drifted" && entry.kind === "table") {
+				const table = desiredByName.get(entry.name)
+				if (!table) continue
+				for (const drift of entry.columnDrifts.filter((d) => d.kind === "missing")) {
+					const colDef = extractColumnDefinition(table.createStatement, drift.column)
+					if (colDef) {
+						yield* execClickHouse(
+							cfg,
+							`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+						)
+					}
+				}
+			}
+		}
+	})
 
 // --- orchestration ----------------------------------------------------------
 
-export async function runClickHouseSchemaApply(
-	env: SchemaApplyWorkflowEnv,
-	event: WorkflowEventLike<SchemaApplyWorkflowPayload>,
-	step: WorkflowStepLike,
-): Promise<SchemaApplyWorkflowResult> {
-	const source = resolveDbConnectionSource(env)
-	if (source._tag === "Unavailable") {
-		throw new Error(source.reason)
-	}
-	const connection = makePgConnectionScope(source.connectionString, source.attributes)
-	try {
-		return await runWithDb(connection, env, event, step)
-	} finally {
-		await connection.close()
-		// This module owns its telemetry instance (the workflow runs outside the
-		// worker's layer graph), so nothing else will drain the span buffer.
-		await schemaApplyTelemetry.flush(env).catch(() => undefined)
-	}
+interface SkippedFeature {
+	readonly id: string
+	readonly reason: string
 }
 
-/** Exported for tests: the orchestration body behind `runClickHouseSchemaApply`. */
-export async function runWithDb(
-	connection: PgConnectionScopeApi,
-	env: SchemaApplyWorkflowEnv,
-	event: WorkflowEventLike<SchemaApplyWorkflowPayload>,
-	step: WorkflowStepLike,
-): Promise<SchemaApplyWorkflowResult> {
-	const orgId = Schema.decodeUnknownSync(OrgId)(event.payload.orgId)
-	const dbStep: DbStep = (fn) =>
-		Effect.runPromise(
-			connection.run(fn).pipe(
-				// Each durable workflow step crosses back into Effect from Promise-land
-				// and owns the telemetry context for that isolated run.
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(schemaApplyTelemetry.layer),
-			),
-		)
-	const encryptionKey = Buffer.from(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY.trim(), "base64")
-	const startedAt = Date.now()
-	const appliedVersions: number[] = []
-	const skippedFeatures: Array<{ readonly id: string; readonly reason: string }> = []
+export const runClickHouseSchemaApply = (
+	payload: SchemaApplyWorkflowPayload,
+): Effect.Effect<
+	SchemaApplyWorkflowResult,
+	never,
+	Database | Cloudflare.WorkflowStep | Cloudflare.WorkerEnvironment
+> =>
+	Effect.gen(function* () {
+		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const database = yield* Database
+		const env = yield* Cloudflare.WorkerEnvironment
 
-	// Inside the protected region below: a config-load failure (settings row
-	// deleted, decrypt failure, invalid URL) must still transition the run row
-	// to failed, or the service reads the leftover "queued" as already_running
-	// and the org can never apply its schema again.
-	try {
-		const cfg = await step.do("load-config", STEP, async () => {
-			const c = await loadConfig(dbStep, orgId, encryptionKey)
-			await updateRun(
-				dbStep,
-				orgId,
-				{
+		// Inside the protected region below: a config-load failure (settings row
+		// deleted, missing encryption key, decrypt failure, invalid URL) must still
+		// transition the run row to failed, or the service reads the leftover
+		// "queued" as already_running and the org can never apply its schema again.
+		const markFailed = (cause: Cause.Cause<unknown>) =>
+			Effect.gen(function* () {
+				const finishedAt = yield* Clock.currentTimeMillis
+				const message = causeMessage(cause)
+				yield* updateRun(database, orgId, {
+					status: "failed",
+					errorMessage: message,
+					finishedAt: msToDate(finishedAt),
+				}).pipe(Effect.ignore)
+				yield* database
+					.execute((db) =>
+						db
+							.update(orgClickHouseSettings)
+							.set({
+								syncStatus: "error",
+								lastSyncError: message,
+								updatedAt: msToDate(finishedAt),
+							})
+							.where(eq(orgClickHouseSettings.orgId, orgId)),
+					)
+					.pipe(Effect.ignore)
+				yield* bustRuntimeConfigCache(orgId)
+			})
+
+		return yield* applySchema(database, env, orgId).pipe(
+			Effect.catchCause((cause) => markFailed(cause).pipe(Effect.andThen(Effect.failCause(cause)))),
+		)
+	}).pipe(Effect.orDie)
+
+const applySchema = (database: DatabaseApi, env: Record<string, unknown>, orgId: OrgId) =>
+	Effect.gen(function* () {
+		const { MAPLE_INGEST_KEY_ENCRYPTION_KEY } = yield* Schema.decodeUnknownEffect(SchemaApplyEnv)(env)
+		const encryptionKey = Buffer.from(MAPLE_INGEST_KEY_ENCRYPTION_KEY.trim(), "base64")
+		const appliedVersions: number[] = []
+		const skippedFeatures: SkippedFeature[] = []
+
+		const cfg = yield* durableStep(
+			"load-config",
+			Effect.gen(function* () {
+				const c = yield* loadConfig(database, orgId, encryptionKey)
+				const startedAt = yield* Clock.currentTimeMillis
+				yield* updateRun(database, orgId, {
 					status: "running",
 					phase: "connecting",
 					errorMessage: null,
-					startedAt: new Date(startedAt),
-				},
-				Date.now(),
-			)
-			return c
-		})
-
-		await step.do("ensure-bookkeeping", STEP, () => ensureMigrationsTable(cfg).then(() => undefined))
-		const applied = await step.do("read-applied", STEP, () =>
-			readAppliedVersions(cfg).then((s) => [...s]),
+					startedAt: msToDate(startedAt),
+				})
+				return c
+			}),
+			STEP,
 		)
+
+		yield* durableStep("ensure-bookkeeping", ensureMigrationsTable(cfg), STEP)
+		const applied = yield* durableStep("read-applied", readAppliedVersions(cfg), STEP)
 		const appliedSet = new Set(applied)
 
 		for (const migration of clickHouseMigrations) {
 			if (migration.requiredForIngest === false) continue
 			if (appliedSet.has(migration.version)) continue
 
-			const steps = await step.do(`plan-m${migration.version}`, STEP, () =>
-				expandMigrationToSteps(migration, cfg.database, (sql) => exec(cfg, sql)).then((s) => [...s]),
+			const steps = yield* durableStep(
+				`plan-m${migration.version}`,
+				planMigrationSteps(cfg, migration),
+				STEP,
 			)
-			const total = steps.length
-			let done = 0
-			for (const s of steps) {
-				await step.do(`m${migration.version}:${s.name}`, STEP, async () => {
-					await exec(cfg, s.sql)
-				})
-				done += 1
-				await updateRun(
-					dbStep,
-					orgId,
-					{
+			for (const [index, s] of steps.entries()) {
+				// Progress rides inside the step: the body replays, so a write there
+				// would repeat, and a clock read there would differ per replay.
+				yield* durableStep(
+					`m${migration.version}:${s.name}`,
+					updateRun(database, orgId, {
 						phase: `migration ${migration.version} · ${s.name}`,
 						currentMigration: migration.version,
-						stepsTotal: total,
-						stepsDone: done,
-					},
-					Date.now(),
+						stepsTotal: steps.length,
+						stepsDone: index,
+					}).pipe(Effect.andThen(execClickHouse(cfg, s.sql))),
+					STEP,
 				)
 			}
-			await step.do(`record-m${migration.version}`, STEP, () =>
-				recordVersion(cfg, migration.version, migration.description).then(() => undefined),
+			yield* durableStep(
+				`record-m${migration.version}`,
+				recordVersion(cfg, migration.version, migration.description),
+				STEP,
 			)
 			appliedVersions.push(migration.version)
 		}
 
 		// Snapshot-diff additive pass: create snapshot objects missing on the
 		// cluster + add missing columns (metadata-only, fits a step easily).
-		await step.do("snapshot-diff", STEP, async () => {
-			await updateRun(dbStep, orgId, { phase: "reconciling schema snapshot" }, Date.now())
-			const desired = parseDesiredTables()
-			const desiredByName = new Map(desired.map((t) => [t.name, t]))
-			const actual = await fetchActualSchema(cfg)
-			for (const entry of computeSchemaDiff({ tables: desired }, actual)) {
-				if (entry.status === "missing") {
-					const table = desiredByName.get(entry.name)
-					if (table)
-						await exec(cfg, qualifyStatementForDatabase(table.createStatement, cfg.database))
-				} else if (entry.status === "drifted" && entry.kind === "table") {
-					const table = desiredByName.get(entry.name)
-					if (!table) continue
-					for (const drift of entry.columnDrifts.filter((d) => d.kind === "missing")) {
-						const colDef = extractColumnDefinition(table.createStatement, drift.column)
-						if (colDef) {
-							await exec(
-								cfg,
-								`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
-							)
-						}
-					}
-				}
-			}
-		})
+		yield* durableStep(
+			"snapshot-diff",
+			updateRun(database, orgId, { phase: "reconciling schema snapshot" }).pipe(
+				Effect.andThen(reconcileSchemaSnapshot(cfg)),
+			),
+			STEP,
+		)
 
 		// Correctness is complete before optional performance work begins. This
 		// keeps direct ingest ready even when a version-gated index cannot be
 		// installed due to permissions, server support, or transient load.
-		await step.do("stamp-correctness", STEP, async () => {
-			const stampedAt = Date.now()
-			await dbStep((db) =>
-				db
-					.update(orgClickHouseSettings)
-					.set({
-						lastSyncAt: new Date(stampedAt),
-						lastSyncError: null,
-						syncStatus: "connected",
-						schemaVersion: clickHouseSchemaVersion,
-						updatedAt: new Date(stampedAt),
-					})
-					.where(eq(orgClickHouseSettings.orgId, orgId)),
-			)
-			await bustRuntimeConfigCache(orgId)
-		})
+		yield* durableStep(
+			"stamp-correctness",
+			Effect.gen(function* () {
+				const stampedAt = yield* Clock.currentTimeMillis
+				yield* database.execute((db) =>
+					db
+						.update(orgClickHouseSettings)
+						.set({
+							lastSyncAt: msToDate(stampedAt),
+							lastSyncError: null,
+							syncStatus: "connected",
+							schemaVersion: clickHouseSchemaVersion,
+							updatedAt: msToDate(stampedAt),
+						})
+						.where(eq(orgClickHouseSettings.orgId, orgId)),
+				)
+				yield* bustRuntimeConfigCache(orgId)
+			}),
+			STEP,
+		)
 
 		for (const migration of clickHouseMigrations) {
 			if (migration.requiredForIngest !== false || appliedSet.has(migration.version)) continue
-			try {
-				const steps = await step.do(`plan-performance-m${migration.version}`, STEP, () =>
-					expandMigrationToSteps(migration, cfg.database, (sql) => exec(cfg, sql)).then((s) => [
-						...s,
-					]),
+			const applyPerformanceMigration = Effect.gen(function* () {
+				const steps = yield* durableStep(
+					`plan-performance-m${migration.version}`,
+					planMigrationSteps(cfg, migration),
+					STEP,
 				)
 				for (const [index, migrationStep] of steps.entries()) {
-					await step.do(
+					yield* durableStep(
 						`performance-m${migration.version}:${migrationStep.name}`,
+						updateRun(database, orgId, {
+							phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
+							currentMigration: migration.version,
+							stepsTotal: steps.length,
+							stepsDone: index,
+						}).pipe(Effect.andThen(execClickHouse(cfg, migrationStep.sql))),
 						STEP,
-						async () => {
-							await updateRun(
-								dbStep,
-								orgId,
-								{
-									phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
-									currentMigration: migration.version,
-									stepsTotal: steps.length,
-									stepsDone: index,
-								},
-								Date.now(),
-							)
-							await exec(cfg, migrationStep.sql)
-						},
 					)
 				}
-				await step.do(`record-performance-m${migration.version}`, STEP, () =>
-					recordVersion(cfg, migration.version, migration.description).then(() => undefined),
+				yield* durableStep(
+					`record-performance-m${migration.version}`,
+					recordVersion(cfg, migration.version, migration.description),
+					STEP,
 				)
 				appliedSet.add(migration.version)
 				appliedVersions.push(migration.version)
-			} catch (error) {
-				skippedFeatures.push({
-					id: `migration_${migration.version}`,
-					reason: error instanceof Error ? error.message : String(error),
-				})
-			}
+			})
+			// A performance migration that cannot be installed is skipped, never fatal.
+			yield* applyPerformanceMigration.pipe(
+				Effect.catchCause((cause) =>
+					Effect.sync(() => {
+						skippedFeatures.push({
+							id: `migration_${migration.version}`,
+							reason: causeMessage(cause),
+						})
+					}),
+				),
+			)
 		}
 
-		const optionalFeatureState = await loadOptionalFeatureState({
-			ensureBookkeeping: () =>
-				step.do("ensure-feature-bookkeeping", STEP, () =>
-					ensureFeaturesTable(cfg).then(() => undefined),
+		const optionalFeatureState = yield* loadOptionalFeatureState({
+			ensureBookkeeping: durableStep("ensure-feature-bookkeeping", ensureFeaturesTable(cfg), STEP),
+			readServerVersion: durableStep(
+				"read-clickhouse-version",
+				execClickHouse(cfg, "SELECT version() FORMAT TabSeparated").pipe(
+					Effect.map((value) => value.trim()),
 				),
-			readServerVersion: () =>
-				step.do("read-clickhouse-version", STEP, () =>
-					exec(cfg, "SELECT version() FORMAT TabSeparated").then((value) => value.trim()),
-				),
-			readAppliedFeatureRevisions: () =>
-				step
-					.do("read-applied-features", STEP, () =>
-						readAppliedFeatureRevisions(cfg).then((entries) => [...entries]),
-					)
-					.then((entries) => new Map(entries)),
+				STEP,
+			),
+			readAppliedFeatureRevisions: durableStep(
+				"read-applied-features",
+				readAppliedFeatureRevisions(cfg),
+				STEP,
+			).pipe(Effect.map((entries) => new Map(entries))),
 		})
 		if (!optionalFeatureState.available) {
-			skippedFeatures.push({
-				id: "feature_reconciliation",
-				reason: optionalFeatureState.reason,
-			})
+			skippedFeatures.push({ id: "feature_reconciliation", reason: optionalFeatureState.reason })
 		}
 		if (optionalFeatureState.available) {
 			const { serverVersion, appliedFeatureRevisions } = optionalFeatureState
@@ -596,88 +680,70 @@ export async function runWithDb(
 				}
 				if ((appliedFeatureRevisions.get(feature.id) ?? 0) >= feature.revision) continue
 
-				try {
-					let satisfied = false
+				const applyFeature = Effect.gen(function* () {
 					const sortingKeyRequirement = feature.satisfiedBySortingKey
-					if (sortingKeyRequirement) {
-						satisfied = await step.do(`feature-${feature.id}:inspect`, STEP, async () => {
-							const table = sortingKeyRequirement.table.replace(/'/g, "''")
-							const result = await exec(
-								cfg,
-								`SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '${table}' FORMAT JSONEachRow`,
+					const satisfied = sortingKeyRequirement
+						? yield* durableStep(
+								`feature-${feature.id}:inspect`,
+								Effect.gen(function* () {
+									const table = sortingKeyRequirement.table.replace(/'/g, "''")
+									const result = yield* execClickHouse(
+										cfg,
+										`SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '${table}' FORMAT JSONEachRow`,
+									)
+									const row = parseSortingKeyRows(result)[0]
+									return (
+										normalizeExpression(row?.sorting_key ?? "") ===
+										normalizeExpression(sortingKeyRequirement.expected)
+									)
+								}),
+								STEP,
 							)
-							const row = parseJsonEachRow<{ sorting_key?: string }>(result)[0]
-							return (
-								normalizeExpression(row?.sorting_key ?? "") ===
-								normalizeExpression(sortingKeyRequirement.expected)
-							)
-						})
-					}
+						: false
 
 					if (!satisfied) {
-						for (let index = 0; index < feature.statements.length; index++) {
-							const statement = feature.statements[index]!
-							await step.do(`feature-${feature.id}:${index + 1}`, STEP, async () => {
-								await updateRun(
-									dbStep,
-									orgId,
-									{
-										phase: `feature ${feature.id} · ${index + 1}/${feature.statements.length}`,
-									},
-									Date.now(),
-								)
-								await exec(cfg, statement)
-							})
+						for (const [index, statement] of feature.statements.entries()) {
+							yield* durableStep(
+								`feature-${feature.id}:${index + 1}`,
+								updateRun(database, orgId, {
+									phase: `feature ${feature.id} · ${index + 1}/${feature.statements.length}`,
+								}).pipe(Effect.andThen(execClickHouse(cfg, statement))),
+								STEP,
+							)
 						}
 					}
-					await step.do(`feature-${feature.id}:record`, STEP, () =>
-						recordFeature(cfg, feature.id, feature.revision, feature.description).then(
-							() => undefined,
-						),
+					yield* durableStep(
+						`feature-${feature.id}:record`,
+						recordFeature(cfg, feature.id, feature.revision, feature.description),
+						STEP,
 					)
-				} catch (error) {
-					skippedFeatures.push({
-						id: feature.id,
-						reason: error instanceof Error ? error.message : String(error),
-					})
-				}
+				})
+				yield* applyFeature.pipe(
+					Effect.catchCause((cause) =>
+						Effect.sync(() => {
+							skippedFeatures.push({ id: feature.id, reason: causeMessage(cause) })
+						}),
+					),
+				)
 			}
 		}
 
-		const finishedAt = Date.now()
-		await step.do("finalize", STEP, async () => {
-			await updateRun(
-				dbStep,
-				orgId,
-				{
+		yield* durableStep(
+			"finalize",
+			Effect.gen(function* () {
+				const finishedAt = yield* Clock.currentTimeMillis
+				yield* updateRun(database, orgId, {
 					status: "succeeded",
 					phase: "done",
 					currentMigration: null,
 					appliedVersions,
 					skipped: skippedFeatures,
-					finishedAt: new Date(finishedAt),
-				},
-				finishedAt,
-			)
-		})
+					finishedAt: msToDate(finishedAt),
+				})
+			}),
+			STEP,
+		)
 
-		return { status: "succeeded", appliedVersions }
-	} catch (error) {
-		const finishedAt = Date.now()
-		const message = error instanceof Error ? error.message : String(error)
-		await updateRun(
-			dbStep,
-			orgId,
-			{ status: "failed", errorMessage: message, finishedAt: new Date(finishedAt) },
-			finishedAt,
-		).catch(() => undefined)
-		await dbStep((db) =>
-			db
-				.update(orgClickHouseSettings)
-				.set({ syncStatus: "error", lastSyncError: message, updatedAt: new Date(finishedAt) })
-				.where(eq(orgClickHouseSettings.orgId, orgId)),
-		).catch(() => undefined)
-		await bustRuntimeConfigCache(orgId)
-		throw error
-	}
-}
+		const result: SchemaApplyWorkflowResult = { status: "succeeded", appliedVersions }
+		return result
+	})

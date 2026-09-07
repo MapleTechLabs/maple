@@ -33,6 +33,10 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import {
+	INVESTIGATION_FANOUT_BINDING,
+	type InvestigationFanoutWorkflowPayload,
+} from "@maple/domain/investigation-fanout"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -50,21 +54,20 @@ const makeWorkerBindings = ({
 }) => ({
 	// Ref stages attach MAPLE_DB via `bindMapleDbRef` in the root stack.
 	...(mapleDb ? { MAPLE_DB: mapleDb } : undefined),
-	// Cross-script binding to the investigation fan-out Workflow hosted by the
-	// api worker. Alert, error, and anomaly ticks start investigations when
-	// incidents open. The first arg is the physical workflow name; `scriptName`
-	// makes this a reference-only binding (the api worker owns the workflow
-	// resource).
-	INVESTIGATION_FANOUT_WORKFLOW: Cloudflare.Workflow<{
-		orgId: string
-		investigationId: string
-		maxWidth: number
-		reservedPasses: number
-		attempt: number
-	}>(resolveWorkerName("investigation-fanout", stage), {
-		className: "InvestigationFanoutWorkflow",
-		scriptName: resolveWorkerName("api", stage),
-	}),
+	// Cross-script binding to the investigation fan-out Workflow the api Worker
+	// hosts as an alchemy class. Alert, error, and anomaly ticks start
+	// investigations when incidents open. Bound under the CLASS name because the
+	// api services shared with these ticks read it there
+	// (`INVESTIGATION_FANOUT_BINDING`, one constant for both). The
+	// physical workflow name derives from `scriptName` + `className` on both
+	// sides; `scriptName` makes this a reference-only binding.
+	[INVESTIGATION_FANOUT_BINDING]: Cloudflare.Workflow<InvestigationFanoutWorkflowPayload>(
+		INVESTIGATION_FANOUT_BINDING,
+		{
+			className: INVESTIGATION_FANOUT_BINDING,
+			scriptName: resolveWorkerName("api", stage),
+		},
+	),
 	// Production only: preview/stg workers run the same email crons against
 	// their own DB branches, so a binding here means every live stage sends
 	// its own copy of onboarding/digest/alert emails to real users.

@@ -56,7 +56,8 @@ export const buildVcsSyncLayer = () => {
 		Layer.provide(Layer.mergeAll(EnvLive, GithubAppClientLive)),
 	)
 	const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
-	const VcsSyncQueueLive = VcsSyncQueue.layer.pipe(Layer.provide(workerEnvironmentLayer))
+	// `VcsSyncQueueProducer` is the Worker's port, provided around the event.
+	const VcsSyncQueueLive = VcsSyncQueue.layer
 	// The issue side of a pull-request webhook. Only the queue consumer needs it —
 	// the scheduled producer below never sees a PR event — so it is built here
 	// rather than in `Base`, keeping the cron layer as light as it was.
@@ -116,7 +117,7 @@ export const buildVcsScheduledLayer = () => {
 	const Base = Layer.mergeAll(EnvLive, DatabaseLive, workerEnvironmentLayer)
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const VcsSyncQueueLive = VcsSyncQueue.layer.pipe(Layer.provide(workerEnvironmentLayer))
+	const VcsSyncQueueLive = VcsSyncQueue.layer
 	const VcsScheduledSyncServiceLive = VcsScheduledSyncService.layer.pipe(
 		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsSyncQueueLive)),
 	)
