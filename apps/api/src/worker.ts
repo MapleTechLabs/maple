@@ -249,8 +249,16 @@ const makeWorkerBindings = ({
 		: undefined),
 })
 
-/** The bundle alchemy deploys — see the module comment. */
-const ENTRY = new URL("./entry.ts", import.meta.url).href
+/**
+ * The bundle alchemy deploys — see the module comment. A sibling module rather
+ * than this one, so it cannot be `import.meta.url` itself; called from inside
+ * `props`, past the `__ALCHEMY_RUNTIME__` guard, because workerd leaves
+ * `import.meta.url` undefined and a module-scope `new URL(_, undefined)` throws
+ * before the isolate starts. That is a rejected script, not a failed request:
+ * the deploy leaves the old api Worker live beside a freshly deployed web, and
+ * the two drift until someone reads the deploy log.
+ */
+const entryUrl = () => new URL("./entry.ts", import.meta.url).href
 
 const stageQueue = (id: string, stage: MapleStage) =>
 	Cloudflare.Queues.Queue(id, { name: resolveWorkerName(id, stage) })
@@ -262,7 +270,7 @@ const stageQueue = (id: string, stage: MapleStage) =>
  * only it reaches, are dead-code-eliminated from what ships.
  */
 const props = Effect.gen(function* () {
-	if (globalThis.__ALCHEMY_RUNTIME__) return { main: ENTRY, isExternal: true }
+	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url, isExternal: true }
 	const { stage, domains, workerDev, devEnv } = yield* MapleStack
 	// MAPLE_DB Hyperdrive comes in two flavors (see `ManagedMapleDb`): dev stages
 	// get the alchemy-managed one yielded here; stg/prd bind a dashboard-managed
@@ -292,7 +300,7 @@ const props = Effect.gen(function* () {
 	// point is that it survives for inspection instead of being dropped.
 	const auditEventsDlq = yield* stageQueue("audit-events-dlq", stage)
 	return {
-		main: ENTRY,
+		main: entryUrl(),
 		isExternal: true,
 		name: resolveWorkerName("api", stage),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
