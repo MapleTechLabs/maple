@@ -4,14 +4,14 @@ import { competitorConfigs, PricingCalculator, type Competitor } from "./Pricing
 
 const COMPETITORS: Competitor[] = ["datadog", "grafana", "new-relic", "dash0", "openobserve", "signoz"]
 
-const MARKS: Record<Competitor, BrandMarkId> = {
+const MARKS = {
 	datadog: "datadog",
 	grafana: "grafana",
 	"new-relic": "newrelic",
 	dash0: "dash0",
 	openobserve: "openobserve",
 	signoz: "signoz",
-}
+} satisfies Record<Competitor, BrandMarkId>
 
 /** The vendor's mark in its brand colour; on the active (amber) tab it takes the tab's foreground instead. */
 function VendorMark({ id, active }: { id: BrandMarkId; active: boolean }) {
