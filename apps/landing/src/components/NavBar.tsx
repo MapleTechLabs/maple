@@ -135,6 +135,7 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 			desc: () => m.nav_desc_vs_new_relic(),
 		},
 		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0(), desc: () => m.nav_desc_vs_dash0() },
+		{ href: l("/compare/signoz"), label: () => m.nav_vs_signoz(), desc: () => m.nav_desc_vs_signoz() },
 	]
 
 	const mobileGroups: { title: string; links: MenuLink[] }[] = [

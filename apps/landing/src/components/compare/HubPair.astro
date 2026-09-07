@@ -1,6 +1,6 @@
 ---
 /**
- * HubPair — ComparePair for the hub: Maple on the left, the four vendors it
+ * HubPair — ComparePair for the hub: Maple on the left, the five vendors it
  * is compared against on the right, each mark linking to its page.
  */
 import { MapleMark } from "@maple/ui/components/icons/maple-mark";
@@ -22,7 +22,7 @@ const locale = Astro.currentLocale ?? "en";
 			<div class="mt-1 font-mono text-[11px] text-fg-muted">maple.dev</div>
 		</div>
 	</div>
-	<ul class="pair-cell grid grid-cols-2 gap-x-4 gap-y-6 px-6 py-8 sm:grid-cols-4 sm:gap-x-2 md:py-10" style="--pair: var(--muted-foreground)">
+	<ul class="pair-cell grid grid-cols-2 gap-x-4 gap-y-6 px-6 py-8 sm:grid-cols-5 sm:gap-x-2 md:py-10" style="--pair: var(--muted-foreground)">
 		{
 			competitors.map((competitor) => (
 				<li>
