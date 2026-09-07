@@ -15,12 +15,12 @@ put it here instead. Git blame does not survive a refactor of the line it annota
   (also emitted as GitHub step outputs).
 - `apps/<app>/src/worker.ts` — a Worker as one module: the alchemy Worker class the root
   yields, whose props are an Effect over `MapleStack`, and the bundle alchemy deploys
-  (`api`, `alerting`, `electric-sync`, `landing`, `local-ui`; see "Single-module Workers"
-  below).
-- `apps/<app>/alchemy.run.ts` — a `create*` factory, only where the Worker still takes
-  another resource as an argument (`web`) or the app is not a Worker (`ingest`, `electric`
-  on ECS). Owns that app's resources and bindings and nothing else's. The one api resource the
-  ingest gateway shares (the replay bucket) is `apps/api/src/resources/replay-blobs.ts`.
+  (`api`, `alerting`, `electric-sync`, `web`, `landing`, `local-ui`; see "Single-module
+  Workers" below).
+- `apps/<app>/alchemy.run.ts` — a `create*` factory, only for the apps that are not
+  Workers (`ingest`, `electric` on ECS). Owns that app's resources and nothing else's. The one
+  api resource the ingest gateway shares (the replay bucket) is
+  `apps/api/src/resources/replay-blobs.ts`.
 - `packages/infra` — stage/region/domain/naming logic, the shared deploy-time env groups,
   and the few resources several Worker modules bind.
     - `cloudflare/stage.ts` — `MapleStage`, domains, worker names, Hyperdrive resolution.
@@ -145,8 +145,10 @@ Effect that reads `MapleStack` (`@maple/infra/cloudflare`, provided once by the 
 the shared `ManagedMapleDb` or `WorkersObservabilityDestinations` (alchemy registers a
 resource by id, so a second module yielding the same one gets the first's). `impl` runs once
 per isolate on the first event and returns the handlers. No hand-written `export default
-{ fetch }`, no per-app `alchemy.run.ts`, no factory arguments. api, electric-sync, alerting,
-landing and local-ui ship this way.
+{ fetch }`, no per-app `alchemy.run.ts`, no factory arguments. Every Worker ships this way.
+A Worker that binds another (web's `API` service binding to the api) takes it as a service
+the root provides after yielding it (`ApiWorker` in `@maple/infra/cloudflare`) — a
+`Worker.ref` reads stored state and cannot see a sibling the same deploy creates.
 
 What each kind of Worker keeps beside the module:
 
@@ -267,8 +269,7 @@ list of yields. What it composes lives beside it:
   services a Worker's init may require, unlike `MapleStack` — behind the same
   `__ALCHEMY_RUNTIME__` guard as a Worker's props, because alchemy evaluates a resource's props
   Effect wherever it is yielded, the bundle included. The ingest factory yields the same
-  `ReplayBlobs` declaration to mint the gateway's writer token; `apps/api/alchemy.run.ts` is
-  gone.
+  `ReplayBlobs` declaration to mint the gateway's writer token.
 - `src/worker/*` — the runtime shell: `http.ts` (the lazily built route graph and `fetch`),
   `rpc.ts`, `crons.ts`, `consumers.ts` (`consumeQueueMessages` over the declarations, so no
   binding is read back off the host), `events.ts`, `modules.ts` (the dynamic imports), and

@@ -1,136 +1,90 @@
-import { alertChartIdFromPath, ogIdFromPath, shareTokenFromPath } from "./og/share-links"
-import { renderAlertChartImage } from "./og/alert-chart"
-import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
-import { apiTarget, type ApiTarget, type WebWorkerEnv } from "./worker-env"
+/**
+ * The dashboard's Worker in alchemy's single-module form: this file is both
+ * the resource the root stack yields (`yield* Web`) and the bundle alchemy
+ * deploys (`main: import.meta.url`). The Vite build is yielded from the props,
+ * and every request goes to `./handler` — OG images, the share preview, the
+ * SPA shell fallback — which stays a plain function so its tests need no
+ * Worker runtime.
+ */
+import { ApiWorker, CLOUDFLARE_WORKER_PLACEMENT, MapleStack, resolveWorkerName } from "@maple/infra/cloudflare"
+import { plainFrom } from "@maple/infra/env"
+import * as Cloudflare from "alchemy/Cloudflare"
+import * as Command from "alchemy/Command"
+import * as Output from "alchemy/Output"
+import { Effect } from "effect"
+import { HttpServerResponse } from "effect/unstable/http"
+import { handleRequest } from "./handler"
 
 /**
- * Frame and referrer policy, applied to document responses.
- *
- * The app is a single-page bundle, so every route is the same index.html and
- * there is no per-route server render to hang a header on — the path is all
- * this layer knows. That is enough for the split that matters:
- *
- *   - Everything except `/share/` refuses framing outright. The authed app has
- *     no reason to be in anyone's iframe, and until now nothing said so.
- *   - `/share/` allows framing at the document level, because embedding a
- *     public chart is a feature. *Which* links may be framed is decided by the
- *     API (`embeddable` on the resolve response) and enforced by the page, which
- *     is the only layer that knows which token it is holding.
- *
- * `Referrer-Policy: no-referrer` is share-specific and load-bearing rather than
- * hygienic: the token is in the share URL, so without it every cross-origin
- * request the page makes hands the token to a third party in `Referer`. The API
- * deliberately keeps tokens out of its own URLs; this is the other half.
+ * Alchemy evaluates a Worker's props wherever the class is yielded — the
+ * deployed bundle included, where they are inert. `__ALCHEMY_RUNTIME__` folds to
+ * `true` there, so the stack-side branch below, and the `@maple/infra` and
+ * `alchemy/Command` modules only it reaches, are dead-code-eliminated.
  */
-const SHARE_PATH_PREFIX = "/share/"
-
-const isShareDocument = (pathname: string): boolean =>
-	pathname === "/share" || pathname.startsWith(SHARE_PATH_PREFIX)
-
-/** HTML only. A script or stylesheet is not framed, and `frame-ancestors` on one means nothing. */
-const isHtmlResponse = (response: Response): boolean =>
-	(response.headers.get("content-type") ?? "").includes("text/html")
-
-const applyDocumentSecurityHeaders = (response: Response, pathname: string): Response => {
-	if (!isHtmlResponse(response)) return response
-
-	// Rebuilt field by field: a `Response` works as a `ResponseInit` (the spec
-	// reads status/statusText/headers off it), but a spread does not — those are
-	// prototype getters, so `{ ...response }` is an empty object and the result
-	// would silently become a 200 with no headers at all.
-	const headers = new Headers(response.headers)
-
-	if (isShareDocument(pathname)) {
-		headers.set("Referrer-Policy", "no-referrer")
-	} else {
-		headers.set("Content-Security-Policy", "frame-ancestors 'none'")
-		headers.set("X-Frame-Options", "DENY")
-	}
-
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
+const props = Effect.gen(function* () {
+	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
+	const { stage, domains, urls } = yield* MapleStack
+	const api = yield* ApiWorker
+	// The build runs through `Command.Build` so the VITE_* env is part of the
+	// memo hash: a stage's URLs (or the commit) changing re-runs it with no
+	// source change. vite.config.ts turns these into `define` overrides.
+	const build = yield* Command.Build("web-build", {
+		command: "bun run build",
+		cwd: new URL("..", import.meta.url).pathname,
+		outdir: "dist",
+		env: {
+			VITE_API_BASE_URL: urls.api,
+			VITE_INGEST_URL: urls.ingest,
+			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
+			VITE_MAPLE_AUTH_MODE: yield* plainFrom(["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"], "self_hosted"),
+			VITE_CLERK_PUBLISHABLE_KEY: yield* plainFrom(["VITE_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY"], ""),
+			VITE_MAPLE_INGEST_KEY: yield* plainFrom(["VITE_MAPLE_INGEST_KEY", "MAPLE_OTEL_PUBLIC_INGEST_KEY"], ""),
+			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
+			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
+		},
 	})
-}
+	return {
+		main: import.meta.url,
+		name: resolveWorkerName("web", stage),
+		assets: {
+			directory: build.outdir,
+			hash: Output.map(build.hash, (h) => h.output ?? ""),
+			// Deep links must serve the shell at the requested URL: without this the
+			// binding 404s, the handler fetches /index.html, and the assets layer's
+			// trailing-slash normalization 307s that to "/" on every hard reload.
+			notFoundHandling: "single-page-application" as const,
+		},
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		workersDev: true,
+		domain: domains.web,
+		// The share-preview lookups ride the service binding; the URL is still
+		// bound because bindings address requests by absolute URL. A dev stage
+		// without an api domain binds neither and previews degrade to the generic card.
+		env: {
+			...(urls.api === "" ? undefined : { MAPLE_API_BASE_URL: urls.api }),
+			API: api,
+		},
+	}
+})
 
-/**
- * Inline a share link's own `og:*` tags, when it has any.
- *
- * Applied to every viewer, not only to crawlers: sniffing user agents to serve
- * different HTML is cloaking, and the tags change nothing for a human — the app
- * replaces the head as soon as it boots.
- */
-const applyShareOgMeta = async (
-	response: Response,
-	url: URL,
-	api: ApiTarget | undefined,
-): Promise<Response> => {
-	const token = shareTokenFromPath(url.pathname)
-	if (api === undefined || token === undefined || !isHtmlResponse(response)) return response
-
-	const meta = await fetchShareOgMeta(api, token)
-	// No meta means an org-only link, a dead one, or an API that did not answer.
-	// All three keep the generic card, and none of them is worth a broken page.
-	return meta === undefined ? response : shareOgMetaRewriter(meta, url.origin).transform(response)
-}
-
-export default {
-	async fetch(request: Request, env: WebWorkerEnv): Promise<Response> {
-		const url = new URL(request.url)
-		const api = apiTarget(env)
-
-		// Ahead of the assets lookup: this path has no asset behind it, and the
-		// 404 the assets layer returns for it would fall through to the SPA shell.
-		const ogId = ogIdFromPath(url.pathname)
-		if (ogId !== undefined) {
-			return api === undefined
-				? new Response(null, { status: 404 })
-				: renderShareOgImage(api, ogId, env.ASSETS)
-		}
-
-		// Also ahead of the assets lookup, and for the same reason: `/alerts/…` is
-		// a real SPA route, so the shell would answer this path with HTML in an
-		// `<img>` slot rather than a 404 anyone could diagnose.
-		const chartId = alertChartIdFromPath(url.pathname)
-		if (chartId !== undefined) {
-			return api === undefined
-				? new Response(null, { status: 404 })
-				: renderAlertChartImage(api, chartId, env.ASSETS)
-		}
-
-		const assetResponse = await env.ASSETS.fetch(request)
-		if (assetResponse.status !== 404) {
-			// `/version.json` is the one asset whose whole job is to be stale-free:
-			// clients poll it to learn a newer bundle is deployed. Served from any
-			// cache it would report the deploy the tab is already running, which is
-			// exactly the answer that makes the check useless.
-			if (url.pathname === "/version.json") {
-				const response = new Response(assetResponse.body, assetResponse)
-				response.headers.set("Cache-Control", "no-store, must-revalidate")
-				return response
-			}
-			// `/` resolves to a real asset and returns here rather than through the
-			// fallback below, so the headers have to be applied on both paths — this
-			// one is the app's own front door.
-			//
-			// `/share/<token>` also lands here, not in the fallback: with
-			// `not_found_handling: single-page-application` the assets layer answers
-			// unknown paths with the shell itself, at status 200. The share preview
-			// therefore has to be applied on this branch too — putting it only on
-			// the fallback below silently disables it in every deployment.
-			return applyShareOgMeta(applyDocumentSecurityHeaders(assetResponse, url.pathname), url, api)
-		}
-
-		// Fetch "/" rather than "/index.html": the assets layer's
-		// auto-trailing-slash handling answers explicit /index.html requests
-		// with a 307 to "/", which would bounce deep links to the root.
-		//
-		// Every SPA route lands here, which is what makes this the one place the
-		// document's security headers can be set from the requested path.
-		const document = await env.ASSETS.fetch(new Request(new URL("/", url), request))
-		// Reached when the assets layer 404s rather than serving the shell — a
-		// deployment without SPA not-found handling, or a request it declines.
-		return applyShareOgMeta(applyDocumentSecurityHeaders(document, url.pathname), url, api)
-	},
-}
+// The logical id stays `app`: it names the deployed resource, and a rename would
+// plan a delete + create of the Worker behind `app.maple.dev`.
+export default class Web extends Cloudflare.Worker<Web>()(
+	"app",
+	props,
+	Effect.succeed({
+		fetch: Effect.gen(function* () {
+			const request = yield* Cloudflare.Workers.Request
+			const env = yield* Cloudflare.WorkerEnvironment
+			return HttpServerResponse.fromWeb(
+				yield* Effect.promise(() =>
+					handleRequest(request, {
+						ASSETS: env.ASSETS,
+						API: env.API,
+						MAPLE_API_BASE_URL: env.MAPLE_API_BASE_URL,
+					}),
+				),
+			)
+		}),
+	}),
+) {}

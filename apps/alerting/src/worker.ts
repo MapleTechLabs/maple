@@ -13,7 +13,9 @@
  * their own, and a failure outside a tick (the layer build) is logged below.
  */
 import {
+	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
+	emailBinding,
 	MapleDb,
 	MapleStack,
 	type MapleStage,
@@ -60,16 +62,7 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 			scriptName: resolveWorkerName("api", stage),
 		},
 	),
-	// Production only: preview/stg workers run the same email crons against
-	// their own DB branches, so a binding here means every live stage sends
-	// its own copy of onboarding/digest/alert emails to real users.
-	...(stage.kind === "prd"
-		? {
-				EMAIL: Cloudflare.Email.SendEmail("email", {
-					allowedSenderAddresses: ["notifications@noreply.maple.dev"],
-				}),
-			}
-		: undefined),
+	...emailBinding(stage),
 })
 
 /**
@@ -170,8 +163,9 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 	Effect.gen(function* () {
 		// Imported on the first fire and kept for the isolate: `./scheduled`
 		// carries the whole api layer graph, which has no business in startup
-		// validation or in the deploy process.
-		const scheduled = yield* Effect.cached(Effect.promise(() => import("./scheduled")))
+		// validation or in the deploy process. A rejected import is retried on
+		// the next fire rather than pinned (`Effect.cached` keeps the failure).
+		const scheduled = yield* cachedRecoverable(Effect.promise(() => import("./scheduled")))
 		// `MAPLE_DB` in the stage's flavor — on stg/prd its own dashboard-managed
 		// config: `alerting` issues ~97% of the workers' Postgres traffic and was
 		// starving the api's connection pool when the two shared one. The ticks

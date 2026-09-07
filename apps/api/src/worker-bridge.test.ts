@@ -8,7 +8,7 @@ import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { type KeyValueStore, MapleDbConnection, McpSessionStore } from "./platform/bindings"
-import { cachedRecoverable } from "./platform/cached-recoverable"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
 
 /**
