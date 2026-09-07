@@ -1,15 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 
-import {
-	ArrowRightIcon,
-	ChatBubbleIcon,
-	ChatBubbleSparkleIcon,
-	ChevronRightIcon,
-	CircleXmarkIcon,
-	DatabaseIcon,
-	FloppyDiskIcon,
-	PaperPlaneIcon,
-} from "@/components/icons"
+import { ArrowRightIcon, ChevronRightIcon, CircleXmarkIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
@@ -30,34 +21,12 @@ import {
 	type SessionToolUsage,
 } from "@/lib/agent-sessions/session-summary"
 import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
+import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
 import type { SessionToolResults } from "@/lib/agent-sessions/span-detail"
 import { shortTarget } from "@/lib/agent-sessions/span-filters"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
 import { OCCUPANCY_DOT_FILL, OCCUPANCY_FILL, OCCUPANCY_LABEL } from "./span-visuals"
-
-// Each bucket carries a glyph in its own colour: what the tokens WERE — sent,
-// replayed from cache, written to it, replied, thought — rather than a swatch
-// that only says which stripe of the bar is which.
-const TOKEN_BUCKETS = [
-	{ key: "input", label: "Input", fill: "bg-chart-2", text: "text-chart-2", icon: PaperPlaneIcon },
-	{ key: "cacheRead", label: "Cache read", fill: "bg-chart-4", text: "text-chart-4", icon: DatabaseIcon },
-	{
-		key: "cacheWrite",
-		label: "Cache write",
-		fill: "bg-chart-5",
-		text: "text-chart-5",
-		icon: FloppyDiskIcon,
-	},
-	{ key: "output", label: "Output", fill: "bg-chart-1", text: "text-chart-1", icon: ChatBubbleIcon },
-	{
-		key: "reasoning",
-		label: "Reasoning",
-		fill: "bg-chart-3",
-		text: "text-chart-3",
-		icon: ChatBubbleSparkleIcon,
-	},
-] as const
 
 const SEVERITY_DOT = {
 	failure: "bg-destructive",
@@ -380,7 +349,10 @@ function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: r
 	// Under half a percent a legend row reads "0%" and says nothing; the bar
 	// still draws the sliver in place, so nothing disappears from the timeline.
 	const legend = summary.occupancy
-		.map((segment) => ({ ...segment, percent: sharePercent(segment.ms, summary.wallClockMs) }))
+		.map((segment) => ({
+			...segment,
+			percent: sharePercent(segment.ms, summary.wallClockMs),
+		}))
 		.filter((segment) => segment.percent >= 0.5)
 	// The bar is chronological — each interval sits where it happened on the
 	// wall clock, so a mid-session stall reads as a hole in the middle, not as
@@ -485,7 +457,9 @@ function Rail({ summary }: { summary: SessionSummary }) {
 								<div className="h-1 w-full overflow-hidden rounded-xs bg-muted">
 									<div
 										className="h-full bg-primary"
-										style={{ width: `${sharePercent(model.cost, topModelCost)}%` }}
+										style={{
+											width: `${sharePercent(model.cost, topModelCost)}%`,
+										}}
 									/>
 								</div>
 							)}
@@ -624,7 +598,9 @@ function ToolUsageRow({ tool, topToolCalls }: { tool: SessionToolUsage; topToolC
 				<span className="flex h-full" style={{ width: `${sharePercent(tool.calls, topToolCalls)}%` }}>
 					<span
 						className="h-full bg-chart-4"
-						style={{ width: `${sharePercent(tool.calls - tool.failed, tool.calls)}%` }}
+						style={{
+							width: `${sharePercent(tool.calls - tool.failed, tool.calls)}%`,
+						}}
 					/>
 					<span
 						className="h-full bg-destructive"
