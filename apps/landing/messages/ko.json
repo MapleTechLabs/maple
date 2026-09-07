@@ -967,6 +967,8 @@
 	"cmp_hub_matrix_title": "\uc7ac\ubb34\ud300\uc774 \uac00\uc7a5 \uba3c\uc800 \ubb3b\ub294 \uc9c8\ubb38",
 	"cmp_hub_pages_eyebrow": "\ube44\uad50",
 	"cmp_hub_pages_title": "\ubca4\ub354 \uace0\ub974\uae30",
+	"cmp_hub_card_tally": "\ucc28\uc774\uc810 {total}\uac1c \u00b7 {name}\uc774 \uc55e\uc120 \ud56d\ubaa9 {ahead}\uac1c",
+	"cmp_hub_card_cta": "\ube44\uad50 \uc77d\uae30",
 	"cmp_nav_differences": "\ucc28\uc774\uc810",
 	"cmp_nav_price": "\uac00\uaca9",
 	"cmp_nav_migration": "\ub9c8\uc774\uadf8\ub808\uc774\uc158",
