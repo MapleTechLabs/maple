@@ -634,7 +634,7 @@ function compileInner<
 		fromSource = sourceOf(inner)
 		fromFragment = raw(`(${inner.sql}) AS ${state.fromQueryAlias}`)
 	} else if (state.fromUnion) {
-		const inner = compileUnionUnsafe(state.fromUnion, params, { deferParams })
+		const inner = compileUnionUnsafe(state.fromUnion, params, { deferParams, enclosingCtes: visibleCtes })
 		fromSource = sourceOf(inner)
 		fromFragment = raw(`(\n${splitTerminalClauses(inner.sql).body}\n) AS ${state.fromQueryAlias}`)
 	} else {
@@ -945,17 +945,24 @@ const unionExprsOf = (
 export function compileUnionUnsafe<Output extends Record<string, any>, Params extends Record<string, any>>(
 	union: CHUnionQuery<Output>,
 	params: Params,
-	options?: { rowSchema?: CompiledQueryRowSchema<Output>; deferParams?: boolean },
+	options?: {
+		rowSchema?: CompiledQueryRowSchema<Output>
+		deferParams?: boolean
+		/** Internal — see `compileInner`'s option of the same name. A union in a
+		 * later CTE's FROM must still see its earlier scoped siblings. */
+		enclosingCtes?: ReadonlyArray<ResolvedCte>
+	},
 ): CompiledQuery<Output, undefined> {
 	const state = union._state
 	const deferParams = options?.deferParams === true
+	const enclosingCtes = options?.enclosingCtes
 
 	// Compile each sub-query without FORMAT
 	const first = state.queries[0]
 	if (first === undefined) throw new QueryBuilderDefect({ message: "unionAll requires at least one query" })
 	const selectKeys = Object.keys(selectExprsOf(first) ?? {})
 	const subQueries = state.queries.map((q) =>
-		compileInner(q, params, { skipFormat: true, deferParams, selectKeys }),
+		compileInner(q, params, { skipFormat: true, deferParams, selectKeys, enclosingCtes }),
 	)
 	const bounds = new Set(
 		subQueries.flatMap((q) => {

@@ -114,11 +114,12 @@ _(Backed by `docs/expressions.md > Arithmetic does not parenthesise`.)_
 `inf` and `0 / 0` as `nan`, and both come back as JSON `null` — so a division that meets a zero
 denominator returns a null the column type has to accept, or the row fails to decode.
 
-Both operators return `Expr<number | null>` — unless the divisor is a non-zero numeric literal.
-`$.Duration.div(1_000_000)` cannot manufacture a null from a finite dividend, so it stays as
-nullable as `$.Duration` (and is exactly rounded, where `.mul(0.000001)` drifts by an ulp on
-a third of integer inputs). A zero literal, a plain `number`, or another expression as the
-divisor makes the result nullable. Modulo by zero can also raise a ClickHouse error; nullable
+Both operators return `Expr<number | null>` — unless the divisor is a numeric literal of
+magnitude 1 or more. `$.Duration.div(1_000_000)` cannot manufacture a null from a finite
+dividend, so it stays as nullable as `$.Duration` (and is exactly rounded, where
+`.mul(0.000001)` drifts by an ulp on a third of integer inputs). A zero, a literal below 1
+(`1 / 5e-324` overflows to `inf`), a plain `number`, or another expression as the divisor
+makes the result nullable. Modulo by zero can also raise a ClickHouse error; nullable
 decoding does not suppress server errors.
 
 When the output must be numeric, guard both non-finite numbers and SQL NULL:

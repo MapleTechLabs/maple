@@ -114,8 +114,8 @@ time; see [Params and compilation](./params-and-compilation.md#what-each-kind-ac
 
 `Expr<T>` methods: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in_`, `notIn`, `like`, `notLike`,
 `ilike` (string-only), and `add`, `sub`, `mul`, `div`, `mod` (number-only, **no parentheses**). `div` and `mod` decode
-as `number | null` — ClickHouse sends `inf`/`nan` as JSON `null` — except by a non-zero numeric
-literal (`Quotient<L, R>`), which keeps the dividend's nullability; use
+as `number | null` — ClickHouse sends `inf`/`nan` as JSON `null` — except by a numeric literal of
+magnitude ≥ 1 (`Quotient<L, R>`), which keeps the dividend's nullability; use
 `ifNull(ifNotFinite(expr, 0), lit(0))` for a guaranteed number otherwise.
 
 ### Spliced sub-SELECTs

@@ -122,6 +122,19 @@ describe("publishing regressions", () => {
 		expect(CH.compileUnsafe(joined, {}).tenantScope).toBe("cross-tenant")
 	})
 
+	it("lets a union inside a later CTE read an earlier scoped sibling", () => {
+		const scoped = branch("a")
+		const Scoped = CH.table("scoped", Events.columns, { tenantColumn: "OrgId" })
+		const readsSibling = CH.from(Scoped).select("Name")
+		const union = CH.fromUnion(CH.unionAll(readsSibling, readsSibling), "u").select("Name")
+		const Both = CH.table("both", Events.columns, { tenantColumn: "OrgId" })
+		const outer = CH.from(Both).withCTE("scoped", scoped).withCTE("both", union).select("Name")
+		expect(CH.compileUnsafe(outer, {}).tenantScope).toBe("single-tenant")
+		// A branch naming a CTE this compilation cannot see stays cross-tenant.
+		const orphan = CH.from(Both).withCTE("both", union).select("Name")
+		expect(CH.compileUnsafe(orphan, {}).tenantScope).toBe("cross-tenant")
+	})
+
 	it("does not scope a derived source by filtering a projected tenant alias", () => {
 		const projected = CH.from(Events).select(($) => ({ OrgId: CH.lit("a"), Name: $.Name }))
 		const facade = CH.table("projected", Events.columns, { tenantColumn: "OrgId" })
@@ -191,6 +204,7 @@ describe("publishing regressions", () => {
 					percentile: CH.quantile(0.95)(CH.lit(1)),
 					arithmetic: CH.nullIf(CH.lit(1), 1).add(2).mul(3),
 					literalDivisor: CH.lit(3).div(1000000),
+					tinyDivisor: CH.lit(1).div(5e-324),
 				})),
 				{},
 			)
@@ -200,6 +214,8 @@ describe("publishing regressions", () => {
 				percentile: null,
 				arithmetic: null,
 				literalDivisor: 0.000003,
+				// 1 / 5e-324 overflows to inf, which the wire carries as null.
+				tinyDivisor: null,
 			}
 			expect(yield* compiled.decodeRows([row])).toEqual([row])
 			// A non-zero literal divisor keeps the codec strict: nan cannot arrive here.

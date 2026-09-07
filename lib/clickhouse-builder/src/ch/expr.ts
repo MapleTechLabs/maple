@@ -93,15 +93,19 @@ export interface Expr<TSType> {
 }
 
 /**
- * What `/` and `%` decode to. A non-zero numeric literal divisor cannot
- * manufacture `inf`/`nan` from a finite dividend, so `x.div(1_000_000)` stays
- * as nullable as `x`. Anything else — a zero literal, a plain `number`, another
- * expression — can, and ClickHouse sends both as JSON `null`.
+ * What `/` and `%` decode to. A numeric literal divisor of magnitude >= 1
+ * cannot manufacture `inf`/`nan` from a finite dividend, so `x.div(1_000_000)`
+ * stays as nullable as `x`. Anything else — a zero, a literal below 1 (which
+ * can overflow: `1 / 5e-324` is `inf`), a plain `number`, another expression —
+ * can, and ClickHouse sends both as JSON `null`. A literal below 1 is spotted
+ * by how it prints: `0.5`, `-0.5`, or `1e-7`.
  */
 export type Quotient<L, R> = [R] extends [number]
 	? 0 extends R
 		? number | null
-		: number | Extract<L, null>
+		: `${R}` extends `0.${string}` | `-0.${string}` | `${string}e-${string}`
+			? number | null
+			: number | Extract<L, null>
 	: number | null
 
 export interface ColumnRef<Name extends string, ColType extends CHType<string, any>> extends Expr<
@@ -175,9 +179,10 @@ const arith = <Result>(
 	lhsSchema?: Schema.Codec<any, any>,
 ): Expr<Result> => {
 	const rhsSchema = typeof rhs === "number" || rhs === null ? undefined : rhs.schema
-	// `x / 1000000` is finite whenever `x` is; only a zero, non-finite, or
-	// non-literal divisor can produce the `inf`/`nan` that arrives as null.
-	const safeDivisor = typeof rhs === "number" && rhs !== 0 && Number.isFinite(rhs)
+	// `x / 1000000` is finite whenever `x` is. A literal below 1 in magnitude
+	// can overflow a large dividend (`1 / 5e-324` is `inf`), so only |d| >= 1
+	// keeps the strict codec — the same rule `Quotient` applies to the type.
+	const safeDivisor = typeof rhs === "number" && Number.isFinite(rhs) && Math.abs(rhs) >= 1
 	const nullable =
 		((op === "/" || op === "%") && !safeDivisor) ||
 		rhs === null ||
