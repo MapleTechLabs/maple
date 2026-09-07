@@ -10,7 +10,7 @@ import {
 	type MapleDomains,
 	type MapleStage,
 } from "@maple/infra/cloudflare"
-import type { MapleApiWorker } from "../api/alchemy.run.ts"
+import type { MapleApiWorker } from "../api/src/worker.ts"
 import type { WebWorkerEnv } from "./src/worker-env.ts"
 
 export interface CreateMapleWebOptions {

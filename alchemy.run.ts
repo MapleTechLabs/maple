@@ -26,7 +26,6 @@ import {
 import {
 	bindMapleDbRef,
 	formatMapleStage,
-	ManagedMapleDb,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleStage,
@@ -36,7 +35,8 @@ import * as Acm from "@maple/infra/acm"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import Alerting from "./apps/alerting/src/worker.ts"
-import { createMapleApi, createReplayBlobStore } from "./apps/api/alchemy.run.ts"
+import { createReplayBlobStore } from "./apps/api/alchemy.run.ts"
+import MapleApi from "./apps/api/src/worker.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
@@ -212,12 +212,10 @@ export default Alchemy.Stack(
 		// via a Cloudflare CNAME at the ALB, so the URL below stays a plain string
 		// and does not depend on the service resource; a PR preview gets no ingest
 		// domain, so its ALB answers plain HTTP on 80 at `ingest.serviceUrl`.
-		// Hoisted above BOTH consumers on purpose. The bucket is read by the api
-		// Worker over its native binding and written by the Rust gateway on ECS over
-		// the S3 API, and the gateway is constructed first — so neither factory can
-		// own it. `credentials` is undefined on stages that keep replay payloads
-		// inline (`stageEnablesReplayBlobs`). Skipped when a dev run leaves the api
-		// out: the bucket is a live account resource even under `alchemy dev`.
+		// Yielded here first for the gateway's write credentials; the api Worker's
+		// props yield the same declaration for its read binding and get this
+		// registration back. `credentials` is undefined on stages that keep replay
+		// payloads inline (`stageEnablesReplayBlobs`).
 		const replayBlobStore = yield* createReplayBlobStore({ stage })
 
 		const ingest = stageDeploysIngest(stage)
@@ -229,21 +227,13 @@ export default Alchemy.Stack(
 				})
 			: undefined
 
-		// Shared by api and alerting: alchemy-managed on dev stages, undefined
-		// elsewhere (stg/prd bind a dashboard config by id, PR previews get none).
-		// `Alerting` yields the same resource itself; the factory still takes it.
-		const mapleDb = yield* ManagedMapleDb
-
 		// Chat and AI triage run inside the api worker (ChatSession Durable Object),
-		// so there is no separate chat worker to sequence against any more.
-		const api = yield* createMapleApi({
-			stage,
-			domains,
-			mapleDb,
-			replayBlobs: replayBlobStore.bucket,
-			dev: workerDev("api"),
-			devEnv,
-		})
+		// so there is no separate chat worker to sequence against any more. A
+		// single module like the Workers below: its props read `MapleStack`.
+		const api = yield* MapleApi
+		// stg/prd: the dashboard-managed Hyperdrive, by id — attached after the
+		// Worker exists (see the alerting note below).
+		yield* bindMapleDbRef(api, stage, "api")
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the
@@ -289,7 +279,7 @@ export default Alchemy.Stack(
 		const alerting = yield* Alerting
 		// stg/prd: the dashboard-managed Hyperdrive, by id. Not a prop — alchemy has
 		// no `env` form for a binding it did not create — so it is attached here,
-		// after the Worker exists, exactly as the api factory does for its own.
+		// after the Worker exists.
 		yield* bindMapleDbRef(alerting, stage, "alerting")
 		yield* serveWorker("alerting", alerting)
 

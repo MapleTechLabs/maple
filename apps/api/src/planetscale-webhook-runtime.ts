@@ -1,10 +1,9 @@
-import type { MessageBatch } from "@cloudflare/workers-types"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
+import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer, Schema } from "effect"
 import { layerPg } from "@/platform/DatabasePgLive"
 import type { Database, DatabaseError } from "@/platform/DatabaseLive"
+import type { QueueBatch } from "@/platform/queue-batch"
 import {
 	classifyPlanetScaleEvent,
 	deployRequestNumber,
@@ -14,29 +13,24 @@ import {
 } from "./services/integrations/planetscale/webhook-events"
 import { PlanetScaleWebhookJob } from "./services/integrations/planetscale/PlanetScaleWebhookQueue"
 
-const telemetry = MapleCloudflareSDK.make({
-	// Deliberately not `maple-api`: background work sharing the request-facing
-	// service's name skewed its percentiles (p99 32s, 2026-09-04).
-	serviceName: "maple-planetscale-webhooks",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
+/**
+ * Deliberately not `maple-api`: background work sharing the request-facing
+ * service's name skewed its percentiles (p99 32s, 2026-09-04). Provided by the
+ * Worker around the event; the layer below carries no tracer of its own.
+ */
+export const planetScaleWebhookTelemetry = eventTelemetry({ serviceName: "maple-planetscale-webhooks" })
 
-export const buildPlanetScaleWebhookLayer = (_env: Record<string, unknown>) => {
+export const buildPlanetScaleWebhookLayer = () => {
 	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
 	return DatabaseLive.pipe(
-		Layer.provideMerge(telemetry.layer),
 		Layer.provideMerge(workerEnvironmentLayer),
 		Layer.provideMerge(WorkerConfigProviderLayer),
 	)
 }
 
-export const flushPlanetScaleWebhookTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
-
 const decodeJob = Schema.decodeUnknownEffect(PlanetScaleWebhookJob)
 
-export const processPlanetScaleWebhookBatch = (batch: MessageBatch<unknown>) =>
+export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 	Effect.forEach(
 		batch.messages,
 		(message) =>

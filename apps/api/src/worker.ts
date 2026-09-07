@@ -1,27 +1,349 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import type { MessageBatch, ScheduledController } from "@cloudflare/workers-types"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
+/**
+ * The api Worker in alchemy's single-module form: this file is the resource
+ * the root stack yields (`yield* MapleApi`) and the init the deployed isolate
+ * runs. Stage-derived props read `MapleStack`; `impl` runs once per isolate,
+ * on the first event, and registers the crons, the queue consumers, the
+ * request handler and the internal RPC methods. The bridge builds the
+ * telemetry into every event's scope and flushes it after — the request path
+ * as `maple-api`, background work under its own service names (see
+ * `eventTelemetry`).
+ *
+ * The bundle entry is `./entry.ts`, not this module (`isExternal` below): the
+ * chat Durable Object and the two Workflows are still hand-written classes,
+ * which alchemy's generated entry cannot carry. `entry.ts` builds the same
+ * bridge that entry would around this init and exports those classes beside
+ * it. Once they move to alchemy's forms, delete it and set
+ * `main: import.meta.url` here.
+ */
+import type { MapleApiRpcContract } from "@maple/domain/internal-rpc"
 import {
-	layerFromEnvRecord,
-	runScheduledEffect,
+	CLOUDFLARE_WORKER_PLACEMENT,
+	formatMapleStage,
+	ManagedMapleDb,
+	type MapleDomains,
+	MapleStack,
+	type MapleStage,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
+import {
+	apnsEnv,
+	appUrlsEnv,
+	authEnv,
+	cloudflareOAuthEnv,
+	derived,
+	ingestKeyCryptoEnv,
+	merge,
+	optionalPlain,
+	optionalSecret,
+	planetScaleOAuthEnv,
+	plainWithDefault,
+	requireSecretEntry,
+	selfObservabilityEnv,
+	tinybirdEnv,
+} from "@maple/infra/env"
+import {
 	WorkerConfigProviderLayer,
+	WorkerEnvironment,
 	workerEnvironmentLayer,
 } from "@maple/infra/worker-runtime"
-import { WorkerEntrypoint } from "cloudflare:workers"
-import { Cause, Context, Effect, Exit, FileSystem, Layer, ManagedRuntime, Path } from "effect"
-import { HttpRouter, type HttpMiddleware } from "effect/unstable/http"
+import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import * as Cloudflare from "alchemy/Cloudflare"
+import { renamedFrom } from "alchemy/Rename"
+import * as AlchemyTelemetry from "alchemy/Telemetry"
+import {
+	Cause,
+	Clock,
+	Duration,
+	Effect,
+	Exit,
+	FileSystem,
+	Layer,
+	Path,
+	Predicate,
+	Scope,
+	Stream,
+} from "effect"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import type { HttpEffect } from "alchemy/Http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
-import { serverErrorSpanMiddleware } from "./http/server-error-span"
-import { v2WorkerUnavailableResponse } from "./http/v2-worker-unavailable"
+import { createReplayBlobStore } from "../alchemy.run.ts"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "./http/api-cors"
-import { persistSession, preloadSession } from "./mcp/lib/session-store"
-import { makeRecoverablePromiseMemo } from "./platform/recoverable-promise-memo"
-import { classifyWorkerQueue } from "./queue-dispatch"
-import type { MapleApiWorkerEnv } from "../alchemy.run.ts"
+import { ApiObservabilityLive } from "./http/api-observability"
+import { v2WorkerUnavailableResponse } from "./http/v2-worker-unavailable"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
+import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
+
+/**
+ * Everything in the api worker's env that comes from configuration rather than
+ * from a resource. Resolved as one `Config` so a deploy missing several vars
+ * reports all of them at once, and so `.env` / `--env-file` reach it — see
+ * `@maple/infra/env`.
+ */
+const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
+	merge(
+		tinybirdEnv,
+		// ClickHouse (BYO warehouse); `tinybird` unless an org config overrides it.
+		optionalPlain("CLICKHOUSE_URL"),
+		plainWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
+		optionalPlain("CLICKHOUSE_USER"),
+		optionalPlain("CLICKHOUSE_DATABASE"),
+		optionalSecret("CLICKHOUSE_PASSWORD"),
+		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
+		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
+		// Dev stages only: alchemy binds only what is declared here, and on a
+		// deploy a pin would point the whole API at one tenant.
+		...(stage.kind === "dev" ? [optionalPlain("MAPLE_ORG_ID_OVERRIDE")] : []),
+		authEnv,
+		ingestKeyCryptoEnv,
+		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
+		appUrlsEnv,
+		// The worker's own canonical origin — everything it publishes about itself
+		// (MCP `server.json`, the discovery index) is built from this rather than
+		// from client-controlled forwarded headers. Stages with a real domain
+		// derive it; the rest fall back to production, overridable per deploy.
+		domains.api
+			? derived("MAPLE_API_BASE_URL", `https://${domains.api}`)
+			: plainWithDefault("MAPLE_API_BASE_URL", "https://api.maple.dev"),
+		// Bucket-cache knobs: on by default in deployed stages. Override via
+		// deploy-time env (e.g. `QE_BUCKET_CACHE_ENABLED=false`) if needed.
+		plainWithDefault("QE_BUCKET_CACHE_ENABLED", "true"),
+		plainWithDefault("QE_BUCKET_CACHE_TTL_SECONDS", "86400"),
+		plainWithDefault("QE_BUCKET_CACHE_FLUX_SECONDS", "60"),
+		plainWithDefault("QE_BUCKET_CACHE_SEGMENT_BUCKETS", "120"),
+		// Both of the next two knobs are bounded by Cloudflare's
+		// six-simultaneous-connection limit, which `cache.match()` counts against
+		// while it waits for response headers. Keep the deploy-time values in step
+		// with the reasoning in `bucket-cache.ts` and `edge-cache.ts` — a stale
+		// override here silently defeats a tuned default, which is exactly what
+		// happened when these were pinned to 16/250 and the code defaults moved to
+		// 6/40 underneath them.
+		plainWithDefault("QE_BUCKET_CACHE_READ_CONCURRENCY", "6"),
+		plainWithDefault("EDGE_CACHE_READ_TIMEOUT_MS", "40"),
+		// MAPLE_ENDPOINT / MAPLE_ENVIRONMENT / COMMIT_SHA / MAPLE_INGEST_KEY.
+		selfObservabilityEnv(stage),
+		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
+		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
+		// See `@/platform/Llm` for the provider-scoped model overrides.
+		optionalPlain("MAPLE_LLM_PROVIDER"),
+		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
+		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
+		optionalSecret("OPENROUTER_API_KEY"),
+		// Svix signing secrets for the public webhook receivers (`/webhooks/clerk`,
+		// `/webhooks/autumn`); each route answers 503 until its secret is set.
+		optionalSecret("CLERK_WEBHOOK_SECRET"),
+		optionalSecret("AUTUMN_WEBHOOK_SECRET"),
+		// Server-side product events default to MAPLE_INGEST_KEY; set this only if
+		// the funnel should land in a different org than the API's traces.
+		optionalSecret("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
+		optionalSecret("AUTUMN_SECRET_KEY"),
+		// Billing details (company name, address, tax IDs) are written to the Stripe
+		// customer Autumn links; Autumn itself has no API for them.
+		optionalSecret("STRIPE_SECRET_KEY"),
+		optionalSecret("SD_INTERNAL_TOKEN"),
+		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		optionalPlain("HAZEL_API_BASE_URL"),
+		optionalPlain("HAZEL_OAUTH_DISCOVERY_URL"),
+		optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
+		optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
+		optionalPlain("HAZEL_OAUTH_SCOPES"),
+		// Slack integration (bot install via OAuth v2)
+		optionalPlain("SLACK_CLIENT_ID"),
+		optionalSecret("SLACK_CLIENT_SECRET"),
+		optionalSecret("SLACK_INTERNAL_SERVICE_TOKEN"),
+		apnsEnv,
+		optionalPlain("GITHUB_APP_ID"),
+		optionalPlain("GITHUB_APP_SLUG"),
+		optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+		optionalPlain("GITHUB_APP_CLIENT_ID"),
+		optionalSecret("GITHUB_APP_CLIENT_SECRET"),
+		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
+		optionalPlain("GITHUB_API_BASE_URL"),
+		cloudflareOAuthEnv,
+		planetScaleOAuthEnv,
+	)
+
+/**
+ * The api worker's resource bindings, split from the `Config`-sourced env so
+ * they read as the binding contract they are. The queue consumers are not
+ * here: `consumeQueueMessages` in the init attaches each one to the Worker.
+ */
+const makeWorkerBindings = ({
+	stage,
+	mapleDb,
+	replayBlobs,
+	mcpSessions,
+	vcsSyncQueue,
+	planetScaleWebhookQueue,
+	auditEventsQueue,
+	auditEventsDlqName,
+}: {
+	stage: MapleStage
+	mapleDb: Cloudflare.Hyperdrive.Connection | undefined
+	replayBlobs: Cloudflare.R2.Bucket
+	mcpSessions: Cloudflare.KV.Namespace
+	vcsSyncQueue: Cloudflare.Queues.Queue
+	planetScaleWebhookQueue: Cloudflare.Queues.Queue
+	auditEventsQueue: Cloudflare.Queues.Queue
+	auditEventsDlqName: string
+}) => ({
+	// Ref stages attach MAPLE_DB via `bindMapleDbRef` in the root stack.
+	...(mapleDb ? { MAPLE_DB: mapleDb } : undefined),
+	// Workers AI (`env.AI`, the v1 `Ai()` binding), driving the AI-triage agent on
+	// `@opencode-ai/ai`. v2 emits the `{ type: "ai" }` binding by attaching an AI Gateway
+	// resource, which also fronts model calls with caching/rate-limits/logging.
+	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
+	// for this resource.
+	AI: Cloudflare.AI.Gateway("maple-api-ai"),
+	// Durable chat transcripts, one Durable Object per "<orgId>:<tabId>". v2
+	// provisions new DO classes as SQLite-backed by default. Class is exported
+	// from src/entry.ts.
+	CHAT_SESSION: Cloudflare.DurableObject("chat-session", { className: "ChatSession" }),
+	MCP_SESSIONS: mcpSessions,
+	// Read side of the replay payload store; absent bindings degrade to
+	// inline-only hydration (see platform/ReplayBlobStore.ts).
+	REPLAY_BLOBS: replayBlobs,
+	VCS_SYNC_QUEUE: vcsSyncQueue,
+	PLANETSCALE_WEBHOOK_QUEUE: planetScaleWebhookQueue,
+	AUDIT_EVENTS_QUEUE: auditEventsQueue,
+	// Read back by the init at plan time, for the audit consumer's dead-letter
+	// setting — the init has the bound queues in hand there, not the stage.
+	AUDIT_EVENTS_DLQ_NAME: auditEventsDlqName,
+	// Long-running schema-apply: chunks heavy backfill migrations across durable
+	// steps so they never hit the Worker request budget. Class is exported from
+	// src/entry.ts. The first Workflow arg IS the physical workflow name; the
+	// api worker hosts it (no scriptName), so alchemy registers it after deploy.
+	CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: Cloudflare.Workflow<{ orgId: string }>(
+		resolveWorkerName("schema-apply", stage),
+		{ className: "ClickHouseSchemaApplyWorkflow" },
+	),
+	// Fan-out investigation: N lens agents in parallel, then a validator that
+	// promotes one cause and records why each rival lost. Class is exported from
+	// src/entry.ts.
+	INVESTIGATION_FANOUT_WORKFLOW: Cloudflare.Workflow<{
+		orgId: string
+		investigationId: string
+		maxWidth: number
+		reservedPasses: number
+		attempt: number
+	}>(resolveWorkerName("investigation-fanout", stage), {
+		className: "InvestigationFanoutWorkflow",
+	}),
+	API_V2_RATE_LIMITER: Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
+		namespaceId: 2026071801,
+		simple: { limit: 600, period: 60 },
+	}),
+	CLI_AUTH_RATE_LIMITER: Cloudflare.RateLimit("CLI_AUTH_RATE_LIMITER", {
+		namespaceId: 2026072101,
+		simple: { limit: 30, period: 60 },
+	}),
+	MCP_OAUTH_RATE_LIMITER: Cloudflare.RateLimit("MCP_OAUTH_RATE_LIMITER", {
+		namespaceId: 2026072102,
+		simple: { limit: 60, period: 60 },
+	}),
+	// Authenticated POST /mcp, per credential. A short window so a runaway
+	// agent loop is cut off in seconds, at twice the v2 API's throughput.
+	MCP_TOOLS_RATE_LIMITER: Cloudflare.RateLimit("MCP_TOOLS_RATE_LIMITER", {
+		namespaceId: 2026082901,
+		simple: { limit: 120, period: 10 },
+	}),
+	API_V2_RATE_LIMIT_PARTITION: formatMapleStage(stage),
+	// Production only: preview/stg workers run the same email crons against
+	// their own DB branches, so a binding here means every live stage sends
+	// its own copy of onboarding/digest/alert emails to real users.
+	...(stage.kind === "prd"
+		? {
+				EMAIL: Cloudflare.Email.SendEmail("email", {
+					allowedSenderAddresses: ["notifications@noreply.maple.dev"],
+				}),
+			}
+		: undefined),
+})
+
+/** The bundle alchemy deploys — see the module comment. */
+const ENTRY = new URL("./entry.ts", import.meta.url).href
+
+const stageQueue = (id: string, stage: MapleStage) =>
+	Cloudflare.Queues.Queue(id, { name: resolveWorkerName(id, stage) })
+
+/**
+ * Alchemy evaluates a Worker's props wherever the class is yielded — the
+ * deployed bundle included, where they are inert. `__ALCHEMY_RUNTIME__` folds to
+ * `true` there, so the stack-side branch below, and the `@maple/infra` modules
+ * only it reaches, are dead-code-eliminated from what ships.
+ */
+const props = Effect.gen(function* () {
+	if (globalThis.__ALCHEMY_RUNTIME__) return { main: ENTRY, isExternal: true }
+	const { stage, domains, workerDev, devEnv } = yield* MapleStack
+	// MAPLE_DB Hyperdrive comes in two flavors (see `ManagedMapleDb`): dev stages
+	// get the alchemy-managed one yielded here; stg/prd bind a dashboard-managed
+	// config by id after the Worker exists (`bindMapleDbRef` in the root stack);
+	// PR previews get no database binding at all — the worker still boots and
+	// serves, DB-backed routes 500 while everything else works.
+	const mapleDb = yield* ManagedMapleDb
+	// Declared once, by id: the root yields the same store for the ingest
+	// gateway's write credentials, and this yield returns that registration.
+	const { bucket: replayBlobs } = yield* createReplayBlobStore({ stage })
+	// Resolved before any resource is created, so a misconfigured deploy fails
+	// with the full list of missing vars rather than part-way through applying.
+	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
+	const mcpSessions = yield* Cloudflare.KV.Namespace("MCP_SESSIONS", {
+		title: resolveWorkerName("mcp-sessions", stage),
+	})
+	// Vendor-agnostic VCS sync queue (commit backfill + webhook deltas), the
+	// PlanetScale webhook queue and the audit-events queue. This Worker is both
+	// producer (bindings) and consumer (`consumeQueueMessages` in the init).
+	// Under `alchemy dev` both halves are emulated in-process from this same
+	// definition.
+	const vcsSyncQueue = yield* stageQueue("vcs-sync", stage)
+	const planetScaleWebhookQueue = yield* stageQueue("planetscale-webhooks", stage)
+	const auditEventsQueue = yield* stageQueue("audit-events", stage)
+	// Parking lot for audit entries that exhausted their retries. Deliberately
+	// has no consumer: an entry landing here is a lost audit record, and the
+	// point is that it survives for inspection instead of being dropped.
+	const auditEventsDlq = yield* stageQueue("audit-events-dlq", stage)
+	return {
+		main: ENTRY,
+		isExternal: true,
+		name: resolveWorkerName("api", stage),
+		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		// Under `bun dev`: a sticky port the app's route follows.
+		dev: workerDev("api"),
+		workersDev: true,
+		// alchemy ≥ beta.70 sets rolldown `strictExecutionOrder: true`, which wraps
+		// ~every chunk in a lazy `__esmMin` initializer. The DB module graph (drizzle
+		// pgTable schemas + Effect Schema ASTs) then evaluates on first use — inside
+		// the first Postgres call of each fresh isolate — instead of at script
+		// startup. That is what stepped the cold dial from ~2s to ~9-11s on
+		// 2026-08-08 (deploy 2679ba80) and produced the CONNECT_TIMEOUT incident;
+		// see the 2026-08-11 investigation. Eager evaluation moves that cost back to
+		// script startup, off the request path. If chunking ever regresses into
+		// upstream #749 (`ScriptStartupError: Cannot access '<minified>' before
+		// initialization`), the deploy fails loudly at upload — remove this override
+		// and instead warm the DB graph off the request path.
+		build: { output: { strictExecutionOrder: false } },
+		// Custom domain (not a zone route): routes don't create DNS records, so
+		// pr-stage hostnames would be authoritative NXDOMAIN. Custom domains
+		// provision DNS + edge certs automatically.
+		domain: domains.api,
+		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
+		env: {
+			...makeWorkerBindings({
+				stage,
+				mapleDb,
+				replayBlobs,
+				mcpSessions,
+				vcsSyncQueue,
+				planetScaleWebhookQueue,
+				auditEventsQueue,
+				auditEventsDlqName: resolveWorkerName("audit-events-dlq", stage),
+			}),
+			...configuredEnv,
+			...devEnv,
+		},
+	}
+})
 
 const WorkerFileSystemLive = FileSystem.layerNoop({})
 
@@ -55,483 +377,464 @@ const WorkerPlatformLive = Layer.mergeAll(
 	WorkerHttpPlatformLive,
 )
 
-// HttpRouter accepts an immutable request-local context. The worker does not
-// inject per-request services here, so reuse the same empty value rather than
-// rebuilding it on every invocation.
-const HandlerContext = Context.empty() as never
-
-// Construct telemetry once at module scope — `layer` is stable, `flush(env)`
-// resolves env lazily on first call. Including `telemetry.layer` in the
-// handler's layer composition is the critical bit: the Tracer reference must
-// live in the same runtime as the routes that emit spans.
-const telemetry = MapleCloudflareSDK.make({
-	serviceName: "maple-api",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	dropSpanNames: ["McpServer/Notifications."],
-	// Expected 4xx outcomes (validation, not-found, unauthorized, …) record as
-	// Ok spans instead of errors — see @maple/domain/anticipated-errors.
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS, ...MCP_ANTICIPATED_ERROR_IDENTIFIERS],
-})
-
 /**
- * Install one Postgres connection for the whole of `program`.
- *
- * The scope module is imported dynamically for the same reason the route graph
- * is: keeping it off module scope protects the worker's fixed startup-CPU
- * budget.
+ * `Effect.cached`, except a failed build is forgotten: `cached` pins its exit,
+ * failure included, for the isolate, and a build that failed on a transient
+ * cause (a binding briefly unavailable) must be retried by a later event
+ * rather than answer 503 until the isolate is replaced.
  */
-const scoped = async <A, E, R>(program: Effect.Effect<A, E, R>) => {
-	const { withPgConnectionScope } = await import("@/platform/pg-connection-scope")
-	return withPgConnectionScope(program)
-}
+const cachedRecoverable = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<Effect.Effect<A, E, R>> =>
+	Effect.map(Effect.cachedInvalidateWithTTL(self, Duration.infinity), ([cached, invalidate]) =>
+		cached.pipe(Effect.onError(() => invalidate)),
+	)
 
-// The service graph, HTTP graph, and database layer are imported DYNAMICALLY,
-// not at module scope. The static import graph reachable from the HTTP graph eagerly builds
-// hundreds of Effect Schema ASTs (`@maple/domain` + 47 MCP tool schemas) at
-// module-evaluation time. Cloudflare runs only the top-level module scope
-// during upload validation, so pulling that work in statically blew the fixed
-// ~1s startup CPU budget (error 10021). Deferring it behind `import()` keeps
-// the top level near-empty; the cost moves to the first request, which runs
-// under the far larger per-request CPU budget.
-const buildHandler = async () => {
-	const [
-		{ HttpServicesLive },
-		{ AllRoutes, ApiAuthLive, ApiObservabilityLive },
-		{ layerPg },
-		{ pgConnectionMiddleware },
-	] = await Promise.all([
-		import("./runtime/service-graph"),
-		import("./runtime/http-graph"),
-		import("@/platform/DatabasePgLive"),
-		import("@/platform/pg-connection-scope"),
+/** A layer built for the isolate: its scope is never closed (workerd has no teardown), except when the build itself fails. */
+const buildForIsolate = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
+	Effect.gen(function* () {
+		const scope = yield* Scope.make()
+		return yield* Layer.buildWithScope(layer, scope).pipe(
+			Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
+		)
+	})
+
+// The service graph, HTTP graph and database layer are imported DYNAMICALLY,
+// not at module scope. The static import graph reachable from the HTTP graph
+// eagerly builds hundreds of Effect Schema ASTs (`@maple/domain` + 47 MCP tool
+// schemas) at module-evaluation time. Cloudflare runs only the top-level module
+// scope during upload validation, so pulling that work in statically blew the
+// fixed ~1s startup CPU budget (error 10021). Deferring it behind `import()`
+// keeps the top level near-empty; the cost moves to the first event, which
+// runs under the far larger per-request CPU budget. The Postgres scope module
+// is deferred for the same reason.
+const pgScopeModule = Effect.promise(() => import("./platform/pg-connection-scope"))
+const rpcModule = Effect.promise(() => import("./internal-rpc"))
+const vcsSyncModule = Effect.promise(() => import("./vcs-sync-runtime"))
+const planetScaleWebhookModule = Effect.promise(() => import("./planetscale-webhook-runtime"))
+const auditEventsModule = Effect.promise(() => import("./audit-events-runtime"))
+const slackReconcileModule = Effect.promise(() => import("./slack-reconcile-runtime"))
+
+/** The route graph as one request handler, built once per isolate on the first request. */
+const buildApp = Effect.gen(function* () {
+	const [{ HttpServicesLive }, { AllRoutes, ApiAuthLive }, { layerPg }] = yield* Effect.all([
+		Effect.promise(() => import("./runtime/service-graph")),
+		Effect.promise(() => import("./runtime/http-graph")),
+		Effect.promise(() => import("./platform/DatabasePgLive")),
 	])
-	// The worker's one per-request middleware stack. Ordering is load-bearing:
-	// `serverErrorSpanMiddleware` must stay OUTERMOST (directly under
-	// `HttpMiddleware.tracer`) so it converts a 5xx success into the failure the
-	// tracer records — after `pgConnectionMiddleware`'s exit-agnostic `ensuring`
-	// has already released the request's Postgres socket. It also keeps a
-	// standing requirement satisfied: POST /mcp hangs indefinitely on Workers
-	// when `toWebHandler` is given NO middleware (1101 in prod, miniflare
-	// "worker hung" locally — suspected Effect RpcServer / HttpRouter
-	// scope-propagation bug), so this slot must never go back to empty.
-	const apiRequestMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) =>
-		serverErrorSpanMiddleware(pgConnectionMiddleware(httpApp))
-	return HttpRouter.toWebHandler(
+	const scope = yield* Scope.make()
+	const handler = yield* HttpRouter.toHttpEffect(
 		AllRoutes.pipe(
 			Layer.provideMerge(HttpServicesLive),
 			Layer.provideMerge(ApiAuthLive),
-			Layer.provideMerge(ApiObservabilityLive),
 			Layer.provideMerge(WorkerPlatformLive),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(workerEnvironmentLayer),
-			Layer.provideMerge(telemetry.layer),
 			Layer.provideMerge(WorkerConfigProviderLayer),
 		),
-		// `disableLogger: true` stops Effect's default logger double-logging;
-		// application logs flow through the OTLP logger from `telemetry.layer`.
-		{ middleware: apiRequestMiddleware, disableLogger: true },
+	).pipe(
+		Scope.provide(scope),
+		Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
 	)
-}
+	return bridgeHandler(handler)
+})
 
-// Single isolate-wide handler — `toWebHandler` builds its own ManagedRuntime
-// lazily on first invocation and keeps it for the lifetime of the isolate.
-// Memoized via the build promise so concurrent first requests share one build.
-// A rejected build is cleared after those callers observe it, allowing a later
-// request to recover instead of pinning the isolate to a rejected promise.
-const handlerMemo = makeRecoverablePromiseMemo(buildHandler)
+/**
+ * The router's handler as the bridge serves it.
+ *
+ * SAFETY: `toHttpEffect` keeps the routes' request-scoped markers in the
+ * handler's type — the services they read per request, and the failures they
+ * declare — but the context it builds runs them with every service the graph
+ * merged (the same services `Layer.provideMerge` put there), and a failure
+ * that escapes a route reaches alchemy's boundary, which renders a Respondable
+ * as its own response and anything else as an empty 500. The retired entry
+ * discharged the same markers by handing `toWebHandler` an empty request
+ * context; this is that discharge, in one place.
+ */
+const bridgeHandler = <E, R>(
+	handler: Effect.Effect<
+		HttpServerResponse.HttpServerResponse,
+		E,
+		R | Scope.Scope | HttpServerRequest.HttpServerRequest
+	>,
+): HttpEffect => handler as HttpEffect
 
-// RPC has no HttpApi request to construct the application services for it, so
-// it gets a sibling isolate-wide ManagedRuntime. Its headless service graph
-// stays behind a dynamic import, preserving the worker's startup-CPU budget.
-const buildRpcRuntime = async (env: MapleApiWorkerEnv) => {
-	const [{ InvestigationServicesLive }, { layerPg }] = await Promise.all([
-		import("./runtime/mcp-service-graph"),
-		import("@/platform/DatabasePgLive"),
+/**
+ * RPC has no HttpApi request to construct the application services for it, so
+ * it gets a sibling isolate-wide service graph — the headless one the MCP tools
+ * run on.
+ */
+const buildRpcServices = Effect.gen(function* () {
+	const [{ InvestigationServicesLive }, { layerPg }] = yield* Effect.all([
+		Effect.promise(() => import("./runtime/mcp-service-graph")),
+		Effect.promise(() => import("./platform/DatabasePgLive")),
 	])
-	const runtime = ManagedRuntime.make(
+	return yield* buildForIsolate(
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(WorkerPlatformLive),
 			Layer.provideMerge(layerPg),
-			Layer.provideMerge(layerFromEnvRecord(env)),
-			Layer.provideMerge(telemetry.layer),
+			Layer.provideMerge(workerEnvironmentLayer),
 			Layer.provideMerge(WorkerConfigProviderLayer),
 		),
 	)
-	try {
-		// ManagedRuntime also acquires lazily and retains a failed build fiber.
-		// Acquire before resolving the recoverable outer promise so a later RPC
-		// can construct a fresh runtime after an initialization failure.
-		await runtime.context()
-		return runtime
-	} catch (error) {
-		await runtime.dispose()
-		throw error
-	}
+})
+
+const pathOf = (url: string): string => {
+	const query = url.indexOf("?")
+	return query === -1 ? url : url.slice(0, query)
 }
 
-const rpcRuntimeMemo = makeRecoverablePromiseMemo(buildRpcRuntime)
+const isV2Path = (path: string): boolean => path === "/v2" || path.startsWith("/v2/")
 
-type InternalRpcMethod = "listMcpTools" | "callMcpTool" | "submitDiagnosis"
+const isSessionsBinding = (value: unknown): value is SessionsBinding =>
+	Predicate.hasProperty(value, "get") &&
+	typeof value.get === "function" &&
+	Predicate.hasProperty(value, "put") &&
+	typeof value.put === "function"
 
-const ALCHEMY_RPC_ERROR_TAG = "~alchemy/rpc/error" as const
-
-// Alchemy's schemaless RPC error envelope is deliberately tiny. Keeping this
-// encoder local avoids pulling its full Worker bridge into an already large API
-// bundle; alchemy's `toRpcAsync` on the caller side decodes this exact public
-// wire shape.
-const encodeRpcError = (error: unknown): unknown => {
-	if (error == null || typeof error !== "object") return error
-	const object = error as Record<string, unknown>
-	if (typeof object._tag === "string") {
-		const encoded = Object.fromEntries(Object.keys(object).map((key) => [key, object[key]]))
-		if (error instanceof Error && !("message" in encoded)) encoded.message = error.message
-		return encoded
-	}
-	if (error instanceof Error) {
-		return { name: error.name, message: error.message, stack: error.stack }
-	}
-	return error
-}
-
-const runInternalRpc = async (
-	method: InternalRpcMethod,
-	input: unknown,
-	env: MapleApiWorkerEnv,
-	ctx: ExecutionContext,
-) => {
-	const [runtime, { callMcpToolRpc, listMcpToolsRpc, submitDiagnosisRpc }] = await Promise.all([
-		rpcRuntimeMemo.get(env),
-		import("./internal-rpc"),
-	])
-	let exit: Exit.Exit<unknown, unknown>
-	// The RPC runtime is isolate-wide, so the scope goes around each call rather
-	// than around the runtime — one socket per RPC invocation, released with it.
-	switch (method) {
-		case "listMcpTools":
-			exit = await runtime.runPromiseExit(await scoped(listMcpToolsRpc))
-			break
-		case "callMcpTool":
-			exit = await runtime.runPromiseExit(await scoped(callMcpToolRpc(input)))
-			break
-		case "submitDiagnosis":
-			exit = await runtime.runPromiseExit(await scoped(submitDiagnosisRpc(input)))
-			break
-	}
-	ctx.waitUntil(telemetry.flush(env))
-	if (exit._tag === "Success") return exit.value
-	const defect = exit.cause.reasons.find(Cause.isDieReason)
-	if (defect) throw defect.defect
-	const failure = exit.cause.reasons.find(Cause.isFailReason)
-	if (failure) {
-		return {
-			_tag: ALCHEMY_RPC_ERROR_TAG,
-			error: encodeRpcError(failure.error),
-		}
-	}
-	throw new Error("RPC method failed with an unexpected cause")
-}
-
-const isMcpPost = (request: Request): boolean => {
-	if (request.method !== "POST") return false
-	try {
-		return new URL(request.url).pathname === "/mcp"
-	} catch {
-		return false
-	}
-}
-
-const isV2Request = (request: Request): boolean => {
-	try {
-		const pathname = new URL(request.url).pathname
-		return pathname === "/v2" || pathname.startsWith("/v2/")
-	} catch {
-		return false
-	}
-}
+/** The route graph could not finish bootstrapping: the canonical v2 fallback, or a plain 504 for the rest. */
+const unavailableResponse = (path: string) =>
+	HttpServerResponse.fromWeb(
+		isV2Path(path)
+			? v2WorkerUnavailableResponse()
+			: new Response("The API worker is temporarily unavailable.", { status: 504 }),
+	)
 
 /**
- * Liveness does not need the domain graph, service graph, authentication,
- * database scope, route codecs, or telemetry runtime. Keeping it
- * bootstrap-safe also lets a cold isolate report health when an unrelated
- * application binding is unavailable.
+ * The request handler the bridge serves. Liveness and preflights answer before
+ * the route graph exists: neither needs the domain graph, authentication, the
+ * database scope or the route codecs, and a cold isolate can report health
+ * when an unrelated binding is unavailable. Everything else runs the router
+ * under one Postgres connection for the request.
+ *
+ * MCP session persistence is driven from here rather than from inside the
+ * MCP layer: the sessions Map hands Effect's MCP server its transcript, and
+ * the KV copy behind it is what lets the next isolate find a session this one
+ * issued.
  */
-const isHealthRequest = (request: Request): boolean => {
-	if (request.method !== "GET") return false
-	try {
-		return new URL(request.url).pathname === "/health"
-	} catch {
-		return false
-	}
-}
-
-const healthResponse = (): Response =>
-	new Response("OK", {
-		headers: { ...API_CORS_RESPONSE_HEADERS, "content-type": "text/plain; charset=utf-8" },
-	})
-
-type McpFrame = { method: string; id: string }
-
-// Peek the JSON-RPC body without consuming the request stream. Returns the
-// first frame's method and id (string-coerced; "-" if absent). Tolerates batch
-// payloads and malformed JSON — diagnostics only, never throws.
-const peekMcpFrame = (body: string): McpFrame => {
-	try {
-		const parsed = JSON.parse(body)
-		const first = Array.isArray(parsed) ? parsed[0] : parsed
-		const method = typeof first?.method === "string" ? first.method : "-"
-		const id = first?.id === undefined || first?.id === null ? "-" : String(first.id)
-		return { method, id }
-	} catch {
-		return { method: "-", id: "-" }
-	}
-}
-
-// The handler should never throw under normal operation — Effect surfaces
-// errors as HTTP responses. If it does (layer construction failure, fatal
-// runtime error), we surface it as a 504 outside Effect.
-//
-// MCP session persistence runs OUTSIDE the Effect runtime on purpose. Effect's
-// fiber scheduler doesn't reliably propagate AsyncLocalStorage through every
-// generator resumption / scope finalizer / forked fiber, so reading a binding
-// via ALS from inside an `override set()` on the clientSessions Map silently
-// no-ops in some paths — sessions stay in-memory only and the next isolate 404s.
-// Driving the KV preload+put from this outer async context means the bindings
-// come from `env` directly — no AsyncLocalStorage required.
-const handle = async (request: Request, env: MapleApiWorkerEnv, ctx: ExecutionContext): Promise<Response> => {
-	if (isHealthRequest(request)) return healthResponse()
-	if (request.method === "OPTIONS") return apiCorsPreflightResponse()
-
-	const isMcp = isMcpPost(request)
-	const kv = isMcp ? env.MCP_SESSIONS : undefined
-	const reqSid = isMcp ? request.headers.get("mcp-session-id") : null
-	// Start the expensive cold handler build and the independent KV read before
-	// buffering an MCP body. Warm requests resolve both promises immediately;
-	// cold MCP requests hide module evaluation and KV latency behind body I/O.
-	const pendingHandler = handlerMemo.get()
-	const pendingSession = kv && reqSid ? preloadSession(kv, reqSid) : undefined
-
-	// MCP diagnostics: buffer the body so we can peek the JSON-RPC method/id
-	// before handing it off to Effect, then re-emit the request with the
-	// buffered body so the inner handler still sees a readable stream.
-	let forwardRequest = request
-	let mcpFrame: McpFrame | null = null
-	const startedAt = isMcp ? Date.now() : undefined
-	if (isMcp) {
-		const bodyText = await request.text()
-		mcpFrame = peekMcpFrame(bodyText)
-		forwardRequest = new Request(request.url, {
-			method: request.method,
-			headers: request.headers,
-			body: bodyText,
-		})
-		console.log(
-			`[mcp-in] method=${mcpFrame.method} id=${mcpFrame.id}` +
-				` sid=${reqSid ?? "-"} body_len=${bodyText.length}`,
-		)
-	}
-
-	try {
-		const built = pendingSession
-			? (await Promise.all([pendingHandler, pendingSession]))[0]
-			: await pendingHandler
-		let response: Response
-		try {
-			response = await built.handler(forwardRequest, HandlerContext)
-		} catch (error) {
-			// `toWebHandler` acquires lazily and pins a rejected inner build.
-			// Evict only the exact wrapper used by this request so the next real
-			// request can rebuild it; overlapping failures cannot clear a retry.
-			if (handlerMemo.evict(pendingHandler)) await built.dispose()
-			throw error
+export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>) =>
+	Effect.gen(function* () {
+		const request = yield* HttpServerRequest.HttpServerRequest
+		const path = pathOf(request.url)
+		if (request.method === "GET" && path === "/health") {
+			return HttpServerResponse.text("OK", { headers: API_CORS_RESPONSE_HEADERS })
 		}
-		if (kv && isMcp) {
-			const resSid = response.headers.get("mcp-session-id")
+		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
+
+		const env = yield* Cloudflare.WorkerEnvironment
+		const isMcp = request.method === "POST" && path === "/mcp"
+		const sessions = isMcp && isSessionsBinding(env.MCP_SESSIONS) ? env.MCP_SESSIONS : undefined
+		const requestSessionId = isMcp ? request.headers["mcp-session-id"] : undefined
+		const startedAt = yield* Clock.currentTimeMillis
+
+		// The cold handler build and the independent KV read overlap: warm
+		// requests resolve both at once, cold MCP requests hide KV latency behind
+		// module evaluation.
+		const [built, { withPgConnectionScope }] = yield* Effect.all(
+			[
+				Effect.exit(app),
+				pgScopeModule,
+				sessions && requestSessionId
+					? Effect.promise(() => preloadSession(sessions, requestSessionId))
+					: Effect.void,
+			],
+			{ concurrency: "unbounded" },
+		)
+		if (Exit.isFailure(built)) {
+			yield* Effect.logError("API worker route graph failed to build", built.cause).pipe(
+				Effect.annotateLogs({ method: request.method, path }),
+			)
+			return unavailableResponse(path)
+		}
+
+		const response = yield* withPgConnectionScope(built.value).pipe(
+			Effect.provideService(WorkerEnvironment, env),
+		)
+
+		if (sessions && isMcp) {
 			// Only persist when the server issued a new session — i.e. on
 			// `initialize`, where the response sid differs from the request sid
 			// (or the request had none). Subsequent requests echo the same sid;
 			// re-putting on every call would burn KV write quota for no reason.
-			if (resSid && resSid !== reqSid) {
-				const put = persistSession(kv, resSid)
-				if (put) ctx.waitUntil(put)
+			const responseSessionId = response.headers["mcp-session-id"]
+			if (responseSessionId && responseSessionId !== requestSessionId) {
+				const put = persistSession(sessions, responseSessionId)
+				if (put) {
+					const exec = yield* Cloudflare.WorkerExecutionContext
+					yield* exec.waitUntil(Effect.promise(() => put))
+				}
 			}
 		}
-		if (isMcp && mcpFrame && startedAt !== undefined) {
-			console.log(
-				`[mcp-out] method=${mcpFrame.method} id=${mcpFrame.id}` +
-					` status=${response.status} dur=${Date.now() - startedAt}ms` +
-					` body_len=${response.headers.get("content-length") ?? "-"}` +
-					` resp_sid=${response.headers.get("mcp-session-id") ?? "-"}`,
-			)
-		}
-		ctx.waitUntil(telemetry.flush(env))
-		return response
-	} catch (err) {
-		console.error("[worker] handler failed:", err)
-		const message = err instanceof Error ? err.message : String(err)
-		Effect.runFork(
-			Effect.logError("API worker handler failed").pipe(
+		if (isMcp) {
+			const now = yield* Clock.currentTimeMillis
+			yield* Effect.logInfo("MCP request handled").pipe(
 				Effect.annotateLogs({
-					error: message,
-					method: request.method,
-					url: request.url,
+					"mcp.session_id": requestSessionId ?? "-",
+					"mcp.response_session_id": response.headers["mcp-session-id"] ?? "-",
+					"http.response.status_code": response.status,
+					duration_ms: now - startedAt,
 				}),
-				// One-shot recovery fiber after the main handler runtime rejected.
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(telemetry.layer),
-			),
-		)
-		if (isMcp && mcpFrame && startedAt !== undefined) {
-			console.error(
-				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` + ` dur=${Date.now() - startedAt}ms`,
 			)
 		}
-		ctx.waitUntil(telemetry.flush(env))
-		return isV2Request(request)
-			? v2WorkerUnavailableResponse()
-			: new Response("The API worker is temporarily unavailable.", { status: 504 })
-	}
-}
-
-// Cloudflare requires Workflow classes to be exported from the worker entry.
-// The class is a thin shell that dynamic-imports its heavy logic inside run(),
-// so this static export keeps module-scope evaluation light (startup-CPU budget).
-export { ClickHouseSchemaApplyWorkflow } from "./workflows/ClickHouseSchemaApplyWorkflow"
-export { InvestigationFanoutWorkflow } from "./workflows/InvestigationFanoutWorkflow"
-// The durable chat transcript. Safe to export at module scope despite the 10021 startup-CPU
-// constraint: `ChatSession` imports only types from `@maple/domain/chat-session`, so it pulls
-// none of the app service graph in with it.
-export { ChatSession } from "./chat/ChatSession"
-
-// VCS sync queue consumer. Dynamic-imported (same startup-CPU-budget discipline
-// as the route graph above) to keep module-scope evaluation light.
-const handleQueue = async (
-	batch: MessageBatch<unknown>,
-	env: MapleApiWorkerEnv,
-	ctx: ExecutionContext,
-): Promise<void> => {
-	const queueKind = classifyWorkerQueue(batch.queue, env)
-	if (queueKind === "planetscale-webhook") {
-		const {
-			buildPlanetScaleWebhookLayer,
-			processPlanetScaleWebhookBatch,
-			flushPlanetScaleWebhookTelemetry,
-		} = await import("./planetscale-webhook-runtime")
-		await runScheduledEffect(
-			buildPlanetScaleWebhookLayer(env),
-			await scoped(processPlanetScaleWebhookBatch(batch)),
-			ctx,
-			{ onSettled: () => flushPlanetScaleWebhookTelemetry(env) },
-		)
-		return
-	}
-	if (queueKind === "audit-events") {
-		const { buildAuditEventsLayer, processAuditEventsBatch, flushAuditEventsTelemetry } = await import(
-			"./audit-events-runtime"
-		)
-		await runScheduledEffect(
-			buildAuditEventsLayer(env),
-			await scoped(processAuditEventsBatch(batch)),
-			ctx,
-			{ onSettled: () => flushAuditEventsTelemetry(env) },
-		)
-		return
-	}
-	if (queueKind === "unknown") {
-		throw new Error(`No queue consumer configured for "${batch.queue}"`)
-	}
-
-	const { buildVcsSyncLayer, processBatch, flushVcsTelemetry } = await import("./vcs-sync-runtime")
-	await runScheduledEffect(buildVcsSyncLayer(env), await scoped(processBatch(batch)), ctx, {
-		onSettled: () => flushVcsTelemetry(env),
+		return response
 	})
-}
-
-// Cron handler. Three schedules (see `crons` in alchemy.run.ts), dispatched on
-// `event.cron`:
-//   "0 */12 * * *" — enqueue a periodic VCS sync per installation
-//   "0 * * * *"    — apply scrape-check retention
-//   "0 */6 * * *"  — Slack workspace reconciliation
-// Retention is hourly rather than 12-hourly because a busy target can write
-// ~75k check rows a day, so the 10k-row cap binds within a few hours.
-const SCRAPE_RETENTION_CRON = "0 * * * *"
-// Backstop for the Railway bot's app_uninstalled/tokens_revoked detection
-// (apps/slack-agent → POST /internal/slack/workspaces/:teamId/revoke) —
-// doesn't need to be tight, it only catches a forward call the bot never
-// made (crash, network blip) or installs that predate that wiring.
-const SLACK_RECONCILE_CRON = "0 */6 * * *"
-
-const handleScheduled = async (
-	event: ScheduledController,
-	env: MapleApiWorkerEnv,
-	ctx: ExecutionContext,
-): Promise<void> => {
-	if (event.cron === SCRAPE_RETENTION_CRON) {
-		const { buildScrapeRetentionLayer, flushVcsTelemetry } = await import("./vcs-sync-runtime")
-		const { runScrapeCheckRetention } = await import("@/services/integrations/scrape-check-retention")
-		const { runPlanetScaleEventRetention } =
-			await import("@/services/integrations/planetscale-event-retention")
-		// Both sweeps ride this one cron: each new cron string costs an entry in
-		// alchemy.run.ts and a branch here, and neither needs its own beat.
-		// Sequential, not concurrent — they share one Postgres socket for the
-		// whole tick, so running them concurrently would only queue on it.
-		await runScheduledEffect(
-			buildScrapeRetentionLayer(env),
-			await scoped(Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention)),
-			ctx,
-			{ onInterrupt: "graceful", onSettled: () => flushVcsTelemetry(env) },
-		)
-		return
-	}
-
-	if (event.cron === SLACK_RECONCILE_CRON) {
-		const { buildSlackReconcileLayer, runSlackReconciliation, flushSlackTelemetry } =
-			await import("./slack-reconcile-runtime")
-		await runScheduledEffect(buildSlackReconcileLayer(env), await scoped(runSlackReconciliation), ctx, {
-			onInterrupt: "graceful",
-			onSettled: () => flushSlackTelemetry(env),
-		})
-		return
-	}
-
-	const { buildVcsScheduledLayer, runScheduledSync, flushVcsTelemetry } = await import("./vcs-sync-runtime")
-	// Graceful on interrupt: a teardown mid-cron is expected lifecycle, and the
-	// schedule reruns — only the queue consumer above must keep rejecting so an
-	// interrupted batch redelivers instead of acking.
-	await runScheduledEffect(buildVcsScheduledLayer(env), await scoped(runScheduledSync), ctx, {
-		onInterrupt: "graceful",
-		onSettled: () => flushVcsTelemetry(env),
-	})
-}
 
 /**
- * Class entrypoint keeps fetch/queue/cron intact while publishing Alchemy's
- * schemaless RPC methods over a Cloudflare service binding. RPC failures are
- * encoded with Alchemy's wire envelope so a plain Worker caller can recover tagged
- * Effect errors via `toRpcAsync`.
+ * The bound queues, as the init needs them for `consumeQueueMessages`. At plan
+ * time the props above already declared them, so they are read back off the
+ * host rather than declared twice; in the isolate the declarations resolve
+ * their attributes from the env the plan bound, and the props are inert.
  */
-export default class MapleApiWorker extends WorkerEntrypoint<MapleApiWorkerEnv> {
-	override fetch(request: Request): Promise<Response> {
-		return handle(request, this.env, this.ctx)
-	}
+const boundQueues = (host: Cloudflare.Worker) =>
+	Effect.gen(function* () {
+		if (globalThis.__ALCHEMY_RUNTIME__) {
+			// SAFETY: a declaration yielded in the isolate never touches a provider —
+			// its attributes resolve from the env — so the provider requirement the
+			// declaration's type carries is erased here, for the runtime only.
+			const declare = (id: string) =>
+				Cloudflare.Queues.Queue(id, {}) as Effect.Effect<Cloudflare.Queues.Queue>
+			return {
+				vcsSync: yield* declare("vcs-sync"),
+				planetScaleWebhooks: yield* declare("planetscale-webhooks"),
+				auditEvents: yield* declare("audit-events"),
+				auditEventsDlqName: undefined,
+			}
+		}
+		const env: unknown = host.Props.env
+		const bound = (name: string) => {
+			const value = Predicate.hasProperty(env, name) ? env[name] : undefined
+			return Cloudflare.Queues.isQueue(value)
+				? Effect.succeed(value)
+				: Effect.die(new Error(`The api Worker's env does not bind the queue "${name}"`))
+		}
+		const dlqName = Predicate.hasProperty(env, "AUDIT_EVENTS_DLQ_NAME")
+			? env.AUDIT_EVENTS_DLQ_NAME
+			: undefined
+		return {
+			vcsSync: yield* bound("VCS_SYNC_QUEUE"),
+			planetScaleWebhooks: yield* bound("PLANETSCALE_WEBHOOK_QUEUE"),
+			auditEvents: yield* bound("AUDIT_EVENTS_QUEUE"),
+			auditEventsDlqName: typeof dlqName === "string" ? dlqName : undefined,
+		}
+	})
 
-	override queue(batch: MessageBatch<unknown>): Promise<void> {
-		return handleQueue(batch, this.env, this.ctx)
-	}
+/**
+ * A fire's outcome: interrupts are isolate teardown (the schedule re-fires) and
+ * a failure is logged rather than re-raised — alchemy's cron source reports
+ * every fire as successful anyway. Under the fire's own SDK instance, flushed
+ * when it returns.
+ */
+const settleFire =
+	(cron: string, telemetry: Layer.Layer<never, never, Cloudflare.WorkerEnvironment>) =>
+	<A, E, R>(fire: Effect.Effect<A, E, R>) =>
+		fire.pipe(
+			Effect.catchCause((cause) =>
+				Cause.hasInterruptsOnly(cause)
+					? Effect.void
+					: Effect.logError("API cron fire failed", cause).pipe(
+							Effect.annotateLogs({ "maple.api.cron": cron }),
+						),
+			),
+			// A per-event layer, on purpose: its scope is the fire, and closing it
+			// is what flushes the fire's telemetry.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(telemetry),
+		)
 
-	override scheduled(event: ScheduledController): Promise<void> {
-		return handleScheduled(event, this.env, this.ctx)
-	}
+// Dispatched by `Cloudflare.Workers.cron` below:
+//   every 12h — VCS sync backstop, enqueues a refresh per installation
+//   hourly    — scrape_target_checks retention (was inline on the
+//               scrape-results write path; a busy target writes ~75k
+//               rows/day, so the 10k cap binds within hours)
+//   every 6h  — Slack workspace reconciliation: backstop for
+//               SlackEventsRouter (app_uninstalled/tokens_revoked), which
+//               catches deliveries Slack never sent/retried through, or
+//               installs that predate the webhook
+const VCS_SYNC_CRON = "0 */12 * * *"
+const SCRAPE_RETENTION_CRON = "0 * * * *"
+const SLACK_RECONCILE_CRON = "0 */6 * * *"
 
-	listMcpTools() {
-		return runInternalRpc("listMcpTools", undefined, this.env, this.ctx)
-	}
+// Consumer settings, attached to the Worker by `consumeQueueMessages`. The
+// audit consumer's `maxRetries` must stay in sync with AUDIT_EVENTS_MAX_RETRIES
+// in audit-events-runtime.ts, which logs the drop on the final attempt; the
+// VCS one with VCS_SYNC_MAX_RETRIES in vcs-sync-runtime.ts.
+const VCS_SYNC_CONSUMER = {
+	batchSize: 10,
+	maxConcurrency: 2,
+	maxRetries: 3,
+	maxWaitTime: "5 seconds",
+} satisfies Cloudflare.Queues.MessagesProps
+const PLANETSCALE_WEBHOOKS_CONSUMER = VCS_SYNC_CONSUMER
+// Audit entries tolerate a few seconds of delivery latency; batch wider and
+// wait longer so one insert round-trip covers many entries.
+const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Queues.MessagesProps => ({
+	batchSize: 25,
+	maxConcurrency: 2,
+	maxRetries: 5,
+	maxWaitTime: "5 seconds",
+	deadLetterQueue,
+})
 
-	callMcpTool(input: unknown) {
-		return runInternalRpc("callMcpTool", input, this.env, this.ctx)
-	}
+export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
+	"api",
+	props,
+	Effect.gen(function* () {
+		const host = yield* Cloudflare.Worker
+		const queues = yield* boundQueues(host)
+		// Built on the first event and kept for the isolate — not here, in init:
+		// init also runs at plan time, where alchemy auto-binds every `Config` it
+		// sees read onto the Worker, and this Worker's env is declared in full by
+		// `props`.
+		const app = yield* cachedRecoverable(buildApp)
+		const rpcServices = yield* cachedRecoverable(buildRpcServices)
+		const pgScope = yield* Effect.cached(pgScopeModule)
+		const rpc = yield* Effect.cached(rpcModule)
+		const vcsSync = yield* Effect.cached(vcsSyncModule)
+		const planetScaleWebhooks = yield* Effect.cached(planetScaleWebhookModule)
+		const auditEvents = yield* Effect.cached(auditEventsModule)
+		const slackReconcile = yield* Effect.cached(slackReconcileModule)
 
-	submitDiagnosis(input: unknown) {
-		return runInternalRpc("submitDiagnosis", input, this.env, this.ctx)
-	}
-}
+		// One cron fire: the tick over its own light layer graph, one Postgres
+		// socket for the tick.
+		yield* Cloudflare.Workers.cron(VCS_SYNC_CRON, () =>
+			Effect.gen(function* () {
+				const [
+					{ buildVcsScheduledLayer, runScheduledSync, vcsSyncTelemetry },
+					{ withPgConnectionScope },
+				] = yield* Effect.all([vcsSync, pgScope])
+				return yield* withPgConnectionScope(runScheduledSync).pipe(
+					Effect.provide(buildVcsScheduledLayer()),
+					settleFire(VCS_SYNC_CRON, vcsSyncTelemetry),
+				)
+			}),
+		)
+		yield* Cloudflare.Workers.cron(SCRAPE_RETENTION_CRON, () =>
+			Effect.gen(function* () {
+				const [
+					{ buildScrapeRetentionLayer, vcsSyncTelemetry },
+					{ withPgConnectionScope },
+					{ runScrapeCheckRetention },
+					{ runPlanetScaleEventRetention },
+				] = yield* Effect.all([
+					vcsSync,
+					pgScope,
+					Effect.promise(() => import("./services/integrations/scrape-check-retention")),
+					Effect.promise(() => import("./services/integrations/planetscale-event-retention")),
+				])
+				// Both sweeps ride this one cron: each new cron string costs a branch
+				// here, and neither needs its own beat. Sequential, not concurrent —
+				// they share one Postgres socket for the whole tick, so running them
+				// concurrently would only queue on it.
+				return yield* withPgConnectionScope(
+					Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention),
+				).pipe(
+					Effect.provide(buildScrapeRetentionLayer()),
+					settleFire(SCRAPE_RETENTION_CRON, vcsSyncTelemetry),
+				)
+			}),
+		)
+		yield* Cloudflare.Workers.cron(SLACK_RECONCILE_CRON, () =>
+			Effect.gen(function* () {
+				const [
+					{ buildSlackReconcileLayer, runSlackReconciliation, slackReconcileTelemetry },
+					{ withPgConnectionScope },
+				] = yield* Effect.all([slackReconcile, pgScope])
+				return yield* withPgConnectionScope(runSlackReconciliation).pipe(
+					Effect.provide(buildSlackReconcileLayer()),
+					settleFire(SLACK_RECONCILE_CRON, slackReconcileTelemetry),
+				)
+			}),
+		)
+
+		// The queue consumers. Each processes its batch per message (ack / retry
+		// are the consumer's decisions; the event source's batch ack afterwards is
+		// ignored for a message already retried) over its own light layer graph and
+		// one Postgres socket for the batch. `renamedFrom` carries the consumer
+		// resources over from the ids the api factory declared them under, so the
+		// deploy migrates their state rows instead of re-creating the consumers.
+		yield* Cloudflare.Queues.consumeQueueMessages(queues.vcsSync, VCS_SYNC_CONSUMER, (stream) =>
+			Effect.gen(function* () {
+				const [{ buildVcsSyncLayer, processBatch, vcsSyncTelemetry }, { withPgConnectionScope }] =
+					yield* Effect.all([vcsSync, pgScope])
+				const messages = yield* Stream.runCollect(stream)
+				yield* withPgConnectionScope(processBatch({ messages })).pipe(
+					Effect.provide(buildVcsSyncLayer()),
+					Effect.provide(vcsSyncTelemetry),
+				)
+			}),
+		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
+		yield* Cloudflare.Queues.consumeQueueMessages(
+			queues.planetScaleWebhooks,
+			PLANETSCALE_WEBHOOKS_CONSUMER,
+			(stream) =>
+				Effect.gen(function* () {
+					const [
+						{
+							buildPlanetScaleWebhookLayer,
+							processPlanetScaleWebhookBatch,
+							planetScaleWebhookTelemetry,
+						},
+						{ withPgConnectionScope },
+					] = yield* Effect.all([planetScaleWebhooks, pgScope])
+					const messages = yield* Stream.runCollect(stream)
+					yield* withPgConnectionScope(processPlanetScaleWebhookBatch({ messages })).pipe(
+						Effect.provide(buildPlanetScaleWebhookLayer()),
+						Effect.provide(planetScaleWebhookTelemetry),
+					)
+				}),
+		).pipe(renamedFrom({ fqn: "planetscale-webhooks-consumer" }))
+		yield* Cloudflare.Queues.consumeQueueMessages(
+			queues.auditEvents,
+			auditEventsConsumer(queues.auditEventsDlqName),
+			(stream) =>
+				Effect.gen(function* () {
+					const [{ buildAuditEventsLayer, processAuditEventsBatch }, { withPgConnectionScope }] =
+						yield* Effect.all([auditEvents, pgScope])
+					const messages = yield* Stream.runCollect(stream)
+					yield* withPgConnectionScope(processAuditEventsBatch({ messages })).pipe(
+						Effect.provide(buildAuditEventsLayer()),
+					)
+				}),
+		).pipe(renamedFrom({ fqn: "audit-events-consumer" }))
+
+		// The internal RPC surface, over a service binding. The bridge envelopes a
+		// typed failure for the caller's `toRpcAsync` and throws a defect as-is;
+		// one Postgres socket per call, released with it.
+		const runRpc = <A, E, R>(program: Effect.Effect<A, E, R>) =>
+			Effect.gen(function* () {
+				const [services, { withPgConnectionScope }] = yield* Effect.all([
+					rpcServices.pipe(Effect.orDie),
+					pgScope,
+				])
+				return yield* withPgConnectionScope(program).pipe(Effect.provide(services))
+			})
+		const internalRpc = {
+			listMcpTools: () => Effect.flatMap(rpc, ({ listMcpToolsRpc }) => runRpc(listMcpToolsRpc)),
+			callMcpTool: (input: unknown) =>
+				Effect.flatMap(rpc, ({ callMcpToolRpc }) => runRpc(callMcpToolRpc(input))),
+			submitDiagnosis: (input: unknown) =>
+				Effect.flatMap(rpc, ({ submitDiagnosisRpc }) => runRpc(submitDiagnosisRpc(input))),
+		} satisfies MapleApiRpcContract
+
+		return { fetch: makeFetch(app), ...internalRpc }
+	}).pipe(
+		// The Worker's init IS the entry point: the cron and queue sources need
+		// the host Worker, which only exists here, and the bridge builds the
+		// telemetry — the SDK exporters plus the tracer filter and header
+		// redaction the api's server spans need — into each event's scope.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(
+			Layer.mergeAll(
+				Cloudflare.Workers.CronEventSourceLive,
+				Cloudflare.Queues.EventSourceLive,
+				WorkerTelemetry({
+					serviceName: "maple-api",
+					dropSpanNames: ["McpServer/Notifications."],
+					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+				}),
+				AlchemyTelemetry.layer(ApiObservabilityLive),
+			),
+		),
+	),
+) {}
+
+/** The deployed api Worker, as the root stack and the web app's service binding see it. */
+export type MapleApiWorker = Effect.Success<typeof MapleApi>
