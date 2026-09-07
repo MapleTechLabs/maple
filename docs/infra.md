@@ -181,6 +181,19 @@ deployed isolate — and two rules keep it honest about which one it is in:
   (a PR preview deliberately gets no `ELECTRIC_URL`). So the route graph is dynamic-imported
   and built once per isolate on the first `fetch` (`Effect.cached`), against a scope that is
   never closed: workerd has no isolate teardown, so nothing in the layer may need releasing.
+- **The bridge serves the router and owns telemetry.** `fetch` is the `HttpRouter.toHttpEffect`
+  handler as-is: the bridge renders its typed failures before its tracer runs (`RouteNotFound`
+  → an Ok span with a 404; a defect → a 500, which the SDK records as an Error server span per
+  OTEL semconv), so no `orDie` sits on the request path — the one that did turned every 404
+  into an Error span. `apps/electric-sync/src/worker-bridge.test.ts` drives the real bridge
+  path and pins all three outcomes. Telemetry is one line on init,
+  `Effect.provide(WorkerTelemetry({ serviceName }))` from `@maple/infra/worker-telemetry`: the
+  published `Maple.Telemetry` from `@maple-dev/alchemy/telemetry` (Maple's counterpart of
+  alchemy's `Axiom.Telemetry` sugar) with Maple's own defaults. It registers the SDK's
+  `requestLayer` with alchemy's `Telemetry.layer`, which builds it into each request scope
+  and flushes after the response — no hand-rolled tracer, `waitUntil`, or flush shim. The
+  key/endpoint bindings `Maple.Telemetry` can do stay off for our Workers:
+  `selfObservabilityEnv(stage)` owns those, with the PR-preview rules.
 
 What it costs: the root stack imports the worker module, so the Alchemy-entrypoints
 typecheck (`tsconfig.alchemy.json`) covers electric-sync's runtime graph and needs

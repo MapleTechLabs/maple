@@ -46,6 +46,8 @@ export {
 	isMapleApiResponseError,
 	makeMapleApiResponseError,
 	MapleApiProtocolError,
+	MapleAlertRuleOwnershipError,
+	MapleAlertRuleTagsError,
 	MapleApiRequestEncodingError,
 	MapleApiResponseDecodeError,
 	MapleApiResponseReadError,
@@ -65,3 +67,4 @@ export { IngestKeys, IngestKeysProvider, type IngestKeysProps } from "./IngestKe
 export { listAll, MapleApi, MapleApiFromHttpClient, MapleApiLive, type MapleApiContract } from "./MapleApi"
 export { DEFAULT_BASE_URL, fromEnv, MapleEnvironment } from "./MapleEnvironment"
 export { Providers, providers, providersWithDependencies } from "./Providers"
+export { Telemetry, type TelemetryProps, type TelemetrySdkOptions } from "./Telemetry"
