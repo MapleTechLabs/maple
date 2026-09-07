@@ -110,8 +110,12 @@ export const AiSessionListItem = Schema.Struct({
 	serviceNames: Schema.Array(Schema.String),
 	/** Every model any agent span of the session ran on, dialects coalesced. */
 	models: Schema.Array(Schema.String),
-	/** Every agent named on any agent span of the session. */
+	/** Every agent named on any agent span of the session, in no order. */
 	agentNames: Schema.Array(Schema.String),
+	/** The agent on the session's earliest-starting named span — the name the
+	 *  list row goes by, resolved the way the detail page's heading resolves it.
+	 *  `''` when no span named an agent. */
+	firstAgentName: Schema.String,
 	llmCalls: Schema.Number,
 	toolCalls: Schema.Number,
 	/** Tokens across every bucket, deepest reporter counted, so the number

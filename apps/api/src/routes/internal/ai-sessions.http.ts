@@ -132,6 +132,7 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									...row,
 									models: ranked.models,
 									agentNames: ranked.agentNames,
+									firstAgentName: ranked.firstAgentName,
 									llmCalls: ranked.llmCalls,
 									toolCalls: ranked.toolCalls,
 									toolErrorCount: ranked.toolErrors,

@@ -230,6 +230,12 @@ const AGENT_CHILD_SPAN: SeedSpan = {
 }
 
 // A second TRACE of the same session — the join that makes `traceCount` 2.
+//
+// It names a SECOND agent, and names it deliberately: `critic-agent` sorts
+// before `slack-agent`, so a heading taken from the orderless `agentNames` set
+// can land on it, while the session's earliest named span is the `slack-agent`
+// turn 30 seconds earlier. `firstAgentName` has to resolve across traces, not
+// just within one.
 const AGENT_TURN_2_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE_2,
 	spanId: "span-agent-3",
@@ -239,6 +245,7 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+		"gen_ai.agent.name": "critic-agent",
 	},
 }
 
@@ -456,7 +463,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			}),
 			// "agent turn" by name, no model, no usage: an agent span, not a call.
 			indexRow(ORG_ID, AGENT_SDK_SPAN),
-			indexRow(ORG_ID, AGENT_TURN_2_SPAN),
+			indexRow(ORG_ID, AGENT_TURN_2_SPAN, { AgentName: "critic-agent" }),
 			// The Vercel AI SDK dialect resolves to the same columns, the deprecated
 			// environment spelling still resolves, and the name rules classify a
 			// span with no operation name as the model call it is.
@@ -607,9 +614,17 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// under a reporting parent, is not a call. The lambdas are raw SQL the
 		// builder cannot type-check, so this is where they are proven.
 		assert.deepStrictEqual(
-			[session!.models, session!.agentNames, session!.llmCalls, session!.toolCalls],
-			[["claude-sonnet-5-20260101"], ["slack-agent"], 1, 1],
+			[session!.models, [...session!.agentNames].sort(), session!.llmCalls, session!.toolCalls],
+			[["claude-sonnet-5-20260101"], ["critic-agent", "slack-agent"], 1, 1],
 		)
+		// The name the row goes by. `agentNames` is a set, and `critic-agent` sorts
+		// first in it; the session's earliest NAMED span is the `slack-agent` turn,
+		// on the other trace, 30 seconds before it. Taking the heading off the set
+		// titled a multi-agent session differently in the list and on its own page.
+		assert.strictEqual(session!.firstAgentName, "slack-agent")
+		// A session that named no agent leaves it blank rather than falling back to
+		// a span with no name — the sentinel keeps unnamed spans out of the argMin.
+		assert.strictEqual(sessionless!.firstAgentName, "")
 		assert.strictEqual(session!.totalTokens, 150)
 		assert.strictEqual(session!.cost, 0.03)
 		assert.strictEqual(session!.errorAgentSpans, 1)
@@ -685,7 +700,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			["claude-sonnet-5-20260101", 1],
 			["gpt-5", 1],
 		])
-		assert.deepStrictEqual(facet("agent"), [["slack-agent", 1]])
+		assert.deepStrictEqual(facet("agent"), [
+			["critic-agent", 1],
+			["slack-agent", 1],
+		])
 		assert.deepStrictEqual(facet("tool"), [["search_traces", 1]])
 		// Any-span counts: the eve session carries eve, the SDK span's vendor and
 		// the gateway mirror's, and the mirror's service — each counted once for
