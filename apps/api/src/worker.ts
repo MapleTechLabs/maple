@@ -699,6 +699,10 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// init also runs at plan time, where alchemy auto-binds every `Config` it
 		// sees read onto the Worker, and this Worker's env is declared in full by
 		// `props`.
+		// Both memos are pinned to this context, so neither build can observe the
+		// event that happens to trigger it — `HttpApiBuilder.handle` captures the
+		// ambient context at layer-build time, and a graph built under a live
+		// request serves that request's headers and body to every later one.
 		const app = yield* cachedRecoverable(buildApp)
 		const rpcServices = yield* cachedRecoverable(buildRpcServices)
 		const pgScope = yield* Effect.cached(pgScopeModule)
