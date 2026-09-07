@@ -67,17 +67,17 @@ const cards = competitors.map((competitor) => ({
 								aria-hidden="true"
 							/>
 
-							<span class="flex items-center justify-between">
-								<span class="flex items-center gap-1.5">
-									<span class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-bg-elevated">
-										<MapleMark size={18} className="text-primary" />
+							<span class="flex items-center justify-between gap-3">
+								<span class="flex shrink-0 items-center gap-1.5">
+									<span class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-bg-elevated">
+										<MapleMark size={16} className="text-primary" />
 									</span>
 									<span class="font-mono text-[9px] uppercase tracking-[0.14em] text-fg-muted/70">vs</span>
-									<span class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-bg-elevated transition-colors duration-300 group-hover:border-(--mark)/60">
-										<BrandMarkIcon id={competitor.mark} class="h-[18px] w-[18px]" />
+									<span class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-bg-elevated transition-colors duration-300 group-hover:border-(--mark)/60">
+										<BrandMarkIcon id={competitor.mark} class="h-4 w-4" />
 									</span>
 								</span>
-								<span class="font-mono text-[11px] text-fg-muted/70">{competitor.site}</span>
+								<span class="hidden min-w-0 truncate font-mono text-[11px] text-fg-muted/70 xl:inline">{competitor.site}</span>
 							</span>
 
 							<span class="flex flex-col gap-1.5">
