@@ -153,8 +153,6 @@ const stubModel = (steps: ReadonlyArray<Step>, log: RequestLog = []) => {
 			// The upstream error shape the turn maps through `toLlmCallError`.
 			const failure = {
 				_tag: "AI.Error",
-				module: "test",
-				method: "stream",
 				reason: { _tag: partial.reason ?? "ProviderInternal" },
 				message: "upstream exploded",
 			} as never

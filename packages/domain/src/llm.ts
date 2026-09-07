@@ -17,10 +17,6 @@ import { Schema } from "effect"
 export class LlmCallError extends Schema.TaggedError<LlmCallError>()("@maple/llm/LlmCallError", {
 	/** Maple-side label for what was being attempted, e.g. `"ai-triage.investigate"`. */
 	operation: Schema.String,
-	/** Upstream `AIError.module` — which part of the LLM core failed. */
-	module: Schema.String,
-	/** Upstream `AIError.method`. */
-	method: Schema.String,
 	/** Tag of the upstream provider-error reason, e.g. `"RateLimit"`, `"InvalidRequest"`. */
 	reason: Schema.String,
 	message: Schema.String,
