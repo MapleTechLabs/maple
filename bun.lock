@@ -65,7 +65,7 @@
         "@maple/query-model": "workspace:*",
         "@maple/safe-fetch": "workspace:*",
         "@maple/widgets": "workspace:*",
-        "@opencode-ai/ai": "0.0.0-beta-19192",
+        "@opencode-ai/ai": "0.0.0-beta-19271",
         "@tinybirdco/sdk": "catalog:tinybird",
         "@typeonce/effect-machine": "0.24.0",
         "drizzle-orm": "^0.45.1",
@@ -1495,9 +1495,9 @@
 
     "@octokit/webhooks-methods": ["@octokit/webhooks-methods@6.0.0", "", {}, "sha512-MFlzzoDJVw/GcbfzVC1RLR36QqkTLUf79vLVO3D+xn7r0QgxnFoLZgtrzxiQErAjFUOdH6fas2KeQJ1yr/qaXQ=="],
 
-    "@opencode-ai/ai": ["@opencode-ai/ai@0.0.0-beta-19192", "", { "dependencies": { "@aws-sdk/credential-providers": "3.1057.0", "@opencode-ai/schema": "0.0.0-beta-19192", "@smithy/eventstream-codec": "4.2.14", "@smithy/util-utf8": "4.2.2", "aws4fetch": "1.0.20", "effect": "4.0.0-rc.112", "google-auth-library": "10.5.0" } }, "sha512-61otpntHJsgshOCHlD0GekDBJYeZ9GtqhZQkNcBXAvsVzdx8vDl4vrnutG/nvF11bzs71kfc9bxDqqPo6qRHSQ=="],
+    "@opencode-ai/ai": ["@opencode-ai/ai@0.0.0-beta-19271", "", { "dependencies": { "@aws-sdk/credential-providers": "3.1057.0", "@opencode-ai/schema": "0.0.0-beta-19271", "@smithy/eventstream-codec": "4.2.14", "@smithy/util-utf8": "4.2.2", "aws4fetch": "1.0.20", "effect": "4.0.0-rc.112", "google-auth-library": "10.5.0" } }, "sha512-FEnuPy7U4JCVjFAu9cjGyRYvSzglfTpqf8gX8o3XBfzw+ly9qpkjXUaOpayNKMbW5D6BfhOKfoWsmktwzRAf4w=="],
 
-    "@opencode-ai/schema": ["@opencode-ai/schema@0.0.0-beta-19192", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.0-rc.112" } }, "sha512-Pc5+igEzmXUqCz2hOT8vSpjRSyr/MtbqK7p6Eu1iZeudQdYBYtHtI2kCk1Crfeobk+OKiy8qNXUuI8qDB/TH7Q=="],
+    "@opencode-ai/schema": ["@opencode-ai/schema@0.0.0-beta-19271", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.0-rc.112" } }, "sha512-5i2EnveTUMB277O5JrMxdVLDi8K8JnSYm6rn1KdBrgJEAQmy182nOQBkZ3X7eBQTK6FDxz+byuiXksz0pmQptQ=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 
