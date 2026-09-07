@@ -25,7 +25,9 @@ function VendorMark({ id, active }: { id: BrandMarkId; active: boolean }) {
 			aria-hidden="true"
 		>
 			<path d={mark.path} />
-			{mark.overlay && <path d={mark.overlay.path} fill={mark.overlay.fill} fillRule={mark.overlay.fillRule} />}
+			{mark.overlay && (
+				<path d={mark.overlay.path} fill={mark.overlay.fill} fillRule={mark.overlay.fillRule} />
+			)}
 		</svg>
 	)
 }

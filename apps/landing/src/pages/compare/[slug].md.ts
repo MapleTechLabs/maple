@@ -29,7 +29,11 @@ export const getStaticPaths: GetStaticPaths = () =>
 	competitors.map((competitor) => ({ params: { slug: competitor.slug }, props: { competitor } }))
 
 const monthLabel = (checked: string) =>
-	new Date(`${checked}-15T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
+	new Date(`${checked}-15T00:00:00Z`).toLocaleDateString("en-US", {
+		month: "long",
+		year: "numeric",
+		timeZone: "UTC",
+	})
 
 const dollars = (amount: number) => formatLineAmount(amount)
 
@@ -74,7 +78,10 @@ export const GET: APIRoute = ({ props, site }) => {
 		table(
 			[label, "Amount"],
 			[
-				...estimate.breakdown.map((item) => [`${item.label} — ${item.detail}`, item.value === 0 ? m.cmp_price_free() : dollars(item.value)]),
+				...estimate.breakdown.map((item) => [
+					`${item.label} — ${item.detail}`,
+					item.value === 0 ? m.cmp_price_free() : dollars(item.value),
+				]),
 				["**Total**", `**${dollars(estimate.total)}**`],
 			],
 		)
@@ -85,7 +92,9 @@ export const GET: APIRoute = ({ props, site }) => {
 		`**${m.cmp_price_workload()}:** ${describeWorkload(competitor.vendor, values)}`,
 		receipt("Maple", maple),
 		receipt(config.name, theirs),
-		delta >= 0 ? m.cmp_price_less({ amount: dollars(delta) }) : m.cmp_price_more({ amount: dollars(-delta) }),
+		delta >= 0
+			? m.cmp_price_less({ amount: dollars(delta) })
+			: m.cmp_price_more({ amount: dollars(-delta) }),
 		`${m.cmp_price_verified({ date: monthLabel(PRICES_VERIFIED) })} ${MAPLE_PRICING_NOTE} ${vendorCaveat[competitor.vendor]}`,
 		`Interactive calculator: ${absolute(site, `/compare/${competitor.slug}#calculator`)}`,
 	)
@@ -97,13 +106,19 @@ export const GET: APIRoute = ({ props, site }) => {
 		`\`\`\`yaml\n# otel-collector.yaml — ${m.cmp_migration_diff_caption()}\n${competitor.migrationDiff}\n\`\`\``,
 	)
 
-	const faq = blocks(`## ${m.faq_heading()}`, ...competitor.faqs.map((f) => `### ${f.question()}\n\n${f.answer()}`))
+	const faq = blocks(
+		`## ${m.faq_heading()}`,
+		...competitor.faqs.map((f) => `### ${f.question()}\n\n${f.answer()}`),
+	)
 
 	const sources = blocks(
 		`## ${m.cmp_sources_title({ name })}`,
 		m.cmp_sources_lede(),
 		competitor.sources
-			.map((s, i) => `${i + 1}. [${s.label}](${s.url}) — ${m.cmp_sources_checked({ date: monthLabel(s.checked) })}`)
+			.map(
+				(s, i) =>
+					`${i + 1}. [${s.label}](${s.url}) — ${m.cmp_sources_checked({ date: monthLabel(s.checked) })}`,
+			)
 			.join("\n"),
 	)
 
@@ -116,6 +131,14 @@ export const GET: APIRoute = ({ props, site }) => {
 	)
 
 	return markdown(
-		blocks(docHeader(competitor.heroTitle(), competitor.heroLede()), differences, price, migration, faq, sources, related),
+		blocks(
+			docHeader(competitor.heroTitle(), competitor.heroLede()),
+			differences,
+			price,
+			migration,
+			faq,
+			sources,
+			related,
+		),
 	)
 }

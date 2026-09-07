@@ -84,7 +84,9 @@ export const GET: APIRoute = ({ site }) => {
 		`Maple against Datadog, Grafana Cloud, New Relic and Dash0. Each page tabulates the differences with who has the edge on each row, prices one reference month on both at list price, and cites the vendor pages it was checked against, with dates. ${CONVENTION("comparison")}`,
 		"",
 		...both("Comparisons index", "/compare"),
-		...competitors.map((competitor) => `- [${competitor.navLabel()}](${url(`/compare/${competitor.slug}.md`)})`),
+		...competitors.map(
+			(competitor) => `- [${competitor.navLabel()}](${url(`/compare/${competitor.slug}.md`)})`,
+		),
 		"",
 
 		"## Guides",

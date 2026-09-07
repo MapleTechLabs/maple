@@ -266,7 +266,8 @@ export const v18ToV19AiTraceIndexUsageConventionsModule: LocalStoreMigrationModu
 > = {
 	id: MODULE_ID,
 	moduleVersion: 1,
-	description: "Recreate ai_trace_index_mv so Tokens counts nested cache and reasoning buckets once, and add ResponseId",
+	description:
+		"Recreate ai_trace_index_mv so Tokens counts nested cache and reasoning buckets once, and add ResponseId",
 	from: LOCAL_SCHEMA_V18,
 	to: LOCAL_SCHEMA_V19,
 	operations,

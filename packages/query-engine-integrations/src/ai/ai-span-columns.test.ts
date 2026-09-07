@@ -149,11 +149,15 @@ describe("span classification SQL", () => {
 		// The prompt half: the cache buckets nest in the prompt figure for the
 		// re-summing vendors and the OpenAI-shaped providers, and sit beside it
 		// for Anthropic; the default nests.
-		expect(text).toContain("multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(")
+		expect(text).toContain(
+			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
+		)
 		expect(text).toContain(
 			"IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(",
 		)
-		expect(text).toContain("IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']")
+		expect(text).toContain(
+			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
 		// The completion half: reasoning nests for Anthropic and the OpenAI-shaped
 		// providers, and sits beside the completion for Gemini.
 		expect(text).toContain("IN ('anthropic', 'openai', 'openrouter'), greatest(")
@@ -213,6 +217,8 @@ describe("span classification SQL", () => {
 			"NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))",
 		)
 		expect(text).toMatch(/^toFloat64\(arraySum\(n -> if\(n\.2 AND n\.1 = '', 1, 0\), /)
-		expect(text).toContain("length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''),")
+		expect(text).toContain(
+			"length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''),",
+		)
 	})
 })

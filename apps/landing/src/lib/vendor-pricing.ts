@@ -42,26 +42,82 @@ export const vendorConfigs = {
 	datadog: {
 		name: "Datadog",
 		sliders: [
-			{ key: "hosts", label: "Infrastructure hosts", min: 5, max: 500, step: 5, default: 15, unit: "hosts" },
+			{
+				key: "hosts",
+				label: "Infrastructure hosts",
+				min: 5,
+				max: 500,
+				step: 5,
+				default: 15,
+				unit: "hosts",
+			},
 			{ key: "apmHosts", label: "APM hosts", min: 0, max: 500, step: 5, default: 10, unit: "hosts" },
-			{ key: "logVolume", label: "Log volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
+			{
+				key: "logVolume",
+				label: "Log volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
 			{ key: "teamSize", label: "Team size", min: 1, max: 200, step: 1, default: 10, unit: "users" },
 		],
 	},
 	grafana: {
 		name: "Grafana Cloud",
 		sliders: [
-			{ key: "metricSeries", label: "Active metric series", min: 10, max: 2000, step: 10, default: 50, unit: "k series" },
-			{ key: "logVolume", label: "Log volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
-			{ key: "traceVolume", label: "Trace volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
+			{
+				key: "metricSeries",
+				label: "Active metric series",
+				min: 10,
+				max: 2000,
+				step: 10,
+				default: 50,
+				unit: "k series",
+			},
+			{
+				key: "logVolume",
+				label: "Log volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "traceVolume",
+				label: "Trace volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
 			{ key: "teamSize", label: "Team size", min: 1, max: 200, step: 1, default: 10, unit: "users" },
 		],
 	},
 	"new-relic": {
 		name: "New Relic",
 		sliders: [
-			{ key: "fullUsers", label: "Full platform users", min: 1, max: 200, step: 1, default: 10, unit: "users" },
-			{ key: "dataVolume", label: "Total data volume", min: 100, max: 10000, step: 50, default: 300, unit: "GB/mo" },
+			{
+				key: "fullUsers",
+				label: "Full platform users",
+				min: 1,
+				max: 200,
+				step: 1,
+				default: 10,
+				unit: "users",
+			},
+			{
+				key: "dataVolume",
+				label: "Total data volume",
+				min: 100,
+				max: 10000,
+				step: 50,
+				default: 300,
+				unit: "GB/mo",
+			},
 		],
 	},
 	dash0: {
@@ -69,23 +125,79 @@ export const vendorConfigs = {
 		sliders: [
 			{ key: "spans", label: "Spans / mo", min: 10, max: 5000, step: 10, default: 100, unit: "M" },
 			{ key: "logs", label: "Log records / mo", min: 10, max: 5000, step: 10, default: 100, unit: "M" },
-			{ key: "metricPoints", label: "Metric data points / mo", min: 10, max: 20000, step: 50, default: 500, unit: "M" },
+			{
+				key: "metricPoints",
+				label: "Metric data points / mo",
+				min: 10,
+				max: 20000,
+				step: 50,
+				default: 500,
+				unit: "M",
+			},
 		],
 	},
 	openobserve: {
 		name: "OpenObserve",
 		sliders: [
-			{ key: "logVolume", label: "Log volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
-			{ key: "traceVolume", label: "Trace volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
-			{ key: "metricVolume", label: "Metric volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
+			{
+				key: "logVolume",
+				label: "Log volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "traceVolume",
+				label: "Trace volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "metricVolume",
+				label: "Metric volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
 		],
 	},
 	signoz: {
 		name: "SigNoz",
 		sliders: [
-			{ key: "logVolume", label: "Log volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
-			{ key: "traceVolume", label: "Trace volume", min: 10, max: 10000, step: 50, default: 100, unit: "GB/mo" },
-			{ key: "metricSamples", label: "Metric samples / mo", min: 10, max: 20000, step: 50, default: 500, unit: "M" },
+			{
+				key: "logVolume",
+				label: "Log volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "traceVolume",
+				label: "Trace volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "metricSamples",
+				label: "Metric samples / mo",
+				min: 10,
+				max: 20000,
+				step: 50,
+				default: 500,
+				unit: "M",
+			},
 		],
 	},
 } satisfies Record<Vendor, { name: string; sliders: SliderConfig[] }>
@@ -108,7 +220,9 @@ export const formatSliderValue = (config: SliderConfig, value: number): string =
  * sentence. Values alone read as "15 hosts · 10 hosts", which says nothing.
  */
 export const describeWorkload = (vendor: Vendor, values: Record<string, number>): string =>
-	vendorConfigs[vendor].sliders.map((slider) => `${slider.label} ${formatSliderValue(slider, values[slider.key])}`).join(" · ")
+	vendorConfigs[vendor].sliders
+		.map((slider) => `${slider.label} ${formatSliderValue(slider, values[slider.key])}`)
+		.join(" · ")
 
 /** A receipt line: "$49", or "−$49" for a credit. Callers render 0 as "Free". */
 export const formatLineAmount = (amount: number): string =>
@@ -136,7 +250,11 @@ const datadog = (values: Record<string, number>): Estimate => {
 		breakdown: [
 			{ label: "Infrastructure", value: infraCost, detail: `${values.hosts} hosts × $15` },
 			{ label: "APM", value: apmCost, detail: `${values.apmHosts} hosts × $31` },
-			{ label: "Log management", value: totalLog, detail: `${values.logVolume} GB ingested + indexing` },
+			{
+				label: "Log management",
+				value: totalLog,
+				detail: `${values.logVolume} GB ingested + indexing`,
+			},
 		].filter((item) => item.value > 0),
 	}
 }
@@ -181,7 +299,9 @@ const newRelic = (values: Record<string, number>): Estimate => {
 			{
 				label: "Full platform users",
 				value: userCost,
-				detail: onStandard ? `Standard: $10 first user + ${users - 1} × $99` : `Pro: ${users} users × $349/mo (annual)`,
+				detail: onStandard
+					? `Standard: $10 first user + ${users - 1} × $99`
+					: `Pro: ${users} users × $349/mo (annual)`,
 			},
 			{ label: "Data ingestion", value: dataOverage, detail: `${values.dataVolume} GB (100 GB free)` },
 		],
@@ -251,7 +371,11 @@ const signoz = (values: Record<string, number>): Estimate => {
 			{ label: "Logs", value: logCost, detail: `${values.logVolume} GB × $0.30` },
 			{ label: "Traces", value: traceCost, detail: `${values.traceVolume} GB × $0.30` },
 			{ label: "Metrics", value: metricCost, detail: `${values.metricSamples}M samples × $0.10/M` },
-			{ label: "Included usage", value: -includedUsage, detail: "$49 of usage included in the base fee" },
+			{
+				label: "Included usage",
+				value: -includedUsage,
+				detail: "$49 of usage included in the base fee",
+			},
 		].filter((item) => item.value !== 0),
 	}
 }
@@ -326,7 +450,9 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 		total: baseCost + overage,
 		breakdown: [
 			{ label: "Startup plan", value: baseCost, detail: "100 GB per signal included" },
-			...(overage > 0 ? [{ label: "Overage", value: overage, detail: `${Math.round(overageGB)} GB over × $0.30` }] : []),
+			...(overage > 0
+				? [{ label: "Overage", value: overage, detail: `${Math.round(overageGB)} GB over × $0.30` }]
+				: []),
 			{ label: "Team seats", value: 0, detail: "No per-seat fees" },
 		],
 	}
@@ -343,12 +469,10 @@ export const vendorCaveat = {
 		"Trace volume is estimated at ~25 GB of spans per APM host per month, and Datadog log indexing assumes ~1 KB per event with ~15% of events indexed; actual volumes depend on request rate and instrumentation density.",
 	"new-relic":
 		"New Relic modeled on Standard ($10 first user + $99/user, max 5) up to 5 full platform users and Pro ($349/user/mo, annual commitment) above, with the Original Data option ($0.40/GB beyond 100 GB free); data is assumed to split evenly across logs, traces, and metrics.",
-	dash0:
-		"Dash0 bills per data point (spans & logs $0.60/M, metrics $0.20/M); Maple bills per GB, so the Maple estimate converts at roughly 1 KB per span and log record and 0.1 KB per metric data point. Your real ratio depends on attribute and payload sizes.",
+	dash0: "Dash0 bills per data point (spans & logs $0.60/M, metrics $0.20/M); Maple bills per GB, so the Maple estimate converts at roughly 1 KB per span and log record and 0.1 KB per metric data point. Your real ratio depends on attribute and payload sizes.",
 	openobserve:
 		"OpenObserve modeled at its headline $0.50/GB ingestion rate, which already includes the 30% annual-commitment discount; query fees ($0.01/GB scanned) and extended retention beyond the included 30 days for logs and traces ($0.02/GB per additional 30 days) are not included, which favors OpenObserve.",
-	signoz:
-		"SigNoz modeled on the Teams plan at its default retention (logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at 1 month) with the $49/mo base fee, from which $49 of usage is subtracted as included; longer retention costs more (up to $1.40/GB at 1 year) and is not included, which favors SigNoz. Maple bills per GB, so the Maple estimate converts metric samples at roughly 0.1 KB per data point (0.1 GB per million samples).",
+	signoz: "SigNoz modeled on the Teams plan at its default retention (logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at 1 month) with the $49/mo base fee, from which $49 of usage is subtracted as included; longer retention costs more (up to $1.40/GB at 1 year) and is not included, which favors SigNoz. Maple bills per GB, so the Maple estimate converts metric samples at roughly 0.1 KB per data point (0.1 GB per million samples).",
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =

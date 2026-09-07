@@ -383,8 +383,6 @@ describe("the prd revision lockstep the skew alert depends on", () => {
 		// change.
 		const prd = { kind: "prd" } as const
 		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("ingest")).toBe(stageDeploysIngest(prd))
-		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("electric-sync")).toBe(
-			stageDeploysElectric(prd),
-		)
+		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("electric-sync")).toBe(stageDeploysElectric(prd))
 	})
 })

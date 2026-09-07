@@ -70,7 +70,13 @@ function Slider({
  * show the reference month line by line, so the live result is one row of
  * totals under the sliders rather than a second pair of cards.
  */
-export function PricingCalculator({ competitor, compact = false }: { competitor: Competitor; compact?: boolean }) {
+export function PricingCalculator({
+	competitor,
+	compact = false,
+}: {
+	competitor: Competitor
+	compact?: boolean
+}) {
 	const config = competitorConfigs[competitor]
 
 	const [values, setValues] = useState<Record<string, number>>(() => {
@@ -115,27 +121,34 @@ export function PricingCalculator({ competitor, compact = false }: { competitor:
 				<div className="space-y-5 p-6 md:p-8">{sliders}</div>
 				<dl className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3">
 					<div className="bg-bg-elevated px-6 py-5 md:px-8">
-						<dt className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-primary">Maple</dt>
+						<dt className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+							Maple
+						</dt>
 						<dd className="mt-2 font-mono text-2xl font-medium tabular-nums tracking-[-0.02em] text-primary md:text-3xl">
 							{formatCurrency(mapleCost.total)}
 							<span className="ml-1 text-xs font-normal text-fg-muted">/mo</span>
 						</dd>
 					</div>
 					<div className="bg-bg-elevated px-6 py-5 md:px-8">
-						<dt className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">{config.name}</dt>
+						<dt className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">
+							{config.name}
+						</dt>
 						<dd className="mt-2 font-mono text-2xl font-medium tabular-nums tracking-[-0.02em] text-fg md:text-3xl">
 							{formatCurrency(competitorCost.total)}
 							<span className="ml-1 text-xs font-normal text-fg-muted">/mo</span>
 						</dd>
 					</div>
 					<div className="col-span-2 bg-bg-elevated px-6 py-5 sm:col-span-1 md:px-8">
-						<dt className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">Difference</dt>
+						<dt className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">
+							Difference
+						</dt>
 						<dd className="mt-2 text-[13px] leading-relaxed text-fg">
 							{savings >= 0
 								? `${formatCurrency(savings)} less per month on Maple`
 								: `${formatCurrency(-savings)} more per month on Maple`}
 							<span className="block text-fg-muted">
-								{formatCurrency(Math.abs(savings) * 12)} a year{savings > 0 ? ` · ${savingsPct}% less` : ""}
+								{formatCurrency(Math.abs(savings) * 12)} a year
+								{savings > 0 ? ` · ${savingsPct}% less` : ""}
 							</span>
 						</dd>
 					</div>
@@ -245,8 +258,8 @@ export function PricingCalculator({ competitor, compact = false }: { competitor:
 
 			{/* Disclaimer */}
 			<p className="px-6 pb-6 pt-4 text-[10px] leading-relaxed text-fg-muted/80 md:px-8">
-				Estimates based on published pricing as of {PRICES_VERIFIED_LABEL}. Actual costs may vary based on
-				contract terms, volume discounts, and additional features. {MAPLE_PRICING_NOTE}{" "}
+				Estimates based on published pricing as of {PRICES_VERIFIED_LABEL}. Actual costs may vary
+				based on contract terms, volume discounts, and additional features. {MAPLE_PRICING_NOTE}{" "}
 				{vendorCaveat[competitor]}
 			</p>
 		</div>

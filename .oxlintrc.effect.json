@@ -39,7 +39,14 @@
 	"overrides": [
 		// Framework composition roots, standalone libraries, generated-client CLI dispatch, and operational probes expose generic Effect channels.
 		{
-			"files": ["apps/api/src/worker.ts", "apps/api/src/worker/**", "apps/cli/**", "examples/**/main.ts", "lib/**", "scripts/**"],
+			"files": [
+				"apps/api/src/worker.ts",
+				"apps/api/src/worker/**",
+				"apps/cli/**",
+				"examples/**/main.ts",
+				"lib/**",
+				"scripts/**"
+			],
 			"rules": {
 				"effecttsgo/any-unknown-in-error-context": "off"
 			}

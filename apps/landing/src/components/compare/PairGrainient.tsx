@@ -22,7 +22,13 @@ const hexToRgb = (hex: string): [number, number, number] => {
 }
 
 const toHex = ([r, g, b]: [number, number, number]) =>
-	`#${[r, g, b].map((c) => Math.round(Math.max(0, Math.min(255, c))).toString(16).padStart(2, "0")).join("")}`
+	`#${[r, g, b]
+		.map((c) =>
+			Math.round(Math.max(0, Math.min(255, c)))
+				.toString(16)
+				.padStart(2, "0"),
+		)
+		.join("")}`
 
 /** `color` pulled `keep` of the way from the ground (0 = ground, 1 = color). */
 const towardGround = (color: string, keep: number): string => {

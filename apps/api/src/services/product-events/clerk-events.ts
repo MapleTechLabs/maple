@@ -47,9 +47,7 @@ export const ClerkOrganizationMembershipData = Schema.Struct({
 	public_user_data: Schema.Struct({ user_id: Schema.String }),
 	role: Schema.optionalKey(Schema.String),
 })
-export type ClerkOrganizationMembershipData = Schema.Schema.Type<
-	typeof ClerkOrganizationMembershipData
->
+export type ClerkOrganizationMembershipData = Schema.Schema.Type<typeof ClerkOrganizationMembershipData>
 
 /** The membership verbs Maple audits, keyed by Clerk's event type. */
 export const CLERK_MEMBERSHIP_EVENTS = {

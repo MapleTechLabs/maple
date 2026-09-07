@@ -142,7 +142,11 @@ describe("destinationAuditDiff", () => {
 	// A webhook URL is the credential for Discord and can carry one for a plain
 	// webhook, so it is withheld rather than diffed.
 	it("treats a webhook URL as a credential", () => {
-		const changes = destinationAuditDiff({ webhook_url: "https://discord.test/api/webhooks/1/tok" }, view(), view())
+		const changes = destinationAuditDiff(
+			{ webhook_url: "https://discord.test/api/webhooks/1/tok" },
+			view(),
+			view(),
+		)
 		expect(changes?.after).toEqual({ webhook_url: "<redacted>" })
 	})
 

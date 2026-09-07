@@ -51,8 +51,8 @@ const renderedSql = migration_0004_service_namespace_projections.statements
 describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
-			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-			27, 28, 29,
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+			28, 29,
 		])
 		expect(migrations.at(-1)).toBe(migration_0029_ai_trace_index_usage_conventions)
 		expect(latestMigrationVersion).toBe(29)
@@ -700,14 +700,20 @@ describe("migration 0029 — ai_trace_index usage conventions", () => {
 		expect(rest).toEqual([])
 		expect(alter).toBe("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ResponseId String")
 		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
-		expect(create).toContain("coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id']) AS ResponseId")
-		expect(create).toMatch(/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/)
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id']) AS ResponseId",
+		)
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		)
 		// The prompt half nests the cache for the re-summing vendors and the
 		// OpenAI-shaped providers, and adds it beside the prompt for Anthropic.
 		expect(create).toContain(
 			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
 		)
-		expect(create).toContain("IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']")
+		expect(create).toContain(
+			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
 		// The completion half sets reasoning beside the completion for Gemini alone.
 		expect(create).toContain(
 			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
@@ -715,8 +721,16 @@ describe("migration 0029 — ai_trace_index usage conventions", () => {
 		expect(create).toContain(") AS Tokens")
 		// Every 0026 column still projected: the view maps to the table by NAME.
 		for (const column of [
-			"DeploymentEnv", "Model", "AgentName", "ToolName", "IsError", "IsLlmCall", "IsToolCall",
-			"Tokens", "Cost", "ResponseId",
+			"DeploymentEnv",
+			"Model",
+			"AgentName",
+			"ToolName",
+			"IsError",
+			"IsLlmCall",
+			"IsToolCall",
+			"Tokens",
+			"Cost",
+			"ResponseId",
 		]) {
 			expect(create).toContain(` AS ${column}`)
 		}

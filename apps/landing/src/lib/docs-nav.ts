@@ -18,8 +18,7 @@ export const GROUP_ORDER = [
 
 export type DocGroup = (typeof GROUP_ORDER)[number]
 
-export const isDocGroup = (group: string): group is DocGroup =>
-	GROUP_ORDER.some((known) => known === group)
+export const isDocGroup = (group: string): group is DocGroup => GROUP_ORDER.some((known) => known === group)
 
 export const groupRank = (group: string): number => {
 	const i = GROUP_ORDER.findIndex((known) => known === group)
