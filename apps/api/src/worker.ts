@@ -501,7 +501,17 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>) =>
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)
 		if (request.method === "GET" && path === "/health") {
-			return HttpServerResponse.text("OK", { headers: API_CORS_RESPONSE_HEADERS })
+			// The revision this isolate is running, so the deploy that just
+			// uploaded a script can assert the script is the one now serving.
+			// Alchemy isolates per-resource failures, so a red deploy still
+			// leaves every sibling Worker updated and this one on the old
+			// bundle — the body stays `OK` and the answer stays graph-free.
+			const revision = (yield* Cloudflare.WorkerEnvironment).COMMIT_SHA
+			return HttpServerResponse.text("OK", {
+				headers: revision
+					? { ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": revision }
+					: API_CORS_RESPONSE_HEADERS,
+			})
 		}
 		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
 
