@@ -3,8 +3,8 @@
 #
 #   curl -fsSL https://maple.dev/cli/uninstall | sh
 #
-# Removes the `maple` PATH symlink and the `~/.maple/bin` bundle (maple +
-# libchdb.so). Your data dir (`~/.maple/data`) and config (`~/.maple/config.json`,
+# Removes the `maple` PATH symlink and the `~/.maple/bin` bundle (maple plus
+# its npm chdb runtime sidecar). Your data dir (`~/.maple/data`) and config (`~/.maple/config.json`,
 # holding any remote token) are KEPT unless you opt in — the data dir prompts
 # (or set MAPLE_REMOVE_DATA=1 for non-interactive removal).
 #

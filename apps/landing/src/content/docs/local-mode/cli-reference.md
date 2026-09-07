@@ -451,19 +451,19 @@ OTLP bodies may be protobuf (default) or JSON, optionally gzip-encoded. The `/lo
 
 **Runtime** (CLI + server):
 
-| Variable                     | Default                    | Purpose                                                                                                                                                |
-| ---------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MAPLE_LOCAL_BIND_HOST`      | `127.0.0.1`                | Server bind host and default same-machine CLI target; wildcards map to loopback                                                                        |
-| `MAPLE_LOCAL_ADVERTISE_HOST` | connection-safe bind host  | Host printed for clients and the bundled UI                                                                                                            |
-| `MAPLE_LOCAL_URL`            | derived bind host + `4318` | Explicit base URL override for CLI query and mode detection                                                                                            |
-| `MAPLE_LOCAL_UI_URL`         | `https://local.maple.dev`  | Exact separately hosted UI origin linked by `maple start` and allowed by CORS                                                                          |
-| `MAPLE_LIBCHDB`              | _(auto)_                   | Explicit path to `libchdb`. Otherwise resolved beside the binary (Homebrew keeps it in the same `libexec` dir), then `~/.maple/bin/libchdb.{so,dylib}` |
-| `MAPLE_API_URL`              | `https://api.maple.dev`    | Remote API base URL                                                                                                                                    |
-| `MAPLE_API_TOKEN`            |                            | Remote bearer token (overrides the stored value)                                                                                                       |
-| `MAPLE_ORG_ID`               |                            | Remote org override                                                                                                                                    |
-| `MAPLE_DEBUG`                |                            | Set to `1` to enable `--debug`                                                                                                                         |
-| `MAPLE_FORMAT`               | `json`                     | `json` or `table` — same as `--format`                                                                                                                 |
-| `MAPLE_NO_UPDATE_CHECK`      |                            | Set to `1` to disable startup update checks (the Homebrew wrapper sets this automatically)                                                             |
+| Variable                     | Default                    | Purpose                                                                                                                                       |
+| ---------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAPLE_LOCAL_BIND_HOST`      | `127.0.0.1`                | Server bind host and default same-machine CLI target; wildcards map to loopback                                                               |
+| `MAPLE_LOCAL_ADVERTISE_HOST` | connection-safe bind host  | Host printed for clients and the bundled UI                                                                                                   |
+| `MAPLE_LOCAL_URL`            | derived bind host + `4318` | Explicit base URL override for CLI query and mode detection                                                                                   |
+| `MAPLE_LOCAL_UI_URL`         | `https://local.maple.dev`  | Exact separately hosted UI origin linked by `maple start` and allowed by CORS                                                                 |
+| `MAPLE_CHDB_NODE_MODULES`    | _(auto)_                   | Explicit `node_modules` directory containing `chdb`. Otherwise resolved beside the binary, then from the source workspace during development. |
+| `MAPLE_API_URL`              | `https://api.maple.dev`    | Remote API base URL                                                                                                                           |
+| `MAPLE_API_TOKEN`            |                            | Remote bearer token (overrides the stored value)                                                                                              |
+| `MAPLE_ORG_ID`               |                            | Remote org override                                                                                                                           |
+| `MAPLE_DEBUG`                |                            | Set to `1` to enable `--debug`                                                                                                                |
+| `MAPLE_FORMAT`               | `json`                     | `json` or `table` — same as `--format`                                                                                                        |
+| `MAPLE_NO_UPDATE_CHECK`      |                            | Set to `1` to disable startup update checks (the Homebrew wrapper sets this automatically)                                                    |
 
 **Homebrew**:
 
@@ -481,7 +481,7 @@ If Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap` 
 | Variable              | Default        | Purpose                                                           |
 | --------------------- | -------------- | ----------------------------------------------------------------- |
 | `MAPLE_VERSION`       | `latest`       | Release tag to install                                            |
-| `MAPLE_INSTALL_DIR`   | `~/.maple/bin` | Where the 2-file bundle is installed                              |
+| `MAPLE_INSTALL_DIR`   | `~/.maple/bin` | Where the bundle directory is installed                           |
 | `MAPLE_BIN_DIR`       | _(auto)_       | Where `maple` is symlinked onto `PATH`                            |
 | `MAPLE_SKIP_CHECKSUM` | `0`            | Set to `1` to skip SHA-256 verification (air-gapped mirrors only) |
 
@@ -489,7 +489,7 @@ The on-disk config at `~/.maple/config.json` stores `apiUrl`, `token`, `orgId`, 
 
 ## Troubleshooting
 
-**`libchdb` not found.** The binary `dlopen`s `libchdb` relative to its own path, then falls back to `~/.maple/bin`. Homebrew keeps `maple` and `libchdb` together in its Cellar; the manual installer keeps them in `~/.maple/bin`. If you move files by hand, keep `libchdb.so`/`.dylib` beside `maple`, or set `MAPLE_LIBCHDB` to its full path. (Running from source has no sibling library — set `MAPLE_LIBCHDB` or drop one in `~/.maple/bin`.)
+**`chdb` runtime not found.** The binary resolves `node_modules/chdb` beside `maple`; the manual installer keeps both under `~/.maple/bin`. If you move files by hand, keep the `node_modules` sidecar next to `maple`, or set `MAPLE_CHDB_NODE_MODULES` to a `node_modules` directory that contains `chdb`.
 
 **Homebrew installed but `maple` still runs the old binary.** You probably have a manual-installer symlink earlier on `PATH`. Run `command -v maple` to confirm, then remove the old symlink or run `curl -fsSL https://maple.dev/cli/uninstall | sh` before reinstalling with Homebrew.
 

@@ -8,7 +8,7 @@
 // Contract: exit 0 (PASS) when the two datasets produce DIFFERENT digests;
 // exit nonzero (FAIL) when they are equal (the bare-NULL collapse).
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-null-value-sensitivity.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-null-value-sensitivity.ts
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"

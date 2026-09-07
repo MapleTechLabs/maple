@@ -4,7 +4,7 @@
 // hashes) cannot detect this. Contract: exit 0 (PASS) when the reassociated
 // export's digest DIFFERS; exit nonzero (FAIL) when equal (the bug).
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-digest-row-swap.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-digest-row-swap.ts
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"

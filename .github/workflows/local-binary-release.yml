@@ -2,13 +2,12 @@ name: Local Binary Release
 
 # Builds the distributable `maple` local binary (a single Bun-compiled
 # executable: CLI + OTLP-ingest/query server + bundled SPA) for macOS and Linux,
-# then attaches a 2-file bundle (`maple` + `libchdb.so`) per platform to a
+# then attaches a bundle (`maple` + npm `chdb` runtime sidecar) per platform to a
 # GitHub release.
 #
-# Why native runners (no cross-compilation): the bundle ships a prebuilt,
-# platform-specific `libchdb.so` (downloaded from chdb-io/chdb-core releases),
-# which `maple` dlopens via bun:ffi at runtime. We fetch the engine matching the
-# host, so each target is built on a matching native runner.
+# Why native runners (no cross-compilation): the bundle ships the platform-specific
+# `@chdb/lib-*` npm package installed for the host, so each target is built on a
+# matching native runner.
 #
 # Each build job publishes its own tarball immediately after packaging — no
 # separate aggregation step — so a slow or queued runner can never block the
@@ -91,8 +90,8 @@ jobs:
 
             - name: Build local binary bundle
               # Builds the SPA, inlines it into the binary, compiles apps/cli with
-              # `bun build --compile`, and downloads the matching libchdb beside it.
-              # Output bundle lands in ./dist (maple + libchdb.so). MAPLE_BUILD_VERSION
+              # `bun build --compile`, and copies the matching npm chdb runtime beside it.
+              # Output bundle lands in ./dist (maple + node_modules). MAPLE_BUILD_VERSION
               # bakes the resolved tag into `maple --version`.
               env:
                   MAPLE_BUILD_VERSION: ${{ steps.version.outputs.version }}
@@ -109,13 +108,15 @@ jobs:
 
             - name: Ad-hoc codesign (macOS)
               # bun-compiled binaries run locally once Gatekeeper quarantine is
-              # cleared; ad-hoc sign both files for good measure. Production
+              # cleared; ad-hoc sign the executable and native sidecar for good measure. Production
               # distribution should layer Developer ID signing + notarization on
               # top (requires APPLE_* secrets not configured here).
               if: ${{ matrix.os == 'macos' }}
               run: |
                   set -euo pipefail
-                  codesign --force --sign - dist/libchdb.so
+                  while IFS= read -r -d '' f; do
+                    codesign --force --sign - "$f"
+                  done < <(find dist/node_modules/@chdb -type f \( -name '*.node' -o -name 'libchdb.so' -o -name '*.dylib' \) -print0)
                   codesign --force --sign - dist/maple
                   codesign --verify --verbose dist/maple
 
@@ -130,8 +131,8 @@ jobs:
                   rm -rf "$staging"
                   mkdir -p "$staging"
                   cp dist/maple "$staging/maple"
-                  cp dist/libchdb.so "$staging/libchdb.so"
-                  # Smoke-check the relocatable 2-file bundle (maple + libchdb.so).
+                  cp -R dist/node_modules "$staging/node_modules"
+                  # Smoke-check the relocatable bundle (maple + node_modules/chdb).
                   ( cd "$staging" && ./maple --help >/dev/null 2>&1 ) || \
                     echo "::warning::'maple --help' smoke check did not exit cleanly on $target"
                   tarball="$RUNNER_TEMP/${name}.tar.gz"
@@ -181,7 +182,7 @@ jobs:
                     'Local Maple (`maple start`) bundles.' \
                     '**Install (macOS / Linux):**' \
                     'curl -fsSL https://maple.dev/cli/install | sh' \
-                    'Or download a bundle below. Each archive contains `maple` + `libchdb.so` — keep both in the same directory. macOS: run `xattr -dr com.apple.quarantine maple libchdb.so` after extracting.' \
+                    'Or download a bundle below. Each archive contains `maple` + `node_modules/chdb` — keep the sidecar next to the binary. macOS: run `xattr -dr com.apple.quarantine maple node_modules` after extracting.' \
                     > "$RUNNER_TEMP/release-notes.md"
                   gh release create "$TAG" --repo "$REPO" \
                     --title "$TAG" \

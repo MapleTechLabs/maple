@@ -4,7 +4,7 @@
 // preserves duplicates detects this; a count-only or sum digest does not.
 // Contract: exit 0 (PASS) when the dup/drop export's digest DIFFERS.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-digest-dup-drop.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-digest-dup-drop.ts
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"

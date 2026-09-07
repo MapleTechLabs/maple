@@ -7,7 +7,7 @@
 // Contract: exit 0 (PASS) when a NULL and the sentinel string produce DIFFERENT
 // digests; exit nonzero (FAIL) when they collide.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-null-flag-binding.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-null-flag-binding.ts
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"

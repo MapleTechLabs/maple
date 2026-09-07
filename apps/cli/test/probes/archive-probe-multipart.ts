@@ -2,7 +2,7 @@
 // the exact source set with no duplicates or omissions. Contract: exit 0 (PASS)
 // when 8 rows across 2 parts archive as the exact source set.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-multipart.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-multipart.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

@@ -3,7 +3,7 @@
 // source set. Contract: exit 0 (PASS) when OPTIMIZE is blocked (code 236) every
 // time and the archived IDs exactly equal the source IDs.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-merge-injection.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-merge-injection.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

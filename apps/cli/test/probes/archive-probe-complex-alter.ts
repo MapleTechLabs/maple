@@ -3,7 +3,7 @@
 // column change (this passed in round 4); the round-5 multiset must preserve it.
 // Contract: exit 0 (PASS) when the altered export's digest DIFFERS.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-complex-alter.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-complex-alter.ts
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"

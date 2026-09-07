@@ -17,8 +17,9 @@ brew install Makisuo/tap/maple
 ```
 
 Homebrew downloads the matching release bundle, verifies its checksum, installs
-`maple` and `libchdb.so` together in the Homebrew Cellar, and links `maple` onto
-your PATH. If Homebrew asks you to trust the third-party tap, run
+`maple` and its `node_modules/chdb` runtime sidecar together in the Homebrew
+Cellar, and links `maple` onto your PATH. If Homebrew asks you to trust the
+third-party tap, run
 `brew trust Makisuo/tap` once and retry the install. The tap lives in
 `Makisuo/homebrew-tap`, not this repo, so its platform coverage is set there —
 Intel macOS currently installs via the manual installer below.
@@ -34,9 +35,9 @@ curl -fsSL https://maple.dev/cli/install | sh
 `https://raw.githubusercontent.com/MapleTechLabs/maple/main/scripts/install.sh` works too.)
 
 The manual installer detects your OS/arch, downloads the matching bundle from
-the latest GitHub release, verifies its checksum, installs the two files into
-`~/.maple/bin`, clears the macOS Gatekeeper quarantine, and symlinks `maple`
-onto your PATH.
+the latest GitHub release, verifies its checksum, installs `maple` and its
+`node_modules/chdb` runtime sidecar into `~/.maple/bin`, clears the macOS
+Gatekeeper quarantine, and symlinks `maple` onto your PATH.
 
 Released targets: macOS (Apple Silicon & Intel) and Linux (x86_64 & arm64).
 Intel macOS builds on GitHub's `macos-15-intel` runner, which is the scarcest
@@ -116,7 +117,8 @@ Manual-installer builds keep themselves current:
   (CI/pipes), and the `--version`/`--help`/`update` paths. Opt out entirely with
   `MAPLE_NO_UPDATE_CHECK=1`.
 - **`maple update`** downloads the latest release bundle, verifies its SHA-256,
-  and installs it **in place** — an atomic rename over both files, safe even
+  and installs it **in place** — an atomic rename over the binary and runtime
+  sidecar, safe even
   though the running binary is being replaced (the install dir's `cp`-based
   installer can't overwrite a running executable; the rename swaps the directory
   entry while the live process keeps its old inode). It then clears the macOS
@@ -151,27 +153,28 @@ as the installer.
 If you migrate from the manual installer to Homebrew, run the manual uninstaller
 or remove the old PATH symlink so your shell resolves Homebrew's `maple`.
 
-## Architecture: one Bun binary + libchdb
+## Architecture: one Bun binary + chdb npm runtime
 
 There is a single binary, `maple`, compiled from **`apps/cli`** (package
 `@maple/cli`, Effect + Bun) with `bun build --compile`. It is both the CLI and
-the server, and it talks to the embedded ClickHouse engine **directly via
-`bun:ffi`** — no subprocess, no second language at the front:
+the server, and it talks to the embedded ClickHouse engine through the
+published **`chdb` npm package** — no subprocess, no second language at the
+front:
 
 | Concern              | Where                          | How                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CLI commands         | `apps/cli/src/commands`        | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace — every command bottoms out at the shared `WarehouseExecutor`, and only the executor layer swaps per [mode](#local-vs-remote-mode).                                                                                                                        |
 | `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA — all on one port.                                                                                                                                                                                                               |
-| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`  | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
+| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`  | Opens one `chdb` npm `Session` against the Maple data directory and holds a single connection for the process.                                                                                                                                                                                                                                                       |
 | OTLP → rows          | `apps/cli/src/server/otlp/`    | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
 | UI (SPA)             | `apps/local-ui` (Vite + React) | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
 
 chDB allows exactly one connection per process and isn't safe to call
 concurrently — so the long-lived `maple start` process owns the connection, and
 short-lived query commands (`maple traces`, …) reach it over HTTP via
-[`executeLocalQuery`](../packages/query-engine/src/local.ts). `bun:ffi` calls are
-synchronous and serialize naturally on the single JS thread, which preserves
-chDB's single-writer requirement.
+[`executeLocalQuery`](../packages/query-engine/src/local.ts). The local server
+keeps chDB access on the single JS thread, preserving chDB's single-writer
+requirement.
 
 ### Store lifecycle & recovery
 
@@ -285,8 +288,8 @@ The Linux native probe `apps/cli/test/native-local-store-migration.sh` uses a
 native chDB setup helper to create a stopped historical raw-table fixture,
 applies the legacy marker, runs the public migration command, checks rebuilt
 service-namespace and database aggregates, and reopens the promoted store in
-a fresh process. It reports `SKIP` when no native `libchdb` is available (for
-example, on a development machine without the platform bundle); the Linux CI
+a fresh process. It reports `SKIP` when no native `chdb` npm runtime is
+available (for example, on a development machine without the platform bundle); the Linux CI
 bundle runs it alongside the checkpoint smoke test. The fixture covers the
 authoritative v0 raw tables; retained derived objects remain rollback-only
 rather than being treated as migrated history.
@@ -359,7 +362,7 @@ No Rust toolchain needed. Run the server and the SPA dev server in two terminals
 
 ```bash
 # Terminal 1 — the server (OTLP ingest + query API + chDB) on :4318.
-# Needs libchdb: set MAPLE_LIBCHDB, or keep libchdb.so in ~/.maple/bin.
+# Needs the @maple/cli workspace dependencies installed.
 bun run apps/cli/src/bin.ts start
 
 # Terminal 2 — the Vite SPA dev server on :4319, proxying /local → :4318
@@ -382,10 +385,10 @@ mapping wildcard binds to matching loopback. `MAPLE_LOCAL_URL` remains the
 explicit override and is required when the server was started with a one-off
 `--host` or non-default `--port` that later CLI processes cannot infer.
 
-> **libchdb in dev.** `chdb.ts` resolves `libchdb` from, in order: `MAPLE_LIBCHDB`,
-> a sibling of the executable, then `~/.maple/bin/libchdb.{so,dylib}`. Running from
-> source uses the Bun executable's directory (no sibling libchdb), so either set
-> `MAPLE_LIBCHDB` or drop a `libchdb.so` in `~/.maple/bin`.
+> **chDB runtime in dev.** Source runs resolve the workspace `@maple/cli`
+> dependency on `chdb`. Compiled bundles resolve `node_modules/chdb` beside the
+> `maple` binary; set `MAPLE_CHDB_NODE_MODULES` only when testing a moved or
+> non-standard runtime sidecar.
 
 ## Local vs remote mode
 
@@ -468,22 +471,22 @@ against the emitting service's logs.
 
 ## Release bundle
 
-`scripts/build-local-binary.sh` produces a relocatable **2-file bundle** (also built
+`scripts/build-local-binary.sh` produces a relocatable bundle (also built
 per-platform by `.github/workflows/local-binary-release.yml`):
 
 ```
-maple        # single Bun-compiled binary: CLI + ingest/query server + embedded SPA
-libchdb.so   # the chDB engine (~320 MB), downloaded from chdb-io/chdb-core releases
+maple          # single Bun-compiled binary: CLI + ingest/query server + embedded SPA
+node_modules/  # chdb npm package plus the installed @chdb/lib-* platform package
 ```
 
 The build (1) builds the SPA, (2) inlines `apps/local-ui/dist` into
 `apps/cli/src/server/ui-embed.gen.ts` so `bun build --compile` bakes it into the
 binary as the `--offline` fallback (the default UI is served from
-`local.maple.dev`), (3) compiles `apps/cli`, and (4) downloads the matching `libchdb` beside
-the binary. At runtime `maple` `dlopen`s the sibling `libchdb` (resolved relative
-to its own path), so keep both files in the same directory — no `LD_LIBRARY_PATH`
-or rpath tricks.
+`local.maple.dev`), (3) compiles `apps/cli`, and (4) copies the npm `chdb`
+runtime sidecar beside the binary. At runtime `maple` resolves
+`node_modules/chdb` relative to its own path, so keep the sidecar next to the
+binary — no `LD_LIBRARY_PATH` or rpath tricks.
 
 ```bash
-scripts/build-local-binary.sh               # full 2-file bundle into ./dist
+scripts/build-local-binary.sh               # full bundle into ./dist
 ```

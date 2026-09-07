@@ -677,8 +677,8 @@ jobs:
         # probe (crash-recovery, ~125s) plus setup.
         #
         # Each leg rebuilds the bundle rather than sharing one via upload-artifact:
-        # dist/ is ~403MB (libchdb.so 334MB + maple 69MB), and build-local-binary.sh
-        # takes ~14s including the libchdb download. Uploading once and downloading
+        # dist/ carries the native chdb npm sidecar plus maple, and build-local-binary.sh
+        # is already quick after bun install. Uploading once and downloading
         # seven times is strictly slower.
         name: Local archive native (${{ matrix.probe }})
         needs: changes

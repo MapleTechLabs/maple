@@ -547,7 +547,7 @@ const assertNoLiveServer = (dataDir: string): void => {
 }
 
 /** Total bytes on disk. A `string | number` because the setting that unquotes
- * 64-bit integers is not in force for every libchdb build this CLI supports. */
+ * 64-bit integers is not in force for every chDB engine build this CLI supports. */
 const DiskUsageRow = Schema.Struct({ bytes: Schema.Union([Schema.String, Schema.Number]) })
 
 const decodeDiskUsageRows = decodeJsonEachRow(DiskUsageRow)

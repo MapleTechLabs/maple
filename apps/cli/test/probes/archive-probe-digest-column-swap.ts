@@ -15,7 +15,7 @@
 // Contract: exit 0 (PASS) when the column-swapped export's digest DIFFERS from
 // the original's; exit nonzero (FAIL) when equal (the commutative bug).
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-digest-column-swap.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-digest-column-swap.ts
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"

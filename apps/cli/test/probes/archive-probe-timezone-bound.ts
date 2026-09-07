@@ -8,7 +8,7 @@
 // This probe parses a manifest shard record directly (no chDB needed) under
 // TZ=America/New_York to reproduce the host-timezone dependence deterministically.
 //
-// Run: TZ=America/New_York MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-timezone-bound.ts
+// Run: TZ=America/New_York MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-timezone-bound.ts
 
 import { ArchiveProbe } from "../archive-probe-helpers"
 import { parseArchiveGenerationManifest } from "../../src/server/archives/manifest"

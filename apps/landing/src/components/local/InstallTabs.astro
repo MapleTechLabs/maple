@@ -30,7 +30,7 @@ const methods: Method[] = [
 		recommended: true,
 		command: "brew install Makisuo/tap/maple",
 		blurb:
-			"Homebrew downloads the matching release bundle, verifies its checksum, installs <code>maple</code> and <code>libchdb</code> together, and links <code>maple</code> onto your <code>PATH</code>.",
+			"Homebrew downloads the matching release bundle, verifies its checksum, installs <code>maple</code> and the <code>node_modules/chdb</code> runtime sidecar together, and links <code>maple</code> onto your <code>PATH</code>.",
 		upgrade: "brew upgrade maple",
 		uninstall: "brew uninstall maple",
 		notes: [
@@ -43,7 +43,7 @@ const methods: Method[] = [
 		label: "Install script",
 		command: "curl -fsSL https://maple.dev/cli/install | sh",
 		blurb:
-			"The script is <code>scripts/install.sh</code> — read it first. It detects your OS/arch, downloads the matching bundle from the latest GitHub release, verifies its checksum, installs <code>maple</code> + <code>libchdb</code> into <code>~/.maple/bin</code>, clears the macOS Gatekeeper quarantine, and symlinks <code>maple</code> onto your <code>PATH</code>.",
+			"The script is <code>scripts/install.sh</code> — read it first. It detects your OS/arch, downloads the matching bundle from the latest GitHub release, verifies its checksum, installs <code>maple</code> + <code>node_modules/chdb</code> into <code>~/.maple/bin</code>, clears the macOS Gatekeeper quarantine, and symlinks <code>maple</code> onto your <code>PATH</code>.",
 		uninstall: "curl -fsSL https://maple.dev/cli/uninstall | sh",
 		notes: [
 			"Your <code>~/.maple/data</code> is kept on uninstall.",

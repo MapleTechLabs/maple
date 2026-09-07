@@ -11,11 +11,12 @@ set -euo pipefail
 BUNDLE_DIR="${1:?usage: native-local-store-migration.sh <bundle-dir> [port]}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MAPLE="$BUNDLE_DIR/maple"
-LIBCHDB="${MAPLE_LIBCHDB:-$BUNDLE_DIR/libchdb.so}"
+CHDB_NODE_MODULES="${MAPLE_CHDB_NODE_MODULES:-$BUNDLE_DIR/node_modules}"
+export MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES"
 PORT="${2:-45241}"
 
-if [[ ! -f "$LIBCHDB" ]]; then
-	echo "SKIP: native local-store migration requires libchdb at $LIBCHDB" >&2
+if [[ ! -d "$CHDB_NODE_MODULES/chdb" ]]; then
+	echo "SKIP: native local-store migration requires chdb runtime at $CHDB_NODE_MODULES/chdb" >&2
 	exit 0
 fi
 [[ -x "$MAPLE" ]] || { echo "FAIL: maple binary not found at $MAPLE" >&2; exit 1; }
@@ -80,7 +81,7 @@ wait_health() {
 }
 
 start_server() {
-	MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" start \
+	"$MAPLE" start \
 		--port "$PORT" \
 		--data-dir "$DATA" \
 		--chdb-config-file "$CONFIG" \
@@ -91,7 +92,7 @@ start_server() {
 }
 
 stop_server() {
-	bounded 60 "maple stop" env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" stop --data-dir "$DATA" >/dev/null 2>&1 || true
+	bounded 60 "maple stop" "$MAPLE" stop --data-dir "$DATA" >/dev/null 2>&1 || true
 	# Bounded wait: a server that ignores the stop must not eat the job budget.
 	for _ in $(seq 1 300); do
 		kill -0 "$SERVER_PID" 2>/dev/null || break
@@ -116,14 +117,14 @@ chmod 600 "$CONFIG"
 
 step "creating legacy v0 source store"
 bounded 60 "legacy source fixture" \
-	env MAPLE_LIBCHDB="$LIBCHDB" bun "$REPO_ROOT/apps/cli/test/native-local-store-migration-fixture.ts" "$DATA" "$CONFIG"
+	bun "$REPO_ROOT/apps/cli/test/native-local-store-migration-fixture.ts" "$DATA" "$CONFIG"
 
 # Install the historical fingerprint-only marker for the v0 physical source.
 # The physical source was created by native chDB; the marker is the only
 # compatibility evidence the v0 resolver is allowed to use.
 step "installing legacy marker"
-CHDB_VERSION="$(bounded 60 "maple --version" env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" --version 2>/dev/null | sed -n 's/.*chdb \([^ ]*\).*/\1/p')"
-[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.1.0"
+CHDB_VERSION="$(bounded 60 "maple --version" "$MAPLE" --version 2>/dev/null | sed -n 's/.*chdb \([^ ]*\).*/\1/p')"
+[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="dev"
 printf '%s\n' "{\"chdb\":\"$CHDB_VERSION\",\"maple\":\"native-probe\",\"createdAt\":\"unknown\",\"schema\":\"428701854f9fd30e\"}" >"$ROOT/maple-store-version.json"
 chmod 600 "$ROOT/maple-store-version.json"
 
@@ -131,7 +132,7 @@ step "running maple schema migrate"
 # 120s bound: healthy runs take ~3s; the job budget is <3 minutes, so a stall
 # has to fail the step in seconds-not-minutes with migrate.out as evidence.
 bounded 120 "maple schema migrate" \
-	env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" schema migrate --data-dir "$DATA" --yes >"$ROOT/migrate.out" 2>&1 || {
+	"$MAPLE" schema migrate --data-dir "$DATA" --yes >"$ROOT/migrate.out" 2>&1 || {
 	cat "$ROOT/migrate.out" >&2
 	fail "native schema migration failed"
 }
@@ -165,7 +166,7 @@ stop_server
 
 step "verifying the service-map ingress bridge"
 bounded 60 "service-map ingress bridge probe" \
-	env MAPLE_LIBCHDB="$LIBCHDB" bun "$REPO_ROOT/apps/cli/test/native-service-map-ingest-bridge-probe.ts" "$DATA" "$CONFIG"
+	bun "$REPO_ROOT/apps/cli/test/native-service-map-ingest-bridge-probe.ts" "$DATA" "$CONFIG"
 
 rollback="$(sed -n 's/^.*rollback *//p' "$ROOT/migrate.out" | tail -1)"
 [[ -n "$rollback" && -d "$rollback" ]] || fail "native migration did not retain a rollback source"
