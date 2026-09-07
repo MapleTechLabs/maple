@@ -5,6 +5,7 @@
 // and ranks them by the requested metric (count, latency quantiles, error
 // rate, or apdex). OrgId-scoped per the Warehouse Query Pattern.
 
+import { finiteOrZero } from "./format"
 import { Match } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
 import { compile } from "@maple-dev/clickhouse-builder/sql"
@@ -37,12 +38,12 @@ export interface TopOperationsOutput {
 	readonly value: number
 }
 
-const durationMs = (col: CH.Expr<number>): CH.Expr<number> => col.div(1_000_000)
+const durationMs = <N extends number | null>(col: CH.Expr<N>) => col.div(1000000)
 
 const metricExpr = (
 	metric: TopOperationsMetric,
 	$: { readonly Duration: CH.Expr<number>; readonly StatusCode: CH.Expr<string> },
-): CH.Expr<number> =>
+): CH.Expr<number | null> =>
 	Match.value(metric).pipe(
 		Match.when("count", () => count()),
 		Match.when("avg_duration", () => durationMs(avg($.Duration))),
@@ -79,7 +80,7 @@ export function topOperationsQuery(opts: TopOperationsOpts) {
 	return from(Traces)
 		.select(($) => ({
 			name: $.SpanName,
-			value: metricExpr(opts.metric, $),
+			value: finiteOrZero(metricExpr(opts.metric, $)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),

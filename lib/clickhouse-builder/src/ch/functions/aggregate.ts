@@ -1,4 +1,4 @@
-import { defineFn } from "../define-fn"
+import { defineFn, compileTypedFnCall, numericResultSchema } from "../define-fn"
 import { QueryBuilderError } from "../errors"
 import { makeExpr } from "../expr"
 import { raw, compile } from "../../sql/sql-fragment"
@@ -17,16 +17,26 @@ const arraySchemaOf = <T>(expr: unknown) => {
 // Standard aggregates (defineFn one-liners)
 
 export const count = defineFn<[], number>("count", T.uint64)
-export const avg = defineFn<[Expr<number>], number>("avg", T.float64)
-export const sum = defineFn<[Expr<number>], number>("sum", T.float64)
+export const avg = defineFn<[Expr<number | null>], number | null>("avg", T.nullable(T.float64))
+export const sum = <N extends number | null>(expr: Expr<N>): Expr<number | Extract<N, null>> =>
+	compileTypedFnCall("sum", numericResultSchema(expr), expr)
 
 // Condition-taking aggregates
 
 export const countIf = defineFn<[Condition], number>("countIf", T.uint64)
-export const sumIf = defineFn<[Expr<number>, Condition], number>("sumIf", T.float64)
-export const avgIf = defineFn<[Expr<number>, Condition], number>("avgIf", T.float64)
-export const maxIf = defineFn<[Expr<number>, Condition], number>("maxIf", T.float64)
-export const minIf = defineFn<[Expr<number>, Condition], number>("minIf", T.float64)
+export const sumIf = <N extends number | null>(
+	expr: Expr<N>,
+	condition: Condition,
+): Expr<number | Extract<N, null>> => compileTypedFnCall("sumIf", numericResultSchema(expr), expr, condition)
+export const avgIf = defineFn<[Expr<number | null>, Condition], number | null>("avgIf", T.nullable(T.float64))
+export const maxIf = <N extends number | null>(
+	expr: Expr<N>,
+	condition: Condition,
+): Expr<number | Extract<N, null>> => compileTypedFnCall("maxIf", numericResultSchema(expr), expr, condition)
+export const minIf = <N extends number | null>(
+	expr: Expr<N>,
+	condition: Condition,
+): Expr<number | Extract<N, null>> => compileTypedFnCall("minIf", numericResultSchema(expr), expr, condition)
 
 // Generic aggregates (compileFnCall for type preservation)
 
@@ -99,8 +109,8 @@ export const argMaxMerge = <T>(expr: Expr<T>): Expr<T> =>
 // Curried / parametric aggregates (handwritten — custom SQL syntax)
 
 export function quantile(q: number) {
-	return (expr: Expr<number>): Expr<number> =>
-		makeExpr(raw(`quantile(${q})(${compile(expr.toFragment())})`), T.float64.schema)
+	return (expr: Expr<number | null>): Expr<number | null> =>
+		makeExpr(raw(`quantile(${q})(${compile(expr.toFragment())})`), T.nullable(T.float64).schema)
 }
 
 /**

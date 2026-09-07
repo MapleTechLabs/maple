@@ -2,6 +2,7 @@
 //
 // DSL-based query definitions for error aggregation and timeseries.
 
+import { finiteOrZero } from "./format"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
@@ -575,8 +576,8 @@ export function tracesDurationStatsQuery(opts: TracesDurationStatsOpts) {
 		.select(($) => ({
 			minDurationMs: CH.min_($.Duration).div(1000000),
 			maxDurationMs: CH.max_($.Duration).div(1000000),
-			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-			p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
@@ -925,11 +926,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			.select(($) => ({
 				totalErrors: $.totalErrors,
 				totalSpans: $.s.totalSpans,
-				errorRate: CH.if_(
-					$.s.totalSpans.gt(0),
-					CH.round_($.totalErrors.div($.s.totalSpans), 6),
-					CH.lit(0),
-				),
+				errorRate: finiteOrZero(CH.round_($.totalErrors.div($.s.totalSpans), 6)),
 				affectedServicesCount: $.affectedServicesCount,
 				affectedTracesCount: $.affectedTracesCount,
 			}))

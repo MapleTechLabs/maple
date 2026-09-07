@@ -364,11 +364,7 @@ export function createJoinedColumnAccessor<Cols extends ColumnDefs, Joins extend
 
 			if (aliasSet.has(prop)) {
 				// Return a nested proxy for the joined table's columns
-				cached = createQualifiedColumnAccessor(
-					prop,
-					joinTenantColumns?.[prop] ?? tenantColumn,
-					joinColumns?.[prop],
-				)
+				cached = createQualifiedColumnAccessor(prop, joinTenantColumns?.[prop], joinColumns?.[prop])
 				cache.set(prop, cached)
 				return cached
 			}

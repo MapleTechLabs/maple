@@ -82,11 +82,16 @@ const unresolved = (name: string) => (): never => {
 	})
 }
 
-function makeParamMarker<N extends string, T>(name: N, fragment: SqlFragment): ParamMarker<N, T> {
+function makeParamMarker<N extends string, T>(
+	name: N,
+	fragment: SqlFragment,
+	schema?: Schema.Codec<T, any>,
+): ParamMarker<N, T> {
 	const raise = unresolved(name)
 	return {
 		_brand: "Expr" as const,
 		_paramName: name,
+		schema,
 		toFragment: () => fragment,
 		eq: raise,
 		neq: raise,
@@ -133,7 +138,7 @@ const paramTypes = new Map<ParamKind, Schema.Codec<any, any>>([
 	["int", CHSafeInteger],
 	["float", T.float64.literalSchema],
 	["bool", T.bool.literalSchema],
-	["dateTime", T.dateTime.literalSchema],
+	["dateTime", T.dateTime64.literalSchema],
 	["dateTimeSeconds", T.CHDateTimeSecondsLiteral],
 ])
 
@@ -141,29 +146,37 @@ const paramTypes = new Map<ParamKind, Schema.Codec<any, any>>([
 export const paramSchema = (kind: ParamKind): Schema.Codec<any, any> | undefined => paramTypes.get(kind)
 
 const makeParam =
-	<T>(kind: ParamKind) =>
+	<T>(kind: ParamKind, schema: Schema.Codec<T, any>) =>
 	<N extends string>(name: N): ParamMarker<N, T> => {
 		assertValidParamName(name)
-		return makeParamMarker<N, T>(name, raw(paramPlaceholder(kind, name)))
+		return makeParamMarker<N, T>(name, raw(paramPlaceholder(kind, name)), schema)
 	}
 
-/** A kind slug for a custom column type: its ClickHouse type name, made safe
- *  for the placeholder grammar (`Map(String, String)` → `MapStringString`). */
-const kindFor = (type: CHType<string, any, any>): ParamKind => type.sql.replace(/[^A-Za-z0-9]/g, "")
+const customKinds = new WeakMap<Schema.Codec<any, any>, ParamKind>()
+let nextCustomKind = 0
+
+const kindFor = (type: CHType<string, any, any>): ParamKind => {
+	const existing = customKinds.get(type.literalSchema)
+	if (existing !== undefined) return existing
+	const kind = `custom${nextCustomKind++}`
+	customKinds.set(type.literalSchema, kind)
+	paramTypes.set(kind, type.literalSchema)
+	return kind
+}
 
 export const param = {
 	/** Resolved from a string; emitted as an escaped SQL literal. */
-	string: makeParam<string>("string"),
+	string: makeParam<string>("string", T.string.schema),
 
 	/** Resolved from an integer (or bigint). A fractional value is rejected
 	 *  rather than silently rounded — reach for `param.float` when you mean one. */
-	int: makeParam<number>("int"),
+	int: makeParam<number>("int", T.int64.schema),
 
 	/** Resolved from any finite number. */
-	float: makeParam<number>("float"),
+	float: makeParam<number>("float", T.float64.schema),
 
 	/** Resolved from a boolean; emitted as ClickHouse's `1` / `0`. */
-	bool: makeParam<boolean>("bool"),
+	bool: makeParam<boolean>("bool", T.bool.schema),
 
 	/**
 	 * Resolved from a `'YYYY-MM-DD hh:mm:ss'` string, a `Date`, or a
@@ -173,7 +186,7 @@ export const param = {
 	 * columns and not against everything. For a column declared as
 	 * `dateTimeString`, use {@link param.dateTimeString}.
 	 */
-	dateTime: makeParam<DateTime.Utc>("dateTime"),
+	dateTime: makeParam<DateTime.Utc>("dateTime", T.dateTime.schema),
 
 	/**
 	 * The same bound, typed for a column declared as `dateTimeString`.
@@ -181,7 +194,7 @@ export const param = {
 	 * Identical at runtime — the flavours differ only in what the row decodes to,
 	 * and a param has to agree with the column it bounds.
 	 */
-	dateTimeString: makeParam<string>("dateTime"),
+	dateTimeString: makeParam<string>("dateTime", T.dateTimeString.schema),
 
 	/**
 	 * The same bound, floored to whole seconds.
@@ -197,7 +210,7 @@ export const param = {
 	 * Widening is safe where these appear: they bound a partition/index key for
 	 * pruning, and the exact `DateTime64` predicate still decides the result.
 	 */
-	dateTimeSeconds: makeParam<string>("dateTimeSeconds"),
+	dateTimeSeconds: makeParam<string>("dateTimeSeconds", T.dateTimeString.schema),
 
 	/**
 	 * A param of any column type, resolved through that type's own codec.
@@ -208,15 +221,7 @@ export const param = {
 	 */
 	of: <T, N extends string>(type: CHType<string, T, any>, name: N): ParamMarker<N, T> => {
 		const kind = kindFor(type)
-		const registered = paramTypes.get(kind)
-		if (registered === undefined) paramTypes.set(kind, type.literalSchema)
-		else if (registered !== type.literalSchema) {
-			// A defect: both types are declared in the source, so no input can
-			// cause or avoid the collision.
-			throw new QueryBuilderDefect({
-				message: `param.of: two different types both compile to '${type.sql}' — give one of them a distinct ClickHouse type name`,
-			})
-		}
-		return makeParam<T>(kind)(name)
+
+		return makeParam<T>(kind, type.schema)(name)
 	},
 }

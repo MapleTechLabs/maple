@@ -2,6 +2,7 @@
 //
 // DSL-based query definitions for logs timeseries and breakdown.
 
+import { finiteOrZero } from "./format"
 import { compileFnCall, subqueryExpr } from "@maple-dev/clickhouse-builder"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { param } from "@maple-dev/clickhouse-builder"
@@ -749,7 +750,7 @@ export function errorRateByServiceQuery() {
 			serviceName: $.serviceName,
 			totalLogs: CH.sum($.bucketTotalLogs),
 			errorLogs: CH.sum($.bucketErrorLogs),
-			errorRate: CH.round_(CH.sum($.bucketErrorLogs).div(CH.sum($.bucketTotalLogs)), 6),
+			errorRate: finiteOrZero(CH.round_(CH.sum($.bucketErrorLogs).div(CH.sum($.bucketTotalLogs)), 6)),
 		}))
 		.groupBy("serviceName")
 		.orderBy(["errorRate", "desc"])

@@ -11,6 +11,7 @@ import type { SqlFragment } from "../sql/sql-fragment"
 import { raw, str, compile, as_ as sqlAs } from "../sql/sql-fragment"
 import { chDateTimeLiteral, CHNumber, string as chString, type CHType, type InferTS } from "./types"
 import { encodeColumnLiteral } from "./literal"
+import { markTenantColumn, markTenantPredicate, tenantColumnOf, tenantPredicatesOf } from "./tenant"
 
 // Core interfaces
 
@@ -73,13 +74,39 @@ export interface Expr<TSType> {
 	in_(...values: Array<Comparable<Widen<TSType>>>): Condition
 	notIn(...values: Array<Comparable<Widen<TSType>>>): Condition
 
-	// Arithmetic — only valid for number expressions
-	div(this: Expr<number>, n: number | Expr<number>): Expr<number>
-	mul(this: Expr<number>, n: number | Expr<number>): Expr<number>
-	add(this: Expr<number>, n: number | Expr<number>): Expr<number>
-	sub(this: Expr<number>, n: number | Expr<number>): Expr<number>
-	mod(this: Expr<number>, n: number | Expr<number>): Expr<number>
+	// JSON represents non-finite division results as null. Other arithmetic
+	// propagates SQL NULL from either operand.
+	div<R extends number | null>(this: Expr<number | null>, n: R | Expr<R>): Expr<Quotient<TSType, R>>
+	mul<R extends number | null>(
+		this: Expr<number | null>,
+		n: R | Expr<R>,
+	): Expr<number | Extract<TSType | R, null>>
+	add<R extends number | null>(
+		this: Expr<number | null>,
+		n: R | Expr<R>,
+	): Expr<number | Extract<TSType | R, null>>
+	sub<R extends number | null>(
+		this: Expr<number | null>,
+		n: R | Expr<R>,
+	): Expr<number | Extract<TSType | R, null>>
+	mod<R extends number | null>(this: Expr<number | null>, n: R | Expr<R>): Expr<Quotient<TSType, R>>
 }
+
+/**
+ * What `/` and `%` decode to. A numeric literal divisor of magnitude >= 1
+ * cannot manufacture `inf`/`nan` from a finite dividend, so `x.div(1_000_000)`
+ * stays as nullable as `x`. Anything else — a zero, a literal below 1 (which
+ * can overflow: `1 / 5e-324` is `inf`), a plain `number`, another expression —
+ * can, and ClickHouse sends both as JSON `null`. A literal below 1 is spotted
+ * by how it prints: `0.5`, `-0.5`, or `1e-7`.
+ */
+export type Quotient<L, R> = [R] extends [number]
+	? 0 extends R
+		? number | null
+		: `${R}` extends `0.${string}` | `-0.${string}` | `${string}e-${string}`
+			? number | null
+			: number | Extract<L, null>
+	: number | null
 
 export interface ColumnRef<Name extends string, ColType extends CHType<string, any>> extends Expr<
 	InferTS<ColType>
@@ -107,15 +134,6 @@ export type MapValueOf<ColType> = [ColType] extends [CHType<"Map", Record<string
 
 export interface Condition {
 	readonly _brand: "Condition"
-	/**
-	 * Set only by an equality/membership test on the table's declared tenant
-	 * column (`table(name, cols, { tenantColumn })`). `compile` reads it off the
-	 * top-level `where` list to decide whether a query is tenant-scoped, so it
-	 * deliberately does NOT propagate through `and`/`or`: `TenantId.eq(x).or(y)`
-	 * is not a scoping predicate, and treating it as one is the bug this marker
-	 * exists to catch.
-	 */
-	readonly scopesTenant?: boolean
 	toFragment(): SqlFragment
 	and(other: Condition): Condition
 	or(other: Condition): Condition
@@ -152,36 +170,27 @@ export function toFragment(value: unknown): SqlFragment {
 const acceptsNull = (schema: Schema.Codec<any, any> | undefined): boolean =>
 	schema !== undefined && Result.isSuccess(Schema.decodeUnknownResult(schema)(null))
 
-/**
- * `lhs <op> rhs` as a numeric expression — see the note on `div` below.
- *
- * A NULL operand makes the whole expression NULL in ClickHouse, so the result
- * decodes nullably when either side does. `CH.sum(x).div(CH.nullIf(CH.sum(y), 0))`
- * — the standard "average, or nothing when the denominator is zero" — is exactly
- * this shape, and a flat `CHNumber` here rejected the NULL it was written to
- * produce.
- *
- * Division and modulo decode nullably whatever their operands are, because they
- * can *manufacture* a NULL from two perfectly good numbers: `1/0` is `inf` and
- * `0/0` is `nan` in ClickHouse, and both render as JSON `null`. `CHNumber` is
- * `Schema.Finite`-based and would reject that null, so an unguarded division
- * that happens to hit a zero denominator in production fails to decode — a 500
- * for a query that ran fine. Nullable decoding costs nothing at the type level
- * (`Expr<number>` either way, as it already is for a nullable operand) and
- * turns that 500 into the `null` the wire actually carried. Reach for
- * {@link ifNotFinite} where a number, not a null, is what the caller needs.
- */
-const arith = (
+/** Numeric promotion and SQL NULL propagation share one runtime codec. The
+ *  result type is the caller's claim — see {@link Quotient} for `/` and `%`. */
+const arith = <Result>(
 	lhs: SqlFragment,
 	op: string,
-	rhs: number | Expr<number>,
+	rhs: number | null | Expr<number | null>,
 	lhsSchema?: Schema.Codec<any, any>,
-): Expr<number> => {
-	const rhsSchema = typeof rhs === "number" ? undefined : rhs.schema
-	const nullable = op === "/" || op === "%" || acceptsNull(lhsSchema) || acceptsNull(rhsSchema)
-	return makeExpr<number>(
+): Expr<Result> => {
+	const rhsSchema = typeof rhs === "number" || rhs === null ? undefined : rhs.schema
+	// `x / 1000000` is finite whenever `x` is. A literal below 1 in magnitude
+	// can overflow a large dividend (`1 / 5e-324` is `inf`), so only |d| >= 1
+	// keeps the strict codec — the same rule `Quotient` applies to the type.
+	const safeDivisor = typeof rhs === "number" && Number.isFinite(rhs) && Math.abs(rhs) >= 1
+	const nullable =
+		((op === "/" || op === "%") && !safeDivisor) ||
+		rhs === null ||
+		acceptsNull(lhsSchema) ||
+		acceptsNull(rhsSchema)
+	return makeExpr(
 		raw(`${compile(lhs)} ${op} ${compile(toFragment(rhs))}`),
-		(nullable ? Schema.NullOr(CHNumber) : CHNumber) as Schema.Codec<number, any>,
+		(nullable ? Schema.NullOr(CHNumber) : CHNumber) as Schema.Codec<Result, any>,
 	)
 }
 
@@ -247,11 +256,14 @@ export function makeExpr<T>(
 		// ClickHouse promotes across the arithmetic operators (`UInt64 / UInt64`
 		// is a Float64), and `CHNumber` is the one codec that reads every numeric
 		// wire form either backend can send.
-		div: (n: number | Expr<number>) => arith(fragment, "/", n, schema),
-		mul: (n: number | Expr<number>) => arith(fragment, "*", n, schema),
-		add: (n: number | Expr<number>) => arith(fragment, "+", n, schema),
-		sub: (n: number | Expr<number>) => arith(fragment, "-", n, schema),
-		mod: (n: number | Expr<number>) => arith(fragment, "%", n, schema),
+		div: <R extends number | null>(n: R | Expr<R>) => arith<Quotient<T, R>>(fragment, "/", n, schema),
+		mul: <R extends number | null>(n: R | Expr<R>) =>
+			arith<number | Extract<T | R, null>>(fragment, "*", n, schema),
+		add: <R extends number | null>(n: R | Expr<R>) =>
+			arith<number | Extract<T | R, null>>(fragment, "+", n, schema),
+		sub: <R extends number | null>(n: R | Expr<R>) =>
+			arith<number | Extract<T | R, null>>(fragment, "-", n, schema),
+		mod: <R extends number | null>(n: R | Expr<R>) => arith<Quotient<T, R>>(fragment, "%", n, schema),
 	}
 	return self
 }
@@ -302,20 +314,45 @@ export function makeColumnRef<Name extends string, ColType extends CHType<string
 			: (value) => raw(encodeColumnLiteral(columnType, value, columnName ?? name)),
 	)
 	const isTenantColumn = tenantColumn !== undefined && (columnName ?? name) === tenantColumn
-	// Captured before `Object.assign` mutates `base` — the overrides below reuse
-	// these to emit byte-identical SQL, and reading them off `base` afterwards
-	// would just call the override again.
 	const baseEq = base.eq
 	const baseIn = base.in_
+	if (isTenantColumn) markTenantColumn(base, name)
+	const bound = (value: unknown): SqlFragment | undefined => {
+		if (isExprLike(value)) {
+			// Only placeholders are known constants. Column equality, raw SQL,
+			// and arbitrary computed expressions do not pin a tenant.
+			return "_paramName" in value ? value.toFragment() : undefined
+		}
+		if (value === null || value === undefined) return undefined
+		return columnType === undefined
+			? toFragment(value)
+			: raw(encodeColumnLiteral(columnType, value, columnName ?? name))
+	}
 	return Object.assign(
 		base,
-		// Only `eq`/`in_` scope a query. `neq`/`notIn`/`like` on the tenant column
-		// narrow nothing, and marking them would let `TenantId != 'x'` pass as scoped.
 		isTenantColumn
 			? {
-					eq: (other: any) => makeCond(baseEq(other).toFragment(), true),
-					in_: (...values: ReadonlyArray<any>) =>
-						makeCond((baseIn as any)(...values).toFragment(), true),
+					eq: (other: any) => {
+						const condition = baseEq(other)
+						const right = isExprLike(other) ? tenantColumnOf(other) : undefined
+						const value = bound(other)
+						return markTenantPredicate(
+							condition,
+							right !== undefined
+								? [{ left: name, right }]
+								: value === undefined
+									? []
+									: [{ column: name, value }],
+						)
+					},
+					in_: (...values: ReadonlyArray<any>) => {
+						const condition = (baseIn as any)(...values)
+						const value = values.length === 1 ? bound(values[0]) : undefined
+						return markTenantPredicate(
+							condition,
+							value === undefined ? [] : [{ column: name, value }],
+						)
+					},
 				}
 			: {},
 		{
@@ -329,13 +366,16 @@ export function makeColumnRef<Name extends string, ColType extends CHType<string
 
 // Condition implementation
 
-export function makeCond(fragment: SqlFragment, scopesTenant?: boolean): Condition {
+export function makeCond(fragment: SqlFragment): Condition {
 	return {
 		_brand: "Condition" as const,
-		...(scopesTenant === true ? { scopesTenant: true as const } : undefined),
 		toFragment: () => fragment,
-		// Composition drops the marker on purpose — see `Condition.scopesTenant`.
-		and: (other) => makeCond(raw(`(${compile(fragment)} AND ${compile(other.toFragment())})`)),
+		and(other) {
+			return markTenantPredicate(
+				makeCond(raw(`(${compile(fragment)} AND ${compile(other.toFragment())})`)),
+				[...tenantPredicatesOf(this), ...tenantPredicatesOf(other)],
+			)
+		},
 		or: (other) => makeCond(raw(`(${compile(fragment)} OR ${compile(other.toFragment())})`)),
 	}
 }

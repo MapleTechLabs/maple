@@ -5,6 +5,7 @@ import {
 	estimateMaple,
 	estimateVendor,
 	formatCurrency,
+	formatLineAmount,
 	formatSliderValue,
 	MAPLE_PRICING_NOTE,
 	PRICES_VERIFIED,
@@ -170,7 +171,7 @@ export function PricingCalculator({ competitor, compact = false }: { competitor:
 							<div key={item.label} className="flex items-center justify-between text-xs">
 								<span className="text-fg-muted">{item.label}</span>
 								<span className="font-mono text-fg">
-									{item.value === 0 ? "Free" : `$${Math.round(item.value)}`}
+									{item.value === 0 ? "Free" : formatLineAmount(item.value)}
 								</span>
 							</div>
 						))}
@@ -200,7 +201,7 @@ export function PricingCalculator({ competitor, compact = false }: { competitor:
 							<div key={item.label} className="flex items-center justify-between text-xs">
 								<span className="text-fg-muted">{item.label}</span>
 								<span className="font-mono text-fg">
-									{item.value === 0 ? "Free" : `$${Math.round(item.value)}`}
+									{item.value === 0 ? "Free" : formatLineAmount(item.value)}
 								</span>
 							</div>
 						))}

@@ -43,6 +43,13 @@ Each kind names a column type, and the value is encoded through that type's
 schema — the same schema a column of that type decodes rows with, read backwards. The two
 directions cannot drift, because there is only one of them.
 
+`param.dateTime` and `param.dateTimeString` preserve milliseconds in `Date` and `DateTime.Utc`
+values, as well as fractions already present in strings. Use `param.dateTimeSeconds` for a
+whole-second DateTime bound, or `param.of(T.dateTime, name)` for the parsed UTC flavour.
+
+`param.of` keeps each codec distinct even when several types share the same SQL name.
+Reuse type definitions across queries when practical.
+
 `param.of(type, name)` takes it further: any column type, including one you declared with
 `T.custom`, works as a param.
 

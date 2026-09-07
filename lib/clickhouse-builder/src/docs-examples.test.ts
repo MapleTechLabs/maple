@@ -260,11 +260,15 @@ describe("docs/expressions.md", () => {
 
 			const guarded = compileCHUnsafe(
 				CH.from(Events)
-					.select(($) => ({ perMs: CH.ifNotFinite(CH.count().div(CH.sum($.DurationMs)), 0) }))
+					.select(($) => ({
+						perMs: CH.ifNull(CH.ifNotFinite(CH.count().div(CH.sum($.DurationMs)), 0), CH.lit(0)),
+					}))
 					.where(($) => [$.OrgId.eq("org_123")]),
 				{},
 			)
-			expect(oneLine(guarded.sql)).toContain("ifNotFinite(count() / sum(DurationMs), 0) AS perMs")
+			expect(oneLine(guarded.sql)).toContain(
+				"ifNull(ifNotFinite(count() / sum(DurationMs), 0), 0) AS perMs",
+			)
 			// The guard is in the SQL, so the column is a number again.
 			expect(Exit.isFailure(yield* Effect.exit(guarded.decodeRows([{ perMs: null }])))).toBe(true)
 
@@ -689,7 +693,7 @@ describe("docs/tenant-scoping.md", () => {
 	it("in_ also scopes; neq does not", () => {
 		const scoped = CH.from(Events)
 			.select(($) => ({ name: $.Name }))
-			.where(($) => [$.OrgId.in_("org_a", "org_b")])
+			.where(($) => [$.OrgId.in_("org_a")])
 
 		const unscoped = CH.from(Events)
 			.select(($) => ({ name: $.Name }))

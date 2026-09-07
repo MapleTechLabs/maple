@@ -50,10 +50,10 @@ _(Backed by `docs/tenant-scoping.md > A table without a declared tenant column i
 
 ## What marks a query scoped
 
-A query is `"single-tenant"` when either:
-
-1. Its **top-level `where` list** contains an `eq` or `in_` on the declared tenant column, or
-2. Every row source it reads — the `FROM` and each join — is already scoped.
+A query is `"single-tenant"` when **every tenanted source** is confined to the same tenant.
+A binding is an equality to a literal or parameter, or a one-value `in_`. Tenant-key
+equalities can propagate that binding across joins. Filtering only the main table does
+not scope an independently joined tenant table.
 
 ```ts
 CH.from(Events)
@@ -72,7 +72,9 @@ an authorization decision on top of this.
 
 ```ts
 $.OrgId.eq("org_123") // scopes
-$.OrgId.in_("org_a", "org_b") // scopes
+$.OrgId.in_("org_a") // scopes
+$.OrgId.in_("org_a", "org_b") // cross-tenant
+$.OrgId.eq($.OrgId) // does NOT scope
 $.OrgId.neq("org_123") // does NOT scope
 $.OrgId.like("org_%") // does NOT scope
 ```
@@ -82,7 +84,7 @@ would be worse than useless.
 
 _(Backed by `docs/tenant-scoping.md > in_ also scopes; neq does not`.)\_
 
-## The marker does not survive `and` / `or`
+## `and` preserves evidence; `or` discards it
 
 ```ts
 .where(($) => [$.OrgId.eq("org_123").or($.Name.eq("checkout"))])
@@ -90,9 +92,8 @@ _(Backed by `docs/tenant-scoping.md > in_ also scopes; neq does not`.)\_
 ```
 
 This is the bug the marker exists to catch: `OrgId = x OR anything` matches rows from other
-tenants. Composition drops the marker deliberately, and it applies to `.and()` too — so keep
-tenant predicates as their own top-level entry in the `where` array rather than folding them
-into a compound condition.
+tenants. `or()` drops scoping evidence deliberately. `and()` preserves it, so both a separate
+entry in the `where` array and `$.OrgId.eq("org_123").and(otherCondition)` can scope a source.
 
 _(Backed by `docs/tenant-scoping.md > The marker does not survive or()`.)_
 
@@ -109,9 +110,19 @@ CH.fromQuery(inner, "sub").select(($) => ({ name: $.name }))
 // tenantScope: "single-tenant"
 ```
 
-For joins, **every** joined source must be scoped — one unscoped table drags the result to
-`"cross-tenant"`. A CTE contributes only if the query's `FROM` names it _and_ it was declared with
-`{ tenantScope: "single-tenant" }`; see [Unions and CTEs](./unions-and-ctes.md#declare-the-ctes-scope).
+For joins, every tenanted source needs a binding to the **same value**. An inner join on
+tenant keys can propagate a binding in either direction. A LEFT JOIN's ON clause can
+constrain the right side, but cannot filter the preserved left side. An unmatched right
+row therefore never proves the left side is scoped. Bind the preserved side explicitly:
+with `join_use_nulls=0`, a filter matching the right column's default can retain unmatched
+rows from any left-side tenant. The builder conservatively avoids reverse propagation
+through LEFT JOINs.
+
+Typed CTEs, FROM-subqueries, and unions inherit their inner scope and bound tenant value.
+A union of `org_a` and `org_b` is cross-tenant even when each branch is individually scoped.
+Apply tenant filters inside each derived query: filtering a projected column outside it
+cannot prove that its aggregates or other columns exclude other tenants. Handwritten CTEs
+require a scope declaration; see [Unions and CTEs](./unions-and-ctes.md#declare-the-ctes-scope).
 
 ## `crossTenant()` — the explicit opt-out
 
@@ -149,5 +160,5 @@ _(Backed by `docs/tenant-scoping.md > route is carried onto the compiled query`.
 
 `rawCompiledQuery` requires `tenantScope` explicitly, since a raw string cannot be
 inspected. Whatever you pass is taken at face value — which is why it also requires a
-`reason` and a `note` naming why the query isn't a builder query at all. See
+`reason` and a `justification` naming why the query isn't a builder query at all. See
 [Extending](./extending.md#handwritten-queries-unsafecompiledquery).
