@@ -7,8 +7,8 @@ import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { type KeyValueStore, MapleDbConnection, McpSessionStore } from "./platform/bindings"
-import { cachedRecoverable } from "./platform/cached-recoverable"
+import { MapleDbConnection } from "./platform/bindings"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
 
 /**
@@ -62,15 +62,8 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 	return value === undefined ? undefined : Number(Object.values(value)[0])
 }
 
-/** No MCP session lands in these requests and no stage database exists, so neither port is reached. */
-const noSessions: KeyValueStore = {
-	getJson: () => Effect.succeed(Option.none()),
-	put: () => Effect.void,
-}
-const noPorts = Layer.mergeAll(
-	Layer.succeed(McpSessionStore, noSessions),
-	Layer.succeed(MapleDbConnection, Option.none()),
-)
+/** No stage database exists in these requests, so the port is never reached. */
+const noPorts = Layer.succeed(MapleDbConnection, Option.none())
 
 const env = {
 	MAPLE_INGEST_KEY: "maple_sk_test",

@@ -10,8 +10,7 @@ import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "../http/api-cors"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
-import { persistSession, preloadSession } from "../mcp/lib/session-store"
-import { type MapleDbConnection, McpSessionStore } from "../platform/bindings"
+import type { MapleDbConnection } from "../platform/bindings"
 import { layerPg } from "../platform/DatabasePgLive"
 import { withPgConnectionScope } from "../platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
@@ -137,10 +136,7 @@ const unavailableResponse = (path: string) =>
  * issued. The ports are provided around the whole request, the same way the
  * background events get them.
  */
-export const makeFetch = (
-	app: Effect.Effect<HttpEffect, unknown>,
-	ports: Layer.Layer<McpSessionStore | MapleDbConnection>,
-) =>
+export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.Layer<MapleDbConnection>) =>
 	Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)
@@ -160,20 +156,9 @@ export const makeFetch = (
 		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
 
 		const isMcp = request.method === "POST" && path === "/mcp"
-		const requestSessionId = isMcp ? request.headers["mcp-session-id"] : undefined
 		const startedAt = yield* Clock.currentTimeMillis
 
-		// The cold handler build and the independent KV read overlap: warm
-		// requests resolve both at once, cold MCP requests hide KV latency behind
-		// module evaluation.
-		const mcpSessions = yield* McpSessionStore
-		const [built] = yield* Effect.all(
-			[
-				Effect.exit(app),
-				requestSessionId ? preloadSession(mcpSessions, requestSessionId) : Effect.void,
-			],
-			{ concurrency: "unbounded" },
-		)
+		const built = yield* Effect.exit(app)
 		if (Exit.isFailure(built)) {
 			yield* Effect.logError("API worker route graph failed to build", built.cause).pipe(
 				Effect.annotateLogs({ method: request.method, path }),
@@ -184,20 +169,11 @@ export const makeFetch = (
 		const response = yield* withPgConnectionScope(built.value)
 
 		if (isMcp) {
-			// Only persist when the server issued a new session — i.e. on
-			// `initialize`, where the response sid differs from the request sid
-			// (or the request had none). Subsequent requests echo the same sid;
-			// re-putting on every call would burn KV write quota for no reason.
-			const responseSessionId = response.headers["mcp-session-id"]
-			if (responseSessionId && responseSessionId !== requestSessionId) {
-				const exec = yield* Cloudflare.WorkerExecutionContext
-				yield* exec.waitUntil(persistSession(mcpSessions, responseSessionId))
-			}
+			// The transport is stateless, so there is no session to carry across
+			// requests and nothing to write back — see `mcp/transport/stateless-http.ts`.
 			const now = yield* Clock.currentTimeMillis
 			yield* Effect.logInfo("MCP request handled").pipe(
 				Effect.annotateLogs({
-					"mcp.session_id": requestSessionId ?? "-",
-					"mcp.response_session_id": response.headers["mcp-session-id"] ?? "-",
 					"http.response.status_code": response.status,
 					duration_ms: now - startedAt,
 				}),

@@ -201,11 +201,11 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    # The single-module Workers too: the root alchemy.run.ts imports
-                    # their src/worker.ts, so the Alchemy-entrypoints typecheck
-                    # resolves each graph through that app's node_modules.
+                    # Every Worker: the root alchemy.run.ts imports each src/worker.ts,
+                    # so the Alchemy-entrypoints typecheck resolves each graph through
+                    # that app's node_modules.
                     - shard: quality
-                      install-filters: "@maple/api @maple/electric-sync @maple/alerting @maple/landing @maple/local-ui"
+                      install-filters: "@maple/api @maple/electric-sync @maple/alerting @maple/web @maple/landing @maple/local-ui"
                     - shard: effect-lint
                       install-filters: ""
                     - shard: build-web
@@ -261,9 +261,8 @@ jobs:
                   git fetch --no-tags --depth=1 origin \
                     "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
 
-            # Each shard has one rolling cache writer. The legacy v1 fallback makes the
-            # first sharded run reuse the cache produced by the former monolithic job.
-            # `github.sha` forces a new save so every shard rolls forward independently.
+            # Each shard has one rolling cache writer. `github.sha` forces a new
+            # save so every shard rolls forward independently.
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
@@ -271,15 +270,17 @@ jobs:
                   key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-${{ github.sha }}
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
-                      turbo-v1-${{ runner.os }}-${{ github.job }}-
-                      turbo-v1-${{ runner.os }}-
 
             # The schema generators import packages/domain, which resolves
-            # @maple-dev/clickhouse-builder through its built dist — so the DSL has to
-            # exist before the check runs, exactly as in clickhouse-schema-e2e.
-            - name: Build ClickHouse query DSL
+            # @maple-dev/clickhouse-builder through its built dist; the Alchemy
+            # entrypoints typecheck below reaches the single-module Workers, whose
+            # `@maple-dev/effect-sdk` and `@maple-dev/alchemy` imports type from
+            # built dist. One build for all three.
+            - name: Build the libraries the quality checks import
               if: ${{ matrix.shard == 'quality' }}
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
+              run: >-
+                  bun turbo build --filter=@maple-dev/clickhouse-builder
+                  --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
 
             - name: Validate generated ClickHouse and local-store schemas
               if: ${{ matrix.shard == 'quality' }}
@@ -335,16 +336,9 @@ jobs:
               run: bun run size
               working-directory: packages/browser
 
-            # `turbo typecheck` does not cover tsconfig.alchemy.json (alchemy.run.ts and
-            # every apps/*/alchemy.run.ts) — only the root `typecheck` script chains it,
-            # and CI calls turbo directly. Without this they ship unchecked.
-            #
-            # That program reaches the single-module Workers (electric-sync, alerting,
-            # landing, local-ui), whose `@maple-dev/effect-sdk` and `@maple-dev/alchemy`
-            # imports type from built dist, so both build first.
-            - name: Build the libraries the Alchemy entrypoints import
-              if: ${{ matrix.shard == 'quality' }}
-              run: bun turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
+            # `turbo typecheck` does not cover tsconfig.alchemy.json (alchemy.run.ts,
+            # the ECS factories and every Worker module it imports) — only the root
+            # `typecheck` script chains it, and CI calls turbo directly.
             - name: Typecheck Alchemy entrypoints
               if: ${{ matrix.shard == 'quality' }}
               run: bunx tsc -p tsconfig.alchemy.json
@@ -493,10 +487,9 @@ jobs:
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: .turbo/cache
-                  key: turbo-v1-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
                   restore-keys: |
-                      turbo-v1-${{ runner.os }}-${{ github.job }}-
-                      turbo-v1-${{ runner.os }}-
+                      turbo-v2-${{ runner.os }}-${{ github.job }}-
 
             # `@maple-dev/clickhouse-builder` resolves only through `dist/`, and the
             # suite reaches it transitively: DatabaseLive imports
@@ -549,10 +542,9 @@ jobs:
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: .turbo/cache
-                  key: turbo-v1-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
                   restore-keys: |
-                      turbo-v1-${{ runner.os }}-${{ github.job }}-
-                      turbo-v1-${{ runner.os }}-
+                      turbo-v2-${{ runner.os }}-${{ github.job }}-
 
             - name: Build ClickHouse query DSL
               run: bun turbo build --filter=@maple-dev/clickhouse-builder
@@ -614,10 +606,9 @@ jobs:
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: .turbo/cache
-                  key: turbo-v1-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
                   restore-keys: |
-                      turbo-v1-${{ runner.os }}-${{ github.job }}-
-                      turbo-v1-${{ runner.os }}-
+                      turbo-v2-${{ runner.os }}-${{ github.job }}-
 
             - name: Build native local bundle
               timeout-minutes: 5
@@ -833,8 +824,6 @@ jobs:
                   key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-${{ github.sha }}
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
-                      turbo-v1-${{ runner.os }}-${{ github.job }}-
-                      turbo-v1-${{ runner.os }}-
 
             # The perf dev server (vite) resolves @maple-dev/browser and
             # @maple-dev/effect-sdk from their built dist/ (gitignored), so build

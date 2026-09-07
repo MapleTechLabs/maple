@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
-import { cachedRecoverable } from "./cached-recoverable"
+import { cachedRecoverable } from "./cached-recoverable.ts"
 
 class BuildFailure extends Schema.TaggedError<BuildFailure>()("BuildFailure", {
 	attempt: Schema.Number,

@@ -46,7 +46,6 @@ jobs:
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
                       turbo-v2-${{ runner.os }}-typescript-build-other-
-                      turbo-v1-${{ runner.os }}-
 
             # @maple/api's measure-tokens imports query-engine, which pulls the
             # dist-based @maple-dev/clickhouse-builder (+ effect-sdk, browser).

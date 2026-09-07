@@ -1,7 +1,6 @@
-// The Maple stack: one module per app, composed here — a Worker's own
-// `src/worker.ts` (an alchemy Worker class, `yield* Alerting`) wherever its
-// props are stage-derived, a `create*` factory where it still takes another
-// resource as an argument (api, web) or is not a Worker (ingest, electric).
+// The Maple stack: one module per app, composed here — every Worker is its own
+// `src/worker.ts` (an alchemy Worker class, `yield* Alerting`); the two ECS
+// services (ingest, electric) are `create*` factories.
 //
 // Comments in these files explain what a reader needs in order not to break the
 // code. The history behind those decisions — the #378 deploy hang, the
@@ -24,6 +23,7 @@ import {
 	stageDeploysIngest,
 } from "@maple/infra/aws"
 import {
+	ApiWorker,
 	formatMapleStage,
 	ManagedMapleDb,
 	MapleStack,
@@ -33,6 +33,7 @@ import {
 	resolveMapleDomains,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
+import { optionalPlain, plainWithDefault } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import Alerting from "./apps/alerting/src/worker.ts"
@@ -42,7 +43,7 @@ import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
 import LocalUi from "./apps/local-ui/src/worker.ts"
-import { createMapleWeb } from "./apps/web/alchemy.run.ts"
+import Web from "./apps/web/src/worker.ts"
 
 // v1 read the account id from CLOUDFLARE_DEFAULT_ACCOUNT_ID (the name Infisical
 // still defines); v2's auth provider reads CLOUDFLARE_ACCOUNT_ID. Bridge the
@@ -56,9 +57,11 @@ if (!process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_DEFAULT_ACCOUNT
 // into other resources' props — they cannot be string-interpolated here. Every
 // deployed stage therefore gets custom domains (see resolveMapleDomains); dev
 // stages fall back to env-supplied URLs (cloud-deploying a dev stage is rare —
-// local dev runs through wrangler/portless instead).
-const resolveUrl = (domain: string | undefined, envKey: string, fallback = ""): string =>
-	domain ? `https://${domain}` : process.env[envKey]?.trim() || fallback
+// local dev runs through portless instead).
+const resolveUrl = (domain: string | undefined, envKey: string, fallback = "") =>
+	domain
+		? Effect.succeed(`https://${domain}`)
+		: Effect.map(plainWithDefault(envKey, fallback), (record) => record[envKey] ?? fallback)
 
 /** Append `key=value` lines to the GitHub Actions step-output file, if any. */
 const appendStepOutputs = (lines: string[]): void => {
@@ -96,21 +99,23 @@ const devEnv = devApps
  */
 const MapleStackLive = Layer.effect(
 	MapleStack,
-	Effect.map(Alchemy.Stage, (raw): MapleStackContext => {
-		const stage = parseMapleStage(raw)
+	Effect.gen(function* () {
+		const stage = parseMapleStage(yield* Alchemy.Stage)
 		const domains = resolveMapleDomains(stage)
-		return {
+		const context: MapleStackContext = {
 			stage,
 			domains,
 			urls: {
-				api: devEnv?.MAPLE_API_BASE_URL ?? resolveUrl(domains.api, "MAPLE_API_BASE_URL"),
-				ingest: resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev"),
+				api: devEnv?.MAPLE_API_BASE_URL ?? (yield* resolveUrl(domains.api, "MAPLE_API_BASE_URL")),
+				ingest: yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev"),
 				electricSync:
-					devEnv?.MAPLE_ELECTRIC_SYNC_URL ?? resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL"),
+					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
+					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
 			},
 			workerDev,
 			devEnv,
 		}
+		return context
 	}),
 )
 
@@ -179,12 +184,13 @@ export default Alchemy.Stack(
 		// certificate in a different region from the ALB that must use it — and
 		// worse, would export telemetry across the residency boundary the EU
 		// instance exists to enforce.
-		const region = parseMapleRegion(process.env.MAPLE_REGION)
+		const { MAPLE_REGION } = yield* optionalPlain("MAPLE_REGION")
+		const { AWS_REGION } = yield* optionalPlain("AWS_REGION")
+		const region = parseMapleRegion(MAPLE_REGION)
 		const expectedAwsRegion = resolveAwsRegion(region)
-		const configuredAwsRegion = process.env.AWS_REGION?.trim()
-		if (configuredAwsRegion && configuredAwsRegion !== expectedAwsRegion) {
+		if (AWS_REGION && AWS_REGION !== expectedAwsRegion) {
 			throw new Error(
-				`AWS_REGION="${configuredAwsRegion}" does not match MAPLE_REGION="${region}" (expects "${expectedAwsRegion}").`,
+				`AWS_REGION="${AWS_REGION}" does not match MAPLE_REGION="${region}" (expects "${expectedAwsRegion}").`,
 			)
 		}
 
@@ -231,17 +237,9 @@ export default Alchemy.Stack(
 
 		// See `isDevServer`: each of these three is gated on a production
 		// `Command.Build`, so including them would make `alchemy dev` build the
-		// whole frontend before serving anything.
-		const web = isDevServer
-			? undefined
-			: yield* createMapleWeb({
-					stage,
-					domains,
-					api,
-					apiUrl: urls.api,
-					ingestUrl: urls.ingest,
-					electricSyncUrl: urls.electricSync,
-				})
+		// whole frontend before serving anything. web's props bind the api
+		// Worker (its `API` service binding), handed over as `ApiWorker`.
+		const web = isDevServer ? undefined : yield* Effect.provideService(Web, ApiWorker, api)
 
 		const landing = isDevServer ? undefined : yield* Landing
 
