@@ -817,3 +817,138 @@ describe("v2 telemetry reads over HTTP", () => {
 		await harness.dispose()
 	})
 })
+
+describe("v2 replay migration parity", () => {
+	it("preserves attribution, recording state, detail traits and custom-event properties over HTTP", async () => {
+		const replay = {
+			sessionId: "session-browser-123",
+			startTime: "2026-07-15 12:00:00",
+			endTime: null,
+			durationMs: 60_000,
+			status: "active",
+			userId: "",
+			userName: "",
+			userEmail: "",
+			groupId: "team",
+			groupName: "Team",
+			visitorId: "visitor-shared",
+			utmSource: "newsletter",
+			entryPath: "/pricing",
+			urlInitial: "https://app.example.com/home",
+			browserName: "Chrome",
+			osName: "Linux",
+			deviceType: "desktop",
+			country: "DE",
+			serviceName: "web",
+			pageViews: 2,
+			clickCount: 3,
+			errorCount: 0,
+			traceCount: 1,
+			recorded: "",
+			version: 1,
+			userAgent: "test",
+			traceIds: [TRACE_ID],
+			resourceAttributes: "{}",
+			visitorIsNew: 1,
+			userTraits: '{"plan":"pro"}',
+			referrer: "https://example.com/article",
+			referrerHost: "example.com",
+			utmMedium: "email",
+			utmCampaign: "launch",
+			utmTerm: "trial",
+			utmContent: "cta",
+			host: "app.example.com",
+			exitPath: "/home",
+			language: "de",
+			lastActivityAt: "2026-07-15 12:00:45",
+		}
+		const event = {
+			timestamp: "2026-07-15 12:00:10",
+			seq: 1,
+			type: "custom",
+			url: replay.urlInitial,
+			traceId: "",
+			level: "",
+			message: "signup",
+			targetSelector: "",
+			targetText: "",
+			netMethod: "",
+			netUrl: "",
+			netStatus: 0,
+			netDurationMs: 0,
+			errorStack: "",
+			attributes: '{"plan":"pro","source":"pricing"}',
+		}
+		const warehouse = makeWarehouseServiceStub({
+			compiledQuery: (_tenant, compiled, options) => {
+				const rows =
+					options?.context === "v2SessionTranscript"
+						? [event]
+						: [
+								replay,
+								{ ...replay, sessionId: "unrecorded", recorded: "false" },
+								{ ...replay, sessionId: "recorded", recorded: "true" },
+							]
+				return compiledQueryOf(compiled).decodeRows(rows)
+			},
+			compiledQueryFirst: (_tenant, compiled, options) =>
+				compiledQueryOf(compiled)
+					.decodeRows(options?.context === "v2GetReplayActivity" ? [] : [replay])
+					.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0]))),
+		})
+		const harness = makeHarness(warehouse)
+		try {
+			const key = await harness.bootstrapKey(["session_replays:read"])
+			const search = await harness.request(
+				"POST",
+				"/v2/session_replays/search",
+				key.secret,
+				allowedWindow(),
+			)
+			expect(search.status).toBe(200)
+			expect(search.body.data.map((row: { recorded: boolean | null }) => row.recorded)).toEqual([
+				null,
+				false,
+				true,
+			])
+			expect(search.body.data[0]).toMatchObject({
+				visitor_id: "visitor-shared",
+				utm_source: "newsletter",
+				entry_path: "/pricing",
+				user_id: null,
+			})
+			const id = search.body.data[0].id
+			expect(id).toMatch(/^srep_/)
+			const detail = await harness.request("GET", `/v2/session_replays/${id}`, key.secret)
+			expect(detail.status).toBe(200)
+			expect(detail.body).toMatchObject({
+				visitor_id: "visitor-shared",
+				visitor_is_new: true,
+				user_traits: replay.userTraits,
+				referrer: replay.referrer,
+				referrer_host: replay.referrerHost,
+				utm_source: "newsletter",
+				utm_medium: "email",
+				utm_campaign: "launch",
+				utm_term: "trial",
+				utm_content: "cta",
+				host: replay.host,
+				entry_path: "/pricing",
+				exit_path: "/home",
+				language: "de",
+				last_activity_at: "2026-07-15T12:00:45.000Z",
+				active_time_ms: null,
+				idle_time_ms: null,
+			})
+			const transcript = await harness.request(
+				"GET",
+				`/v2/session_replays/${id}/transcript`,
+				key.secret,
+			)
+			expect(transcript.status).toBe(200)
+			expect(transcript.body.data[0]).toMatchObject({ type: "custom", attributes: event.attributes })
+		} finally {
+			await harness.dispose()
+		}
+	})
+})

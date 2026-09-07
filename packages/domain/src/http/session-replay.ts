@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { SessionId, TraceId, UserId } from "../primitives"
 import { TinybirdDateTime } from "../query-engine"
@@ -302,14 +302,18 @@ export class SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays")
 			payload: ListReplaysRequest,
 			success: ListReplaysResponse,
 			error: sessionReplayEndpointErrors,
-		}),
+		}).annotateMerge(
+			OpenApi.annotations({ deprecated: true, description: "Use POST /v2/session_replays/search." }),
+		),
 	)
 	.add(
 		HttpApiEndpoint.post("getReplay", "/get", {
 			payload: GetReplayRequest,
 			success: GetReplayResponse,
 			error: sessionReplayEndpointErrors,
-		}),
+		}).annotateMerge(
+			OpenApi.annotations({ deprecated: true, description: "Use GET /v2/session_replays/{id}." }),
+		),
 	)
 	// Replay payload reads live on v2 only: `GET /v2/session_replays/:id/manifest`
 	// then `GET /v2/session_replays/:id/events?from_chunk_seq=…`. There is no v1
@@ -321,14 +325,21 @@ export class SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays")
 			payload: ReplaysForTraceRequest,
 			success: ReplaysForTraceResponse,
 			error: sessionReplayEndpointErrors,
-		}),
+		}).annotateMerge(
+			OpenApi.annotations({ deprecated: true, description: "Use POST /v2/session_replays/for_trace." }),
+		),
 	)
 	.add(
 		HttpApiEndpoint.post("sessionTranscript", "/transcript", {
 			payload: SessionTranscriptRequest,
 			success: SessionTranscriptResponse,
 			error: sessionReplayEndpointErrors,
-		}),
+		}).annotateMerge(
+			OpenApi.annotations({
+				deprecated: true,
+				description: "Use GET /v2/session_replays/{id}/transcript.",
+			}),
+		),
 	)
 	.prefix("/api/session-replays")
 	.middleware(Authorization)
