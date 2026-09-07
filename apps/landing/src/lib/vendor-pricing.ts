@@ -226,6 +226,8 @@ const signoz = (values: Record<string, number>): Estimate => {
 	// the default 15-day retention, metrics $0.10 per million samples at the
 	// default 1-month retention, and a $49/mo minimum that *includes* $49 of
 	// usage — the bill is max($49, usage), matching SigNoz's own calculator.
+	// $49 is the standing base fee, not a promo: SigNoz cut it from $199 in
+	// May 2025 and the struck-through $199 on their page is the old anchor.
 	// Longer retention costs more and is not modeled ($/GB: 15d 0.30, 30d 0.40,
 	// 90d 0.60, 180d 0.80, 1y 1.40; $/mn metric samples: 1mo 0.10, 3mo 0.12,
 	// 6mo 0.15, 13mo 0.18), which biases the estimate in SigNoz's favor.
