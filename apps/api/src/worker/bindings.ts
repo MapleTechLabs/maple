@@ -15,10 +15,7 @@ import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
 	CliAuthRateLimit,
-	type KeyValueStore,
-	KeyValueStoreError,
 	McpOAuthRateLimit,
-	McpSessionStore,
 	McpToolsRateLimit,
 	type ObjectStore,
 	ObjectStoreError,
@@ -31,7 +28,6 @@ import {
 	VcsSyncQueueProducer,
 } from "../platform/bindings"
 import { mapleDbConnectionLayer } from "../platform/pg-connection-source"
-import { McpSessions } from "../resources/mcp-sessions"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
@@ -54,7 +50,6 @@ export const bindApiClients = Effect.gen(function* () {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
-		mcpSessions: yield* Cloudflare.KV.ReadWriteNamespace(McpSessions),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
@@ -84,7 +79,6 @@ type ApiBindingClients = Effect.Success<typeof bindApiClients>
 export const ApiBindingLayers = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
-	Cloudflare.KV.ReadWriteNamespaceBinding,
 	Cloudflare.R2.ReadBucketBinding,
 	Cloudflare.Workers.RateLimitBinding,
 )
@@ -140,20 +134,6 @@ const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 		),
 })
 
-const keyValueStore = (client: Cloudflare.KV.ReadWriteNamespaceClient): KeyValueStore => {
-	const storeError = (error: { readonly message: string; readonly cause?: unknown }) =>
-		new KeyValueStoreError({ message: error.message, cause: error.cause })
-	return {
-		getJson: (key) =>
-			runtime(client.get<unknown>(key, "json")).pipe(
-				Effect.map((value) => Option.fromNullishOr(value)),
-				Effect.mapError(storeError),
-			),
-		put: (key, value, options) =>
-			runtime(client.put(key, value, options)).pipe(Effect.mapError(storeError)),
-	}
-}
-
 /**
  * The ports the service graph depends on, over the clients the init bound,
  * plus the env itself as `WorkerEnvironment` and the `ConfigProvider` — the
@@ -171,7 +151,6 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
-		Layer.succeed(McpSessionStore, keyValueStore(clients.mcpSessions)),
 		mapleDbConnectionLayer(env),
 		workerEnvLayer(env),
 	)
