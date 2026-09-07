@@ -196,6 +196,12 @@ describe("span classification SQL", () => {
 		},
 	)
 
+	it("takes the response id from another tuple position when told to", () => {
+		expect(sql(sessionUsageSum("usageBuckets", 6, { responseId: 8 }))).toContain(
+			"arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.),",
+		)
+	})
+
 	it("counts a model call at its deepest account, once per response id", () => {
 		const text = sql(sessionLlmCalls("usageReporters"))
 		// A reporting call counts by its netted claim; a non-reporting one by

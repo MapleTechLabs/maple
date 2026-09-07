@@ -350,6 +350,32 @@ export function genAiTokensExpr(attrs: MapColumnLike): Expr<number> {
 	)
 }
 
+/**
+ * The five buckets as disjoint figures under the reporter's convention —
+ * `input` the uncached prompt, `output` the visible completion, each clamped
+ * at zero like the detail page clamps them — whose sum is `genAiTokensExpr`.
+ * For a read off the raw table that needs the split, which the index does not
+ * carry.
+ */
+export function genAiUsageBucketsExpr(
+	attrs: MapColumnLike,
+): Readonly<Record<keyof typeof GENAI_USAGE_KEYS, Expr<number>>> {
+	const bucket = (name: keyof typeof GENAI_USAGE_KEYS) => tokenBucket(attrs, GENAI_USAGE_KEYS[name])
+	const floor = (expr: Expr<number>) => CH.compileFnCall<number>("greatest", CH.lit(0), expr)
+	const input = bucket("input")
+	const cacheRead = bucket("cacheRead")
+	const cacheWrite = bucket("cacheWrite")
+	const output = bucket("output")
+	const reasoning = bucket("reasoning")
+	return {
+		input: byConvention(attrs, "inputIncludesCache", floor(input.sub(cacheRead).sub(cacheWrite)), input),
+		cacheRead,
+		cacheWrite,
+		output: byConvention(attrs, "outputIncludesReasoning", floor(output.sub(reasoning)), output),
+		reasoning,
+	}
+}
+
 /** USD as the instrumentation priced the call; 0 where nothing did. */
 export function genAiCostExpr(attrs: MapColumnLike): Expr<number> {
 	return CH.toFloat64OrZero(firstNonEmptyAttr(attrs, GENAI_COST_KEYS))

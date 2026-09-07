@@ -88,22 +88,28 @@ const sessionReporters = (reporters: string): string =>
 
 /** A reporter's own claim for `element` (3 tokens, 4 cost) less what its
  *  reporting children already claimed — zero for a clean roll-up. */
-const netted = (all: string, element: 3 | 4, reporter = "r"): string =>
+const netted = (all: string, element: number, reporter = "r"): string =>
 	`greatest(0., ${reporter}.${element} - arraySum(c -> if(c.2 = ${reporter}.1, c.${element}, 0.), ${all}))`
 
 /**
  * The session's tokens (`element` 3) or cost (`element` 4): each reporter's
  * netted claim, summed — with reporters sharing a response id collapsed to the
- * largest claim among them.
+ * largest claim among them. The same sum serves any tuple of the
+ * `(SpanId, ParentSpanId, …claims, …)` shape — the list's per-bucket
+ * reporters carry their response id at another position, hence `responseId`.
  *
  * `reporters` is the column {@link usageReportersExpr} was selected as, named
  * in raw SQL because the builder has no lambda syntax. `0.` keeps the whole
  * expression Float64.
  */
-export function sessionUsageSum(reporters: string, element: 3 | 4): Expr<number> {
+export function sessionUsageSum(
+	reporters: string,
+	element: number,
+	{ responseId = 5 }: { readonly responseId?: number } = {},
+): Expr<number> {
 	const all = sessionReporters(reporters)
 	// `(responseId, netted claim)` per reporter.
-	const claims = `arrayMap(r -> tuple(r.5, ${netted(all, element)}), ${all})`
+	const claims = `arrayMap(r -> tuple(r.${responseId}, ${netted(all, element)}), ${all})`
 	const unkeyed = `arraySum(n -> if(n.1 = '', n.2, 0.), ${claims})`
 	const keyed = `arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), ${claims}), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, ${claims}))))`
 	return CH.rawExpr(`${unkeyed} + ${keyed}`, T.float64)
