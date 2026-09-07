@@ -1,0 +1,216 @@
+---
+/**
+ * StackTopology — the two platforms as the processes you actually run, side
+ * by side. Static: no toggles, no script. Boxes are CSS, not SVG, because
+ * inline <svg> in MDX turns literal braces into JSX expressions (see
+ * blog-post-demos.test.ts).
+ *
+ * Renders inside `.docs-content` prose, so every element carries a scoped
+ * class (the global `.docs-content X` descendant rules beat Tailwind
+ * utilities — scoped classes win). Same frame grammar as TraceComparison.
+ */
+
+interface Node {
+	name: string
+	role: string
+	/** Grouped boxes share a tier; tiers are drawn top to bottom in data order. */
+	tier: "ingest" | "store" | "app" | "meta"
+}
+
+interface Stack {
+	id: string
+	label: string
+	note: string
+	nodes: Node[]
+}
+
+const stacks: Stack[] = [
+	{
+		id: "signoz",
+		label: "SigNoz, self-hosted",
+		note: "Five containers from the Docker guide. The SigNoz binary bundles the UI, API, alert ruler, Alertmanager and the OpAMP server for log pipelines.",
+		nodes: [
+			{ name: "signoz-otel-collector", role: "OTLP, Jaeger, Zipkin in · writes ClickHouse", tier: "ingest" },
+			{ name: "ClickHouse", role: "traces, logs, metrics", tier: "store" },
+			{ name: "ClickHouse Keeper", role: "coordination", tier: "store" },
+			{ name: "signoz", role: "UI · API · ruler · Alertmanager · OpAMP", tier: "app" },
+			{ name: "PostgreSQL", role: "metadata: users, dashboards, rules", tier: "meta" },
+		],
+	},
+	{
+		id: "maple",
+		label: "Maple, self-hosted",
+		note: "The compose file plus a ClickHouse you point it at. The ingest gateway journals to a WAL before it acknowledges, so a warehouse hiccup is a delay, not a loss.",
+		nodes: [
+			{ name: "ingest", role: "OTLP in · WAL · writes ClickHouse", tier: "ingest" },
+			{ name: "ClickHouse", role: "traces, logs, metrics, sessions, events", tier: "store" },
+			{ name: "api · web · alerting", role: "query engine · UI · rule evaluator · MCP", tier: "app" },
+			{ name: "PostgreSQL", role: "metadata: issues, dashboards, rules, keys", tier: "meta" },
+		],
+	},
+]
+
+const TIERS: Array<{ id: Node["tier"]; label: string }> = [
+	{ id: "ingest", label: "ingest" },
+	{ id: "store", label: "warehouse" },
+	{ id: "app", label: "app" },
+	{ id: "meta", label: "metadata" },
+]
+
+// Stable service → colour per stack, the LiveTrace hashing idiom.
+function nodeColor(stackIdx: number, nodeIdx: number): string {
+	return `var(--service-${((stackIdx * 5 + nodeIdx) % 16) + 1})`
+}
+---
+
+<figure class="stk">
+	<div class="stk__frame">
+		<div class="stk__head">
+			<span class="stk__title">what you run · the same four tiers, two ways</span>
+		</div>
+		<div class="stk__cols">
+			{
+				stacks.map((s, si) => (
+					<div class="stk__col">
+						<p class="stk__collabel">{s.label}</p>
+						{TIERS.map((t) => {
+							const nodes = s.nodes.filter((n) => n.tier === t.id)
+							return (
+								<div class="stk__tier">
+									<span class="stk__tierlabel">{t.label}</span>
+									<div class="stk__boxes">
+										{nodes.map((n) => (
+											<div class="stk__box" style={`--node-color:${nodeColor(si, s.nodes.indexOf(n))}`}>
+												<span class="stk__name">{n.name}</span>
+												<span class="stk__role">{n.role}</span>
+											</div>
+										))}
+									</div>
+								</div>
+							)
+						})}
+						<p class="stk__note">{s.note}</p>
+					</div>
+				))
+			}
+		</div>
+	</div>
+	<figcaption class="stk__cap">
+		Both are one warehouse, one app tier and one metadata store. Local mode collapses Maple's column into a single binary with an embedded ClickHouse.
+	</figcaption>
+</figure>
+
+<style>
+	.stk {
+		margin: 40px 0;
+	}
+
+	.stk__frame {
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in oklab, var(--bg-elevated) 30%, transparent);
+	}
+
+	.stk__head {
+		display: flex;
+		align-items: center;
+		padding: 9px 14px;
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+	}
+	.stk__title {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+
+	.stk__cols {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+	}
+	.stk__col {
+		padding: 14px;
+		min-width: 0;
+	}
+	.stk__col + .stk__col {
+		border-left: 1px solid var(--border);
+	}
+	@media (max-width: 640px) {
+		.stk__cols {
+			grid-template-columns: 1fr;
+		}
+		.stk__col + .stk__col {
+			border-left: 0;
+			border-top: 1px solid var(--border);
+		}
+	}
+
+	.stk__collabel {
+		margin: 0 0 10px;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--foreground);
+	}
+
+	.stk__tier {
+		display: grid;
+		grid-template-columns: 64px 1fr;
+		gap: 8px;
+		align-items: start;
+		padding: 6px 0;
+		border-top: 1px dashed var(--border);
+	}
+	.stk__tierlabel {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+		padding-top: 6px;
+	}
+	.stk__boxes {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+	}
+	.stk__box {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 6px 8px 6px 10px;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--node-color);
+		border-radius: 6px;
+		background: color-mix(in oklab, var(--bg-elevated) 55%, transparent);
+		min-width: 0;
+	}
+	.stk__name {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--foreground);
+		overflow-wrap: anywhere;
+	}
+	.stk__role {
+		font-size: 12px;
+		line-height: 1.35;
+		color: var(--muted-foreground);
+	}
+
+	.stk__note {
+		margin: 10px 0 0;
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--muted-foreground);
+	}
+
+	.stk__cap {
+		margin-top: 10px;
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--muted-foreground);
+	}
+</style>
