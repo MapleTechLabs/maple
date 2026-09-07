@@ -59,7 +59,11 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 	return value === undefined ? undefined : Number(Object.values(value)[0])
 }
 
-const env = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
+const env = {
+	MAPLE_INGEST_KEY: "maple_sk_test",
+	MAPLE_ENDPOINT: "http://ingest.test",
+	COMMIT_SHA: "deadbeefcafe",
+}
 
 class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBuildFailure", {
 	message: Schema.String,
@@ -114,6 +118,8 @@ describe("the api Worker through alchemy's bridge", () => {
 			assert.strictEqual(response.status, 200)
 			assert.strictEqual(body, "OK")
 			assert.strictEqual(response.headers.get("access-control-allow-origin"), "*")
+			// What `deploy-prd.yml` asserts against to catch a partial deploy.
+			assert.strictEqual(response.headers.get("x-maple-revision"), "deadbeefcafe")
 		}),
 	)
 
