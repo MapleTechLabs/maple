@@ -22,7 +22,7 @@ import {
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import ChatSessionObject from "./chat/ChatSession"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
@@ -119,12 +119,19 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// The service graphs are built on the first event, not here: init also
 		// runs at plan time, where alchemy auto-binds every `Config` it sees read
 		// onto the Worker, and this Worker's env is declared in full by `props`.
-		const isolate = yield* Effect.context()
-		const app = yield* cachedRecoverable(buildApp(isolate, ports.layer))
-		const rpcServices = yield* cachedRecoverable(buildRpcServices(isolate, ports.layer))
-		yield* registerCrons(ports.layer)
-		yield* registerQueueConsumers(ports.layer)
-		return { fetch: makeFetch(app, ports), ...makeInternalRpc(rpcServices, ports.database) }
+		// `cachedRecoverable` rather than building eagerly is what lets `/health`
+		// and preflights answer while the graph cannot build. The captured context
+		// drops the init's deferred execution context (a handler must see the
+		// event's own) and the init's memo map.
+		const isolate = Context.omit(
+			Cloudflare.WorkerExecutionContext,
+			Layer.CurrentMemoMap,
+		)(yield* Effect.context())
+		const app = yield* cachedRecoverable(buildApp(isolate, ports))
+		const rpcServices = yield* cachedRecoverable(buildRpcServices(isolate, ports))
+		yield* registerCrons(ports)
+		yield* registerQueueConsumers(ports)
+		return { fetch: makeFetch(app, ports), ...makeInternalRpc(rpcServices, ports) }
 	}).pipe(
 		// The init IS the entry point: the cron and queue sources need the host
 		// Worker, which exists only here.

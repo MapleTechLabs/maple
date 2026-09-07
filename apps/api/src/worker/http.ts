@@ -11,9 +11,10 @@ import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "../http/api-cors"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import { persistSession, preloadSession } from "../mcp/lib/session-store"
-import type { KeyValueStore, MapleDbConnection } from "../platform/bindings"
+import { type MapleDbConnection, McpSessionStore } from "../platform/bindings"
+import { layerPg } from "../platform/DatabasePgLive"
+import { withPgConnectionScope } from "../platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
-import { pgScopeModule } from "./modules"
 
 const WorkerFileSystemLive = FileSystem.layerNoop({})
 
@@ -78,10 +79,9 @@ export const buildIsolateHandler = <E>(
 /** The route graph as one request handler, built once per isolate on the first request, over the Worker's ports. */
 export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) =>
 	Effect.gen(function* () {
-		const [{ HttpServicesLive }, { AllRoutes, ApiAuthLive }, { layerPg }] = yield* Effect.all([
+		const [{ HttpServicesLive }, { AllRoutes, ApiAuthLive }] = yield* Effect.all([
 			Effect.promise(() => import("../runtime/service-graph")),
 			Effect.promise(() => import("../runtime/http-graph")),
-			Effect.promise(() => import("../platform/DatabasePgLive")),
 		])
 		return yield* buildIsolateHandler(
 			isolate,
@@ -134,11 +134,12 @@ const unavailableResponse = (path: string) =>
  * MCP session persistence is driven from here rather than from inside the
  * MCP layer: the sessions Map hands Effect's MCP server its transcript, and
  * the KV copy behind it is what lets the next isolate find a session this one
- * issued.
+ * issued. The ports are provided around the whole request, the same way the
+ * background events get them.
  */
 export const makeFetch = (
 	app: Effect.Effect<HttpEffect, unknown>,
-	ports: { readonly mcpSessions: KeyValueStore; readonly database: Layer.Layer<MapleDbConnection> },
+	ports: Layer.Layer<McpSessionStore | MapleDbConnection>,
 ) =>
 	Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
@@ -165,11 +166,11 @@ export const makeFetch = (
 		// The cold handler build and the independent KV read overlap: warm
 		// requests resolve both at once, cold MCP requests hide KV latency behind
 		// module evaluation.
-		const [built, { withPgConnectionScope }] = yield* Effect.all(
+		const mcpSessions = yield* McpSessionStore
+		const [built] = yield* Effect.all(
 			[
 				Effect.exit(app),
-				pgScopeModule,
-				requestSessionId ? preloadSession(ports.mcpSessions, requestSessionId) : Effect.void,
+				requestSessionId ? preloadSession(mcpSessions, requestSessionId) : Effect.void,
 			],
 			{ concurrency: "unbounded" },
 		)
@@ -180,10 +181,7 @@ export const makeFetch = (
 			return unavailableResponse(path)
 		}
 
-		const response = yield* withPgConnectionScope(built.value).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request's connection scope opens on the Worker's `MAPLE_DB` port.
-			Effect.provide(ports.database),
-		)
+		const response = yield* withPgConnectionScope(built.value)
 
 		if (isMcp) {
 			// Only persist when the server issued a new session — i.e. on
@@ -193,7 +191,7 @@ export const makeFetch = (
 			const responseSessionId = response.headers["mcp-session-id"]
 			if (responseSessionId && responseSessionId !== requestSessionId) {
 				const exec = yield* Cloudflare.WorkerExecutionContext
-				yield* exec.waitUntil(persistSession(ports.mcpSessions, responseSessionId))
+				yield* exec.waitUntil(persistSession(mcpSessions, responseSessionId))
 			}
 			const now = yield* Clock.currentTimeMillis
 			yield* Effect.logInfo("MCP request handled").pipe(
@@ -206,4 +204,7 @@ export const makeFetch = (
 			)
 		}
 		return response
-	})
+	}).pipe(
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
+		Effect.provide(ports),
+	)

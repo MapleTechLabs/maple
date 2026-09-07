@@ -161,10 +161,8 @@ const keyValueStore = (client: Cloudflare.KV.ReadWriteNamespaceClient): KeyValue
  * `MAPLE_DB` binding — real in the isolate, empty at plan time, where nothing
  * reads it.
  */
-export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) => {
-	const mcpSessions = keyValueStore(clients.mcpSessions)
-	const database = mapleDbConnectionLayer(env)
-	const layer = Layer.mergeAll(
+export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) =>
+	Layer.mergeAll(
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
@@ -173,11 +171,9 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
-		Layer.succeed(McpSessionStore, mcpSessions),
-		database,
+		Layer.succeed(McpSessionStore, keyValueStore(clients.mcpSessions)),
+		mapleDbConnectionLayer(env),
 		workerEnvLayer(env),
 	)
-	return { layer, mcpSessions, database }
-}
 
-export type ApiPortsLayer = ReturnType<typeof apiPorts>["layer"]
+export type ApiPortsLayer = ReturnType<typeof apiPorts>

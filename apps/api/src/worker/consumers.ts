@@ -7,6 +7,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
+import { layerPg } from "../platform/DatabasePgLive"
 import { AuditEventsDlq, AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent } from "./events"
@@ -57,15 +58,11 @@ export const registerQueueConsumers = (ports: ApiPortsLayer) =>
 			(stream) =>
 				Effect.flatMap(
 					planetScaleWebhookModule,
-					({
-						PlanetScaleWebhookLive,
-						processPlanetScaleWebhookBatch,
-						planetScaleWebhookTelemetry,
-					}) =>
+					({ processPlanetScaleWebhookBatch, planetScaleWebhookTelemetry }) =>
 						Effect.flatMap(Stream.runCollect(stream), (messages) =>
 							runEvent(
 								processPlanetScaleWebhookBatch({ messages }),
-								PlanetScaleWebhookLive.pipe(
+								layerPg.pipe(
 									Layer.provideMerge(planetScaleWebhookTelemetry),
 									Layer.provideMerge(ports),
 								),

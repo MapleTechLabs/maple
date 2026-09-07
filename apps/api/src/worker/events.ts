@@ -2,7 +2,7 @@
  * What a background event (a cron fire, a queue batch) shares.
  */
 import { Cause, Effect, type Layer } from "effect"
-import { pgScopeModule } from "./modules"
+import { withPgConnectionScope } from "../platform/pg-connection-scope"
 
 /**
  * One background event: its program on one Postgres socket, over the layer it
@@ -14,10 +14,8 @@ export const runEvent = <A, E, R, ROut, E2>(
 	program: Effect.Effect<A, E, R>,
 	layer: Layer.Layer<ROut, E2, never>,
 ) =>
-	Effect.flatMap(pgScopeModule, ({ withPgConnectionScope }) =>
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the event IS the boundary the layer belongs to.
-		withPgConnectionScope(program).pipe(Effect.provide(layer)),
-	)
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the event IS the boundary the layer belongs to.
+	withPgConnectionScope(program).pipe(Effect.provide(layer))
 
 /**
  * A fire's outcome: interrupts are isolate teardown (the schedule re-fires) and

@@ -32,9 +32,9 @@ import {
 import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
-import { Cause, Clock, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Clock, Effect, Option, Schema } from "effect"
 import { EdgeCacheService } from "@maple/cache"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
+import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { Database, type DatabaseApi, type DatabaseError } from "@/platform/DatabaseLive"
 import { msToDate } from "@/platform/time"
 import {
@@ -67,7 +67,7 @@ const bustRuntimeConfigCache = (orgId: OrgId): Effect.Effect<void> =>
 	}).pipe(
 		// The workflow isolate has no application runtime to own this cache layer.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))),
+		Effect.provide(EdgeCacheServiceLive),
 		Effect.ignore,
 	)
 

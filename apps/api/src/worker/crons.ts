@@ -11,6 +11,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
+import { layerPg } from "../platform/DatabasePgLive"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent, settleFire } from "./events"
 import { slackReconcileModule, vcsSyncModule } from "./modules"
@@ -32,20 +33,18 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 		)
 		yield* Cloudflare.Workers.cron(SCRAPE_RETENTION_CRON, () =>
 			Effect.gen(function* () {
-				const [
-					{ ScrapeRetentionLive, vcsSyncTelemetry },
-					{ runScrapeCheckRetention },
-					{ runPlanetScaleEventRetention },
-				] = yield* Effect.all([
-					vcsSyncModule,
-					Effect.promise(() => import("../services/integrations/scrape-check-retention")),
-					Effect.promise(() => import("../services/integrations/planetscale-event-retention")),
-				])
+				const [{ vcsSyncTelemetry }, { runScrapeCheckRetention }, { runPlanetScaleEventRetention }] =
+					yield* Effect.all([
+						vcsSyncModule,
+						Effect.promise(() => import("../services/integrations/scrape-check-retention")),
+						Effect.promise(() => import("../services/integrations/planetscale-event-retention")),
+					])
 				// Both sweeps ride this one cron, sequentially: they share the tick's
 				// one Postgres socket, so running them concurrently would only queue.
+				// The jobs talk only to Postgres, so the layer is the database alone.
 				return yield* runEvent(
 					Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention),
-					ScrapeRetentionLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
+					layerPg.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
 				)
 			}).pipe(settleFire(SCRAPE_RETENTION_CRON)),
 		)

@@ -1,17 +1,9 @@
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
-import { EdgeCacheService } from "@maple/cache"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
-import { EventBaseLive, layerPg } from "@/platform/DatabasePgLive"
-import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgTokenService"
-import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { AuditLogService } from "@/services/audit/AuditLogService"
+import { EventBaseLive } from "@/platform/DatabasePgLive"
+import { AuditLogLive } from "@/runtime/warehouse-layer"
+import { VcsProviderRegistryLive as VcsProviderRegistryLayer } from "@/runtime/vcs-source-layer"
 import { Env } from "@/platform/Env"
-import { GithubAppClient } from "./services/integrations/vcs/vendor/github/GithubAppClient"
-import { GithubHttp } from "./services/integrations/vcs/vendor/github/GithubHttp"
-import { GithubProvider } from "./services/integrations/vcs/vendor/github/GithubProvider"
-import { VcsProviderRegistry } from "./services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "./services/integrations/vcs/VcsRepository"
 import { VcsScheduledSyncService } from "./services/integrations/vcs/VcsScheduledSyncService"
 import {
@@ -48,13 +40,7 @@ export const VcsSyncLive = (() => {
 	const Base = EventBaseLive
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const GithubAppClientLive = GithubAppClient.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, GithubHttp.layer)),
-	)
-	const GithubProviderLive = GithubProvider.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, GithubAppClientLive)),
-	)
-	const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
+	const VcsProviderRegistryLive = VcsProviderRegistryLayer.pipe(Layer.provide(EnvLive))
 	// `VcsSyncQueueProducer` is the Worker's port, provided around the event.
 	const VcsSyncQueueLive = VcsSyncQueue.layer
 	// The issue side of a pull-request webhook. Only the queue consumer needs it —
@@ -63,15 +49,7 @@ export const VcsSyncLive = (() => {
 	const ErrorActorsServiceLive = ErrorActorsService.layer.pipe(Layer.provide(Base))
 	// Issue events from a PR webhook are audited, and audit entries are warehouse
 	// rows — so the consumer carries the (Tinybird-pinned) ingest path as well.
-	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
-	const OrgClickHouseSettingsLive = OrgClickHouseSettingsService.layer.pipe(
-		Layer.provide(Layer.mergeAll(Base, EdgeCacheServiceLive)),
-	)
-	const TinybirdOrgTokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(EnvLive))
-	const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
-	)
-	const AuditLogServiceLive = AuditLogService.layer.pipe(Layer.provide(WarehouseQueryServiceLive))
+	const AuditLogServiceLive = AuditLogLive.pipe(Layer.provide(Base))
 	const ErrorIssueWorkflowServiceLive = ErrorIssueWorkflowService.layer.pipe(
 		Layer.provide(Layer.mergeAll(Base, ErrorActorsServiceLive, AuditLogServiceLive)),
 	)
@@ -115,11 +93,6 @@ export const VcsScheduledLive = (() => {
 
 	return VcsScheduledSyncServiceLive
 })()
-
-// Scrape-check retention's cron layer — the lightest of the three: the job talks
-// only to Postgres, so it deliberately skips the scrape-targets service and its
-// PlanetScale discovery/OAuth dependencies.
-export const ScrapeRetentionLive = layerPg
 
 // The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {

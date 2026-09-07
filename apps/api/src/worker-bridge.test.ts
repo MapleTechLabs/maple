@@ -7,7 +7,7 @@ import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { type KeyValueStore, MapleDbConnection } from "./platform/bindings"
+import { type KeyValueStore, MapleDbConnection, McpSessionStore } from "./platform/bindings"
 import { cachedRecoverable } from "./platform/cached-recoverable"
 import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
 
@@ -67,7 +67,10 @@ const noSessions: KeyValueStore = {
 	getJson: () => Effect.succeed(Option.none()),
 	put: () => Effect.void,
 }
-const noPorts = { mcpSessions: noSessions, database: Layer.succeed(MapleDbConnection, Option.none()) }
+const noPorts = Layer.mergeAll(
+	Layer.succeed(McpSessionStore, noSessions),
+	Layer.succeed(MapleDbConnection, Option.none()),
+)
 
 const env = {
 	MAPLE_INGEST_KEY: "maple_sk_test",
