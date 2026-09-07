@@ -143,6 +143,10 @@ jobs:
             # Liveness only. Every other prod Worker is covered by the
             # "Prod revision skew" alert, which compares
             # `vcs.ref.head.revision` across services from their own telemetry.
+            # Which services that is, and the fact that it assumes they always
+            # deploy together, is pinned in `PRD_LOCKSTEP_REVISION_SERVICES`
+            # (`packages/infra/src/env.ts`) — change what this workflow deploys
+            # and `env.test.ts` will tell you the rule needs editing too.
             - name: Verify the deployed api serves this commit
               if: ${{ always() && steps.deploy.outcome != 'skipped' }}
               env:

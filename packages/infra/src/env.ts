@@ -210,6 +210,39 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
 		),
 	)
 
+/**
+ * The prd services that stamp `vcs.ref.head.revision` and are deployed by a
+ * SINGLE `alchemy deploy --stage prd` run, so in a healthy production they all
+ * report the same commit.
+ *
+ * That lockstep is what the **"Prod revision skew — a Worker missed the deploy"**
+ * alert rule (`raw_query`, id `2a6e9529-5f73-4478-9fa0-432904ff15c8`) tests: it
+ * counts distinct revisions across exactly these service names and pages when
+ * the count exceeds one. Alchemy isolates per-resource failures on purpose, so
+ * a deploy can update four of these and leave the fifth on its old script —
+ * that is the 2026-09-07 incident, where `api` sat 6h behind `web`.
+ *
+ * **The alert rule lives in the Maple database, not in this repo, so nothing
+ * mechanically couples the two.** This constant and `env.test.ts` are that
+ * coupling. If you change which services deploy together, you MUST edit the
+ * rule's SQL to match — otherwise it either pages forever on a service that no
+ * longer ships with the rest, or silently stops covering one that does.
+ *
+ * What is deliberately NOT here:
+ * - `scraper` — runs in production but is not part of this stack (see the
+ *   dev-only note in `alchemy.run.ts`), so it sits on its own revision.
+ * - `maple-landing`, `maple-ios` — deployed, but stamp no revision.
+ * - api's background service names (`maple-vcs-sync`, `maple-investigations`,
+ *   …) — the same Worker as `maple-api`, so they add no signal.
+ */
+export const PRD_LOCKSTEP_REVISION_SERVICES = [
+	"alerting",
+	"electric-sync",
+	"ingest",
+	"maple-api",
+	"maple-web",
+] as const
+
 /** Cloudflare account integration (account OAuth — Authorization Code + PKCE). */
 export const cloudflareOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("CLOUDFLARE_OAUTH_CLIENT_ID"),
