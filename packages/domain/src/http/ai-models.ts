@@ -10,7 +10,7 @@ import { SessionAuthorization } from "./current-tenant"
 
 export class DetectAiModelRequest extends Schema.Class<DetectAiModelRequest>("DetectAiModelRequest")({
 	/** Bounded because it is matched against a catalog, never stored — nothing legitimate is longer. */
-	model: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500)),
+	model: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(500)),
 }) {}
 
 export const AiModelDetectionSource = Schema.Literals(["openrouter", "heuristic", "unknown"])

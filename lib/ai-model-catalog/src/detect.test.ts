@@ -35,6 +35,19 @@ describe("detectAiModel", () => {
 		expect(detectAiModel("mistral-large-latest").openRouterId).toBe("mistralai/mistral-large")
 	})
 
+	it("keeps an explicit vendor even when the segment names another vendor's model", () => {
+		expect(detectAiModel("anthropic/gpt-4o")).toMatchObject({
+			vendorSlug: "anthropic",
+			openRouterId: null,
+			source: "heuristic",
+		})
+		// A dated provider id under its own vendor still resolves.
+		expect(detectAiModel("anthropic/claude-sonnet-4-5-20250929").openRouterId).toBe(
+			"anthropic/claude-sonnet-4.5",
+		)
+		expect(detectAiModel("openai/gpt-5-2025-08-07").openRouterId).toBe("openai/gpt-5")
+	})
+
 	it("keeps a dated id OpenRouter lists as its own snapshot", () => {
 		expect(detectAiModel("gpt-4o-2024-08-06").normalizedSlug).toBe("gpt-4o-2024-08-06")
 	})

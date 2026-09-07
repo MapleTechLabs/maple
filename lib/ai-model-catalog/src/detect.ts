@@ -82,11 +82,11 @@ for (const [id, canonicalSlug, name] of ordered) {
 	const modelSlug = stripVariant(model)
 	const entry: CatalogEntry = { vendorSlug, modelSlug, name }
 	byName.set(`${vendorSlug}/${modelSlug}`, name)
-	add(modelSlug, entry)
-	add(`${vendorSlug}/${modelSlug}`, entry)
 	const [, canonicalModel] = splitId(canonicalSlug)
-	add(canonicalModel, entry)
-	add(canonicalModel.replace(DATE_SUFFIX, ""), entry)
+	for (const key of [modelSlug, canonicalModel, canonicalModel.replace(DATE_SUFFIX, "")]) {
+		add(key, entry)
+		add(`${vendorSlug}/${key}`, entry)
+	}
 }
 
 const vendorNameOf = (vendorSlug: string): string =>
@@ -178,16 +178,14 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 		slug = bedrockModel
 	}
 
+	// An explicit vendor is binding: `anthropic/gpt-4o` is not OpenAI's model
+	// however the segment reads, so the lookup is vendor-qualified and an
+	// unlisted pairing falls through to the heuristic path with that vendor.
 	const base = stripVariant(slug)
-	const lookup = (key: string) => byModelSlug.get(pathVendor ? `${pathVendor}/${key}` : key)
 	let entry: CatalogEntry | undefined
-	let matched = base
 	for (const candidate of candidates(base)) {
-		entry = lookup(candidate) ?? (pathVendor ? byModelSlug.get(candidate) : undefined)
-		if (entry) {
-			matched = candidate
-			break
-		}
+		entry = byModelSlug.get(pathVendor === null ? candidate : `${pathVendor}/${candidate}`)
+		if (entry) break
 	}
 
 	if (entry) {
@@ -206,7 +204,7 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 		}
 	}
 
-	const normalizedSlug = candidates(base).at(-1) ?? matched
+	const normalizedSlug = candidates(base).at(-1) ?? base
 	const vendorSlug =
 		pathVendor ?? VENDOR_PREFIX_RULES.find(([pattern]) => pattern.test(normalizedSlug))?.[1] ?? null
 	return {
