@@ -1,6 +1,6 @@
 services:
     # Dev database for `alchemy dev` (the dev Hyperdrive origin in
-    # apps/api/alchemy.run.ts points here). Port 5499 dodges any host
+    # packages/infra/src/cloudflare/maple-db.ts points here). Port 5499 dodges any host
     # Postgres. vitest does NOT need this — tests run embedded PGlite.
     postgres:
         image: postgres:17-alpine

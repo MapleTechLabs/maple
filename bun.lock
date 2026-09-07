@@ -5,7 +5,7 @@
     "": {
       "name": "maple",
       "devDependencies": {
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/platform-node": "4.0.0-rc.111",
         "@effect/tsgo": "0.36.4",
         "@effect/vitest": "catalog:effect",
@@ -14,7 +14,7 @@
         "@oxlint/plugins": "1.77.0",
         "@tinybirdco/sdk": "catalog:tinybird",
         "@types/node": "catalog:tooling",
-        "alchemy": "2.0.0-beta.74",
+        "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
         "knip": "^6.17.1",
         "oxfmt": "^0.55.0",
@@ -34,7 +34,7 @@
         "effect": "catalog:effect",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/language-service": "catalog:effect",
         "@effect/vitest": "catalog:effect",
         "@maple-dev/effect-sdk": "workspace:*",
@@ -73,7 +73,7 @@
       },
       "devDependencies": {
         "@ai-sdk/openai-compatible": "^2.0.48",
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/language-service": "catalog:effect",
         "@electric-sql/pglite": "^0.5.2",
         "@types/node": "catalog:tooling",
@@ -118,7 +118,7 @@
         "effect": "catalog:effect",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/language-service": "catalog:effect",
         "@effect/vitest": "catalog:effect",
         "@types/node": "catalog:tooling",
@@ -298,10 +298,10 @@
     "examples/alchemy-maple": {
       "name": "@maple-examples/alchemy",
       "devDependencies": {
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@maple-dev/alchemy": "workspace:*",
         "@maple-dev/effect-sdk": "workspace:*",
-        "alchemy": "2.0.0-beta.74",
+        "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
         "typescript": "catalog:tooling",
       },
@@ -341,7 +341,7 @@
     "lib/alchemy-portless": {
       "name": "@maple/alchemy-portless",
       "dependencies": {
-        "alchemy": "2.0.0-beta.74",
+        "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -481,7 +481,7 @@
         "@effect/vitest": "catalog:effect",
         "@maple/domain": "workspace:*",
         "@types/node": "catalog:tooling",
-        "alchemy": "2.0.0-beta.74",
+        "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
         "tsdown": "^0.22.14",
         "typescript": "catalog:tooling",
@@ -566,7 +566,7 @@
         "postgres": "^3.4.9",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/language-service": "catalog:effect",
         "@maple/widgets": "workspace:*",
         "@types/node": "catalog:tooling",
@@ -631,11 +631,11 @@
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/alchemy-portless": "workspace:*",
         "@maple/domain": "workspace:*",
-        "alchemy": "2.0.0-beta.74",
+        "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "4.20260603.1",
+        "@cloudflare/workers-types": "catalog:alchemy",
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
@@ -768,6 +768,10 @@
     "vitest": "^4.1.9",
   },
   "catalogs": {
+    "alchemy": {
+      "@cloudflare/workers-types": "4.20260603.1",
+      "alchemy": "2.0.0-beta.74",
+    },
     "charts": {
       "@tanstack/charts": "0.16.0",
       "@tanstack/charts-scales": "0.16.0",

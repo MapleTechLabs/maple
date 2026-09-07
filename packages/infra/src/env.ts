@@ -106,6 +106,14 @@ export const optionalPlain = (key: string, fallback?: string): Config.Config<Pla
 export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
 	trimmedOption(key).pipe(Config.map((value) => entry(key, Option.map(value, Redacted.make))))
 
+/** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
+export const plainFrom = (keys: ReadonlyArray<string>, fallback: string): Config.Config<string> =>
+	Config.all(keys.map(trimmedOption)).pipe(
+		Config.map((values: ReadonlyArray<Option.Option<string>>) =>
+			Option.getOrElse(Option.firstSomeOf(values), () => fallback),
+		),
+	)
+
 /**
  * Optional value with a default that a BLANK env var also falls back to.
  *

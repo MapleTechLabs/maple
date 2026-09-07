@@ -7,10 +7,10 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "4.20260603.1",
+		"@cloudflare/workers-types": "catalog:alchemy",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
-		"alchemy": "2.0.0-beta.74",
+		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
 		"typescript": "catalog:tooling"
 	}

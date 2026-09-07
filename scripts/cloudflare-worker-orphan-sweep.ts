@@ -24,7 +24,7 @@
  * wedged), and a queue referenced by a Worker's producer BINDING cannot be
  * deleted either (error 11005 — run 30407693847). Each preview api worker
  * both binds and consumes its stage's `maple-vcs-sync-pr-<n>` /
- * `maple-planetscale-webhooks-pr-<n>` queues (apps/api/alchemy.run.ts), so
+ * `maple-planetscale-webhooks-pr-<n>` queues (apps/api/src/resources/queues.ts), so
  * the sweep breaks the cycle in three passes:
  *   1. detach the consumer registrations of closed-PR queues,
  *   2. delete the workers (their producer bindings die with them),
