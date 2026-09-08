@@ -549,6 +549,16 @@ jobs:
             - name: Build ClickHouse query DSL
               run: bun turbo build --filter=@maple-dev/clickhouse-builder
 
+            - name: Verify public ClickHouse builder against the live server
+              env:
+                  CLICKHOUSE_BUILDER_TEST_URL: http://127.0.0.1:8123
+                  CLICKHOUSE_BUILDER_TEST_USER: maple
+                  CLICKHOUSE_BUILDER_TEST_PASSWORD: maple
+              run: bun lib/clickhouse-builder/scripts/test-clickhouse.ts
+
+            - name: Verify isolated ClickHouse builder tarball
+              run: bun lib/clickhouse-builder/scripts/check-package.ts
+
             - name: Replay migrations and verify search indexes
               env:
                   CLICKHOUSE_E2E: "1"
