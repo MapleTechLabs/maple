@@ -440,4 +440,61 @@ describe("MCP HTTP authorization", () => {
 			await dispose()
 		}
 	})
+
+	it("answers JSON-RPC when the request body cannot be read", async () => {
+		// Regression: `Effect.orDie(request.text)` turned an unreadable body into a
+		// defect, which escaped every boundary and left a bare 500 logged only as
+		// alchemy's `HTTP handler failed`. In production the cause was workerd
+		// refusing a body stream owned by another invocation ("Cannot perform I/O
+		// on behalf of a different request") — ~10 MCP calls a day, each opaque to
+		// the client. An unreadable body is a request we can still answer.
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Unreadable body test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const routes = McpLive.pipe(Layer.provideMerge(services))
+		const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+		try {
+			const response = await handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${key.secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+					},
+					body: new ReadableStream({
+						start: (controller) =>
+							controller.error(
+								new Error("Cannot perform I/O on behalf of a different request"),
+							),
+					}),
+					// @ts-expect-error -- undici requires this for a stream body; not in the DOM lib.
+					duplex: "half",
+				}),
+				Context.empty() as never,
+			)
+			const body = await response.clone().json()
+			expect({ status: response.status, code: body.error?.code }).toEqual({
+				status: 200,
+				code: -32700,
+			})
+		} finally {
+			await dispose()
+		}
+	})
 })

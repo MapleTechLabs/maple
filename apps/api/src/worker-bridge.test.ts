@@ -36,6 +36,21 @@ const ExportedTraces = Schema.Struct({
 })
 const decodeExportedTraces = Schema.decodeUnknownSync(ExportedTraces)
 
+const ExportedLogRecord = Schema.Struct({
+	severityText: Schema.optionalKey(Schema.String),
+	body: Schema.optionalKey(Schema.Struct({ stringValue: Schema.optionalKey(Schema.String) })),
+})
+const ExportedLogs = Schema.Struct({
+	resourceLogs: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				scopeLogs: Schema.Array(Schema.Struct({ logRecords: Schema.Array(ExportedLogRecord) })),
+			}),
+		),
+	),
+})
+const decodeExportedLogs = Schema.decodeUnknownSync(ExportedLogs)
+
 interface RecordedRequest {
 	readonly url: string
 	readonly body: string | null
@@ -56,6 +71,13 @@ const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSp
 		.flatMap((request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [])
 		.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
 		.filter((span) => span.name.startsWith("http.server "))
+
+const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
+	recorded
+		.filter((request) => request.url.endsWith("/v1/logs"))
+		.flatMap((request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [])
+		.flatMap((resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords))
+		.flatMap((record) => (record.body?.stringValue === undefined ? [] : [record.body.stringValue]))
 
 const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 	const value = span?.attributes.find((attribute) => attribute.key === "http.response.status_code")?.value
@@ -96,6 +118,28 @@ const EchoHandlersLive = HttpApiBuilder.group(EchoApi, "echo", (handlers) =>
 	),
 )
 
+/**
+ * One route that logs from inside its handler, the way `V1ErrorBoundaryLive`
+ * logs a defect before answering `V1UnexpectedError`.
+ *
+ * The graph is built under the isolate's context, not the first event's, and
+ * the HttpApi group layers wrap every handler in the context they were built
+ * in — so a handler's logger is the one the build captured. This pins that it
+ * is still the event's, and that what a route logs reaches the exporter: a
+ * boundary that logs into a dropped batch is a 500 with no cause anywhere.
+ */
+const LoggingGroup = HttpApiGroup.make("logging").add(
+	HttpApiEndpoint.get("logging", "/logging", { success: Schema.String }),
+)
+class LoggingApi extends HttpApi.make("LoggingApi").add(LoggingGroup) {}
+const LoggingHandlersLive = HttpApiBuilder.group(LoggingApi, "logging", (handlers) =>
+	Effect.succeed(
+		handlers.handle("logging", () =>
+			Effect.logError("boundary answered with a server error").pipe(Effect.as("logged")),
+		),
+	),
+)
+
 const event = (
 	method: string,
 	path: string,
@@ -131,7 +175,7 @@ const event = (
 		const body = yield* Effect.promise(() => response.text())
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)
-		return { response, body, server: serverSpans(recorded) }
+		return { response, body, server: serverSpans(recorded), logs: logBodies(recorded) }
 	}).pipe(Effect.scoped)
 
 describe("the api Worker through alchemy's bridge", () => {
@@ -199,6 +243,23 @@ describe("the api Worker through alchemy's bridge", () => {
 			const second = yield* event("GET", "/echo", app, { authorization: "Bearer second" })
 			assert.strictEqual(second.response.status, 200)
 			assert.strictEqual(second.body, JSON.stringify("Bearer second"))
+		}),
+	)
+
+	it.effect("a log emitted inside a route handler is exported", () =>
+		Effect.gen(function* () {
+			const app = yield* cachedRecoverable(
+				buildIsolateHandler(
+					Context.empty(),
+					HttpApiBuilder.layer(LoggingApi).pipe(
+						Layer.provide(LoggingHandlersLive),
+						Layer.provide(WorkerPlatformLive),
+					),
+				),
+			)
+			const { response, logs } = yield* event("GET", "/logging", app)
+			assert.strictEqual(response.status, 200)
+			assert.include(logs, "boundary answered with a server error")
 		}),
 	)
 
