@@ -145,6 +145,21 @@ export interface EnvConfig {
 	 * request may only name a subset of them.
 	 */
 	readonly PLANETSCALE_OAUTH_SCOPES: string
+	readonly GOOGLE_OAUTH_CLIENT_ID: Option.Option<string>
+	/** Required alongside the client id — Google web-application clients are confidential. */
+	readonly GOOGLE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly GOOGLE_OAUTH_AUTHORIZE_URL: string
+	readonly GOOGLE_OAUTH_TOKEN_URL: string
+	readonly GOOGLE_OAUTH_REVOKE_URL: string
+	/**
+	 * Space-delimited OAuth scopes. `analytics.readonly` is a Google SENSITIVE scope: the
+	 * client needs brand review + OAuth verification before serving more than 100 users.
+	 */
+	readonly GOOGLE_OAUTH_SCOPES: string
+	/** GA4 Data API base (`runReport`) — overridable for tests. */
+	readonly MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL: string
+	/** GA4 Admin API base (`accountSummaries`) — overridable for tests. */
+	readonly MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL: string
 }
 
 const portConfig = Config.number("PORT").pipe(Config.withDefault(3472))
@@ -295,6 +310,28 @@ const envConfig = Config.all({
 	PLANETSCALE_OAUTH_SCOPES: stringWithDefault(
 		"PLANETSCALE_OAUTH_SCOPES",
 		"user:read_organizations organization:read_organization organization:read_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
+	),
+	GOOGLE_OAUTH_CLIENT_ID: optionalString("GOOGLE_OAUTH_CLIENT_ID"),
+	GOOGLE_OAUTH_CLIENT_SECRET: optionalRedacted("GOOGLE_OAUTH_CLIENT_SECRET"),
+	GOOGLE_OAUTH_AUTHORIZE_URL: stringWithDefault(
+		"GOOGLE_OAUTH_AUTHORIZE_URL",
+		"https://accounts.google.com/o/oauth2/v2/auth",
+	),
+	GOOGLE_OAUTH_TOKEN_URL: stringWithDefault("GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
+	GOOGLE_OAUTH_REVOKE_URL: stringWithDefault("GOOGLE_OAUTH_REVOKE_URL", "https://oauth2.googleapis.com/revoke"),
+	// Read-only analytics data + the property list needed to discover what to poll.
+	// `analytics.readonly` alone covers both the Data API and Admin API reads we make.
+	GOOGLE_OAUTH_SCOPES: stringWithDefault(
+		"GOOGLE_OAUTH_SCOPES",
+		"https://www.googleapis.com/auth/analytics.readonly",
+	),
+	MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL: stringWithDefault(
+		"MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL",
+		"https://analyticsdata.googleapis.com/v1beta",
+	),
+	MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL: stringWithDefault(
+		"MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL",
+		"https://analyticsadmin.googleapis.com/v1beta",
 	),
 })
 

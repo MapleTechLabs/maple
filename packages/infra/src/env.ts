@@ -272,6 +272,23 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_PLANETSCALE_API_BASE_URL"),
 )
 
+/**
+ * Google Analytics 4 integration (Google OAuth — confidential client, no PKCE).
+ *
+ * `analytics.readonly` is a SENSITIVE scope: the registered Google Cloud client must clear
+ * brand review + OAuth verification before it can serve more than 100 users.
+ */
+export const googleAnalyticsOAuthEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("GOOGLE_OAUTH_CLIENT_ID"),
+	optionalSecret("GOOGLE_OAUTH_CLIENT_SECRET"),
+	optionalPlain("GOOGLE_OAUTH_SCOPES"),
+	optionalPlain("GOOGLE_OAUTH_AUTHORIZE_URL"),
+	optionalPlain("GOOGLE_OAUTH_TOKEN_URL"),
+	optionalPlain("GOOGLE_OAUTH_REVOKE_URL"),
+	optionalPlain("MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL"),
+	optionalPlain("MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL"),
+)
+
 /** Apple push (iOS app) — token auth; see `apps/api/src/platform/Apns.ts`. */
 export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),

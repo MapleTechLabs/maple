@@ -9,6 +9,7 @@ import {
 	authEnv,
 	cloudflareOAuthEnv,
 	derived,
+	googleAnalyticsOAuthEnv,
 	ingestKeyCryptoEnv,
 	optionalPlain,
 	optionalSecret,
@@ -227,6 +228,16 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 		"PLANETSCALE_OAUTH_TOKEN_INFO_URL",
 		"MAPLE_PLANETSCALE_API_BASE_URL",
 	]
+	const GA_OAUTH = [
+		"GOOGLE_OAUTH_CLIENT_ID",
+		"GOOGLE_OAUTH_CLIENT_SECRET",
+		"GOOGLE_OAUTH_SCOPES",
+		"GOOGLE_OAUTH_AUTHORIZE_URL",
+		"GOOGLE_OAUTH_TOKEN_URL",
+		"GOOGLE_OAUTH_REVOKE_URL",
+		"MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL",
+		"MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL",
+	]
 
 	// A plain loop, not `describe.each` — the typed-tuple inference in `.each`
 	// blows tsc's memory on this repo's config.
@@ -336,6 +347,21 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 					...oldOptionalPlain(env, "MAPLE_PLANETSCALE_API_BASE_URL"),
 				}
 				expect(unwrap(run(planetScaleOAuthEnv, env))).toEqual(unwrap(old))
+			})
+
+			it("googleAnalyticsOAuthEnv", () => {
+				const env = full ? populated(GA_OAUTH) : {}
+				const old = {
+					...oldOptionalPlain(env, "GOOGLE_OAUTH_CLIENT_ID"),
+					...oldOptionalSecret(env, "GOOGLE_OAUTH_CLIENT_SECRET"),
+					...oldOptionalPlain(env, "GOOGLE_OAUTH_SCOPES"),
+					...oldOptionalPlain(env, "GOOGLE_OAUTH_AUTHORIZE_URL"),
+					...oldOptionalPlain(env, "GOOGLE_OAUTH_TOKEN_URL"),
+					...oldOptionalPlain(env, "GOOGLE_OAUTH_REVOKE_URL"),
+					...oldOptionalPlain(env, "MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL"),
+					...oldOptionalPlain(env, "MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL"),
+				}
+				expect(unwrap(run(googleAnalyticsOAuthEnv, env))).toEqual(unwrap(old))
 			})
 		})
 	}

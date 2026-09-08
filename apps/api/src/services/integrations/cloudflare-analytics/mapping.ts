@@ -14,6 +14,7 @@
  *   sampling-adjusted by Cloudflare, so they pass through untouched.
  */
 import { fmtMetricTs, type MetricGaugeRow, type MetricSumRow } from "@/services/warehouse/metric-rows"
+import { foldTail, OTHER_BUCKET, topNKeys } from "../shared/cardinality"
 import type {
 	DnsGroupDefinition,
 	DurableObjectsGroupDefinition,
@@ -139,16 +140,6 @@ export const MAX_DNS_QUERY_NAMES = 20
 export const MAX_HTTP_PATHS = 50
 /** Countries are naturally bounded (~250); the cap is a safety net, not a design constraint. */
 export const MAX_COUNTRIES = 50
-export const OTHER_BUCKET = "other"
-
-/** Top-N keys by weight; ties break lexicographically so folding is deterministic across runs. */
-export const topNKeys = (weights: ReadonlyMap<string, number>, n: number): ReadonlySet<string> =>
-	new Set(
-		[...weights.entries()]
-			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-			.slice(0, n)
-			.map(([key]) => key),
-	)
 
 const httpResourceAttrs = (orgId: string, zoneId: string, zoneName: string): Attrs => ({
 	maple_org_id: orgId,
@@ -263,12 +254,6 @@ export const mapHttpGroups = (input: MapHttpGroupsInput): CloudflareMetricRows =
 	}
 
 	return { sumRows, gaugeRows }
-}
-
-/** Weight-rank an unbounded dimension across a window and fold the tail into {@link OTHER_BUCKET}. */
-const foldTail = (weights: ReadonlyMap<string, number>, n: number): ((key: string) => string) => {
-	const top = topNKeys(weights, n)
-	return (key) => (top.has(key) ? key : OTHER_BUCKET)
 }
 
 /** Cap stored path length so one pathological URL can't bloat the attribute map. */

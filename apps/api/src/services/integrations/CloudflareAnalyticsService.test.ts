@@ -28,7 +28,7 @@ import { CloudflareOAuthService } from "@/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
 import type { MetricGaugeRow, MetricSumRow } from "./cloudflare-analytics/mapping"
-import type { OtlpMetricsPayload } from "./cloudflare-analytics/otlp"
+import type { OtlpMetricsPayload } from "./shared/otlp"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const trackedDbs: TestDb[] = []

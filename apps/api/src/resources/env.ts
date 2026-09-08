@@ -17,6 +17,7 @@ import {
 	authEnv,
 	cloudflareOAuthEnv,
 	derived,
+	googleAnalyticsOAuthEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -109,4 +110,5 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		optionalPlain("GITHUB_API_BASE_URL"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		googleAnalyticsOAuthEnv,
 	)
