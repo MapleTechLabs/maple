@@ -168,7 +168,8 @@ export const makePgConnectionScope = (
 						// Wrapped per call so each call's statements land in its own span.
 						// One shared wrapper would cross-attribute `db.query.text` between
 						// concurrent calls; the wrapper is cheap (relational config only).
-						return await fn(wrapMaplePgClient(open.sql, { onQuery: hooks.collect }))
+						const db = wrapMaplePgClient(open.sql, { onQuery: hooks.collect })
+						return await fn(db)
 					}, extraAttributes),
 				)
 			}),

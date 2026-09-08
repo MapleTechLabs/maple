@@ -88,7 +88,11 @@ const AppLayer = Layer.unwrap(
 				HttpRouter.cors({
 					allowedOrigins: ["*"],
 					allowedMethods: ["GET", "OPTIONS"],
-					allowedHeaders: ["*"],
+					// `Authorization` is excluded from the `*` wildcard by the Fetch
+					// spec. Listing only `*` makes Chrome drop the credentialed
+					// preflight (`Access-Control-Allow-Headers: *` cannot authorize
+					// the Authorization request header). Same pairing as apps/api.
+					allowedHeaders: ["*", "Authorization"],
 					// Load-bearing, not hygiene: without these exposed headers
 					// @electric-sql/client cannot advance the shape cursor through the
 					// proxy, and every stream stalls after its first chunk.

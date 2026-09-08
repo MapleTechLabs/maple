@@ -5,7 +5,7 @@ import {
 } from "@maple/effect-db/electric"
 import type { ManagedRuntime, Schema } from "effect"
 import { mapleRuntime } from "@/lib/registry"
-import { electricSyncBaseUrl } from "@/lib/services/common/electric-sync-url"
+import { getSyncProxyUrl } from "@/lib/services/common/electric-sync-url"
 import { getMapleAuthHeaders } from "@/lib/services/common/auth-headers"
 import { tracedFetch } from "@/lib/services/common/telemetry"
 
@@ -15,8 +15,11 @@ import { tracedFetch } from "@/lib/services/common/telemetry"
  * authenticates, injects the org scope from the BEARER (never from `org=`, which
  * is there for cache keying only — see `createSyncedCollection`), and forwards to
  * Electric. Never point a ShapeStream at Electric directly — it has no auth.
+ *
+ * Resolved at collection-create time so production same-origin (`VITE_ELECTRIC_SYNC_URL=""`)
+ * becomes `location.origin/api/sync/shape`. ShapeStream cannot take a relative URL.
  */
-export const syncProxyUrl = `${electricSyncBaseUrl}/api/sync/shape`
+export const syncProxyUrl = getSyncProxyUrl
 
 /**
  * `fetchClient` for every ShapeStream. Mirrors `mapleFetch` in http-client.ts
@@ -87,7 +90,7 @@ export const createSyncedCollection = <A extends Row<unknown>>(config: {
 		schema: config.schema,
 		getKey: config.getKey,
 		shapeOptions: {
-			url: syncProxyUrl,
+			url: syncProxyUrl(),
 			params: {
 				shape: config.shape,
 				// Present so the URL differs per tenant, and read by NOBODY: the proxy
