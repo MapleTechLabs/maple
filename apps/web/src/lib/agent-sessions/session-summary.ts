@@ -196,7 +196,7 @@ export interface SessionSummary {
 	/** The same failures those counts tally, grouped by what they say went wrong
 	 *  and ordered busiest first. */
 	readonly failureGroups: readonly SessionFailureGroup[]
-	/** Tools by the time their calls took, most expensive first. */
+	/** Tools by how often they were called, busiest first. */
 	readonly tools: readonly SessionToolUsage[]
 	readonly spanCount: number
 	readonly traceCount: number
@@ -782,9 +782,9 @@ function toolUsage(
 				slowestMs: Math.max(...entry.events.map((event) => event.durationMs)),
 				events: entry.events,
 			}))
-			// Time spent leads: a tool called twice for a minute matters more to a
-			// reader than one called twenty times for a millisecond.
-			.sort((a, b) => b.totalMs - a.totalMs || b.calls - a.calls || a.name.localeCompare(b.name))
+			// Reach leads, time breaks the tie: what the agent kept going back to is
+			// the first thing a reader scans the ledger for.
+			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || a.name.localeCompare(b.name))
 	)
 }
 

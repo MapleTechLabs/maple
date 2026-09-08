@@ -579,11 +579,6 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 							/>
 						)}
 					</div>
-
-					<div className="flex items-baseline justify-between gap-5 text-[11px] text-muted-foreground">
-						<span>One mark per call, at its start time and sized by how long it took.</span>
-						<span className="shrink-0">Sorted by time spent</span>
-					</div>
 				</>
 			)}
 		</section>
@@ -593,8 +588,8 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 /**
  * The run of tools at the bottom worth one row between them: no failures, and
  * together a rounding error against the session's tool time. Tools are ordered
- * by time spent, so this is always the cheap end — a tool called once that took
- * twelve seconds sits high in the list and keeps its own row.
+ * by reach, so this is the least-called end — and a tool that cost real time
+ * keeps its own row however rarely it was reached for.
  */
 function foldableTail(tools: readonly SessionToolUsage[]): readonly SessionToolUsage[] {
 	const budget = tools.reduce((total, tool) => total + tool.totalMs, 0) * TOOL_FOLD_MAX_SHARE
@@ -718,7 +713,7 @@ function ToolLedgerRow({
 
 	return (
 		<div className={cn("flex flex-col", tool.failed > 0 && "bg-destructive/[0.06]")}>
-			<div className="flex h-5 items-center gap-4">
+			<div className="flex h-6 items-center gap-4">
 				{disclosable ? (
 					<button
 						type="button"
@@ -815,7 +810,7 @@ function ToolFoldRow({
 
 	return (
 		<div className="flex flex-col border-border border-t">
-			<div className="flex h-5 items-center gap-4 text-muted-foreground">
+			<div className="flex h-6 items-center gap-4 text-muted-foreground">
 				<button
 					type="button"
 					onClick={onToggle}
@@ -856,7 +851,7 @@ function ToolFoldRow({
 
 			{expanded &&
 				tools.map((tool) => (
-					<div key={tool.name} className="flex h-5 items-center gap-4">
+					<div key={tool.name} className="flex h-6 items-center gap-4">
 						<span
 							className={cn(LEDGER_NAME, "truncate pl-[15px] font-mono text-xs")}
 							title={tool.name}
@@ -916,7 +911,7 @@ function CallLane({
 	onOpenSpan: OpenSpan
 }) {
 	return (
-		<span className="relative h-5 min-w-0 grow">
+		<span className="relative h-6 min-w-0 grow">
 			<span aria-hidden className="absolute top-1/2 left-0 h-px w-full bg-border" />
 			{events.map((event) => (
 				<button
@@ -928,10 +923,10 @@ function CallLane({
 					className={cn(
 						"absolute cursor-pointer rounded-[1px]",
 						event.failed
-							? "top-[3px] h-3.5 bg-destructive"
+							? "top-[5px] h-3.5 bg-destructive"
 							: muted
-								? "top-1.5 h-2 bg-muted-foreground/50"
-								: "top-[5px] h-2.5 bg-chart-4",
+								? "top-2 h-2 bg-muted-foreground/50"
+								: "top-[7px] h-2.5 bg-chart-4",
 					)}
 					style={{
 						// A call at the very end would draw its minimum width past the

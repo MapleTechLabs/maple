@@ -992,9 +992,9 @@ describe("per-model cost, tools and failure groups", () => {
 		expect(summary.cost).toBeCloseTo(0.3)
 	})
 
-	// The ledger sorts by what a tool cost, not how often it was reached for: a
-	// tool called twice for a minute is where the session's time went.
-	it("orders tools by the time their calls took, and totals it", () => {
+	// Busiest first, with what each cost alongside it: how often the agent
+	// reached for a tool is the ledger's own order.
+	it("orders tools by how often they were called, and totals what they cost", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 30 * SECOND }),
 			toolSpan({ spanId: "t1", parentSpanId: "a1", startMs: 0, durationMs: 100 }),
@@ -1009,8 +1009,8 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs])).toEqual([
-			["run_tests", 1, 5 * SECOND, 5 * SECOND],
 			["read_file", 2, 200, 100],
+			["run_tests", 1, 5 * SECOND, 5 * SECOND],
 		])
 	})
 
