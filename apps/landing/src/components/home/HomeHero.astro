@@ -1,6 +1,6 @@
 ---
 /**
- * THESIS: Open observability at architectural scale; a poster opening makes the
+ * THESIS: Open observability at Roman architectural scale; a poster opening makes the
  * product's connected systems tangible before the working interface appears.
  * OWN-WORLD: Maple amber, charcoal, bone, heavy grotesk type, shared rounded buttons and dithered stone.
  * STORY: Understand the offer, see the real product, start a trial or read source.
@@ -11,6 +11,7 @@
 import { buttonVariants } from "@maple/ui/components/ui/button";
 import * as m from "../../paraglide/messages.js";
 import { HeroCta } from "../HeroCta";
+import PixelStar from "../icons/PixelStar.astro";
 import CustomerLogos from "../CustomerLogos.astro";
 import HeroCarousel from "./HeroCarousel.astro";
 import { DATA_POINTS_INGESTED, formatDataPoints } from "../../lib/ingest-stats";
@@ -33,27 +34,23 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
             <span>{m.home_monument_title_2()}</span>
         </h1>
         <div class="monument-hero__copy">
-            <p class="monument-hero__statement">{m.hero_title_sub()}<br />{m.hero_title_accent()}</p>
             <p class="monument-hero__description">{m.hero_subtitle()}</p>
             <div class="monument-actions">
                 <HeroCta client:load className={buttonVariants({ size: "xl" })} />
                 <a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class={buttonVariants({ variant: "outline", size: "xl" })}>{m.cta_github()}</a>
             </div>
         </div>
-        <img class="monument-hero__art" src="/art/maple-monument.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
-        <div class="monument-hero__colophon" aria-hidden="true">
-            <span>MAPLE / OPEN TELEMETRY</span><span>TRACES · LOGS · METRICS</span>
-        </div>
-    </div>
     <div class="monument-proof">
-        <div class="shell monument-proof__inner">
+        <div class="monument-proof__inner">
             <dl class="monument-proof__stats">
-                {stars !== null && <div><dt>{m.stat_github()}</dt><dd><a href="https://github.com/MapleTechLabs/maple">{formatStars(stars)} <span aria-hidden="true">↗</span></a></dd></div>}
+                {stars !== null && <div><dt>{m.stat_github()}</dt><dd><a class="monument-proof__github" href="https://github.com/MapleTechLabs/maple"><PixelStar class="size-5 text-primary" />{formatStars(stars)}</a></dd></div>}
                 <div><dt>{m.ingest_stats_label()}</dt><dd>{formatDataPoints(DATA_POINTS_INGESTED)}+</dd></div>
             </dl>
             <CustomerLogos variant="rail" />
         </div>
     </div>
+    </div>
+    <img class="monument-hero__art" src="/art/maple-rome-balanced.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
 </section>
 <section class="monument-product">
     <div class="shell"><HeroCarousel /></div>

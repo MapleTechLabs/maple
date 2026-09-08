@@ -2,7 +2,7 @@
 
 ## Overview
 
-The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an architectural, orange dithered telemetry sculpture. This direction applies to the homepage and its locale variants; other marketing pages and the application retain their existing design.
+The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage and its locale variants; other marketing pages and the application retain their existing design.
 
 ## Colors
 
@@ -14,7 +14,7 @@ Geist Variable is the heavy, tightly set monumental display face: 800 weight, -0
 
 ## Layout
 
-A wide poster opening: announcement, oversized two-line title, architectural art occupying the right and lower field, descriptive copy and two CTAs on the left. A compact proof rail leads into the working product. Below, preserve the existing product narrative and interactive demonstrations with stronger headings, asymmetric layouts and two saturated color breaks. At mobile widths the art follows the copy and actions, with no text over texture.
+A wide poster opening: announcement, oversized two-line title, architectural art occupying the right and lower field, descriptive copy and two CTAs on the left. A compact proof rail leads into the working product. Below, preserve the existing product narrative and interactive demonstrations with stronger headings, asymmetric layouts and two saturated color breaks. The stats and customer proof rail are visible in the opening viewport. At mobile widths the rail follows the copy and actions over the artwork, with a dark backdrop that keeps labels readable.
 
 ## Elevation & Depth
 
@@ -33,3 +33,7 @@ Existing navigation, authentication-aware CTAs, carousel, walkthrough, calculato
 Keep localized content and real commercial facts. Use the generated monument at hero scale. Do not tint screenshots, invent metrics, replace working controls with decorative labels, or change the product theme.
 
 Homepage buttons use the original shared `buttonVariants` (hero size `xl`, primary and outline variants). Preserve their radius, shadows, focus rings, hover and pressed states; homepage surface overrides exclude buttons and links.
+
+The stats and customer logos overlay the lower hero artwork with a soft charcoal gradient and text shadow for contrast. There is no divider or separate strip. The GitHub count uses the existing PixelStar icon. Keep the proof visible in the opening viewport.
+
+The Roman hero uses medium-fine dithering in stone and shadows, with crisp architectural edges. Avoid large checkerboard blocks or overly smooth engraving.

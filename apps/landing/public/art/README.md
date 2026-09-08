@@ -23,3 +23,9 @@ Recolored with built-in GPT Image Gen using the actual shared UI palette.
 Hero prompt: Recolor only, preserve exact composition, buildings, crop and dither texture. Dark-mode version. Replace pale blue sky and pale surfaces with flat warm charcoal #1A1714. Replace cobalt lines/shadows with Maple amber #E8872A. Two-color inverted print: amber dithered architecture on charcoal. Left sky solid charcoal for seamless integration. No other changes, no text.
 
 Portal prompt: Recolor only, preserve architecture, crop, composition and dithering. Replace cobalt background with flat amber #E8872A and pale highlights with charcoal #1A1714. Strict amber-and-charcoal duotone, charcoal dither print on amber ground. No other colors or changes, no text.
+
+The current hero is now `maple-rome.webp`, a Rome-inspired temple and aqueduct. See [rome-prompt.md](rome-prompt.md) for its source reference and GPT Image Gen prompt. The closing graphic remains `maple-portal.webp`.
+
+Current hero: `maple-rome-dither.webp`, a stronger ordered-dither revision of the Roman composition, saved as lossless WebP to preserve pixel clusters. Original engraving retained as `maple-rome.webp`. Generated with built-in GPT Image Gen; revision prompt in [rome-prompt.md](rome-prompt.md).
+
+Current revision: `maple-rome-balanced.webp`. Medium-fine GPT Image Gen dither, between the original engraving and the rejected coarse version. Saved losslessly.

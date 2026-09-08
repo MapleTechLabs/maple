@@ -65,7 +65,7 @@
 	"hero_title": "Open-source observability.",
 	"hero_title_sub": "Built on OpenTelemetry.",
 	"hero_title_accent": "Your agent reads it too.",
-	"hero_subtitle": "Traces, logs, metrics, and session replay, queried in under a second. $39 a month, then a flat rate per GB. Nothing billed per host or per seat.",
+	"hero_subtitle": "Traces, logs, metrics, and session replay, connected by OpenTelemetry. Investigate issues yourself or give your AI agent the same tools.",
 
 	"customers_eyebrow": "Trusted by teams at",
 	"ingest_stats_label": "traces ingested / month",
