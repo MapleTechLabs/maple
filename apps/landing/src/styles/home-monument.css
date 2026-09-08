@@ -1,0 +1,545 @@
+/* Homepage-only visual world. Shared application tokens remain untouched. */
+.monumental-home {
+	--home-orange: #b9480d;
+	--home-deep: #873207;
+	--home-paper: #fff2e2;
+	--home-pale: #f5e2cc;
+	--home-ink: #422719;
+	--home-muted: #79533b;
+	--home-rule: #d9b999;
+	background: var(--home-paper);
+	color: var(--home-ink);
+	font-family: "Geist Variable", sans-serif;
+}
+.monumental-home ::selection {
+	background: var(--home-orange);
+	color: var(--home-paper);
+}
+.monumental-home :where(a, button, summary, input):focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 5px;
+}
+.monumental-home :where(.bg-bg, .bg-background) {
+	background-color: var(--home-paper);
+}
+.monumental-home :where(.bg-bg-deep, .bg-bg-elevated, .bg-card, .bg-popover) {
+	background-color: var(--home-pale);
+}
+.monumental-home :where(.text-fg, .text-foreground, .text-card-foreground, .text-popover-foreground) {
+	color: var(--home-ink);
+}
+.monumental-home :where(.text-fg-muted, .text-muted-foreground) {
+	color: var(--home-muted);
+}
+.monumental-home :where(.text-primary) {
+	color: var(--home-orange);
+}
+.monumental-home :where(.border-border, .border-input) {
+	border-color: var(--home-rule);
+}
+.monumental-home :where(.bg-primary) {
+	background-color: var(--home-orange);
+	color: var(--home-paper);
+}
+.monumental-home :where(.bg-muted) {
+	background-color: var(--home-pale);
+}
+.monumental-home :where(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-md) {
+	border-radius: 0;
+}
+.monumental-home #main-nav {
+	background: var(--home-paper);
+	border-color: var(--home-rule);
+}
+.monumental-home #main-nav > .shell {
+	height: 76px;
+}
+.monumental-home #main-nav a[href="/"] {
+	font-size: 22px;
+}
+.monumental-home #main-nav a[href="/"] > span {
+	font-size: 22px;
+	font-weight: 750;
+	letter-spacing: -0.04em;
+}
+.monumental-home #main-nav :where(a, button) {
+	border-radius: 0;
+}
+.monumental-home .font-display {
+	font-family: "Geist Variable", sans-serif;
+}
+.monumental-home main > section:not(.monument-hero):not(.monument-product) h2 {
+	font-weight: 750;
+	letter-spacing: -0.035em;
+	text-wrap: balance;
+}
+.monumental-home main > section:not(.monument-hero):not(.monument-product) :where(p, dd) {
+	line-height: 1.65;
+}
+.monumental-home .live-frame {
+	border-color: var(--home-rule);
+	border-radius: 0;
+}
+.monumental-home .live-frame__head {
+	background: var(--home-pale);
+	color: var(--home-ink);
+}
+.monumental-home .drenched-amber {
+	background: var(--home-orange);
+	color: var(--home-paper);
+}
+.monumental-home .drenched-amber::before {
+	display: none;
+}
+.monumental-home .drenched-amber :where(a, strong) {
+	color: var(--home-paper);
+}
+.monumental-home .drenched-amber :where(a, button):focus-visible {
+	outline-color: var(--home-paper);
+}
+.monumental-home .drenched-amber .ink-button {
+	background: var(--home-paper);
+	color: var(--home-orange);
+}
+.monumental-home .drenched-amber .ink-button:hover {
+	background: var(--home-pale);
+}
+.monumental-home .drenched-amber .ink-link:hover {
+	color: var(--home-paper);
+	opacity: 0.8;
+}
+.monumental-home .drenched-amber h2 {
+	font-size: clamp(2.6rem, 5.2vw, 5.5rem);
+	line-height: 1.02;
+}
+.monumental-home footer {
+	border-color: var(--home-rule);
+}
+
+.monument-hero {
+	padding-top: 76px;
+	overflow: clip;
+	background: var(--home-paper);
+}
+.monument-hero__field {
+	position: relative;
+	min-height: 890px;
+	padding-top: 34px;
+	isolation: isolate;
+}
+.monument-announce {
+	position: relative;
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
+	gap: 13px;
+	font-size: 12px;
+	color: var(--home-orange);
+}
+.monument-announce > span:first-child {
+	padding: 5px 7px;
+	background: var(--home-orange);
+	color: var(--home-paper);
+	font-family: "Geist Mono Variable", monospace;
+	font-size: 10px;
+	text-transform: uppercase;
+}
+.monument-announce:hover {
+	text-decoration: underline;
+	text-underline-offset: 4px;
+}
+.monument-hero h1 {
+	position: relative;
+	z-index: 2;
+	width: max-content;
+	max-width: 100%;
+	margin-top: 36px;
+	color: var(--home-orange);
+	font-size: clamp(4.5rem, 8.8vw, 8rem);
+	font-weight: 800;
+	line-height: 0.94;
+	letter-spacing: -0.04em;
+}
+.monument-hero h1 span {
+	display: block;
+}
+.monument-hero__art {
+	position: absolute;
+	z-index: -1;
+	right: -100px;
+	bottom: 0;
+	width: min(86%, 1110px);
+	height: 740px;
+	object-fit: cover;
+	mix-blend-mode: multiply;
+	pointer-events: none;
+}
+.monument-hero__copy {
+	position: relative;
+	z-index: 2;
+	margin-top: 38px;
+	width: 360px;
+	max-width: 100%;
+}
+.monument-hero__statement {
+	color: var(--home-orange);
+	font-size: 22px;
+	font-weight: 650;
+	line-height: 1.35;
+	letter-spacing: -0.025em;
+}
+.monument-hero__description {
+	margin-top: 20px;
+	max-width: 34ch;
+	font-size: 15px;
+	line-height: 1.7;
+	color: var(--home-ink);
+}
+.monument-actions {
+	display: flex;
+	gap: 10px;
+	margin-top: 26px;
+	flex-wrap: wrap;
+}
+.monument-button {
+	min-height: 48px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 20px;
+	padding: 12px 19px;
+	font-size: 13px;
+	font-weight: 600;
+	border: 1px solid var(--home-orange);
+	transition:
+		background-color 150ms,
+		color 150ms;
+}
+.monument-button--solid {
+	background: var(--home-orange);
+	color: var(--home-paper);
+}
+.monument-button--solid:hover {
+	background: var(--home-deep);
+}
+.monument-button--outline {
+	color: var(--home-orange);
+	background: var(--home-paper);
+}
+.monument-button--outline:hover {
+	background: var(--home-pale);
+}
+.monument-hero__colophon {
+	position: absolute;
+	bottom: 21px;
+	left: 52px;
+	right: 52px;
+	display: flex;
+	justify-content: space-between;
+	gap: 20px;
+	color: var(--home-deep);
+	font:
+		10px "Geist Mono Variable",
+		monospace;
+	letter-spacing: 0.06em;
+}
+.monument-proof {
+	position: relative;
+	background: var(--home-orange);
+	color: var(--home-paper);
+}
+.monument-proof__inner {
+	min-height: 120px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 42px;
+	padding-block: 24px;
+}
+.monument-proof__stats {
+	display: flex;
+	gap: 40px;
+	flex-shrink: 0;
+}
+.monument-proof__stats > div {
+	display: flex;
+	flex-direction: column-reverse;
+	gap: 4px;
+}
+.monument-proof dt {
+	font-size: 11px;
+}
+.monument-proof dd {
+	font-size: 26px;
+	font-weight: 650;
+	letter-spacing: -0.03em;
+}
+.monument-proof :where(.text-fg, .text-fg-muted, .text-primary) {
+	color: var(--home-paper);
+}
+.monument-proof a:focus-visible {
+	outline-color: var(--home-paper);
+}
+.monument-product {
+	padding-block: 75px 90px;
+	background: var(--home-pale);
+}
+.monument-product .hero-caption {
+	color: var(--home-ink);
+	font-size: 22px;
+	letter-spacing: -0.02em;
+	font-weight: 600;
+}
+.monument-product .hero-seg {
+	background: var(--home-rule);
+}
+.monument-product .hero-seg__fill {
+	background: var(--home-orange);
+}
+.monument-product .hero-tab {
+	color: var(--home-orange);
+}
+html:not([lang="en"]) .monument-hero h1 {
+	font-size: clamp(2.8rem, 6.8vw, 6.1rem);
+	line-height: 1.13;
+	width: auto;
+}
+@media (min-width: 1500px) {
+	.monument-hero__field {
+		min-height: 930px;
+	}
+}
+@media (max-width: 1100px) {
+	.monument-hero__field {
+		min-height: 870px;
+	}
+	.monument-hero__art {
+		right: -210px;
+		width: 1000px;
+		height: 670px;
+	}
+	.monument-hero__copy {
+		width: 330px;
+	}
+	.monument-proof__inner {
+		flex-wrap: wrap;
+		gap: 24px;
+	}
+}
+@media (max-width: 767px) {
+	.monumental-home #main-nav > .shell {
+		height: 64px;
+	}
+	.monument-hero {
+		padding-top: 64px;
+	}
+	.monument-hero__field {
+		min-height: auto;
+		padding-top: 25px;
+		padding-bottom: 0;
+	}
+	.monument-announce {
+		font-size: 10px;
+		gap: 8px;
+	}
+	.monument-hero h1 {
+		font-size: clamp(2.5rem, 10.3vw, 5rem);
+		margin-top: 35px;
+	}
+	.monument-hero__copy {
+		width: 100%;
+		margin-top: 30px;
+	}
+	.monument-hero__statement {
+		font-size: 20px;
+	}
+	.monument-hero__description {
+		max-width: 48ch;
+		font-size: 14px;
+	}
+	.monument-hero__art {
+		position: relative;
+		right: auto;
+		display: block;
+		width: calc(100% + 48px);
+		max-width: none;
+		height: auto;
+		margin: 5px -24px 0;
+	}
+	.monument-hero__colophon {
+		bottom: 12px;
+		left: 24px;
+		right: 24px;
+		font-size: 8px;
+	}
+	.monument-hero__colophon span:last-child {
+		display: none;
+	}
+	.monument-proof__inner {
+		padding-block: 27px;
+	}
+	.monument-proof__stats {
+		gap: 30px;
+	}
+	.monument-product {
+		padding-block: 40px;
+	}
+	.monument-product .hero-caption {
+		font-size: 17px;
+	}
+	html:not([lang="en"]) .monument-hero h1 {
+		font-size: clamp(1.7rem, 6.1vw, 3rem);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.monumental-home *,
+	.monumental-home *::before,
+	.monumental-home *::after {
+		scroll-behavior: auto;
+		transition-duration: 0s;
+		animation: none;
+	}
+}
+.monumental-home .monument-close {
+	background: var(--home-orange);
+	isolation: isolate;
+}
+.monument-close__art {
+	position: absolute;
+	right: -7%;
+	bottom: 0;
+	width: 65%;
+	height: 100%;
+	object-fit: cover;
+	object-position: right center;
+	z-index: -1;
+}
+.monumental-home .monument-close > .shell {
+	text-align: left;
+	padding-block: 110px;
+}
+.monumental-home .monument-close h2 {
+	max-width: 11ch;
+	margin-inline: 0;
+}
+.monumental-home .monument-close p {
+	max-width: 36ch;
+	margin-inline: 0;
+}
+.monumental-home .monument-close .justify-center {
+	justify-content: flex-start;
+}
+@media (max-width: 767px) {
+	.monumental-home .monument-close > .shell {
+		padding-top: 60px;
+		padding-bottom: 350px;
+	}
+	.monument-close__art {
+		right: 0;
+		width: 100%;
+		height: 340px;
+		object-position: right bottom;
+	}
+	.monumental-home .monument-close h2 {
+		max-width: 15ch;
+	}
+}
+/* Translucent legacy surfaces need an opaque paper ground in the light world. */
+.monumental-home .bg-border {
+	background-color: var(--home-rule);
+}
+.monumental-home [class~="bg-primary/[0.06]"] {
+	background-color: var(--home-paper);
+}
+.monumental-home [class~="bg-primary/[0.04]"] {
+	background-color: var(--home-pale);
+}
+.monumental-home [class~="bg-primary/10"],
+.monumental-home [class~="bg-primary/15"] {
+	background-color: var(--home-pale);
+}
+.monumental-home :where(a, button).bg-primary {
+	box-shadow: none;
+	border-color: var(--home-orange);
+}
+.monument-hero__art {
+	mask-image: linear-gradient(to right, transparent, black 18%);
+}
+@media (max-width: 767px) {
+	.monument-hero__art {
+		mask-image: none;
+	}
+}
+.monumental-home #main-nav button:is(:hover, [data-state="open"], [data-popup-open]) {
+	background-color: var(--home-pale);
+	color: var(--home-orange);
+}
+.monumental-home [data-slot="navigation-menu-link"]:is(:hover, :focus),
+.monumental-home [data-slot="navigation-menu-trigger"]:is(:hover, :focus) {
+	background-color: var(--home-pale);
+	color: var(--home-orange);
+}
+.monumental-home footer .shell > .mt-12 > .flex {
+	flex-wrap: wrap;
+	justify-content: center;
+}
+.monument-close__art {
+	mask-image: linear-gradient(to right, transparent, black 18%);
+}
+@media (max-width: 767px) {
+	.monument-hero__colophon {
+		display: none;
+	}
+	.monument-close__art {
+		mask-image: linear-gradient(to bottom, transparent, black 15%);
+	}
+}
+/* Embedded live product demonstrations retain the application's dark palette. */
+.monumental-home .live-frame {
+	color: var(--foreground);
+}
+.monumental-home .live-frame :where(.text-fg, .text-foreground) {
+	color: var(--foreground);
+}
+.monumental-home .live-frame :where(.text-fg-muted, .text-muted-foreground) {
+	color: var(--muted-foreground);
+}
+.monumental-home .live-frame .text-primary {
+	color: var(--primary);
+}
+.monumental-home .live-frame :where(.border-border) {
+	border-color: var(--border);
+}
+.monumental-home .live-frame__head {
+	color: var(--home-ink);
+}
+@media (max-width: 639px) {
+	.monumental-home [class~="sm:justify-end"].shrink-0 {
+		flex-wrap: wrap;
+	}
+	.monumental-home .k8s-hm-legend {
+		flex-wrap: wrap;
+	}
+	.monumental-home .lt-val {
+		flex-wrap: wrap;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.monumental-home [data-mcp-root] .mcp-line:has(> .grid) {
+		overflow-x: auto;
+	}
+}
+.monumental-home #main-nav a:is([href="/ja"], [href="/ko"]) > span {
+	font-size: 22px;
+	font-weight: 750;
+	letter-spacing: -0.04em;
+}
+.monumental-home .live-frame .bg-bg-elevated {
+	background-color: var(--bg-elevated);
+}
+.monumental-home .live-frame__live {
+	color: var(--home-orange);
+}
+.monumental-home .live-frame__live-dot {
+	background-color: var(--home-orange);
+}
