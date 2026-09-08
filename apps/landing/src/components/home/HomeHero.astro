@@ -25,9 +25,9 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
 <section class="monument-hero" aria-labelledby="home-title">
     <div class="monument-hero__field shell">
         <a href={localPath} class="monument-announce">
-            <span>{m.hero_announce_badge()}</span>
-            {m.hero_announce_text()}
-            <span aria-hidden="true">↗</span>
+            <span class="monument-announce__badge">{m.hero_announce_badge()}</span>
+            <span class="monument-announce__text">{m.hero_announce_text()}</span>
+            <span class="monument-announce__arrow" aria-hidden="true">→</span>
         </a>
         <h1 id="home-title">
             <span>{m.hero_title()}</span>

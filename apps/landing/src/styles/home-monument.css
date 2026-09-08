@@ -112,20 +112,31 @@
 	position: relative;
 	z-index: 2;
 	display: inline-flex;
+	align-self: flex-start;
 	align-items: center;
-	gap: 13px;
+	gap: 10px;
 	font-size: 12px;
+	line-height: 1;
 	color: var(--home-orange);
 }
-.monument-announce > span:first-child {
-	padding: 5px 7px;
+.monument-announce__badge {
+	padding: 4px 6px;
 	background: var(--home-orange);
 	color: var(--home-paper);
 	font-family: "Geist Mono Variable", monospace;
 	font-size: 10px;
+	font-weight: 500;
+	line-height: 1;
+	letter-spacing: 0.06em;
 	text-transform: uppercase;
 }
-.monument-announce:hover {
+.monument-announce__arrow {
+	transition: transform 150ms ease;
+}
+.monument-announce:hover .monument-announce__arrow {
+	transform: translateX(2px);
+}
+.monument-announce:hover .monument-announce__text {
 	text-decoration: underline;
 	text-underline-offset: 4px;
 }
