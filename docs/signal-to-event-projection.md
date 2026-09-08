@@ -339,9 +339,11 @@ These bounds keep evaluation predictable and leave room for indexing active
 projections by source kind and simple discriminating fields. `SignalScalar`
 describes normalized source data and does not inherit the literal-only 1,024-code-point
 limit; the OTLP adapter accepts source strings up to its separate 16 KiB bound.
-The literal limit is normative in UTF-8 bytes. Because JSON Schema `maxLength`
-counts characters rather than encoded bytes, the generated schema documents the
-constraint and the shared multibyte conformance vectors enforce its exact edge.
+The literal limit is normative in Unicode code points: both the shared decoder
+and the generated JSON Schema enforce a maximum of 1,024. Since a Unicode code
+point requires at most four UTF-8 bytes, this also bounds literals to 4 KiB.
+ASCII literals are therefore limited to 1,024 characters, not 4,096. The shared
+multibyte conformance vectors verify the same boundary.
 
 ### Signal projection
 
