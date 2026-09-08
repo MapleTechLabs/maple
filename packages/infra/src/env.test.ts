@@ -235,6 +235,7 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 		"GOOGLE_OAUTH_AUTHORIZE_URL",
 		"GOOGLE_OAUTH_TOKEN_URL",
 		"GOOGLE_OAUTH_REVOKE_URL",
+		"GOOGLE_OAUTH_USERINFO_URL",
 		"MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL",
 		"MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL",
 	]
@@ -358,6 +359,7 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 					...oldOptionalPlain(env, "GOOGLE_OAUTH_AUTHORIZE_URL"),
 					...oldOptionalPlain(env, "GOOGLE_OAUTH_TOKEN_URL"),
 					...oldOptionalPlain(env, "GOOGLE_OAUTH_REVOKE_URL"),
+					...oldOptionalPlain(env, "GOOGLE_OAUTH_USERINFO_URL"),
 					...oldOptionalPlain(env, "MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL"),
 					...oldOptionalPlain(env, "MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL"),
 				}

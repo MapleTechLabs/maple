@@ -151,6 +151,8 @@ export interface EnvConfig {
 	readonly GOOGLE_OAUTH_AUTHORIZE_URL: string
 	readonly GOOGLE_OAUTH_TOKEN_URL: string
 	readonly GOOGLE_OAUTH_REVOKE_URL: string
+	/** OIDC userinfo — resolves the connecting Google identity for the integration card. */
+	readonly GOOGLE_OAUTH_USERINFO_URL: string
 	/**
 	 * Space-delimited OAuth scopes. `analytics.readonly` is a Google SENSITIVE scope: the
 	 * client needs brand review + OAuth verification before serving more than 100 users.
@@ -319,11 +321,18 @@ const envConfig = Config.all({
 	),
 	GOOGLE_OAUTH_TOKEN_URL: stringWithDefault("GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
 	GOOGLE_OAUTH_REVOKE_URL: stringWithDefault("GOOGLE_OAUTH_REVOKE_URL", "https://oauth2.googleapis.com/revoke"),
-	// Read-only analytics data + the property list needed to discover what to poll.
-	// `analytics.readonly` alone covers both the Data API and Admin API reads we make.
+	GOOGLE_OAUTH_USERINFO_URL: stringWithDefault(
+		"GOOGLE_OAUTH_USERINFO_URL",
+		"https://openidconnect.googleapis.com/v1/userinfo",
+	),
+	// Read-only analytics data + the property list needed to discover what to poll:
+	// `analytics.readonly` alone covers both the Data API and Admin API reads we make. It is
+	// Google's only SENSITIVE scope here, and the one gating app verification.
+	// `openid email` is added so the integration card can say which Google account is connected
+	// and so the connection row has a stable external identity; both are non-sensitive.
 	GOOGLE_OAUTH_SCOPES: stringWithDefault(
 		"GOOGLE_OAUTH_SCOPES",
-		"https://www.googleapis.com/auth/analytics.readonly",
+		"https://www.googleapis.com/auth/analytics.readonly openid email",
 	),
 	MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL: stringWithDefault(
 		"MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL",

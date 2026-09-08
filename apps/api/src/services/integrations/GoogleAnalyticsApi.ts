@@ -20,7 +20,16 @@
  */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+
+/**
+ * Each call provides its own client rather than demanding one from the caller's context — the
+ * same shape `CloudflareApiImpl` uses, so these stay callable from a service closure without
+ * leaking `HttpClient` into its requirement channel. `FetchHttpClient.Fetch` is a
+ * `Context.Reference` with a default, so a test that overrides it further out still wins.
+ */
+const withHttpClient = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	effect.pipe(Effect.provide(FetchHttpClient.layer))
 
 /** GA4 quota denial — the caller backs off rather than retrying within the tick. */
 export const GA_QUOTA_STATUS = 429
@@ -68,8 +77,8 @@ const RunReportResponse = Schema.Struct({
 
 export type GoogleAnalyticsRunReportResponse = typeof RunReportResponse.Type
 
-const decodeAccountSummaries = Schema.decodeUnknown(AccountSummariesResponse)
-const decodeRunReport = Schema.decodeUnknown(RunReportResponse)
+const decodeAccountSummaries = Schema.decodeUnknownEffect(AccountSummariesResponse)
+const decodeRunReport = Schema.decodeUnknownEffect(RunReportResponse)
 
 export interface GoogleAnalyticsProperty {
 	/** Bare id ("123456789"), with the API's "properties/" resource prefix stripped. */
@@ -204,7 +213,51 @@ export const listProperties = Effect.fn("GoogleAnalyticsApi.listProperties")(fun
 	}
 
 	return properties
+}, withHttpClient)
+
+const PropertyDetail = Schema.Struct({
+	displayName: Schema.optionalKey(Schema.String),
+	timeZone: Schema.optionalKey(Schema.String),
 })
+const decodePropertyDetail = Schema.decodeUnknownEffect(PropertyDetail)
+
+/**
+ * A property's IANA reporting timezone. Not carried by `accountSummaries`, and required before a
+ * property can be polled at all — `dateHour` is expressed in it — so this is fetched once per
+ * property and cached on the state row rather than per discovery pass.
+ */
+export const getPropertyTimeZone = Effect.fn("GoogleAnalyticsApi.getPropertyTimeZone")(
+	function* (options: {
+		readonly accessToken: string
+		readonly adminBaseUrl: string
+		readonly propertyId: string
+	}) {
+		const httpClient = yield* HttpClient.HttpClient
+		const url = `${options.adminBaseUrl.replace(/\/+$/, "")}/properties/${options.propertyId}`
+		const response = yield* httpClient
+			.execute(authorized(HttpClientRequest.get(url), options.accessToken))
+			.pipe(
+				Effect.annotateSpans("peer.service", "google-analytics-admin"),
+				Effect.catchTag("HttpClientError", (error) =>
+					Effect.fail(upstream(`Google Analytics admin request failed: ${error.message}`, undefined, error)),
+				),
+			)
+
+		if (response.status >= 300) {
+			const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+			return yield* Effect.fail(classifyFailure(response.status, text, "Admin API"))
+		}
+
+		const json = yield* response.json.pipe(
+			Effect.mapError(() => upstream("Google Analytics Admin API returned a non-JSON response")),
+		)
+		const detail = yield* decodePropertyDetail(json).pipe(
+			Effect.mapError(() => upstream("Google Analytics Admin API returned an unexpected payload")),
+		)
+		return { timeZone: detail.timeZone ?? null, displayName: detail.displayName ?? null }
+	},
+	withHttpClient,
+)
 
 /** One Data API `runReport` against a single property. */
 export const runReport = Effect.fn("GoogleAnalyticsApi.runReport")(function* (options: {
@@ -255,6 +308,6 @@ export const runReport = Effect.fn("GoogleAnalyticsApi.runReport")(function* (op
 	return yield* decodeRunReport(json).pipe(
 		Effect.mapError(() => upstream("Google Analytics Data API returned an unexpected payload")),
 	)
-})
+}, withHttpClient)
 
 export type GoogleAnalyticsApiError = IntegrationsUpstreamError | IntegrationsRevokedError

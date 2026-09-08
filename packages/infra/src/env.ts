@@ -285,6 +285,7 @@ export const googleAnalyticsOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("GOOGLE_OAUTH_AUTHORIZE_URL"),
 	optionalPlain("GOOGLE_OAUTH_TOKEN_URL"),
 	optionalPlain("GOOGLE_OAUTH_REVOKE_URL"),
+	optionalPlain("GOOGLE_OAUTH_USERINFO_URL"),
 	optionalPlain("MAPLE_GOOGLE_ANALYTICS_DATA_API_BASE_URL"),
 	optionalPlain("MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL"),
 )
