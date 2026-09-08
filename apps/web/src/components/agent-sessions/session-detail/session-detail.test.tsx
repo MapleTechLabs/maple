@@ -1267,10 +1267,9 @@ describe("SessionHeader", () => {
 		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
 	})
 
-	it("demotes the opening prompt to a quoted line rather than making it the title", () => {
+	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
 		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.getByText("“fix the webhook retry backoff”")).toBeTruthy()
-		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("webhook")
+		expect(screen.queryByText(/webhook/)).toBeNull()
 	})
 
 	it("shows the full session id as a copyable fact, never as the heading", () => {
