@@ -34,7 +34,7 @@
 		"@distilled.cloud/cloudflare": "1.0.0-rc.6",
 		"@distilled.cloud/core": "1.0.0-rc.6",
 		"@effect/platform-bun": "catalog:effect",
-		"@maple-dev/effect-clickhouse": "workspace:*",
+		"@maple-dev/effect-clickhouse": "0.1.0",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/ai-model-catalog": "workspace:*",
 		"@maple/auth": "workspace:*",

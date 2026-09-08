@@ -190,7 +190,7 @@ is one row per (visitor,user) pair.
 
 ### 5. Query engine
 
-`lib/effect-clickhouse`:
+[`effect-clickhouse`](https://github.com/MapleTechLabs/effect-clickhouse):
 
 - Parametric aggregates `windowFunnel(windowSec, mode?)(ts, cond1..condN)` and
   `sequenceMatch(pattern)(ts, cond…)` following the handwritten `quantile(q)` pattern in

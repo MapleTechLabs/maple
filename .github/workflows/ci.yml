@@ -14,8 +14,7 @@ permissions:
     contents: read
 
 jobs:
-    # Which jobs are worth running for this diff. Most filters carry the `base`
-    # anchor; standalone builder checks deliberately use only their package path.
+    # Which jobs are worth running for this diff. Most filters carry the `base` anchor.
     #
     # Push events filter too. paths-filter compares `github.event.before..github.sha`
     # there, which spans the whole push — correct for squash-merges, for direct
@@ -33,7 +32,6 @@ jobs:
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             web: ${{ steps.filter.outputs.web == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
-            clickhouse_builder: ${{ steps.filter.outputs.clickhouse_builder == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
             slack: ${{ steps.filter.outputs.slack == 'true' }}
         steps:
@@ -81,7 +79,6 @@ jobs:
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
                         - 'packages/effect-sdk/**'
-                        - 'lib/effect-clickhouse/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
                         - 'packages/infra/**'
@@ -113,14 +110,8 @@ jobs:
                         - 'packages/ui/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
-                      # Standalone release checks only run for builder changes.
-                      # Do not inherit base: unrelated lockfile, app, or warehouse
-                      # changes should not rerun the live suite or npm tarball install.
-                      clickhouse_builder:
-                        - 'lib/effect-clickhouse/**'
                       clickhouse:
                         - *base
-                        - 'lib/effect-clickhouse/**'
                         - 'apps/api/src/services/warehouse/**'
                         - 'packages/db/**'
                         - 'scripts/*clickhouse*'
@@ -219,7 +210,7 @@ jobs:
                     - shard: build-other
                       install-filters: >-
                           @maple-dev/alchemy @maple-dev/browser
-                          @maple-dev/effect-clickhouse @maple-dev/effect-sdk
+                          @maple-dev/effect-sdk
                           @maple/landing @maple/local-ui
                     - shard: typecheck-api
                       install-filters: "@maple/api"
@@ -278,15 +269,12 @@ jobs:
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
 
-            # The schema generators import packages/domain, which resolves
-            # @maple-dev/effect-clickhouse through its built dist; the Alchemy
-            # entrypoints typecheck below reaches the single-module Workers, whose
-            # `@maple-dev/effect-sdk` and `@maple-dev/alchemy` imports type from
-            # built dist. One build for all three.
+            # Alchemy entrypoints reach Workers whose SDK and Alchemy imports
+            # need declarations built from the workspace sources.
             - name: Build the libraries the quality checks import
               if: ${{ matrix.shard == 'quality' }}
               run: >-
-                  bun turbo build --filter=@maple-dev/effect-clickhouse
+                  bun turbo build
                   --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
 
             - name: Validate generated ClickHouse and local-store schemas
@@ -306,14 +294,14 @@ jobs:
               if: ${{ matrix.shard == 'quality' }}
               run: bun run check:tokens
 
-            # Type-aware lint resolves the four workspace packages whose exports point
+            # Type-aware lint resolves the three workspace packages whose exports point
             # at dist/. Build them before linting so Effect requirement/error channels
             # cannot silently degrade to `any` through missing declarations.
             - name: Build workspace libraries for type-aware Effect lint
               if: ${{ matrix.shard == 'effect-lint' }}
               run: >-
                   bun turbo build --filter=@maple-dev/effect-sdk
-                  --filter=@maple-dev/effect-clickhouse --filter=@maple-dev/alchemy
+                  --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser --concurrency=2
 
             - name: Lint TypeScript and Effect code
@@ -328,7 +316,7 @@ jobs:
               if: ${{ matrix.shard == 'build-other' }}
               run: >-
                   bun turbo build --filter=@maple-dev/alchemy
-                  --filter=@maple-dev/browser --filter=@maple-dev/effect-clickhouse
+                  --filter=@maple-dev/browser
                   --filter=@maple-dev/effect-sdk --filter=@maple/landing
                   --filter=@maple/local-ui --concurrency=2
 
@@ -498,15 +486,6 @@ jobs:
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
 
-            # `@maple-dev/effect-clickhouse` resolves only through `dist/`, and the
-            # suite reaches it transitively: DatabaseLive imports
-            # `@maple/query-engine/execution`, which imports `ch/index.ts`. Without
-            # this the run dies at import with "Failed to resolve entry for package"
-            # before a single test starts. Same step, same reason, as the typescript
-            # and clickhouse jobs.
-            - name: Build ClickHouse query DSL
-              run: bun turbo build --filter=@maple-dev/effect-clickhouse
-
             # No migrations: the suite creates the one scratch table it needs and
             # drops it. Keeping it schema-independent means a migration change can
             # never make this job red for a reason unrelated to connections.
@@ -552,21 +531,6 @@ jobs:
                   key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
-
-            - name: Build ClickHouse query DSL
-              run: bun turbo build --filter=@maple-dev/effect-clickhouse
-
-            - name: Verify public ClickHouse builder against the live server
-              if: ${{ needs.changes.outputs.clickhouse_builder == 'true' }}
-              env:
-                  EFFECT_CLICKHOUSE_TEST_URL: http://127.0.0.1:8123
-                  EFFECT_CLICKHOUSE_TEST_USER: maple
-                  EFFECT_CLICKHOUSE_TEST_PASSWORD: maple
-              run: bun lib/effect-clickhouse/scripts/test-clickhouse.ts
-
-            - name: Verify isolated ClickHouse builder tarball
-              if: ${{ needs.changes.outputs.clickhouse_builder == 'true' }}
-              run: bun lib/effect-clickhouse/scripts/check-package.ts
 
             - name: Replay migrations and verify search indexes
               env:

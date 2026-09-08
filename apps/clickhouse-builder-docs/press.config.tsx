@@ -7,6 +7,8 @@ import { fumadocsMdx } from "fumapress/adapters/mdx"
 import { metaSchema, pageSchema } from "fumapress/adapters/mdx/schema"
 import { defineDocs } from "fumadocs-mdx/macro"
 
+import { sidebarIcon } from "./src/sidebar-icons"
+
 const docs = defineDocs({
 	dir: "content",
 	docs: {
@@ -29,11 +31,14 @@ export default defineConfig({
 		links: [
 			{
 				text: "GitHub",
-				url: "https://github.com/MapleTechLabs/maple/tree/main/lib/effect-clickhouse",
+				url: "https://github.com/MapleTechLabs/effect-clickhouse",
 			},
 		],
 	},
 	content: docs.toFumadocsSource(),
+	loaderOptions: {
+		icon: sidebarIcon,
+	},
 	site: {
 		name: "Effect ClickHouse",
 		baseUrl: "https://effect-clickhouse.maple.dev",

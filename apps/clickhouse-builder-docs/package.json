@@ -12,6 +12,8 @@
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.7.0",
+		"@maple-dev/effect-clickhouse": "0.1.0",
+		"effect": "catalog:effect",
 		"fumadocs-core": "^16.15.4",
 		"fumadocs-mdx": "^15.4.0",
 		"fumadocs-ui": "npm:@fumadocs/base-ui@^16.15.4",

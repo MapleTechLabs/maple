@@ -7,7 +7,7 @@
 			"apps/scraper/**",
 			"packages/domain/**",
 			"packages/effect-sdk/**",
-			"lib/effect-clickhouse/**"
+			"bun.lock"
 		]
 	},
 	"deploy": {

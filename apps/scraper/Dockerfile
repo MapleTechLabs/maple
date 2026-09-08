@@ -5,11 +5,8 @@ FROM oven/bun:1.4.0 AS runner
 WORKDIR /app
 
 COPY . .
-# @maple-dev/effect-clickhouse resolves through its dist/ exports, and
-# @maple/domain imports its ./sql subpath — build it or the container
-# crashloops at startup on a clean checkout.
+# Build the workspace SDK consumed by the scraper.
 RUN bun install --frozen-lockfile \
-	&& bun run --cwd lib/effect-clickhouse build \
 	&& bun run --cwd packages/effect-sdk build
 
 EXPOSE 3475
