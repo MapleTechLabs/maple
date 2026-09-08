@@ -43,6 +43,13 @@ Each kind names a column type, and the value is encoded through that type's
 schema — the same schema a column of that type decodes rows with, read backwards. The two
 directions cannot drift, because there is only one of them.
 
+`param.dateTime` and `param.dateTimeString` preserve milliseconds in `Date` and `DateTime.Utc`
+values, as well as fractions already present in strings. Use `param.dateTimeSeconds` for a
+whole-second DateTime bound, or `param.of(T.dateTime, name)` for the parsed UTC flavour.
+
+`param.of` keeps each codec distinct even when several types share the same SQL name.
+Reuse type definitions across queries when practical.
+
 `param.of(type, name)` takes it further: any column type, including one you declared with
 `T.custom`, works as a param.
 
@@ -161,7 +168,7 @@ interface CompiledQuery<Output> {
 | `rowSchemaSource`               | Where the row schema came from, so a caller can tell real validation from a pass-through |
 | `rowSchema`                     | The codec itself, for a caller that needs a `Schema` rather than a call                  |
 | `untypedColumns`                | When `rowSchemaSource` is `"none"`, the selected aliases responsible                     |
-| `rowSchemaMismatch`             | How a *declared* schema disagrees with the SELECT by field name, when it does            |
+| `rowSchemaMismatch`             | How a _declared_ schema disagrees with the SELECT by field name, when it does            |
 | `rawSql`                        | Present only for `rawCompiledQuery`: the `reason` and `note` it was given                |
 | `route`                         | Set by `.route(tag)`; opaque metadata for your executor                                  |
 | `decodeRows` / `decodeFirstRow` | See [Decoding results](./decoding-results.md)                                            |

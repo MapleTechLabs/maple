@@ -1,8 +1,8 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { Effect, Layer } from "effect"
-import { layerFromEnvRecord } from "@maple/effect-cloudflare/worker-environment"
-import { ReplayBlobStore, replayObjectKey, REPLAY_BLOBS_BINDING } from "./ReplayBlobStore"
+import { Effect, Layer, Option } from "effect"
+import { type ObjectStore, ReplayBlobBucket } from "@/platform/bindings"
+import { ReplayBlobStore, replayObjectKey } from "./ReplayBlobStore"
 
 const gzip = (text: string): Effect.Effect<Uint8Array> =>
 	Effect.promise(async () => {
@@ -10,27 +10,24 @@ const gzip = (text: string): Effect.Effect<Uint8Array> =>
 		return new Uint8Array(await new Response(stream).arrayBuffer())
 	})
 
-/** Minimal stand-in for the R2 binding: only `get` is exercised. */
-const fakeBucket = (objects: Record<string, Uint8Array>, onGet?: (key: string) => void) => ({
-	get: async (key: string) => {
-		onGet?.(key)
-		const bytes = objects[key]
-		if (!bytes) return null
-		return { bytes: async () => bytes }
-	},
+/** Minimal stand-in for the bucket port. */
+const fakeBucket = (objects: Record<string, Uint8Array>, onGet?: (key: string) => void): ObjectStore => ({
+	getBytes: (key) =>
+		Effect.sync(() => {
+			onGet?.(key)
+			return Option.fromNullishOr(objects[key])
+		}),
 })
 
 const runWithBucket = <A>(
-	bucket: unknown,
+	bucket: ObjectStore,
 	program: (store: typeof ReplayBlobStore.Service) => Effect.Effect<A>,
 ) =>
 	Effect.gen(function* () {
 		const store = yield* ReplayBlobStore
 		return yield* program(store)
 	}).pipe(
-		Effect.provide(
-			ReplayBlobStore.layer.pipe(Layer.provide(layerFromEnvRecord({ [REPLAY_BLOBS_BINDING]: bucket }))),
-		),
+		Effect.provide(ReplayBlobStore.layer.pipe(Layer.provide(Layer.succeed(ReplayBlobBucket, bucket)))),
 	)
 
 describe("replayObjectKey", () => {
@@ -112,7 +109,7 @@ describe("ReplayBlobStore.hydrate", () => {
 			for (let seq = 0; seq < 20; seq++) {
 				objects[replayObjectKey("org_1", "sess_1", seq)] = yield* gzip(`[${seq}]`)
 			}
-			const result = yield* runWithBucket(objects && fakeBucket(objects), (store) =>
+			const result = yield* runWithBucket(fakeBucket(objects), (store) =>
 				store.hydrate(
 					"org_1",
 					"sess_1",
@@ -134,7 +131,7 @@ describe("ReplayBlobStore.hydrate", () => {
 			const result = yield* Effect.gen(function* () {
 				const store = yield* ReplayBlobStore
 				return yield* store.hydrate("org_1", "sess_1", chunks)
-			}).pipe(Effect.provide(ReplayBlobStore.layer.pipe(Layer.provide(layerFromEnvRecord({})))))
+			}).pipe(Effect.provide(ReplayBlobStore.layer))
 			expect(result).toEqual(chunks)
 		}),
 	)

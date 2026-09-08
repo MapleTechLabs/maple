@@ -29,7 +29,7 @@ import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@/platform/DatabaseLive"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@/platform/Crypto"
 import { Env } from "@/platform/Env"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { CliAuthRateLimit } from "@/platform/bindings"
 
 const DEVICE_TTL_SECONDS = 15 * 60
 /**
@@ -43,18 +43,6 @@ const DEVICE_TTL_SECONDS = 15 * 60
 const CLI_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const POLL_INTERVAL_SECONDS = 5
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-const CLI_AUTH_RATE_LIMIT_BINDING = "CLI_AUTH_RATE_LIMITER"
-
-interface RateLimitBinding {
-	readonly limit: (options: { readonly key: string }) => Promise<{ readonly success: boolean }>
-}
-
-const isRateLimitBinding = (value: unknown): value is RateLimitBinding =>
-	typeof value === "object" &&
-	value !== null &&
-	"limit" in value &&
-	typeof (value as { limit?: unknown }).limit === "function"
-
 const hashCode = (value: string) => createHash("sha256").update(value).digest("hex")
 const normalizeUserCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, "")
 const displayUserCode = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 8)}`
@@ -133,7 +121,8 @@ export class CliDeviceAuthService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
-		const workerEnvironment = yield* Effect.serviceOption(WorkerEnvironment)
+		// Absent outside the api Worker (tests, the CLI): the check then passes.
+		const rateLimit = yield* Effect.serviceOption(CliAuthRateLimit)
 		const apiKeyHmacKey = yield* Effect.try({
 			try: () => parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY)),
 			catch: (error) =>
@@ -157,13 +146,11 @@ export class CliDeviceAuthService extends Context.Service<
 		})
 
 		const checkRateLimit = Effect.fn("CliDeviceAuthService.checkRateLimit")(function* (key: string) {
-			if (Option.isNone(workerEnvironment)) return
-			const binding = workerEnvironment.value[CLI_AUTH_RATE_LIMIT_BINDING]
-			if (!isRateLimitBinding(binding)) return
-			const outcome = yield* Effect.tryPromise({
-				try: () => binding.limit({ key: `${env.MAPLE_ENVIRONMENT}:cli-auth:${key}` }),
-				catch: () => new CliDevicePersistenceError({ message: "CLI auth rate limiter unavailable" }),
-			}).pipe(Effect.orElseSucceed(() => undefined))
+			if (Option.isNone(rateLimit)) return
+			// A limiter outage fails open: the login is not refused for it.
+			const outcome = yield* rateLimit.value
+				.limit(`${env.MAPLE_ENVIRONMENT}:cli-auth:${key}`)
+				.pipe(Effect.orElseSucceed(() => undefined))
 			if (outcome && !outcome.success) {
 				return yield* new CliDeviceRateLimitError({
 					message: "Too many CLI login attempts. Wait a minute and try again.",

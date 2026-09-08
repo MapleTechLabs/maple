@@ -1,10 +1,7 @@
-import type { MessageBatch } from "@cloudflare/workers-types"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Effect, Layer, Schema } from "effect"
-import { layerPg } from "@/platform/DatabasePgLive"
+import { eventTelemetry } from "@maple/infra/worker-telemetry"
+import { Effect, Schema } from "effect"
 import type { Database, DatabaseError } from "@/platform/DatabaseLive"
+import type { QueueBatch } from "@/platform/queue-batch"
 import {
 	classifyPlanetScaleEvent,
 	deployRequestNumber,
@@ -14,27 +11,16 @@ import {
 } from "./services/integrations/planetscale/webhook-events"
 import { PlanetScaleWebhookJob } from "./services/integrations/planetscale/PlanetScaleWebhookQueue"
 
-const telemetry = MapleCloudflareSDK.make({
-	serviceName: "maple-api",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
-
-export const buildPlanetScaleWebhookLayer = (_env: Record<string, unknown>) => {
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironment.layer))
-	return DatabaseLive.pipe(
-		Layer.provideMerge(telemetry.layer),
-		Layer.provideMerge(WorkerEnvironment.layer),
-		Layer.provideMerge(WorkerConfigProviderLayer),
-	)
-}
-
-export const flushPlanetScaleWebhookTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
+/**
+ * Deliberately not `maple-api`: background work sharing the request-facing
+ * service's name skewed its percentiles (p99 32s, 2026-09-04). Provided by the
+ * Worker around the event; the layer below carries no tracer of its own.
+ */
+export const planetScaleWebhookTelemetry = eventTelemetry({ serviceName: "maple-planetscale-webhooks" })
 
 const decodeJob = Schema.decodeUnknownEffect(PlanetScaleWebhookJob)
 
-export const processPlanetScaleWebhookBatch = (batch: MessageBatch<unknown>) =>
+export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 	Effect.forEach(
 		batch.messages,
 		(message) =>

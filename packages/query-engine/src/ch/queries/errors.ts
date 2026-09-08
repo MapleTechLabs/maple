@@ -2,6 +2,7 @@
 //
 // DSL-based query definitions for error aggregation and timeseries.
 
+import { finiteOrZero } from "./format"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
@@ -142,9 +143,31 @@ const sharedFilterConditions = (
 // hash (string), not a query-time heuristic — see materializations.ts /
 // fingerprint.ts for how the hash + label are derived.
 
+/**
+ * Error identities that violate the "every failure is a namespaced tagged error" policy: labels
+ * outside the org's own namespace (library tags such as `AI.Error`, bare `Error`), plus the
+ * markers Maple emits when a request ended in a 5xx or the unexpected-error envelope.
+ */
+export interface UnexpectedIdentityFilter {
+	readonly namespacePrefix: string
+	readonly markerLabels: readonly string[]
+}
+
+export const DEFAULT_ERROR_NAMESPACE_PREFIX = "@maple/"
+
+export const UNEXPECTED_IDENTITY_MARKERS: readonly string[] = [
+	// The SDK's marker for a server span whose handler rendered a 5xx (the
+	// Worker bridge answers a defect that way); the api's own marker before it.
+	"HttpServerErrorResponse",
+	"@maple/api/http/Http5xxResponseError",
+	"@maple/http/v2/UnexpectedError",
+	"@maple/http/v1/V1UnexpectedError",
+]
+
 export interface ErrorsByTypeOpts extends ErrorsSharedFilters {
 	rootOnly?: boolean
 	fingerprintHashes?: readonly string[]
+	unexpectedIdentity?: UnexpectedIdentityFilter
 	limit?: number
 }
 
@@ -178,12 +201,20 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 			opts.fingerprintHashes?.length
 				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
+			opts.unexpectedIdentity
+				? $.ErrorLabel.notLike(`${likeLiteral(opts.unexpectedIdentity.namespacePrefix)}%`).or(
+						CH.inList($.ErrorLabel, opts.unexpectedIdentity.markerLabels),
+					)
+				: undefined,
 		])
 		.groupBy("fingerprintHash")
 		.orderBy(["count", "desc"])
 		.limit(opts.limit ?? 50)
 		.format("JSON")
 }
+
+/** A namespace prefix is a literal, so its `%`/`_` must not act as LIKE wildcards. */
+const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
 
 // Errors timeseries
 
@@ -545,8 +576,8 @@ export function tracesDurationStatsQuery(opts: TracesDurationStatsOpts) {
 		.select(($) => ({
 			minDurationMs: CH.min_($.Duration).div(1000000),
 			maxDurationMs: CH.max_($.Duration).div(1000000),
-			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-			p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
@@ -895,11 +926,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			.select(($) => ({
 				totalErrors: $.totalErrors,
 				totalSpans: $.s.totalSpans,
-				errorRate: CH.if_(
-					$.s.totalSpans.gt(0),
-					CH.round_($.totalErrors.div($.s.totalSpans), 6),
-					CH.lit(0),
-				),
+				errorRate: finiteOrZero(CH.round_($.totalErrors.div($.s.totalSpans), 6)),
 				affectedServicesCount: $.affectedServicesCount,
 				affectedTracesCount: $.affectedTracesCount,
 			}))
@@ -1242,6 +1269,15 @@ export interface ErrorDetailTracesOutput {
 	readonly services: readonly string[]
 	readonly rootSpanName: string
 	readonly errorMessage: string
+	readonly errorSpanId: string
+	readonly errorSpanName: string
+	readonly errorServiceName: string
+	readonly errorModel: string
+	readonly errorToolName: string
+	readonly errorHttpMethod: string
+	readonly errorHttpRoute: string
+	readonly errorQueryContext: string
+	readonly errorType: string
 }
 
 export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
@@ -1280,7 +1316,18 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 			spanCount: CH.count(),
 			services: CH.groupUniqArray($.ServiceName),
 			rootSpanName: CH.anyIf($.SpanName, $.ParentSpanId.eq("")),
-			errorMessage: CH.any_($.StatusMessage),
+			// The failing span, not an arbitrary one: `any(StatusMessage)` used to pick whichever span
+			// ClickHouse read first, which for most traces is a healthy span with an empty message.
+			errorMessage: CH.anyIf($.StatusMessage, $.StatusCode.eq("Error")),
+			errorSpanId: CH.anyIf($.SpanId, $.StatusCode.eq("Error")),
+			errorSpanName: CH.anyIf($.SpanName, $.StatusCode.eq("Error")),
+			errorServiceName: CH.anyIf($.ServiceName, $.StatusCode.eq("Error")),
+			errorModel: CH.anyIf($.SpanAttributes.get("gen_ai.request.model"), $.StatusCode.eq("Error")),
+			errorToolName: CH.anyIf($.SpanAttributes.get("gen_ai.tool.name"), $.StatusCode.eq("Error")),
+			errorHttpMethod: CH.anyIf($.SpanAttributes.get("http.request.method"), $.StatusCode.eq("Error")),
+			errorHttpRoute: CH.anyIf($.SpanAttributes.get("http.route"), $.StatusCode.eq("Error")),
+			errorQueryContext: CH.anyIf($.SpanAttributes.get("query.context"), $.StatusCode.eq("Error")),
+			errorType: CH.anyIf($.SpanAttributes.get("error.type"), $.StatusCode.eq("Error")),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),

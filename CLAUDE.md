@@ -11,7 +11,7 @@ Three roots, and the split is a rule, not a habit:
 - **`packages/*`** — shared code that **knows Maple**: its schema, tables, API, or product.
   `domain`, `query-engine`, `ui`, `db`, `auth`, `effect-sdk`, `browser`, …
 - **`lib/*`** — libraries with **zero Maple knowledge**, extractable to their own repo tomorrow.
-  `clickhouse-builder`, `effect-cloudflare`, `effect-db`, `effect-router`, `cache`,
+  `clickhouse-builder`, `effect-db`, `effect-router`, `cache`, `safe-fetch`,
   `otel-helpers`, `unitflow`.
 
 The test for `lib/` is "could this ship as a standalone OSS library?" — not "is it published?"
@@ -89,6 +89,22 @@ no `castRows` — a cast that looked type-safe hid wire-format drift.
   a failure the route already returns.
 - `packages/domain/src/tinybird/endpoints.ts` is **type-only** — no `defineEndpoint()` calls.
 
+## Query benchmarking
+
+Use `bun run bench:queries` for query optimization evidence; see
+[`docs/query-benchmarking.md`](docs/query-benchmarking.md). `catalog` compiles the real core and
+integration fixtures, or a custom `--suite` TypeScript module using
+`@maple/query-engine/benchmark`'s `caseFromCompiled`. Export a baseline before changing the builder,
+then re-export the candidate with the same case IDs, inputs, and populated dataset. `run` saves
+individual measurements and collects query logs after timing; `inspect` accepts the saved run to
+explain the SQL/settings actually measured; `compare --fail-on-regression` gates regressions and
+incomplete evidence. Catalog fixtures use synthetic inputs, so empty-table timings are not
+optimization evidence. Benchmark artifacts belong in the gitignored `apps/api/scripts/.bench/`.
+The benchmark package owns the former SQL catalog fixtures and coverage checks. The CLI and
+`query-benchmark.clickhouse.e2e.test.ts` share `apps/api/scripts/query-bench/catalog.ts`; add cases
+under the owning package's `src/benchmark/`, not a separate catalog. The live test also seeds an
+isolated database and exercises run/compare/inspect against real Maple builders.
+
 ## Application database (PlanetScale Postgres)
 
 Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/`pgTable` in
@@ -133,7 +149,7 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   JS plugin in `scripts/oxlint-plugins/maple.mjs`) and the repo is at zero — keep it there. Generic
   constraints (`<T extends Record<string, any>>`) are exempt: `unknown` does not work in that
   position. `typescript/no-explicit-any` is `warn` (75 left, all outside `lib/`). Both rules are off
-  under `lib/**`, whose builder DSLs (`clickhouse-builder`, `unitflow`, `effect-cloudflare`) use
+  under `lib/**`, whose builder DSLs (`clickhouse-builder`, `unitflow`) use
   `any` as a type-level placeholder in variance positions. `Record<string, unknown>` is _not_ banned —
   it forces narrowing at every read, which is the point.
 - **Effect:** source is vendored at `.context/effect/` (subtree of Effect-TS/effect-smol).

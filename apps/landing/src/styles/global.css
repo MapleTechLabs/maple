@@ -161,14 +161,6 @@
 	opacity: 1;
 }
 
-/* Gradient text utility — used in the hero accent line. */
-.text-gradient-accent {
-	background: linear-gradient(to right, var(--primary), oklch(0.75 0.15 90));
-	-webkit-background-clip: text;
-	-webkit-text-fill-color: transparent;
-	background-clip: text;
-}
-
 /* ──────────────────────────────────────────────────────────────
    Drenched amber identity surface.
    Used twice on the page — sovereignty section, bookend CTA.
@@ -190,6 +182,16 @@
 }
 .drenched-amber .ink-link:hover {
 	border-bottom-color: var(--primary-foreground);
+}
+/* The one filled button an amber surface can carry: ink, with the page's
+   cream on it. Declared here because `.drenched-amber a` above would otherwise
+   paint the label ink-on-ink. */
+.drenched-amber .ink-button {
+	background: var(--primary-foreground);
+	color: var(--foreground);
+}
+.drenched-amber .ink-button:hover {
+	background: color-mix(in oklab, var(--primary-foreground) 88%, var(--primary));
 }
 
 /* Cross-bar grain motif on drenched sections (subtle horizontal scan). */
@@ -381,6 +383,44 @@
 }
 
 /* ──────────────────────────────────────────────────────────────
+   Pair cell dither (the /compare hero's logo pairing).
+   Each cell is washed in one brand colour: a faint flat tint plus an
+   ordered dot screen in the same hue, masked off toward the edges so
+   it reads as a halftone behind the mark rather than a filled card.
+   `--pair` is the brand colour, set inline per cell.
+   ────────────────────────────────────────────────────────────── */
+.pair-cell {
+	position: relative;
+	isolation: isolate;
+	background: color-mix(in oklab, var(--pair) 7%, var(--background));
+}
+.pair-cell::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	background-image:
+		radial-gradient(var(--pair) 0.9px, transparent 1.1px),
+		radial-gradient(var(--pair) 0.9px, transparent 1.1px);
+	background-size:
+		6px 6px,
+		6px 6px;
+	background-position:
+		0 0,
+		3px 3px;
+	opacity: 0.42;
+	-webkit-mask-image: radial-gradient(ellipse 90% 85% at 50% 45%, black 20%, transparent 72%);
+	mask-image: radial-gradient(ellipse 90% 85% at 50% 45%, black 20%, transparent 72%);
+}
+.pair-cell > :not([aria-hidden="true"]) {
+	position: relative;
+}
+.pair-cell canvas {
+	display: block;
+}
+
+/* ──────────────────────────────────────────────────────────────
    Live artifact frame.
    Container around every live demo. Soft 1px border, no glass,
    no blur, deep-ink background, generous padding, monospace inset.
@@ -448,7 +488,7 @@
 .waterfall-row .span-name {
 	position: relative;
 	color: var(--foreground);
-	transition: color 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+	transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .waterfall-row .span-name.is-active {
 	color: var(--primary);
@@ -465,15 +505,15 @@
 	transform: scaleX(0);
 	transform-origin: left center;
 	transition:
-		opacity 160ms cubic-bezier(0.34, 1.56, 0.64, 1),
-		transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+		opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
+		transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .waterfall-row .span-name.is-active::after {
 	opacity: 1;
 	transform: scaleX(1);
 }
 .waterfall-row .span-dur {
-	transition: color 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+	transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .waterfall-row .span-dur.is-active {
 	color: var(--primary);
@@ -494,7 +534,7 @@
 	transform-origin: left center;
 	transform: scaleX(var(--bar-progress, 1));
 	will-change: transform;
-	transition: box-shadow 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+	transition: box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .waterfall-row .span-bar.is-active {
 	box-shadow: 0 0 0 1px var(--primary);
@@ -1189,24 +1229,83 @@
 	@apply leading-relaxed;
 }
 
+/* Inline code reads as a token, not a link: links own the amber. */
 .docs-content code:not(pre code) {
-	@apply bg-bg-elevated text-primary text-[13px] px-1.5 py-0.5 border border-border;
+	@apply bg-bg-elevated text-fg text-[13px] px-1.5 py-0.5 rounded;
+	/* Long flag values (`<count|avg_duration|…>`) have no break opportunity;
+	   let them wrap rather than widen the page on phones. */
+	overflow-wrap: anywhere;
 }
 
+.docs-content a code:not(pre code) {
+	@apply text-inherit;
+}
+
+/* Code blocks are the unit of work on every guide, so each one carries its
+   own copy button (injected by DocsLayout; the block is plain <pre> without JS). */
 .docs-content pre {
-	@apply bg-bg-elevated border border-border overflow-x-auto p-4 mb-4 text-[13px];
+	@apply relative bg-bg-elevated border border-border rounded-lg overflow-x-auto p-4 my-5 text-[13px] leading-[1.6];
 }
 
+.docs-content pre code {
+	@apply text-inherit bg-transparent p-0;
+}
+
+.docs-content .code-copy {
+	@apply absolute top-2 right-2 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-muted rounded-[5px] border border-border px-2 py-[3px] cursor-pointer transition-colors;
+	background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background));
+	opacity: 0;
+}
+
+.docs-content pre:hover .code-copy,
+.docs-content .code-copy:focus-visible,
+.docs-content .code-copy.is-done {
+	opacity: 1;
+}
+
+@media (hover: none) {
+	.docs-content .code-copy {
+		opacity: 1;
+	}
+}
+
+.docs-content .code-copy:hover {
+	color: var(--primary);
+	border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+}
+
+.docs-content .code-copy.is-done {
+	color: var(--chart-3);
+	border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border));
+}
+
+/* Blockquotes are notes ("Run this with Claude Code", the MAPLE_TEST placeholder…),
+   so they render as a quiet panel rather than italic mono. */
 .docs-content blockquote {
-	@apply border-l-2 border-primary pl-4 text-sm text-fg-muted italic my-4;
+	@apply border-l-2 border-primary/70 rounded-r-lg px-4 py-3 my-5 text-sm text-fg-muted;
+	background: color-mix(in oklab, var(--bg-elevated) 55%, transparent);
+}
+
+.docs-content blockquote > :last-child {
+	@apply mb-0;
 }
 
 .docs-content hr {
 	@apply border-border my-8;
 }
 
+/* Tables sit in a scroll wrapper (rehype-table-wrap) so a wide flag table
+   scrolls on its own instead of widening the page. */
+.docs-content .table-wrap {
+	@apply overflow-x-auto mb-5 -mx-1 px-1;
+}
+
 .docs-content table {
-	@apply w-full text-sm text-fg-muted border-collapse mb-4;
+	@apply w-full text-sm text-fg-muted border-collapse;
+}
+
+.docs-content td > code:not(pre code) {
+	@apply whitespace-nowrap;
 }
 
 .docs-content th {
@@ -1219,6 +1318,17 @@
 
 .docs-content strong {
 	@apply text-fg font-semibold;
+}
+
+/* Hover-revealed section permalinks, injected by DocsLayout. Inline after
+   the heading text so nothing hangs past the column edge on phones. */
+.docs-content .heading-anchor {
+	@apply ml-2 font-mono font-normal text-fg-muted no-underline opacity-0 transition-opacity;
+}
+
+.docs-content :is(h2, h3):hover .heading-anchor,
+.docs-content .heading-anchor:focus-visible {
+	@apply opacity-100 text-primary;
 }
 
 /*
@@ -1360,4 +1470,9 @@ details[open] > summary .details-open\:rotate-180 {
 html {
 	scroll-behavior: smooth;
 	scroll-padding-top: 5rem;
+}
+
+/* Docs stack a category strip under the header (5.75rem), so anchors need more room. */
+html.docs {
+	scroll-padding-top: 6.75rem;
 }

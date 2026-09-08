@@ -29,7 +29,8 @@ import {
 	type SessionTurn,
 	type AiSpanCategory,
 } from "@/lib/agent-sessions/session-turns"
-import { filterSpans, isDelegation, shortTarget } from "@/lib/agent-sessions/span-filters"
+import { filterSpans, isDelegation } from "@/lib/agent-sessions/span-filters"
+import { useDetectedModels, type DetectedModel } from "@/hooks/use-detected-models"
 import { Pill } from "./pill"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
@@ -122,6 +123,10 @@ export function SessionWaterfall({
 }: SessionWaterfallProps) {
 	// The page scrolls as one, so the virtualizer rides the page's scroller.
 	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
+
+	// The summary's model set, so the header and the rail share this batch —
+	// the column names a model per row, and a raw id is what it named before.
+	const detect = useDetectedModels(summary.models.map((model) => model.model))
 
 	const spansById = useMemo(
 		() => new Map(turns.flatMap((turn) => turn.spans).map((span) => [span.spanId, span])),
@@ -326,6 +331,7 @@ export function SessionWaterfall({
 											row={row}
 											axis={axis}
 											spansById={spansById}
+											detect={detect}
 											selected={selected}
 											revealed={revealedSpanId === row.span.spanId}
 											focused={focusedId === row.span.spanId}
@@ -597,6 +603,7 @@ function TraceLink({ traceId, timestamp }: { traceId: string; timestamp: string 
 }
 
 function SpanRow({
+	detect,
 	row,
 	axis,
 	spansById,
@@ -605,6 +612,7 @@ function SpanRow({
 	focused,
 	onClick,
 }: {
+	detect: (model: string) => DetectedModel
 	row: Extract<WaterfallRow, { kind: "span" }>
 	axis: SessionAxis
 	spansById: ReadonlyMap<string, AiSessionSpan>
@@ -622,9 +630,10 @@ function SpanRow({
 	// by shape, and a failure takes the glyph over outright.
 	const Glyph = errored ? CircleXmarkIcon : CATEGORY_ICON[category]
 	const target = spanTarget(span, category)
-	// Only a model id is a provider path — a tool's target is usually a file path,
-	// whose last segment is not the part worth keeping.
-	const targetLabel = target === undefined ? "—" : category === "tool" ? target : shortTarget(target)
+	// A model gets the name the catalog knows it by; a tool's target is a file
+	// path or a query, which nothing but itself can spell. Either way the value
+	// the span carried stays in the row's `title`.
+	const targetLabel = target === undefined ? "—" : category === "tool" ? target : detect(target).displayName
 
 	return (
 		<button

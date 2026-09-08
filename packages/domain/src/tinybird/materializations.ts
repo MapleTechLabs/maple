@@ -47,6 +47,7 @@ import {
 	DB_SYSTEM_ATTR_SQL,
 } from "./db-query-shape-sql"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "../gen-ai"
+import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
 import {
 	GENAI_AGENT_NAME_SQL,
@@ -55,6 +56,7 @@ import {
 	GENAI_IS_LLM_CALL_SQL,
 	GENAI_IS_TOOL_CALL_SQL,
 	GENAI_MODEL_SQL,
+	GENAI_RESPONSE_ID_SQL,
 	GENAI_TOKENS_SQL,
 	GENAI_TOOL_NAME_SQL,
 } from "./gen-ai-columns"
@@ -990,12 +992,20 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * the SQL comes from `gen-ai-columns.ts`, so a raw-table read of the same fact
  * is the same expression. Migration 0026 added them; rows materialized before
  * it carry `''`/0 throughout, which the facets drop, the filters never match
- * and the sums count as nothing.
+ * and the sums count as nothing. Migration 0027 changed `Tokens` to count a
+ * nested cache or reasoning bucket once, under the reporter's usage
+ * convention; rows materialized between the two keep the over-count.
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
 		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), pre-extracting the maple_ai.* identity, the environment, the GenAI model/agent/tool and the span's kind, failure and usage to plain columns.",
 	datasource: aiTraceIndex,
+	// Migration 0026's columns are additive, and the rows already in the target
+	// are explicitly allowed to carry ''/0 for them (see above). Without this,
+	// Tinybird migrates the target by replaying `traces` through this pipe — the
+	// backfill that crashed the maple_us deploy with an internal error. `alter`
+	// adds the columns at promotion with no data movement.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "ai_trace_index_mv_node",
@@ -1018,7 +1028,8 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_IS_LLM_CALL_SQL} AS IsLlmCall,
           ${GENAI_IS_TOOL_CALL_SQL} AS IsToolCall,
           ${GENAI_TOKENS_SQL} AS Tokens,
-          ${GENAI_COST_SQL} AS Cost
+          ${GENAI_COST_SQL} AS Cost,
+          ${GENAI_RESPONSE_ID_SQL} AS ResponseId
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
       `,
@@ -1647,9 +1658,35 @@ export const productEventsMv = defineMaterializedView("product_events_mv", {
           path(Url) AS PagePath,
           Url,
           '' AS ServiceName,
-          Attributes
+          Attributes,
+          '' AS TraceId,
+          '' AS SpanId
         FROM session_events
         WHERE Type IN ('navigation', 'custom')
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `product_events` from spans carrying `maple.product_event.name` —
+ * the only feed that carries `TraceId`. The predicate is one map lookup per
+ * incoming span (an MV sees the insert block, so no skip index helps). Column
+ * order must match the `product_events` SCHEMA order, enforced by
+ * `materialized-projection-order.test.ts`.
+ */
+export const productEventsTracesMv = defineMaterializedView("product_events_traces_mv", {
+	description:
+		"Populates product_events from spans carrying the maple.product_event.name attribute, projecting the span's identity, attributes (narrowed by maple.product_event.include, merged with maple.product_event.prop.*), service and TraceId/SpanId so the event links back to the trace that produced it.",
+	datasource: productEvents,
+	nodes: [
+		node({
+			name: "product_events_traces_mv_node",
+			sql: `
+        SELECT
+          ${PRODUCT_EVENTS_TRACE_PROJECTION_SQL}
+        FROM traces
+        WHERE ${PRODUCT_EVENTS_TRACE_FILTER}
       `,
 		}),
 	],

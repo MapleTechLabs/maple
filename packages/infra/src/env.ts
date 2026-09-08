@@ -2,7 +2,7 @@ import * as Config from "effect/Config"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
-import { optionalString } from "@maple/effect-cloudflare/config-helpers"
+import { optionalString } from "./config-helpers.ts"
 import type { MapleStage } from "./cloudflare/stage.ts"
 import { resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
 
@@ -50,7 +50,7 @@ export type WorkerEnv = Record<string, string | Redacted.Redacted<string>>
 /**
  * Present-and-non-blank, trimmed.
  *
- * Built on `@maple/effect-cloudflare/config-helpers`' `optionalString`, which
+ * Built on `./config-helpers.ts`' `optionalString`, which
  * already encodes "blank or whitespace-only counts as absent" for the runtime
  * worker env schemas. The trim on top is the one thing it does not do — it
  * returns the raw value — and the deploy path has always trimmed.
@@ -105,6 +105,14 @@ export const optionalPlain = (key: string, fallback?: string): Config.Config<Pla
 /** Optional secret, omitted when unset. */
 export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
 	trimmedOption(key).pipe(Config.map((value) => entry(key, Option.map(value, Redacted.make))))
+
+/** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
+export const plainFrom = (keys: ReadonlyArray<string>, fallback: string): Config.Config<string> =>
+	Config.all(keys.map(trimmedOption)).pipe(
+		Config.map((values: ReadonlyArray<Option.Option<string>>) =>
+			Option.getOrElse(Option.firstSomeOf(values), () => fallback),
+		),
+	)
 
 /**
  * Optional value with a default that a BLANK env var also falls back to.
@@ -209,6 +217,39 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
 			}),
 		),
 	)
+
+/**
+ * The prd services that stamp `vcs.ref.head.revision` and are deployed by a
+ * SINGLE `alchemy deploy --stage prd` run, so in a healthy production they all
+ * report the same commit.
+ *
+ * That lockstep is what the **"Prod revision skew — a Worker missed the deploy"**
+ * alert rule (`raw_query`, id `2a6e9529-5f73-4478-9fa0-432904ff15c8`) tests: it
+ * counts distinct revisions across exactly these service names and pages when
+ * the count exceeds one. Alchemy isolates per-resource failures on purpose, so
+ * a deploy can update four of these and leave the fifth on its old script —
+ * that is the 2026-09-07 incident, where `api` sat 6h behind `web`.
+ *
+ * **The alert rule lives in the Maple database, not in this repo, so nothing
+ * mechanically couples the two.** This constant and `env.test.ts` are that
+ * coupling. If you change which services deploy together, you MUST edit the
+ * rule's SQL to match — otherwise it either pages forever on a service that no
+ * longer ships with the rest, or silently stops covering one that does.
+ *
+ * What is deliberately NOT here:
+ * - `scraper` — runs in production but is not part of this stack (see the
+ *   dev-only note in `alchemy.run.ts`), so it sits on its own revision.
+ * - `maple-landing`, `maple-ios` — deployed, but stamp no revision.
+ * - api's background service names (`maple-vcs-sync`, `maple-investigations`,
+ *   …) — the same Worker as `maple-api`, so they add no signal.
+ */
+export const PRD_LOCKSTEP_REVISION_SERVICES = [
+	"alerting",
+	"electric-sync",
+	"ingest",
+	"maple-api",
+	"maple-web",
+] as const
 
 /** Cloudflare account integration (account OAuth — Authorization Code + PKCE). */
 export const cloudflareOAuthEnv: Config.Config<WorkerEnv> = merge(

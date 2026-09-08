@@ -27,8 +27,9 @@ _(Backed by `docs/joins-and-subqueries.md > Joining a table`.)_
 ### `leftJoin` nullability
 
 `leftJoin` wraps the joined side in `NullableColumnDefs`, so its columns infer as `T | null`
-in the output row. That is the type system telling you the truth about an unmatched row —
-handle it in your `rowSchema` rather than casting it away.
+in the output row. Derived codecs accept NULL when `join_use_nulls=1` and the column
+defaults ClickHouse emits with `join_use_nulls=0`. This applies to `leftJoinQuery` too.
+An explicitly declared `rowSchema` must also accept the nullable joined columns.
 
 ## Joining a subquery
 
@@ -127,7 +128,7 @@ All three also accept a pre-compiled SQL string, for the rare case where that is
 ## Splicing a subquery where there is no syntax for one
 
 `exists` / `inSubquery` / `notInSubquery` put a subquery where SQL expects a subquery. Sometimes
-you need its *SQL text* somewhere the builder has no syntax for — inside an aggregate, a tuple
+you need its _SQL text_ somewhere the builder has no syntax for — inside an aggregate, a tuple
 comparison, a hand-written predicate:
 
 ```sql
@@ -176,7 +177,7 @@ a template string of your own:
   substitution pass as everything else — exactly like the subquery conditions above.
 - A value the inner query cannot encode fails the **outer** compile, so it lands in the error
   channel where a route can `catchTag` it. Compiling the inner query yourself runs the compiler
-  while the outer query is still being *built* — outside any `Effect` — so the same bad value is
+  while the outer query is still being _built_ — outside any `Effect` — so the same bad value is
   a synchronous throw from your query-definition function instead.
 
 You are assembling SQL text inside `wrap`: interpolate only values you control, and route

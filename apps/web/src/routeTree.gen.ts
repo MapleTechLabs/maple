@@ -45,6 +45,7 @@ import { Route as InvestigationsIndexRouteImport } from './routes/investigations
 import { Route as InvestigationsIdRouteImport } from './routes/investigations/$id'
 import { Route as LabIndexRouteImport } from './routes/lab/index'
 import { Route as LabAgentSessionRouteImport } from './routes/lab/agent-session'
+import { Route as LabAgentSessionsRouteImport } from './routes/lab/agent-sessions'
 import { Route as LabChartsRouteImport } from './routes/lab/charts'
 import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
@@ -58,6 +59,8 @@ import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as MetricsIndexRouteImport } from './routes/metrics/index'
 import { Route as MetricsMetricNameRouteImport } from './routes/metrics/$metricName'
 import { Route as RecommendationsRecommendationKeyRouteImport } from './routes/recommendations/$recommendationKey'
+import { Route as ReleasesIndexRouteImport } from './routes/releases/index'
+import { Route as ReleasesCommitShaRouteImport } from './routes/releases/$commitSha'
 import { Route as ReplaysIndexRouteImport } from './routes/replays/index'
 import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionId'
 import { Route as ServicesIndexRouteImport } from './routes/services/index'
@@ -272,6 +275,11 @@ const LabAgentSessionRoute = LabAgentSessionRouteImport.update({
   path: '/agent-session',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabAgentSessionsRoute = LabAgentSessionsRouteImport.update({
+  id: '/agent-sessions',
+  path: '/agent-sessions',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabChartsRoute = LabChartsRouteImport.update({
   id: '/charts',
   path: '/charts',
@@ -338,6 +346,16 @@ const RecommendationsRecommendationKeyRoute =
     path: '/recommendations/$recommendationKey',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ReleasesIndexRoute = ReleasesIndexRouteImport.update({
+  id: '/releases/',
+  path: '/releases/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReleasesCommitShaRoute = ReleasesCommitShaRouteImport.update({
+  id: '/releases/$commitSha',
+  path: '/releases/$commitSha',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReplaysIndexRoute = ReplaysIndexRouteImport.update({
   id: '/replays/',
   path: '/replays/',
@@ -543,6 +561,7 @@ export interface FileRoutesByFullPath {
   '/infra/discover': typeof InfraDiscoverRoute
   '/investigations/$id': typeof InvestigationsIdRoute
   '/lab/agent-session': typeof LabAgentSessionRoute
+  '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -554,6 +573,7 @@ export interface FileRoutesByFullPath {
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
+  '/releases/$commitSha': typeof ReleasesCommitShaRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
@@ -569,6 +589,7 @@ export interface FileRoutesByFullPath {
   '/lab/': typeof LabIndexRoute
   '/logs/': typeof LogsIndexRoute
   '/metrics/': typeof MetricsIndexRoute
+  '/releases/': typeof ReleasesIndexRoute
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
@@ -626,6 +647,7 @@ export interface FileRoutesByTo {
   '/infra/discover': typeof InfraDiscoverRoute
   '/investigations/$id': typeof InvestigationsIdRoute
   '/lab/agent-session': typeof LabAgentSessionRoute
+  '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -637,6 +659,7 @@ export interface FileRoutesByTo {
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
+  '/releases/$commitSha': typeof ReleasesCommitShaRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
@@ -652,6 +675,7 @@ export interface FileRoutesByTo {
   '/lab': typeof LabIndexRoute
   '/logs': typeof LogsIndexRoute
   '/metrics': typeof MetricsIndexRoute
+  '/releases': typeof ReleasesIndexRoute
   '/replays': typeof ReplaysIndexRoute
   '/services': typeof ServicesIndexRoute
   '/traces': typeof TracesIndexRoute
@@ -711,6 +735,7 @@ export interface FileRoutesById {
   '/infra/discover': typeof InfraDiscoverRoute
   '/investigations/$id': typeof InvestigationsIdRoute
   '/lab/agent-session': typeof LabAgentSessionRoute
+  '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -722,6 +747,7 @@ export interface FileRoutesById {
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
+  '/releases/$commitSha': typeof ReleasesCommitShaRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
@@ -737,6 +763,7 @@ export interface FileRoutesById {
   '/lab/': typeof LabIndexRoute
   '/logs/': typeof LogsIndexRoute
   '/metrics/': typeof MetricsIndexRoute
+  '/releases/': typeof ReleasesIndexRoute
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
@@ -797,6 +824,7 @@ export interface FileRouteTypes {
     | '/infra/discover'
     | '/investigations/$id'
     | '/lab/agent-session'
+    | '/lab/agent-sessions'
     | '/lab/charts'
     | '/lab/errors'
     | '/lab/flow'
@@ -808,6 +836,7 @@ export interface FileRouteTypes {
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
+    | '/releases/$commitSha'
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
@@ -823,6 +852,7 @@ export interface FileRouteTypes {
     | '/lab/'
     | '/logs/'
     | '/metrics/'
+    | '/releases/'
     | '/replays/'
     | '/services/'
     | '/traces/'
@@ -880,6 +910,7 @@ export interface FileRouteTypes {
     | '/infra/discover'
     | '/investigations/$id'
     | '/lab/agent-session'
+    | '/lab/agent-sessions'
     | '/lab/charts'
     | '/lab/errors'
     | '/lab/flow'
@@ -891,6 +922,7 @@ export interface FileRouteTypes {
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
+    | '/releases/$commitSha'
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
@@ -906,6 +938,7 @@ export interface FileRouteTypes {
     | '/lab'
     | '/logs'
     | '/metrics'
+    | '/releases'
     | '/replays'
     | '/services'
     | '/traces'
@@ -964,6 +997,7 @@ export interface FileRouteTypes {
     | '/infra/discover'
     | '/investigations/$id'
     | '/lab/agent-session'
+    | '/lab/agent-sessions'
     | '/lab/charts'
     | '/lab/errors'
     | '/lab/flow'
@@ -975,6 +1009,7 @@ export interface FileRouteTypes {
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
+    | '/releases/$commitSha'
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
@@ -990,6 +1025,7 @@ export interface FileRouteTypes {
     | '/lab/'
     | '/logs/'
     | '/metrics/'
+    | '/releases/'
     | '/replays/'
     | '/services/'
     | '/traces/'
@@ -1051,6 +1087,7 @@ export interface RootRouteChildren {
   LogsLogIdRoute: typeof LogsLogIdRoute
   MetricsMetricNameRoute: typeof MetricsMetricNameRoute
   RecommendationsRecommendationKeyRoute: typeof RecommendationsRecommendationKeyRoute
+  ReleasesCommitShaRoute: typeof ReleasesCommitShaRoute
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
   ShareTokenRoute: typeof ShareTokenRoute
@@ -1065,6 +1102,7 @@ export interface RootRouteChildren {
   InvestigationsIndexRoute: typeof InvestigationsIndexRoute
   LogsIndexRoute: typeof LogsIndexRoute
   MetricsIndexRoute: typeof MetricsIndexRoute
+  ReleasesIndexRoute: typeof ReleasesIndexRoute
   ReplaysIndexRoute: typeof ReplaysIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   TracesIndexRoute: typeof TracesIndexRoute
@@ -1343,6 +1381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabAgentSessionRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/agent-sessions': {
+      id: '/lab/agent-sessions'
+      path: '/agent-sessions'
+      fullPath: '/lab/agent-sessions'
+      preLoaderRoute: typeof LabAgentSessionsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/charts': {
       id: '/lab/charts'
       path: '/charts'
@@ -1432,6 +1477,20 @@ declare module '@tanstack/react-router' {
       path: '/recommendations/$recommendationKey'
       fullPath: '/recommendations/$recommendationKey'
       preLoaderRoute: typeof RecommendationsRecommendationKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/releases/': {
+      id: '/releases/'
+      path: '/releases'
+      fullPath: '/releases/'
+      preLoaderRoute: typeof ReleasesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/releases/$commitSha': {
+      id: '/releases/$commitSha'
+      path: '/releases/$commitSha'
+      fullPath: '/releases/$commitSha'
+      preLoaderRoute: typeof ReleasesCommitShaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/replays/': {
@@ -1670,6 +1729,7 @@ declare module '@tanstack/react-router' {
 
 interface LabRouteRouteChildren {
   LabAgentSessionRoute: typeof LabAgentSessionRoute
+  LabAgentSessionsRoute: typeof LabAgentSessionsRoute
   LabChartsRoute: typeof LabChartsRoute
   LabErrorsRoute: typeof LabErrorsRoute
   LabFlowRoute: typeof LabFlowRoute
@@ -1690,6 +1750,7 @@ interface LabRouteRouteChildren {
 
 const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabAgentSessionRoute: LabAgentSessionRoute,
+  LabAgentSessionsRoute: LabAgentSessionsRoute,
   LabChartsRoute: LabChartsRoute,
   LabErrorsRoute: LabErrorsRoute,
   LabFlowRoute: LabFlowRoute,
@@ -1742,6 +1803,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogsLogIdRoute: LogsLogIdRoute,
   MetricsMetricNameRoute: MetricsMetricNameRoute,
   RecommendationsRecommendationKeyRoute: RecommendationsRecommendationKeyRoute,
+  ReleasesCommitShaRoute: ReleasesCommitShaRoute,
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
   ServicesServiceNameRoute: ServicesServiceNameRoute,
   ShareTokenRoute: ShareTokenRoute,
@@ -1756,6 +1818,7 @@ const rootRouteChildren: RootRouteChildren = {
   InvestigationsIndexRoute: InvestigationsIndexRoute,
   LogsIndexRoute: LogsIndexRoute,
   MetricsIndexRoute: MetricsIndexRoute,
+  ReleasesIndexRoute: ReleasesIndexRoute,
   ReplaysIndexRoute: ReplaysIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   TracesIndexRoute: TracesIndexRoute,

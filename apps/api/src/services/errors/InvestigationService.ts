@@ -34,7 +34,7 @@ import {
 	type InvestigationLensRunRow,
 	type InvestigationRow,
 } from "@maple/db"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Duration, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { applyDiagnosisWrites, subjectTypeOf } from "@/services/errors/apply-diagnosis"
@@ -54,9 +54,9 @@ import { summarizeCause } from "@/platform/describe-cause"
 /**
  * Cloudflare Workflow binding that runs a fan-out. Named here rather than read
  * off `Env` because the binding is only present inside a Worker isolate — the
- * same reason `CHAT_SESSION` is resolved this way.
+ * same reason `ChatSession` is resolved this way.
  */
-export const FANOUT_WORKFLOW_BINDING = "INVESTIGATION_FANOUT_WORKFLOW"
+import { INVESTIGATION_FANOUT_BINDING as FANOUT_WORKFLOW_BINDING } from "@maple/domain/investigation-fanout"
 
 interface FanoutWorkflowBinding {
 	readonly create: (options: { id: string; params: unknown }) => Promise<{ id: string }>

@@ -1,68 +1,53 @@
 import { describe, expect, it } from "@effect/vitest"
 import { ApiKeyId } from "@maple/domain/http"
 import { Effect, Layer, Schema } from "effect"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
-import {
-	API_V2_RATE_LIMIT_BINDING,
-	API_V2_RATE_LIMIT_PARTITION,
-	ApiV2RateLimiter,
-	makeApiV2RateLimitKey,
-} from "./ApiV2RateLimiter"
+import { ApiV2RateLimit, RateLimitBindingError, type RateLimiter } from "@/platform/bindings"
+import { testEnv } from "@/services/integrations/vcs/__tests__/harness"
+import { ApiV2RateLimiter, makeApiV2RateLimitKey } from "./ApiV2RateLimiter"
 
 const KEY_A = Schema.decodeUnknownSync(ApiKeyId)("00000000-0000-4000-8000-000000000001")
 const KEY_B = Schema.decodeUnknownSync(ApiKeyId)("00000000-0000-4000-8000-000000000002")
 
-const limiterLayer = (environment: Record<string, unknown>) =>
-	ApiV2RateLimiter.layer.pipe(Layer.provide(Layer.succeed(WorkerEnvironment, environment)))
+/** The limiter over a fake binding port (or none at all), keyed under the given deployment. */
+const limiterLayer = (limiter: RateLimiter | undefined, environment = "stg") =>
+	ApiV2RateLimiter.layer.pipe(
+		Layer.provide(limiter === undefined ? Layer.empty : Layer.succeed(ApiV2RateLimit, limiter)),
+		Layer.provide(testEnv({ MAPLE_ENVIRONMENT: environment })),
+	)
+
+const allowing =
+	(observed: string[]) =>
+	(key: string): ReturnType<RateLimiter["limit"]> =>
+		Effect.sync(() => {
+			observed.push(key)
+			return { success: true }
+		})
 
 describe("ApiV2RateLimiter", () => {
-	it.effect("uses only the stage partition and internal API-key ID as the counter key", () => {
+	it.effect("uses only the deployment and internal API-key ID as the counter key", () => {
 		const keys: string[] = []
-		const environment = {
-			[API_V2_RATE_LIMIT_PARTITION]: "stg",
-			[API_V2_RATE_LIMIT_BINDING]: {
-				limit: ({ key }: { key: string }) => {
-					keys.push(key)
-					return Promise.resolve({ success: true })
-				},
-			},
-		}
-
 		return Effect.gen(function* () {
 			const limiter = yield* ApiV2RateLimiter
 			expect(yield* limiter.check(KEY_A)).toBe("allowed")
 			expect(yield* limiter.check(KEY_B)).toBe("allowed")
 			expect(keys).toEqual([makeApiV2RateLimitKey("stg", KEY_A), makeApiV2RateLimitKey("stg", KEY_B)])
 			expect(keys.join(" ")).not.toContain("maple_ak_")
-		}).pipe(Effect.provide(limiterLayer(environment)))
+		}).pipe(Effect.provide(limiterLayer({ limit: allowing(keys) })))
 	})
 
-	it.effect("isolates the same key across deployment stages", () => {
+	it.effect("isolates the same key across deployments", () => {
 		const observed: string[] = []
-		const binding = {
-			limit: ({ key }: { key: string }) => {
-				observed.push(key)
-				return Promise.resolve({ success: true })
-			},
-		}
-		const run = (partition: string) =>
+		const run = (environment: string) =>
 			Effect.gen(function* () {
 				const limiter = yield* ApiV2RateLimiter
 				return yield* limiter.check(KEY_A)
-			}).pipe(
-				Effect.provide(
-					limiterLayer({
-						[API_V2_RATE_LIMIT_PARTITION]: partition,
-						[API_V2_RATE_LIMIT_BINDING]: binding,
-					}),
-				),
-			)
+			}).pipe(Effect.provide(limiterLayer({ limit: allowing(observed) }, environment)))
 
 		return Effect.gen(function* () {
-			expect(yield* run("prd")).toBe("allowed")
+			expect(yield* run("production")).toBe("allowed")
 			expect(yield* run("stg")).toBe("allowed")
 			expect(observed).toEqual([
-				makeApiV2RateLimitKey("prd", KEY_A),
+				makeApiV2RateLimitKey("production", KEY_A),
 				makeApiV2RateLimitKey("stg", KEY_A),
 			])
 		})
@@ -72,34 +57,15 @@ describe("ApiV2RateLimiter", () => {
 		Effect.gen(function* () {
 			const limiter = yield* ApiV2RateLimiter
 			expect(yield* limiter.check(KEY_A)).toBe("limited")
-		}).pipe(
-			Effect.provide(
-				limiterLayer({
-					[API_V2_RATE_LIMIT_PARTITION]: "prd",
-					[API_V2_RATE_LIMIT_BINDING]: {
-						limit: () => Promise.resolve({ success: false }),
-					},
-				}),
-			),
-		),
+		}).pipe(Effect.provide(limiterLayer({ limit: () => Effect.succeed({ success: false }) }))),
 	)
 
-	it.effect("fails open when the binding or partition is unavailable", () => {
-		const run = (environment: Record<string, unknown>) =>
-			Effect.gen(function* () {
-				const limiter = yield* ApiV2RateLimiter
-				return yield* limiter.check(KEY_A)
-			}).pipe(Effect.provide(limiterLayer(environment)))
-
-		return Effect.gen(function* () {
-			expect(yield* run({ [API_V2_RATE_LIMIT_PARTITION]: "prd" })).toBe("failed_open")
-			expect(
-				yield* run({
-					[API_V2_RATE_LIMIT_BINDING]: { limit: () => Promise.resolve({ success: true }) },
-				}),
-			).toBe("failed_open")
-		})
-	})
+	it.effect("fails open when the binding is unavailable", () =>
+		Effect.gen(function* () {
+			const limiter = yield* ApiV2RateLimiter
+			expect(yield* limiter.check(KEY_A)).toBe("failed_open")
+		}).pipe(Effect.provide(limiterLayer(undefined))),
+	)
 
 	it.effect("fails open when the Cloudflare binding throws", () =>
 		Effect.gen(function* () {
@@ -108,10 +74,13 @@ describe("ApiV2RateLimiter", () => {
 		}).pipe(
 			Effect.provide(
 				limiterLayer({
-					[API_V2_RATE_LIMIT_PARTITION]: "prd",
-					[API_V2_RATE_LIMIT_BINDING]: {
-						limit: () => Promise.reject(new Error("binding unavailable")),
-					},
+					limit: () =>
+						Effect.fail(
+							new RateLimitBindingError({
+								message: "binding unavailable",
+								cause: new Error("binding unavailable"),
+							}),
+						),
 				}),
 			),
 		),

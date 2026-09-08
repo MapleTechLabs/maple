@@ -24,7 +24,7 @@ describe("metricsTimeseriesQuery", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_sum")
-		expect(sql).toContain("avg(Value) AS avgValue")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue")
 		expect(sql).toContain("min(Value) AS minValue")
 		expect(sql).toContain("max(Value) AS maxValue")
 		expect(sql).toContain("sum(Value) AS sumValue")
@@ -90,8 +90,8 @@ describe("metricsTimeseriesQuery", () => {
 			seriesLimit: 7,
 		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("WITH __series_base AS")
-		expect(sql).toContain("LIMIT 7")
+		expect(sql).toContain("max(dataPointCount) OVER (PARTITION BY groupName)")
+		expect(sql).toContain("__series_rank <= 7")
 	})
 
 	it("applies serviceName filter", () => {
@@ -139,8 +139,8 @@ describe("metricsTimeseriesRateQuery", () => {
 	it("caps grouped rate timeseries before returning the long tail", () => {
 		const q = metricsTimeseriesRateQuery({ groupBy: ["service"], seriesLimit: 7 })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("WITH __series_base AS")
-		expect(sql).toContain("LIMIT 7")
+		expect(sql).toContain("max(dataPointCount) OVER (PARTITION BY groupName)")
+		expect(sql).toContain("__series_rank <= 7")
 	})
 
 	it("compiles CTE-based rate query", () => {
@@ -330,7 +330,7 @@ describe("metricsSparklinesQuery", () => {
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("MetricName IN ('cpu.utilization', 'memory.usage')")
 		expect(sql).toContain("MetricName AS metricName")
-		expect(sql).toContain("avg(Value) AS avgValue")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue")
 		expect(sql).toContain("sum(Value) AS sumValue")
 		expect(sql).toContain("count() AS dataPointCount")
 		expect(sql).toContain("GROUP BY bucket, metricName")
@@ -364,7 +364,7 @@ describe("metricsBreakdownQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain("ServiceName AS name")
-		expect(sql).toContain("avg(Value) AS avgValue")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(Value), 0), 0) AS avgValue")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 10")

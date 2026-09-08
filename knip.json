@@ -12,7 +12,6 @@
 			"entry": [
 				"src/routes/**/*.tsx",
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
 				"src/lib/effect-atom.ts"
@@ -25,9 +24,16 @@
 		"apps/api": {
 			// src/worker.ts was auto-detected from wrangler.jsonc's `main` until the
 			// wrangler configs were deleted; the Worker entries are now named here.
-			"entry": ["src/worker.ts", "alchemy.run.ts", "autumn.config.ts", "scripts/cold-path/*.mjs"],
+			// bench-suites/*.ts are loaded by path from scripts/bench-queries.ts (a dynamic
+			// import off the CLI's --suite argument), so knip cannot see the edge.
+			"entry": [
+				"src/worker.ts",
+				"autumn.config.ts",
+				"scripts/cold-path/*.mjs",
+				"scripts/bench-suites/*.ts"
+			],
 			// Shelled out to by scripts/bench-startup-cpu.ts, never imported.
-			"ignoreDependencies": ["cloudflare", "wrangler"]
+			"ignoreDependencies": ["cloudflare"]
 		},
 		// Single-module Workers: the root alchemy.run.ts imports src/worker.ts, and
 		// alchemy bundles it, so it is the app's one entry.
@@ -59,8 +65,8 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		"lib/effect-cloudflare": {
-			"ignoreDependencies": ["cloudflare"]
+		"lib/ai-model-catalog": {
+			"entry": ["scripts/**/*.ts"]
 		},
 		"lib/alchemy-portless": {
 			// The dev-sidecar entry alchemy loads by URL, not by import.

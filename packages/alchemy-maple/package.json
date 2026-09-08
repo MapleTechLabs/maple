@@ -29,6 +29,10 @@
 		".": {
 			"types": "./dist/index.d.mts",
 			"import": "./dist/index.mjs"
+		},
+		"./telemetry": {
+			"types": "./dist/telemetry.d.mts",
+			"import": "./dist/telemetry.mjs"
 		}
 	},
 	"publishConfig": {
@@ -40,19 +44,22 @@
 		"test": "vitest run",
 		"prepublishOnly": "bun run build"
 	},
+	"dependencies": {
+		"@maple-dev/effect-sdk": "workspace:*"
+	},
 	"devDependencies": {
 		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple/domain": "workspace:*",
 		"@types/node": "catalog:tooling",
-		"alchemy": "2.0.0-beta.74",
+		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
 		"tsdown": "^0.22.14",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"alchemy": ">=2.0.0-beta.64 <3",
-		"effect": ">=4.0.0-beta.100 || >=4.0.0"
+		"alchemy": ">=2.0.0-beta.74 <3",
+		"effect": ">=4.0.0-rc.111 <5"
 	}
 }

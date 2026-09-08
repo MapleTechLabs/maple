@@ -1,7 +1,10 @@
+import type * as Cloudflare from "alchemy/Cloudflare"
 import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
 import type { DevApp } from "../dev-urls.ts"
-import type { MapleDomains, MapleStage } from "./stage.ts"
+import { Stage } from "alchemy/Stage"
+import { type MapleDomains, type MapleStage, parseMapleStage, resolveWorkerName } from "./stage.ts"
 
 /**
  * Public origins of the apps the others point at, as plan-time strings:
@@ -34,3 +37,35 @@ export interface MapleStackContext {
  * behind its `__ALCHEMY_RUNTIME__` guard, so it never has to exist in an isolate.
  */
 export class MapleStack extends Context.Service<MapleStack, MapleStackContext>()("@maple/infra/MapleStack") {}
+
+/**
+ * The deployed api Worker, for a Worker whose props bind it (web's `API`
+ * service binding). The root provides it right after yielding the api, so
+ * web's module never imports the api's; a `Worker.ref` would not do — it
+ * reads stored state and cannot see a sibling created by the same deploy.
+ */
+export class ApiWorker extends Context.Service<ApiWorker, Cloudflare.Worker>()("@maple/infra/ApiWorker") {}
+
+/**
+ * Props for a resource declared at module scope whose physical name is
+ * stage-derived (`resolveWorkerName(base, stage)`): `make` receives that name
+ * and returns the props. Reads alchemy's own `Stage` — one of the platform
+ * services a Worker's init may require, unlike `MapleStack` — so the
+ * declaration can be yielded from the init as well as from the props. Alchemy
+ * evaluates a resource's props Effect wherever the resource is yielded — the
+ * deployed bundle included, where it is inert — so, like a Worker's props,
+ * this returns nothing under `__ALCHEMY_RUNTIME__` and the stage read is
+ * dead-code-eliminated from what ships.
+ */
+export const stageProps = <Props extends object>(
+	base: string,
+	make: (name: string) => Props,
+): Effect.Effect<Partial<Props>, never, Stage> =>
+	Effect.gen(function* () {
+		if (globalThis.__ALCHEMY_RUNTIME__) return {}
+		const stage = parseMapleStage(yield* Stage)
+		return make(resolveWorkerName(base, stage))
+	})
+
+/** {@link stageProps} for the common case: a resource whose only stage-derived prop is `name`. */
+export const stageNamed = (base: string) => stageProps(base, (name) => ({ name }))

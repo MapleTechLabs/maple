@@ -1,11 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, DateTime, Effect, Exit, Option, Result, Schema } from "effect"
-import {
-	CompiledQueryDecodeError,
-	compileCHUnsafe,
-	compileUnionUnsafe,
-	rawCompiledQuery,
-} from "./compile"
+import { CompiledQueryDecodeError, compileCHUnsafe, compileUnionUnsafe, rawCompiledQuery } from "./compile"
 import * as CH from "./index"
 import * as T from "./types"
 
@@ -156,9 +151,13 @@ describe("CompiledQuery.decodeRows", () => {
 			CH.from(table)
 				.select(($) => ({ status: $.Status }))
 				.where(($) => [$.OrgId.eq("org"), $.Status.eq(status)])
-		const compiled = compileUnionUnsafe(CH.unionAll(branch("ok"), branch("error")), {}, {
-			rowSchema: erased({ status: Schema.String, missing: Schema.String }),
-		})
+		const compiled = compileUnionUnsafe(
+			CH.unionAll(branch("ok"), branch("error")),
+			{},
+			{
+				rowSchema: erased({ status: Schema.String, missing: Schema.String }),
+			},
+		)
 
 		expect(compiled.rowSchemaMismatch).toEqual({ undeclared: [], unselected: ["missing"] })
 	})
@@ -308,7 +307,7 @@ describe("CompiledQuery.tenantScope", () => {
 			scopeOf((t) =>
 				CH.from(t)
 					.select(($) => ({ count: $.Count }))
-					.where(($) => [$.OrgId.in_("a", "b")]),
+					.where(($) => [$.OrgId.in_("a")]),
 			),
 		).toBe("single-tenant")
 	})
@@ -383,18 +382,18 @@ describe("CompiledQuery.tenantScope", () => {
 		expect(
 			compileCHUnsafe(
 				CH.fromQuery(inner, "i")
-					.leftJoin(other, "o", (main, o) => main.OrgId.eq(o.OrgId))
+					.innerJoin(other, "o", (main, o) => main.OrgId.eq(o.OrgId))
 					.select(($) => ({ total: CH.sum($.count) })),
 				{},
 			).tenantScope,
 		).toBe("cross-tenant")
 	})
 
-	it("is 'tenant' for a tenant predicate on a joined alias", () => {
+	it("propagates an inner join tenant binding from the joined alias", () => {
 		expect(
 			compileCHUnsafe(
 				CH.from(events)
-					.leftJoin(other, "o", (main, o) => main.OrgId.eq(o.OrgId))
+					.innerJoin(other, "o", (main, o) => main.OrgId.eq(o.OrgId))
 					.select(($) => ({ count: $.Count }))
 					.where(($) => [$.o.OrgId.eq("org")]),
 				{},
@@ -699,16 +698,18 @@ describe("arithmetic decoding", () => {
 	)
 
 	// The SQL-side guard, for callers that need a number rather than a null.
-	it.effect("ifNotFinite keeps the column non-null", () =>
+	it.effect("ifNotFinite with ifNull keeps the column non-null", () =>
 		Effect.gen(function* () {
 			const compiled = compileCHUnsafe(
 				CH.from(Events)
-					.select(($) => ({ rate: CH.ifNotFinite(CH.sum($.Hits).div(CH.sum($.Total)), 0) }))
+					.select(($) => ({
+						rate: CH.ifNull(CH.ifNotFinite(CH.sum($.Hits).div(CH.sum($.Total)), 0), CH.lit(0)),
+					}))
 					.where(($) => [$.OrgId.eq("org")]),
 				{},
 			)
 
-			expect(compiled.sql).toContain("ifNotFinite(sum(Hits) / sum(Total), 0) AS rate")
+			expect(compiled.sql).toContain("ifNull(ifNotFinite(sum(Hits) / sum(Total), 0), 0) AS rate")
 			const exit = yield* Effect.exit(compiled.decodeRows([{ rate: null }]))
 			expect(Exit.isFailure(exit)).toBe(true)
 		}),

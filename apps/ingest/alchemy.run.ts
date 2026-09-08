@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
+import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
@@ -18,10 +20,12 @@ import {
 	resolveIngestScaling,
 	resolveIngestTaskSize,
 	stageDeploysCollector,
+	stageEnablesReplayBlobs,
 } from "@maple/infra/aws"
-import type { ReplayBlobCredentials } from "../api/alchemy.run.ts"
+import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
+import { issueCertificateViaCloudflare } from "@maple/infra/acm"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveDeploymentEnvironment } from "@maple/infra/cloudflare"
+import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 // Only the primitives. The grouped helpers in that module return Worker-binding
 // shapes (Redacted secrets inline); these values feed ECS `env:` and Secrets
 // Manager ARNs instead, so the gateway composes them itself.
@@ -82,10 +86,8 @@ const EPHEMERAL_STORAGE_GIB = 60
 /**
  * Pinned rather than derived. The gateway defaults to `num_cpus * 2`, which
  * makes on-disk layout and fd count a function of task size — so a cpu bump, or
- * a move to another capacity provider, would silently reshape the WAL. Three
- * lanes per shard (Tinybird + ClickHouse + Tinybird mirror) means this is 12
- * open WAL files; the mirror lane is present but idle unless
- * `TINYBIRD_MIRROR_HOST`/`TINYBIRD_MIRROR_TOKEN` are set.
+ * a move to another capacity provider, would silently reshape the WAL. Two
+ * lanes per shard (Tinybird + ClickHouse) means this is 8 open WAL files.
  */
 const WAL_SHARDS = 4
 
@@ -94,13 +96,58 @@ export interface CreateMapleIngestOptions {
 	domains: MapleDomains
 	/** Geographic instance. Every AWS resource here is scoped to it. */
 	region: MapleRegion
-	/**
-	 * Stack-minted R2 credentials for the replay payload store, or `undefined`
-	 * on a stage that keeps payloads inline. See `createReplayBlobStore` in
-	 * `apps/api/alchemy.run.ts` — the gate is `stageEnablesReplayBlobs`.
-	 */
-	replayBlobs: ReplayBlobCredentials | undefined
 }
+
+/** R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value. */
+const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) =>
+	Output.map(value, (token) =>
+		Redacted.make(createHash("sha256").update(Redacted.value(token)).digest("hex")),
+	)
+
+/**
+ * The gateway's write credentials for the replay payload store
+ * (`apps/api/src/resources/replay-blobs.ts`, which the api Worker reads): a
+ * bucket-scoped token, or `undefined` on a stage that keeps payloads inline
+ * (`stageEnablesReplayBlobs`) — the bucket stays bound on the api side either
+ * way, so anything already written keeps playing back.
+ */
+const replayBlobWriterCredentials = (stage: MapleStage) =>
+	Effect.gen(function* () {
+		if (!stageEnablesReplayBlobs(stage)) return undefined
+		// Yielded so the token is ordered behind the bucket.
+		yield* ReplayBlobs
+		const bucketName = resolveWorkerName("replay-blobs", stage)
+
+		// Plan-time: it keys the policy map and the endpoint, neither of which
+		// can take a lazy value.
+		const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
+
+		// Bucket-scoped, not account-wide. Minting it needs the DEPLOY token to
+		// carry account-level `API Tokens > Write`, or the deploy fails outright.
+		const token = yield* Cloudflare.ApiToken.AccountApiToken("replay-blobs-writer", {
+			name: `${bucketName}-writer`,
+			accountId,
+			policies: [
+				{
+					effect: "allow",
+					permissionGroups: ["Workers R2 Storage Bucket Item Write"],
+					// `<account>_<jurisdiction>_<bucket>`, `default` = non-jurisdictional.
+					resources: {
+						[`com.cloudflare.edge.r2.bucket.${accountId}_default_${bucketName}`]: "*",
+					},
+				},
+			],
+		})
+
+		return {
+			/** Account-scoped S3 endpoint. A plan-time string — the account id is env-supplied. */
+			endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+			bucket: bucketName,
+			/** The API token's id. Only known after the token exists, hence an Output. */
+			accessKeyId: Output.asOutput(token.tokenId),
+			secretAccessKey: deriveSecretAccessKey(Output.asOutput(token.value)),
+		}
+	})
 
 /**
  * The Rust OTLP gateway (`apps/ingest`) on ECS Fargate.
@@ -128,8 +175,9 @@ export interface CreateMapleIngestOptions {
  * has no load balancer: an internal ALB would bill the same bytes again for a
  * single private consumer, and Cloud Map costs a private hosted zone.
  */
-export const createMapleIngest = ({ stage, domains, region, replayBlobs }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
+		const replayBlobs = yield* replayBlobWriterCredentials(stage)
 		const taskSize = resolveIngestTaskSize(stage)
 		const scaling = resolveIngestScaling(stage)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
@@ -242,27 +290,12 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 
 		// Optional credentials — absent in a stage that hasn't enabled the feature.
 		// Autumn absent means billing enforcement is dark.
-		const autumnKey = process.env.AUTUMN_SECRET_KEY?.trim()
+		const { AUTUMN_SECRET_KEY: autumnKey } = yield* optionalPlain("AUTUMN_SECRET_KEY")
 		const autumnSecret = autumnKey ? yield* secret("autumn-secret-key", autumnKey) : undefined
 
 		// Second Tinybird workspace to mirror writes into during a workspace
-		// migration. Both halves must be set together; the gateway rejects a
-		// half-configured mirror at startup rather than 401-ing its lane forever.
-		//
-		// Resolved through `optionalPlain`, not `process.env`: alchemy reads
-		// `--env-file`/`.env` through its own ConfigProvider and never copies
-		// those values into `process.env`, so a bare read would see the var in
-		// CI and miss it locally. The host is plain (not a secret); the token is
-		// resolved here only to mint the Secrets Manager entry below, exactly as
-		// TINYBIRD_TOKEN is, and never reaches `env`.
-		const tinybirdMirrorHostEntry = yield* optionalPlain("TINYBIRD_MIRROR_HOST")
-		const tinybirdMirrorTokenValue = (yield* optionalPlain("TINYBIRD_MIRROR_TOKEN")).TINYBIRD_MIRROR_TOKEN
-		const tinybirdMirrorToken = tinybirdMirrorTokenValue
-			? yield* secret("tinybird-mirror-token", tinybirdMirrorTokenValue)
-			: undefined
-
-		// Both halves are stack-minted (`createReplayBlobStore`), so there is no
-		// half-set config left to guard against. The access key id is not secret,
+		// Both halves are stack-minted (`replayBlobWriterCredentials`), so there is
+		// no half-set config left to guard against. The access key id is not secret,
 		// but it only exists once the token does and `env` takes plan-time strings
 		// only — ECS injects `secrets` as env vars, so the Rust side is unchanged.
 		const replayR2Secret = replayBlobs
@@ -278,7 +311,9 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 		// one deploy, which is how a preview tests it. Without a collector the
 		// gateway keeps whatever forward endpoint the deploy env supplies — its
 		// self-telemetry goes nowhere reachable, exactly as before.
-		const deployCollector = stageDeploysCollector(stage) || process.env.MAPLE_DEPLOY_AWS_COLLECTOR === "1"
+		const deployCollector =
+			stageDeploysCollector(stage) ||
+			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
 		const collectorEndpoint = deployCollector ? resolveCollectorEndpoint(stage, region) : undefined
 		const collector = deployCollector
 			? yield* Effect.gen(function* () {
@@ -376,10 +411,11 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 		// ALB actually lands — CI must set AWS_REGION to the same value, since
 		// that is what `AWS.providers()` places every other resource with.
 		//
-		// Without `hostedZoneId` the provider does not block on issuance, so the
-		// first deploy of a new stage lands the certificate PENDING_VALIDATION;
-		// add the DNS validation record in Cloudflare, then re-run to attach the
-		// listener once ACM reports ISSUED.
+		// `hostedZoneId` is Route53-only and Maple's zone is on Cloudflare, so the
+		// provider does not block on issuance and the certificate lands
+		// PENDING_VALIDATION. `issueCertificateViaCloudflare` below closes that:
+		// it publishes the validation CNAME into the `maple.dev` zone and waits
+		// for ACM to mark the certificate ISSUED.
 		const certificate = domains.ingest
 			? yield* AWS.ACM.Certificate("ingest-cert", {
 					domainName: domains.ingest,
@@ -388,6 +424,20 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 					tags: { Service: "maple-ingest", Region: region },
 				})
 			: undefined
+
+		// The ARN of the ISSUED certificate. Deliberately NOT
+		// `certificate.certificateArn`: consuming this one is what orders the
+		// listener after validation, so the first deploy of a new domain no
+		// longer fails on a certificate ACM has not issued yet.
+		const issuedCertificateArn =
+			certificate && domains.ingest
+				? yield* issueCertificateViaCloudflare({
+						id: "ingest-cert",
+						certificateArn: certificate.certificateArn,
+						hostname: domains.ingest,
+						region: resolveAwsRegion(region),
+					})
+				: undefined
 
 		// The gateway marks its own task scale-in-protected while the WAL holds
 		// backlog (`apps/ingest/src/task_protection.rs`). The ECS agent endpoint it
@@ -541,7 +591,7 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 			// `/health` and the service would never stabilize.
 			port: INGEST_PORT,
 			healthCheckPath: "/health",
-			...(certificate ? { certificateArn: certificate.certificateArn } : undefined),
+			...(issuedCertificateArn ? { certificateArn: issuedCertificateArn } : undefined),
 
 			// `/health` returns a bare 200 with no dependency checks, so it detects a
 			// dead task but not a wedged export lane or a dead Postgres pool. The
@@ -557,9 +607,6 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 				MAPLE_INGEST_KEY_ENCRYPTION_KEY: keyEncryptionKey.secretArn,
 				MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: keyLookupHmacKey.secretArn,
 				...(autumnSecret ? { AUTUMN_SECRET_KEY: autumnSecret.secretArn } : undefined),
-				...(tinybirdMirrorToken
-					? { TINYBIRD_MIRROR_TOKEN: tinybirdMirrorToken.secretArn }
-					: undefined),
 				...(replayR2Secret && replayR2AccessKeyId
 					? {
 							INGEST_REPLAY_R2_SECRET_ACCESS_KEY: replayR2Secret.secretArn,
@@ -632,14 +679,6 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS")),
 				...(yield* optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD")),
-				// Tinybird mirror. The host is plain (it is not a secret); the token
-				// goes through Secrets Manager above. Ramp with SAMPLE_PERCENT: start
-				// at 1, confirm rows land and `ingest_tinybird_mirror_dropped_total`
-				// stays flat, then climb to 100.
-				...tinybirdMirrorHostEntry,
-				...(yield* optionalPlain("INGEST_TINYBIRD_MIRROR_SAMPLE_PERCENT")),
-				...(yield* optionalPlain("INGEST_TINYBIRD_MIRROR_MAX_ATTEMPTS")),
-				...(yield* optionalPlain("INGEST_TINYBIRD_MIRROR_TIMEOUT_MS")),
 				...(yield* optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES")),
 				// The org Maple's own telemetry is filed under. Required here and in
 				// the gateway (`AppConfig::from_env`), with no fallback on either
@@ -663,7 +702,7 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 				// 30s cuts the ~2M balances.track calls/day by ~30x.
 				...(yield* optionalPlain("AUTUMN_FLUSH_INTERVAL_SECS", "30")),
 				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
-				...(yield* optionalPlain("COMMIT_SHA", process.env.GITHUB_SHA?.trim())),
+				...(yield* optionalPlain("COMMIT_SHA", (yield* optionalPlain("GITHUB_SHA")).GITHUB_SHA)),
 				// `satisfies` rather than a bare literal: alchemy types `env` as
 				// `Record<string, any>`, which is what let a spread `Config` object
 				// through unnoticed. Pinning the literal to string values makes that
@@ -687,13 +726,11 @@ export const createMapleIngest = ({ stage, domains, region, replayBlobs }: Creat
 			// VPC; surfaced so a preview's logs say where the gateway is pointing.
 			collectorEndpoint,
 			collectorServiceName: collector?.serviceName,
-			// One-time manual DNS, surfaced here so it is discoverable from the
-			// deploy output rather than the AWS console:
-			//   1. the ACM validation CNAME (below) — added once per domain, reused
-			//      for every renewal;
-			//   2. a CNAME for `domains.ingest` at `serviceUrl` (the ALB), proxied.
-			// Both live in the Cloudflare `maple.dev` zone, which this stack does
-			// not otherwise touch.
+			// The validation CNAME is published by the stack now
+			// (`issueCertificateViaCloudflare`); this stays as the record of what
+			// was published, and for diagnosing a certificate stuck short of
+			// ISSUED. The one record still added by hand is a proxied CNAME for
+			// `domains.ingest` at `serviceUrl` (the ALB).
 			certificateValidation: certificate?.domainValidationOptions,
 		}
 	})

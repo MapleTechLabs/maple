@@ -30,5 +30,10 @@ export function isoBucket(column: CH.Expr<string>): CH.Expr<string> {
  * `CH.avgIf`.
  */
 export function avgWhere(value: CH.Expr<number>, cond: CH.Condition): CH.Expr<number> {
-	return CH.if_(CH.countIf(cond).gt(0), CH.avgIf(value, cond), CH.lit(0))
+	return finiteOrZero(CH.avgIf(value, cond))
+}
+
+/** Product numeric outputs use zero for SQL NULL and non-finite aggregates. */
+export function finiteOrZero(value: CH.Expr<number | null>): CH.Expr<number> {
+	return CH.ifNull(CH.ifNotFinite(value, 0), CH.lit(0))
 }

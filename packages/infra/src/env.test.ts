@@ -14,11 +14,13 @@ import {
 	optionalSecret,
 	planetScaleOAuthEnv,
 	plainWithDefault,
+	PRD_LOCKSTEP_REVISION_SERVICES,
 	requiredPlain,
 	selfObservabilityEnv,
 	tinybirdEnv,
 	type WorkerEnv,
 } from "./env.ts"
+import { stageDeploysElectric, stageDeploysIngest } from "./aws/stage.ts"
 
 /**
  * These groups replaced per-worker copies of the same expressions. The parity
@@ -349,5 +351,38 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 		expect(run(planetScaleOAuthEnv, env).PLANETSCALE_OAUTH_TOKEN_INFO_URL).toBe(
 			"https://auth.planetscale.com/tokeninfo",
 		)
+	})
+})
+
+/**
+ * The alert rule this pins lives in the Maple database, not in this repo, so
+ * these assertions are the only thing standing between a stack change and a
+ * rule that silently stops matching production.
+ */
+describe("the prd revision lockstep the skew alert depends on", () => {
+	it("covers exactly the services that deploy together and stamp a revision", () => {
+		// If this fails you changed which services ship in one `alchemy deploy
+		// --stage prd`. Edit the SQL of the "Prod revision skew — a Worker missed
+		// the deploy" rule (2a6e9529-5f73-4478-9fa0-432904ff15c8) to match, THEN
+		// update this list. Out of sync, the rule either pages forever on a
+		// service that no longer ships with the rest, or stops covering one
+		// that does.
+		expect([...PRD_LOCKSTEP_REVISION_SERVICES]).toStrictEqual([
+			"alerting",
+			"electric-sync",
+			"ingest",
+			"maple-api",
+			"maple-web",
+		])
+	})
+
+	it("only claims lockstep for the stage-gated services prd actually deploys", () => {
+		// `ingest` and `electric-sync` are the two members behind a stage
+		// predicate. Flip either away from prd and it stops tracking the other
+		// three, so it has to leave the list — and the rule's SQL — in the same
+		// change.
+		const prd = { kind: "prd" } as const
+		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("ingest")).toBe(stageDeploysIngest(prd))
+		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("electric-sync")).toBe(stageDeploysElectric(prd))
 	})
 })

@@ -25,6 +25,9 @@ import { migration_0023_service_operations_discriminators } from "./0023_service
 import { migration_0024_ai_trace_index } from "./0024_ai_trace_index"
 import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_revision"
 import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
+import { migration_0027_audit_log } from "./0027_audit_log"
+import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
+import { migration_0029_ai_trace_index_usage_conventions } from "./0029_ai_trace_index_usage_conventions"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -82,6 +85,9 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0024_ai_trace_index,
 	migration_0025_commit_sha_vcs_revision,
 	migration_0026_ai_trace_index_filter_columns,
+	migration_0027_audit_log,
+	migration_0028_product_events_from_traces,
+	migration_0029_ai_trace_index_usage_conventions,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

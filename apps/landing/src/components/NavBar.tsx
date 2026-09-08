@@ -39,7 +39,7 @@ type CTAProps = {
  * The href flips with the label: signed out, "Get started" has to name
  * `/sign-up`, because the app root sends a session-less visitor to `/sign-in`.
  */
-function CTAAnchor({ signedIn, trackLocation, ...rest }: CTAProps & { signedIn: boolean }) {
+function CTAButton({ signedIn, trackLocation, ...rest }: CTAProps & { signedIn: boolean }) {
 	return (
 		<a
 			href={signedIn ? APP_URL : APP_SIGN_UP_URL}
@@ -50,27 +50,6 @@ function CTAAnchor({ signedIn, trackLocation, ...rest }: CTAProps & { signedIn: 
 			{signedIn ? m.nav_dashboard() : m.nav_get_started()}
 		</a>
 	)
-}
-
-function AuthAwareCTA(props: CTAProps) {
-	const { isSignedIn, isLoaded, userId } = useAuth()
-	const signedIn = isLoaded && isSignedIn === true
-	useEffect(() => {
-		broadcastSignedIn(signedIn)
-		// This island is the only place Clerk is mounted, so it is also the only
-		// place that can name the visitor. Anonymous visitors still link to their
-		// later app sessions through the cross-subdomain visitor cookie.
-		identifyLanding(signedIn ? userId : null)
-	}, [signedIn, userId])
-	return <CTAAnchor signedIn={signedIn} {...props} />
-}
-
-function CTAButton(props: CTAProps) {
-	// Only use Clerk auth hook when the provider is actually available
-	if (!PUBLISHABLE_KEY) {
-		return <CTAAnchor signedIn={false} {...props} />
-	}
-	return <AuthAwareCTA {...props} />
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -118,7 +97,9 @@ function useHeaderCtaCollapsed() {
 	return collapsed
 }
 
-function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number | null }) {
+type NavBarProps = { locale?: string; stars?: number | null }
+
+export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { signedIn: boolean }) {
 	const [menuOpen, setMenuOpen] = useState(false)
 	const ctaCollapsed = useHeaderCtaCollapsed()
 	const l = (path: string) => (locale === "en" ? path : `/${locale}${path}`)
@@ -154,6 +135,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 			desc: () => m.nav_desc_vs_new_relic(),
 		},
 		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0(), desc: () => m.nav_desc_vs_dash0() },
+		{ href: l("/compare/signoz"), label: () => m.nav_vs_signoz(), desc: () => m.nav_desc_vs_signoz() },
 	]
 
 	const mobileGroups: { title: string; links: MenuLink[] }[] = [
@@ -282,16 +264,19 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 			<div className="flex items-center gap-3 sm:gap-4">
 				<GithubStarButton stars={stars} className="hidden sm:inline-flex" />
 
-				<a
-					href={APP_SIGN_IN_URL}
-					data-track="cta_click"
-					data-track-location="nav_login"
-					className="hidden text-[13px] font-medium text-fg-muted transition-colors hover:text-fg md:inline-flex"
-				>
-					{m.nav_login()}
-				</a>
+				{!signedIn && (
+					<a
+						href={APP_SIGN_IN_URL}
+						data-track="cta_click"
+						data-track-location="nav_login"
+						className="hidden text-[13px] font-medium text-fg-muted transition-colors hover:text-fg md:inline-flex"
+					>
+						{m.nav_login()}
+					</a>
+				)}
 
 				<CTAButton
+					signedIn={signedIn}
 					trackLocation="nav"
 					className={cn(
 						buttonVariants({ size: "sm" }),
@@ -398,6 +383,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 								{stars != null && <span className="tabular-nums">{formatStars(stars)}</span>}
 							</a>
 							<CTAButton
+								signedIn={signedIn}
 								trackLocation="nav_mobile"
 								className={buttonVariants({ size: "sm" })}
 							/>
@@ -409,10 +395,31 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 	)
 }
 
-export function NavBar({ locale = "en", stars }: { locale?: string; stars?: number | null }) {
+/**
+ * Reads Clerk once for the whole header so "Log in" and the CTA agree on the
+ * visitor's state. Must render inside ClerkProvider.
+ */
+function AuthAwareNavBar(props: NavBarProps) {
+	const { isSignedIn, isLoaded, userId } = useAuth()
+	const signedIn = isLoaded && isSignedIn === true
+	useEffect(() => {
+		broadcastSignedIn(signedIn)
+		// This island is the only place Clerk is mounted, so it is also the only
+		// place that can name the visitor. Anonymous visitors still link to their
+		// later app sessions through the cross-subdomain visitor cookie.
+		identifyLanding(signedIn ? userId : null)
+	}, [signedIn, userId])
+	return <NavBarInner {...props} signedIn={signedIn} />
+}
+
+export function NavBar(props: NavBarProps) {
+	// Only use the Clerk auth hook when the provider is actually available
+	if (!PUBLISHABLE_KEY) {
+		return <NavBarInner {...props} signedIn={false} />
+	}
 	return (
 		<ClerkProvider>
-			<NavBarInner locale={locale} stars={stars} />
+			<AuthAwareNavBar {...props} />
 		</ClerkProvider>
 	)
 }
