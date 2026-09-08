@@ -37,6 +37,14 @@ export interface LabEntry {
 
 export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
+		path: "/lab/onboarding",
+		title: "Onboarding",
+		description:
+			"Click through onboarding with simulated plan selection and a restart button. No account changes.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:
