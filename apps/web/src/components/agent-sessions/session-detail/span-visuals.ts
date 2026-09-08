@@ -1,11 +1,21 @@
 // The session page's shared color vocabulary: one token per kind of work, read
 // identically by the header's breakdown bar, the waterfall's dots and bars and
 // the flow view's nodes. The tokens are the app's existing chart tokens rather
-// than new ones, and time-to-first-token is a lighter value of the inference
-// token rather than a fifth hue — chart-5 and chart-2 are two near-identical
-// cyans in the light palette (ΔL 0.04, Δh 25°).
+// than new ones. Time-to-first-token gets its own hue (chart-3) rather than a
+// lighter value of the inference token: side by side in the occupancy bar the
+// two values of chart-2 read as one band. chart-5 stays unused here — it and
+// chart-2 are two near-identical cyans in the light palette (ΔL 0.04, Δh 25°).
 
-import { DotsIcon, FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@/components/icons"
+import {
+	BoltIcon,
+	CircleQuestionIcon,
+	DotsIcon,
+	FaceRobotIcon,
+	GearIcon,
+	MediaPauseIcon,
+	PixelSparkleIcon,
+	type IconComponent,
+} from "@/components/icons"
 
 import type { AiSpanCategory } from "@/lib/agent-sessions/session-turns"
 import type { OccupancyKind } from "@/lib/agent-sessions/session-summary"
@@ -45,19 +55,30 @@ export const CATEGORY_TEXT = {
 /** Segment background in the header's occupancy bar. */
 export const OCCUPANCY_FILL = {
 	idle: NO_WORK_FILL,
-	ttft: "bg-chart-2/45",
+	ttft: "bg-chart-3",
 	inference: "bg-chart-2",
 	tool: "bg-chart-4",
 	unaccounted: UNACCOUNTED_FILL,
 } satisfies Record<OccupancyKind, string>
 
-/** The same vocabulary at 6px, where the 45% ttft fill washes out. */
-export const OCCUPANCY_DOT_FILL = {
-	idle: NO_WORK_FILL,
-	ttft: "bg-chart-2/70",
-	inference: "bg-chart-2",
-	tool: "bg-chart-4",
-	unaccounted: UNACCOUNTED_FILL,
+/** Legend glyph for an occupancy segment: the kind of time reads by shape
+ *  first, with the bar's hue as reinforcement — the same rule the flow view's
+ *  nodes follow. */
+export const OCCUPANCY_ICON = {
+	idle: MediaPauseIcon,
+	ttft: BoltIcon,
+	inference: PixelSparkleIcon,
+	tool: GearIcon,
+	unaccounted: CircleQuestionIcon,
+} satisfies Record<OccupancyKind, IconComponent>
+
+/** The bar's tokens as text color, for the legend glyphs. */
+export const OCCUPANCY_TEXT = {
+	idle: "text-muted-foreground/70",
+	ttft: "text-chart-3",
+	inference: "text-chart-2",
+	tool: "text-chart-4",
+	unaccounted: "text-muted-foreground",
 } satisfies Record<OccupancyKind, string>
 
 /** Legend text for an occupancy segment. */

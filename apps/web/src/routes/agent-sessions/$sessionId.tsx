@@ -224,7 +224,7 @@ function SessionDetailBody({
 			<DashboardLayout.Content>
 				<DashboardLayout.Sticky>
 					<DashboardLayout.Header
-						titleContent={<SessionHeader sessionId={sessionId} summary={summary} turns={turns} />}
+						titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
 					/>
 				</DashboardLayout.Sticky>
 				{/* `py-0` (the content blocks carry the padding instead) so the views'

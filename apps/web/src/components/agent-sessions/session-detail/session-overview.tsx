@@ -27,7 +27,7 @@ import { useDetectedModels } from "@/hooks/use-detected-models"
 import { ModelLabel } from "../model-label"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
-import { OCCUPANCY_DOT_FILL, OCCUPANCY_FILL, OCCUPANCY_LABEL } from "./span-visuals"
+import { OCCUPANCY_FILL, OCCUPANCY_ICON, OCCUPANCY_LABEL, OCCUPANCY_TEXT } from "./span-visuals"
 
 const SEVERITY_DOT = {
 	failure: "bg-destructive",
@@ -386,18 +386,18 @@ function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: r
 			</div>
 
 			<div className="mt-3.5 flex flex-wrap gap-x-6 gap-y-2">
-				{legend.map((segment) => (
+				{legend.map((segment) => {
+					const Icon = OCCUPANCY_ICON[segment.kind]
+					return (
 					<span key={segment.kind} className="flex items-center gap-2 text-[13px]">
-						<span
-							aria-hidden
-							className={cn("size-2 rounded-xs", OCCUPANCY_DOT_FILL[segment.kind])}
-						/>
+						<Icon size={14} aria-hidden className={cn("shrink-0", OCCUPANCY_TEXT[segment.kind])} />
 						<span>{OCCUPANCY_LABEL[segment.kind]}</span>
 						<span className="font-mono text-muted-foreground text-xs tabular-nums">
 							{formatSessionDuration(segment.ms)} · {formatPercent(segment.percent / 100)}
 						</span>
 					</span>
-				))}
+					)
+				})}
 			</div>
 		</section>
 	)
