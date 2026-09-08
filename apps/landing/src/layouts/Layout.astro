@@ -3,6 +3,8 @@ import { getRelativeLocaleUrl } from "astro:i18n";
 import "../styles/global.css";
 
 interface Props {
+    bodyClass?: string;
+    themeColor?: string;
     title?: string;
     description?: string;
     image?: string;
@@ -23,6 +25,8 @@ interface Props {
 }
 
 const {
+    bodyClass,
+    themeColor = "#171410",
     title = "Open Source Observability for Traces, Logs & Metrics — Maple",
     description = "Open-source observability platform for traces, logs, and metrics. Built on OpenTelemetry.",
     image = "/og-image.png",
@@ -63,7 +67,7 @@ const absoluteImage = image.startsWith("http")
         <link rel="manifest" href="/manifest.json" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="description" content={description} />
-        <meta name="theme-color" content="#171410" />
+        <meta name="theme-color" content={themeColor} />
         <meta name="robots" content="index,follow" />
         <link rel="canonical" href={canonicalUrl} />
         {locales.map((locale) => (
@@ -108,7 +112,7 @@ const absoluteImage = image.startsWith("http")
         </script>
         <title>{title}</title>
     </head>
-    <body class="min-h-screen antialiased">
+    <body class:list={["min-h-screen antialiased", bodyClass]}>
         <slot />
         <script is:inline>
             (function() {
