@@ -834,17 +834,21 @@ describe("SessionWaterfall", () => {
 		expect(onToggleTurn).toHaveBeenCalledWith(turns[0]!.id)
 	})
 
-	it("names the model in MODEL even when the span name already says it", () => {
+	// The span name conventionally repeats the model ("chat gpt-5"), and MODEL is
+	// already the column for it: a row that says it twice is a row where neither
+	// copy is the one being read.
+	it("leaves the model to MODEL when the span name already says it", () => {
 		render(<Waterfall turns={targetTurns} summary={targetSummary} />)
 
-		const named = screen.getByText("chat gpt-5").closest("button")!
-		expect(within(named).getByText("gpt-5")).toBeTruthy()
+		expect(screen.queryByText("chat gpt-5")).toBeNull()
+		expect(screen.getAllByText("chat")).toHaveLength(2)
+		expect(screen.getAllByText("gpt-5")).toHaveLength(1)
 	})
 
 	it("shortens a gateway model id in MODEL, with the full id in the title", () => {
 		render(<Waterfall turns={targetTurns} summary={targetSummary} />)
 
-		const modelCell = within(screen.getByText("chat").closest("button")!).getByText("gpt-4o-mini")
+		const modelCell = screen.getByText("gpt-4o-mini").closest("[title]")!
 		expect(modelCell.getAttribute("title")).toBe("openrouter/openai/gpt-4o-mini")
 	})
 
@@ -864,12 +868,14 @@ describe("SessionWaterfall", () => {
 		expect(within(toolRow).getAllByText("read_file")).toHaveLength(1)
 	})
 
-	it("splits a call's tokens into the same halves the header totals", () => {
+	it("breaks a call's tokens into the same buckets the header totals", () => {
 		render(<Waterfall />)
 
-		// 40,000 in and 600 out, cache buckets included in the prompt half exactly
-		// as the session total counts them.
-		expect(screen.getByText("40.0K → 600")).toBeTruthy()
+		// 40,000 input and 600 output: one bar segment each, and their sum is the
+		// figure beside the bar — the same total the session header reaches. The
+		// title's newlines come back normalised, so the query reads them as spaces.
+		const cell = screen.getAllByTitle("40.6K tokens Input: 40,000 Output: 600")[0]!
+		expect(within(cell).getByText("40.6K")).toBeTruthy()
 	})
 
 	// Regression: assignment is by start time, so a span reporting for the whole
