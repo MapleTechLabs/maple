@@ -2,7 +2,7 @@
 
 ## Overview
 
-The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage and its locale variants; other marketing pages and the application retain their existing design.
+The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage, pricing page, and their locale variants; other marketing pages and the application retain their existing design.
 
 ## Colors
 
@@ -39,3 +39,7 @@ The stats and customer logos overlay the lower hero artwork with a soft charcoal
 The Roman hero uses medium-fine dithering in stone and shadows, with crisp architectural edges. Avoid large checkerboard blocks or overly smooth engraving.
 
 Hero headline restored: “Open-source observability. / Built on OpenTelemetry. / Your agent reads it too.” The first two lines use bone; the final line uses the shared amber primary. Supporting copy is one short product description without repeating OpenTelemetry or the agent claim.
+
+## Pricing
+
+Pricing carries the shared orange-and-charcoal palette, Geist typography, sharp panel frames and original rounded buttons into a focused purchasing surface. Use a compact introduction with a distinct Roman countryside engraving with cultivated fields, an aqueduct and a winding merchant route, enlarged across the right background and softly faded behind the copy; rates and the plan price take priority over display typography. Keep the offer, calculator, supported-stack section, deployment options and FAQs. Omit homepage-style artwork, customer-logo bands and a large promotional closing CTA. Prices, trial terms, retention and calculator behavior remain sourced from the existing commercial data. English, Japanese and Korean share the styling. Mobile rate cells form two columns and offer panels stack; text must not overflow.
