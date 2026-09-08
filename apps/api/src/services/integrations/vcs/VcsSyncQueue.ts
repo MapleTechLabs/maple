@@ -1,13 +1,13 @@
-import type { Queue } from "@cloudflare/workers-types"
 import { VcsQueueError, VcsSyncJob } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { Context, Effect, Layer, Schema } from "effect"
+import { VcsSyncQueueProducer } from "@/platform/bindings"
 
-// Vendor-agnostic queue producer. Reads the `VCS_SYNC_QUEUE` binding from the
-// worker env and sends Schema-encoded `VcsSyncJob`s. The same queue carries
-// jobs for every provider (discriminated by `job.provider`).
+// Vendor-agnostic queue producer over the `VcsSyncQueueProducer` port, sending
+// Schema-encoded `VcsSyncJob`s. The same queue carries jobs for every provider
+// (discriminated by `job.provider`).
 
-const QUEUE_BINDING = "VCS_SYNC_QUEUE"
+/** The queue's logical id — its binding name on the Worker. */
+const QUEUE_NAME = "vcs-sync"
 const encodeJob = Schema.encodeSync(VcsSyncJob)
 
 // Messaging semconv identity for this queue, shared with the consumer side
@@ -17,7 +17,7 @@ const encodeJob = Schema.encodeSync(VcsSyncJob)
 // Consumer span kinds these are what put the queue on the service map as an
 // external dependency — an Internal span with neither is invisible there.
 export const MESSAGING_SYSTEM = "cloudflare_queues"
-export const MESSAGING_DESTINATION = QUEUE_BINDING
+export const MESSAGING_DESTINATION = QUEUE_NAME
 
 // Cloudflare Queues transport limits, owned here (the only module that talks to
 // the binding). Producers that must pre-size their payloads — e.g. a provider
@@ -58,8 +58,7 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 	"@maple/api/services/vcs/VcsSyncQueue",
 	{
 		make: Effect.gen(function* () {
-			const workerEnv = yield* WorkerEnvironment
-			const queue = workerEnv[QUEUE_BINDING] as Queue<unknown> | undefined
+			const queue = yield* VcsSyncQueueProducer
 
 			const send = Effect.fn("VcsSyncQueue.send", {
 				kind: "producer",
@@ -70,21 +69,14 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 				},
 			})(function* (job: VcsSyncJob, options?: { readonly delaySeconds?: number }) {
 				yield* Effect.annotateCurrentSpan({ "vcs.job.kind": job.kind, "vcs.provider": job.provider })
-				if (!queue) {
-					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
-				}
 				const body = encodeJob(job)
-				const sendOptions =
+				const delay =
 					options?.delaySeconds === undefined
 						? undefined
 						: { delaySeconds: clampQueueDelaySeconds(options.delaySeconds) }
-				yield* Effect.tryPromise({
-					try: () => queue.send(body, sendOptions),
-					catch: (cause) =>
-						new VcsQueueError({
-							message: cause instanceof Error ? cause.message : "queue send failed",
-						}),
-				})
+				yield* queue
+					.sendBatch([{ body, ...delay }])
+					.pipe(Effect.mapError((error) => new VcsQueueError({ message: error.message })))
 			})
 
 			const sendBatch = Effect.fn("VcsSyncQueue.sendBatch", {
@@ -103,9 +95,6 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 					"vcs.job.kinds": [...new Set(jobs.map((j) => j.kind))].sort().join(","),
 				})
 				if (jobs.length === 0) return
-				if (!queue) {
-					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
-				}
 
 				// Encode once, then greedily pack into chunks bounded by BOTH the message
 				// count and the byte cap Cloudflare accepts per `sendBatch`. A single job
@@ -136,14 +125,9 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 				yield* Effect.forEach(
 					chunks,
 					(chunk) =>
-						Effect.tryPromise({
-							try: () => queue.sendBatch(chunk),
-							catch: (cause) =>
-								new VcsQueueError({
-									message:
-										cause instanceof Error ? cause.message : "queue sendBatch failed",
-								}),
-						}),
+						queue
+							.sendBatch(chunk)
+							.pipe(Effect.mapError((error) => new VcsQueueError({ message: error.message }))),
 					{ discard: true },
 				)
 			})

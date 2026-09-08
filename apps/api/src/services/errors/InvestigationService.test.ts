@@ -26,7 +26,7 @@ import {
 } from "@maple/db"
 import type { MaplePgClient } from "@maple/db/client"
 import { createMaplePgliteClient } from "@maple/db/pglite"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { eq } from "drizzle-orm"
 import { Env } from "@/platform/Env"
 import { Database } from "@/platform/DatabaseLive"
@@ -285,7 +285,7 @@ describe("InvestigationService", () => {
 	)
 
 	/**
-	 * Stub `CHAT_SESSION` namespace. The autonomous turn now claims the turn on the ChatSession
+	 * Stub `ChatSession` namespace. The autonomous turn now claims the turn on the ChatSession
 	 * Durable Object in process instead of POSTing back to chat-flue over a service binding, so the
 	 * observable contract is one `beginTurn` call rather than an HTTP request. The real object
 	 * also runs the turn inside itself; nothing here does, which is the point.
@@ -304,7 +304,7 @@ describe("InvestigationService", () => {
 				endTurn: async () => undefined,
 			}),
 		}
-		return { beginTurns, env: { CHAT_SESSION: namespace } }
+		return { beginTurns, env: { ChatSession: namespace } }
 	}
 
 	/**
@@ -336,7 +336,7 @@ describe("InvestigationService", () => {
 		const workflow = fanoutWorkflowHarness()
 		const harness = makeHarness({
 			...chat.env,
-			INVESTIGATION_FANOUT_WORKFLOW: workflow.binding,
+			InvestigationFanoutWorkflow: workflow.binding,
 		})
 		return Effect.gen(function* () {
 			const database = yield* Database
@@ -373,7 +373,7 @@ describe("InvestigationService", () => {
 		const workflow = fanoutWorkflowHarness()
 		const harness = makeHarness({
 			...chat.env,
-			INVESTIGATION_FANOUT_WORKFLOW: workflow.binding,
+			InvestigationFanoutWorkflow: workflow.binding,
 		})
 		return Effect.gen(function* () {
 			const started = yield* InvestigationService.pipe(
@@ -428,7 +428,7 @@ describe("InvestigationService", () => {
 		const workflow = fanoutWorkflowHarness()
 		const harness = makeHarness({
 			...chat.env,
-			INVESTIGATION_FANOUT_WORKFLOW: workflow.binding,
+			InvestigationFanoutWorkflow: workflow.binding,
 		})
 		return Effect.gen(function* () {
 			const database = yield* Database
@@ -477,7 +477,7 @@ describe("InvestigationService", () => {
 		const workflow = fanoutWorkflowHarness()
 		const harness = makeHarness({
 			...chat.env,
-			INVESTIGATION_FANOUT_WORKFLOW: workflow.binding,
+			InvestigationFanoutWorkflow: workflow.binding,
 		})
 		return Effect.gen(function* () {
 			const database = yield* Database

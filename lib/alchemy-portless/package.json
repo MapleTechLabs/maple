@@ -10,7 +10,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"alchemy": "2.0.0-beta.74",
+		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

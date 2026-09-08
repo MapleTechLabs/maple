@@ -226,7 +226,7 @@ export function listContainersQuery(opts: ListContainersOpts = {}) {
 
 function containerScopeCondition(
 	$: {
-		saturation: CH.Expr<number>
+		saturation: CH.Expr<number | null>
 		lastSeen: CH.Expr<string>
 	},
 	scope: ContainerScope,

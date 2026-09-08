@@ -32,7 +32,7 @@ const TENANT = encodeChatTurnTenant({
  */
 const makeSession = () => {
 	const state = makeFakeDurableObjectState()
-	const session = new ChatSession(state as DurableObjectState, {})
+	const session = new ChatSession(state, {})
 	/** The id the session minted for the in-flight turn — deliberately not the user message's. */
 	const turnId = (): string | undefined =>
 		(

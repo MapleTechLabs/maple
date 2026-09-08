@@ -3,6 +3,7 @@
 // Reusable expression builders and WHERE condition helpers used across
 // traces, alerts, services, and metrics queries.
 
+import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { param } from "@maple-dev/clickhouse-builder"
@@ -31,7 +32,11 @@ import * as T from "@maple-dev/clickhouse-builder/types"
  * @param errorCondition - Optional predicate identifying errored spans
  *                         (typically `$.StatusCode.eq("Error")`)
  */
-export function apdexExprs(durationMs: CH.Expr<number>, thresholdMs: number, errorCondition?: CH.Condition) {
+export function apdexExprs(
+	durationMs: CH.Expr<number | null>,
+	thresholdMs: number,
+	errorCondition?: CH.Condition,
+) {
 	const satisfiedLatency = durationMs.lt(thresholdMs)
 	const toleratingLatency = durationMs.gte(thresholdMs).and(durationMs.lt(thresholdMs * 4))
 	// Gate the latency buckets on "not an error" so failed requests fall through
@@ -161,7 +166,7 @@ export interface FacetOutput {
 // numeric row schema fails the decode for the whole page, not just that row.
 // Shared by the infra (host/pod/node/workload) and container queries.
 export const avgIfOrZero = (value: CH.Expr<number>, condition: CH.Condition): CH.Expr<number> =>
-	CH.ifNotFinite(CH.avgIf(value, condition), 0)
+	finiteOrZero(CH.avgIf(value, condition))
 
 export const maxIfOrZero = (value: CH.Expr<number>, condition: CH.Condition): CH.Expr<number> =>
 	CH.ifNotFinite(CH.maxIf(value, condition), 0)
@@ -189,6 +194,21 @@ export const facetAttrExpr = (
  */
 export const soleValue = <A>(values: readonly A[]): A | undefined =>
 	values.length === 1 ? values[0] : undefined
+
+/**
+ * Every spelling a severity *level* reaches the warehouse as. Effect's logger writes Title Case
+ * (`Error`), the OTel SDKs upper-case (`ERROR`), pino-style shims lower-case — so `severity: "ERROR"`
+ * matched none of Maple's own services. Exact values (kept as `IN`) preserve the sorting-key prefix
+ * on `logs_aggregates_hourly`, which `upper(SeverityText)` would not.
+ */
+export function severitySpellings(level: string): readonly string[] {
+	const trimmed = level.trim()
+	if (trimmed === "") return []
+	const upper = trimmed.toUpperCase()
+	const lower = trimmed.toLowerCase()
+	const title = upper.charAt(0) + lower.slice(1)
+	return [...new Set([upper, title, lower])]
+}
 
 export function inclusionCondition(col: CH.Expr<string>, values: readonly string[]): CH.Condition {
 	const only = soleValue(values)
@@ -581,7 +601,7 @@ export function metricsSelectExprs($: ColumnAccessor<typeof MetricsSum.columns>,
 		// SAFETY: `isHistogram` selects the histogram table whose accessor includes Count/Sum/Min/Max.
 		const $h = $ as unknown as ColumnAccessor<typeof MetricsHistogram.columns>
 		return {
-			avgValue: CH.if_(CH.sum($h.Count).gt(0), CH.sum($h.Sum).div(CH.sum($h.Count)), CH.lit(0)),
+			avgValue: finiteOrZero(CH.sum($h.Sum).div(CH.sum($h.Count))),
 			// Min/Max are Nullable (OTel histograms may omit extrema), and min/max
 			// over an all-NULL bucket return NULL — fall back to 0 like avgValue so
 			// the declared non-null Float64 row contract holds.
@@ -592,7 +612,7 @@ export function metricsSelectExprs($: ColumnAccessor<typeof MetricsSum.columns>,
 		}
 	}
 	return {
-		avgValue: CH.avg($.Value),
+		avgValue: finiteOrZero(CH.avg($.Value)),
 		minValue: CH.min_($.Value),
 		maxValue: CH.max_($.Value),
 		sumValue: CH.sum($.Value),

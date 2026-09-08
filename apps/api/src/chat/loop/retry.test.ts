@@ -13,8 +13,6 @@ import { isRetryableStepFailure, stepRetryDelayMs } from "./retry"
 const error = (patch: { reason: string; retryable?: boolean; contextOverflow?: boolean }): LlmCallError =>
 	new LlmCallError({
 		operation: "chat.turn",
-		module: "test",
-		method: "stream",
 		message: "boom",
 		reason: patch.reason,
 		retryable: patch.retryable ?? false,

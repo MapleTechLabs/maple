@@ -1,4 +1,4 @@
-import type { DateTime } from "effect"
+import { type DateTime, SchemaAST } from "effect"
 import { makeExpr } from "../expr"
 import { schemaOf } from "../define-fn"
 import { raw, str, compile } from "../../sql/sql-fragment"
@@ -124,7 +124,20 @@ export function formatDateTime(col: DateTimeExpr<DateTimeValue>, format: string)
 export function toDateTime<T extends DateTimeValue>(col: Expr<T>): DateTimeExpr<T>
 export function toDateTime(col: Expr<number>): DateTimeExpr
 export function toDateTime(col: Expr<any>): Expr<any> {
-	// A coerced value decodes like whatever it was coerced from: a string param
-	// wrapped for `toStartOfInterval` is still the string the caller passed.
-	return makeExpr(raw(`toDateTime(${compile(col.toFragment())})`), sameDateTime(col))
+	// String inputs retain the string flavour; numeric epoch inputs decode to UTC.
+	const input = schemaOf(col)
+	const stringInput = input !== undefined && isStringType(SchemaAST.toType(input.ast))
+	return makeExpr<any>(
+		raw(`toDateTime(${compile(col.toFragment())})`),
+		stringInput ? T.dateTimeString.schema : T.dateTime.schema,
+	)
+}
+
+function isStringType(ast: SchemaAST.AST): boolean {
+	return (
+		ast._tag === "String" ||
+		ast._tag === "TemplateLiteral" ||
+		(ast._tag === "Literal" && typeof ast.literal === "string") ||
+		(ast._tag === "Union" && ast.types.every(isStringType))
+	)
 }

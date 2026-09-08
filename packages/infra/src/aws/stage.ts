@@ -1,3 +1,4 @@
+import type { RegionName } from "@distilled.cloud/aws/Region"
 import type { MapleStage } from "../cloudflare/stage.ts"
 
 /**
@@ -13,6 +14,13 @@ import type { MapleStage } from "../cloudflare/stage.ts"
  * nothing (a rename destroys and recreates every resource).
  */
 export type MapleRegion = "us" | "eu"
+
+/**
+ * The AWS regions Maple deploys into, as the literal union the AWS client
+ * types use. Narrower than `string` on purpose: it is what lets a region flow
+ * into an AWS `Region` override without a cast at the call site.
+ */
+export type AwsRegionName = Extract<RegionName, "us-east-1" | "eu-central-1">
 
 export const DEFAULT_MAPLE_REGION: MapleRegion = "us"
 
@@ -40,7 +48,7 @@ export function parseMapleRegion(value: string | undefined): MapleRegion {
  *
  * Verify the instance's TINYBIRD_HOST before changing a mapping.
  */
-export function resolveAwsRegion(region: MapleRegion): string {
+export function resolveAwsRegion(region: MapleRegion): AwsRegionName {
 	switch (region) {
 		case "us":
 			return "us-east-1"
@@ -159,6 +167,10 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
  * when the label comes off or the PR closes. A preview gets no `ingest` domain
  * from `resolveMapleDomains`, so its ALB answers plain HTTP on 80 with no ACM
  * certificate — point an OTLP exporter at `http://<alb>/v1/traces`.
+ *
+ * Changing this for prd also breaks the prd revision lockstep — see
+ * `PRD_LOCKSTEP_REVISION_SERVICES` in `../env.ts`, which the "Prod revision
+ * skew" alert rule depends on. `env.test.ts` fails if the two disagree.
  */
 export function stageDeploysIngest(stage: MapleStage): boolean {
 	return stage.kind === "prd" || stage.kind === "stg" || stage.kind === "pr"
@@ -252,6 +264,10 @@ export function resolveCollectorTaskSize(stage: MapleStage): IngestTaskSize {
  * PR previews are excluded for the same reason they get no Electric config at
  * all: no PlanetScale branch, so nothing to replicate from. Dev stages use the
  * docker `electric` service.
+ *
+ * Changing this for prd also breaks the prd revision lockstep — see
+ * `PRD_LOCKSTEP_REVISION_SERVICES` in `../env.ts`, which the "Prod revision
+ * skew" alert rule depends on. `env.test.ts` fails if the two disagree.
  */
 export function stageDeploysElectric(stage: MapleStage): boolean {
 	return stage.kind === "prd" || stage.kind === "stg"

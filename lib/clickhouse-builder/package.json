@@ -50,7 +50,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit",
 		"test": "vitest run && node scripts/check-doc-citations.mjs && node scripts/check-exports-documented.mjs",
 		"prepublishOnly": "bun run build"
 	},

@@ -79,7 +79,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-map-3d",
 		title: "Service map 3D",
 		description:
-			"The service graph as storeys and pipes \u2014 tiers stack vertically, calls flow as packets, WebGL over a fixture.",
+			"Two 3D perspectives over one sample topology: Atlas groups infrastructure by namespace; Cascade follows dependency depth.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/agent-sessions",
+		title: "Agent sessions list",
+		description:
+			"The `/agent-sessions` list over rows that break its lanes — a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
 		kind: "lab",
 		session: "none",
 	},

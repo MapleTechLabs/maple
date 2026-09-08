@@ -33,7 +33,7 @@ import {
 import { EdgeCacheService } from "@maple/cache"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
 import { and, eq, inArray, lt, notInArray, or } from "drizzle-orm"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import {
 	Array as Arr,
 	Clock,
@@ -405,7 +405,7 @@ const toPersistenceError = (error: unknown) =>
 
 // Cloudflare Workflow binding that runs the actual (chunked, long-running)
 // schema apply. Resolved off the worker env at runtime — see `apply-schema`.
-const SCHEMA_APPLY_WORKFLOW_BINDING = "CLICKHOUSE_SCHEMA_APPLY_WORKFLOW"
+const SCHEMA_APPLY_WORKFLOW_BINDING = "ClickHouseSchemaApplyWorkflow"
 
 /**
  * A queued/running apply-run row whose `updatedAt` is older than this is

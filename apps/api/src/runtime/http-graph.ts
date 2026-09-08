@@ -1,11 +1,12 @@
 import { MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Layer } from "effect"
-import { Headers, HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { API_CORS_OPTIONS } from "@/http/api-cors"
 import { McpLive } from "@/mcp/app"
 import { Env } from "@/platform/Env"
+import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
@@ -48,6 +49,8 @@ import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommendations.http"
+import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
+import { AuditLogServiceLive } from "@/runtime/service-graph"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
@@ -66,8 +69,7 @@ import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer
 import { SessionAuthorizationLayer } from "@/services/auth/SessionAuthorizationLayer"
 import { ApiV2RateLimiter } from "@/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
-import { EdgeCacheService } from "@maple/cache"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
+import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { OrgMembershipService } from "@/services/auth/OrgMembershipService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 
@@ -108,7 +110,12 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
  */
 const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 	Layer.provide(
-		Layer.mergeAll(HttpQueryEngineLive, HttpSessionReplaysInternalLive, HttpAiSessionsInternalLive),
+		Layer.mergeAll(
+			HttpQueryEngineLive,
+			HttpSessionReplaysInternalLive,
+			HttpAiSessionsInternalLive,
+			HttpAiModelsInternalLive,
+		),
 	),
 	Layer.provide(
 		Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpChatLive, HttpDemoLive, HttpDigestLive),
@@ -130,6 +137,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2PlanetScaleIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
+			HttpV2AuditLogLive,
 			HttpV2ScrapeTargetsLive,
 			HttpV2InstrumentationRecommendationsLive,
 			HttpV2InstrumentationAuditLive,
@@ -184,57 +192,11 @@ export const ApiAuthLive = Layer.mergeAll(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	// Denied attempts and audited reads are recorded from inside the auth layers.
+	Layer.provideMerge(AuditLogServiceLive),
 	// Membership verification for `x-maple-org-id`. Only the v2 layer asks for
 	// it; without it that layer cannot build, which is deliberate — the header
 	// must never end up silently ignored in a runtime that forgot to wire this.
-	Layer.provideMerge(
-		OrgMembershipService.layer.pipe(
-			Layer.provide(EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))),
-		),
-	),
+	Layer.provideMerge(OrgMembershipService.layer.pipe(Layer.provide(EdgeCacheServiceLive))),
 	Layer.provideMerge(Env.layer),
-)
-
-// OAuth callbacks whose query string carries a provider-issued authorization
-// `code` (exchangeable for an access token) plus the single-use connect `state`.
-// `HttpMiddleware.tracer` stamps `url.full` and `url.query` verbatim on the
-// server span — it redacts URL userinfo only, and `Headers.CurrentRedactedNames`
-// covers headers, not query parameters — so tracing these requests would retain
-// a live bearer credential in telemetry. There is no per-attribute lever, so the
-// auto server span is suppressed for them; each callback handler carries its own
-// span with safe attributes instead (see `integrations.*OAuthCallback` and
-// `slack.oauthCallback`). The second alternative must stay in sync with
-// `SLACK_CALLBACK_PATH` — the Slack app install redirects there.
-// `/oauth/authorize` is deliberately NOT here: its query carries no bearer
-// credential, and `/oauth/token` + `/oauth/revoke` are POSTs (secrets in the body).
-const OAUTH_CALLBACK_PATH = /^(?:\/api\/integrations\/[^/]+\/callback|\/oauth\/slack\/callback)(?:\?|$)/
-
-// The OTLP tracer/logger is constructed once at worker module scope and
-// provided to the same runtime as the routes. This shared layer installs the
-// `TracerDisabledWhen` filter and the header-redaction list — both
-// ServiceMap.References read by HttpMiddleware regardless of which Tracer is
-// active.
-export const ApiObservabilityLive = Layer.mergeAll(
-	Layer.succeed(
-		HttpMiddleware.TracerDisabledWhen,
-		(request: { url: string; method: string }) =>
-			request.url === "/health" ||
-			request.method === "OPTIONS" ||
-			OAUTH_CALLBACK_PATH.test(request.url) ||
-			/\.(png|ico|jpg|jpeg|gif|css|js|svg|webp|woff2?)(\?.*)?$/i.test(request.url),
-	),
-	// Every request header lands on the server span as `http.request.header.<name>`.
-	// Effect's defaults cover the usual credential headers; the provider webhook
-	// signatures are ours to add (a GitHub webhook HMAC is replayable alongside its
-	// body, and there is no reason to retain it).
-	Layer.succeed(Headers.CurrentRedactedNames, [
-		"authorization",
-		"cookie",
-		"set-cookie",
-		"x-api-key",
-		"x-hub-signature",
-		"x-hub-signature-256",
-		// Svix (Clerk / Autumn webhooks): replayable alongside its body within the tolerance window.
-		"svix-signature",
-	]),
 )

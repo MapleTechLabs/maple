@@ -84,9 +84,9 @@ const PRODUCTION = { "deployment.environment.name": "production" }
 
 // The turn-owning span of the eve session: the only one of its trace that
 // carries the session key, which is why resolution is per-TRACE. It names the
-// agent, and it ROLLS UP the usage of the chat call beneath it — the shape
-// several frameworks emit, and the reason a naive sum reads 300 tokens where
-// 150 were billed.
+// agent, and it ROLLS UP the usage of the chat call beneath it, bucket for
+// bucket — the shape several frameworks emit, and the reason a naive sum reads
+// 300 tokens where 150 were billed.
 const AGENT_TURN_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-agent-1",
@@ -99,15 +99,21 @@ const AGENT_TURN_SPAN: SeedSpan = {
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 		"gen_ai.operation.name": "invoke_agent",
 		"gen_ai.agent.name": "slack-agent",
+		"gen_ai.provider.name": "openrouter",
 		"gen_ai.usage.input_tokens": "100",
+		"gen_ai.usage.cache_read.input_tokens": "40",
 		"gen_ai.usage.output_tokens": "50",
+		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
 	},
 	resource: PRODUCTION,
 }
 
 // The model call under the turn span: the index row that carries the model,
-// and the deepest reporter of the 150 tokens the turn span repeats.
+// and the deepest reporter of the 150 tokens the turn span repeats. Served
+// through OpenRouter, whose prompt figure already contains the cached tokens
+// and whose completion figure contains the reasoning — so the 40 and the 10
+// reported beside them are NOT added again, and the row still reads 150.
 const AGENT_CHAT_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-chat-1",
@@ -119,13 +125,63 @@ const AGENT_CHAT_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		"gen_ai.operation.name": "chat",
+		"gen_ai.provider.name": "openrouter",
 		"gen_ai.request.model": "claude-sonnet-5",
 		"gen_ai.response.model": "claude-sonnet-5-20260101",
+		"gen_ai.response.id": "gen-e2e-1",
 		"gen_ai.usage.input_tokens": "100",
+		"gen_ai.usage.cache_read.input_tokens": "40",
 		"gen_ai.usage.output_tokens": "50",
+		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
 	},
 	resource: PRODUCTION,
+}
+
+// The gateway's own trace of that same call, forwarded into the session
+// (OpenRouter Broadcast): a separate trace, the same response id, the usage
+// repeated, and a higher price than the app's SDK saw. One call, not two —
+// and the session takes the larger claim for its cost.
+const MIRROR_TRACE = "aitraceindexe2e000000000000000007"
+const MIRROR_CALL_SPAN: SeedSpan = {
+	traceId: MIRROR_TRACE,
+	spanId: "span-mirror-1",
+	name: "LLM Generation",
+	ms: BASE_MS + 1_100,
+	service: "openrouter",
+	status: "Ok",
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+		"gen_ai.operation.name": "chat",
+		"gen_ai.provider.name": "openrouter",
+		"gen_ai.request.model": "claude-sonnet-5",
+		"gen_ai.response.model": "claude-sonnet-5-20260101",
+		"gen_ai.response.id": "gen-e2e-1",
+		"gen_ai.usage.input_tokens": "100",
+		"gen_ai.usage.input_tokens.cached": "40",
+		"gen_ai.usage.output_tokens": "50",
+		"gen_ai.usage.output_tokens.reasoning": "10",
+		"gen_ai.usage.total_cost": "0.03",
+	},
+}
+
+// The gateway's provider attempt under its call: a model span that reports no
+// usage while its parent does — the same call seen again, never a call of its
+// own.
+const MIRROR_ATTEMPT_SPAN: SeedSpan = {
+	traceId: MIRROR_TRACE,
+	spanId: "span-mirror-2",
+	parentSpanId: "span-mirror-1",
+	name: "provider attempt 1: Anthropic",
+	ms: BASE_MS + 1_150,
+	service: "openrouter",
+	status: "Ok",
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+		"gen_ai.operation.name": "chat",
+		"gen_ai.response.id": "gen-e2e-1:attempt-0",
+	},
 }
 
 // A tool call under the turn span that failed by status: the index row that
@@ -174,6 +230,12 @@ const AGENT_CHILD_SPAN: SeedSpan = {
 }
 
 // A second TRACE of the same session — the join that makes `traceCount` 2.
+//
+// It names a SECOND agent, and names it deliberately: `critic-agent` sorts
+// before `slack-agent`, so a heading taken from the orderless `agentNames` set
+// can land on it, while the session's earliest named span is the `slack-agent`
+// turn 30 seconds earlier. `firstAgentName` has to resolve across traces, not
+// just within one.
 const AGENT_TURN_2_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE_2,
 	spanId: "span-agent-3",
@@ -183,6 +245,7 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+		"gen_ai.agent.name": "critic-agent",
 	},
 }
 
@@ -205,6 +268,8 @@ const SESSIONLESS_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk",
 		"ai.model.id": "gpt-5",
 		"ai.usage.promptTokens": "10",
+		// The SDK re-sums the prompt, so the 4 cached are inside the 10.
+		"ai.usage.cachedInputTokens": "4",
 		"ai.usage.completionTokens": "5",
 	},
 	resource: { "deployment.environment": "staging" },
@@ -239,6 +304,8 @@ const EARLY_TURN_SPAN: SeedSpan = {
 const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	AGENT_TURN_SPAN,
 	AGENT_CHAT_SPAN,
+	MIRROR_CALL_SPAN,
+	MIRROR_ATTEMPT_SPAN,
 	AGENT_TOOL_SPAN,
 	AGENT_SDK_SPAN,
 	AGENT_CHILD_SPAN,
@@ -289,7 +356,9 @@ const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknow
 		default_format: "JSON",
 		output_format_json_quote_64bit_integers: "0",
 	})
-	const parsed = JSON.parse(body) as { readonly data?: ReadonlyArray<Record<string, unknown>> }
+	const parsed = JSON.parse(body) as {
+		readonly data?: ReadonlyArray<Record<string, unknown>>
+	}
 	return parsed.data ?? []
 }
 
@@ -308,7 +377,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		const rows = await runJson(
 			`SELECT OrgId, toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName,
 			        DeploymentEnv, Model, AgentName, ToolName, SpanId, ParentSpanId, Duration,
-			        IsError, IsLlmCall, IsToolCall, Tokens, Cost
+			        IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId
 			 FROM ai_trace_index ORDER BY Timestamp ASC`,
 		)
 
@@ -327,6 +396,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				IsToolCall: number
 				Tokens: number
 				Cost: number
+				ResponseId: string
 			}> = {},
 		) => ({
 			OrgId: orgId,
@@ -347,6 +417,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			IsToolCall: 0,
 			Tokens: 0,
 			Cost: 0,
+			ResponseId: "",
 			...expect,
 		})
 
@@ -369,6 +440,20 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				IsLlmCall: 1,
 				Tokens: 150,
 				Cost: 0.02,
+				ResponseId: "gen-e2e-1",
+			}),
+			// The gateway's observation of the same call: its own row, keyed by
+			// the same response id, priced under its own cost key.
+			indexRow(ORG_ID, MIRROR_CALL_SPAN, {
+				Model: "claude-sonnet-5-20260101",
+				IsLlmCall: 1,
+				Tokens: 150,
+				Cost: 0.03,
+				ResponseId: "gen-e2e-1",
+			}),
+			indexRow(ORG_ID, MIRROR_ATTEMPT_SPAN, {
+				IsLlmCall: 1,
+				ResponseId: "gen-e2e-1:attempt-0",
 			}),
 			indexRow(ORG_ID, AGENT_TOOL_SPAN, {
 				DeploymentEnv: "production",
@@ -378,7 +463,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			}),
 			// "agent turn" by name, no model, no usage: an agent span, not a call.
 			indexRow(ORG_ID, AGENT_SDK_SPAN),
-			indexRow(ORG_ID, AGENT_TURN_2_SPAN),
+			indexRow(ORG_ID, AGENT_TURN_2_SPAN, { AgentName: "critic-agent" }),
 			// The Vercel AI SDK dialect resolves to the same columns, the deprecated
 			// environment spelling still resolves, and the name rules classify a
 			// span with no operation name as the model call it is.
@@ -443,7 +528,9 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// `orgId` and the page's two bounds — stage two takes no window param from
 		// the caller, so there is nothing else to pass.
 		const compiled = compileUnsafe(
-			Integrations.aiSessionListQuery({ sessionIds: page.map((row) => row.sessionId) }),
+			Integrations.aiSessionListQuery({
+				sessionIds: page.map((row) => row.sessionId),
+			}),
 			{ orgId: ORG_ID, fanOutStart, fanOutEnd },
 		)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
@@ -459,14 +546,33 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			[
 				// Survived the `<= fanOutEnd` boundary it defined.
 				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, "vercel_ai_sdk", 1, 1],
-				// Two traces merged, six spans: the turn span, its chat and tool
+				// Three traces merged, eight spans: the turn span, its chat and tool
 				// children, the SDK span that carries no session id, the plain child
-				// that is not in the index at all, and the second trace's turn span.
-				// `eve` and not the alphabetically-later `vercel_ai_sdk`, because the
+				// that is not in the index at all, the second trace's turn span, and
+				// the gateway's mirror trace with its attempt. `eve` and not the
+				// alphabetically-later `openrouter`/`vercel_ai_sdk`, because the
 				// vendor is the earliest SESSION-BEARING span's. `EARLY_TURN_SPAN` is
 				// not among them.
-				[SESSION_ID, "eve", 2, 6],
+				[SESSION_ID, "eve", 3, 8],
 			],
+		)
+		// The buckets off the raw attributes, deepest reporter counted like the
+		// index's total and one claim per response id: the turn span's roll-up
+		// of its chat call is not added again, nor is the gateway's mirror of
+		// it; OpenRouter nests the cache in the prompt and the reasoning in the
+		// completion, so both are carved out; and the Vercel dialect's
+		// prompt/completion spellings are read. Each row sums to its `Tokens`.
+		const buckets = (row: Integrations.AiSessionListOutput) => [
+			row.inputTokens,
+			row.cacheReadTokens,
+			row.cacheWriteTokens,
+			row.outputTokens,
+			row.reasoningTokens,
+		]
+		assert.deepStrictEqual(buckets(byId.get(SESSION_ID)!), [60, 40, 0, 40, 10])
+		assert.deepStrictEqual(
+			buckets(byId.get(`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`)!),
+			[6, 4, 0, 5, 0],
 		)
 	})
 
@@ -495,19 +601,36 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		assert.strictEqual(sessionless!.totalTokens, 15)
 		assert.strictEqual(sessionless!.cost, 0)
 		assert.strictEqual(sessionless!.errorAgentSpans, 1)
+		// The one failed span is a model call: a turn failure, not a tool's.
+		assert.deepStrictEqual([sessionless!.toolErrors, sessionless!.turnErrors], [0, 1])
 		// One span of 1ms: the extent is its own duration.
 		assert.strictEqual(sessionless!.agentDurationMs, 1)
 
 		// The roll-up: the turn span reported the chat call's 150 tokens and
-		// $0.02 again; the deepest reporter is counted once. The usage lambda is
-		// raw SQL the builder cannot type-check, so this is where it is proven.
+		// $0.02 again; the deepest reporter is counted once. The gateway's mirror
+		// trace observed the same call under the same response id, so it is the
+		// same call — one, not two, its 150 tokens once, and its $0.03 as the
+		// larger claim over the app's $0.02; its provider attempt, a model span
+		// under a reporting parent, is not a call. The lambdas are raw SQL the
+		// builder cannot type-check, so this is where they are proven.
 		assert.deepStrictEqual(
-			[session!.models, session!.agentNames, session!.llmCalls, session!.toolCalls],
-			[["claude-sonnet-5-20260101"], ["slack-agent"], 1, 1],
+			[session!.models, [...session!.agentNames].sort(), session!.llmCalls, session!.toolCalls],
+			[["claude-sonnet-5-20260101"], ["critic-agent", "slack-agent"], 1, 1],
 		)
+		// The name the row goes by. `agentNames` is a set, and `critic-agent` sorts
+		// first in it; the session's earliest NAMED span is the `slack-agent` turn,
+		// on the other trace, 30 seconds before it. Taking the heading off the set
+		// titled a multi-agent session differently in the list and on its own page.
+		assert.strictEqual(session!.firstAgentName, "slack-agent")
+		// A session that named no agent leaves it blank rather than falling back to
+		// a span with no name — the sentinel keeps unnamed spans out of the argMin.
+		assert.strictEqual(sessionless!.firstAgentName, "")
 		assert.strictEqual(session!.totalTokens, 150)
-		assert.strictEqual(session!.cost, 0.02)
+		assert.strictEqual(session!.cost, 0.03)
 		assert.strictEqual(session!.errorAgentSpans, 1)
+		// The failed tool span under an `Ok` turn: one tool error, and no turn
+		// error echoed off it. The failure lambda is raw SQL too.
+		assert.deepStrictEqual([session!.toolErrors, session!.turnErrors], [1, 0])
 		// From the first turn span to the end of the second trace's turn span.
 		assert.strictEqual(session!.agentDurationMs, 30_001)
 	})
@@ -577,7 +700,24 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			["claude-sonnet-5-20260101", 1],
 			["gpt-5", 1],
 		])
-		assert.deepStrictEqual(facet("agent"), [["slack-agent", 1]])
+		assert.deepStrictEqual(facet("agent"), [
+			["critic-agent", 1],
+			["slack-agent", 1],
+		])
 		assert.deepStrictEqual(facet("tool"), [["search_traces", 1]])
+		// Any-span counts: the eve session carries eve, the SDK span's vendor and
+		// the gateway mirror's, and the mirror's service — each counted once for
+		// the session, the model above included, although two of its traces name
+		// it. The trace key is resolved over every span of a trace, not the ones
+		// carrying the value.
+		assert.deepStrictEqual(facet("vendor"), [
+			["eve", 1],
+			["openrouter", 1],
+			["vercel_ai_sdk", 2],
+		])
+		assert.deepStrictEqual(facet("service"), [
+			["agent-service", 2],
+			["openrouter", 1],
+		])
 	})
 })

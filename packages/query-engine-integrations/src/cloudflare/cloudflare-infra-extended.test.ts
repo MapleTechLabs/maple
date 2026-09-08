@@ -69,7 +69,7 @@ describe("cloudflareQueueGaugesSQL", () => {
 		)
 		expect(sql).toContain("maxIf(Value, MetricName = 'cloudflare.queue.backlog.messages')")
 		// avgIf over an empty set is NaN → must be guarded.
-		expect(sql).toContain("if(countIf(")
+		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).toContain("GROUP BY serviceName")
 	})
 })

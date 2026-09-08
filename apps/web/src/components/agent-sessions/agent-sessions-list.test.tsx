@@ -14,16 +14,23 @@ vi.mock("@tanstack/react-router", () => ({
 const session: AgentSessionRow = {
 	sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
 	vendorId: "eve",
-	vendorVersion: "1",
 	traceCount: 2,
 	spanCount: 12,
 	errorSpanCount: 0,
+	toolErrorCount: 0,
+	turnErrorCount: 0,
 	serviceNames: ["maple-slack-agent"],
 	models: ["claude-sonnet-5"],
-	agentNames: ["slack-agent"],
+	agentNames: ["web-fetcher", "slack-agent"],
+	firstAgentName: "slack-agent",
 	llmCalls: 4,
 	toolCalls: 2,
 	totalTokens: 18_400,
+	inputTokens: 12_000,
+	cacheReadTokens: 4_000,
+	cacheWriteTokens: 0,
+	outputTokens: 2_000,
+	reasoningTokens: 400,
 	cost: 0.12,
 	startTime: "2026-08-19 10:33:25.825000000",
 	endTime: "2026-08-19 10:34:25.825000000",
@@ -77,6 +84,37 @@ describe("AgentSessionsList pagination observer", () => {
 	it("renders no sentinel once the backend has no more pages", () => {
 		render(<AgentSessionsList sessions={[session]} hasMore={false} />)
 		expect(MockIntersectionObserver.instances).toHaveLength(0)
+	})
+
+	it("names the framework by its mark alone, and splits the failures by kind", () => {
+		const view = render(
+			<AgentSessionsList
+				sessions={[
+					{
+						...session,
+						errorSpanCount: 5,
+						toolErrorCount: 2,
+						turnErrorCount: 1,
+					},
+				]}
+			/>,
+		)
+		// The agent names the row, the id sits under it, and the framework is the
+		// mark's title rather than more text.
+		expect(view.getAllByText("slack-agent")).toHaveLength(1)
+		expect(view.queryByText(/^eve/)).toBeNull()
+		expect(view.getAllByTitle("eve").length).toBeGreaterThan(0)
+		// Two chips in two tones — one per lane that shows them (phone + desktop).
+		// The chip splits its count and noun into fixed-width slots, so match on
+		// the whole chip's text rather than a single text node.
+		const chip = (label: string) => (_: string, element: Element | null) =>
+			element?.classList.contains("rounded-full") === true && element.textContent === label
+		expect(view.getAllByText(chip("2 tool errors"))).toHaveLength(2)
+		expect(view.getAllByText(chip("1 turn error"))).toHaveLength(2)
+		// The buckets are the bar's title (one per line; the matcher collapses
+		// whitespace), the total the text beside it.
+		expect(view.getAllByTitle(/18,400 tokens Input: 12,000 Cache read: 4,000/)).toHaveLength(2)
+		expect(view.getByText("18.4k tok")).toBeTruthy()
 	})
 
 	it("explains the retention cap instead of paging further", () => {

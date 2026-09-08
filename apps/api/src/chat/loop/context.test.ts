@@ -9,7 +9,7 @@
  * see the module header — so "never rewrites a surviving message" is load-bearing, not incidental.
  */
 import { LLM, Message, ToolResultPart, type LLMRequest, type LanguageModel } from "@opencode-ai/ai"
-import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare"
+import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare-workers-ai"
 import { assert, describe, it } from "vitest"
 import { dropOldestToolStep, isNearContextLimit } from "./context"
 

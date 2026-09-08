@@ -10,12 +10,11 @@
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/auth": "workspace:*",
 		"@maple/domain": "workspace:*",
-		"@maple/effect-cloudflare": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "4.20260603.1",
+		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",

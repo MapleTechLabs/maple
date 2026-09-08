@@ -75,8 +75,8 @@ function assumeNotNull<T>(value: CH.Expr<T | null>): CH.Expr<T> {
 
 // ifNotFinite(x, fallback) — quantile() over an empty set yields nan, and
 // casting that to an integer is a hard error.
-function ifNotFinite(value: CH.Expr<number>, fallback: number): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("ifNotFinite", T.float64.schema, value, CH.lit(fallback))
+function ifNotFinite(value: CH.Expr<number | null>, fallback: number): CH.Expr<number> {
+	return CH.ifNull(CH.ifNotFinite(value, fallback), CH.lit(fallback))
 }
 
 // List query

@@ -95,18 +95,18 @@ Services:
 ## Cloudflare Deploy (Alchemy)
 
 Deployments run on **Alchemy v2** (Effect-based): the root `alchemy.run.ts` exports a
-single `Alchemy.Stack("maple", …)` whose program composes per-app factories:
+single `Alchemy.Stack("maple", …)` whose program yields one module per app:
 
-- `apps/api/alchemy.run.ts` — Hyperdrive (PlanetScale Postgres) `MAPLE_DB`, KV, queue,
-  workflows, the `ChatSession` Durable Object + api Worker with all env bindings
-- `apps/alerting/alchemy.run.ts` — cron-driven alerting Worker (cross-script workflow ref)
-- `apps/electric-sync/alchemy.run.ts` — ElectricSQL shape-proxy Worker
-- `apps/web/alchemy.run.ts` / `apps/landing/alchemy.run.ts` / `apps/local-ui/alchemy.run.ts`
+- `apps/api/src/worker.ts` — the api Worker: Hyperdrive (PlanetScale Postgres) `MAPLE_DB`,
+  KV, queues, the two Workflows and the `ChatSession` Durable Object, all yielded from its init
+- `apps/alerting/src/worker.ts` — cron-driven alerting Worker (cross-script workflow ref)
+- `apps/electric-sync/src/worker.ts` — ElectricSQL shape-proxy Worker
+- `apps/web/src/worker.ts` / `apps/landing/src/worker.ts` / `apps/local-ui/src/worker.ts`
   — static builds via `Command.Build` + asset-serving Workers
 
 Stage grammar is `prd` / `stg` / `pr-<number>` / dev names, resolved via
 `@maple/infra/cloudflare` (`parseMapleStage`, `resolveMapleDomains`, `resolveWorkerName`,
-`resolveHyperdriveName`, `resolveHyperdriveRefId`, `resolveDatabaseMode`). stg/prd bind the
+`resolveHyperdriveRefId`, `resolveDatabaseMode`). stg/prd bind the
 dashboard-managed Hyperdrive by config ID (`resolveHyperdriveRefId`) — origin credentials
 never touch a deploy. `MAPLE_PG_URL` is only needed for dev stages, whose Hyperdrive alchemy
 manages itself. PR previews bind **no database at all** (`resolveDatabaseMode` → `"none"`):

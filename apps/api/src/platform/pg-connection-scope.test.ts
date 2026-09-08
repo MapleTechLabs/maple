@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { createMaplePgSocket, type MaplePgSocketHandle, type MaplePgSocketOptions } from "@maple/db/client"
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
-import { Effect, Exit, Fiber, Tracer } from "effect"
+import { Effect, Exit, Fiber, Option, Tracer } from "effect"
+import { MapleDbConnection } from "./bindings"
 import type { DatabaseClient } from "./DatabaseLive"
 import {
 	executeOnFreshPgClient,
@@ -453,19 +453,19 @@ describe("withPgConnectionScopeOf", () => {
 })
 
 describe("withPgConnectionScope", () => {
-	const hyperdriveEnv = {
-		MAPLE_DB: {
-			connectionString: "postgres://maple:maple@cfg.hyperdrive.local:5432/maple",
-			host: "cfg.hyperdrive.local",
-			port: 5432,
-			database: "maple",
+	const hyperdrive = Option.some({
+		connectionString: "postgres://maple:maple@cfg.hyperdrive.local:5432/maple",
+		attributes: {
+			"db.namespace": "maple",
+			"server.address": "cfg.hyperdrive.local",
+			"server.port": 5432,
 		},
-	}
+	})
 
 	it.effect("installs a scope when the MAPLE_DB binding is present", () =>
 		Effect.gen(function* () {
 			const scope = yield* withPgConnectionScope(PgConnectionScope).pipe(
-				Effect.provideService(WorkerEnvironment, hyperdriveEnv),
+				Effect.provideService(MapleDbConnection, hyperdrive),
 			)
 
 			// Lazy: resolving the binding must not connect. Nothing here reaches the
@@ -481,7 +481,7 @@ describe("withPgConnectionScope", () => {
 			// DatabasePgLive keeps reporting the missing binding per execute, so
 			// DB-free routes still serve.
 			const scope = yield* withPgConnectionScope(PgConnectionScope).pipe(
-				Effect.provideService(WorkerEnvironment, {}),
+				Effect.provideService(MapleDbConnection, Option.none()),
 			)
 
 			assert.isUndefined(scope)
