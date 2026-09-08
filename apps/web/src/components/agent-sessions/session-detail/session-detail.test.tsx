@@ -493,16 +493,103 @@ describe("SessionOverview", () => {
 		expect(screen.getByText("No findings.")).toBeTruthy()
 	})
 
-	// A tool called ten times and failing every time reads nothing like one that
-	// never failed; the rail used to draw both as the same bar.
-	it("separates a tool's failed calls from its successful ones", () => {
-		render(<Overview />)
+	// The ledger's row is a summary; the calls behind it are the point. A mark is
+	// one call, and it opens that span rather than describing it.
+	it("puts every call on the session's clock and opens the span behind a mark", () => {
+		const onSelectSpan = vi.fn()
+		render(<Overview onSelectSpan={onSelectSpan} />)
 
-		// run_tests: one call, and it errored.
-		expect(screen.getByTitle("1 failed")).toBeTruthy()
-		expect(screen.getByTitle("0 ok · 1 errored")).toBeTruthy()
-		// read_file and grep_repo ran clean, and say so by having nothing to say.
-		expect(screen.getAllByTitle("1 ok · 0 errored").length).toBe(2)
+		fireEvent.click(screen.getByRole("button", { name: /^run_tests — turn 1, 14s in, 20.0s/ }))
+		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
+	})
+
+	// The description and the failure used to live in two different places — the
+	// rail disclosed one, the findings list carried the other. Expanding the tool
+	// is where a reader asks about the tool.
+	it("discloses a tool's definition and its failed calls when the row is expanded", () => {
+		const onSelectSpan = vi.fn()
+		const described = sessionOf([
+			agentSpan({ spanId: "d-agent", startMs: 0, durationMs: 30 * SECOND }),
+			toolSpan({
+				spanId: "d-tool",
+				parentSpanId: "d-agent",
+				startMs: SECOND,
+				durationMs: 4 * SECOND,
+				toolName: "reindex_shard",
+				statusCode: "Error",
+				statusMessage: "shard 3 is locked by a running merge",
+				genAi: { errorType: "SHARD_LOCKED", toolDescription: "Rebuild a shard's index." },
+			}),
+		])
+		render(<Overview turns={described.turns} summary={described.summary} onSelectSpan={onSelectSpan} />)
+
+		expect(screen.queryByText("Rebuild a shard's index.")).toBeNull()
+
+		fireEvent.click(screen.getByRole("button", { name: "reindex_shard" }))
+
+		expect(screen.getByText("Rebuild a shard's index.")).toBeTruthy()
+		// The findings list names the same failure; the disclosure is where a
+		// reader asking about this tool finds it.
+		expect(screen.getAllByText("SHARD_LOCKED").length).toBeGreaterThan(0)
+		expect(screen.getAllByText("shard 3 is locked by a running merge").length).toBe(2)
+
+		fireEvent.click(screen.getByRole("button", { name: /Open span/ }))
+		expect(onSelectSpan).toHaveBeenCalledWith("d-tool")
+	})
+
+	// A session reaching for twenty tools would otherwise spend twenty rows on
+	// the ones that cost nothing; a tool that failed keeps its row whatever it
+	// cost, because that is the row a reader came for.
+	it("folds the cheap tail into one row, and keeps the expensive and the failed", () => {
+		const many = sessionOf([
+			agentSpan({ spanId: "m-agent", startMs: 0, durationMs: 60 * SECOND }),
+			toolSpan({
+				spanId: "m-slow",
+				parentSpanId: "m-agent",
+				startMs: 0,
+				durationMs: 30 * SECOND,
+				toolName: "run_tests",
+			}),
+			toolSpan({
+				spanId: "m-cheap-1",
+				parentSpanId: "m-agent",
+				startMs: 31 * SECOND,
+				durationMs: 200,
+				toolName: "list_shards",
+			}),
+			toolSpan({
+				spanId: "m-cheap-2",
+				parentSpanId: "m-agent",
+				startMs: 32 * SECOND,
+				durationMs: 200,
+				toolName: "query_data",
+			}),
+			toolSpan({
+				spanId: "m-cheap-3",
+				parentSpanId: "m-agent",
+				startMs: 33 * SECOND,
+				durationMs: 200,
+				toolName: "search_logs",
+			}),
+			toolSpan({
+				spanId: "m-failed",
+				parentSpanId: "m-agent",
+				startMs: 34 * SECOND,
+				durationMs: 100,
+				toolName: "git_diff",
+				statusCode: "Error",
+			}),
+		])
+		render(<Overview turns={many.turns} summary={many.summary} />)
+
+		expect(screen.getByText("run_tests")).toBeTruthy()
+		// Cheapest of all, but it failed, so it stays a row of its own.
+		expect(screen.getByText("git_diff")).toBeTruthy()
+		expect(screen.queryByText("query_data")).toBeNull()
+
+		const fold = screen.getByRole("button", { name: "3 tools, 1 call each" })
+		fireEvent.click(fold)
+		expect(screen.getByText("query_data")).toBeTruthy()
 	})
 
 	it("says no cost was reported rather than pricing tokens itself", () => {

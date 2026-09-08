@@ -992,28 +992,61 @@ describe("per-model cost, tools and failure groups", () => {
 		expect(summary.cost).toBeCloseTo(0.3)
 	})
 
-	it("counts tools by name, busiest first", () => {
+	// The ledger sorts by what a tool cost, not how often it was reached for: a
+	// tool called twice for a minute is where the session's time went.
+	it("orders tools by the time their calls took, and totals it", () => {
 		const summary = summarize([
-			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 30 * SECOND }),
 			toolSpan({ spanId: "t1", parentSpanId: "a1", startMs: 0, durationMs: 100 }),
 			toolSpan({ spanId: "t2", parentSpanId: "a1", startMs: 200, durationMs: 100 }),
 			toolSpan({
 				spanId: "t3",
 				parentSpanId: "a1",
 				startMs: 400,
-				durationMs: 100,
+				durationMs: 5 * SECOND,
 				toolName: "run_tests",
 			}),
 		])
 
-		expect(summary.tools).toEqual([
-			{ name: "read_file", calls: 2, failed: 0 },
-			{ name: "run_tests", calls: 1, failed: 0 },
+		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs])).toEqual([
+			["run_tests", 1, 5 * SECOND, 5 * SECOND],
+			["read_file", 2, 200, 100],
 		])
 	})
 
-	// The rail draws the failed share inside the tool's bar, so the count has to
-	// be per tool — a session-wide error count cannot say which tool broke.
+	// The rail drew one bar per tool, so a failure only ever showed as a share of
+	// it. The ledger opens the call itself, which means carrying the call.
+	it("carries every call of a tool: when it ran, how long, and the span behind it", () => {
+		const summary = summarize([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({ spanId: "t1", parentSpanId: "a1", startMs: 1000, durationMs: 100 }),
+			toolSpan({ spanId: "t2", parentSpanId: "a1", startMs: 2000, durationMs: 300 }),
+		])
+
+		expect(
+			summary.tools[0]?.events.map((event) => ({ ...event, startMs: event.startMs - summary.startMs })),
+		).toEqual([
+			{
+				spanId: "t1",
+				startMs: 1000,
+				durationMs: 100,
+				failed: false,
+				errorLabel: undefined,
+				errorDetail: undefined,
+				turnIndex: 1,
+			},
+			{
+				spanId: "t2",
+				startMs: 2000,
+				durationMs: 300,
+				failed: false,
+				errorLabel: undefined,
+				errorDetail: undefined,
+				turnIndex: 1,
+			},
+		])
+	})
+
 	it("counts the failed calls of each tool alongside its total", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
@@ -1036,13 +1069,50 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools).toEqual([
-			{ name: "read_file", calls: 2, failed: 1 },
-			{ name: "run_tests", calls: 1, failed: 1 },
+		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.failed])).toEqual([
+			["read_file", 2, 1],
+			["run_tests", 1, 1],
 		])
 	})
 
-	// The Overview's rail discloses the description, so it rides the usage row.
+	// A failed call is only actionable if it says what went wrong in the row the
+	// reader expanded, rather than sending them to the span to find out.
+	it("names a failed call's error, and its message wherever the framework put it", () => {
+		const summary = summarize([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({
+				spanId: "t1",
+				parentSpanId: "a1",
+				startMs: 0,
+				durationMs: 100,
+				statusCode: "Error",
+				statusMessage: "shard 3 is locked by a running merge",
+				genAi: { errorType: "SHARD_LOCKED" },
+			}),
+			// Maple's own agent reports a failed call as a value on an Ok span: the
+			// recorded result IS the error.
+			toolSpan({
+				spanId: "t2",
+				parentSpanId: "a1",
+				startMs: 200,
+				durationMs: 100,
+				toolName: "run_tests",
+				genAi: { errorType: "tool_error", toolCallResult: { error: "exit 1" } },
+			}),
+		])
+
+		expect(
+			summary.tools.flatMap((tool) =>
+				tool.events.map((event) => [event.errorLabel, event.errorDetail]),
+			),
+		).toEqual([
+			["SHARD_LOCKED", "shard 3 is locked by a running merge"],
+			["tool_error", "exit 1"],
+		])
+	})
+
+	// The Overview discloses the description under the tool, so it rides the
+	// usage row rather than being re-read off a span.
 	it("keeps the first stamped tool description for the tool's usage row", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
@@ -1056,9 +1126,7 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools).toEqual([
-			{ name: "read_file", calls: 2, failed: 0, description: "Read a file from the repository." },
-		])
+		expect(summary.tools.map((tool) => tool.description)).toEqual(["Read a file from the repository."])
 	})
 
 	// The counts and the breakdown are two readings of one list, so a failure
