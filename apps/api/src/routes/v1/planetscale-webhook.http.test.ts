@@ -46,7 +46,7 @@ const makeRouterLayer = (
 ) =>
 	PlanetScaleWebhookRouter.pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send })),
+		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send: (prepared) => send(prepared.body) })),
 		Layer.provide(Env.layer),
 		Layer.provide(makeConfig()),
 	)
@@ -192,8 +192,10 @@ describe("PlanetScaleWebhookRouter", () => {
 						Context.make(Database, database),
 					),
 				)
-				assert.strictEqual(timestampLess.status, 400)
-				assert.strictEqual(jobs.length, 0)
+				assert.strictEqual(timestampLess.status, 202)
+				assert.strictEqual(jobs.length, 1)
+				assert.isString(jobs[0]?.event.time)
+				jobs.length = 0
 
 				const oversizedBody = JSON.stringify({
 					timestamp: 1_698_252_879,
@@ -316,19 +318,13 @@ describe("PlanetScaleWebhookRouter", () => {
 				assert.strictEqual(branchReady.status, 202)
 				assert.strictEqual(jobs.length, 2)
 
-				// Unknown provider facts also enter the typed event layer. The current
-				// issue/timeline consumer may ignore them, but other consumers can opt in.
 				const unknown = yield* post({
 					event: "branch.some_future_event",
 					organization: "acme",
 					database: "shop",
 				})
-				assert.strictEqual(unknown.status, 202)
-				assert.strictEqual(jobs.length, 3)
-				assert.strictEqual(
-					(jobs[2]?.event.data as { readonly event: string }).event,
-					"branch.some_future_event",
-				)
+				assert.strictEqual(unknown.status, 200)
+				assert.strictEqual(jobs.length, 2)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}).pipe(Effect.provide(testDb.layer))
 	})

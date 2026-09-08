@@ -1,3 +1,4 @@
+import { Result } from "effect"
 import type { MessageBatch } from "@cloudflare/workers-types"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
@@ -6,10 +7,13 @@ import { Database, DatabaseError } from "@/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@/platform/test-pglite"
 import { processPlanetScaleWebhookBatch } from "./planetscale-webhook-runtime"
 import {
-	projectPlanetScaleWebhookEvent,
+	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
 	type PlanetScaleWebhookPayload,
 } from "./services/integrations/planetscale/webhook-events"
 import type { PlanetScaleWebhookJob } from "./services/integrations/planetscale/PlanetScaleWebhookQueue"
+
+const projectPlanetScaleWebhookEvent = (...args: Parameters<typeof projectPlanetScaleWebhookEventResult>) =>
+	Result.getOrThrow(projectPlanetScaleWebhookEventResult(...args))
 
 const trackedDbs: TestDb[] = []
 
@@ -68,6 +72,31 @@ const makeBatch = (body: unknown) => {
 }
 
 describe("PlanetScale webhook queue consumer", () => {
+	it.effect("isolates an invalid projection from a valid sibling message", () => {
+		const testDb = createTestDb(trackedDbs)
+		const bad = makeBatch({
+			kind: "planetscale-webhook",
+			orgId,
+			connectionId: "connection_1",
+			payload: basePayload,
+			receivedAt: Number.MAX_SAFE_INTEGER,
+		})
+		const good = makeBatch(job)
+		return Effect.gen(function* () {
+			yield* processPlanetScaleWebhookBatch({
+				...good.batch,
+				messages: [...bad.batch.messages, ...good.batch.messages],
+			})
+			assert.isTrue(bad.acknowledged())
+			assert.isTrue(good.acknowledged())
+			assert.isFalse(good.retried())
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number }>(testDb, "SELECT count(*)::int AS count FROM error_issues"),
+			)
+			assert.strictEqual(row?.count, 1)
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.effect("persists an issue and acknowledges the delivery", () => {
 		const testDb = createTestDb(trackedDbs)
 		const delivery = makeBatch(job)
@@ -181,7 +210,7 @@ describe("PlanetScale webhook queue consumer", () => {
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
-	it.effect("terminally acknowledges timestamp-less legacy queue bodies", () => {
+	it.effect("processes timestamp-less legacy queue bodies using their durable receipt time", () => {
 		const testDb = createTestDb(trackedDbs)
 		const delivery = makeBatch({
 			kind: "planetscale-webhook",
@@ -190,15 +219,19 @@ describe("PlanetScale webhook queue consumer", () => {
 			payload: { ...basePayload, timestamp: null },
 			receivedAt: 1_000,
 		})
-		return processPlanetScaleWebhookBatch(delivery.batch).pipe(
-			Effect.tap(() =>
-				Effect.sync(() => {
-					assert.isTrue(delivery.acknowledged())
-					assert.isFalse(delivery.retried())
-				}),
-			),
-			Effect.provide(testDb.layer),
-		)
+		return Effect.gen(function* () {
+			yield* processPlanetScaleWebhookBatch(delivery.batch)
+			assert.isTrue(delivery.acknowledged())
+			assert.isFalse(delivery.retried())
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number }>(
+					testDb,
+					"SELECT count(*)::int AS count FROM error_issues WHERE org_id = $1",
+					[orgId],
+				),
+			)
+			assert.strictEqual(row?.count, 1)
+		}).pipe(Effect.provide(testDb.layer))
 	})
 
 	it.effect("acknowledges terminal malformed jobs", () => {

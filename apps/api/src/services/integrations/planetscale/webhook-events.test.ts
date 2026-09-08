@@ -1,3 +1,4 @@
+import { Result } from "effect"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -10,11 +11,14 @@ import {
 	deployRequestNumber,
 	insertPlanetScaleEvent,
 	planetScaleIssueFingerprint,
-	projectPlanetScaleWebhookEvent,
+	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
 	truncateToSecond,
 	upsertPlanetScaleIssue,
 	verifyPlanetScaleSignature,
 } from "./webhook-events"
+
+const projectPlanetScaleWebhookEvent = (...args: Parameters<typeof projectPlanetScaleWebhookEventResult>) =>
+	Result.getOrThrow(projectPlanetScaleWebhookEventResult(...args))
 
 const trackedDbs: TestDb[] = []
 
@@ -62,13 +66,19 @@ describe("classifyPlanetScaleEvent", () => {
 		assert.strictEqual(event.tenantid, "org_events")
 		assert.strictEqual(event.subject, "planetscale-databases/main-db")
 		assert.strictEqual((event.data as { readonly event: string }).event, "branch.out_of_memory")
-		assert.throws(
-			() => projectPlanetScaleWebhookEvent({ ...input, receivedAt: Number.MAX_SAFE_INTEGER }),
-			/outside the supported date range/,
-		)
+		const invalid = projectPlanetScaleWebhookEventResult({
+			...input,
+			receivedAt: Number.MAX_SAFE_INTEGER,
+		})
+		assert.isTrue(Result.isFailure(invalid))
+		if (Result.isFailure(invalid))
+			assert.strictEqual(
+				invalid.failure._tag,
+				"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+			)
 	})
 
-	it("keeps source-timestamp retries byte-identical and rejects missing timestamps", () => {
+	it("keeps source-timestamp retries byte-identical and falls back for missing timestamps", () => {
 		const timestamped = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(JSON.parse(OOM_PAYLOAD))
 		const first = projectPlanetScaleWebhookEvent({
 			orgId: "org_events",
@@ -88,16 +98,13 @@ describe("classifyPlanetScaleEvent", () => {
 			event: "branch.ready",
 			database: "main-db",
 		})
-		assert.throws(
-			() =>
-				projectPlanetScaleWebhookEvent({
-					orgId: "org_events",
-					connectionId: "connection-1",
-					payload: withoutTimestamp,
-					receivedAt: 1_698_252_880_000,
-				}),
-			/requires a positive source timestamp/,
-		)
+		const fallback = projectPlanetScaleWebhookEvent({
+			orgId: "org_events",
+			connectionId: "connection-1",
+			payload: withoutTimestamp,
+			receivedAt: 1_698_252_880_000,
+		})
+		assert.strictEqual(fallback.time, new Date(1_698_252_880_000).toISOString())
 	})
 
 	it("maps health events to issues and lifecycle events to timeline rows", () => {
@@ -635,4 +642,30 @@ describe("decodePlanetScaleWebhookPayload", () => {
 			assert.strictEqual(failure._tag, "SchemaError")
 		}),
 	)
+})
+
+describe("consumed PlanetScale receipts", () => {
+	it.effect("skips a redelivery after its issue has been hard deleted", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const payload = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(JSON.parse(OOM_PAYLOAD))
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ($1, $2, now())",
+					["org_1", "already-consumed"],
+				),
+			)
+			const result = yield* upsertPlanetScaleIssue({
+				orgId: asOrgId("org_1"),
+				eventId: "already-consumed",
+				payload,
+				severity: "high",
+				title: "OOM",
+				description: "OOM",
+				timestamp: 1_000,
+			})
+			assert.deepStrictEqual(result, { issueId: null, action: "skipped" })
+		}).pipe(Effect.provide(testDb.layer))
+	})
 })

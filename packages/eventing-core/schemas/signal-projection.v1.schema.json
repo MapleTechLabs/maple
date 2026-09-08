@@ -3,12 +3,21 @@
 	"$id": "urn:maple:eventing:schema:signal-projection:v1",
 	"$ref": "#/$defs/SignalProjectionSpec",
 	"$defs": {
+		"SignalPredicate_1": {
+			"$ref": "#/$defs/Union_"
+		},
 		"SignalFieldRef": {
 			"type": "object",
 			"properties": {
 				"namespace": {
 					"type": "string",
-					"enum": ["signal", "resource", "scope", "attribute", "body"]
+					"enum": [
+						"signal",
+						"resource",
+						"scope",
+						"attribute",
+						"body"
+					]
 				},
 				"key": {
 					"type": "string",
@@ -17,10 +26,21 @@
 				},
 				"type": {
 					"type": "string",
-					"enum": ["string", "boolean", "int64", "float64", "timestamp", "duration"]
+					"enum": [
+						"string",
+						"boolean",
+						"int64",
+						"float64",
+						"timestamp",
+						"duration"
+					]
 				}
 			},
-			"required": ["namespace", "key", "type"],
+			"required": [
+				"namespace",
+				"key",
+				"type"
+			],
 			"additionalProperties": false
 		},
 		"SignalLiteral": {
@@ -30,14 +50,19 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["string"]
+							"enum": [
+								"string"
+							]
 						},
 						"value": {
 							"type": "string",
-							"description": "Predicate string literal limited to 4096 UTF-8 bytes; JSON Schema cannot express this byte-count constraint"
+							"maxLength": 1024
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -45,13 +70,18 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["boolean"]
+							"enum": [
+								"boolean"
+							]
 						},
 						"value": {
 							"type": "boolean"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -59,7 +89,9 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["int64"]
+							"enum": [
+								"int64"
+							]
 						},
 						"value": {
 							"type": "string",
@@ -67,7 +99,10 @@
 							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -75,13 +110,18 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["float64"]
+							"enum": [
+								"float64"
+							]
 						},
 						"value": {
 							"type": "number"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -89,14 +129,19 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["timestamp"]
+							"enum": [
+								"timestamp"
+							]
 						},
 						"value": {
 							"type": "string",
 							"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -104,7 +149,9 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["duration"]
+							"enum": [
+								"duration"
+							]
 						},
 						"value": {
 							"type": "string",
@@ -112,30 +159,38 @@
 							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				}
 			]
 		},
-		"SignalPredicate": {
+		"Union_": {
 			"anyOf": [
 				{
 					"type": "object",
 					"properties": {
 						"op": {
 							"type": "string",
-							"enum": ["all"]
+							"enum": [
+								"all"
+							]
 						},
 						"clauses": {
 							"type": "array",
 							"items": {
-								"$ref": "#/$defs/SignalPredicate"
+								"$ref": "#/$defs/SignalPredicate_1"
 							},
 							"minItems": 1,
 							"maxItems": 64
 						}
 					},
-					"required": ["op", "clauses"],
+					"required": [
+						"op",
+						"clauses"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -143,18 +198,23 @@
 					"properties": {
 						"op": {
 							"type": "string",
-							"enum": ["any"]
+							"enum": [
+								"any"
+							]
 						},
 						"clauses": {
 							"type": "array",
 							"items": {
-								"$ref": "#/$defs/SignalPredicate"
+								"$ref": "#/$defs/SignalPredicate_1"
 							},
 							"minItems": 1,
 							"maxItems": 64
 						}
 					},
-					"required": ["op", "clauses"],
+					"required": [
+						"op",
+						"clauses"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -162,13 +222,18 @@
 					"properties": {
 						"op": {
 							"type": "string",
-							"enum": ["not"]
+							"enum": [
+								"not"
+							]
 						},
 						"clause": {
-							"$ref": "#/$defs/SignalPredicate"
+							"$ref": "#/$defs/SignalPredicate_1"
 						}
 					},
-					"required": ["op", "clause"],
+					"required": [
+						"op",
+						"clause"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -176,13 +241,18 @@
 					"properties": {
 						"op": {
 							"type": "string",
-							"enum": ["exists"]
+							"enum": [
+								"exists"
+							]
 						},
 						"field": {
 							"$ref": "#/$defs/SignalFieldRef"
 						}
 					},
-					"required": ["op", "field"],
+					"required": [
+						"op",
+						"field"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -190,7 +260,15 @@
 					"properties": {
 						"op": {
 							"type": "string",
-							"enum": ["eq", "neq", "gt", "gte", "lt", "lte", "contains"]
+							"enum": [
+								"eq",
+								"neq",
+								"gt",
+								"gte",
+								"lt",
+								"lte",
+								"contains"
+							]
 						},
 						"field": {
 							"$ref": "#/$defs/SignalFieldRef"
@@ -199,7 +277,11 @@
 							"$ref": "#/$defs/SignalLiteral"
 						}
 					},
-					"required": ["op", "field", "value"],
+					"required": [
+						"op",
+						"field",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -207,7 +289,9 @@
 					"properties": {
 						"op": {
 							"type": "string",
-							"enum": ["in"]
+							"enum": [
+								"in"
+							]
 						},
 						"field": {
 							"$ref": "#/$defs/SignalFieldRef"
@@ -221,10 +305,17 @@
 							"maxItems": 100
 						}
 					},
-					"required": ["op", "field", "values"],
+					"required": [
+						"op",
+						"field",
+						"values"
+					],
 					"additionalProperties": false
 				}
 			]
+		},
+		"SignalPredicate": {
+			"$ref": "#/$defs/Union_"
 		},
 		"SignalProjectionSpec": {
 			"type": "object",
@@ -272,7 +363,11 @@
 						},
 						"config": {}
 					},
-					"required": ["id", "version", "config"],
+					"required": [
+						"id",
+						"version",
+						"config"
+					],
 					"additionalProperties": false
 				},
 				"activeFrom": {

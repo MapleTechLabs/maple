@@ -1,0 +1,7 @@
+export const MAX_PREDICATE_DEPTH = 8
+export const MAX_PREDICATE_NODES = 64
+export const MAX_IN_VALUES = 100
+export const MAX_STRING_LITERAL_BYTES = 4 * 1024
+export const MAX_DECIMAL_INT64_LENGTH = 20
+
+export const MAX_STRING_LITERAL_CHARACTERS = 1024

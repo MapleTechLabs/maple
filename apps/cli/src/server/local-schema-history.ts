@@ -227,3 +227,8 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)
+
+/** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */
+export const LOCAL_CONTROL_SCHEMA_HISTORY = Object.freeze([
+	Object.freeze({ version: 1, digest: "9af9047b0e0e4f3562c0ee02bab4c25969960712dab862aee73eb5e8dc16b522" }),
+] as const)

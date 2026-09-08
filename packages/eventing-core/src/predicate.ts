@@ -1,3 +1,5 @@
+import { predicateInputBudgetIssue } from "./input-budget"
+import { Option, Schema } from "effect"
 import type {
 	FieldRef,
 	NormalizedSignal,
@@ -8,12 +10,13 @@ import type {
 	SignalScalarType,
 } from "./model"
 import {
+	SignalProjectionSpecSchema,
 	fieldKey,
 	MAX_DECIMAL_INT64_LENGTH,
 	MAX_IN_VALUES,
 	MAX_PREDICATE_DEPTH,
 	MAX_PREDICATE_NODES,
-	MAX_STRING_LITERAL_BYTES,
+	MAX_STRING_LITERAL_CHARACTERS,
 } from "./model"
 
 const INT64_MIN = -(1n << 63n)
@@ -25,91 +28,37 @@ export interface ValidationIssue {
 	readonly message: string
 }
 
-export class SignalPredicateValidationError extends Error {
-	readonly issues: readonly ValidationIssue[]
-
-	constructor(issues: readonly ValidationIssue[]) {
-		super(issues.map(({ path, message }) => `${path}: ${message}`).join("; "))
-		this.name = "SignalPredicateValidationError"
-		this.issues = issues
+export class SignalPredicateValidationError extends Schema.TaggedError<SignalPredicateValidationError>()(
+	"@maple/eventing-core/SignalPredicateInvalid",
+	{
+		message: Schema.String,
+		issues: Schema.Array(Schema.Struct({ path: Schema.String, message: Schema.String })),
+	},
+) {
+	static create(issues: readonly ValidationIssue[]) {
+		return new SignalPredicateValidationError({
+			message: issues.map(({ path, message }) => `${path}: ${message}`).join("; "),
+			issues,
+		})
 	}
 }
 
-const stringBytes = (value: string): number => new TextEncoder().encode(value).byteLength
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
-
-const assertScalarInputBudget = (value: unknown): void => {
-	if (!isRecord(value) || typeof value.type !== "string") return
-	if (value.type === "string" && typeof value.value === "string") {
-		if (stringBytes(value.value) > MAX_STRING_LITERAL_BYTES)
-			throw new Error(`selector string exceeds ${MAX_STRING_LITERAL_BYTES} UTF-8 bytes`)
-		return
-	}
-	if (
-		(value.type === "int64" || value.type === "duration") &&
-		typeof value.value === "string" &&
-		value.value.length > MAX_DECIMAL_INT64_LENGTH
-	)
-		throw new Error(`${value.type} literal exceeds ${MAX_DECIMAL_INT64_LENGTH} characters`)
-}
-
-/**
- * Reject hostile selector topology before the recursive runtime schema sees it.
- * HTTP hosts should additionally bound the serialized request body.
- */
 export const assertSignalProjectionInputBudget = (candidate: unknown): void => {
-	if (!isRecord(candidate) || candidate.selector === undefined) return
-	const stack: Array<{ readonly value: unknown; readonly depth: number }> = [
-		{ value: candidate.selector, depth: 1 },
-	]
-	const seen = new Set<object>()
-	let nodes = 0
-	while (stack.length > 0) {
-		const current = stack.pop()!
-		if (current.depth > MAX_PREDICATE_DEPTH)
-			throw new Error(`predicate depth exceeds ${MAX_PREDICATE_DEPTH}`)
-		nodes += 1
-		if (nodes > MAX_PREDICATE_NODES) throw new Error(`predicate exceeds ${MAX_PREDICATE_NODES} nodes`)
-		if (!isRecord(current.value)) continue
-		if (seen.has(current.value)) throw new Error("predicate must be acyclic JSON")
-		seen.add(current.value)
-
-		switch (current.value.op) {
-			case "all":
-			case "any": {
-				const clauses = current.value.clauses
-				if (!Array.isArray(clauses)) break
-				if (clauses.length > MAX_PREDICATE_NODES)
-					throw new Error(`predicate clause list exceeds ${MAX_PREDICATE_NODES} entries`)
-				for (let index = clauses.length - 1; index >= 0; index--)
-					stack.push({ value: clauses[index], depth: current.depth + 1 })
-				break
-			}
-			case "not":
-				stack.push({ value: current.value.clause, depth: current.depth + 1 })
-				break
-			case "in": {
-				const values = current.value.values
-				if (!Array.isArray(values)) break
-				if (values.length > MAX_IN_VALUES) throw new Error(`in exceeds ${MAX_IN_VALUES} values`)
-				for (const value of values) assertScalarInputBudget(value)
-				break
-			}
-			default:
-				assertScalarInputBudget(current.value.value)
-		}
-	}
+	if (typeof candidate !== "object" || candidate === null || !("selector" in candidate)) return
+	const issue = predicateInputBudgetIssue(candidate.selector)
+	if (issue !== undefined)
+		throw SignalPredicateValidationError.create([{ path: "selector", message: issue }])
 }
 
-const parseInt64 = (value: string): bigint | null => {
-	try {
-		const parsed = BigInt(value)
-		return parsed >= INT64_MIN && parsed <= INT64_MAX ? parsed : null
-	} catch {
-		return null
-	}
+const Int64FromString = Schema.BigIntFromString.check(
+	Schema.makeFilter((value) => value >= INT64_MIN && value <= INT64_MAX, { expected: "signed int64" }),
+)
+const parseInt64 = (value: string): bigint | null =>
+	Option.getOrNull(Schema.decodeUnknownOption(Int64FromString)(value))
+
+/** Guard topology before the recursive codec, including persisted and compile inputs. */
+export const decodeSignalProjectionSpec = (candidate: unknown): SignalProjectionSpec => {
+	return Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate)
 }
 
 const isLeapYear = (year: number): boolean => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
@@ -197,8 +146,8 @@ export const validateSignalScalar = (scalar: SignalScalar, path = "value"): read
 
 export const validateSignalLiteral = (literal: SignalLiteral, path = "value"): readonly ValidationIssue[] => [
 	...validateSignalScalar(literal, path),
-	...(literal.type === "string" && stringBytes(literal.value) > MAX_STRING_LITERAL_BYTES
-		? [{ path, message: `string exceeds ${MAX_STRING_LITERAL_BYTES} UTF-8 bytes` }]
+	...(literal.type === "string" && Array.from(literal.value).length > MAX_STRING_LITERAL_CHARACTERS
+		? [{ path, message: `string exceeds ${MAX_STRING_LITERAL_CHARACTERS} Unicode code points` }]
 		: []),
 ]
 
@@ -222,8 +171,8 @@ export const validateSignalPredicate = (predicate: SignalPredicate): readonly Va
 						path: `${path}.clauses`,
 						message: `${node.op} requires at least one clause`,
 					})
-				for (let i = 0; i < node.clauses.length; i++)
-					visit(node.clauses[i]!, `${path}.clauses[${i}]`, depth + 1)
+				for (const [i, clause] of node.clauses.entries())
+					visit(clause, `${path}.clauses[${i}]`, depth + 1)
 				break
 			case "not":
 				visit(node.clause, `${path}.clause`, depth + 1)
@@ -256,8 +205,7 @@ export const validateSignalPredicate = (predicate: SignalPredicate): readonly Va
 					issues.push({ path: `${path}.values`, message: "in requires at least one value" })
 				if (node.values.length > MAX_IN_VALUES)
 					issues.push({ path: `${path}.values`, message: `in exceeds ${MAX_IN_VALUES} values` })
-				for (let i = 0; i < node.values.length; i++) {
-					const value = node.values[i]!
+				for (const [i, value] of node.values.entries()) {
 					if (value.type !== node.field.type)
 						issues.push({
 							path: `${path}.values[${i}]`,
@@ -277,7 +225,7 @@ export const validateSignalPredicate = (predicate: SignalPredicate): readonly Va
 
 export const assertValidSignalPredicate = (predicate: SignalPredicate): void => {
 	const issues = validateSignalPredicate(predicate)
-	if (issues.length > 0) throw new SignalPredicateValidationError(issues)
+	if (issues.length > 0) throw SignalPredicateValidationError.create(issues)
 }
 
 export const validateSignalProjectionSpec = (
@@ -340,8 +288,9 @@ const scalarOrder = (left: SignalScalar, right: SignalScalar): number | null => 
 						: 0
 		case "timestamp": {
 			if (right.type !== "timestamp") return null
-			const a = timestampToEpochNanos(left.value)!
-			const b = timestampToEpochNanos(right.value)!
+			const a = timestampToEpochNanos(left.value)
+			const b = timestampToEpochNanos(right.value)
+			if (a === null || b === null) return null
 			return a < b ? -1 : a > b ? 1 : 0
 		}
 		default:
@@ -352,6 +301,7 @@ const scalarOrder = (left: SignalScalar, right: SignalScalar): number | null => 
 export type CompiledSignalPredicate = (signal: NormalizedSignal) => PredicateEvaluation
 
 export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSignalPredicate => {
+	assertSignalProjectionInputBudget({ selector: predicate })
 	assertValidSignalPredicate(predicate)
 
 	return (signal) => {

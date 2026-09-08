@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import type { AlertDestinationRow } from "@maple/db"
-import { Effect } from "effect"
+import { Effect, Result } from "effect"
 import { parseBase64Aes256GcmKey } from "@/platform/Crypto"
 import type { EmailServiceApi } from "@/platform/EmailService"
 import type { SlackBotTokenResolverApi } from "@/services/integrations/slack-bot-token"
@@ -130,9 +130,9 @@ export const makeAlertDestinationDelivery = (options: {
 			{ sendEmail, resolveSlackBotToken: options.resolveSlackBotToken },
 		)
 
-	const buildPayload = (context: AlertDeliveryPayloadContext, tenantId: string) =>
-		({
-			event: projectAlertLifecycleEvent({
+	const buildPayloadValue = (context: AlertDeliveryPayloadContext, tenantId: string) =>
+		Result.gen(function* () {
+			const event = yield* projectAlertLifecycleEvent({
 				tenantId,
 				ruleId: context.ruleId,
 				ruleName: context.ruleName,
@@ -149,56 +149,70 @@ export const makeAlertDestinationDelivery = (options: {
 				value: context.value,
 				sampleCount: context.sampleCount,
 				occurredAtMs: context.sentAtMs,
-			}),
-			eventType: context.eventType,
-			incidentId: context.incidentId,
-			incidentStatus: context.incidentStatus,
-			dedupeKey: context.dedupeKey,
-			rule: {
-				id: context.ruleId,
-				name: context.ruleName,
-				signalType: context.signalType,
-				severity: context.severity,
-				groupKey: context.groupKey,
-				comparator: context.comparator,
-				threshold: context.threshold,
-				thresholdUpper: context.thresholdUpper,
-				windowMinutes: context.windowMinutes,
-			},
-			observed: {
-				value: context.value,
-				sampleCount: context.sampleCount,
-			},
-			template: context.template ?? null,
-			// Snapshotted at queue time, not re-derived at delivery: a retry an
-			// hour later must show what the alert saw, not what has happened since.
-			chart:
-				context.sparkline || context.chartUrl
-					? {
-							...(context.sparkline ? { sparkline: context.sparkline } : undefined),
-							...(context.chartUrl ? { url: context.chartUrl } : undefined),
-						}
-					: null,
-			linkUrl: context.linkUrl,
-			chatUrl: buildAlertChatUrl(options.appBaseUrl, context),
-			sentAt: new Date(context.sentAtMs).toISOString(),
-		}) satisfies {
-			readonly event: ReturnType<typeof projectAlertLifecycleEvent>
-			readonly eventType: AlertDeliveryPayloadContext["eventType"]
-			readonly incidentId: AlertIncidentId | null
-			readonly incidentStatus: AlertDeliveryPayloadContext["incidentStatus"]
-			readonly dedupeKey: string
-			readonly rule: Record<string, unknown>
-			readonly observed: Record<string, unknown>
-			readonly template: AlertNotificationTemplate | null
-			readonly chart: {
-				readonly sparkline?: string
-				readonly url?: string
-			} | null
-			readonly linkUrl: string
-			readonly chatUrl: string
-			readonly sentAt: string
-		}
+			})
+			return {
+				event,
+				eventType: context.eventType,
+				incidentId: context.incidentId,
+				incidentStatus: context.incidentStatus,
+				dedupeKey: context.dedupeKey,
+				rule: {
+					id: context.ruleId,
+					name: context.ruleName,
+					signalType: context.signalType,
+					severity: context.severity,
+					groupKey: context.groupKey,
+					comparator: context.comparator,
+					threshold: context.threshold,
+					thresholdUpper: context.thresholdUpper,
+					windowMinutes: context.windowMinutes,
+				},
+				observed: {
+					value: context.value,
+					sampleCount: context.sampleCount,
+				},
+				template: context.template ?? null,
+				// Snapshotted at queue time, not re-derived at delivery: a retry an
+				// hour later must show what the alert saw, not what has happened since.
+				chart:
+					context.sparkline || context.chartUrl
+						? {
+								...(context.sparkline ? { sparkline: context.sparkline } : undefined),
+								...(context.chartUrl ? { url: context.chartUrl } : undefined),
+							}
+						: null,
+				linkUrl: context.linkUrl,
+				chatUrl: buildAlertChatUrl(options.appBaseUrl, context),
+				sentAt: new Date(context.sentAtMs).toISOString(),
+			} satisfies {
+				readonly event: Result.Result.Success<ReturnType<typeof projectAlertLifecycleEvent>>
+				readonly eventType: AlertDeliveryPayloadContext["eventType"]
+				readonly incidentId: AlertIncidentId | null
+				readonly incidentStatus: AlertDeliveryPayloadContext["incidentStatus"]
+				readonly dedupeKey: string
+				readonly rule: Record<string, unknown>
+				readonly observed: Record<string, unknown>
+				readonly template: AlertNotificationTemplate | null
+				readonly chart: {
+					readonly sparkline?: string
+					readonly url?: string
+				} | null
+				readonly linkUrl: string
+				readonly chatUrl: string
+				readonly sentAt: string
+			}
+		})
+
+	const buildPayload = (context: AlertDeliveryPayloadContext, tenantId: string) =>
+		Effect.suspend(() => Effect.fromResult(buildPayloadValue(context, tenantId))).pipe(
+			Effect.mapError(
+				(cause) =>
+					new AlertDeliveryError({
+						message: `Unable to project lifecycle event for rule ${context.ruleId}`,
+						cause,
+					}),
+			),
+		)
 
 	const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
 		destinationRow: AlertDestinationRow,
@@ -212,7 +226,7 @@ export const makeAlertDestinationDelivery = (options: {
 			secretConfig: enrichedSecret,
 			...context,
 		}
-		const payload = buildPayload(fullContext, destinationRow.orgId)
+		const payload = yield* buildPayload(fullContext, destinationRow.orgId)
 		return yield* dispatchDelivery(fullContext, JSON.stringify(payload))
 	})
 

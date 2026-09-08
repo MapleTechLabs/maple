@@ -1,5 +1,5 @@
 {
-  "id": "05e399ba-d2a8-48cf-9e7a-d8d4228b57e0",
+  "id": "b4945a41-fcc2-4a3f-bd58-4a7caefe7392",
   "prevId": "08d43f4b-2c3a-4173-8e8e-1999ae66b5d0",
   "version": "7",
   "dialect": "postgresql",
@@ -7656,6 +7656,61 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.planetscale_issue_receipts": {
+      "name": "planetscale_issue_receipts",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "planetscale_issue_receipts_processed_at_idx": {
+          "name": "planetscale_issue_receipts_processed_at_idx",
+          "columns": [
+            {
+              "expression": "processed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "planetscale_issue_receipts_org_id_event_id_pk": {
+          "name": "planetscale_issue_receipts_org_id_event_id_pk",
+          "columns": [
+            "org_id",
+            "event_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.planetscale_poll_state": {
       "name": "planetscale_poll_state",
       "schema": "",
@@ -8803,45 +8858,6 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.planetscale_issue_receipts": {
-      "name": "planetscale_issue_receipts",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "processed_at": {
-          "name": "processed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "planetscale_issue_receipts_org_id_event_id_pk": {
-          "name": "planetscale_issue_receipts_org_id_event_id_pk",
-          "columns": [
-            "org_id",
-            "event_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -1,12 +1,13 @@
 import { Schema } from "effect"
 
-export const MAX_PREDICATE_DEPTH = 8
-export const MAX_PREDICATE_NODES = 64
-export const MAX_IN_VALUES = 100
-export const MAX_STRING_LITERAL_BYTES = 4 * 1024
-export const MAX_DECIMAL_INT64_LENGTH = 20
-
-const utf8Bytes = (value: string): number => new TextEncoder().encode(value).byteLength
+import {
+	MAX_IN_VALUES,
+	MAX_PREDICATE_NODES,
+	MAX_DECIMAL_INT64_LENGTH,
+	MAX_STRING_LITERAL_CHARACTERS,
+} from "./limits"
+import { predicateInputBudgetIssue } from "./input-budget"
+export * from "./limits"
 
 const NonEmptyIdentifier = Schema.String.check(
 	Schema.isMinLength(1),
@@ -28,12 +29,10 @@ export const StringSignalScalar = Schema.Struct({
 	value: Schema.String,
 })
 
-const StringLiteralValue = Schema.String.annotate({
-	description: `Predicate string literal limited to ${MAX_STRING_LITERAL_BYTES} UTF-8 bytes; JSON Schema cannot express this byte-count constraint`,
-}).check(
-	Schema.makeFilter((value) => utf8Bytes(value) <= MAX_STRING_LITERAL_BYTES, {
-		expected: `a string no larger than ${MAX_STRING_LITERAL_BYTES} UTF-8 bytes`,
-		description: `Predicate string literal limited to ${MAX_STRING_LITERAL_BYTES} UTF-8 bytes`,
+const StringLiteralValue = Schema.String.check(
+	Schema.makeFilter((value) => Array.from(value).length <= MAX_STRING_LITERAL_CHARACTERS, {
+		expected: "at most 1024 Unicode code points (at most 4 KiB UTF-8)",
+		toJsonSchema: () => ({ maxLength: MAX_STRING_LITERAL_CHARACTERS }),
 	}),
 )
 
@@ -138,26 +137,26 @@ export type SignalPredicate =
 	| ComparisonPredicate
 	| InPredicate
 
-export const SignalPredicateSchema: Schema.Codec<SignalPredicate, SignalPredicate> = Schema.suspend(
+const RecursiveSignalPredicateSchema: Schema.Codec<SignalPredicate, SignalPredicate> = Schema.suspend(
 	(): Schema.Codec<SignalPredicate, SignalPredicate> =>
 		Schema.Union([
 			Schema.Struct({
 				op: Schema.Literal("all"),
-				clauses: Schema.Array(SignalPredicateSchema).check(
+				clauses: Schema.Array(RecursiveSignalPredicateSchema).check(
 					Schema.isMinLength(1),
 					Schema.isMaxLength(MAX_PREDICATE_NODES),
 				),
 			}),
 			Schema.Struct({
 				op: Schema.Literal("any"),
-				clauses: Schema.Array(SignalPredicateSchema).check(
+				clauses: Schema.Array(RecursiveSignalPredicateSchema).check(
 					Schema.isMinLength(1),
 					Schema.isMaxLength(MAX_PREDICATE_NODES),
 				),
 			}),
 			Schema.Struct({
 				op: Schema.Literal("not"),
-				clause: SignalPredicateSchema,
+				clause: RecursiveSignalPredicateSchema,
 			}),
 			Schema.Struct({
 				op: Schema.Literal("exists"),
@@ -176,8 +175,15 @@ export const SignalPredicateSchema: Schema.Codec<SignalPredicate, SignalPredicat
 					Schema.isMaxLength(MAX_IN_VALUES),
 				),
 			}),
-		]) as Schema.Codec<SignalPredicate, SignalPredicate>,
+		]),
 ).annotate({ identifier: "SignalPredicate" })
+
+/** The topology guard runs before any recursive decoder, including direct schema consumers. */
+export const SignalPredicateSchema = Schema.Unknown.check(
+	Schema.makeFilter((value) => predicateInputBudgetIssue(value) ?? true, {
+		expected: "a predicate within the depth, node and literal budgets",
+	}),
+).pipe(Schema.decodeTo(RecursiveSignalPredicateSchema))
 
 export const ProjectorRefSchema = Schema.Struct({
 	id: NonEmptyIdentifier,
@@ -235,7 +241,7 @@ export interface MapleCloudEvent {
 	readonly projectorid: string
 	readonly projectorversion: number
 	readonly sourceoccurrenceid?: string
-	readonly sourceidentityquality?: "source" | "derived" | "none"
+	readonly identityquality?: "source" | "derived" | "none"
 	readonly data: JsonValue
 }
 
@@ -254,8 +260,8 @@ export const MapleCloudEventSchema = Schema.Struct({
 	projectorid: NonEmptyIdentifier,
 	projectorversion: Schema.Int.check(Schema.isGreaterThan(0)),
 	sourceoccurrenceid: Schema.optionalKey(NonEmptyIdentifier),
-	sourceidentityquality: Schema.optionalKey(Schema.Literals(["source", "derived", "none"])),
-	data: Schema.Unknown,
+	identityquality: Schema.optionalKey(Schema.Literals(["source", "derived", "none"])),
+	data: Schema.Json,
 }).annotate({ identifier: "MapleCloudEvent" })
 
 export const fieldKey = (field: Pick<FieldRef, "namespace" | "key">): string =>

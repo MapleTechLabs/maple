@@ -1,3 +1,5 @@
+import CREATE_SCHEMA from "../schema/control-schema.sql" with { type: "text" }
+import { LOCAL_CONTROL_SCHEMA_VERSION as CONTROL_SCHEMA_VERSION } from "../local-schema-version"
 import { constants as sqliteConstants, Database } from "bun:sqlite"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
@@ -6,18 +8,17 @@ import { pathToFileURL } from "node:url"
 import {
 	canonicalJson,
 	isJsonValue,
-	SignalProjectionSpecSchema,
+	decodeSignalProjectionSpec,
 	validateMapleCloudEvent,
 	type MapleCloudEvent,
 	type JsonValue,
 	type ProjectionFailure,
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
 import { durableWrite, ensurePrivateDirectory } from "../durable-files"
 import { NOOP_EVENTING_TELEMETRY, type EventingTelemetry } from "./telemetry"
 
-const CONTROL_SCHEMA_VERSION = 4
 const CONTROL_DIRECTORY = "control"
 const CONTROL_DATABASE = "eventing.sqlite"
 const MAX_FAILURES_PER_TENANT = 10_000
@@ -30,155 +31,6 @@ export const eventingControlPath = (dataDir: string): string =>
 	join(eventingControlDirectory(dataDir), CONTROL_DATABASE)
 export const eventingControlSnapshotPath = (dataDir: string, checkpointId: string): string =>
 	join(resolve(dataDir), "backups", "snapshots", checkpointId, "control.sqlite")
-
-const CREATE_SCHEMA = `
-CREATE TABLE projection_revisions (
-    tenant_id TEXT NOT NULL,
-    projection_id TEXT NOT NULL,
-    revision INTEGER NOT NULL CHECK (revision > 0),
-    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
-    spec_json TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, projection_id, revision)
-) STRICT;
-
-CREATE TABLE active_projections (
-    tenant_id TEXT NOT NULL,
-    projection_id TEXT NOT NULL,
-    revision INTEGER NOT NULL,
-    PRIMARY KEY (tenant_id, projection_id),
-    FOREIGN KEY (tenant_id, projection_id, revision)
-        REFERENCES projection_revisions (tenant_id, projection_id, revision)
-        ON DELETE RESTRICT
-) STRICT;
-
-CREATE TABLE outbox_events (
-    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id TEXT NOT NULL UNIQUE,
-    tenant_id TEXT NOT NULL,
-    projection_id TEXT NOT NULL,
-    projection_revision INTEGER NOT NULL CHECK (projection_revision > 0),
-    source_kind TEXT,
-    source TEXT,
-    source_occurrence_id TEXT,
-    source_fingerprint TEXT,
-    state TEXT NOT NULL CHECK (state IN ('staged', 'ready')),
-    event_json TEXT NOT NULL,
-    staged_at TEXT NOT NULL,
-    ready_at TEXT
-) STRICT;
-
-CREATE INDEX outbox_events_staged_sequence
-    ON outbox_events (state, sequence);
-
-CREATE INDEX outbox_events_staged_occurrence
-    ON outbox_events (tenant_id, source_kind, source, source_occurrence_id, state);
-
-CREATE TABLE outbox_ready_events (
-    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id TEXT NOT NULL UNIQUE,
-    ready_at TEXT NOT NULL,
-    FOREIGN KEY (event_id)
-        REFERENCES outbox_events (event_id)
-        ON DELETE RESTRICT
-) STRICT;
-
-CREATE TABLE projection_failures (
-    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-    tenant_id TEXT NOT NULL,
-    projection_id TEXT NOT NULL,
-    projection_revision INTEGER NOT NULL CHECK (projection_revision > 0),
-    occurrence_id TEXT,
-    message TEXT NOT NULL,
-    created_at TEXT NOT NULL
-) STRICT;
-
-CREATE UNIQUE INDEX projection_failures_occurrence
-    ON projection_failures (tenant_id, projection_id, projection_revision, occurrence_id)
-    WHERE occurrence_id IS NOT NULL;
-
-CREATE TABLE event_consumers (
-    consumer_id TEXT PRIMARY KEY,
-    tenant_id TEXT NOT NULL,
-    active INTEGER NOT NULL CHECK (active IN (0, 1)),
-    last_acked_sequence INTEGER NOT NULL CHECK (last_acked_sequence >= 0),
-    lease_token_hash TEXT,
-    lease_expires_at TEXT,
-    claimed_through_sequence INTEGER CHECK (claimed_through_sequence > 0),
-    registered_at TEXT NOT NULL,
-    disabled_at TEXT,
-    CHECK (
-        (active = 1 AND disabled_at IS NULL) OR
-        (active = 0 AND disabled_at IS NOT NULL)
-    ),
-    CHECK (
-        (lease_token_hash IS NULL AND lease_expires_at IS NULL AND claimed_through_sequence IS NULL) OR
-        (lease_token_hash IS NOT NULL AND lease_expires_at IS NOT NULL AND claimed_through_sequence IS NOT NULL)
-    ),
-    CHECK (claimed_through_sequence IS NULL OR claimed_through_sequence > last_acked_sequence)
-) STRICT;
-
-CREATE INDEX event_consumers_tenant_active_ack
-    ON event_consumers (tenant_id, active, last_acked_sequence);
-
-PRAGMA user_version = 4;
-`
-
-const MIGRATE_SCHEMA_1_TO_2 = `
-CREATE TABLE event_consumers (
-    consumer_id TEXT PRIMARY KEY,
-    tenant_id TEXT NOT NULL,
-    active INTEGER NOT NULL CHECK (active IN (0, 1)),
-    last_acked_sequence INTEGER NOT NULL CHECK (last_acked_sequence >= 0),
-    lease_token_hash TEXT,
-    lease_expires_at TEXT,
-    claimed_through_sequence INTEGER CHECK (claimed_through_sequence > 0),
-    registered_at TEXT NOT NULL,
-    disabled_at TEXT,
-    CHECK (
-        (active = 1 AND disabled_at IS NULL) OR
-        (active = 0 AND disabled_at IS NOT NULL)
-    ),
-    CHECK (
-        (lease_token_hash IS NULL AND lease_expires_at IS NULL AND claimed_through_sequence IS NULL) OR
-        (lease_token_hash IS NOT NULL AND lease_expires_at IS NOT NULL AND claimed_through_sequence IS NOT NULL)
-    ),
-    CHECK (claimed_through_sequence IS NULL OR claimed_through_sequence > last_acked_sequence)
-) STRICT;
-
-CREATE INDEX event_consumers_tenant_active_ack
-    ON event_consumers (tenant_id, active, last_acked_sequence);
-
-PRAGMA user_version = 2;
-`
-
-const MIGRATE_SCHEMA_2_TO_3 = `
-ALTER TABLE outbox_events ADD COLUMN source_kind TEXT;
-ALTER TABLE outbox_events ADD COLUMN source TEXT;
-ALTER TABLE outbox_events ADD COLUMN source_occurrence_id TEXT;
-
-UPDATE outbox_events
-SET source_kind = (
-        SELECT json_extract(spec_json, '$.sourceKind')
-        FROM projection_revisions
-        WHERE projection_revisions.tenant_id = outbox_events.tenant_id
-          AND projection_revisions.projection_id = outbox_events.projection_id
-          AND projection_revisions.revision = outbox_events.projection_revision
-    ),
-    source = json_extract(event_json, '$.source'),
-    source_occurrence_id = json_extract(event_json, '$.sourceoccurrenceid');
-
-CREATE INDEX outbox_events_staged_occurrence
-    ON outbox_events (tenant_id, source_kind, source, source_occurrence_id, state);
-
-PRAGMA user_version = 3;
-`
-
-const MIGRATE_SCHEMA_3_TO_4 = `
-ALTER TABLE outbox_events ADD COLUMN source_fingerprint TEXT;
-
-PRAGMA user_version = 4;
-`
 
 interface UserVersionRow {
 	readonly user_version: number | bigint
@@ -234,6 +86,7 @@ interface ConsumerRow {
 	readonly tenant_id: string
 	readonly active: number | bigint
 	readonly last_acked_sequence: number | bigint
+	readonly accepted_gap_generation: number | bigint
 	readonly lease_token_hash: string | null
 	readonly lease_expires_at: string | null
 	readonly claimed_through_sequence: number | bigint | null
@@ -254,6 +107,7 @@ interface ActiveRevisionRow {
 }
 
 export interface StageEventsResult {
+	readonly dropped: number
 	readonly inserted: number
 	readonly deduplicated: number
 	readonly eventIds: readonly string[]
@@ -318,9 +172,74 @@ export interface EventConsumerAcknowledgement {
 	readonly prunedEvents: number
 }
 
-export class EventConsumerInputError extends Error {}
-export class EventConsumerNotFoundError extends Error {}
-export class EventConsumerConflictError extends Error {}
+export class EventConsumerInputError extends Schema.TaggedError<EventConsumerInputError>()(
+	"@maple/cli/eventing/EventConsumerInputInvalid",
+	{ message: Schema.String },
+) {
+	static create(message: string) {
+		return new EventConsumerInputError({ message })
+	}
+}
+export class EventConsumerNotFoundError extends Schema.TaggedError<EventConsumerNotFoundError>()(
+	"@maple/cli/eventing/EventConsumerNotFound",
+	{ message: Schema.String, consumerId: Schema.String },
+) {
+	static create(message: string, consumerId: string) {
+		return new EventConsumerNotFoundError({ message, consumerId })
+	}
+}
+export class EventConsumerConflictError extends Schema.TaggedError<EventConsumerConflictError>()(
+	"@maple/cli/eventing/EventConsumerConflict",
+	{
+		message: Schema.String,
+		consumerId: Schema.String,
+	},
+) {
+	static create(message: string, consumerId: string) {
+		return new EventConsumerConflictError({ message, consumerId })
+	}
+}
+
+export class EventConsumerLeaseError extends Schema.TaggedError<EventConsumerLeaseError>()(
+	"@maple/cli/eventing/EventConsumerLeaseConflict",
+	{
+		message: Schema.String,
+		consumerId: Schema.String,
+		expiresAtMs: Schema.NullOr(Schema.Number),
+	},
+) {
+	static create(message: string, consumerId: string, expiresAt: string | null) {
+		return new EventConsumerLeaseError({
+			message,
+			consumerId,
+			expiresAtMs: expiresAt === null ? null : Date.parse(expiresAt),
+		})
+	}
+}
+
+export class EventConsumerDeliveryGapError extends Schema.TaggedError<EventConsumerDeliveryGapError>()(
+	"@maple/cli/eventing/EventConsumerDeliveryGap",
+	{
+		message: Schema.String,
+		consumerId: Schema.String,
+		generation: Schema.Number,
+		droppedEvents: Schema.Number,
+	},
+) {}
+export class OutboxAdministrationInvalid extends Schema.TaggedError<OutboxAdministrationInvalid>()(
+	"@maple/cli/eventing/OutboxAdministrationInvalid",
+	{ message: Schema.String },
+) {}
+export interface DeliveryGap {
+	readonly generation: number
+	readonly droppedEvents: number
+	readonly lastDroppedAt: string | null
+}
+interface DeliveryGapRow {
+	readonly generation: number | bigint
+	readonly dropped_events: number | bigint
+	readonly last_dropped_at: string
+}
 
 const asNumber = (value: number | bigint): number => {
 	const number = Number(value)
@@ -329,10 +248,12 @@ const asNumber = (value: number | bigint): number => {
 }
 
 const decodeProjection = (json: string): SignalProjectionSpec =>
-	Schema.decodeUnknownSync(SignalProjectionSpecSchema)(JSON.parse(json) as unknown)
+	decodeSignalProjectionSpec(Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json))
 
 const decodeEvent = (json: string): MapleCloudEvent => {
-	return validateMapleCloudEvent(JSON.parse(json) as unknown).event
+	return Result.getOrThrow(
+		validateMapleCloudEvent(Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json)),
+	).event
 }
 
 const assertRealDatabaseFile = (path: string): void => {
@@ -340,7 +261,7 @@ const assertRealDatabaseFile = (path: string): void => {
 	try {
 		info = lstatSync(path)
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+		if (Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }))(error)) return
 		throw error
 	}
 	if (info.isSymbolicLink() || !info.isFile())
@@ -351,19 +272,6 @@ const configure = (db: Database): void => {
 	db.exec("PRAGMA foreign_keys = ON")
 	db.exec("PRAGMA trusted_schema = OFF")
 	db.exec("PRAGMA busy_timeout = 5000")
-}
-
-const assertSchema3MigrationSafe = (db: Database): void => {
-	const row = db
-		.query<CountRow, []>(
-			"SELECT count(*) AS count FROM outbox_events WHERE state = 'staged' AND source_occurrence_id IS NOT NULL",
-		)
-		.get()
-	if (row === null) throw new Error("schema-3 staged-source preflight returned no row")
-	if (asNumber(row.count) > 0)
-		throw new Error(
-			"cannot migrate eventing control schema 3 with staged source occurrences: the legacy rows have no source fingerprint; complete or explicitly abandon them with the schema-3 build before upgrading",
-		)
 }
 
 const checkpointWal = (db: Database): void => {
@@ -403,6 +311,20 @@ const validateOpenDatabase = (
 		throw new Error(
 			`unsupported eventing control schema ${schemaVersion}; expected ${acceptedSchemaVersions.join(" or ")}`,
 		)
+	// Full accounting verification belongs at open/restore, never on the ingest hot path.
+	const accounting = db.prepare<CountRow, []>(`
+		SELECT count(*) AS count FROM outbox_usage
+		WHERE singleton = 1
+		AND count = (SELECT count(*) FROM outbox_events)
+		AND bytes = (SELECT coalesce(sum(length(CAST(event_json AS BLOB))), 0) FROM outbox_events)
+	`)
+	try {
+		const row = accounting.get()
+		if (row === null || asNumber(row.count) !== 1)
+			throw new Error("eventing control outbox accounting is inconsistent")
+	} finally {
+		accounting.finalize()
+	}
 	const count = (where: string): number => {
 		const row = db.query<CountRow, []>(`SELECT count(*) AS count FROM outbox_events ${where}`).get()
 		if (!row) throw new Error("eventing control count query returned no row")
@@ -427,7 +349,7 @@ const validateOpenDatabase = (
 	if (!invalidReadiness) throw new Error("eventing readiness validation query returned no row")
 	if (asNumber(invalidReadiness.count) !== 0)
 		throw new Error("eventing control database has inconsistent outbox readiness state")
-	if (schemaVersion >= 2) {
+	{
 		const consumers = db
 			.query<Pick<ConsumerRow, "lease_expires_at" | "registered_at" | "disabled_at">, []>(
 				"SELECT lease_expires_at, registered_at, disabled_at FROM event_consumers",
@@ -441,7 +363,7 @@ const validateOpenDatabase = (
 				canonicalInstant(consumer.disabled_at, "event consumer disabledAt")
 		}
 	}
-	if (schemaVersion >= 4) {
+	{
 		const statement = db.prepare<CountRow, []>(
 			`SELECT count(*) AS count
 				 FROM outbox_events
@@ -479,7 +401,7 @@ const LEASE_TOKEN = /^[0-9a-f]{64}$/
 
 const validateConsumerId = (consumerId: string): string => {
 	if (!CONSUMER_ID.test(consumerId))
-		throw new EventConsumerInputError(
+		throw EventConsumerInputError.create(
 			"consumerId must start with a lowercase letter and contain at most 64 lowercase letters, digits, dots, underscores, or hyphens",
 		)
 	return consumerId
@@ -488,7 +410,7 @@ const validateConsumerId = (consumerId: string): string => {
 const canonicalInstant = (value: string, label: string): number => {
 	const milliseconds = Date.parse(value)
 	if (Number.isNaN(milliseconds) || new Date(milliseconds).toISOString() !== value)
-		throw new EventConsumerInputError(`${label} must be canonical ISO-8601`)
+		throw EventConsumerInputError.create(`${label} must be canonical ISO-8601`)
 	return milliseconds
 }
 
@@ -515,6 +437,7 @@ const decodeConsumer = (row: ConsumerRow): EventConsumer => ({
 
 export class LocalEventingControlStore {
 	readonly #db: Database
+	#stagedSourceKinds = new Set<string>()
 	readonly #limits: ResolvedLocalEventingControlLimits
 	readonly #telemetry: EventingTelemetry
 	readonly path: string
@@ -529,6 +452,7 @@ export class LocalEventingControlStore {
 		this.#db = db
 		this.#limits = limits
 		this.#telemetry = telemetry
+		this.#refreshStagedSourceKinds()
 	}
 
 	static async open(
@@ -557,21 +481,6 @@ export class LocalEventingControlStore {
 				db.transaction(() => db.exec(CREATE_SCHEMA)).exclusive()
 				schemaVersion = CONTROL_SCHEMA_VERSION
 			}
-			if (schemaVersion === 1) {
-				db.transaction(() => db.exec(MIGRATE_SCHEMA_1_TO_2)).exclusive()
-				schemaVersion = 2
-			}
-			if (schemaVersion === 2) {
-				db.transaction(() => db.exec(MIGRATE_SCHEMA_2_TO_3)).exclusive()
-				schemaVersion = 3
-			}
-			if (schemaVersion === 3) {
-				db.transaction(() => {
-					assertSchema3MigrationSafe(db)
-					db.exec(MIGRATE_SCHEMA_3_TO_4)
-				}).exclusive()
-				schemaVersion = 4
-			}
 			if (schemaVersion !== CONTROL_SCHEMA_VERSION)
 				throw new Error(
 					`unsupported eventing control schema ${schemaVersion}; expected ${CONTROL_SCHEMA_VERSION}`,
@@ -591,7 +500,7 @@ export class LocalEventingControlStore {
 	}
 
 	saveProjection(spec: SignalProjectionSpec, createdAt = new Date().toISOString()): void {
-		const decoded = Schema.decodeUnknownSync(SignalProjectionSpecSchema)(spec)
+		const decoded = decodeSignalProjectionSpec(spec)
 		if (!isJsonValue(decoded)) throw new Error("projection spec must be finite JSON")
 		const specJson = canonicalJson(decoded)
 		this.#db
@@ -684,20 +593,18 @@ export class LocalEventingControlStore {
 	): StageEventsResult {
 		let inserted = 0
 		let deduplicated = 0
+		const droppedByTenant = new Map<string, number>()
+		let dropped = 0
 		const eventIds: string[] = []
 		try {
 			this.#db
 				.transaction(() => {
-					const usage = this.#db
-						.query<OutboxUsageRow, []>(
-							"SELECT count(*) AS count, coalesce(sum(length(CAST(event_json AS BLOB))), 0) AS bytes FROM outbox_events",
-						)
-						.get()
+					const usage = this.#outboxUsage()
 					if (!usage) throw new Error("event outbox usage query returned no row")
 					let outboxEvents = asNumber(usage.count)
 					let outboxBytes = asNumber(usage.bytes)
 					for (const candidate of events) {
-						const validated = validateMapleCloudEvent(candidate)
+						const validated = Result.getOrThrow(validateMapleCloudEvent(candidate))
 						const { event, canonicalJson: eventJson, byteLength: eventBytes } = validated
 						const sourceFingerprint = sourceFingerprints.get(event.id) ?? null
 						if (sourceFingerprint !== null && !/^sha256:[0-9a-f]{64}$/.test(sourceFingerprint))
@@ -746,10 +653,14 @@ export class LocalEventingControlStore {
 							if (
 								outboxEvents + 1 > this.#limits.maxOutboxEvents ||
 								outboxBytes + eventBytes > this.#limits.maxOutboxBytes
-							)
-								throw new Error(
-									`event outbox capacity exceeded (${outboxEvents}/${this.#limits.maxOutboxEvents} events, ${outboxBytes}/${this.#limits.maxOutboxBytes} bytes)`,
+							) {
+								dropped += 1
+								droppedByTenant.set(
+									event.tenantid,
+									(droppedByTenant.get(event.tenantid) ?? 0) + 1,
 								)
+								continue
+							}
 							this.#db.run(
 								"INSERT INTO outbox_events (event_id, tenant_id, projection_id, projection_revision, source_kind, source, source_occurrence_id, source_fingerprint, state, event_json, staged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?)",
 								[
@@ -771,25 +682,137 @@ export class LocalEventingControlStore {
 						}
 						eventIds.push(event.id)
 					}
+					for (const [tenantId, count] of droppedByTenant)
+						this.#recordDeliveryGap(tenantId, count, stagedAt)
 				})
 				.immediate()
 		} catch (error) {
 			this.#telemetry.record({ operation: "outbox_stage", outcome: "failure" })
 			throw error
 		}
+		this.#refreshStagedSourceKinds()
 		this.#telemetry.record({ operation: "outbox_stage", outcome: "success", count: inserted })
 		this.#telemetry.record({ operation: "outbox_dedup", outcome: "success", count: deduplicated })
-		return { inserted, deduplicated, eventIds }
+		this.#telemetry.record({ operation: "outbox_stage", outcome: "dropped", count: dropped })
+		return { inserted, deduplicated, dropped, eventIds }
 	}
 
-	hasStagedSourceKind(tenantId: string, sourceKind: string): boolean {
-		const row = this.#db
-			.query<CountRow, [string, string]>(
-				"SELECT count(*) AS count FROM outbox_events WHERE tenant_id = ? AND source_kind = ? AND state = 'staged'",
+	deliveryGap(tenantId: string): DeliveryGap {
+		const statement = this.#db.prepare<DeliveryGapRow, [string]>(
+			"SELECT generation, dropped_events, last_dropped_at FROM delivery_gaps WHERE tenant_id = ?",
+		)
+		try {
+			const row = statement.get(tenantId)
+			return row === null
+				? { generation: 0, droppedEvents: 0, lastDroppedAt: null }
+				: {
+						generation: asNumber(row.generation),
+						droppedEvents: asNumber(row.dropped_events),
+						lastDroppedAt: row.last_dropped_at,
+					}
+		} finally {
+			statement.finalize()
+		}
+	}
+	#recordDeliveryGap(tenantId: string, count: number, at: string): void {
+		if (count === 0) return
+		this.#db.run(
+			`INSERT INTO delivery_gaps (tenant_id, generation, dropped_events, last_dropped_at) VALUES (?, 1, ?, ?)
+   ON CONFLICT (tenant_id) DO UPDATE SET generation = generation + 1, dropped_events = dropped_events + excluded.dropped_events, last_dropped_at = excluded.last_dropped_at`,
+			[tenantId, count, at],
+		)
+	}
+	acceptDeliveryGap(tenantId: string, consumerId: string, generation: number): DeliveryGap {
+		validateConsumerId(consumerId)
+		return this.#db
+			.transaction(() => {
+				const consumer = this.#consumer(tenantId, consumerId)
+				if (consumer === null)
+					throw EventConsumerNotFoundError.create(
+						`event consumer not found: ${consumerId}`,
+						consumerId,
+					)
+				const gap = this.deliveryGap(tenantId)
+				if (!Number.isSafeInteger(generation) || generation < 1 || generation !== gap.generation)
+					throw EventConsumerConflictError.create(
+						"delivery gap generation changed; inspect current health before accepting",
+						consumerId,
+					)
+				this.#db.run(
+					"UPDATE event_consumers SET accepted_gap_generation = ? WHERE tenant_id = ? AND consumer_id = ?",
+					[generation, tenantId, consumerId],
+				)
+				return gap
+			})
+			.immediate()
+	}
+	/** Operator-authorized loss; the HTTP caller drains admission before invoking this transaction. */
+	abandonEvents(
+		tenantId: string,
+		eventIds: readonly string[],
+	): { readonly abandoned: number; readonly gap: DeliveryGap } {
+		if (eventIds.length < 1 || eventIds.length > 1000 || new Set(eventIds).size !== eventIds.length)
+			throw new OutboxAdministrationInvalid({ message: "abandon requires 1–1000 distinct event IDs" })
+		const result = this.#db
+			.transaction(() => {
+				const lookup = this.#db.prepare<EventIdRow, [string, string]>(
+					"SELECT event_id FROM outbox_events WHERE tenant_id = ? AND event_id = ?",
+				)
+				try {
+					for (const eventId of eventIds)
+						if (lookup.get(tenantId, eventId) === null)
+							throw new OutboxAdministrationInvalid({
+								message: `unknown event ID for abandonment: ${eventId}`,
+							})
+				} finally {
+					lookup.finalize()
+				}
+				for (const eventId of eventIds) {
+					this.#db.run("DELETE FROM outbox_ready_events WHERE event_id = ?", [eventId])
+					this.#db.run("DELETE FROM outbox_events WHERE tenant_id = ? AND event_id = ?", [
+						tenantId,
+						eventId,
+					])
+				}
+				this.#recordDeliveryGap(tenantId, eventIds.length, new Date().toISOString())
+				this.#db.run(
+					"UPDATE event_consumers SET lease_token_hash = NULL, lease_expires_at = NULL, claimed_through_sequence = NULL WHERE tenant_id = ?",
+					[tenantId],
+				)
+				return { abandoned: eventIds.length, gap: this.deliveryGap(tenantId) }
+			})
+			.immediate()
+		this.#refreshStagedSourceKinds()
+		this.#telemetry.record({ operation: "outbox_abandon", outcome: "success", count: result.abandoned })
+		return result
+	}
+
+	#refreshStagedSourceKinds(): void {
+		const statement = this.#db.prepare<{ tenant_id: string; source_kind: string }, []>(
+			"SELECT DISTINCT tenant_id, source_kind FROM outbox_events WHERE state = 'staged' AND source_kind IS NOT NULL",
+		)
+		try {
+			this.#stagedSourceKinds = new Set(
+				statement.all().map((row) => JSON.stringify([row.tenant_id, row.source_kind])),
 			)
-			.get(tenantId, sourceKind)
-		if (row === null) throw new Error("staged source-kind query returned no row")
-		return asNumber(row.count) > 0
+		} finally {
+			statement.finalize()
+		}
+	}
+	#outboxUsage(): OutboxUsageRow {
+		const statement = this.#db.prepare<OutboxUsageRow, []>(
+			"SELECT count, bytes FROM outbox_usage WHERE singleton = 1",
+		)
+		try {
+			const usage = statement.get()
+			if (usage === null) throw new Error("event outbox usage query returned no row")
+			return usage
+		} finally {
+			statement.finalize()
+		}
+	}
+	hasStagedSourceKind(tenantId: string, sourceKind: string): boolean {
+		return this.#stagedSourceKinds.has(JSON.stringify([tenantId, sourceKind]))
 	}
 
 	hasStagedSourceOccurrence(
@@ -857,6 +880,7 @@ export class LocalEventingControlStore {
 			this.#telemetry.record({ operation: "outbox_ready", outcome: "failure" })
 			throw error
 		}
+		this.#refreshStagedSourceKinds()
 		this.#telemetry.record({ operation: "outbox_ready", outcome: "success", count: markedReady })
 	}
 
@@ -911,7 +935,7 @@ export class LocalEventingControlStore {
 	listConsumers(tenantId: string): readonly EventConsumer[] {
 		return this.#db
 			.query<ConsumerRow, [string]>(
-				`SELECT consumer_id, tenant_id, active, last_acked_sequence, lease_token_hash,
+				`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
 				        lease_expires_at, claimed_through_sequence, registered_at, disabled_at
 				 FROM event_consumers
 				 WHERE tenant_id = ?
@@ -929,13 +953,16 @@ export class LocalEventingControlStore {
 	): EventConsumer {
 		validateConsumerId(consumerId)
 		if (startAt !== "beginning" && startAt !== "latest")
-			throw new EventConsumerInputError("startAt must be beginning or latest")
+			throw EventConsumerInputError.create("startAt must be beginning or latest")
 		canonicalInstant(registeredAt, "event consumer registeredAt")
 		return this.#db
 			.transaction(() => {
 				const existing = this.#consumer(tenantId, consumerId)
 				if (existing)
-					throw new EventConsumerConflictError(`event consumer already exists: ${consumerId}`)
+					throw EventConsumerConflictError.create(
+						`event consumer already exists: ${consumerId}`,
+						consumerId,
+					)
 				const boundary = this.#db
 					.query<SequenceRow, [string]>(
 						startAt === "latest"
@@ -955,7 +982,18 @@ export class LocalEventingControlStore {
 					"INSERT INTO event_consumers (consumer_id, tenant_id, active, last_acked_sequence, registered_at) VALUES (?, ?, 1, ?, ?)",
 					[consumerId, tenantId, lastAcknowledged, registeredAt],
 				)
-				return decodeConsumer(this.#consumer(tenantId, consumerId)!)
+				if (startAt === "latest")
+					this.#db.run(
+						"UPDATE event_consumers SET accepted_gap_generation = ? WHERE tenant_id = ? AND consumer_id = ?",
+						[this.deliveryGap(tenantId).generation, tenantId, consumerId],
+					)
+				const updated = this.#consumer(tenantId, consumerId)
+				if (updated === null)
+					throw EventConsumerNotFoundError.create(
+						`event consumer not found: ${consumerId}`,
+						consumerId,
+					)
+				return decodeConsumer(updated)
 			})
 			.immediate()
 	}
@@ -970,7 +1008,11 @@ export class LocalEventingControlStore {
 		return this.#db
 			.transaction(() => {
 				const existing = this.#consumer(tenantId, consumerId)
-				if (!existing) throw new EventConsumerNotFoundError(`unknown event consumer: ${consumerId}`)
+				if (!existing)
+					throw EventConsumerNotFoundError.create(
+						`unknown event consumer: ${consumerId}`,
+						consumerId,
+					)
 				if (asNumber(existing.active) === 0) return decodeConsumer(existing)
 				this.#db.run(
 					`UPDATE event_consumers
@@ -980,7 +1022,13 @@ export class LocalEventingControlStore {
 					[disabledAt, tenantId, consumerId],
 				)
 				this.#pruneAcknowledgedReady(tenantId)
-				return decodeConsumer(this.#consumer(tenantId, consumerId)!)
+				const updated = this.#consumer(tenantId, consumerId)
+				if (updated === null)
+					throw EventConsumerNotFoundError.create(
+						`event consumer not found: ${consumerId}`,
+						consumerId,
+					)
+				return decodeConsumer(updated)
 			})
 			.immediate()
 	}
@@ -997,24 +1045,41 @@ export class LocalEventingControlStore {
 		try {
 			validateConsumerId(consumerId)
 			if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000)
-				throw new EventConsumerInputError("claim limit must be between 1 and 1000")
+				throw EventConsumerInputError.create("claim limit must be between 1 and 1000")
 			if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 5 || leaseSeconds > 300)
-				throw new EventConsumerInputError("leaseSeconds must be between 5 and 300")
+				throw EventConsumerInputError.create("leaseSeconds must be between 5 and 300")
 			const nowMilliseconds = canonicalInstant(now, "claim time")
 			const claim = this.#db
 				.transaction(() => {
 					const consumer = this.#consumer(tenantId, consumerId)
 					if (!consumer)
-						throw new EventConsumerNotFoundError(`unknown event consumer: ${consumerId}`)
+						throw EventConsumerNotFoundError.create(
+							`unknown event consumer: ${consumerId}`,
+							consumerId,
+						)
+					const gap = this.deliveryGap(tenantId)
+					if (gap.generation > asNumber(consumer.accepted_gap_generation))
+						throw new EventConsumerDeliveryGapError({
+							message:
+								"Event delivery has a gap; an operator must acknowledge the reported generation before claiming more events",
+							consumerId,
+							generation: gap.generation,
+							droppedEvents: gap.droppedEvents,
+						})
 					if (asNumber(consumer.active) === 0)
-						throw new EventConsumerConflictError(`event consumer is disabled: ${consumerId}`)
+						throw EventConsumerConflictError.create(
+							`event consumer is disabled: ${consumerId}`,
+							consumerId,
+						)
 					if (
 						consumer.lease_expires_at !== null &&
 						canonicalInstant(consumer.lease_expires_at, "event consumer leaseExpiresAt") >
 							nowMilliseconds
 					)
-						throw new EventConsumerConflictError(
+						throw EventConsumerLeaseError.create(
 							`event consumer already has an active lease: ${consumerId}`,
+							consumerId,
+							consumer.lease_expires_at,
 						)
 					if (consumer.lease_expires_at !== null) reclaimedExpiredLease = true
 					lag = this.#consumerLag(tenantId, asNumber(consumer.last_acked_sequence))
@@ -1045,7 +1110,9 @@ export class LocalEventingControlStore {
 
 					const leaseToken = randomBytes(32).toString("hex")
 					const leaseExpiresAt = new Date(nowMilliseconds + leaseSeconds * 1_000).toISOString()
-					const throughSequence = asNumber(rows.at(-1)!.sequence)
+					const last = rows.at(-1)
+					if (last === undefined) throw EventConsumerConflictError.create("empty claim", consumerId)
+					const throughSequence = asNumber(last.sequence)
 					this.#db.run(
 						`UPDATE event_consumers
 					 SET lease_token_hash = ?, lease_expires_at = ?, claimed_through_sequence = ?
@@ -1077,7 +1144,7 @@ export class LocalEventingControlStore {
 			return claim
 		} catch (error) {
 			this.#telemetry.record({ operation: "consumer_claim", outcome: "failure" })
-			if (error instanceof EventConsumerConflictError && /lease/.test(error.message))
+			if (Schema.is(EventConsumerLeaseError)(error))
 				this.#telemetry.record({ operation: "consumer_lease", outcome: "failure" })
 			throw error
 		}
@@ -1093,36 +1160,52 @@ export class LocalEventingControlStore {
 		try {
 			validateConsumerId(consumerId)
 			if (!Number.isSafeInteger(throughSequence) || throughSequence < 1)
-				throw new EventConsumerInputError("throughSequence must be a positive safe integer")
+				throw EventConsumerInputError.create("throughSequence must be a positive safe integer")
 			const nowMilliseconds = canonicalInstant(now, "acknowledgement time")
 			const acknowledgement = this.#db
 				.transaction(() => {
 					const consumer = this.#consumer(tenantId, consumerId)
 					if (!consumer)
-						throw new EventConsumerNotFoundError(`unknown event consumer: ${consumerId}`)
+						throw EventConsumerNotFoundError.create(
+							`unknown event consumer: ${consumerId}`,
+							consumerId,
+						)
 					if (asNumber(consumer.active) === 0)
-						throw new EventConsumerConflictError(`event consumer is disabled: ${consumerId}`)
+						throw EventConsumerConflictError.create(
+							`event consumer is disabled: ${consumerId}`,
+							consumerId,
+						)
 					if (
 						consumer.lease_token_hash === null ||
 						consumer.lease_expires_at === null ||
 						consumer.claimed_through_sequence === null
 					)
-						throw new EventConsumerConflictError(
+						throw EventConsumerLeaseError.create(
 							`event consumer has no active lease: ${consumerId}`,
+							consumerId,
+							consumer.lease_expires_at,
 						)
 					if (
 						canonicalInstant(consumer.lease_expires_at, "event consumer leaseExpiresAt") <=
 						nowMilliseconds
 					)
-						throw new EventConsumerConflictError(
+						throw EventConsumerLeaseError.create(
 							`event consumer lease has expired: ${consumerId}`,
+							consumerId,
+							consumer.lease_expires_at,
 						)
 					if (!tokenHashMatches(consumer.lease_token_hash, leaseToken))
-						throw new EventConsumerConflictError("event consumer lease token does not match")
+						throw EventConsumerLeaseError.create(
+							"event consumer lease token does not match",
+							consumerId,
+							consumer.lease_expires_at,
+						)
 					const claimedThrough = asNumber(consumer.claimed_through_sequence)
 					if (throughSequence !== claimedThrough)
-						throw new EventConsumerConflictError(
+						throw EventConsumerLeaseError.create(
 							`acknowledgement must cover the complete claimed batch through sequence ${claimedThrough}`,
+							consumerId,
+							consumer.lease_expires_at,
 						)
 					this.#db.run(
 						`UPDATE event_consumers
@@ -1147,7 +1230,7 @@ export class LocalEventingControlStore {
 			return acknowledgement
 		} catch (error) {
 			this.#telemetry.record({ operation: "consumer_ack", outcome: "failure" })
-			if (error instanceof EventConsumerConflictError && /lease/.test(error.message))
+			if (Schema.is(EventConsumerLeaseError)(error))
 				this.#telemetry.record({ operation: "consumer_lease", outcome: "failure" })
 			throw error
 		}
@@ -1171,7 +1254,7 @@ export class LocalEventingControlStore {
 	#consumer(tenantId: string, consumerId: string): ConsumerRow | null {
 		return this.#db
 			.query<ConsumerRow, [string, string]>(
-				`SELECT consumer_id, tenant_id, active, last_acked_sequence, lease_token_hash,
+				`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
 				        lease_expires_at, claimed_through_sequence, registered_at, disabled_at
 				 FROM event_consumers
 				 WHERE tenant_id = ? AND consumer_id = ?`,
@@ -1207,11 +1290,7 @@ export class LocalEventingControlStore {
 		readonly currentEvents: number
 		readonly currentBytes: number
 	} {
-		const usage = this.#db
-			.query<OutboxUsageRow, []>(
-				"SELECT count(*) AS count, coalesce(sum(length(CAST(event_json AS BLOB))), 0) AS bytes FROM outbox_events",
-			)
-			.get()
+		const usage = this.#outboxUsage()
 		if (!usage) throw new Error("event outbox usage query returned no row")
 		return {
 			...this.#limits,
@@ -1251,14 +1330,18 @@ export class LocalEventingControlStore {
 		return validateOpenDatabase(this.#db)
 	}
 
-	async backupTo(path: string): Promise<EventingControlSnapshotValidation> {
-		// sqlite3_serialize() snapshots the main database file. In WAL mode a
-		// committed transaction may still live only in the sidecar, so force and
-		// verify a complete checkpoint before copying the file image.
+	captureSnapshot(): Uint8Array {
 		checkpointWal(this.#db)
-		const bytes = this.#db.serialize()
+		return this.#db.serialize()
+	}
+
+	static async writeSnapshot(path: string, bytes: Uint8Array): Promise<EventingControlSnapshotValidation> {
 		await durableWrite(path, bytes)
 		return LocalEventingControlStore.validateSnapshot(path)
+	}
+
+	async backupTo(path: string): Promise<EventingControlSnapshotValidation> {
+		return LocalEventingControlStore.writeSnapshot(path, this.captureSnapshot())
 	}
 
 	static validateSnapshot(path: string): EventingControlSnapshotValidation {
@@ -1268,7 +1351,7 @@ export class LocalEventingControlStore {
 		const db = new Database(uri, sqliteConstants.SQLITE_OPEN_READONLY | sqliteConstants.SQLITE_OPEN_URI)
 		try {
 			configure(db)
-			return validateOpenDatabase(db, [1, 2, 3, CONTROL_SCHEMA_VERSION])
+			return validateOpenDatabase(db)
 		} finally {
 			db.close(true)
 		}

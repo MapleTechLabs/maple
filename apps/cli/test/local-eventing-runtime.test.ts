@@ -1,3 +1,4 @@
+import { Result } from "effect"
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -144,46 +145,73 @@ const int64Field = (signal: NormalizedSignal, key: string, required = false): st
 }
 
 const exampleProjectors = (): ProjectorRegistry =>
-	new ProjectorRegistry().register({
-		id: "example.record.observed",
-		version: 1,
-		sourceKinds: ["otel.log"],
-		outputType: "dev.maple.example.record.observed.v1",
-		dataSchema: "urn:maple:event-schema:example-record-observed:v1",
-		decodeOutput: (value): JsonValue => {
-			if (!isJsonValue(value)) throw new Error("example projector output must be finite JSON")
-			return value
-		},
-		decodeConfig: (value) => {
-			if (typeof value !== "object" || value === null || Array.isArray(value))
-				throw new Error("example projector config must be an object")
-			return {}
-		},
-		project: (signal) => {
-			const collectionName = stringField(signal, "attribute", "example.collection.name", true)!
-			const sequence = int64Field(signal, "example.record.sequence", true)!
-			return {
-				subject: `${collectionName}/records/${sequence}`,
-				data: {
-					collection: {
-						id: int64Field(signal, "example.collection.id"),
-						name: collectionName,
+	Result.getOrThrow(
+		new ProjectorRegistry().register({
+			id: "example.record.observed",
+			version: 1,
+			sourceKinds: ["otel.log"],
+			outputType: "dev.maple.example.record.observed.v1",
+			dataSchema: "urn:maple:event-schema:example-record-observed:v1",
+			decodeOutput: (value): JsonValue => {
+				if (!isJsonValue(value)) throw new Error("example projector output must be finite JSON")
+				return value
+			},
+			decodeConfig: (value) => {
+				if (typeof value !== "object" || value === null || Array.isArray(value))
+					throw new Error("example projector config must be an object")
+				return {}
+			},
+			project: (signal) => {
+				const collectionName = stringField(signal, "attribute", "example.collection.name", true)!
+				const sequence = int64Field(signal, "example.record.sequence", true)!
+				return {
+					subject: `${collectionName}/records/${sequence}`,
+					data: {
+						collection: {
+							id: int64Field(signal, "example.collection.id"),
+							name: collectionName,
+						},
+						record: {
+							id: int64Field(signal, "example.record.id"),
+							sequence,
+							title: stringField(signal, "attribute", "example.record.title"),
+							url: stringField(signal, "attribute", "example.record.url"),
+						},
+						actor: {
+							id: int64Field(signal, "example.actor.id"),
+							name: stringField(signal, "attribute", "example.actor.name"),
+						},
+						serviceName: stringField(signal, "resource", "service.name"),
 					},
-					record: {
-						id: int64Field(signal, "example.record.id"),
-						sequence,
-						title: stringField(signal, "attribute", "example.record.title"),
-						url: stringField(signal, "attribute", "example.record.url"),
-					},
-					actor: {
-						id: int64Field(signal, "example.actor.id"),
-						name: stringField(signal, "attribute", "example.actor.name"),
-					},
-					serviceName: stringField(signal, "resource", "service.name"),
-				},
-			}
-		},
+				}
+			},
+		}),
+	)
+
+describe("OTLP eventing input validation", () => {
+	it("rejects non-string attribute keys before normalization", () => {
+		throws(
+			() =>
+				normalizeOtlpLogs({
+					resourceLogs: [
+						{
+							scopeLogs: [
+								{
+									logRecords: [
+										{
+											timeUnixNano: "1786125600000000000",
+											attributes: [{ key: 123, value: { stringValue: "bad" } }],
+										},
+									],
+								},
+							],
+						},
+					],
+				}),
+			/invalid OTLP logs/,
+		)
 	})
+})
 
 describe("LocalEventingRuntime", () => {
 	it("records bounded normalization and projection outcomes without signal data", async () =>
@@ -399,7 +427,7 @@ describe("LocalEventingRuntime", () => {
 					projectorid: "example.record.observed",
 					projectorversion: 1,
 					sourceoccurrenceid: "01K20EXAMPLERECORD42",
-					sourceidentityquality: "source",
+					identityquality: "source",
 					data: {
 						collection: { id: "7", name: "example/widgets" },
 						record: {

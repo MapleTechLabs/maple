@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { Schema } from "effect"
@@ -27,7 +26,7 @@ const documents = [
 
 let stale = false
 for (const entry of documents) {
-	const document = Schema.toJsonSchemaDocument(entry.schema)
+	const document = Schema.toJsonSchemaDocument(Schema.toType(entry.schema))
 	const schemaDocument =
 		Object.keys(document.definitions).length === 0
 			? { $schema: "https://json-schema.org/draft/2020-12/schema", $id: entry.id, ...document.schema }
@@ -37,15 +36,7 @@ for (const entry of documents) {
 					...document.schema,
 					$defs: document.definitions,
 				}
-	const unformatted = `${JSON.stringify(schemaDocument, null, "\t")}\n`
-	const serialized = execFileSync(
-		resolve(root, "../../node_modules/.bin/oxfmt"),
-		["--stdin-filepath", entry.path],
-		{
-			input: unformatted,
-			encoding: "utf8",
-		},
-	)
+	const serialized = `${JSON.stringify(schemaDocument, null, "\t")}\n`
 	const path = resolve(root, entry.path)
 	if (check) {
 		if (!existsSync(path) || readFileSync(path, "utf8") !== serialized) {

@@ -3,10 +3,8 @@ import {
 	canonicalJson,
 	CompiledProjectionRegistry,
 	defineSignalFields,
-	isJsonValue,
 	ProjectorRegistry,
 	SignalSourceRegistry,
-	type JsonValue,
 	type MapleCloudEvent,
 	type SignalProjector,
 	type SignalSourceAdapter,
@@ -23,7 +21,8 @@ import {
 	type ErrorIssueRow,
 } from "@maple/db"
 import { and, eq, sql } from "drizzle-orm"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Result, Schema } from "effect"
+import { msToDate, dateToMs } from "@/platform/time"
 import { Database, type DatabaseError } from "@/platform/DatabaseLive"
 
 /**
@@ -54,7 +53,7 @@ export const PlanetScaleWebhookPayload = Schema.Struct({
 	event: Schema.String,
 	organization: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	database: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	resource: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
+	resource: Schema.optionalKey(Schema.NullOr(Schema.JsonObject)),
 })
 export type PlanetScaleWebhookPayload = Schema.Schema.Type<typeof PlanetScaleWebhookPayload>
 
@@ -79,13 +78,12 @@ interface PlanetScaleWebhookAdapterContext {
 	readonly acceptedAt: string
 }
 
-const validDate = (epochMs: number, label: string): Date => {
-	if (!Number.isSafeInteger(epochMs) || epochMs < 0)
-		throw new Error(`${label} must be a non-negative epoch millisecond`)
-	const date = new Date(epochMs)
-	if (Number.isNaN(date.getTime())) throw new Error(`${label} is outside the supported date range`)
-	return date
-}
+const EpochMillisSchema = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(0),
+	Schema.isLessThanOrEqualTo(8_640_000_000_000_000),
+)
+const validDate = (epochMs: number, _label: string): Date =>
+	msToDate(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
 
 export const planetScaleWebhookTimestampMillis = (payload: PlanetScaleWebhookPayload): number | null => {
 	if (payload.timestamp == null || !Number.isFinite(payload.timestamp) || payload.timestamp <= 0)
@@ -110,13 +108,9 @@ export const PLANETSCALE_WEBHOOK_ADAPTER: SignalSourceAdapter<
 		],
 	},
 	normalize: ({ connectionId, payload }, context) => {
-		const observedAtDate = new Date(context.acceptedAt)
-		if (Number.isNaN(observedAtDate.getTime()))
-			throw new Error("PlanetScale receipt time is outside the supported date range")
-		if (!isJsonValue(payload)) throw new Error("PlanetScale webhook payload must be finite JSON")
-		const payloadJson = payload
-		const occurredAtMs = planetScaleWebhookTimestampMillis(payload)
-		if (occurredAtMs === null) throw new Error("PlanetScale webhook requires a positive source timestamp")
+		const observedAtDate = validDate(Date.parse(context.acceptedAt), "receipt time")
+		const payloadJson = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(payload)
+		const occurredAtMs = planetScaleWebhookTimestampMillis(payload) ?? observedAtDate.getTime()
 		const occurredAt = validDate(occurredAtMs, "PlanetScale event timestamp").toISOString()
 		const occurrenceId = `derived:sha256:${createHash("sha256")
 			.update(connectionId)
@@ -149,7 +143,7 @@ export const PLANETSCALE_WEBHOOK_ADAPTER: SignalSourceAdapter<
 					event: payload.event,
 					organization: payload.organization ?? null,
 					database: payload.database ?? null,
-					resource: (payload.resource ?? null) as JsonValue,
+					resource: payloadJson.resource ?? null,
 				},
 			},
 		]
@@ -161,16 +155,12 @@ const PlanetScaleWebhookEventDataSchema = Schema.Struct({
 	event: Schema.String,
 	organization: Schema.NullOr(Schema.String),
 	database: Schema.NullOr(Schema.String),
-	resource: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
+	resource: Schema.NullOr(Schema.JsonObject),
 })
 
 const decodePlanetScaleWebhookEventData = Schema.decodeUnknownSync(PlanetScaleWebhookEventDataSchema)
 
-const decodePlanetScaleWebhookProjectorOutput = (value: unknown): JsonValue => {
-	const decoded = decodePlanetScaleWebhookEventData(value)
-	if (!isJsonValue(decoded)) throw new Error("PlanetScale projector output must be finite JSON")
-	return decoded
-}
+const decodePlanetScaleWebhookProjectorOutput = decodePlanetScaleWebhookEventData
 
 const PLANETSCALE_WEBHOOK_PROJECTOR: SignalProjector<Record<string, never>> = {
 	id: "planetscale.webhook",
@@ -179,53 +169,99 @@ const PLANETSCALE_WEBHOOK_PROJECTOR: SignalProjector<Record<string, never>> = {
 	outputType: "dev.maple.planetscale.webhook.received.v1",
 	dataSchema: "urn:maple:event-schema:planetscale-webhook:v1",
 	decodeOutput: decodePlanetScaleWebhookProjectorOutput,
-	decodeConfig: (value) => {
-		if (
-			typeof value !== "object" ||
-			value === null ||
-			Array.isArray(value) ||
-			Object.keys(value).length > 0
-		)
-			throw new Error("PlanetScale webhook projector config must be empty")
-		return {}
-	},
-	project: (signal) => ({ data: signal.data as JsonValue }),
+	decodeConfig: Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Never)),
+	project: (signal) => ({ data: decodePlanetScaleWebhookEventData(signal.data) }),
 }
 
-const PLANETSCALE_SOURCES = new SignalSourceRegistry().register(PLANETSCALE_WEBHOOK_ADAPTER.definition)
-const PLANETSCALE_PROJECTORS = new ProjectorRegistry().register(PLANETSCALE_WEBHOOK_PROJECTOR)
+const PLANETSCALE_SOURCES = Result.getOrThrow(
+	new SignalSourceRegistry().register(PLANETSCALE_WEBHOOK_ADAPTER.definition),
+)
+const PLANETSCALE_PROJECTORS = Result.getOrThrow(
+	new ProjectorRegistry().register(PLANETSCALE_WEBHOOK_PROJECTOR),
+)
 
-/** Normalize and project one verified, durably queued PlanetScale webhook through the common layer. */
-export const projectPlanetScaleWebhookEvent = (input: PlanetScaleWebhookEventInput): MapleCloudEvent => {
-	const observedAt = validDate(input.receivedAt, "PlanetScale receipt time").toISOString()
-	const [signal] = PLANETSCALE_WEBHOOK_ADAPTER.normalize(
-		{ connectionId: input.connectionId, payload: input.payload },
-		{ tenantId: input.orgId, acceptedAt: observedAt },
-	)
-	if (!signal) throw new Error("PlanetScale webhook adapter produced no signal")
-	const registry = CompiledProjectionRegistry.compile(
-		[
-			{
-				id: "planetscale-webhook",
-				revision: 1,
-				enabled: true,
-				tenantId: input.orgId,
-				sourceKind: "planetscale.webhook",
-				selector: {
-					op: "exists",
-					field: { namespace: "signal", key: "event.name", type: "string" },
+const PLANETSCALE_REGISTRIES = new Map<string, CompiledProjectionRegistry>()
+const planetScaleRegistry = (
+	orgId: string,
+): Result.Result<CompiledProjectionRegistry, import("@maple/eventing-core").ProjectionInvalid> =>
+	Result.gen(function* () {
+		const existing = PLANETSCALE_REGISTRIES.get(orgId)
+		if (existing !== undefined) return existing
+		const registry = yield* CompiledProjectionRegistry.compile(
+			[
+				{
+					id: "planetscale-webhook",
+					revision: 1,
+					enabled: true,
+					tenantId: orgId,
+					sourceKind: "planetscale.webhook",
+					selector: {
+						op: "exists",
+						field: { namespace: "signal", key: "event.name", type: "string" },
+					},
+					projector: { id: "planetscale.webhook", version: 1, config: {} },
+					activeFrom: "1970-01-01T00:00:00.000Z",
 				},
-				projector: { id: "planetscale.webhook", version: 1, config: {} },
-				activeFrom: observedAt,
-			},
-		],
-		PLANETSCALE_SOURCES,
-		PLANETSCALE_PROJECTORS,
-	)
-	const result = registry.evaluate(signal, observedAt)
-	if (result.failures.length > 0) throw new Error(result.failures[0]!.message)
-	if (result.events.length !== 1) throw new Error("PlanetScale webhook projection produced no event")
-	return result.events[0]!
+			],
+			PLANETSCALE_SOURCES,
+			PLANETSCALE_PROJECTORS,
+		)
+
+		if (PLANETSCALE_REGISTRIES.size >= 128) {
+			const oldest = PLANETSCALE_REGISTRIES.keys().next().value
+			if (oldest !== undefined) PLANETSCALE_REGISTRIES.delete(oldest)
+		}
+		PLANETSCALE_REGISTRIES.set(orgId, registry)
+		return registry
+	})
+
+export class PlanetScaleWebhookProjectionInvalid extends Schema.TaggedError<PlanetScaleWebhookProjectionInvalid>()(
+	"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+	{ message: Schema.String, orgId: Schema.String, connectionId: Schema.String, cause: Schema.Defect() },
+) {}
+
+const ProjectionInputSchema = Schema.Struct({
+	orgId: Schema.NonEmptyString.check(Schema.isTrimmed()),
+	connectionId: Schema.NonEmptyString.check(Schema.isTrimmed()),
+	receivedAt: EpochMillisSchema,
+	payload: PlanetScaleWebhookPayload,
+})
+
+/** Decode once at the host boundary; malformed input is a typed queue/HTTP outcome. */
+export const projectPlanetScaleWebhookEvent = (
+	input: PlanetScaleWebhookEventInput,
+): Result.Result<MapleCloudEvent, PlanetScaleWebhookProjectionInvalid> => {
+	const invalid = (cause: unknown) =>
+		new PlanetScaleWebhookProjectionInvalid({
+			message: "Invalid PlanetScale webhook projection",
+			orgId: input.orgId,
+			connectionId: input.connectionId,
+			cause,
+		})
+	return Result.gen(function* () {
+		const decoded = yield* Schema.decodeUnknownResult(ProjectionInputSchema)(input).pipe(
+			Result.mapError(invalid),
+		)
+		const observedAt = msToDate(decoded.receivedAt).toISOString()
+		const signals = yield* Result.try({
+			try: () =>
+				PLANETSCALE_WEBHOOK_ADAPTER.normalize(
+					{ connectionId: decoded.connectionId, payload: decoded.payload },
+					{ tenantId: decoded.orgId, acceptedAt: observedAt },
+				),
+			catch: invalid,
+		})
+		const signal = signals[0]
+		if (signal === undefined) return yield* Result.fail(invalid("PlanetScale adapter produced no signal"))
+		const registry = yield* planetScaleRegistry(decoded.orgId).pipe(Result.mapError(invalid))
+		const result = yield* registry.evaluate(signal, observedAt).pipe(Result.mapError(invalid))
+		const failure = result.failures[0]
+		if (failure !== undefined) return yield* Result.fail(invalid(failure))
+		const event = result.events[0]
+		if (event === undefined || result.events.length !== 1)
+			return yield* Result.fail(invalid("PlanetScale projection produced no event"))
+		return event
+	})
 }
 
 export const planetScaleWebhookPayloadFromEvent = (
@@ -234,29 +270,44 @@ export const planetScaleWebhookPayloadFromEvent = (
 	},
 	orgId: string,
 	connectionId: string,
-): PlanetScaleWebhookPayload => {
-	if (
-		event.type !== "dev.maple.planetscale.webhook.received.v1" ||
-		event.dataschema !== "urn:maple:event-schema:planetscale-webhook:v1"
+) =>
+	Schema.decodeUnknownResult(
+		Schema.Struct({
+			type: Schema.Literal("dev.maple.planetscale.webhook.received.v1"),
+			dataschema: Schema.Literal("urn:maple:event-schema:planetscale-webhook:v1"),
+			tenantid: Schema.Literal(orgId),
+			source: Schema.Literal(`urn:maple:planetscale:${connectionId}`),
+			time: Schema.String.check(
+				Schema.makeFilter(
+					(value) => Number.isSafeInteger(Date.parse(value)) && Date.parse(value) > 0,
+					{ expected: "a positive event timestamp" },
+				),
+			),
+			data: Schema.Struct({
+				...PlanetScaleWebhookEventDataSchema.fields,
+				connectionId: Schema.Literal(connectionId),
+			}),
+		}),
+	)(event).pipe(
+		Result.map(
+			({ time, data }): PlanetScaleWebhookPayload => ({
+				timestamp: Date.parse(time) / 1000,
+				event: data.event,
+				organization: data.organization,
+				database: data.database,
+				resource: data.resource,
+			}),
+		),
+		Result.mapError(
+			(cause) =>
+				new PlanetScaleWebhookProjectionInvalid({
+					message: "Invalid queued PlanetScale webhook event",
+					orgId,
+					connectionId,
+					cause,
+				}),
+		),
 	)
-		throw new Error("queued PlanetScale event contract is invalid")
-	if (event.tenantid !== orgId) throw new Error("queued PlanetScale event tenant identity is contradictory")
-	if (event.source !== `urn:maple:planetscale:${connectionId}`)
-		throw new Error("queued PlanetScale event source identity is contradictory")
-	const data = decodePlanetScaleWebhookEventData(event.data)
-	if (data.connectionId !== connectionId)
-		throw new Error("queued PlanetScale event connection identity is contradictory")
-	const timestamp = Date.parse(event.time)
-	if (!Number.isSafeInteger(timestamp) || timestamp <= 0)
-		throw new Error("queued PlanetScale event timestamp is invalid")
-	return {
-		timestamp: timestamp / 1_000,
-		event: data.event,
-		organization: data.organization,
-		database: data.database,
-		resource: data.resource,
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Classification
@@ -436,7 +487,7 @@ const BRANCH_STATE_VERB: Record<string, string> = {
  * backfill carries milliseconds. Both are truncated to the second so the same
  * transition from either source lands on one row under the dedupe index.
  */
-export const truncateToSecond = (epochMs: number): Date => new Date(Math.floor(epochMs / 1000) * 1000)
+export const truncateToSecond = (epochMs: number): Date => msToDate(Math.floor(epochMs / 1000) * 1000)
 
 export interface InsertPlanetScaleEventInput {
 	readonly orgId: OrgId
@@ -500,7 +551,7 @@ export const insertPlanetScaleEvent: (
 				url: input.url ?? null,
 				payloadJson: input.payload ?? null,
 				occurredAt: truncateToSecond(input.occurredAtMs),
-				createdAt: new Date(input.createdAtMs),
+				createdAt: msToDate(input.createdAtMs),
 			})
 			.onConflictDoNothing()
 			.returning({ id: planetscaleEvents.id })
@@ -536,7 +587,7 @@ export interface UpsertPlanetScaleIssueInput {
 }
 
 export interface UpsertPlanetScaleIssueResult {
-	readonly issueId: ErrorIssueId
+	readonly issueId: ErrorIssueId | null
 	readonly action: "created" | "reopened" | "refreshed" | "skipped"
 }
 
@@ -577,7 +628,7 @@ export const upsertPlanetScaleIssue: (
 				.values({
 					orgId: input.orgId,
 					eventId: input.eventId,
-					processedAt: new Date(actorTimestamp),
+					processedAt: msToDate(actorTimestamp),
 				})
 				.onConflictDoNothing()
 				.returning({ eventId: planetscaleIssueReceipts.eventId })
@@ -594,9 +645,8 @@ export const upsertPlanetScaleIssue: (
 						)
 						.limit(1)
 				)[0]
-				if (existing === undefined)
-					throw new Error("PlanetScale issue receipt exists without its atomic issue mutation")
-				return { issueId: existing.id, action: "skipped" as const }
+				// A receipt survives hard deletion of its issue; redelivery stays consumed.
+				return { issueId: existing?.id ?? null, action: "skipped" as const }
 			}
 
 			const ensureActor = async (): Promise<ActorId> => {
@@ -625,8 +675,8 @@ export const upsertPlanetScaleIssue: (
 						model: null,
 						capabilitiesJson: ["system", "integration-issues"],
 						createdBy: null,
-						createdAt: new Date(actorTimestamp),
-						lastActiveAt: new Date(actorTimestamp),
+						createdAt: msToDate(actorTimestamp),
+						lastActiveAt: msToDate(actorTimestamp),
 					})
 					.onConflictDoNothing()
 				const row = (await selectActor())[0]
@@ -653,7 +703,7 @@ export const upsertPlanetScaleIssue: (
 					fromState: opts.fromState ?? null,
 					toState: opts.toState ?? null,
 					payloadJson: opts.payload ?? {},
-					createdAt: new Date(input.timestamp),
+					createdAt: msToDate(input.timestamp),
 				})
 
 			const prior: ErrorIssueRow | undefined = (
@@ -696,15 +746,15 @@ export const upsertPlanetScaleIssue: (
 						leaseExpiresAt: null,
 						claimedAt: null,
 						notes: null,
-						firstSeenAt: new Date(input.timestamp),
-						lastSeenAt: new Date(input.timestamp),
+						firstSeenAt: msToDate(input.timestamp),
+						lastSeenAt: msToDate(input.timestamp),
 						occurrenceCount: 1,
 						resolvedAt: null,
 						resolvedByActorId: null,
 						snoozeUntil: null,
 						archivedAt: null,
-						createdAt: new Date(input.timestamp),
-						updatedAt: new Date(input.timestamp),
+						createdAt: msToDate(input.timestamp),
+						updatedAt: msToDate(input.timestamp),
 					})
 					.onConflictDoNothing({
 						target: [errorIssues.orgId, errorIssues.fingerprintHash],
@@ -747,17 +797,17 @@ export const upsertPlanetScaleIssue: (
 				// A wontfix issue with an active or indefinite snooze stays untouched.
 				const snoozeActive =
 					prior.workflowState === "wontfix" &&
-					(prior.snoozeUntil == null || prior.snoozeUntil.getTime() > input.timestamp)
+					(prior.snoozeUntil == null || dateToMs(prior.snoozeUntil) > input.timestamp)
 				if (snoozeActive) return { issueId, action: "skipped" as const }
 
 				await tx
 					.update(errorIssues)
 					.set({
-						lastSeenAt: new Date(input.timestamp),
+						lastSeenAt: msToDate(input.timestamp),
 						occurrenceCount: sql`${errorIssues.occurrenceCount} + 1`,
 						exceptionMessage: input.description,
 						sourceRefJson,
-						updatedAt: new Date(input.timestamp),
+						updatedAt: msToDate(input.timestamp),
 					})
 					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
 
@@ -774,7 +824,7 @@ export const upsertPlanetScaleIssue: (
 						resolvedAt: null,
 						resolvedByActorId: null,
 						snoozeUntil: null,
-						updatedAt: new Date(input.timestamp),
+						updatedAt: msToDate(input.timestamp),
 					})
 					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
 				const actorId = await ensureActor()

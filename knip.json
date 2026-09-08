@@ -73,6 +73,8 @@
 			// The dev-sidecar entry alchemy loads by URL, not by import.
 			"entry": ["src/Local.ts"]
 		},
+		"packages/eventing-core": { "entry": ["src/index.ts", "scripts/generate-schemas.ts"] },
+		"packages/alerting-core": { "entry": ["src/index.ts"] },
 		"packages/query-engine": {
 			"entry": ["src/drain/index.ts"]
 		},

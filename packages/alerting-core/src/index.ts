@@ -1,8 +1,14 @@
-import { makeCloudEvent, type MapleCloudEvent } from "@maple/eventing-core"
+import { Effect, Result, Schema } from "effect"
+import { foldObservation } from "./hysteresis"
+import { makeCloudEvent, CloudEventInvalid, type MapleCloudEvent } from "@maple/eventing-core"
 
-export type AlertComparator = "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "between" | "not_between"
-
-export type AlertEvaluationStatus = "breached" | "healthy" | "skipped"
+import type {
+	AlertComparator,
+	AlertEventType,
+	AlertEvaluationResult,
+	AlertEvaluationStatus,
+} from "@maple/domain/http"
+export type { AlertComparator, AlertEventType, AlertEvaluationStatus } from "@maple/domain/http"
 
 export interface AlertObservation {
 	readonly value: number | null
@@ -18,14 +24,10 @@ export interface AlertEvaluationPolicy {
 	readonly noDataBehavior: "skip" | "zero"
 }
 
-export interface AlertEvaluation {
-	readonly status: AlertEvaluationStatus
-	readonly value: number | null
-	readonly sampleCount: number
-	readonly threshold: number
-	readonly thresholdUpper: number | null
-	readonly comparator: AlertComparator
-	readonly reason: string
+export interface AlertEvaluation extends Pick<
+	AlertEvaluationResult,
+	"status" | "value" | "sampleCount" | "threshold" | "thresholdUpper" | "comparator" | "reason"
+> {
 	/** A healthy result derived from an empty window synthesized as zero. */
 	readonly derivedFromNoData: boolean
 }
@@ -64,7 +66,13 @@ export const evaluateAlertObservation = (
 	// Sample-weighted counts can be fractional while durable alert state commonly
 	// stores an integer. Normalize at the host-neutral boundary.
 	const sampleCount = Math.round(observation.sampleCount)
-	const value = observation.hasData ? observation.value : policy.noDataBehavior === "zero" ? 0 : null
+	const value = observation.hasData
+		? observation.value !== null && Number.isFinite(observation.value)
+			? observation.value
+			: null
+		: policy.noDataBehavior === "zero"
+			? 0
+			: null
 
 	if (!observation.hasData && policy.noDataBehavior === "skip") {
 		return {
@@ -136,7 +144,6 @@ export interface AlertLifecycleIncident {
 	readonly lastDeliveredEventType: AlertEventType | null
 }
 
-export type AlertEventType = "trigger" | "resolve" | "renotify" | "test"
 export type AlertIncidentTransition = "none" | "opened" | "continued" | "resolved"
 export type AlertNotificationSuppression = "flapping" | "flap_resolution" | null
 export type AlertLifecycleHold = "missing_telemetry" | null
@@ -160,67 +167,80 @@ export interface AlertLifecycleEventInput {
 	readonly occurredAtMs: number
 }
 
-/** Project a query-alert lifecycle intent into the common factual event envelope. */
-export const projectAlertLifecycleEvent = (input: AlertLifecycleEventInput): MapleCloudEvent => {
-	if (!Number.isSafeInteger(input.occurredAtMs) || input.occurredAtMs < 0)
-		throw new Error("alert lifecycle event time must be a non-negative epoch millisecond")
-	const occurredAtDate = new Date(input.occurredAtMs)
-	if (Number.isNaN(occurredAtDate.getTime()))
-		throw new Error("alert lifecycle event time is outside the supported date range")
-	const occurredAt = occurredAtDate.toISOString()
-	const occurrenceId = `${input.incidentId ?? input.ruleId}:${input.eventType}:${input.occurredAtMs}`
-	return makeCloudEvent({
-		signal: {
-			sourceKind: "alert.lifecycle",
-			source: `urn:maple:alert-rule:${input.ruleId}`,
-			tenantId: input.tenantId,
-			occurrenceId,
-			identityQuality: "source",
-			occurredAt,
-			observedAt: occurredAt,
-			subject:
-				input.incidentId === null
-					? `alert-rules/${input.ruleId}`
-					: `alert-incidents/${input.incidentId}`,
-			fields: new Map(),
-			data: {},
-		},
-		projection: {
-			id: "alert-lifecycle",
-			revision: 1,
-			enabled: true,
-			tenantId: input.tenantId,
-			sourceKind: "alert.lifecycle",
-			selector: {
-				op: "exists",
-				field: { namespace: "signal", key: "event_type", type: "string" },
+/** Identity is stable per scheduled tick; delivery retries reuse the retained envelope. */
+export const projectAlertLifecycleEvent = (
+	input: AlertLifecycleEventInput,
+): Result.Result<MapleCloudEvent, CloudEventInvalid> =>
+	Result.gen(function* () {
+		const occurredAtMs = yield* Schema.decodeUnknownResult(
+			Schema.Int.check(
+				Schema.isGreaterThanOrEqualTo(0),
+				Schema.isLessThanOrEqualTo(8_640_000_000_000_000),
+			),
+		)(input.occurredAtMs).pipe(
+			Result.mapError(
+				(cause) =>
+					new CloudEventInvalid({
+						message: "alert lifecycle event time is outside the supported date range",
+						cause,
+					}),
+			),
+		)
+		const occurredAtDate = new Date(occurredAtMs)
+		const occurredAt = occurredAtDate.toISOString()
+		const occurrenceId = `${input.incidentId ?? input.ruleId}:${input.eventType}:${input.occurredAtMs}`
+		return yield* makeCloudEvent({
+			signal: {
+				sourceKind: "alert.lifecycle",
+				source: `urn:maple:alert-rule:${input.ruleId}`,
+				tenantId: input.tenantId,
+				occurrenceId,
+				identityQuality: "source",
+				occurredAt,
+				observedAt: occurredAt,
+				subject:
+					input.incidentId === null
+						? `alert-rules/${input.ruleId}`
+						: `alert-incidents/${input.incidentId}`,
+				fields: new Map(),
+				data: {},
 			},
-			projector: { id: "alert.lifecycle", version: 1, config: {} },
-			activeFrom: occurredAt,
-		},
-		projectorId: "alert.lifecycle",
-		projectorVersion: 1,
-		outputType: `dev.maple.alert.lifecycle.${input.eventType}.v1`,
-		dataSchema: "urn:maple:event-schema:alert-lifecycle:v1",
-		data: {
-			eventType: input.eventType,
-			incidentId: input.incidentId,
-			incidentStatus: input.incidentStatus,
-			rule: {
-				id: input.ruleId,
-				name: input.ruleName,
-				signalType: input.signalType,
-				severity: input.severity,
-				groupKey: input.groupKey,
-				comparator: input.comparator,
-				threshold: input.threshold,
-				thresholdUpper: input.thresholdUpper,
-				windowMinutes: input.windowMinutes,
+			projection: {
+				id: "alert-lifecycle",
+				revision: 1,
+				enabled: true,
+				tenantId: input.tenantId,
+				sourceKind: "alert.lifecycle",
+				selector: {
+					op: "exists",
+					field: { namespace: "signal", key: "event_type", type: "string" },
+				},
+				projector: { id: "alert.lifecycle", version: 1, config: {} },
+				activeFrom: occurredAt,
 			},
-			observed: { value: input.value, sampleCount: input.sampleCount },
-		},
+			projectorId: "alert.lifecycle",
+			projectorVersion: 1,
+			outputType: `dev.maple.alert.lifecycle.${input.eventType}.v1`,
+			dataSchema: "urn:maple:event-schema:alert-lifecycle:v1",
+			data: {
+				eventType: input.eventType,
+				incidentId: input.incidentId,
+				incidentStatus: input.incidentStatus,
+				rule: {
+					id: input.ruleId,
+					name: input.ruleName,
+					signalType: input.signalType,
+					severity: input.severity,
+					groupKey: input.groupKey,
+					comparator: input.comparator,
+					threshold: input.threshold,
+					thresholdUpper: input.thresholdUpper,
+					windowMinutes: input.windowMinutes,
+				},
+				observed: { value: input.value, sampleCount: input.sampleCount },
+			},
+		})
 	})
-}
 
 export interface AlertLifecycleInput {
 	readonly policy: AlertLifecyclePolicy
@@ -300,83 +320,88 @@ const noTransition = (state: AlertLifecycleState, hold: AlertLifecycleHold = nul
  * liveness checks, and time. This makes the same lifecycle semantics usable by
  * the hosted PostgreSQL/Tinybird adapter and a future Maple Local adapter.
  */
-export const planAlertLifecycle = (input: AlertLifecycleInput): AlertLifecyclePlan => {
-	const { evaluation, policy, openIncident, nowMs } = input
-	const previous = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0 }
+export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<AlertLifecyclePlan> =>
+	Effect.gen(function* () {
+		const { evaluation, policy, openIncident, nowMs } = input
+		const previous = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0 }
 
-	if (evaluation.status === "skipped") return noTransition(previous)
+		if (evaluation.status === "skipped") return noTransition(previous)
 
-	const state: AlertLifecycleState = {
-		consecutiveBreaches:
-			evaluation.status === "breached"
-				? Math.min(previous.consecutiveBreaches + 1, policy.consecutiveBreachesRequired)
-				: 0,
-		consecutiveHealthy:
-			evaluation.status === "healthy"
-				? Math.min(previous.consecutiveHealthy + 1, policy.consecutiveHealthyRequired)
-				: 0,
-	}
-
-	if (
-		evaluation.status === "breached" &&
-		openIncident == null &&
-		state.consecutiveBreaches >= policy.consecutiveBreachesRequired
-	) {
-		const previousNotificationAtMs = input.previousNotificationAtMs ?? null
-		const flapSuppressed =
-			previousNotificationAtMs != null &&
-			previousNotificationAtMs >= nowMs - policy.renotifyIntervalMinutes * 60_000
-		return {
-			state,
-			transition: "opened",
-			eventType: flapSuppressed ? null : "trigger",
-			notificationSuppression: flapSuppressed ? "flapping" : null,
-			hold: null,
-			inheritedNotificationAtMs: flapSuppressed ? previousNotificationAtMs : null,
-			advanceNotificationAnchor: false,
-		}
-	}
-
-	if (evaluation.status === "breached" && openIncident != null) {
-		const renotifyDueAt =
-			(openIncident.lastNotifiedAtMs ?? openIncident.firstTriggeredAtMs) +
-			policy.renotifyIntervalMinutes * 60_000
-		const renotifyDue = renotifyDueAt <= nowMs
-		return {
-			state,
-			transition: "continued",
-			eventType: renotifyDue ? "renotify" : null,
-			notificationSuppression: null,
-			hold: null,
-			inheritedNotificationAtMs: null,
-			advanceNotificationAnchor: renotifyDue,
-		}
-	}
-
-	if (
-		evaluation.status === "healthy" &&
-		openIncident != null &&
-		state.consecutiveHealthy >= policy.consecutiveHealthyRequired
-	) {
-		if (evaluation.derivedFromNoData && input.allowNoDataResolution !== true) {
-			return noTransition(state, "missing_telemetry")
+		const folded = yield* foldObservation(
+			{ ...previous, incidentOpen: openIncident !== null, lastResolvedAtMs: null },
+			evaluation.status,
+			{
+				breachesToOpen: policy.consecutiveBreachesRequired,
+				healthyToResolve: policy.consecutiveHealthyRequired,
+				cooldownMs: 0,
+			},
+			nowMs,
+		)
+		const state: AlertLifecycleState = {
+			consecutiveBreaches: folded.consecutiveBreaches,
+			consecutiveHealthy: folded.consecutiveHealthy,
 		}
 
-		const flapResolutionSuppressed =
-			openIncident.lastDeliveredEventType == null && openIncident.lastNotifiedAtMs != null
-		return {
-			state,
-			transition: "resolved",
-			eventType: flapResolutionSuppressed ? null : "resolve",
-			notificationSuppression: flapResolutionSuppressed ? "flap_resolution" : null,
-			hold: null,
-			inheritedNotificationAtMs: null,
-			advanceNotificationAnchor: false,
+		if (
+			evaluation.status === "breached" &&
+			openIncident == null &&
+			state.consecutiveBreaches >= policy.consecutiveBreachesRequired
+		) {
+			const previousNotificationAtMs = input.previousNotificationAtMs ?? null
+			const flapSuppressed =
+				previousNotificationAtMs != null &&
+				previousNotificationAtMs >= nowMs - policy.renotifyIntervalMinutes * 60_000
+			return {
+				state,
+				transition: "opened",
+				eventType: flapSuppressed ? null : "trigger",
+				notificationSuppression: flapSuppressed ? "flapping" : null,
+				hold: null,
+				inheritedNotificationAtMs: flapSuppressed ? previousNotificationAtMs : null,
+				advanceNotificationAnchor: false,
+			}
 		}
-	}
 
-	return noTransition(state)
-}
+		if (evaluation.status === "breached" && openIncident != null) {
+			const renotifyDueAt =
+				(openIncident.lastNotifiedAtMs ?? openIncident.firstTriggeredAtMs) +
+				policy.renotifyIntervalMinutes * 60_000
+			const renotifyDue = renotifyDueAt <= nowMs
+			return {
+				state,
+				transition: "continued",
+				eventType: renotifyDue ? "renotify" : null,
+				notificationSuppression: null,
+				hold: null,
+				inheritedNotificationAtMs: null,
+				advanceNotificationAnchor: renotifyDue,
+			}
+		}
+
+		if (
+			evaluation.status === "healthy" &&
+			openIncident != null &&
+			state.consecutiveHealthy >= policy.consecutiveHealthyRequired
+		) {
+			if (evaluation.derivedFromNoData && input.allowNoDataResolution !== true) {
+				return noTransition(state, "missing_telemetry")
+			}
+
+			const flapResolutionSuppressed =
+				openIncident.lastDeliveredEventType == null && openIncident.lastNotifiedAtMs != null
+			return {
+				state,
+				transition: "resolved",
+				eventType: flapResolutionSuppressed ? null : "resolve",
+				notificationSuppression: flapResolutionSuppressed ? "flap_resolution" : null,
+				hold: null,
+				inheritedNotificationAtMs: null,
+				advanceNotificationAnchor: false,
+			}
+		}
+
+		return noTransition(state)
+	})
 
 /** Preserve per-tenant order while preventing one tenant from monopolizing a tick. */
 export const interleaveAlertRulesByTenant = <T>(

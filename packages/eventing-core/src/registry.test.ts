@@ -1,3 +1,4 @@
+import { Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	CompiledProjectionRegistry,
@@ -9,6 +10,8 @@ import {
 	ProjectorRegistry,
 	SignalSourceRegistry,
 	validateMapleCloudEvent,
+	makeCloudEvent,
+	SignalProjectionSpecSchema,
 	type NormalizedSignal,
 	type JsonValue,
 	type SignalProjectionSpec,
@@ -59,41 +62,45 @@ const projection = (overrides: Partial<SignalProjectionSpec> = {}): SignalProjec
 })
 
 const projectors = (): ProjectorRegistry =>
-	new ProjectorRegistry().register({
-		id: "example.record",
-		version: 1,
-		sourceKinds: ["otel.log"],
-		outputType: "dev.maple.example.record.observed.v1",
-		dataSchema: "urn:maple:event-schema:example-record:v1",
-		decodeOutput: decodeJsonOutput,
-		decodeConfig: (value) => {
-			if (typeof value !== "object" || value === null) throw new Error("invalid projector config")
-			return value
-		},
-		project: (input) => ({ data: input.data as { record: { id: number; label: string } } }),
-	})
+	Result.getOrThrow(
+		new ProjectorRegistry().register({
+			id: "example.record",
+			version: 1,
+			sourceKinds: ["otel.log"],
+			outputType: "dev.maple.example.record.observed.v1",
+			dataSchema: "urn:maple:event-schema:example-record:v1",
+			decodeOutput: decodeJsonOutput,
+			decodeConfig: (value) => {
+				if (typeof value !== "object" || value === null) throw new Error("invalid projector config")
+				return value
+			},
+			project: (input) => ({ data: input.data as { record: { id: number; label: string } } }),
+		}),
+	)
 
 const sources = (): SignalSourceRegistry =>
-	new SignalSourceRegistry().register({
-		sourceKind: "otel.log",
-		fields: [
-			{
-				field: { namespace: "attribute", key: "event.name", type: "string" },
-				operators: ["exists", "eq", "neq", "contains", "in"],
-				sensitivity: "public",
-				replay: "coerced",
-			},
-		],
-		openFields: [
-			{
-				namespace: "attribute",
-				types: ["string", "boolean", "int64", "float64", "timestamp", "duration"],
-				operators: ["exists", "eq", "neq", "gt", "gte", "lt", "lte", "contains", "in"],
-				sensitivity: "public",
-				replay: "coerced",
-			},
-		],
-	})
+	Result.getOrThrow(
+		new SignalSourceRegistry().register({
+			sourceKind: "otel.log",
+			fields: [
+				{
+					field: { namespace: "attribute", key: "event.name", type: "string" },
+					operators: ["exists", "eq", "neq", "contains", "in"],
+					sensitivity: "public",
+					replay: "coerced",
+				},
+			],
+			openFields: [
+				{
+					namespace: "attribute",
+					types: ["string", "boolean", "int64", "float64", "timestamp", "duration"],
+					operators: ["exists", "eq", "neq", "gt", "gte", "lt", "lte", "contains", "in"],
+					sensitivity: "public",
+					replay: "coerced",
+				},
+			],
+		}),
+	)
 
 describe("CompiledProjectionRegistry", () => {
 	const acceptedAt = "2026-08-07T20:00:00Z"
@@ -113,9 +120,11 @@ describe("CompiledProjectionRegistry", () => {
 	})
 
 	it("projects every match into a deterministic CloudEvent", () => {
-		const registry = CompiledProjectionRegistry.compile([projection()], sources(), projectors())
-		const first = registry.evaluate(signal(), acceptedAt)
-		const second = registry.evaluate(signal(), acceptedAt)
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile([projection()], sources(), projectors()),
+		)
+		const first = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
+		const second = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
 		expect(first.failures).toEqual([])
 		expect(first.events).toEqual(second.events)
 		expect(first.events).toHaveLength(1)
@@ -133,28 +142,46 @@ describe("CompiledProjectionRegistry", () => {
 			subject: "records/42",
 			projectionrevision: 3,
 			sourceoccurrenceid: "event-123",
-			sourceidentityquality: "source",
+			identityquality: "source",
 			data: signal().data,
 		})
 	})
 
+	it("lets a projector clear an inherited subject explicitly", () => {
+		const input = {
+			signal: signal(),
+			projection: projection(),
+			projectorId: "example.record",
+			projectorVersion: 1,
+			outputType: "dev.maple.example.record.observed.v1",
+			dataSchema: "urn:maple:event-schema:example-record:v1",
+			data: {},
+		}
+		expect(Result.getOrThrow(makeCloudEvent(input)).subject).toBe("records/42")
+		expect(Result.getOrThrow(makeCloudEvent({ ...input, subject: null })).subject).toBeUndefined()
+	})
+
 	it("validates historical CloudEvents that predate source identity extensions", () => {
-		const registry = CompiledProjectionRegistry.compile([projection()], sources(), projectors())
-		const event = registry.evaluate(signal(), acceptedAt).events[0]!
-		const { sourceoccurrenceid: _occurrence, sourceidentityquality: _quality, ...historical } = event
-		const validated = validateMapleCloudEvent(historical).event
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile([projection()], sources(), projectors()),
+		)
+		const event = Result.getOrThrow(registry.evaluate(signal(), acceptedAt)).events[0]!
+		const { sourceoccurrenceid: _occurrence, identityquality: _quality, ...historical } = event
+		const validated = Result.getOrThrow(validateMapleCloudEvent(historical)).event
 		expect(validated.id).toBe(event.id)
 		expect(validated.sourceoccurrenceid).toBeUndefined()
-		expect(validated.sourceidentityquality).toBeUndefined()
+		expect(validated.identityquality).toBeUndefined()
 	})
 
 	it("runs every matching projection from one immutable registry snapshot", () => {
-		const registry = CompiledProjectionRegistry.compile(
-			[projection(), projection({ id: "example-record-observed-audit" })],
-			sources(),
-			projectors(),
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile(
+				[projection(), projection({ id: "example-record-observed-audit" })],
+				sources(),
+				projectors(),
+			),
 		)
-		const result = registry.evaluate(signal(), acceptedAt)
+		const result = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
 		expect(result.failures).toEqual([])
 		expect(result.events.map(({ projectionid }) => projectionid)).toEqual([
 			"example-record-observed",
@@ -163,43 +190,52 @@ describe("CompiledProjectionRegistry", () => {
 	})
 
 	it("runs all matching projections and isolates projector failures", () => {
-		const registryDefinitions = projectors().register({
-			id: "broken",
-			version: 1,
-			sourceKinds: ["otel.log"],
-			outputType: "dev.maple.broken.v1",
-			dataSchema: "urn:maple:event-schema:broken:v1",
-			decodeOutput: decodeJsonOutput,
-			decodeConfig: () => ({}),
-			project: () => {
-				throw new Error("projector invariant failed")
-			},
-		})
-		registryDefinitions.register({
-			id: "invalid-output",
-			version: 1,
-			sourceKinds: ["otel.log"],
-			outputType: "dev.maple.invalid-output.v1",
-			dataSchema: "urn:maple:event-schema:invalid-output:v1",
-			decodeConfig: () => ({}),
-			decodeOutput: () => {
-				throw new Error("projector output violated declared schema")
-			},
-			project: () => ({ data: { invalid: true } }),
-		})
-		const registry = CompiledProjectionRegistry.compile(
-			[
-				projection(),
-				projection({ id: "broken-projection", projector: { id: "broken", version: 1, config: {} } }),
-				projection({
-					id: "invalid-output-projection",
-					projector: { id: "invalid-output", version: 1, config: {} },
-				}),
-			],
-			sources(),
-			registryDefinitions,
+		const registryDefinitions = Result.getOrThrow(
+			projectors().register({
+				id: "broken",
+				version: 1,
+				sourceKinds: ["otel.log"],
+				outputType: "dev.maple.broken.v1",
+				dataSchema: "urn:maple:event-schema:broken:v1",
+				decodeOutput: decodeJsonOutput,
+				decodeConfig: () => ({}),
+				project: () => {
+					throw new Error("projector invariant failed")
+				},
+			}),
 		)
-		const result = registry.evaluate(signal(), acceptedAt)
+		Result.getOrThrow(
+			registryDefinitions.register({
+				id: "invalid-output",
+				version: 1,
+				sourceKinds: ["otel.log"],
+				outputType: "dev.maple.invalid-output.v1",
+				dataSchema: "urn:maple:event-schema:invalid-output:v1",
+				decodeConfig: () => ({}),
+				decodeOutput: () => {
+					throw new Error("projector output violated declared schema")
+				},
+				project: () => ({ data: { invalid: true } }),
+			}),
+		)
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile(
+				[
+					projection(),
+					projection({
+						id: "broken-projection",
+						projector: { id: "broken", version: 1, config: {} },
+					}),
+					projection({
+						id: "invalid-output-projection",
+						projector: { id: "invalid-output", version: 1, config: {} },
+					}),
+				],
+				sources(),
+				registryDefinitions,
+			),
+		)
+		const result = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
 		expect(result.events).toHaveLength(1)
 		expect(result.failures).toEqual([
 			expect.objectContaining({
@@ -214,18 +250,19 @@ describe("CompiledProjectionRegistry", () => {
 	})
 
 	it("isolates complete-envelope schema and size failures from successful siblings", () => {
-		const registryDefinitions = projectors()
-			.register({
-				id: "oversized",
-				version: 1,
-				sourceKinds: ["otel.log"],
-				outputType: "dev.maple.oversized.v1",
-				dataSchema: "urn:maple:event-schema:oversized:v1",
-				decodeOutput: decodeJsonOutput,
-				decodeConfig: () => ({}),
-				project: () => ({ data: { payload: "x".repeat(MAX_CLOUD_EVENT_BYTES) } }),
-			})
-			.register({
+		const registryDefinitions = Result.getOrThrow(
+			Result.getOrThrow(
+				projectors().register({
+					id: "oversized",
+					version: 1,
+					sourceKinds: ["otel.log"],
+					outputType: "dev.maple.oversized.v1",
+					dataSchema: "urn:maple:event-schema:oversized:v1",
+					decodeOutput: decodeJsonOutput,
+					decodeConfig: () => ({}),
+					project: () => ({ data: { payload: "x".repeat(MAX_CLOUD_EVENT_BYTES) } }),
+				}),
+			).register({
 				id: "invalid-envelope",
 				version: 1,
 				sourceKinds: ["otel.log"],
@@ -234,23 +271,26 @@ describe("CompiledProjectionRegistry", () => {
 				decodeOutput: decodeJsonOutput,
 				decodeConfig: () => ({}),
 				project: () => ({ data: {} }),
-			})
-		const registry = CompiledProjectionRegistry.compile(
-			[
-				projection(),
-				projection({
-					id: "oversized-projection",
-					projector: { id: "oversized", version: 1, config: {} },
-				}),
-				projection({
-					id: "invalid-envelope-projection",
-					projector: { id: "invalid-envelope", version: 1, config: {} },
-				}),
-			],
-			sources(),
-			registryDefinitions,
+			}),
 		)
-		const result = registry.evaluate(signal(), acceptedAt)
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile(
+				[
+					projection(),
+					projection({
+						id: "oversized-projection",
+						projector: { id: "oversized", version: 1, config: {} },
+					}),
+					projection({
+						id: "invalid-envelope-projection",
+						projector: { id: "invalid-envelope", version: 1, config: {} },
+					}),
+				],
+				sources(),
+				registryDefinitions,
+			),
+		)
+		const result = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
 		expect(result.events.map(({ projectionid }) => projectionid)).toEqual(["example-record-observed"])
 		expect(result.failures).toEqual(
 			expect.arrayContaining([
@@ -266,32 +306,40 @@ describe("CompiledProjectionRegistry", () => {
 	})
 
 	it("isolates tenants, source kinds, activation time, and disabled revisions", () => {
-		const registry = CompiledProjectionRegistry.compile(
-			[
-				projection(),
-				projection({ id: "future", revision: 1, activeFrom: "2026-08-08T00:00:00Z" }),
-				projection({ id: "disabled", revision: 1, enabled: false }),
-				projection({ id: "other-tenant", revision: 1, tenantId: "tenant-b" }),
-			],
-			sources(),
-			projectors(),
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile(
+				[
+					projection(),
+					projection({ id: "future", revision: 1, activeFrom: "2026-08-08T00:00:00Z" }),
+					projection({ id: "disabled", revision: 1, enabled: false }),
+					projection({ id: "other-tenant", revision: 1, tenantId: "tenant-b" }),
+				],
+				sources(),
+				projectors(),
+			),
 		)
 		expect(
-			registry
-				.evaluate(signal({ observedAt: "1999-01-01T00:00:00Z" }), acceptedAt)
-				.events.map(({ projectionid }) => projectionid),
+			Result.getOrThrow(
+				registry.evaluate(signal({ observedAt: "1999-01-01T00:00:00Z" }), acceptedAt),
+			).events.map(({ projectionid }) => projectionid),
 		).toEqual(["example-record-observed"])
-		expect(registry.evaluate(signal({ sourceKind: "otel.span" }), acceptedAt).events).toEqual([])
 		expect(
-			registry
-				.evaluate(signal({ observedAt: "2099-01-01T00:00:00Z" }), "2026-08-07T00:00:00Z")
-				.events.map(({ projectionid }) => projectionid),
+			Result.getOrThrow(registry.evaluate(signal({ sourceKind: "otel.span" }), acceptedAt)).events,
+		).toEqual([])
+		expect(
+			Result.getOrThrow(
+				registry.evaluate(signal({ observedAt: "2099-01-01T00:00:00Z" }), "2026-08-07T00:00:00Z"),
+			).events.map(({ projectionid }) => projectionid),
 		).toEqual(["example-record-observed"])
 	})
 
 	it("requires occurrence identity for durable projection", () => {
-		const registry = CompiledProjectionRegistry.compile([projection()], sources(), projectors())
-		const result = registry.evaluate(signal({ occurrenceId: null, identityQuality: "none" }), acceptedAt)
+		const registry = Result.getOrThrow(
+			CompiledProjectionRegistry.compile([projection()], sources(), projectors()),
+		)
+		const result = Result.getOrThrow(
+			registry.evaluate(signal({ occurrenceId: null, identityQuality: "none" }), acceptedAt),
+		)
 		expect(result.events).toEqual([])
 		expect(result.failures[0]?.message).toBe(
 			"durable event projection requires stable or derived occurrence identity",
@@ -301,70 +349,108 @@ describe("CompiledProjectionRegistry", () => {
 	it("rejects duplicate registrations, projection revisions, and invalid projector bindings", () => {
 		const definitions = projectors()
 		expect(() =>
-			definitions.register({
-				id: "example.record",
-				version: 1,
-				sourceKinds: ["otel.log"],
-				outputType: "duplicate",
-				dataSchema: "duplicate",
-				decodeOutput: decodeJsonOutput,
-				decodeConfig: (value) => value,
-				project: () => ({ data: {} }),
-			}),
+			Result.getOrThrow(
+				definitions.register({
+					id: "example.record",
+					version: 1,
+					sourceKinds: ["otel.log"],
+					outputType: "duplicate",
+					dataSchema: "duplicate",
+					decodeOutput: decodeJsonOutput,
+					decodeConfig: (value) => value,
+					project: () => ({ data: {} }),
+				}),
+			),
 		).toThrow("duplicate projector registration")
 		expect(() =>
-			CompiledProjectionRegistry.compile([projection(), projection()], sources(), projectors()),
+			Result.getOrThrow(
+				CompiledProjectionRegistry.compile([projection(), projection()], sources(), projectors()),
+			),
 		).toThrow("duplicate projection revision")
 		expect(() =>
-			CompiledProjectionRegistry.compile(
-				[projection({ projector: { id: "missing", version: 1, config: {} } })],
-				sources(),
-				projectors(),
+			Result.getOrThrow(
+				CompiledProjectionRegistry.compile(
+					[projection({ projector: { id: "missing", version: 1, config: {} } })],
+					sources(),
+					projectors(),
+				),
 			),
 		).toThrow("unregistered projector")
 	})
 
 	it("validates selector fields and operators against the source catalog", () => {
-		const closed = new SignalSourceRegistry().register({
-			sourceKind: "otel.log",
-			fields: [
-				{
-					field: { namespace: "attribute", key: "event.name", type: "string" },
-					operators: ["eq"],
-					sensitivity: "public",
-					replay: "coerced",
-				},
-			],
-		})
-		expect(() =>
-			CompiledProjectionRegistry.compile(
-				[
-					projection({
-						selector: {
-							op: "contains",
-							field: { namespace: "attribute", key: "event.name", type: "string" },
-							value: { type: "string", value: "example" },
-						},
-					}),
+		const closed = Result.getOrThrow(
+			new SignalSourceRegistry().register({
+				sourceKind: "otel.log",
+				fields: [
+					{
+						field: { namespace: "attribute", key: "event.name", type: "string" },
+						operators: ["eq"],
+						sensitivity: "public",
+						replay: "coerced",
+					},
 				],
-				closed,
-				projectors(),
+			}),
+		)
+		expect(() =>
+			Result.getOrThrow(
+				CompiledProjectionRegistry.compile(
+					[
+						projection({
+							selector: {
+								op: "contains",
+								field: { namespace: "attribute", key: "event.name", type: "string" },
+								value: { type: "string", value: "example" },
+							},
+						}),
+					],
+					closed,
+					projectors(),
+				),
 			),
 		).toThrow("contains is not allowed for catalog field")
 		expect(() =>
-			CompiledProjectionRegistry.compile(
-				[
-					projection({
-						selector: {
-							op: "eq",
-							field: { namespace: "attribute", key: "unknown", type: "string" },
-							value: { type: "string", value: "x" },
-						},
-					}),
-				],
-				closed,
-				projectors(),
+			Result.getOrThrow(
+				CompiledProjectionRegistry.compile(
+					[
+						projection({
+							selector: {
+								op: "eq",
+								field: { namespace: "attribute", key: "unknown", type: "string" },
+								value: { type: "string", value: "x" },
+							},
+						}),
+					],
+					closed,
+					projectors(),
+				),
 			),
 		).toThrow("unknown field attribute:unknown")
+	})
+})
+
+describe("projection input budgets", () => {
+	it("rejects excessive nesting before the recursive compile decoder", () => {
+		const spec = projection()
+		let selector = spec.selector
+		for (let depth = 0; depth < 10000; depth++) selector = { op: "not", clause: selector }
+		expect(() =>
+			Result.getOrThrow(
+				CompiledProjectionRegistry.compile([{ ...spec, selector }], sources(), projectors()),
+			),
+		).toThrow(/predicate depth/)
+	})
+})
+
+describe("schema topology boundary", () => {
+	it("rejects a hostile selector through the exported schema itself", () => {
+		let selector: import("./model").SignalPredicate = {
+			op: "exists",
+			field: { namespace: "attribute", key: "x", type: "string" },
+		}
+		for (let i = 0; i < 10000; i++) selector = { op: "not", clause: selector }
+		const decoded = Schema.decodeUnknownResult(SignalProjectionSpecSchema)({ ...projection(), selector })
+		expect(Result.isFailure(decoded)).toBe(true)
+		if (Result.isFailure(decoded)) expect(decoded.failure.message).toContain("depth")
 	})
 })

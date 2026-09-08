@@ -1,7 +1,5 @@
 # Signal-to-event projection architecture
 
-Status: implemented on `codex/issue-222-alerting-core`; downstream delivery remains out of scope
-
 Related work: [issue #222](https://github.com/MapleTechLabs/maple/issues/222),
 `@maple/alerting-core`
 
@@ -334,12 +332,12 @@ selector to:
 - nesting depth of 8;
 - 64 total predicate nodes;
 - 100 members in one `in` predicate;
-- 4 KiB per string literal;
+- 1,024 Unicode code points per string literal (at most 4 KiB UTF-8);
 - no regular expressions, functions, arithmetic, joins, or user code.
 
 These bounds keep evaluation predictable and leave room for indexing active
 projections by source kind and simple discriminating fields. `SignalScalar`
-describes normalized source data and does not inherit the literal-only 4 KiB
+describes normalized source data and does not inherit the literal-only 1,024-code-point
 limit; the OTLP adapter accepts source strings up to its separate 16 KiB bound.
 The literal limit is normative in UTF-8 bytes. Because JSON Schema `maxLength`
 counts characters rather than encoded bytes, the generated schema documents the
@@ -465,8 +463,13 @@ type and schema namespace.
 The event ID is deterministic when stable occurrence identity exists:
 
 ```text
-SHA-256(tenant ID, source kind, source URI, occurrence ID, projection ID, projection revision)
+sha256:<hex SHA-256 of length-delimited fields>
 ```
+
+The fields, in order, are `maple-event-v1`, tenant ID, source kind, source URI,
+occurrence ID, projection ID, and the decimal projection revision. Encode each
+field as UTF-8, prefix it with its byte length as an unsigned four-byte big-endian
+integer, concatenate, and hash. The `sha256:` prefix is outside the hash.
 
 The hash input uses a canonical length-delimited encoding, not string
 concatenation. Projector version and output schema version are already fixed by
@@ -729,7 +732,7 @@ The intended ownership is:
   the reference TypeScript evaluator, projector registry contracts, canonical
   event identity, and conformance fixtures. No database, network, scheduler, or
   global clock dependencies.
-- `packages/alerting-core` (existing): aggregate alert evaluation and incident
+- `packages/alerting-core` (new): aggregate alert evaluation and incident
   lifecycle. It remains distinct and later emits through an eventing-core port.
 - `packages/domain`: public/API schemas when projection CRUD becomes public.
 - `apps/cli`: Maple Local OTLP source adapter, compiled-registry lifecycle,
@@ -971,8 +974,7 @@ readiness `sequence` on their first staged-to-ready transition;
 recovered after newer events were already read. `?state=staged` uses the original
 staging sequence for bounded inspection of records stranded before the chDB
 commit point. The Local store defaults to at most 10,000 events and 256 MiB of
-canonical event JSON. Staging fails closed with a retryable ingest error before
-either cap can be exceeded. Inspection remains non-destructive. Named downstream
+canonical event JSON. When either cap would be exceeded, new projections are dropped while warehouse ingestion continues. A durable delivery gap blocks subsequent consumer claims until an operator accepts its generation. Existing records remain intact; the maintenance-only abandon API can explicitly remove stranded records. Inspection remains non-destructive. Named downstream
 consumers use the separate [Maple Local event consumer protocol](./local-event-consumers.md) for
 leased, at-least-once claims and exact whole-batch acknowledgement. Ready-event pruning advances only
 through the slowest active consumer and retains a bounded acknowledged tail; staged events are never
@@ -989,3 +991,15 @@ revision commit and immutable runtime-registry swap occur while ingest is
 quiesced, so invalid credentials, incomplete bodies, and expensive validation do
 not close admission and every ingest request still observes exactly one registry
 version. Concurrent maintenance requests receive an intentional conflict response.
+
+## Compatibility and delivery notes
+
+The initial Local adapter projects OTLP logs only; traces and metrics continue through ordinary warehouse ingestion. Alert webhook and Hazel payloads gain an additive `event` CloudEvent envelope (including `tenantid`, typically about 1 KB). Alert event identities are deterministic for a scheduled tick; retries reuse the retained payload and identity.
+
+Checkpoint format v2 includes the control database. Older CLIs cannot list or restore v2 checkpoints and their reset command rejects data directories containing `control/`. Restore a v1 checkpoint with the new CLI to recover warehouse data with an empty control store; projection definitions and consumer positions are not present in v1.
+
+A checkpoint drains admitted operations, captures immutable SQLite bytes, and runs the synchronous chDB backup before reopening admission. The bytes are written and verified after admission resumes. chDB’s native backup blocks the JavaScript event loop, so this does not promise query availability during the native backup; it avoids holding admission closed during the subsequent asynchronous control archive write. Taking unrelated snapshots with a time gap could restore acknowledged delivery state ahead of the warehouse, so that gap is not accepted.
+
+Deploy the generated PlanetScale receipt migration before deploying the consumer. Its receipt insert shares the issue transaction and requires the table to exist.
+
+PlanetScale issue receipts are retained for 90 days after processing and swept hourly in batches of at most 5,000. Replays after that window may apply issue mutations again. Receipts intentionally survive issue deletion within the window, so redelivery is skipped instead of recreating a deleted issue.

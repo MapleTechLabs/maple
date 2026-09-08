@@ -1,15 +1,20 @@
+import { Result } from "effect"
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import { PlanetScaleWebhookQueueProducer, type QueueProducer, QueueSendError } from "@/platform/bindings"
 import { Effect, Layer, Schema } from "effect"
-import { projectPlanetScaleWebhookEvent } from "./webhook-events"
+import { projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult } from "./webhook-events"
 import {
 	MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES,
 	PlanetScaleWebhookQueue,
 	PlanetScaleWebhookQueueMessage,
 	planetScaleWebhookQueueJobBytes,
+	preparePlanetScaleWebhookJob,
 	type PlanetScaleWebhookJob,
 } from "./PlanetScaleWebhookQueue"
+
+const projectPlanetScaleWebhookEvent = (...args: Parameters<typeof projectPlanetScaleWebhookEventResult>) =>
+	Result.getOrThrow(projectPlanetScaleWebhookEventResult(...args))
 
 const orgId = Schema.decodeUnknownSync(OrgId)("org_1")
 const payload = {
@@ -71,7 +76,7 @@ describe("PlanetScaleWebhookQueue", () => {
 		assert.isBelow(planetScaleWebhookQueueJobBytes(job), MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES)
 		return Effect.gen(function* () {
 			const queue = yield* PlanetScaleWebhookQueue
-			yield* queue.send(job)
+			yield* queue.send(preparePlanetScaleWebhookJob(job))
 			assert.deepStrictEqual(sent, [job])
 		}).pipe(
 			provideQueue({
@@ -87,7 +92,7 @@ describe("PlanetScaleWebhookQueue", () => {
 		let attempts = 0
 		return Effect.gen(function* () {
 			const queue = yield* PlanetScaleWebhookQueue
-			const error = yield* queue.send(job).pipe(Effect.flip)
+			const error = yield* queue.send(preparePlanetScaleWebhookJob(job)).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/api/services/planetscale/PlanetScaleWebhookQueueError")
 			assert.strictEqual(error.message, "simulated queue outage")
 			assert.strictEqual(attempts, 1)
@@ -127,8 +132,8 @@ describe("PlanetScaleWebhookQueue", () => {
 		)
 		return Effect.gen(function* () {
 			const queue = yield* PlanetScaleWebhookQueue
-			yield* queue.send(atCap)
-			const error = yield* queue.send(oversized).pipe(Effect.flip)
+			yield* queue.send(preparePlanetScaleWebhookJob(atCap))
+			const error = yield* queue.send(preparePlanetScaleWebhookJob(oversized)).pipe(Effect.flip)
 			assert.match(error.message, /queue job exceeds/)
 			assert.strictEqual(attempts, 1)
 		}).pipe(

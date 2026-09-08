@@ -1,6 +1,9 @@
 # `@maple/eventing-core`
 
-Host-neutral signal-to-event contracts and deterministic runtime semantics.
+Signal-to-event contracts and deterministic runtime semantics.
+
+Canonical hashing uses `node:crypto` and `Buffer`. Supported hosts are Node.js,
+Bun, and Cloudflare Workers with `nodejs_compat` enabled.
 
 The package owns typed signal values, bounded selectors, pure projector
 registration, canonical event identity, and an immutable compiled projection

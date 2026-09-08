@@ -3,7 +3,7 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
-import { Effect, Predicate, Schema, type Scope } from "effect"
+import { Effect, Predicate, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { gunzipSync } from "node:zlib"
 import { TelemetryLayer } from "../core/telemetry"
@@ -21,6 +21,9 @@ import { buildInsertStatements } from "./inserts"
 import {
 	eventingControlSnapshotPath,
 	EventConsumerConflictError,
+	EventConsumerLeaseError,
+	EventConsumerDeliveryGapError,
+	OutboxAdministrationInvalid,
 	EventConsumerInputError,
 	EventConsumerNotFoundError,
 	LocalEventingControlStore,
@@ -120,8 +123,7 @@ export const corsHeadersForAllowedOrigin = (
 				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
 				// every request; a listener that does not allow it fails preflight
 				// for the whole SDK.
-				"access-control-allow-headers":
-					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-maintenance-token",
+				"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -196,7 +198,9 @@ function decodeOtlp(
 	}
 	const isJson = contentType.includes("json")
 	if (isJson) {
-		return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+		return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+			new TextDecoder().decode(bytes),
+		)
 	}
 	switch (signal) {
 		case "traces":
@@ -226,7 +230,7 @@ interface IngestResult {
 }
 
 async function ingest(
-	db: Chdb,
+	db: Pick<Chdb, "exec">,
 	authority: RetiredDayAuthority,
 	eventing: LocalEventingRuntime,
 	signal: Signal,
@@ -284,10 +288,14 @@ async function ingest(
 		}
 	}
 	let stagedEventIds: readonly string[] = []
+	let droppedEvents = 0
 	try {
 		eventing.persistFailures(evaluation.failures)
-		if (evaluation.events.length > 0)
-			stagedEventIds = eventing.stage(evaluation.events, evaluation.eventSourceFingerprints).eventIds
+		if (evaluation.events.length > 0) {
+			const staged = eventing.stage(evaluation.events, evaluation.eventSourceFingerprints)
+			stagedEventIds = staged.eventIds
+			droppedEvents = staged.dropped
+		}
 	} catch (error) {
 		const status = error instanceof OtlpFieldError ? 400 : 503
 		return {
@@ -336,20 +344,20 @@ async function ingest(
 				: signal === "logs"
 					? { rejectedLogRecords: rejected }
 					: { rejectedDataPoints: rejected }
+		const response = json(rejected > 0 ? { partialSuccess: { ...rejectedField, errorMessage } } : {})
+		if (droppedEvents > 0) response.headers.set("x-maple-eventing-dropped", String(droppedEvents))
 		return {
-			response: json(rejected > 0 ? { partialSuccess: { ...rejectedField, errorMessage } } : {}),
+			response,
 			accepted,
 			requestBytes,
 		}
 	}
-	return {
-		response: new Response(encodeExportResponse(signal, rejected, errorMessage), {
-			status: 200,
-			headers: { "content-type": "application/x-protobuf" },
-		}),
-		accepted,
-		requestBytes,
-	}
+	const response = new Response(encodeExportResponse(signal, rejected, errorMessage), {
+		status: 200,
+		headers: { "content-type": "application/x-protobuf" },
+	})
+	if (droppedEvents > 0) response.headers.set("x-maple-eventing-dropped", String(droppedEvents))
+	return { response, accepted, requestBytes }
 }
 
 /**
@@ -590,7 +598,7 @@ export class RequestQuiescenceGate {
 	}
 
 	async exclusive<A>(work: () => Promise<A>): Promise<A> {
-		if (this.#closed) throw new MaintenanceInProgressError()
+		if (this.#closed) throw MaintenanceInProgressError.create()
 		this.#closed = true
 		try {
 			if (this.#active > 0) await new Promise<void>((resolve) => this.#drained.push(resolve))
@@ -601,17 +609,24 @@ export class RequestQuiescenceGate {
 	}
 }
 
-class MaintenanceInProgressError extends Error {
-	constructor() {
-		super("another server maintenance operation is active")
-		this.name = "MaintenanceInProgressError"
+class MaintenanceInProgressError extends Schema.TaggedError<MaintenanceInProgressError>()(
+	"@maple/cli/MaintenanceInProgress",
+	{ message: Schema.String },
+) {
+	static create() {
+		return new MaintenanceInProgressError({ message: "another server maintenance operation is active" })
 	}
 }
 
-class RequestBodyTooLargeError extends Error {
-	constructor(readonly maximumBytes: number) {
-		super(`request body exceeds ${maximumBytes} bytes`)
-		this.name = "RequestBodyTooLargeError"
+class RequestBodyTooLargeError extends Schema.TaggedError<RequestBodyTooLargeError>()(
+	"@maple/cli/RequestBodyTooLarge",
+	{ message: Schema.String, maximumBytes: Schema.Number },
+) {
+	static create(maximumBytes: number) {
+		return new RequestBodyTooLargeError({
+			message: `request body exceeds ${maximumBytes} bytes`,
+			maximumBytes,
+		})
 	}
 }
 
@@ -620,9 +635,9 @@ const readBoundedJson = async (req: Request, maximumBytes: number): Promise<unkn
 	if (contentLength !== null && /^[0-9]+$/.test(contentLength)) {
 		const declared = Number(contentLength)
 		if (!Number.isSafeInteger(declared) || declared > maximumBytes)
-			throw new RequestBodyTooLargeError(maximumBytes)
+			throw RequestBodyTooLargeError.create(maximumBytes)
 	}
-	if (req.body === null) return JSON.parse("") as unknown
+	if (req.body === null) return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))("")
 	const reader = req.body.getReader()
 	const chunks: Uint8Array[] = []
 	let total = 0
@@ -633,7 +648,7 @@ const readBoundedJson = async (req: Request, maximumBytes: number): Promise<unkn
 			total += value.byteLength
 			if (total > maximumBytes) {
 				await reader.cancel()
-				throw new RequestBodyTooLargeError(maximumBytes)
+				throw RequestBodyTooLargeError.create(maximumBytes)
 			}
 			chunks.push(value)
 		}
@@ -646,11 +661,25 @@ const readBoundedJson = async (req: Request, maximumBytes: number): Promise<unkn
 		bytes.set(chunk, offset)
 		offset += chunk.byteLength
 	}
-	return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+	return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(new TextDecoder().decode(bytes))
 }
 
+const recoverMaintenanceError = (error: unknown, fallback: Response): Response => {
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Union([MaintenanceInProgressError, RequestBodyTooLargeError]),
+	)(error)
+	if (Result.isFailure(decoded)) return fallback
+	return Effect.runSync(
+		Effect.fail(decoded.success).pipe(
+			Effect.catchTags({
+				"@maple/cli/MaintenanceInProgress": (error) => Effect.succeed(text(error.message, 409)),
+				"@maple/cli/RequestBodyTooLarge": (error) => Effect.succeed(text(error.message, 413)),
+			}),
+		),
+	)
+}
 const invalidJsonResponse = (error: unknown): Response =>
-	error instanceof RequestBodyTooLargeError ? text(error.message, 413) : text("invalid JSON body", 400)
+	recoverMaintenanceError(error, text("invalid JSON body", 400))
 
 const admitted = async (gate: RequestQuiescenceGate, work: () => Promise<Response>): Promise<Response> => {
 	const leave = gate.enter()
@@ -677,24 +706,24 @@ const handleRetirement = async (
 	} catch {
 		return text("invalid JSON body", 400)
 	}
-	if (!Predicate.isObject(body)) return text("invalid body", 400)
-	const record = body
-	const keys = Object.keys(record).sort().join(",")
-	if (keys !== "archiveDir,rangeDate,sealingLagHours") return text("invalid retirement fields", 400)
-	if (
-		typeof record.archiveDir !== "string" ||
-		typeof record.rangeDate !== "string" ||
-		typeof record.sealingLagHours !== "number"
-	)
-		return text("invalid retirement values", 400)
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Struct({
+			archiveDir: Schema.NonEmptyString,
+			rangeDate: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)),
+			sealingLagHours: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+		}),
+		{ onExcessProperty: "error" },
+	)(body)
+	if (Result.isFailure(decoded)) return text("invalid retirement fields", 400)
+	const record = decoded.success
 	try {
 		const retired = await gate.exclusive(() =>
 			retireLiveDayInServer({
 				db,
 				authority,
-				archiveDir: record.archiveDir as string,
-				rangeDate: record.rangeDate as string,
-				sealingLagHours: record.sealingLagHours as number,
+				archiveDir: record.archiveDir,
+				rangeDate: record.rangeDate,
+				sealingLagHours: record.sealingLagHours,
 			}),
 		)
 		return json(retired)
@@ -702,6 +731,11 @@ const handleRetirement = async (
 		return text(`retirement failed: ${error instanceof Error ? error.message : String(error)}`, 409)
 	}
 }
+
+class EventingStartupError extends Schema.TaggedError<EventingStartupError>()(
+	"@maple/cli/eventing/StartupFailed",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 const CHECKPOINT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MAX_CHECKPOINT_BODY_BYTES = 4 * 1024
@@ -725,24 +759,29 @@ const handleCheckpointBackup = async (
 	} catch (error) {
 		return invalidJsonResponse(error)
 	}
-	if (!Predicate.isObject(body)) return text("invalid body", 400)
-	const record = body
-	if (Object.keys(record).sort().join(",") !== "checkpointId" || !Predicate.isString(record.checkpointId))
-		return text("invalid checkpoint fields", 400)
-	if (!CHECKPOINT_ID.test(record.checkpointId)) return text("invalid checkpoint ID", 400)
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Struct({
+			checkpointId: Schema.String.check(Schema.isPattern(CHECKPOINT_ID)),
+		}),
+		{ onExcessProperty: "error" },
+	)(body)
+	if (Result.isFailure(decoded)) return text("invalid checkpoint fields", 400)
+	const record = decoded.success
 	try {
 		const checkpointId = record.checkpointId.toLowerCase()
-		return await gate.exclusive(async () => {
-			const control = await controlStore.backupTo(eventingControlSnapshotPath(dataDir, checkpointId))
+		const controlBytes = await gate.exclusive(async () => {
+			// Both captures are synchronous: no request can mutate either database between them.
+			const bytes = controlStore.captureSnapshot()
 			db.exec(`BACKUP DATABASE default TO Disk('default', 'backups/snapshots/${checkpointId}/backup')`)
-			return json({ checkpointId, control })
+			return bytes
 		})
-	} catch (error) {
-		if (error instanceof MaintenanceInProgressError) return text(error.message, 409)
-		return text(
-			`checkpoint backup failed: ${error instanceof Error ? error.message : String(error)}`,
-			400,
+		const control = await LocalEventingControlStore.writeSnapshot(
+			eventingControlSnapshotPath(dataDir, checkpointId),
+			controlBytes,
 		)
+		return json({ checkpointId, control })
+	} catch (error) {
+		return recoverMaintenanceError(error, text(`checkpoint backup failed: ${describeThrown(error)}`, 400))
 	}
 }
 
@@ -780,24 +819,55 @@ const handleProjectionActivation = async (
 		await gate.exclusive(async () => eventing.commitActivation(activation))
 		return json({ active: eventing.listActive() })
 	} catch (error) {
-		if (error instanceof MaintenanceInProgressError) return text(error.message, 409)
-		return text(
-			`invalid event projection: ${error instanceof Error ? error.message : String(error)}`,
-			400,
-		)
+		return recoverMaintenanceError(error, text(`invalid event projection: ${describeThrown(error)}`, 400))
 	}
 }
 
 const eventConsumerErrorResponse = (error: unknown): Response => {
-	const message = error instanceof Error ? error.message : String(error)
-	if (error instanceof EventConsumerNotFoundError) return text(message, 404)
-	if (error instanceof EventConsumerConflictError) return text(message, 409)
-	if (error instanceof EventConsumerInputError) return text(message, 400)
-	return text(`event consumer operation failed: ${message}`, 500)
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Union([
+			EventConsumerInputError,
+			EventConsumerNotFoundError,
+			EventConsumerConflictError,
+			EventConsumerLeaseError,
+			EventConsumerDeliveryGapError,
+			OutboxAdministrationInvalid,
+		]),
+	)(error)
+	if (Result.isFailure(decoded))
+		return text(`event consumer operation failed: ${describeThrown(error)}`, 500)
+	return Effect.runSync(
+		Effect.fail(decoded.success).pipe(
+			Effect.catchTags({
+				"@maple/cli/eventing/EventConsumerDeliveryGap": (error) =>
+					Effect.succeed(
+						json(
+							{
+								error: error._tag,
+								message: error.message,
+								consumerId: error.consumerId,
+								generation: error.generation,
+								droppedEvents: error.droppedEvents,
+							},
+							409,
+						),
+					),
+				"@maple/cli/eventing/OutboxAdministrationInvalid": (error) =>
+					Effect.succeed(text(error.message, 400)),
+				"@maple/cli/eventing/EventConsumerInputInvalid": (error) =>
+					Effect.succeed(text(error.message, 400)),
+				"@maple/cli/eventing/EventConsumerNotFound": (error) =>
+					Effect.succeed(text(error.message, 404)),
+				"@maple/cli/eventing/EventConsumerConflict": (error) =>
+					Effect.succeed(text(error.message, 409)),
+				"@maple/cli/eventing/EventConsumerLeaseConflict": (error) =>
+					Effect.succeed(text(error.message, 409)),
+			}),
+		),
+	)
 }
 
-const isRequestRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+const ConsumerIdSchema = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9._-]{0,63}$/))
 
 const handleConsumerRegistration = async (
 	eventing: LocalEventingRuntime,
@@ -813,16 +883,12 @@ const handleConsumerRegistration = async (
 	} catch (error) {
 		return invalidJsonResponse(error)
 	}
-	if (!isRequestRecord(body)) return text("invalid body", 400)
-	const record = body
-	const consumerId = record.consumerId
-	const startAt = record.startAt
-	if (
-		Object.keys(record).sort().join(",") !== "consumerId,startAt" ||
-		!Schema.is(Schema.String)(consumerId) ||
-		(startAt !== "beginning" && startAt !== "latest")
-	)
-		return text("invalid event consumer registration fields", 400)
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Struct({ consumerId: ConsumerIdSchema, startAt: Schema.Literals(["beginning", "latest"]) }),
+		{ onExcessProperty: "error" },
+	)(body)
+	if (Result.isFailure(decoded)) return text("invalid event consumer registration fields", 400)
+	const { consumerId, startAt } = decoded.success
 	return admitted(gate, async () => {
 		try {
 			return json(eventing.registerConsumer(consumerId, startAt), 201)
@@ -846,11 +912,11 @@ const handleConsumerDisable = async (
 	} catch (error) {
 		return invalidJsonResponse(error)
 	}
-	if (!isRequestRecord(body)) return text("invalid body", 400)
-	const record = body
-	const consumerId = record.consumerId
-	if (Object.keys(record).join(",") !== "consumerId" || !Schema.is(Schema.String)(consumerId))
-		return text("invalid event consumer disable fields", 400)
+	const decoded = Schema.decodeUnknownResult(Schema.Struct({ consumerId: ConsumerIdSchema }), {
+		onExcessProperty: "error",
+	})(body)
+	if (Result.isFailure(decoded)) return text("invalid event consumer disable fields", 400)
+	const { consumerId } = decoded.success
 	return admitted(gate, async () => {
 		try {
 			return json(eventing.disableConsumer(consumerId))
@@ -861,7 +927,7 @@ const handleConsumerDisable = async (
 }
 
 const handleConsumerClaim = async (
-	eventing: LocalEventingRuntime,
+	eventing: Pick<LocalEventingRuntime, "claimReady">,
 	gate: RequestQuiescenceGate,
 	consumerToken: string,
 	req: Request,
@@ -874,18 +940,16 @@ const handleConsumerClaim = async (
 	} catch (error) {
 		return invalidJsonResponse(error)
 	}
-	if (!isRequestRecord(body)) return text("invalid body", 400)
-	const record = body
-	const consumerId = record.consumerId
-	const limit = record.limit
-	const leaseSeconds = record.leaseSeconds
-	if (
-		Object.keys(record).sort().join(",") !== "consumerId,leaseSeconds,limit" ||
-		!Schema.is(Schema.String)(consumerId) ||
-		!Schema.is(Schema.Number)(limit) ||
-		!Schema.is(Schema.Number)(leaseSeconds)
-	)
-		return text("invalid event consumer claim fields", 400)
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Struct({
+			consumerId: ConsumerIdSchema,
+			limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
+			leaseSeconds: Schema.Int.check(Schema.isBetween({ minimum: 5, maximum: 300 })),
+		}),
+		{ onExcessProperty: "error" },
+	)(body)
+	if (Result.isFailure(decoded)) return text("invalid event consumer claim fields", 400)
+	const { consumerId, limit, leaseSeconds } = decoded.success
 	return admitted(gate, async () => {
 		try {
 			return json(eventing.claimReady(consumerId, limit, leaseSeconds))
@@ -909,21 +973,68 @@ const handleConsumerAcknowledgement = async (
 	} catch (error) {
 		return invalidJsonResponse(error)
 	}
-	if (!isRequestRecord(body)) return text("invalid body", 400)
-	const record = body
-	const consumerId = record.consumerId
-	const leaseToken = record.leaseToken
-	const throughSequence = record.throughSequence
-	if (
-		Object.keys(record).sort().join(",") !== "consumerId,leaseToken,throughSequence" ||
-		!Schema.is(Schema.String)(consumerId) ||
-		!Schema.is(Schema.String)(leaseToken) ||
-		!Schema.is(Schema.Number)(throughSequence)
-	)
-		return text("invalid event consumer acknowledgement fields", 400)
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Struct({
+			consumerId: ConsumerIdSchema,
+			leaseToken: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+			throughSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+		}),
+		{ onExcessProperty: "error" },
+	)(body)
+	if (Result.isFailure(decoded)) return text("invalid event consumer acknowledgement fields", 400)
+	const { consumerId, leaseToken, throughSequence } = decoded.success
 	return admitted(gate, async () => {
 		try {
 			return json(eventing.acknowledgeClaim(consumerId, leaseToken, throughSequence))
+		} catch (error) {
+			return eventConsumerErrorResponse(error)
+		}
+	})
+}
+
+const handleOutboxAdministration = async (
+	eventing: Pick<LocalEventingRuntime, "abandonEvents" | "acceptDeliveryGap">,
+	gate: RequestQuiescenceGate,
+	token: string,
+	req: Request,
+	action: "abandon" | "accept-gap",
+): Promise<Response> => {
+	const unauthorized = eventingAuthorized(token, req)
+	if (unauthorized) return unauthorized
+	let body: unknown
+	try {
+		body = await readBoundedJson(req, MAX_PROJECTION_BODY_BYTES)
+	} catch (error) {
+		return invalidJsonResponse(error)
+	}
+	if (action === "abandon") {
+		const decoded = Schema.decodeUnknownResult(
+			Schema.Struct({
+				eventIds: Schema.Array(Schema.NonEmptyString.check(Schema.isMaxLength(256))).check(
+					Schema.isMinLength(1),
+					Schema.isMaxLength(1000),
+				),
+			}),
+			{ onExcessProperty: "error" },
+		)(body)
+		if (Result.isFailure(decoded)) return text("invalid outbox abandonment fields", 400)
+		try {
+			return json(await gate.exclusive(async () => eventing.abandonEvents(decoded.success.eventIds)))
+		} catch (error) {
+			return recoverMaintenanceError(error, eventConsumerErrorResponse(error))
+		}
+	}
+	const decoded = Schema.decodeUnknownResult(
+		Schema.Struct({
+			consumerId: ConsumerIdSchema,
+			generation: Schema.Int.check(Schema.isGreaterThan(0)),
+		}),
+		{ onExcessProperty: "error" },
+	)(body)
+	if (Result.isFailure(decoded)) return text("invalid delivery gap acknowledgement fields", 400)
+	return admitted(gate, async () => {
+		try {
+			return json(eventing.acceptDeliveryGap(decoded.success.consumerId, decoded.success.generation))
 		} catch (error) {
 			return eventConsumerErrorResponse(error)
 		}
@@ -998,6 +1109,14 @@ const makeFetch =
 				)
 			if (url.pathname === "/local/query")
 				return respond(await admitted(gate, () => querySpan(runSpan, db, authority, req)))
+			if (url.pathname === "/local/eventing/outbox/abandon")
+				return respond(
+					await handleOutboxAdministration(eventing, gate, maintenanceToken, req, "abandon"),
+				)
+			if (url.pathname === "/local/eventing/consumers/accept-gap")
+				return respond(
+					await handleOutboxAdministration(eventing, gate, maintenanceToken, req, "accept-gap"),
+				)
 			if (url.pathname === "/local/checkpoint/backup")
 				return respond(
 					await handleCheckpointBackup(
@@ -1035,7 +1154,11 @@ const makeFetch =
  *  order). Resolves with the bound port once listening. */
 export const startServer = (
 	options: ServerOptions,
-): Effect.Effect<{ readonly port: number }, ChdbError | ServerBindError, Scope.Scope> =>
+): Effect.Effect<
+	{ readonly port: number },
+	ChdbError | EventingStartupError | ServerBindError,
+	Scope.Scope
+> =>
 	Effect.gen(function* () {
 		const retention = yield* Effect.try({
 			try: () => {
@@ -1072,16 +1195,28 @@ export const startServer = (
 			Effect.tryPromise({
 				try: () => LocalEventingControlStore.open(options.dataDir, undefined, eventingTelemetry),
 				catch: (error) =>
-					new ChdbError({
+					new EventingStartupError({
+						cause: error,
 						message: `failed to open local eventing control store: ${error instanceof Error ? error.message : String(error)}`,
 					}),
 			}),
-			(store) => Effect.sync(() => store.close()),
+			(store) =>
+				Effect.try({
+					try: () => store.close(),
+					catch: (cause) =>
+						new EventingStartupError({
+							message: "failed to close eventing control store",
+							cause,
+						}),
+				}).pipe(
+					Effect.catchTag("@maple/cli/eventing/StartupFailed", (error) => Effect.logError(error)),
+				),
 		)
 		const eventing = yield* Effect.try({
 			try: () => new LocalEventingRuntime(controlStore, eventingTelemetry),
 			catch: (error) =>
-				new ChdbError({
+				new EventingStartupError({
+					cause: error,
 					message: `failed to compile local event projections: ${error instanceof Error ? error.message : String(error)}`,
 				}),
 		})
@@ -1185,6 +1320,7 @@ export const startServer = (
 export const __testables = {
 	handleConsumerAcknowledgement,
 	handleConsumerClaim,
+	handleOutboxAdministration,
 	handleConsumerDisable,
 	handleConsumerRegistration,
 	handleCheckpointBackup,

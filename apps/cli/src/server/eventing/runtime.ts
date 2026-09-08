@@ -1,3 +1,4 @@
+import { Result } from "effect"
 import { createHash } from "node:crypto"
 import {
 	canonicalJson,
@@ -94,10 +95,12 @@ export class LocalEventingRuntime {
 	) {
 		this.#store = store
 		this.#telemetry = telemetry
-		this.#sources = new SignalSourceRegistry().register(OTLP_LOG_ADAPTER.definition)
+		this.#sources = Result.getOrThrow(new SignalSourceRegistry().register(OTLP_LOG_ADAPTER.definition))
 		this.#projectors = projectors
 		const specs = store.loadEnabledProjections(TENANT_ID)
-		this.#compiled = CompiledProjectionRegistry.compile(specs, this.#sources, this.#projectors)
+		this.#compiled = Result.getOrThrow(
+			CompiledProjectionRegistry.compile(specs, this.#sources, this.#projectors),
+		)
 		this.#activeSourceKinds = new Set(specs.map(({ sourceKind }) => sourceKind))
 	}
 
@@ -114,7 +117,9 @@ export class LocalEventingRuntime {
 			.loadEnabledProjections(TENANT_ID)
 			.filter((candidate) => candidate.id !== spec.id)
 		const next = spec.enabled ? [...active, spec] : active
-		const compiled = CompiledProjectionRegistry.compile(next, this.#sources, this.#projectors)
+		const compiled = Result.getOrThrow(
+			CompiledProjectionRegistry.compile(next, this.#sources, this.#projectors),
+		)
 		return { spec, next, compiled, generation: this.#generation }
 	}
 
@@ -228,7 +233,7 @@ export class LocalEventingRuntime {
 				}
 			}
 			if (isRetiredUtcDay(occurrence.occurredAt.slice(0, 10))) continue
-			const result = snapshot.evaluate(occurrence, acceptedAt)
+			const result = Result.getOrThrow(snapshot.evaluate(occurrence, acceptedAt))
 			this.#telemetry.record({
 				operation: "projection",
 				outcome: "success",
@@ -307,9 +312,17 @@ export class LocalEventingRuntime {
 		return this.#store.acknowledgeClaim(TENANT_ID, consumerId, leaseToken, throughSequence)
 	}
 
+	acceptDeliveryGap(consumerId: string, generation: number) {
+		return this.#store.acceptDeliveryGap(TENANT_ID, consumerId, generation)
+	}
+	abandonEvents(eventIds: readonly string[]) {
+		return this.#store.abandonEvents(TENANT_ID, eventIds)
+	}
+
 	health() {
 		return {
 			activeProjections: this.listActive().length,
+			deliveryGap: this.#store.deliveryGap(TENANT_ID),
 			outboxCapacity: this.#store.outboxCapacity(),
 			...this.#store.validate(),
 		}

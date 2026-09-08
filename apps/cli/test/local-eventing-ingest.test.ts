@@ -261,6 +261,24 @@ describe("Local eventing ingest seam", () => {
 		await maintenance
 	})
 
+	it("rejects fractional consumer limits before calling the store", async () => {
+		const response = await __testables.handleConsumerClaim(
+			{
+				claimReady: () => {
+					throw new Error("invalid input reached the store")
+				},
+			},
+			new __testables.RequestQuiescenceGate(),
+			"secret",
+			new Request("http://127.0.0.1/local/eventing/claims", {
+				method: "POST",
+				headers: { "x-maple-event-consumer-token": "secret" },
+				body: JSON.stringify({ consumerId: "automation", limit: 1.5, leaseSeconds: 30 }),
+			}),
+		)
+		strictEqual(response.status, 400)
+	})
+
 	it("isolates projection failures, stores telemetry, and makes sibling events ready", async () => {
 		const order: string[] = []
 		const event = { id: "event-1" }
@@ -296,7 +314,7 @@ describe("Local eventing ingest seam", () => {
 			persistFailures: () => order.push("persist-failures"),
 			stage: () => {
 				order.push("stage")
-				return { inserted: 1, deduplicated: 0, eventIds: [event.id] }
+				return { inserted: 1, deduplicated: 0, dropped: 0, eventIds: [event.id] }
 			},
 			markReady: () => order.push("ready"),
 		}
@@ -371,7 +389,7 @@ describe("Local eventing ingest seam", () => {
 					typeMismatchFields: [],
 				}),
 				persistFailures: () => undefined,
-				stage: () => ({ inserted: 1, deduplicated: 0, eventIds: ["event-1"] }),
+				stage: () => ({ inserted: 1, deduplicated: 0, dropped: 0, eventIds: ["event-1"] }),
 				markReady: () => {
 					markedReady = true
 				},
@@ -420,7 +438,7 @@ describe("Local eventing ingest seam", () => {
 					typeMismatchFields: [],
 				}),
 				persistFailures: () => undefined,
-				stage: () => ({ inserted: 0, deduplicated: 0, eventIds: [] }),
+				stage: () => ({ inserted: 0, deduplicated: 0, dropped: 0, eventIds: [] }),
 				markReady: (eventIds: readonly string[]) => {
 					readyIds = eventIds
 				},
@@ -526,7 +544,7 @@ describe("Local eventing ingest seam", () => {
 				persistFailures: () => undefined,
 				stage: (events: readonly { readonly id: string }[]) => {
 					stagedIds = events.map(({ id }) => id)
-					return { inserted: events.length, deduplicated: 0, eventIds: stagedIds }
+					return { inserted: events.length, deduplicated: 0, dropped: 0, eventIds: stagedIds }
 				},
 				markReady: () => undefined,
 			} as never,

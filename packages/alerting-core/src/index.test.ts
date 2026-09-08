@@ -1,3 +1,5 @@
+import { Result } from "effect"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	alertDeliveryRetryDelayMs,
@@ -5,10 +7,13 @@ import {
 	evaluateAlertObservation,
 	interleaveAlertRulesByTenant,
 	makeAlertDeliveryKey,
-	planAlertLifecycle,
-	projectAlertLifecycleEvent,
+	planAlertLifecycle as planAlertLifecycleEffect,
+	projectAlertLifecycleEvent as projectAlertLifecycleEventResult,
 	type AlertEvaluation,
 } from "./index"
+
+const planAlertLifecycle = (...args: Parameters<typeof planAlertLifecycleEffect>) =>
+	Effect.runSync(planAlertLifecycleEffect(...args))
 
 const breached: AlertEvaluation = {
 	status: "breached",
@@ -28,6 +33,9 @@ const policy = {
 	consecutiveHealthyRequired: 2,
 	renotifyIntervalMinutes: 10,
 }
+
+const projectAlertLifecycleEvent = (input: Parameters<typeof projectAlertLifecycleEventResult>[0]) =>
+	Result.getOrThrow(projectAlertLifecycleEventResult(input))
 
 describe("evaluateAlertObservation", () => {
 	it("applies thresholds and rounds weighted sample counts", () => {

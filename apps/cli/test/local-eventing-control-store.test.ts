@@ -161,7 +161,7 @@ describe("LocalEventingControlStore", () => {
 				store.saveProjection(projection({ revision: 3 }))
 				deepStrictEqual(store.loadEnabledProjections("tenant-a"), [projection({ revision: 3 })])
 				deepStrictEqual(store.validate(), {
-					schemaVersion: 4,
+					schemaVersion: 1,
 					projectionRevisions: 3,
 					projectionFailures: 0,
 					stagedEvents: 0,
@@ -179,6 +179,7 @@ describe("LocalEventingControlStore", () => {
 				deepStrictEqual(store.stageEvents([event(), event()]), {
 					inserted: 1,
 					deduplicated: 1,
+					dropped: 0,
 					eventIds: [event().id, event().id],
 				})
 				throws(() => store.stageEvents([event({ data: { recordId: 43 } })]), /collision/)
@@ -255,7 +256,7 @@ describe("LocalEventingControlStore", () => {
 			const snapshot = join(dataDir, "backups", "snapshot", "control.sqlite")
 			const validation = await store.backupTo(snapshot)
 			deepStrictEqual(validation, {
-				schemaVersion: 4,
+				schemaVersion: 1,
 				projectionRevisions: 1,
 				projectionFailures: 1,
 				stagedEvents: 0,
@@ -278,6 +279,39 @@ describe("LocalEventingControlStore", () => {
 				)
 			} finally {
 				restoredStore.close()
+			}
+		}))
+
+	it("writes the captured SQLite state even when the live store changes before archive I/O", async () =>
+		withDataDir(async (dataDir) => {
+			const store = await LocalEventingControlStore.open(dataDir)
+			try {
+				store.saveProjection(projection())
+				store.stageEvents([event()])
+				const bytes = store.captureSnapshot()
+				store.markReady([event().id])
+				store.saveProjection(projection({ revision: 2, enabled: false }))
+				const snapshot = join(dataDir, "backups", "captured", "control.sqlite")
+				const validation = await LocalEventingControlStore.writeSnapshot(snapshot, bytes)
+				strictEqual(validation.stagedEvents, 1)
+				strictEqual(validation.readyEvents, 0)
+				strictEqual(validation.projectionRevisions, 1)
+				strictEqual(store.validate().readyEvents, 1)
+				strictEqual(store.validate().projectionRevisions, 2)
+				const restored = join(dataDir, "restored-capture")
+				await LocalEventingControlStore.restoreSnapshot(snapshot, restored)
+				const recovered = await LocalEventingControlStore.open(restored)
+				try {
+					deepStrictEqual(recovered.loadEnabledProjections("tenant-a"), [projection()])
+					deepStrictEqual(
+						recovered.listStaged().events.map((row) => row.event),
+						[event()],
+					)
+				} finally {
+					recovered.close()
+				}
+			} finally {
+				store.close()
 			}
 		}))
 
@@ -313,7 +347,7 @@ describe("LocalEventingControlStore", () => {
 			}
 		}))
 
-	it("paginates every ready event and applies fail-closed outbox capacity", async () =>
+	it("paginates every ready event and reports bounded outbox overflow", async () =>
 		withDataDir(async (dataDir) => {
 			const store = await LocalEventingControlStore.open(dataDir, {
 				maxOutboxEvents: 2,
@@ -335,7 +369,13 @@ describe("LocalEventingControlStore", () => {
 				)
 				strictEqual(secondPage.nextCursor, null)
 				deepStrictEqual(store.stageEvents([event()]).deduplicated, 1)
-				throws(() => store.stageEvents([third]), /outbox capacity exceeded/)
+				deepStrictEqual(store.stageEvents([third]), {
+					inserted: 0,
+					deduplicated: 0,
+					dropped: 1,
+					eventIds: [],
+				})
+				strictEqual(store.deliveryGap("tenant-a").generation, 1)
 			} finally {
 				store.close()
 			}
@@ -370,92 +410,7 @@ describe("LocalEventingControlStore", () => {
 			}
 		}))
 
-	it("migrates schema 1 in place and keeps schema-1 snapshots restorable", async () =>
-		withDataDir(async (dataDir) => {
-			let store = await LocalEventingControlStore.open(dataDir)
-			store.saveProjection(projection())
-			const migratedEvent = event({ sourceoccurrenceid: "record-42" })
-			store.stageEvents([migratedEvent], new Map([[migratedEvent.id, SOURCE_FINGERPRINT]]))
-			store.markReady([migratedEvent.id])
-			store.close()
-
-			const database = new Database(eventingControlPath(dataDir), {
-				readwrite: true,
-				strict: true,
-				safeIntegers: true,
-			})
-			database.exec("DROP INDEX outbox_events_staged_occurrence")
-			database.exec("ALTER TABLE outbox_events DROP COLUMN source_fingerprint")
-			database.exec("ALTER TABLE outbox_events DROP COLUMN source_kind")
-			database.exec("ALTER TABLE outbox_events DROP COLUMN source")
-			database.exec("ALTER TABLE outbox_events DROP COLUMN source_occurrence_id")
-			database.exec("DROP TABLE event_consumers")
-			database.exec("PRAGMA user_version = 1")
-			database.close(true)
-
-			strictEqual(
-				LocalEventingControlStore.validateSnapshot(eventingControlPath(dataDir)).schemaVersion,
-				1,
-			)
-			store = await LocalEventingControlStore.open(dataDir)
-			try {
-				strictEqual(store.validate().schemaVersion, 4)
-				deepStrictEqual(
-					store.listReady().events.map(({ event }) => event.id),
-					[migratedEvent.id],
-				)
-				strictEqual(
-					store.stageEvents([migratedEvent], new Map([[migratedEvent.id, SOURCE_FINGERPRINT]]))
-						.deduplicated,
-					1,
-				)
-				deepStrictEqual(store.listConsumers("tenant-a"), [])
-			} finally {
-				store.close()
-			}
-		}))
-
-	it("refuses schema-3 migration when staged source rows lack recovery fingerprints", async () =>
-		withDataDir(async (dataDir) => {
-			let store = await LocalEventingControlStore.open(dataDir)
-			store.saveProjection(projection())
-			const staged = event({ sourceoccurrenceid: "record-42" })
-			store.stageEvents([staged], new Map([[staged.id, SOURCE_FINGERPRINT]]))
-			store.close()
-
-			const database = new Database(eventingControlPath(dataDir), {
-				readwrite: true,
-				strict: true,
-				safeIntegers: true,
-			})
-			database.exec("ALTER TABLE outbox_events DROP COLUMN source_fingerprint")
-			database.exec("PRAGMA user_version = 3")
-			database.close(true)
-
-			strictEqual(
-				LocalEventingControlStore.validateSnapshot(eventingControlPath(dataDir)).schemaVersion,
-				3,
-			)
-			await rejects(
-				() => LocalEventingControlStore.open(dataDir),
-				/schema 3 with staged source occurrences/,
-			)
-			const unchanged = new Database(eventingControlPath(dataDir), {
-				readwrite: true,
-				strict: true,
-				safeIntegers: true,
-			})
-			try {
-				const version = unchanged
-					.query<{ readonly user_version: number | bigint }, []>("PRAGMA user_version")
-					.get()
-				strictEqual(Number(version!.user_version), 3)
-			} finally {
-				unchanged.close(true)
-			}
-		}))
-
-	it("rejects invalid schema-4 staged fingerprints during snapshot validation", async () =>
+	it("rejects invalid schema-1 staged fingerprints during snapshot validation", async () =>
 		withDataDir(async (dataDir) => {
 			const store = await LocalEventingControlStore.open(dataDir)
 			store.saveProjection(projection())
@@ -489,56 +444,6 @@ describe("LocalEventingControlStore", () => {
 				/invalid staged source fingerprint/,
 			)
 			await rejects(() => LocalEventingControlStore.open(dataDir), /invalid staged source fingerprint/)
-		}))
-
-	it("rejects an unsafe schema-3 restore before replacing an openable target", async () =>
-		withDataDir(async (dataDir) => {
-			const unsafeDataDir = join(dataDir, "unsafe")
-			let store = await LocalEventingControlStore.open(unsafeDataDir)
-			store.saveProjection(projection())
-			const unsafeEvent = event({ sourceoccurrenceid: "unsafe-record" })
-			store.stageEvents([unsafeEvent], new Map([[unsafeEvent.id, SOURCE_FINGERPRINT]]))
-			store.close()
-			const unsafeDatabase = new Database(eventingControlPath(unsafeDataDir), {
-				readwrite: true,
-				strict: true,
-				safeIntegers: true,
-			})
-			unsafeDatabase.exec("ALTER TABLE outbox_events DROP COLUMN source_fingerprint")
-			unsafeDatabase.exec("PRAGMA user_version = 3")
-			unsafeDatabase.close(true)
-
-			const liveDataDir = join(dataDir, "live")
-			store = await LocalEventingControlStore.open(liveDataDir)
-			store.saveProjection(projection())
-			const liveEvent = event({ id: "live-event" })
-			store.stageEvents([liveEvent])
-			store.markReady([liveEvent.id])
-			store.close()
-			const liveBefore = readFileSync(eventingControlPath(liveDataDir))
-
-			await rejects(
-				() =>
-					LocalEventingControlStore.restoreSnapshot(
-						eventingControlPath(unsafeDataDir),
-						liveDataDir,
-					),
-				/schema 3 with staged source occurrences/,
-			)
-			deepStrictEqual(readFileSync(eventingControlPath(liveDataDir)), liveBefore)
-			deepStrictEqual(
-				readdirSync(dataDir).filter((name) => name.startsWith(".maple-eventing-control-restore-")),
-				[],
-			)
-			store = await LocalEventingControlStore.open(liveDataDir)
-			try {
-				deepStrictEqual(
-					store.listReady().events.map(({ event }) => event.id),
-					[liveEvent.id],
-				)
-			} finally {
-				store.close()
-			}
 		}))
 
 	it("leases whole batches, redelivers after expiry, and rejects stale acknowledgements", async () =>
@@ -732,6 +637,20 @@ describe("LocalEventingControlStore", () => {
 			} finally {
 				store.close()
 			}
+		}))
+
+	it("rejects a corrupted durable outbox counter at reopen", async () =>
+		withDataDir(async (dataDir) => {
+			const store = await LocalEventingControlStore.open(dataDir)
+			store.stageEvents([event()])
+			store.close()
+			const db = new Database(eventingControlPath(dataDir))
+			try {
+				db.run("UPDATE outbox_usage SET bytes = bytes + 1 WHERE singleton = 1")
+			} finally {
+				db.close()
+			}
+			await rejects(() => LocalEventingControlStore.open(dataDir), /accounting is inconsistent/)
 		}))
 
 	it("refuses a symlink in place of the database", async () =>

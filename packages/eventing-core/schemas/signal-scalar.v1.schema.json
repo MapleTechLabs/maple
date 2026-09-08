@@ -10,13 +10,18 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["string"]
+							"enum": [
+								"string"
+							]
 						},
 						"value": {
 							"type": "string"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -24,13 +29,18 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["boolean"]
+							"enum": [
+								"boolean"
+							]
 						},
 						"value": {
 							"type": "boolean"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -38,7 +48,9 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["int64"]
+							"enum": [
+								"int64"
+							]
 						},
 						"value": {
 							"type": "string",
@@ -46,7 +58,10 @@
 							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -54,13 +69,18 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["float64"]
+							"enum": [
+								"float64"
+							]
 						},
 						"value": {
 							"type": "number"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -68,14 +88,19 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["timestamp"]
+							"enum": [
+								"timestamp"
+							]
 						},
 						"value": {
 							"type": "string",
 							"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				},
 				{
@@ -83,7 +108,9 @@
 					"properties": {
 						"type": {
 							"type": "string",
-							"enum": ["duration"]
+							"enum": [
+								"duration"
+							]
 						},
 						"value": {
 							"type": "string",
@@ -91,7 +118,10 @@
 							"pattern": "^-?(?:0|[1-9][0-9]*)$"
 						}
 					},
-					"required": ["type", "value"],
+					"required": [
+						"type",
+						"value"
+					],
 					"additionalProperties": false
 				}
 			]

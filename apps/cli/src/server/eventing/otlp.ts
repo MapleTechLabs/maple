@@ -9,47 +9,71 @@ import {
 	type SignalSourceAdapter,
 	type SignalSourceDefinition,
 } from "@maple/eventing-core"
-import { OtlpFieldError, spanIdHex, traceIdHex } from "../otlp/encode"
+import { Result, Schema } from "effect"
+import { OtlpFieldError, spanIdHex, traceIdHex, type AnyValue, type KeyValue } from "../otlp/encode"
 
-interface AnyValue {
-	readonly stringValue?: string
-	readonly boolValue?: boolean
-	readonly intValue?: string | number
-	readonly doubleValue?: number
-	readonly bytesValue?: string
-	readonly arrayValue?: { readonly values?: readonly AnyValue[] }
-	readonly kvlistValue?: { readonly values?: readonly KeyValue[] }
-}
-
-interface KeyValue {
-	readonly key?: string
-	readonly value?: AnyValue
-}
-
-interface OtlpLogRecord {
-	readonly timeUnixNano?: string | number
-	readonly observedTimeUnixNano?: string | number
-	readonly severityNumber?: number
-	readonly severityText?: string
-	readonly eventName?: string
-	readonly body?: AnyValue
-	readonly attributes?: readonly KeyValue[]
-	readonly traceId?: string
-	readonly spanId?: string
-}
-
-interface OtlpLogsRequest {
-	readonly resourceLogs?: readonly {
-		readonly resource?: { readonly attributes?: readonly KeyValue[] }
-		readonly scopeLogs?: readonly {
-			readonly scope?: {
-				readonly name?: string
-				readonly version?: string
-				readonly attributes?: readonly KeyValue[]
-			}
-			readonly logRecords?: readonly OtlpLogRecord[]
-		}[]
-	}[]
+const NumberOrString = Schema.Union([Schema.String, Schema.Number])
+const AnyValueSchema: Schema.Codec<AnyValue> = Schema.suspend(() =>
+	Schema.Struct({
+		stringValue: Schema.optionalKey(Schema.String),
+		boolValue: Schema.optionalKey(Schema.Boolean),
+		intValue: Schema.optionalKey(NumberOrString),
+		doubleValue: Schema.optionalKey(Schema.Number),
+		bytesValue: Schema.optionalKey(Schema.String),
+		value: Schema.optionalKey(Schema.String),
+		arrayValue: Schema.optionalKey(
+			Schema.Struct({ values: Schema.optionalKey(Schema.Array(AnyValueSchema)) }),
+		),
+		kvlistValue: Schema.optionalKey(
+			Schema.Struct({ values: Schema.optionalKey(Schema.Array(KeyValueSchema)) }),
+		),
+	}),
+)
+const KeyValueSchema: Schema.Codec<KeyValue> = Schema.suspend(() =>
+	Schema.Struct({
+		key: Schema.optionalKey(Schema.String),
+		value: Schema.optionalKey(AnyValueSchema),
+	}),
+)
+const AttributesSchema = Schema.optionalKey(Schema.Array(KeyValueSchema))
+const ScopeSchema = Schema.Struct({
+	name: Schema.optionalKey(Schema.String),
+	version: Schema.optionalKey(Schema.String),
+	attributes: AttributesSchema,
+})
+const LogRecordSchema = Schema.Struct({
+	timeUnixNano: Schema.optionalKey(NumberOrString),
+	observedTimeUnixNano: Schema.optionalKey(NumberOrString),
+	severityNumber: Schema.optionalKey(Schema.Number),
+	severityText: Schema.optionalKey(Schema.String),
+	eventName: Schema.optionalKey(Schema.String),
+	body: Schema.optionalKey(AnyValueSchema),
+	attributes: AttributesSchema,
+	traceId: Schema.optionalKey(Schema.String),
+	spanId: Schema.optionalKey(Schema.String),
+})
+type OtlpLogRecord = typeof LogRecordSchema.Type
+const LogsRequestSchema = Schema.Struct({
+	resourceLogs: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				resource: Schema.optionalKey(Schema.Struct({ attributes: AttributesSchema })),
+				scopeLogs: Schema.optionalKey(
+					Schema.Array(
+						Schema.Struct({
+							scope: Schema.optionalKey(ScopeSchema),
+							logRecords: Schema.optionalKey(Schema.Array(LogRecordSchema)),
+						}),
+					),
+				),
+			}),
+		),
+	),
+})
+const decodeLogsRequest = (request: unknown) => {
+	const decoded = Schema.decodeUnknownResult(LogsRequestSchema)(request ?? {})
+	if (Result.isFailure(decoded)) throw new OtlpFieldError(`invalid OTLP logs: ${decoded.failure.message}`)
+	return decoded.success
 }
 
 const MAX_ATTRIBUTES = 256
@@ -315,158 +339,147 @@ const recoveryIdentity = (
 const derivedOccurrenceId = (input: JsonValue): string =>
 	`derived:sha256:${createHash("sha256").update(canonicalJson(input)).digest("hex")}`
 
-const normalizeOtlpLogsStrict = (
-	request: unknown,
-	_acceptedAt = new Date().toISOString(),
-	tenantId = "local",
-): readonly NormalizedSignal[] => {
-	const input = (request ?? {}) as OtlpLogsRequest
-	const signals: NormalizedSignal[] = []
-	for (const resourceLogs of input.resourceLogs ?? []) {
-		const resource = attributes(resourceLogs.resource?.attributes, "resource.attributes")
-		for (const scopeLogs of resourceLogs.scopeLogs ?? []) {
-			const scope = attributes(scopeLogs.scope?.attributes, "scope.attributes")
-			for (const log of scopeLogs.logRecords ?? []) {
-				const record = attributes(log.attributes, "log.attributes")
-				const occurredNanos = epochNanos(log.timeUnixNano) ?? epochNanos(log.observedTimeUnixNano)
-				// OTLP permits both timestamps to be absent or zero. Such records still
-				// belong in the warehouse, but cannot acquire a durable event identity.
-				if (occurredNanos === null) continue
-				const observedNanos = epochNanos(log.observedTimeUnixNano)
-				const occurredAt = nanosToTimestamp(occurredNanos)
-				const sourceObservedAt = observedNanos ? nanosToTimestamp(observedNanos) : occurredAt
-				const bodyScalar = anyValueScalar(log.body, "log.body")
-				const traceId = traceIdHex(log.traceId, "logRecord.traceId")
-				const spanId = spanIdHex(log.spanId, "logRecord.spanId")
-				const data: JsonValue = {
-					resource: resource.data,
-					scope: {
-						name: assertStringBound(scopeLogs.scope?.name ?? "", "scope.name"),
-						version: assertStringBound(scopeLogs.scope?.version ?? "", "scope.version"),
-						attributes: scope.data,
-					},
-					record: {
-						eventName: assertStringBound(log.eventName ?? "", "log.eventName"),
-						severityNumber: log.severityNumber ?? 0,
-						severityText: assertStringBound(log.severityText ?? "", "log.severityText"),
-						traceId,
-						spanId,
-						body: anyValueJson(log.body, "log.body"),
-						attributes: record.data,
-					},
-				}
-				if (Buffer.byteLength(canonicalJson(data), "utf8") > MAX_DATA_BYTES)
-					throw new OtlpFieldError(`normalized log event exceeds ${MAX_DATA_BYTES} UTF-8 bytes`)
-				const source = sourceUri(resource, record)
-				const occurrenceId = sourceOccurrenceId(record)
-				const subject =
-					stringAttribute(record, "event.subject") ?? stringAttribute(record, "cloudevents.subject")
-				signals.push({
-					sourceKind: "otel.log",
-					source,
-					tenantId,
-					occurrenceId:
-						occurrenceId ??
-						derivedOccurrenceId({ source, occurredAt, signalKind: "otel.log", data }),
-					identityQuality: occurrenceId === null ? "derived" : "source",
-					occurredAt,
-					observedAt: sourceObservedAt,
-					subject,
-					fields: defineSignalFields([
-						...(log.eventName
-							? [
-									{
-										field: {
-											namespace: "signal" as const,
-											key: "event.name",
-											type: "string" as const,
-										},
-										value: { type: "string" as const, value: log.eventName },
-									},
-								]
-							: []),
-						{
-							field: { namespace: "signal", key: "severity.number", type: "int64" },
-							value: {
-								type: "int64",
-								value: int64(log.severityNumber ?? 0, "severity.number"),
-							},
-						},
-						...(log.severityText
-							? [
-									{
-										field: {
-											namespace: "signal" as const,
-											key: "severity.text",
-											type: "string" as const,
-										},
-										value: { type: "string" as const, value: log.severityText },
-									},
-								]
-							: []),
-						...(traceId
-							? [
-									{
-										field: {
-											namespace: "signal" as const,
-											key: "trace.id",
-											type: "string" as const,
-										},
-										value: { type: "string" as const, value: traceId },
-									},
-								]
-							: []),
-						...(spanId
-							? [
-									{
-										field: {
-											namespace: "signal" as const,
-											key: "span.id",
-											type: "string" as const,
-										},
-										value: { type: "string" as const, value: spanId },
-									},
-								]
-							: []),
-						{
-							field: { namespace: "signal", key: "time", type: "timestamp" },
-							value: { type: "timestamp", value: occurredAt },
-						},
-						{
-							field: { namespace: "signal", key: "observed_time", type: "timestamp" },
-							value: { type: "timestamp", value: sourceObservedAt },
-						},
-						...resource.scalars.map(({ key, value }) => ({
-							field: { namespace: "resource" as const, key, type: value.type },
-							value,
-						})),
-						...scope.scalars.map(({ key, value }) => ({
-							field: { namespace: "scope" as const, key, type: value.type },
-							value,
-						})),
-						...record.scalars.map(({ key, value }) => ({
-							field: { namespace: "attribute" as const, key, type: value.type },
-							value,
-						})),
-						...(bodyScalar
-							? [
-									{
-										field: {
-											namespace: "body" as const,
-											key: "value",
-											type: bodyScalar.type,
-										},
-										value: bodyScalar,
-									},
-								]
-							: []),
-					]),
-					data,
-				})
-			}
-		}
+const normalizeLogRecord = (
+	log: OtlpLogRecord,
+	resource: NormalizedAttributes,
+	scope: NormalizedAttributes,
+	scopeInfo: typeof ScopeSchema.Type | undefined,
+	tenantId: string,
+): NormalizedSignal | null => {
+	const record = attributes(log.attributes, "log.attributes")
+	const occurredNanos = epochNanos(log.timeUnixNano) ?? epochNanos(log.observedTimeUnixNano)
+	// OTLP permits both timestamps to be absent or zero. Such records still
+	// belong in the warehouse, but cannot acquire a durable event identity.
+	if (occurredNanos === null) return null
+	const observedNanos = epochNanos(log.observedTimeUnixNano)
+	const occurredAt = nanosToTimestamp(occurredNanos)
+	const sourceObservedAt = observedNanos ? nanosToTimestamp(observedNanos) : occurredAt
+	const bodyScalar = anyValueScalar(log.body, "log.body")
+	const traceId = traceIdHex(log.traceId, "logRecord.traceId")
+	const spanId = spanIdHex(log.spanId, "logRecord.spanId")
+	const data: JsonValue = {
+		resource: resource.data,
+		scope: {
+			name: assertStringBound(scopeInfo?.name ?? "", "scope.name"),
+			version: assertStringBound(scopeInfo?.version ?? "", "scope.version"),
+			attributes: scope.data,
+		},
+		record: {
+			eventName: assertStringBound(log.eventName ?? "", "log.eventName"),
+			severityNumber: log.severityNumber ?? 0,
+			severityText: assertStringBound(log.severityText ?? "", "log.severityText"),
+			traceId,
+			spanId,
+			body: anyValueJson(log.body, "log.body"),
+			attributes: record.data,
+		},
 	}
-	return signals
+	if (Buffer.byteLength(canonicalJson(data), "utf8") > MAX_DATA_BYTES)
+		throw new OtlpFieldError(`normalized log event exceeds ${MAX_DATA_BYTES} UTF-8 bytes`)
+	const source = sourceUri(resource, record)
+	const occurrenceId = sourceOccurrenceId(record)
+	const subject = stringAttribute(record, "event.subject") ?? stringAttribute(record, "cloudevents.subject")
+	return {
+		sourceKind: "otel.log",
+		source,
+		tenantId,
+		occurrenceId:
+			occurrenceId ?? derivedOccurrenceId({ source, occurredAt, signalKind: "otel.log", data }),
+		identityQuality: occurrenceId === null ? "derived" : "source",
+		occurredAt,
+		observedAt: sourceObservedAt,
+		subject,
+		fields: defineSignalFields([
+			...(log.eventName
+				? [
+						{
+							field: {
+								namespace: "signal" as const,
+								key: "event.name",
+								type: "string" as const,
+							},
+							value: { type: "string" as const, value: log.eventName },
+						},
+					]
+				: []),
+			{
+				field: { namespace: "signal", key: "severity.number", type: "int64" },
+				value: {
+					type: "int64",
+					value: int64(log.severityNumber ?? 0, "severity.number"),
+				},
+			},
+			...(log.severityText
+				? [
+						{
+							field: {
+								namespace: "signal" as const,
+								key: "severity.text",
+								type: "string" as const,
+							},
+							value: { type: "string" as const, value: log.severityText },
+						},
+					]
+				: []),
+			...(traceId
+				? [
+						{
+							field: {
+								namespace: "signal" as const,
+								key: "trace.id",
+								type: "string" as const,
+							},
+							value: { type: "string" as const, value: traceId },
+						},
+					]
+				: []),
+			...(spanId
+				? [
+						{
+							field: {
+								namespace: "signal" as const,
+								key: "span.id",
+								type: "string" as const,
+							},
+							value: { type: "string" as const, value: spanId },
+						},
+					]
+				: []),
+			{
+				field: { namespace: "signal", key: "time", type: "timestamp" },
+				value: { type: "timestamp", value: occurredAt },
+			},
+			{
+				field: { namespace: "signal", key: "observed_time", type: "timestamp" },
+				value: { type: "timestamp", value: sourceObservedAt },
+			},
+			...resource.scalars.map(({ key, value }) => ({
+				field: { namespace: "resource" as const, key, type: value.type },
+				value,
+			})),
+			...scope.scalars.map(({ key, value }) => ({
+				field: { namespace: "scope" as const, key, type: value.type },
+				value,
+			})),
+			...record.scalars.map(({ key, value }) => ({
+				field: { namespace: "attribute" as const, key, type: value.type },
+				value,
+			})),
+			...(bodyScalar
+				? [
+						{
+							field: {
+								namespace: "body" as const,
+								key: "value",
+								type: bodyScalar.type,
+							},
+							value: bodyScalar,
+						},
+					]
+				: []),
+		]),
+		data,
+	}
 }
 
 export interface OtlpLogNormalizationResult {
@@ -476,50 +489,44 @@ export interface OtlpLogNormalizationResult {
 	readonly failures: number
 }
 
-/**
- * Event projection is an optional branch beside the established warehouse
- * encoder. Projection-only bounds make one occurrence ineligible; they must
- * not narrow the OTLP request contract or suppress unrelated warehouse rows.
- * The warehouse encoder independently rejects fields that are invalid for
- * both paths.
- */
+/** Projection limits isolate individual records; resource and scope attributes are normalized once per group. */
 export const normalizeOtlpLogsWithDiagnostics = (
 	request: unknown,
-	acceptedAt = new Date().toISOString(),
+	_acceptedAt = new Date().toISOString(),
 	tenantId = "local",
 ): OtlpLogNormalizationResult => {
-	const input = (request ?? {}) as OtlpLogsRequest
+	const input = decodeLogsRequest(request)
 	const signals: NormalizedSignal[] = []
 	const unprojectedIdentities: OtlpRecoveryIdentity[] = []
 	let ineligible = 0
 	let failures = 0
-	for (const resourceLogs of input.resourceLogs ?? [])
-		for (const scopeLogs of resourceLogs.scopeLogs ?? [])
+	for (const resourceLogs of input.resourceLogs ?? []) {
+		const resource = Result.try(() =>
+			attributes(resourceLogs.resource?.attributes, "resource.attributes"),
+		)
+		for (const scopeLogs of resourceLogs.scopeLogs ?? []) {
+			const scope = Result.try(() => attributes(scopeLogs.scope?.attributes, "scope.attributes"))
 			for (const log of scopeLogs.logRecords ?? []) {
-				const identity = recoveryIdentity(resourceLogs.resource?.attributes, log, tenantId)
-				try {
-					const normalized = normalizeOtlpLogsStrict(
-						{
-							resourceLogs: [
-								{
-									...resourceLogs,
-									scopeLogs: [{ ...scopeLogs, logRecords: [log] }],
-								},
-							],
-						},
-						acceptedAt,
-						tenantId,
+				const normalized = Result.gen(function* () {
+					const resourceValue = yield* resource
+					const scopeValue = yield* scope
+					return yield* Result.try(() =>
+						normalizeLogRecord(log, resourceValue, scopeValue, scopeLogs.scope, tenantId),
 					)
-					if (normalized.length === 0) {
-						ineligible += 1
-						if (identity !== null) unprojectedIdentities.push(identity)
-					} else signals.push(...normalized)
-				} catch (error) {
-					if (!(error instanceof OtlpFieldError)) throw error
+				})
+				if (Result.isFailure(normalized)) {
+					if (!(normalized.failure instanceof OtlpFieldError)) throw normalized.failure
 					failures += 1
-					if (identity !== null) unprojectedIdentities.push(identity)
+				} else if (normalized.success === null) ineligible += 1
+				else {
+					signals.push(normalized.success)
+					continue
 				}
+				const identity = recoveryIdentity(resourceLogs.resource?.attributes, log, tenantId)
+				if (identity !== null) unprojectedIdentities.push(identity)
 			}
+		}
+	}
 	return { signals, unprojectedIdentities, ineligible, failures }
 }
 

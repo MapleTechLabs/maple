@@ -4,14 +4,18 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./hysteresis": "./src/hysteresis.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple/eventing-core": "workspace:*"
+		"@maple/domain": "workspace:*",
+		"@maple/eventing-core": "workspace:*",
+		"@typeonce/effect-machine": "0.24.0",
+		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",

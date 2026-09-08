@@ -5,6 +5,7 @@ export type EventingTelemetryOperation =
 	| "projection"
 	| "selector_type_mismatch"
 	| "outbox_stage"
+	| "outbox_abandon"
 	| "outbox_ready"
 	| "outbox_dedup"
 	| "consumer_claim"
@@ -14,6 +15,7 @@ export type EventingTelemetryOperation =
 
 export type EventingTelemetryOutcome =
 	| "success"
+	| "dropped"
 	| "failure"
 	| "empty"
 	| "active"

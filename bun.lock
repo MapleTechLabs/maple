@@ -53,8 +53,8 @@
         "@effect/platform-bun": "catalog:effect",
         "@maple-dev/clickhouse-builder": "workspace:*",
         "@maple-dev/effect-sdk": "workspace:*",
-        "@maple/alerting-core": "workspace:*",
         "@maple/ai-model-catalog": "workspace:*",
+        "@maple/alerting-core": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",
         "@maple/db": "workspace:*",
@@ -499,7 +499,10 @@
       "name": "@maple/alerting-core",
       "version": "0.0.0",
       "dependencies": {
+        "@maple/domain": "workspace:*",
         "@maple/eventing-core": "workspace:*",
+        "@typeonce/effect-machine": "0.24.0",
+        "effect": "catalog:effect",
       },
       "devDependencies": {
         "@types/node": "catalog:tooling",

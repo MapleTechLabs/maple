@@ -174,7 +174,10 @@ export const planetscaleIssueReceipts = pgTable(
 		eventId: text("event_id").notNull(),
 		processedAt: timestamp("processed_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
-	(table) => [primaryKey({ columns: [table.orgId, table.eventId] })],
+	(table) => [
+		primaryKey({ columns: [table.orgId, table.eventId] }),
+		index("planetscale_issue_receipts_processed_at_idx").on(table.processedAt),
+	],
 )
 
 export type PlanetScaleIssueReceiptRow = typeof planetscaleIssueReceipts.$inferSelect

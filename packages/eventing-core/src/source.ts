@@ -1,3 +1,5 @@
+import { Result, Schema } from "effect"
+import { FieldRefSchema, FieldNamespaceSchema } from "./model"
 import type { FieldNamespace, FieldRef, NormalizedSignal, SignalPredicate, SignalScalarType } from "./model"
 import { fieldKey } from "./model"
 import type { ValidationIssue } from "./predicate"
@@ -50,36 +52,88 @@ const catalogEntryTypes = (entry: SignalFieldCatalogEntry): readonly SignalScala
 	return [entry.field.type]
 }
 
+const Operators = Schema.Array(
+	Schema.Literals(["exists", "eq", "neq", "gt", "gte", "lt", "lte", "contains", "in"]),
+).check(Schema.isMinLength(1))
+const ScalarTypes = Schema.Array(FieldRefSchema.fields.type).check(Schema.isMinLength(1))
+const PolicyFields = {
+	operators: Operators,
+	sensitivity: Schema.Literals(["public", "sensitive"]),
+	replay: Schema.Literals(["exact", "coerced", "unavailable"]),
+}
+const SourceDefinitionSchema = Schema.Struct({
+	sourceKind: Schema.NonEmptyString.check(Schema.isTrimmed()),
+	fields: Schema.Array(
+		Schema.Union([
+			Schema.Struct({ ...PolicyFields, field: FieldRefSchema }),
+			Schema.Struct({
+				...PolicyFields,
+				field: Schema.Struct({ namespace: FieldNamespaceSchema, key: FieldRefSchema.fields.key }),
+				types: ScalarTypes,
+			}),
+		]),
+	),
+	openFields: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ ...PolicyFields, namespace: FieldNamespaceSchema, types: ScalarTypes })),
+	),
+})
+export class SignalSourceInvalid extends Schema.TaggedError<SignalSourceInvalid>()(
+	"@maple/eventing-core/SignalSourceInvalid",
+	{ message: Schema.String, sourceKind: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
+) {}
+
 export class SignalSourceRegistry {
 	readonly #sources = new Map<string, RegisteredSignalSource>()
 
-	register(definition: SignalSourceDefinition): this {
-		if (definition.sourceKind.trim().length === 0) throw new Error("source kind must not be empty")
-		if (this.#sources.has(definition.sourceKind))
-			throw new Error(`duplicate source registration: ${definition.sourceKind}`)
+	register(definition: SignalSourceDefinition): Result.Result<this, SignalSourceInvalid> {
+		const self = this
+		return Result.gen(function* () {
+			yield* Schema.decodeUnknownResult(SourceDefinitionSchema)(definition).pipe(
+				Result.mapError(
+					(cause) =>
+						new SignalSourceInvalid({
+							sourceKind: definition.sourceKind,
+							message: cause.message,
+							cause,
+						}),
+				),
+			)
+			if (self.#sources.has(definition.sourceKind))
+				return yield* Result.fail(
+					new SignalSourceInvalid({
+						sourceKind: definition.sourceKind,
+						message: `duplicate source registration: ${definition.sourceKind}`,
+					}),
+				)
 
-		const fields = new Map<string, SignalFieldCatalogEntry>()
-		for (const entry of definition.fields) {
-			const key = fieldKey(entry.field)
-			if (fields.has(key))
-				throw new Error(`duplicate field catalog entry: ${definition.sourceKind}:${key}`)
-			if (entry.operators.length === 0) throw new Error(`field catalog entry has no operators: ${key}`)
-			if (entry.types !== undefined && entry.types.length === 0)
-				throw new Error(`field catalog entry has no types: ${key}`)
-			fields.set(key, entry)
-		}
+			const fields = new Map<string, SignalFieldCatalogEntry>()
+			for (const entry of definition.fields) {
+				const key = fieldKey(entry.field)
+				if (fields.has(key))
+					return yield* Result.fail(
+						new SignalSourceInvalid({
+							sourceKind: definition.sourceKind,
+							message: `duplicate field catalog entry: ${definition.sourceKind}:${key}`,
+						}),
+					)
+				fields.set(key, entry)
+			}
 
-		const openFields = new Map<FieldNamespace, OpenFieldNamespacePolicy>()
-		for (const policy of definition.openFields ?? []) {
-			if (openFields.has(policy.namespace))
-				throw new Error(`duplicate open field policy: ${definition.sourceKind}:${policy.namespace}`)
-			if (policy.types.length === 0 || policy.operators.length === 0)
-				throw new Error(`open field policy must declare types and operators: ${policy.namespace}`)
-			openFields.set(policy.namespace, policy)
-		}
+			const openFields = new Map<FieldNamespace, OpenFieldNamespacePolicy>()
+			for (const policy of definition.openFields ?? []) {
+				if (openFields.has(policy.namespace))
+					return yield* Result.fail(
+						new SignalSourceInvalid({
+							sourceKind: definition.sourceKind,
+							message: `duplicate open field policy: ${definition.sourceKind}:${policy.namespace}`,
+						}),
+					)
+				openFields.set(policy.namespace, policy)
+			}
 
-		this.#sources.set(definition.sourceKind, { definition, fields, openFields })
-		return this
+			self.#sources.set(definition.sourceKind, { definition, fields, openFields })
+			return self
+		})
 	}
 
 	get(sourceKind: string): RegisteredSignalSource | undefined {
@@ -99,7 +153,7 @@ const leafFields = (
 		switch (node.op) {
 			case "all":
 			case "any":
-				for (let i = 0; i < node.clauses.length; i++) visit(node.clauses[i]!, `${path}.clauses[${i}]`)
+				for (const [i, clause] of node.clauses.entries()) visit(clause, `${path}.clauses[${i}]`)
 				break
 			case "not":
 				visit(node.clause, `${path}.clause`)

@@ -293,7 +293,9 @@ describe("IncidentHysteresis", () => {
 // scheduled rule path and upstream's anomaly/preview machine in agreement.
 describe("host-neutral alert lifecycle parity", () => {
 	it("preserves saturated counters and transitions across breached, healthy, and skipped windows", async () => {
-		const { planAlertLifecycle } = await import("@maple/alerting-core")
+		const { planAlertLifecycle: planEffect } = await import("@maple/alerting-core")
+		const planAlertLifecycle = (...args: Parameters<typeof planEffect>) =>
+			Effect.runSync(planEffect(...args))
 		for (const seed of [1, 17, 222, 363]) {
 			const config: HysteresisConfig = { breachesToOpen: 3, healthyToResolve: 2, cooldownMs: 0 }
 			let row: HysteresisRow = {

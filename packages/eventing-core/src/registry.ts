@@ -1,5 +1,5 @@
 import { makeCloudEvent } from "./event"
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
 import type {
 	JsonValue,
 	MapleCloudEvent,
@@ -7,8 +7,8 @@ import type {
 	ProjectedEventData,
 	SignalProjectionSpec,
 } from "./model"
-import { SignalProjectionSpecSchema } from "./model"
 import { timestampToEpochNanos, compileSignalPredicate, validateSignalProjectionSpec } from "./predicate"
+import { SignalProjectionSpecSchema } from "./model"
 import { SignalSourceRegistry, validatePredicateAgainstSource } from "./source"
 
 // BOUNDARY: projector codecs intentionally own decoding of untrusted configuration and output values.
@@ -23,36 +23,61 @@ export interface SignalProjector<TConfig = unknown, TData extends JsonValue = Js
 	readonly project: (signal: NormalizedSignal, config: TConfig) => ProjectedEventData<TData>
 }
 
-type ErasedSignalProjector = SignalProjector<unknown, JsonValue>
+interface ErasedSignalProjector {
+	readonly id: string
+	readonly version: number
+	readonly sourceKinds: readonly string[]
+	readonly outputType: string
+	readonly dataSchema: string
+	readonly decodeOutput: (value: unknown) => JsonValue
+	readonly prepare: (value: unknown) => (signal: NormalizedSignal) => ProjectedEventData
+}
+export class ProjectionInvalid extends Schema.TaggedError<ProjectionInvalid>()(
+	"@maple/eventing-core/ProjectionInvalid",
+	{
+		message: Schema.String,
+		projectionId: Schema.optionalKey(Schema.String),
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
+const ProjectorMetadataSchema = Schema.Struct({
+	id: Schema.NonEmptyString.check(Schema.isTrimmed()),
+	version: Schema.Int.check(Schema.isGreaterThan(0)),
+	sourceKinds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1)),
+	outputType: Schema.NonEmptyString.check(Schema.isTrimmed()),
+	dataSchema: Schema.NonEmptyString.check(Schema.isTrimmed()),
+})
 
 export class ProjectorRegistry {
 	readonly #projectors = new Map<string, ErasedSignalProjector>()
 
-	register<TConfig, TData extends JsonValue>(projector: SignalProjector<TConfig, TData>): this {
-		if (projector.id.trim().length === 0) throw new Error("projector ID must not be empty")
-		if (!Number.isSafeInteger(projector.version) || projector.version < 1)
-			throw new Error("projector version must be a positive safe integer")
-		if (projector.sourceKinds.length === 0) throw new Error("projector must accept a source kind")
-		if (projector.outputType.trim().length === 0)
-			throw new Error("projector output type must not be empty")
-		if (projector.dataSchema.trim().length === 0)
-			throw new Error("projector data schema must not be empty")
-		const key = ProjectorRegistry.key(projector.id, projector.version)
-		if (this.#projectors.has(key)) throw new Error(`duplicate projector registration: ${key}`)
-		this.#projectors.set(key, {
-			id: projector.id,
-			version: projector.version,
-			sourceKinds: projector.sourceKinds,
-			outputType: projector.outputType,
-			dataSchema: projector.dataSchema,
-			decodeConfig: projector.decodeConfig,
-			decodeOutput: projector.decodeOutput,
-			project: (signal, config) => {
-				// SAFETY: compiled projections pass only the value returned by this projector's decodeConfig.
-				return projector.project(signal, config as TConfig)
-			},
+	register<TConfig, TData extends JsonValue>(
+		projector: SignalProjector<TConfig, TData>,
+	): Result.Result<this, ProjectionInvalid> {
+		const self = this
+		return Result.gen(function* () {
+			yield* Schema.decodeUnknownResult(ProjectorMetadataSchema)(projector).pipe(
+				Result.mapError((cause) => new ProjectionInvalid({ message: cause.message, cause })),
+			)
+			const key = ProjectorRegistry.key(projector.id, projector.version)
+			if (self.#projectors.has(key))
+				return yield* Result.fail(
+					new ProjectionInvalid({ message: `duplicate projector registration: ${key}` }),
+				)
+			self.#projectors.set(key, {
+				id: projector.id,
+				version: projector.version,
+				sourceKinds: projector.sourceKinds,
+				outputType: projector.outputType,
+				dataSchema: projector.dataSchema,
+				decodeOutput: projector.decodeOutput,
+				prepare: (value) => {
+					const config = projector.decodeConfig(value)
+					return (signal) => projector.project(signal, config)
+				},
+			})
+			return self
 		})
-		return this
 	}
 
 	get(id: string, version: number): ErasedSignalProjector | undefined {
@@ -68,7 +93,7 @@ interface CompiledProjection {
 	readonly spec: SignalProjectionSpec
 	readonly evaluate: ReturnType<typeof compileSignalPredicate>
 	readonly projector: ErasedSignalProjector
-	readonly config: unknown
+	readonly project: (signal: NormalizedSignal) => ProjectedEventData
 	readonly activeFromNanos: bigint
 }
 
@@ -85,12 +110,6 @@ export interface ProjectionBatchResult {
 	readonly typeMismatchFields: readonly string[]
 }
 
-const validateProjectedData = (value: ProjectedEventData): ProjectedEventData => {
-	if (value.time !== undefined && timestampToEpochNanos(value.time) === null)
-		throw new Error("projector returned an invalid event timestamp")
-	return value
-}
-
 /** Immutable compiled snapshot. Hosts atomically replace the whole instance. */
 export class CompiledProjectionRegistry {
 	readonly #bySourceKind: ReadonlyMap<string, readonly CompiledProjection[]>
@@ -103,78 +122,121 @@ export class CompiledProjectionRegistry {
 		specs: readonly SignalProjectionSpec[],
 		sources: SignalSourceRegistry,
 		projectors: ProjectorRegistry,
-	): CompiledProjectionRegistry {
-		const bySourceKind = new Map<string, CompiledProjection[]>()
-		const revisions = new Set<string>()
+	): Result.Result<CompiledProjectionRegistry, ProjectionInvalid> {
+		return Result.gen(function* () {
+			const bySourceKind = new Map<string, CompiledProjection[]>()
+			const revisions = new Set<string>()
 
-		for (const candidate of specs) {
-			const spec = Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate)
-			const source = sources.get(spec.sourceKind)
-			if (!source)
-				throw new Error(
-					`projection ${spec.id}@${spec.revision} references an unregistered source ${spec.sourceKind}`,
+			for (const candidate of specs) {
+				const spec = yield* Schema.decodeUnknownResult(SignalProjectionSpecSchema)(candidate).pipe(
+					Result.mapError((cause) => new ProjectionInvalid({ message: cause.message, cause })),
 				)
-			const issues = [
-				...validateSignalProjectionSpec(spec),
-				...validatePredicateAgainstSource(spec.selector, source),
-			]
-			if (issues.length > 0)
-				throw new Error(
-					`invalid projection ${spec.id}@${spec.revision}: ${issues
-						.map(({ path, message }) => `${path}: ${message}`)
-						.join("; ")}`,
-				)
-			const revisionKey = `${spec.tenantId}:${spec.id}@${spec.revision}`
-			if (revisions.has(revisionKey)) throw new Error(`duplicate projection revision: ${revisionKey}`)
-			revisions.add(revisionKey)
-			if (!spec.enabled) continue
+				const source = sources.get(spec.sourceKind)
+				if (!source)
+					return yield* Result.fail(
+						new ProjectionInvalid({
+							projectionId: spec.id,
+							message: `projection ${spec.id}@${spec.revision} references an unregistered source ${spec.sourceKind}`,
+						}),
+					)
+				const issues = [
+					...validateSignalProjectionSpec(spec),
+					...validatePredicateAgainstSource(spec.selector, source),
+				]
+				if (issues.length > 0)
+					return yield* Result.fail(
+						new ProjectionInvalid({
+							projectionId: spec.id,
+							message: `invalid projection ${spec.id}@${spec.revision}: ${issues
+								.map(({ path, message }) => `${path}: ${message}`)
+								.join("; ")}`,
+						}),
+					)
+				const revisionKey = `${spec.tenantId}:${spec.id}@${spec.revision}`
+				if (revisions.has(revisionKey))
+					return yield* Result.fail(
+						new ProjectionInvalid({
+							projectionId: spec.id,
+							message: `duplicate projection revision: ${revisionKey}`,
+						}),
+					)
+				revisions.add(revisionKey)
+				if (!spec.enabled) continue
 
-			const projector = projectors.get(spec.projector.id, spec.projector.version)
-			if (!projector)
-				throw new Error(
-					`projection ${spec.id}@${spec.revision} references an unregistered projector ${spec.projector.id}@${spec.projector.version}`,
-				)
-			if (!projector.sourceKinds.includes(spec.sourceKind))
-				throw new Error(
-					`projector ${projector.id}@${projector.version} does not accept ${spec.sourceKind}`,
-				)
+				const projector = projectors.get(spec.projector.id, spec.projector.version)
+				if (!projector)
+					return yield* Result.fail(
+						new ProjectionInvalid({
+							projectionId: spec.id,
+							message: `projection ${spec.id}@${spec.revision} references an unregistered projector ${spec.projector.id}@${spec.projector.version}`,
+						}),
+					)
+				if (!projector.sourceKinds.includes(spec.sourceKind))
+					return yield* Result.fail(
+						new ProjectionInvalid({
+							projectionId: spec.id,
+							message: `projector ${projector.id}@${projector.version} does not accept ${spec.sourceKind}`,
+						}),
+					)
 
-			const compiled: CompiledProjection = {
-				spec,
-				evaluate: compileSignalPredicate(spec.selector),
-				projector,
-				config: projector.decodeConfig(spec.projector.config),
-				activeFromNanos: timestampToEpochNanos(spec.activeFrom)!,
+				const activeFromNanos = timestampToEpochNanos(spec.activeFrom)
+				if (activeFromNanos === null)
+					return yield* Result.fail(
+						new ProjectionInvalid({
+							projectionId: spec.id,
+							message: "invalid projection activeFrom timestamp",
+						}),
+					)
+				const compiled: CompiledProjection = {
+					spec,
+					evaluate: compileSignalPredicate(spec.selector),
+					projector,
+					project: yield* Result.try({
+						try: () => projector.prepare(spec.projector.config),
+						catch: (cause) =>
+							new ProjectionInvalid({
+								message: "invalid projector config",
+								projectionId: spec.id,
+								cause,
+							}),
+					}),
+					activeFromNanos,
+				}
+				const bucket = bySourceKind.get(spec.sourceKind)
+				if (bucket) bucket.push(compiled)
+				else bySourceKind.set(spec.sourceKind, [compiled])
 			}
-			const bucket = bySourceKind.get(spec.sourceKind)
-			if (bucket) bucket.push(compiled)
-			else bySourceKind.set(spec.sourceKind, [compiled])
-		}
 
-		return new CompiledProjectionRegistry(bySourceKind)
+			return new CompiledProjectionRegistry(bySourceKind)
+		})
 	}
 
-	evaluate(signal: NormalizedSignal, acceptedAt: string): ProjectionBatchResult {
-		const events: MapleCloudEvent[] = []
-		const failures: ProjectionFailure[] = []
-		const typeMismatchFields = new Set<string>()
-		const acceptedAtNanos = timestampToEpochNanos(acceptedAt)
-		if (acceptedAtNanos === null) throw new Error("projection acceptance time must be a valid instant")
-
-		for (const projection of this.#bySourceKind.get(signal.sourceKind) ?? []) {
-			if (projection.spec.tenantId !== signal.tenantId) continue
-			if (acceptedAtNanos < projection.activeFromNanos) continue
-			const evaluation = projection.evaluate(signal)
-			for (const field of evaluation.typeMismatches)
-				typeMismatchFields.add(`${field.namespace}:${field.key}`)
-			if (!evaluation.matches) continue
-
-			try {
-				const projected = validateProjectedData(
-					projection.projector.project(signal, projection.config),
+	evaluate(
+		signal: NormalizedSignal,
+		acceptedAt: string,
+	): Result.Result<ProjectionBatchResult, ProjectionInvalid> {
+		const self = this
+		return Result.gen(function* () {
+			const events: MapleCloudEvent[] = []
+			const failures: ProjectionFailure[] = []
+			const typeMismatchFields = new Set<string>()
+			const acceptedAtNanos = timestampToEpochNanos(acceptedAt)
+			if (acceptedAtNanos === null)
+				return yield* Result.fail(
+					new ProjectionInvalid({ message: "projection acceptance time must be a valid instant" }),
 				)
-				events.push(
-					makeCloudEvent({
+
+			for (const projection of self.#bySourceKind.get(signal.sourceKind) ?? []) {
+				if (projection.spec.tenantId !== signal.tenantId) continue
+				if (acceptedAtNanos < projection.activeFromNanos) continue
+				const evaluation = projection.evaluate(signal)
+				for (const field of evaluation.typeMismatches)
+					typeMismatchFields.add(`${field.namespace}:${field.key}`)
+				if (!evaluation.matches) continue
+
+				const outcome = Result.try(() => {
+					const projected = projection.project(signal)
+					return makeCloudEvent({
 						signal,
 						projection: projection.spec,
 						projectorId: projection.projector.id,
@@ -184,18 +246,23 @@ export class CompiledProjectionRegistry {
 						subject: projected.subject,
 						time: projected.time,
 						data: projection.projector.decodeOutput(projected.data),
-					}),
-				)
-			} catch (error) {
-				failures.push({
-					projectionId: projection.spec.id,
-					projectionRevision: projection.spec.revision,
-					occurrenceId: signal.occurrenceId,
-					message: error instanceof Error ? error.message : String(error),
-				})
+					})
+				}).pipe(Result.flatMap((result) => result))
+				if (Result.isSuccess(outcome)) events.push(outcome.success)
+				else {
+					const error = outcome.failure
+					failures.push({
+						projectionId: projection.spec.id,
+						projectionRevision: projection.spec.revision,
+						occurrenceId: signal.occurrenceId,
+						message: Schema.is(Schema.Struct({ message: Schema.String }))(error)
+							? error.message
+							: String(error),
+					})
+				}
 			}
-		}
 
-		return { events, failures, typeMismatchFields: [...typeMismatchFields] }
+			return { events, failures, typeMismatchFields: [...typeMismatchFields] }
+		})
 	}
 }

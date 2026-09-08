@@ -1951,24 +1951,26 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_timeout")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
-			const lifecycleEvent = projectAlertLifecycleEvent({
-				tenantId: orgId,
-				ruleId: rule.id,
-				ruleName: rule.name,
-				incidentId: null,
-				eventType: "test",
-				incidentStatus: "resolved",
-				groupKey: null,
-				signalType: rule.signalType,
-				severity: rule.severity,
-				comparator: rule.comparator,
-				threshold: rule.threshold,
-				thresholdUpper: rule.thresholdUpper,
-				windowMinutes: rule.windowMinutes,
-				value: 0,
-				sampleCount: 0,
-				occurredAtMs: fixedTime,
-			})
+			const lifecycleEvent = yield* Effect.fromResult(
+				projectAlertLifecycleEvent({
+					tenantId: orgId,
+					ruleId: rule.id,
+					ruleName: rule.name,
+					incidentId: null,
+					eventType: "test",
+					incidentStatus: "resolved",
+					groupKey: null,
+					signalType: rule.signalType,
+					severity: rule.severity,
+					comparator: rule.comparator,
+					threshold: rule.threshold,
+					thresholdUpper: rule.thresholdUpper,
+					windowMinutes: rule.windowMinutes,
+					value: 0,
+					sampleCount: 0,
+					occurredAtMs: fixedTime,
+				}),
+			)
 
 			yield* Effect.promise(() =>
 				insertDeliveryEventRow(testDb, {

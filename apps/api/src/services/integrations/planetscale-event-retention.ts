@@ -1,4 +1,5 @@
-import { planetscaleEvents } from "@maple/db"
+import { msToDate, msToSqlTimestamp } from "@/platform/time"
+import { planetscaleEvents, planetscaleIssueReceipts } from "@maple/db"
 import { and, desc, eq, lt, sql } from "drizzle-orm"
 import { Clock, Effect } from "effect"
 import { Database } from "@/platform/DatabaseLive"
@@ -30,10 +31,20 @@ const EVENT_MAX_ROWS_PER_ORG = 20_000
  */
 export const runPlanetScaleEventRetention = Effect.gen(function* () {
 	const now = yield* Clock.currentTimeMillis
-	const cutoff = new Date(now - EVENT_RETENTION_MS)
+	const cutoff = msToDate(now - EVENT_RETENTION_MS)
 	const database = yield* Database
 
-	const { orgs, deletedByAge } = yield* database.execute(async (db) => {
+	const { orgs, deletedByAge, deletedReceipts } = yield* database.execute(async (db) => {
+		// A bounded indexed sweep retains replay protection for 90 days after processing.
+		const receipts = await db
+			.delete(planetscaleIssueReceipts)
+			.where(sql`
+   (${planetscaleIssueReceipts.orgId}, ${planetscaleIssueReceipts.eventId}) IN (
+    SELECT org_id, event_id FROM planetscale_issue_receipts
+    WHERE processed_at < ${msToSqlTimestamp(now - EVENT_RETENTION_MS)}::timestamptz
+    ORDER BY processed_at LIMIT 5000
+   )`)
+			.returning({ eventId: planetscaleIssueReceipts.eventId })
 		const aged = await db
 			.delete(planetscaleEvents)
 			.where(lt(planetscaleEvents.occurredAt, cutoff))
@@ -71,11 +82,12 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 				)
 		}
 
-		return { orgs: overCap.length, deletedByAge: aged.length }
+		return { orgs: overCap.length, deletedByAge: aged.length, deletedReceipts: receipts.length }
 	})
 
 	yield* Effect.annotateCurrentSpan({
 		"planetscale.event_retention.deleted_by_age": deletedByAge,
+		"planetscale.event_retention.deleted_receipts": deletedReceipts,
 		"planetscale.event_retention.orgs_capped": orgs,
 		"planetscale.event_retention.outcome": "completed",
 	})

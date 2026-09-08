@@ -261,8 +261,12 @@ import {
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
 
-const sources = new SignalSourceRegistry().register(BUILD_SOURCE.definition)
-const projectors = new ProjectorRegistry().register(BUILD_COMPLETED_PROJECTOR)
+import { Result } from "effect"
+
+// At trusted startup, abort initialization if registration or compilation fails.
+// Request handlers should instead lift these Results into their typed error channel.
+const sources = Result.getOrThrow(new SignalSourceRegistry().register(BUILD_SOURCE.definition))
+const projectors = Result.getOrThrow(new ProjectorRegistry().register(BUILD_COMPLETED_PROJECTOR))
 
 const projection: SignalProjectionSpec = {
 	id: "successful-builds",
@@ -283,7 +287,7 @@ const projection: SignalProjectionSpec = {
 	activeFrom: "2026-08-21T00:00:00Z",
 }
 
-const compiled = CompiledProjectionRegistry.compile([projection], sources, projectors)
+const compiled = Result.getOrThrow(CompiledProjectionRegistry.compile([projection], sources, projectors))
 ```
 
 Compilation rejects:
@@ -316,6 +320,7 @@ const [signal] = BUILD_SOURCE.normalize(
 
 if (!signal) throw new Error("build adapter produced no signal")
 const result = compiled.evaluate(signal, acceptedAt)
+// Result<ProjectionBatchResult, ProjectionInvalid>; handle both outcomes before committing.
 ```
 
 `acceptedAt` is host control metadata used for `activeFrom` gating. It is not

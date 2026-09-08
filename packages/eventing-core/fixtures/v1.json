@@ -17,14 +17,14 @@
 	"stringLiteralByteVectors": [
 		{
 			"name": "multibyte literal exactly at the UTF-8 byte limit",
-			"unit": "é",
-			"repeat": 2048,
+			"unit": "🦋",
+			"repeat": 1024,
 			"valid": true
 		},
 		{
 			"name": "multibyte literal one code point beyond the UTF-8 byte limit",
-			"unit": "é",
-			"repeat": 2049,
+			"unit": "🦋",
+			"repeat": 1025,
 			"valid": false
 		}
 	],

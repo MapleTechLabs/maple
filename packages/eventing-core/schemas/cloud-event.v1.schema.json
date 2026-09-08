@@ -8,7 +8,9 @@
 			"properties": {
 				"specversion": {
 					"type": "string",
-					"enum": ["1.0"]
+					"enum": [
+						"1.0"
+					]
 				},
 				"id": {
 					"type": "string",
@@ -37,7 +39,9 @@
 				},
 				"datacontenttype": {
 					"type": "string",
-					"enum": ["application/json"]
+					"enum": [
+						"application/json"
+					]
 				},
 				"dataschema": {
 					"type": "string",
@@ -77,9 +81,13 @@
 					"maxLength": 256,
 					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
 				},
-				"sourceidentityquality": {
+				"identityquality": {
 					"type": "string",
-					"enum": ["source", "derived", "none"]
+					"enum": [
+						"source",
+						"derived",
+						"none"
+					]
 				},
 				"data": {}
 			},

@@ -8,7 +8,6 @@ import {
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
 import { formatWarehouseDateTime, snapAlertWindowEndMs, warehouseDateTime64 } from "@maple/query-engine"
-import { MapleCloudEventSchema } from "@maple/eventing-core"
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertComparator,
@@ -130,23 +129,7 @@ import { summarizeCause } from "@/platform/describe-cause"
 
 export { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 
-interface EvaluatedRule {
-	readonly status: Schema.Schema.Type<typeof AlertEvaluationResult.fields.status>
-	readonly value: number | null
-	readonly sampleCount: number
-	readonly threshold: number
-	readonly thresholdUpper: number | null
-	readonly comparator: AlertComparator
-	readonly reason: string
-	/**
-	 * The window returned nothing and `noDataBehavior: "zero"` synthesized the
-	 * value. Such a status is a statement about the absence of data, not about
-	 * the health of the system — a `gt` rule reads a total ingest outage as
-	 * `healthy` this way. Anything that acts on "healthy" destructively (i.e.
-	 * resolving an open incident) must prove telemetry is still flowing first.
-	 */
-	readonly derivedFromNoData: boolean
-}
+type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
@@ -156,7 +139,6 @@ interface DeliveryAttemptFailure {
 	readonly retryable: boolean
 }
 
-const MAX_DELIVERY_ATTEMPTS = 5
 /**
  * Consecutive *terminal* delivery failures after which a destination is
  * auto-disabled.
@@ -195,41 +177,44 @@ type DatabaseExecutor = DatabaseClient | DatabaseTransaction
 /*  Schemas for stored JSON formats                                           */
 /* -------------------------------------------------------------------------- */
 
-const StoredDeliveryPayloadSchema = Schema.Struct({
-	event: Schema.optionalKey(MapleCloudEventSchema),
-	eventType: Schema.optionalKey(Schema.String),
-	incidentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	incidentStatus: Schema.optionalKey(Schema.String),
-	dedupeKey: Schema.optionalKey(Schema.String),
-	rule: Schema.optionalKey(
-		Schema.Struct({
-			id: Schema.optionalKey(Schema.String),
-			name: Schema.optionalKey(Schema.String),
-			signalType: Schema.optionalKey(Schema.String),
-			severity: Schema.optionalKey(Schema.String),
-			groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			comparator: Schema.optionalKey(Schema.String),
-			threshold: Schema.optionalKey(Schema.Number),
-			thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-			windowMinutes: Schema.optionalKey(Schema.Number),
-		}),
-	),
-	observed: Schema.optionalKey(
-		Schema.Struct({
-			value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-			sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-		}),
-	),
-	template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
-	chart: Schema.optionalKey(
-		Schema.NullOr(
+const StoredDeliveryPayloadSchema = Schema.StructWithRest(
+	Schema.Struct({
+		event: Schema.optionalKey(Schema.Unknown),
+		eventType: Schema.optionalKey(Schema.String),
+		incidentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		incidentStatus: Schema.optionalKey(Schema.String),
+		dedupeKey: Schema.optionalKey(Schema.String),
+		rule: Schema.optionalKey(
 			Schema.Struct({
-				sparkline: Schema.optionalKey(Schema.String),
-				url: Schema.optionalKey(Schema.String),
+				id: Schema.optionalKey(Schema.String),
+				name: Schema.optionalKey(Schema.String),
+				signalType: Schema.optionalKey(Schema.String),
+				severity: Schema.optionalKey(Schema.String),
+				groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
+				comparator: Schema.optionalKey(Schema.String),
+				threshold: Schema.optionalKey(Schema.Number),
+				thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+				windowMinutes: Schema.optionalKey(Schema.Number),
 			}),
 		),
-	),
-})
+		observed: Schema.optionalKey(
+			Schema.Struct({
+				value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+				sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+			}),
+		),
+		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
+		chart: Schema.optionalKey(
+			Schema.NullOr(
+				Schema.Struct({
+					sparkline: Schema.optionalKey(Schema.String),
+					url: Schema.optionalKey(Schema.String),
+				}),
+			),
+		),
+	}),
+	[Schema.Record(Schema.String, Schema.Unknown)],
+)
 
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
@@ -777,7 +762,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									breachSide: series.breachSide,
 								})
 
-					const payload = buildPayload(
+					const payload = yield* buildPayload(
 						{
 							eventType,
 							incidentId: incident.id,
@@ -801,7 +786,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							sentAtMs: scheduledAt,
 						},
 						orgId,
-					)
+					).pipe(Effect.mapError((error) => makeValidationError(error.message, [], error)))
 
 					yield* Effect.forEach(
 						rule.destinationIds,
@@ -1645,7 +1630,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const retryPayload = yield* parseDeliveryPayload(row.payloadJson).pipe(
 							// Validate known fields, but retain the original object so additive
 							// payload fields (including the CloudEvent) survive every retry.
-							Effect.map(() => row.payloadJson as Record<string, unknown>),
 							Effect.orElseSucceed(() => ({})),
 						)
 						yield* insertDeliveryEvent(
@@ -1811,7 +1795,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						nowMs: timestamp,
 					}
 
-					let lifecycle = planAlertLifecycle(lifecycleInput)
+					let lifecycle = yield* planAlertLifecycle(lifecycleInput)
 					// Persist the counter/state decision before follow-up adapter work, as
 					// before extraction. A failed flap-history or liveness query must not
 					// discard an evaluation that already completed successfully.
@@ -1849,7 +1833,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									.orderBy(desc(alertIncidents.lastNotifiedAt))
 									.limit(1),
 							))[0] ?? null
-						lifecycle = planAlertLifecycle({
+						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
 							previousNotificationAtMs: priorNotified?.lastNotifiedAt?.getTime() ?? null,
 						})
@@ -1865,7 +1849,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							timestamp,
 						)
 						if (liveness.dataFlowing) {
-							lifecycle = planAlertLifecycle({ ...lifecycleInput, allowNoDataResolution: true })
+							lifecycle = yield* planAlertLifecycle({
+								...lifecycleInput,
+								allowNoDataResolution: true,
+							})
 						} else {
 							yield* Effect.logWarning(
 								"Holding incident open: healthy evaluation came from missing telemetry",
