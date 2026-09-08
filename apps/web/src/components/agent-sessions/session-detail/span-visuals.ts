@@ -12,6 +12,7 @@ import {
 	DotsIcon,
 	FaceRobotIcon,
 	GearIcon,
+	MediaPauseIcon,
 	PixelSparkleIcon,
 	type IconComponent,
 } from "@/components/icons"
@@ -49,12 +50,21 @@ export const CATEGORY_TEXT = {
 	other: "text-muted-foreground",
 } satisfies Record<AiSpanCategory, string>
 
-/** Band background in the agent-time breakdown. */
+/**
+ * The breakdown's bands: the classes of agent time, plus the idle the session
+ * spent waiting on a human. Idle is not agent time and gets the neutral rather
+ * than a hue, but it is disjoint from all the work — nothing at all was running
+ * — so the four sum honestly to the time the section accounts for.
+ */
+export type TimeBandKind = AgentTimeKind | "idle"
+
+/** Band background in the breakdown. */
 export const AGENT_TIME_FILL = {
 	ttft: "bg-chart-ai-ttft",
 	inference: "bg-chart-ai-inference",
 	tool: "bg-chart-ai-tool",
-} satisfies Record<AgentTimeKind, string>
+	idle: NO_WORK_FILL,
+} satisfies Record<TimeBandKind, string>
 
 /** Legend glyph for a class of agent time: the kind of work reads by shape
  *  first, with the band's hue as reinforcement — the same rule the flow view's
@@ -63,18 +73,21 @@ export const AGENT_TIME_ICON = {
 	ttft: BoltIcon,
 	inference: PixelSparkleIcon,
 	tool: GearIcon,
-} satisfies Record<AgentTimeKind, IconComponent>
+	idle: MediaPauseIcon,
+} satisfies Record<TimeBandKind, IconComponent>
 
 /** The bands' tokens as text color, for the legend glyphs. */
 export const AGENT_TIME_TEXT = {
 	ttft: "text-chart-ai-ttft",
 	inference: "text-chart-ai-inference",
 	tool: "text-chart-ai-tool",
-} satisfies Record<AgentTimeKind, string>
+	idle: "text-muted-foreground/70",
+} satisfies Record<TimeBandKind, string>
 
 /** Legend text for a class of agent time. */
 export const AGENT_TIME_LABEL = {
 	ttft: "Time to first token",
 	inference: "Inference",
 	tool: "Tool execution",
-} satisfies Record<AgentTimeKind, string>
+	idle: "Idle",
+} satisfies Record<TimeBandKind, string>

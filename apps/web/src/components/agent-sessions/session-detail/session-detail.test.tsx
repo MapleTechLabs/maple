@@ -405,11 +405,18 @@ describe("SessionOverview", () => {
 		render(<Overview />)
 
 		expect(screen.getByText("Tool execution")).toBeTruthy()
-		expect(screen.getByText(/^23s · 56%$/)).toBeTruthy()
-		expect(screen.getByText(/41s agent time · up to 2 at once/)).toBeTruthy()
-		// The clock it is measured against stays under the bar, out of the bands.
-		expect(screen.getByText(/5m 12s wall clock/)).toBeTruthy()
-		expect(screen.queryByText("Idle")).toBeNull()
+		expect(screen.getByText("Agent time").nextElementSibling?.textContent).toBe("41s")
+		expect(screen.getByText("Wall clock").nextElementSibling?.textContent).toBe("5m 12s")
+		expect(screen.getByText("agents in parallel").previousElementSibling?.textContent).toBe("2×")
+	})
+
+	// Idle is not agent time, but nothing at all was running then — disjoint
+	// from every band, so it belongs in the same bar rather than a footnote.
+	it("keeps the idle the session spent waiting on a human in the breakdown", () => {
+		render(<Overview />)
+
+		expect(screen.getByText("Idle")).toBeTruthy()
+		expect(screen.getByText(/^4m 20s · 86%$/)).toBeTruthy()
 	})
 
 	// The five-second answer: the verdict names what killed the final turn and

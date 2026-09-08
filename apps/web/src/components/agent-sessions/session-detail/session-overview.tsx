@@ -9,14 +9,12 @@ import { cn } from "@maple/ui/lib/utils"
 
 import {
 	buildSessionFindings,
-	turnOrdinal,
 	type FindingSeverity,
 	type SessionFinding,
 	type SessionVerdict,
 } from "@/lib/agent-sessions/session-findings"
 import {
 	formatCost,
-	type IdleGap,
 	type SessionSummary,
 	type SessionToolUsage,
 } from "@/lib/agent-sessions/session-summary"
@@ -27,7 +25,13 @@ import { useDetectedModels } from "@/hooks/use-detected-models"
 import { ModelLabel } from "../model-label"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
-import { AGENT_TIME_FILL, AGENT_TIME_ICON, AGENT_TIME_LABEL, AGENT_TIME_TEXT } from "./span-visuals"
+import {
+	AGENT_TIME_FILL,
+	AGENT_TIME_ICON,
+	AGENT_TIME_LABEL,
+	AGENT_TIME_TEXT,
+	type TimeBandKind,
+} from "./span-visuals"
 
 const SEVERITY_DOT = {
 	failure: "bg-destructive",
@@ -92,7 +96,7 @@ export function SessionOverview({
 					/>
 					<Findings findings={report.findings} onOpenSpan={openSpan} />
 					<Separator />
-					<TimeComposition summary={summary} turns={turns} />
+					<TimeComposition summary={summary} />
 				</div>
 				<Rail summary={summary} />
 			</div>
@@ -276,87 +280,91 @@ function FindingRow({ finding, onOpenSpan }: { finding: SessionFinding; onOpenSp
 /* Where the time went                                                        */
 /* -------------------------------------------------------------------------- */
 
-function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: readonly SessionTurn[] }) {
+function TimeComposition({ summary }: { summary: SessionSummary }) {
 	const { segments, totalMs, peakParallel } = summary.agentTime
-	// Agent time, not the clock: the bands are sorted by class and each one is
-	// the whole time that class of work ran, summed across every agent. Two
-	// subagents inferring at once are two seconds here per second of wall clock,
-	// which is the fan-out being visible rather than a double count. Where each
-	// piece of that time actually fell is the waterfall's question.
-	const total = Math.max(totalMs, 1)
-	const legend = segments
-		.map((segment) => ({ ...segment, percent: sharePercent(segment.ms, total) }))
+	// Agent time, not the clock: each band is the whole time that class of work
+	// ran, summed across every agent, so two subagents inferring at once are two
+	// seconds here per second of wall clock — the fan-out made visible rather
+	// than a double count. Idle joins them because nothing at all was running
+	// then, which makes it disjoint from every band and honest to add. Where any
+	// of it fell chronologically is the waterfall's question.
+	const bands: readonly { kind: TimeBandKind; ms: number }[] = [
+		...segments,
+		...(summary.idleMs > 0 ? [{ kind: "idle" as const, ms: summary.idleMs }] : []),
+	]
+	const total = Math.max(
+		bands.reduce((sum, band) => sum + band.ms, 0),
+		1,
+	)
+	const legend = bands
+		.map((band) => ({ ...band, percent: sharePercent(band.ms, total) }))
 		// Under half a percent a legend row reads "0%" and says nothing; the band
 		// is still drawn, so nothing vanishes from the bar.
-		.filter((segment) => segment.percent >= 0.5)
-	const caption = [
-		`${formatSessionDuration(totalMs)} agent time`,
-		peakParallel > 1 ? `up to ${peakParallel} at once` : undefined,
-	]
-		.filter((part) => part !== undefined)
-		.join(" · ")
-	const footnote = [`${formatSessionDuration(summary.wallClockMs)} wall clock`, longestGapText(summary.idleGaps, turns)]
-		.filter((part) => part !== undefined)
-		.join(" · ")
+		.filter((band) => band.percent >= 0.5)
 
 	return (
 		<section>
-			<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+			<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
 				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
 					Where the time went
 				</h3>
-				<span className="font-mono text-muted-foreground text-xs tabular-nums">{caption}</span>
+				{/* The two clocks the bands are read against, stated rather than left
+				    to be inferred from the bar — and the fan-out that makes them
+				    differ, which is the one number the bar itself cannot show. */}
+				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+					<Clock label="Agent time" value={formatSessionDuration(totalMs)} className="text-chart-ai-inference" />
+					<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
+					{peakParallel > 1 && (
+						<span
+							className="flex items-baseline gap-1.5 rounded-sm bg-chart-ai-agent/12 px-1.5 py-0.5 text-chart-ai-agent"
+							title={`At its widest, ${peakParallel} model calls or tools were running at the same time.`}
+						>
+							<span className="font-mono font-semibold text-xs tabular-nums">{peakParallel}×</span>
+							<span className="text-[11px]">agents in parallel</span>
+						</span>
+					)}
+				</div>
 			</div>
 
 			<div className="mt-3.5 flex h-4 w-full overflow-hidden rounded-sm bg-muted">
-				{segments.map((segment) => (
+				{bands.map((band) => (
 					<div
-						key={segment.kind}
-						className={AGENT_TIME_FILL[segment.kind]}
-						style={{ width: `${(segment.ms / total) * 100}%` }}
+						key={band.kind}
+						className={AGENT_TIME_FILL[band.kind]}
+						style={{ width: `${(band.ms / total) * 100}%` }}
 					/>
 				))}
 			</div>
 
 			<div className="mt-3.5 flex flex-wrap gap-x-6 gap-y-2">
-				{legend.map((segment) => {
-					const Icon = AGENT_TIME_ICON[segment.kind]
+				{legend.map((band) => {
+					const Icon = AGENT_TIME_ICON[band.kind]
 					return (
-						<span key={segment.kind} className="flex items-center gap-2 text-[13px]">
-							<Icon size={14} aria-hidden className={cn("shrink-0", AGENT_TIME_TEXT[segment.kind])} />
-							<span>{AGENT_TIME_LABEL[segment.kind]}</span>
+						<span key={band.kind} className="flex items-center gap-2 text-[13px]">
+							<Icon size={14} aria-hidden className={cn("shrink-0", AGENT_TIME_TEXT[band.kind])} />
+							<span>{AGENT_TIME_LABEL[band.kind]}</span>
 							<span className="font-mono text-muted-foreground text-xs tabular-nums">
-								{formatSessionDuration(segment.ms)} · {formatPercent(segment.percent / 100)}
+								{formatSessionDuration(band.ms)} · {formatPercent(band.percent / 100)}
 							</span>
 						</span>
 					)
 				})}
 			</div>
-
-			{/* The clock the agent time is measured against — kept under the bar
-			    rather than in it, so no percentage above is a share of two
-			    different denominators. */}
-			<p className="mt-3 font-mono text-muted-foreground text-xs tabular-nums">{footnote}</p>
 		</section>
 	)
 }
 
-/** Where the session's longest hole sits — inside a turn it is a stall, between
- *  turns it is the user thinking, and the caption says which. */
-function longestGapText(gaps: readonly IdleGap[], turns: readonly SessionTurn[]): string | undefined {
-	const longest = [...gaps].sort((a, b) => b.durationMs - a.durationMs)[0]
-	if (longest === undefined) return undefined
-	const duration = formatSessionDuration(longest.durationMs)
-
-	const inside = turns.find((turn) => longest.startMs >= turn.startMs && longest.endMs <= turn.endMs)
-	if (inside !== undefined) return `longest stall ${duration}, inside ${turnOrdinal(inside).toLowerCase()}`
-
-	const before = [...turns].reverse().find((turn) => turn.endMs <= longest.startMs)
-	const after = turns.find((turn) => turn.startMs >= longest.endMs)
-	if (before !== undefined && after !== undefined) {
-		return `longest gap ${duration}, between ${turnOrdinal(before).toLowerCase()} and ${after.index}`
-	}
-	return `longest gap ${duration}`
+/** One of the section's two clocks: a micro label with the number carrying the
+ *  weight, so the pair reads as facts rather than a line of grey prose. */
+function Clock({ label, value, className }: { label: string; value: string; className?: string }) {
+	return (
+		<span className="flex items-baseline gap-1.5">
+			<span className="font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
+				{label}
+			</span>
+			<span className={cn("font-mono font-semibold text-xs tabular-nums", className)}>{value}</span>
+		</span>
+	)
 }
 
 /* -------------------------------------------------------------------------- */

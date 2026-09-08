@@ -53,11 +53,15 @@
 	   bar. Designated hues ~85° apart, the same in both themes, for the reason
 	   the token buckets have them — the chart-1..5 slots are spaced per theme,
 	   and in dark they put TTFT (chart-3, green) next to tool (chart-4, teal)
-	   at ΔE 0.08, which is one band to the eye. Only lightness moves per theme. */
+	   at ΔE 0.08, which is one band to the eye. Only lightness moves per theme.
+	   Agent keeps the amber it has always worn in dark: it marks a span, and no
+	   view draws a span beside a class of agent time, so its closeness to TTFT
+	   costs nothing — while a purple agent read as the reasoning tokens, which
+	   wear the same glyph two sections away. */
 	--chart-ai-ttft: oklch(0.64 0.16 65);
 	--chart-ai-tool: oklch(0.6 0.15 155);
 	--chart-ai-inference: oklch(0.6 0.15 250);
-	--chart-ai-agent: oklch(0.6 0.17 330);
+	--chart-ai-agent: oklch(0.63 0.16 59);
 	--chart-tok-input: oklch(0.6 0.15 246);
 	--chart-tok-cache-read: oklch(0.62 0.13 174);
 	--chart-tok-cache-write: oklch(0.62 0.15 102);
@@ -210,7 +214,7 @@
 	--chart-ai-ttft: oklch(0.73 0.15 65);
 	--chart-ai-tool: oklch(0.7 0.14 155);
 	--chart-ai-inference: oklch(0.69 0.15 250);
-	--chart-ai-agent: oklch(0.7 0.16 330);
+	--chart-ai-agent: oklch(0.714 0.154 59);
 	--chart-tok-input: oklch(0.69 0.15 246);
 	--chart-tok-cache-read: oklch(0.72 0.12 174);
 	--chart-tok-cache-write: oklch(0.73 0.15 102);
