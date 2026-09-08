@@ -12,7 +12,6 @@
 			"entry": [
 				"src/routes/**/*.tsx",
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
 				"src/lib/effect-atom.ts"

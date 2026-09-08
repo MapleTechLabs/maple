@@ -111,28 +111,3 @@ export class MapleDbConnection extends Context.Service<
 	MapleDbConnection,
 	Option.Option<DatabaseConnection>
 >()("@maple/api/platform/MapleDbConnection") {}
-
-// ── Key-value store (KV) ─────────────────────────────────────────────────────
-
-export class KeyValueStoreError extends Schema.TaggedError<KeyValueStoreError>()(
-	"@maple/api/platform/KeyValueStoreError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-/** One KV namespace, JSON values. */
-export interface KeyValueStore {
-	readonly getJson: (key: string) => Effect.Effect<Option.Option<unknown>, KeyValueStoreError>
-	readonly put: (
-		key: string,
-		value: string,
-		options: { readonly expirationTtl: number },
-	) => Effect.Effect<void, KeyValueStoreError>
-}
-
-/** MCP session transcripts, so the next isolate can find a session this one issued. */
-export class McpSessionStore extends Context.Service<McpSessionStore, KeyValueStore>()(
-	"@maple/api/platform/McpSessionStore",
-) {}

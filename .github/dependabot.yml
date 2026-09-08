@@ -1,0 +1,12 @@
+# Every action is pinned to a commit SHA with a version comment; this is what
+# moves the pins. Package updates are deliberately not here: bun's lockfile and
+# the Effect/alchemy pins are bumped by hand, with the vendored source read.
+version: 2
+updates:
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+          interval: weekly
+      groups:
+          actions:
+              patterns: ["*"]

@@ -14,7 +14,9 @@
  * from those yields.
  */
 import {
+	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
+	emailBinding,
 	MapleStack,
 	type MapleStage,
 	resolveWorkerName,
@@ -26,7 +28,6 @@ import { Context, Effect, Layer } from "effect"
 import ChatSessionObject from "./chat/ChatSession"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
-import { cachedRecoverable } from "./platform/cached-recoverable"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
@@ -47,16 +48,7 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
 	// for this resource.
 	AI: Cloudflare.AI.Gateway("maple-api-ai"),
-	// Production only: preview/stg workers run the same email crons against
-	// their own DB branches, so a binding here means every live stage sends
-	// its own copy of onboarding/digest/alert emails to real users.
-	...(stage.kind === "prd"
-		? {
-				EMAIL: Cloudflare.Email.SendEmail("email", {
-					allowedSenderAddresses: ["notifications@noreply.maple.dev"],
-				}),
-			}
-		: undefined),
+	...emailBinding(stage),
 })
 
 /**
@@ -153,6 +145,3 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		),
 	),
 ) {}
-
-/** The deployed api Worker, as the root stack and the web app's service binding see it. */
-export type MapleApiWorker = Effect.Success<typeof MapleApi>
