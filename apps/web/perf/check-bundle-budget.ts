@@ -55,10 +55,12 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // work: `@/components/icons` re-exports them, so the barrel's own chunk keeps
 // a static edge to them however they are reached. Dropping the marks from the
 // model lanes is what buys the 27 KB back, not a lazy import.
-// 685 KB (2026-09-08): main at 4beb70d9fd measures 683.4 KB after the
-// Agent Sessions updates (#800–802), with no web runtime changes in #799.
-// Keep a small margin over that baseline; lazy-only exclusions still apply.
-const maxGzipBytes = 685 * 1024
+// 684 KB from #800-#802 (2026-09-08): the Agent Sessions detail work — the
+// leaner header, the model marks on the filters and the agent-time breakdown —
+// lands in the route registry and the startup index chunk, not in a new
+// dependency. main measures 683.8 with all three in, so this is the honest
+// number rather than a target the pages would have to be cut back to.
+const maxGzipBytes = 684 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
