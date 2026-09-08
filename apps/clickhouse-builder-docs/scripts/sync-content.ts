@@ -1,9 +1,9 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 
 // The package's tested Markdown remains the source of truth, including in npm releases.
-const source = new URL("../../../lib/clickhouse-builder/docs/", import.meta.url)
+const source = new URL("../../../lib/effect-clickhouse/docs/", import.meta.url)
 const output = new URL("../content/", import.meta.url)
-const repository = "https://github.com/MapleTechLabs/maple/blob/main/lib/clickhouse-builder/"
+const repository = "https://github.com/MapleTechLabs/maple/blob/main/lib/effect-clickhouse/"
 const pages = [
 	"index",
 	"getting-started",
@@ -16,6 +16,8 @@ const pages = [
 	"params-and-compilation",
 	"decoding-results",
 	"running-queries",
+	"benchmarking",
+	"benchmark-agent",
 	"tenant-scoping",
 	"extending",
 	"reference",

@@ -51,7 +51,7 @@
         "@distilled.cloud/cloudflare": "1.0.0-rc.6",
         "@distilled.cloud/core": "1.0.0-rc.6",
         "@effect/platform-bun": "catalog:effect",
-        "@maple-dev/clickhouse-builder": "workspace:*",
+        "@maple-dev/effect-clickhouse": "workspace:*",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/ai-model-catalog": "workspace:*",
         "@maple/auth": "workspace:*",
@@ -387,8 +387,8 @@
         "vitest": "catalog:",
       },
     },
-    "lib/clickhouse-builder": {
-      "name": "@maple-dev/clickhouse-builder",
+    "lib/effect-clickhouse": {
+      "name": "@maple-dev/effect-clickhouse",
       "version": "0.1.0",
       "devDependencies": {
         "@clickhouse/client": "1.21.0",
@@ -604,7 +604,7 @@
       "name": "@maple/domain",
       "version": "0.0.0",
       "dependencies": {
-        "@maple-dev/clickhouse-builder": "workspace:*",
+        "@maple-dev/effect-clickhouse": "workspace:*",
         "@maple/primitives": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/widgets": "workspace:*",
@@ -684,7 +684,7 @@
     "packages/query-engine": {
       "name": "@maple/query-engine",
       "dependencies": {
-        "@maple-dev/clickhouse-builder": "workspace:*",
+        "@maple-dev/effect-clickhouse": "workspace:*",
         "@maple/cache": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/query-model": "workspace:*",
@@ -701,7 +701,7 @@
     "packages/query-engine-integrations": {
       "name": "@maple/query-engine-integrations",
       "dependencies": {
-        "@maple-dev/clickhouse-builder": "workspace:*",
+        "@maple-dev/effect-clickhouse": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "effect": "catalog:effect",
@@ -1394,7 +1394,7 @@
 
     "@maple-dev/browser": ["@maple-dev/browser@workspace:packages/browser"],
 
-    "@maple-dev/clickhouse-builder": ["@maple-dev/clickhouse-builder@workspace:lib/clickhouse-builder"],
+    "@maple-dev/effect-clickhouse": ["@maple-dev/effect-clickhouse@workspace:lib/effect-clickhouse"],
 
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
 

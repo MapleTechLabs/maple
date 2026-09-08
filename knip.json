@@ -71,7 +71,7 @@
 			"entry": ["press.config.tsx", "src/app.css"],
 			"ignoreDependencies": ["@base-ui/react"]
 		},
-		"lib/clickhouse-builder": {
+		"lib/effect-clickhouse": {
 			// Copied to a temporary consumer project and executed by path.
 			"entry": ["tests/package-consumer.mts"],
 			// scripts/check-doc-examples.mjs typechecks the docs' own snippets, one of

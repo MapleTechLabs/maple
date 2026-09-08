@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "../index"
-import { compile as compileFragment } from "@maple-dev/clickhouse-builder/sql"
+import { compile as compileFragment } from "@maple-dev/effect-clickhouse/sql"
 import * as CH from "../index"
 import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
-import { paramPlaceholder } from "@maple-dev/clickhouse-builder"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import { paramPlaceholder } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 // These pin the tiling invariant: the raw edge and the aggregate interior must
 // cover the window exactly once. Getting it wrong does not raise — it inflates

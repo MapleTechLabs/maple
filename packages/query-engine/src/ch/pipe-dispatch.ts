@@ -15,10 +15,10 @@
 import type { TracesMetric, AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "./queries/errors"
 import type { OrgId } from "@maple/domain"
-import { compile, compileUnion, type CompiledQuery } from "@maple-dev/clickhouse-builder"
+import { compile, compileUnion, type CompiledQuery } from "@maple-dev/effect-clickhouse"
 import { rawCompiledQuery } from "./raw-sql"
 import { Array as A, Effect, Match, Result, Schema } from "effect"
-import type { QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,

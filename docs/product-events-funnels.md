@@ -190,7 +190,7 @@ is one row per (visitor,user) pair.
 
 ### 5. Query engine
 
-`lib/clickhouse-builder`:
+`lib/effect-clickhouse`:
 
 - Parametric aggregates `windowFunnel(windowSec, mode?)(ts, cond1..condN)` and
   `sequenceMatch(pattern)(ts, cond…)` following the handwritten `quantile(q)` pattern in
@@ -409,8 +409,8 @@ lookup.
     tested, and the same data-loss warning returns, because it is the datasource schema change that
     triggers the source backfill, not the view's. And once the forward query is in place Tinybird
     suggests the inverse ("could be applied with ALTER TABLE and no data movement at promotion time
-    if you remove the FORWARD_QUERY"); following that suggestion reintroduces the loss. Per the
-    Tinybird rules the forward query can be deleted in a _later_ deploy, once this one has compacted.
+    if you remove the FORWARD*QUERY"); following that suggestion reintroduces the loss. Per the
+    Tinybird rules the forward query can be deleted in a \_later* deploy, once this one has compacted.
 
     **The populate is one-shot and overlap-prone.** Unlike BYO and local, the managed surface has no
     `DELETE WHERE Source = 'trace'` step, so running it twice double-inserts, and running it after

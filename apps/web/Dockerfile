@@ -16,7 +16,7 @@ RUN bun install
 COPY --from=pruner /app/out/full/ ./
 
 # Build workspace dependencies that publish from dist/
-RUN bun run --cwd lib/clickhouse-builder build && \
+RUN bun run --cwd lib/effect-clickhouse build && \
     bun run --cwd packages/effect-sdk build
 
 # Build-time env vars (baked into the SPA bundle)

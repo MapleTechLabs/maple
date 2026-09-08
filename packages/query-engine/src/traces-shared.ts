@@ -36,9 +36,9 @@ export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 
 // Attribute filter → typed Condition
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 // Semconv rename coalescing
 //

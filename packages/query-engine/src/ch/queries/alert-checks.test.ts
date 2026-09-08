@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { alertCheckGroupTotalsQuery, alertChecksSummaryQuery, listRuleChecksQuery } from "./alert-checks"
 
 const baseParams = {

@@ -70,7 +70,7 @@ jobs:
                       # The workspace-dependency closure of apps/cli + apps/local-ui
                       # (plus what alchemy:build-deps builds): cli → effect-sdk,
                       # domain, query-engine; local-ui → infra, query-engine, ui;
-                      # domain/query-engine → clickhouse-builder; effect-sdk /
+                      # domain/query-engine → effect-clickhouse; effect-sdk /
                       # @maple-dev/browser → browser-session. The old blanket
                       # `lib/**` + `packages/**` ran this job and all seven archive
                       # legs for changes to packages the bundle never links (db,
@@ -81,7 +81,7 @@ jobs:
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
                         - 'packages/effect-sdk/**'
-                        - 'lib/clickhouse-builder/**'
+                        - 'lib/effect-clickhouse/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
                         - 'packages/infra/**'
@@ -117,10 +117,10 @@ jobs:
                       # Do not inherit base: unrelated lockfile, app, or warehouse
                       # changes should not rerun the live suite or npm tarball install.
                       clickhouse_builder:
-                        - 'lib/clickhouse-builder/**'
+                        - 'lib/effect-clickhouse/**'
                       clickhouse:
                         - *base
-                        - 'lib/clickhouse-builder/**'
+                        - 'lib/effect-clickhouse/**'
                         - 'apps/api/src/services/warehouse/**'
                         - 'packages/db/**'
                         - 'scripts/*clickhouse*'
@@ -219,7 +219,7 @@ jobs:
                     - shard: build-other
                       install-filters: >-
                           @maple-dev/alchemy @maple-dev/browser
-                          @maple-dev/clickhouse-builder @maple-dev/effect-sdk
+                          @maple-dev/effect-clickhouse @maple-dev/effect-sdk
                           @maple/landing @maple/local-ui
                     - shard: typecheck-api
                       install-filters: "@maple/api"
@@ -279,14 +279,14 @@ jobs:
                       turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
 
             # The schema generators import packages/domain, which resolves
-            # @maple-dev/clickhouse-builder through its built dist; the Alchemy
+            # @maple-dev/effect-clickhouse through its built dist; the Alchemy
             # entrypoints typecheck below reaches the single-module Workers, whose
             # `@maple-dev/effect-sdk` and `@maple-dev/alchemy` imports type from
             # built dist. One build for all three.
             - name: Build the libraries the quality checks import
               if: ${{ matrix.shard == 'quality' }}
               run: >-
-                  bun turbo build --filter=@maple-dev/clickhouse-builder
+                  bun turbo build --filter=@maple-dev/effect-clickhouse
                   --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
 
             - name: Validate generated ClickHouse and local-store schemas
@@ -313,7 +313,7 @@ jobs:
               if: ${{ matrix.shard == 'effect-lint' }}
               run: >-
                   bun turbo build --filter=@maple-dev/effect-sdk
-                  --filter=@maple-dev/clickhouse-builder --filter=@maple-dev/alchemy
+                  --filter=@maple-dev/effect-clickhouse --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser --concurrency=2
 
             - name: Lint TypeScript and Effect code
@@ -328,7 +328,7 @@ jobs:
               if: ${{ matrix.shard == 'build-other' }}
               run: >-
                   bun turbo build --filter=@maple-dev/alchemy
-                  --filter=@maple-dev/browser --filter=@maple-dev/clickhouse-builder
+                  --filter=@maple-dev/browser --filter=@maple-dev/effect-clickhouse
                   --filter=@maple-dev/effect-sdk --filter=@maple/landing
                   --filter=@maple/local-ui --concurrency=2
 
@@ -498,14 +498,14 @@ jobs:
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
 
-            # `@maple-dev/clickhouse-builder` resolves only through `dist/`, and the
+            # `@maple-dev/effect-clickhouse` resolves only through `dist/`, and the
             # suite reaches it transitively: DatabaseLive imports
             # `@maple/query-engine/execution`, which imports `ch/index.ts`. Without
             # this the run dies at import with "Failed to resolve entry for package"
             # before a single test starts. Same step, same reason, as the typescript
             # and clickhouse jobs.
             - name: Build ClickHouse query DSL
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
+              run: bun turbo build --filter=@maple-dev/effect-clickhouse
 
             # No migrations: the suite creates the one scratch table it needs and
             # drops it. Keeping it schema-independent means a migration change can
@@ -554,19 +554,19 @@ jobs:
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
 
             - name: Build ClickHouse query DSL
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
+              run: bun turbo build --filter=@maple-dev/effect-clickhouse
 
             - name: Verify public ClickHouse builder against the live server
               if: ${{ needs.changes.outputs.clickhouse_builder == 'true' }}
               env:
-                  CLICKHOUSE_BUILDER_TEST_URL: http://127.0.0.1:8123
-                  CLICKHOUSE_BUILDER_TEST_USER: maple
-                  CLICKHOUSE_BUILDER_TEST_PASSWORD: maple
-              run: bun lib/clickhouse-builder/scripts/test-clickhouse.ts
+                  EFFECT_CLICKHOUSE_TEST_URL: http://127.0.0.1:8123
+                  EFFECT_CLICKHOUSE_TEST_USER: maple
+                  EFFECT_CLICKHOUSE_TEST_PASSWORD: maple
+              run: bun lib/effect-clickhouse/scripts/test-clickhouse.ts
 
             - name: Verify isolated ClickHouse builder tarball
               if: ${{ needs.changes.outputs.clickhouse_builder == 'true' }}
-              run: bun lib/clickhouse-builder/scripts/check-package.ts
+              run: bun lib/effect-clickhouse/scripts/check-package.ts
 
             - name: Replay migrations and verify search indexes
               env:

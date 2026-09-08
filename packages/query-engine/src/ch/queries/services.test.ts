@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	serviceOverviewQuery,
 	serviceOverviewRowSchema,

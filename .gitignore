@@ -66,3 +66,6 @@ apps/ingest/dist/
 apps/ios/Maple.xcodeproj/
 apps/ios/Config/Secrets.xcconfig
 apps/ios/build/
+
+# Generic ClickHouse benchmark artifacts (may contain literal query inputs)
+.bench/

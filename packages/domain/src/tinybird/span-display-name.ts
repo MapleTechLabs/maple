@@ -1,6 +1,6 @@
-import type { Expr } from "@maple-dev/clickhouse-builder/expr"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { compile } from "@maple-dev/clickhouse-builder/sql"
+import type { Expr } from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 
 /**
  * Canonical operation-name expression shared by runtime queries and generated
