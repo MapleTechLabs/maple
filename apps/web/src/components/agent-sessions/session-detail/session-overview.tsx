@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react"
 
 import { ArrowRightIcon, ChevronRightIcon, CircleXmarkIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
+import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -78,6 +79,10 @@ export function SessionOverview({
 	return (
 		<div className="@container flex grow flex-col pt-5 pb-10">
 			<div className="flex flex-col gap-8 @4xl:flex-row @4xl:gap-8">
+				{/* The verdict and its findings are one reading, so no rule divides
+				    them; each section below answers a different question, and the
+				    hairline is what keeps the verdict from reading as a header over
+				    all of them. */}
 				<div className="flex min-w-0 grow flex-col gap-7">
 					<Verdict
 						verdict={report.verdict}
@@ -86,6 +91,7 @@ export function SessionOverview({
 						onOpenSpan={openSpan}
 					/>
 					<Findings findings={report.findings} onOpenSpan={openSpan} />
+					<Separator />
 					<TimeComposition summary={summary} turns={turns} />
 				</div>
 				<Rail summary={summary} />
