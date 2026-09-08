@@ -221,8 +221,9 @@ jobs:
                       install-filters: "@maple/web"
                     - shard: typecheck-rest
                       install-filters: >-
-                          @maple/alerting @maple/cli @maple/electric-sync @maple/landing
-                          @maple/local-ui @maple/scraper ./lib/* ./examples/*
+                          @maple/alerting @maple/cli @maple/clickhouse-builder-docs
+                          @maple/electric-sync @maple/landing @maple/local-ui
+                          @maple/scraper ./lib/* ./examples/*
                     - shard: typecheck-packages
                       install-filters: "./packages/*"
                     - shard: test-api-1
