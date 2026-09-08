@@ -9,6 +9,7 @@ import {
 	V2UnexpectedErrors,
 } from "@maple/domain/http/v2"
 import { describeSchemaIssue } from "@/routes/schema-error-detail"
+import { observeServerError } from "@/routes/server-error-observability"
 
 class V2RouteExecutionDefect extends Schema.TaggedError<V2RouteExecutionDefect>()(
 	"@maple/api/routes/v2/V2RouteExecutionDefect",
@@ -119,6 +120,7 @@ export const V2UnexpectedErrorsLive = Layer.succeed(
 	V2UnexpectedErrors.of((httpEffect, { endpoint, group }) =>
 		httpEffect.pipe(
 			Effect.tapError(appendRetryAfter),
+			Effect.tapError(observeServerError(endpoint, group)),
 			Effect.catchDefect((cause) => {
 				const defectType = cause instanceof Error ? cause.name : typeof cause
 				const error = new V2RouteExecutionDefect({
