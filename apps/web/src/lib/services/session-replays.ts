@@ -1,0 +1,75 @@
+import type {
+	V2SessionReplay,
+	V2SessionReplayListItem,
+	V2SessionTranscriptEvent,
+} from "@maple/domain/http/v2"
+
+const replayBaseFromV2 = (replay: V2SessionReplay | V2SessionReplayListItem) => ({
+	sessionId: replay.id,
+	startTime: replay.start_time,
+	endTime: replay.end_time,
+	durationMs: replay.duration_ms,
+	status: replay.status,
+	userId: replay.user_id,
+	userName: replay.user_name,
+	userEmail: replay.user_email,
+	groupId: replay.group_id,
+	groupName: replay.group_name,
+	visitorId: replay.visitor_id,
+	utmSource: replay.utm_source,
+	entryPath: replay.entry_path,
+	urlInitial: replay.url_initial,
+	browserName: replay.browser_name,
+	osName: replay.os_name,
+	deviceType: replay.device_type,
+	country: replay.country,
+	serviceName: replay.service_name,
+	pageViews: replay.page_views,
+	clickCount: replay.click_count,
+	errorCount: replay.error_count,
+	traceCount: replay.trace_count,
+})
+
+export const replayListItemFromV2 = (replay: V2SessionReplayListItem) => ({
+	...replayBaseFromV2(replay),
+	recorded: replay.recorded === null ? "" : String(replay.recorded),
+})
+
+export const replayDetailFromV2 = (replay: V2SessionReplay) => ({
+	...replayBaseFromV2(replay),
+	visitorIsNew: replay.visitor_is_new,
+	userTraits: replay.user_traits,
+	referrer: replay.referrer,
+	referrerHost: replay.referrer_host,
+	utmMedium: replay.utm_medium,
+	utmCampaign: replay.utm_campaign,
+	utmTerm: replay.utm_term,
+	utmContent: replay.utm_content,
+	host: replay.host,
+	exitPath: replay.exit_path,
+	language: replay.language,
+	lastActivityAt: replay.last_activity_at,
+	userAgent: replay.user_agent,
+	traceIds: replay.trace_ids,
+	resourceAttributes: replay.resource_attributes,
+	activeTimeMs: replay.active_time_ms,
+	idleTimeMs: replay.idle_time_ms,
+})
+
+export const replayEventFromV2 = (event: V2SessionTranscriptEvent) => ({
+	timestamp: event.timestamp,
+	seq: event.seq,
+	type: event.type,
+	url: event.url,
+	traceId: event.trace_id,
+	attributes: event.attributes,
+	level: event.level ?? "",
+	message: event.message ?? "",
+	targetSelector: event.target_selector ?? "",
+	targetText: event.target_text ?? "",
+	netMethod: event.net_method ?? "",
+	netUrl: event.net_url ?? "",
+	netStatus: event.net_status ?? 0,
+	netDurationMs: event.net_duration_ms ?? 0,
+	errorStack: event.error_stack ?? "",
+})

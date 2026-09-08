@@ -62,7 +62,7 @@ export const Route = createFileRoute("/replays/")({
 	loader: ({ context, deps }) => {
 		const filterInputs = replaysFilterInputs(deps)
 		warmAtoms(context.effectRegistry, [
-			listReplaysResultAtom({ data: { ...filterInputs, limit: REPLAYS_PAGE_SIZE, offset: 0 } }),
+			listReplaysResultAtom({ data: { ...filterInputs, limit: REPLAYS_PAGE_SIZE } }),
 			replaysFacetsResultAtom({ data: filterInputs }),
 		])
 	},
