@@ -12,7 +12,6 @@ import {
 	type FindingSeverity,
 	type SessionFinding,
 	type SessionVerdict,
-	type TurnHealth,
 } from "@/lib/agent-sessions/session-findings"
 import {
 	formatCost,
@@ -53,7 +52,6 @@ export function SessionOverview({
 	onSpanTabChange,
 	toolResults,
 	onOpenTraceView,
-	onOpenTurnInTraceView,
 }: {
 	turns: readonly SessionTurn[]
 	summary: SessionSummary
@@ -68,8 +66,6 @@ export function SessionOverview({
 	toolResults?: SessionToolResults
 	/** The popover's "Open in Traces view": same span, sibling view. */
 	onOpenTraceView: () => void
-	/** A session-shape cell: cross to Traces and land on that whole turn. */
-	onOpenTurnInTraceView: (turnId: string) => void
 }) {
 	const report = useMemo(() => buildSessionFindings(turns, summary), [turns, summary])
 	const spansById = useMemo(
@@ -90,12 +86,6 @@ export function SessionOverview({
 						onOpenSpan={openSpan}
 					/>
 					<Findings findings={report.findings} onOpenSpan={openSpan} />
-					<TurnHealthStrip
-						turns={turns}
-						health={report.turnHealth}
-						summary={summary}
-						onOpenTurn={onOpenTurnInTraceView}
-					/>
 					<TimeComposition summary={summary} turns={turns} />
 				</div>
 				<Rail summary={summary} />
@@ -277,72 +267,6 @@ function FindingRow({ finding, onOpenSpan }: { finding: SessionFinding; onOpenSp
 }
 
 /* -------------------------------------------------------------------------- */
-/* Session shape                                                              */
-/* -------------------------------------------------------------------------- */
-
-const HEALTH_CELL = {
-	clean: "border-border bg-muted/40 text-muted-foreground hover:bg-accent",
-	anomaly: "border-severity-warn/40 bg-severity-warn/10 text-severity-warn hover:bg-severity-warn/20",
-	failure: "border-destructive/50 bg-destructive/10 text-destructive hover:bg-destructive/20",
-} satisfies Record<TurnHealth, string>
-
-function TurnHealthStrip({
-	turns,
-	health,
-	summary,
-	onOpenTurn,
-}: {
-	turns: readonly SessionTurn[]
-	health: readonly TurnHealth[]
-	summary: SessionSummary
-	/** A cell is a whole turn, so it opens the turn in Traces rather than one
-	 *  span in the overlay: the reader asking about turn 7 wants what it did. */
-	onOpenTurn: (turnId: string) => void
-}) {
-	// "with errors", not "failed": a red cell marks a turn something went wrong
-	// INSIDE — the turn itself may have closed cleanly, and calling it failed
-	// would contradict a Completed verdict two sections up.
-	const errored = health.filter((status) => status === "failure").length
-	const flagged = health.filter((status) => status === "anomaly").length
-	const caption = [
-		errored > 0 ? `${errored} with errors` : undefined,
-		flagged > 0 ? `${flagged} flagged` : undefined,
-		errored === 0 && flagged === 0 ? "none flagged" : undefined,
-		`${formatSessionDuration(summary.wallClockMs)} wall clock`,
-	]
-		.filter((part) => part !== undefined)
-		.join(" · ")
-
-	return (
-		<section>
-			<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-3.5">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-					Session shape
-				</h3>
-				<span className="font-mono text-muted-foreground text-xs tabular-nums">{caption}</span>
-			</div>
-
-			<div className="flex flex-wrap gap-1.5">
-				{turns.map((turn, index) => (
-					<button
-						key={turn.id}
-						type="button"
-						onClick={() => onOpenTurn(turn.id)}
-						title={`${turnOrdinal(turn)}${turn.label === undefined ? "" : ` — ${turn.label}`} — open in Traces`}
-						className={cn(
-							"flex size-8 cursor-pointer items-center justify-center rounded-sm border font-mono text-[11px] tabular-nums",
-							HEALTH_CELL[health[index] ?? "clean"],
-						)}
-					>
-						{turn.index}
-					</button>
-				))}
-			</div>
-		</section>
-	)
-}
-
-/* -------------------------------------------------------------------------- */
 /* Where the time went                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -359,7 +283,12 @@ function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: r
 	// wall clock, so a mid-session stall reads as a hole in the middle, not as
 	// an idle block pinned to the left.
 	const wallClockMs = Math.max(summary.wallClockMs, 1)
-	const caption = longestGapText(summary.idleGaps, turns)
+	// The section owns the session's wall clock now: it is the number every
+	// percentage below is a share of, so it belongs beside them rather than
+	// over a strip of turn cells.
+	const caption = [`${formatSessionDuration(summary.wallClockMs)} wall clock`, longestGapText(summary.idleGaps, turns)]
+		.filter((part) => part !== undefined)
+		.join(" · ")
 
 	return (
 		<section>
@@ -367,9 +296,7 @@ function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: r
 				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
 					Where the time went
 				</h3>
-				{caption !== undefined && (
-					<span className="font-mono text-muted-foreground text-xs tabular-nums">{caption}</span>
-				)}
+				<span className="font-mono text-muted-foreground text-xs tabular-nums">{caption}</span>
 			</div>
 
 			<div className="relative mt-3.5 h-4 w-full overflow-hidden rounded-sm bg-muted">
