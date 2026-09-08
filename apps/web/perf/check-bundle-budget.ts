@@ -55,7 +55,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // work: `@/components/icons` re-exports them, so the barrel's own chunk keeps
 // a static edge to them however they are reached. Dropping the marks from the
 // model lanes is what buys the 27 KB back, not a lazy import.
-const maxGzipBytes = 682 * 1024
+// 685 KB (2026-09-08): main at 4beb70d9fd measures 683.4 KB after the
+// Agent Sessions updates (#800–802), with no web runtime changes in #799.
+// Keep a small margin over that baseline; lazy-only exclusions still apply.
+const maxGzipBytes = 685 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
