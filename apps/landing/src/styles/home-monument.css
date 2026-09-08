@@ -89,9 +89,12 @@
 }
 
 .monument-hero {
+	/* One viewport tall, but never a 1440px wall: past the cap the next section
+	   peeks in instead of the copy floating in empty space. */
+	--monument-hero-h: min(100svh, 1080px);
 	display: flex;
 	flex-direction: column;
-	min-height: 100svh;
+	min-height: var(--monument-hero-h);
 	position: relative;
 	isolation: isolate;
 	padding-top: 76px;
@@ -163,7 +166,7 @@
 	z-index: -1;
 	right: 0;
 	bottom: 0;
-	width: min(86%, calc((100svh - 76px) * 1.5));
+	width: min(86%, calc((var(--monument-hero-h) - 76px) * 1.5));
 	height: auto;
 	object-fit: contain;
 	object-position: right bottom;
@@ -275,6 +278,80 @@ html:not([lang="en"]) .monument-hero h1 {
 	font-size: clamp(2rem, 4.2vw, 4rem);
 	line-height: 1.13;
 	width: auto;
+}
+/* Large monitors: fixed-pixel type and a 120px proof rail read as miniature on
+   a 2560px canvas, so the whole composition steps up together. */
+@media (min-width: 1800px) {
+	.monument-hero__field {
+		padding-top: 40px;
+	}
+	.monument-announce {
+		font-size: 14px;
+		gap: 12px;
+	}
+	.monument-announce__badge {
+		font-size: 11px;
+		padding: 5px 7px;
+	}
+	.monument-hero h1 {
+		margin-top: 32px;
+		font-size: clamp(4.5rem, min(3.6vw, 9svh), 5.75rem);
+	}
+	html:not([lang="en"]) .monument-hero h1 {
+		font-size: clamp(4rem, 3.2vw, 5rem);
+	}
+	.monument-hero__copy {
+		width: 560px;
+		margin-top: 32px;
+	}
+	.monument-hero__description {
+		font-size: 21px;
+	}
+	.monument-actions {
+		gap: 12px;
+		margin-top: 32px;
+	}
+	.monument-actions > * {
+		height: 48px;
+		padding-inline: 22px;
+		font-size: 17px;
+	}
+	.monument-proof {
+		padding-top: 40px;
+	}
+	.monument-proof__inner {
+		min-height: 168px;
+		gap: 56px;
+		padding-block: 40px;
+	}
+	.monument-proof__stats {
+		gap: 56px;
+	}
+	.monument-proof__stats > div {
+		gap: 6px;
+	}
+	.monument-proof dt {
+		font-size: 13px;
+	}
+	.monument-proof dd {
+		font-size: 34px;
+	}
+	.monument-proof__github .size-5 {
+		width: 26px;
+		height: 26px;
+	}
+	.monument-proof .gap-x-7 {
+		column-gap: 40px;
+	}
+	.monument-proof [class~="text-[10px]"] {
+		font-size: 12px;
+	}
+	.monument-proof .logo-cell__mark {
+		height: 28px;
+	}
+	.monument-proof .text-sm {
+		font-size: 17px;
+	}
 }
 @media (max-width: 1100px) {
 	.monument-hero__copy {
