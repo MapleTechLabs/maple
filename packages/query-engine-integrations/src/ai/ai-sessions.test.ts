@@ -5,7 +5,7 @@ import {
 	compileUnionUnsafe,
 	QueryBuilderDefect,
 	type CompiledQuery,
-} from "@maple-dev/clickhouse-builder"
+} from "@maple-dev/effect-clickhouse"
 import {
 	aiSessionFacetsQuery,
 	aiSessionListQuery,

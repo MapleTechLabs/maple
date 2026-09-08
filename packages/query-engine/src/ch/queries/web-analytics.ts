@@ -8,9 +8,9 @@
 // use `uniq[If](SessionId)`. Page views come from append-only navigation events.
 // WHERE clauses use only columns written identically to both session versions.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/clickhouse-builder"
-import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-clickhouse"
+import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { SessionReplays, SessionEvents, ProductEvents } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"

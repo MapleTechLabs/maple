@@ -10,7 +10,7 @@ import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import * as Bench from "@maple/query-engine/benchmark"
 import { collectWarehouseQueryCatalog } from "./query-bench/catalog"
-import { runCli } from "@maple-dev/clickhouse-builder/benchmark/cli"
+import { runCli } from "@maple-dev/effect-clickhouse/benchmark/cli"
 
 // Errors
 

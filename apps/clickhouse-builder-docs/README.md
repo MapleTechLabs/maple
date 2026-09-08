@@ -2,7 +2,7 @@
 
 Fumapress site at https://effect-clickhouse.maple.dev, hosted as static assets on Cloudflare Workers.
 
-Edit `lib/clickhouse-builder/docs/*.md`. Builds generate `content/` from those files,
+Edit `lib/effect-clickhouse/docs/*.md`. Builds generate `content/` from those files,
 add page metadata, and convert relative links to website routes. Generated content is ignored
 by Git; existing package documentation checks continue to use the original files.
 

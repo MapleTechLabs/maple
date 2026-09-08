@@ -136,7 +136,7 @@ const NO_ORDIE_COMPILED_QUERY_MESSAGE =
 const COMPILE_NAMES = new Set(["compile", "compileUnion", "compileCH", "compileCHUnsafe"])
 
 /** Modules a bare `compile` can only have come from. */
-const COMPILE_MODULES = /(clickhouse-builder|query-engine\/ch)$/
+const COMPILE_MODULES = /(effect-clickhouse|query-engine\/ch)$/
 
 /**
  * A call to a compile entry point.

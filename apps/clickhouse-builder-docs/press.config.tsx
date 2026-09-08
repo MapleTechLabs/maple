@@ -29,7 +29,7 @@ export default defineConfig({
 		links: [
 			{
 				text: "GitHub",
-				url: "https://github.com/MapleTechLabs/maple/tree/main/lib/clickhouse-builder",
+				url: "https://github.com/MapleTechLabs/maple/tree/main/lib/effect-clickhouse",
 			},
 		],
 	},

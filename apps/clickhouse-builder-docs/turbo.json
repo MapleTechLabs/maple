@@ -1,4 +1,4 @@
 {
 	"extends": ["//"],
-	"tasks": { "build": { "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/lib/clickhouse-builder/docs/**"] } }
+	"tasks": { "build": { "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/lib/effect-clickhouse/docs/**"] } }
 }

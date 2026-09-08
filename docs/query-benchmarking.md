@@ -4,12 +4,12 @@ Use `bun run bench:queries` from the repository root. The CLI compiles the real
 query catalog, runs fixed workloads against ClickHouse, saves evidence, and compares
 implementations by **case ID**, so changing SQL does not lose the baseline.
 
-The reusable, driver-free API lives at `@maple-dev/clickhouse-builder/benchmark`.
+The reusable, driver-free API lives at `@maple-dev/effect-clickhouse/benchmark`.
 `@maple/query-engine/benchmark` composes it with Maple catalog fixtures.
 `apps/api/scripts/bench-queries.ts` owns Maple catalog export and trace mining;
 execution, HTTP, files and printing use the published `ch-bench` CLI. See the
-[public benchmark guide](../lib/clickhouse-builder/docs/benchmarking.md) and
-[agent playbook](../lib/clickhouse-builder/docs/benchmark-agent.md).
+[public benchmark guide](../lib/effect-clickhouse/docs/benchmarking.md) and
+[agent playbook](../lib/effect-clickhouse/docs/benchmark-agent.md).
 
 `run` accepts a TypeScript suite directly and recompiles it on each invocation.
 `doctor`, `export`, `schema`, `--json`, per-case verification, and multi-metric
@@ -204,7 +204,7 @@ the change. It does not automatically recommend an index or materialized view.
 ## Validate tooling changes
 
 ```sh
-bun run --cwd lib/clickhouse-builder test
+bun run --cwd lib/effect-clickhouse test
 bun run --cwd packages/query-engine test -- src/benchmark/catalog.test.ts
 bun run --cwd packages/query-engine-integrations test -- src/benchmark/catalog.test.ts
 bun run --cwd packages/query-engine typecheck

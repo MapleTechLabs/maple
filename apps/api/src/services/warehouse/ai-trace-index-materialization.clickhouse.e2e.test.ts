@@ -17,7 +17,7 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,

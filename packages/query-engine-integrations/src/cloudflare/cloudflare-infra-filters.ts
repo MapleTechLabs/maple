@@ -13,8 +13,8 @@
 // dropped here, and the handler reports them back as `ignoredFilters` so the UI
 // can mark that panel zone-wide rather than silently lying about its scope.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import type { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 
 /** Filter key → the metric attribute it lives on. */

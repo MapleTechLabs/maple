@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as CH from "./index"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import { tracesTimeseriesQuery, tracesBreakdownQuery, tracesListQuery } from "./queries/traces"
 import { logsFacetsQuery } from "./queries/logs"
 import { servicesFacetsQuery } from "./queries/services"
@@ -12,8 +12,8 @@ import {
 	spanDetailQuery,
 	traceTimeProbeQuery,
 } from "./queries/errors"
-import { unionAll } from "@maple-dev/clickhouse-builder"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import { unionAll } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 // Core DSL tests
 

@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { maskLiteralsAndComments, splitTerminalClauses } from "@maple-dev/clickhouse-builder/sql"
+import { maskLiteralsAndComments, splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
 
 // The static half of raw-SQL validation: everything that can be decided from the
 // query text alone, without an org, a time window, or a granularity.

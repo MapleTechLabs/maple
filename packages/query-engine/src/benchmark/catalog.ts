@@ -25,7 +25,7 @@
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
 import { Effect } from "effect"
-import type { CompiledQuery } from "@maple-dev/clickhouse-builder"
+import type { CompiledQuery } from "@maple-dev/effect-clickhouse"
 import {
 	DeploymentEnvironment,
 	MetricName,
@@ -43,7 +43,7 @@ import { compilePipeQuery } from "../ch/pipe-dispatch"
 import { compiledQueryOf } from "../execution/compiled-input"
 import { fingerprintSql } from "../execution/fingerprint"
 import { makeQueryEngineExecute, type QueryEngineWarehouse, type QueryTenant } from "../runtime"
-import { BenchmarkError, validateSuite, type Suite } from "@maple-dev/clickhouse-builder/benchmark"
+import { BenchmarkError, validateSuite, type Suite } from "@maple-dev/effect-clickhouse/benchmark"
 
 // Fixture inputs
 

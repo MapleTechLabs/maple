@@ -27,7 +27,7 @@ describe("integration sql catalog", () => {
 	})
 
 	// Structural, not a substring check on the SQL — see the tenant-scope work in
-	// @maple-dev/clickhouse-builder. No integration query reads across tenants.
+	// @maple-dev/effect-clickhouse. No integration query reads across tenants.
 	it("scopes every query to an org", () => {
 		for (const entry of entries) {
 			expect(entry.compiled.tenantScope, `${entry.id} tenant scope`).toBe("single-tenant")

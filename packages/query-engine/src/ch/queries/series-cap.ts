@@ -12,10 +12,10 @@
 // group-by), the inner query is returned unchanged so existing SQL snapshots
 // stay byte-identical.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { fromQuery, type CHQuery } from "@maple-dev/clickhouse-builder"
-import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
-import { uint64 } from "@maple-dev/clickhouse-builder/types"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { fromQuery, type CHQuery } from "@maple-dev/effect-clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
+import { uint64 } from "@maple-dev/effect-clickhouse/types"
 
 function hasRealGroupBy(groupBy: readonly string[] | undefined): boolean {
 	return !!groupBy && groupBy.some((key) => key !== "none")

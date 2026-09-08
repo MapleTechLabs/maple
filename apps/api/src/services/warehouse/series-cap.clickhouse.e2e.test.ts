@@ -1,8 +1,8 @@
 // SAFETY-FILE: JSON is emitted by the isolated ClickHouse fixture and decoded by the real query schema.
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { compileUnsafe, from, param, table } from "@maple-dev/clickhouse-builder"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import { compileUnsafe, from, param, table } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
 import { finalizeTimeseries } from "../../../../../packages/query-engine/src/ch/queries/series-cap"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { clickhouseE2eEnabled, clickhouseExec, uniqueDatabase } from "./clickhouse-e2e-support"

@@ -131,7 +131,7 @@ jobs:
             # A clean runner has no dist/ until the workspace dependency is built.
             - name: Build Tinybird TypeScript workspace dependencies
               if: ${{ env.TEARDOWN != 'true' }}
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
+              run: bun turbo build --filter=@maple-dev/effect-clickhouse
 
             # Create/refresh an ephemeral Tinybird branch `pr_<n>` seeded with the
             # latest prod partition, deploy this PR's schema into it, and override

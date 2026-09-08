@@ -13,17 +13,17 @@
 // into `ingest` with no reshaping.
 
 import { Schema, Effect } from "effect"
-import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import { compile } from "@maple-dev/clickhouse-builder"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery } from "@maple-dev/clickhouse-builder"
+import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import { compile } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery } from "@maple-dev/effect-clickhouse"
 import { OrgId } from "@maple/domain"
 import { ServiceAddressResolutionsHourly, ServiceMapEdgesHourly, Traces } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { serviceMapEdgeJoinQuery } from "./service-map"
 import { CHNumber } from "../schema"
-import type { QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 
 /** One pre-aggregated service-to-service edge bucket — mirrors the columns of
  * the `service_map_edges_hourly` ClickHouse table. */

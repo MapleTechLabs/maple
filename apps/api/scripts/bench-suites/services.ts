@@ -1,6 +1,6 @@
 /** Edit the inputs to a representative fixed window in a populated snapshot. */
 import * as CH from "@maple/query-engine/ch"
-import * as Bench from "@maple-dev/clickhouse-builder/benchmark"
+import * as Bench from "@maple-dev/effect-clickhouse/benchmark"
 
 export default Bench.defineSuite({
 	name: "services-workload",

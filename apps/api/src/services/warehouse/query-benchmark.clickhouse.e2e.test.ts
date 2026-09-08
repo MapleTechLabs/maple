@@ -21,7 +21,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
-import type { CompiledQueryDecodeError } from "@maple-dev/clickhouse-builder"
+import type { CompiledQueryDecodeError } from "@maple-dev/effect-clickhouse"
 import { caseFromCompiled, RunOutput, Suite } from "@maple/query-engine/benchmark"
 import { collectWarehouseQueryCatalog } from "../../../scripts/query-bench/catalog"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
@@ -76,7 +76,7 @@ const benchScript = fileURLToPath(new URL("../../../scripts/bench-queries.ts", i
 const runCli = async (label: string, args: ReadonlyArray<string>) => {
 	const result = await new Promise<{ code: number; output: string }>((resolve, reject) => {
 		const nodeBin = fileURLToPath(
-			new URL("bin.mjs", import.meta.resolve("@maple-dev/clickhouse-builder/benchmark/cli")),
+			new URL("bin.mjs", import.meta.resolve("@maple-dev/effect-clickhouse/benchmark/cli")),
 		)
 		const child = spawn(
 			label === "baseline" ? "node" : "bun",
@@ -338,7 +338,7 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 			candidateSuite,
 			`
 import * as CH from "@maple/query-engine/ch"
-import * as Bench from "@maple-dev/clickhouse-builder/benchmark"
+import * as Bench from "@maple-dev/effect-clickhouse/benchmark"
 export default Bench.defineSuite({ name: "populated-maple-e2e", dataset: ${JSON.stringify(database)}, cases: [
  Bench.query({ id: "traces/overview/5m", inputs: ${JSON.stringify({ ...inputs, ...options })}, compile: (values) => CH.compile(CH.tracesTimeseriesQuery({ ...values, overviewTiers: "minute" }), values), results: "unordered" }),
  Bench.query({ id: "services/facets", inputs: ${JSON.stringify(inputs)}, compile: (values) => CH.compileUnion(CH.servicesFacetsQuery(), values), results: "unordered" }),

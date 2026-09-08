@@ -36,7 +36,7 @@ jobs:
             # workspaces accounted for roughly half of this job's wall time.
             - uses: ./.github/actions/bun-install
               with:
-                  filters: "@maple/api @maple-dev/effect-sdk @maple-dev/browser @maple-dev/clickhouse-builder"
+                  filters: "@maple/api @maple-dev/effect-sdk @maple-dev/browser @maple-dev/effect-clickhouse"
 
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -48,7 +48,7 @@ jobs:
                       turbo-v2-${{ runner.os }}-typescript-build-other-
 
             # @maple/api's measure-tokens imports query-engine, which pulls the
-            # dist-based @maple-dev/clickhouse-builder (+ effect-sdk, browser).
+            # dist-based @maple-dev/effect-clickhouse (+ effect-sdk, browser).
             # Those ship from dist/ and must be built before they can be loaded.
             - name: Build workspace deps
               run: bun run alchemy:build-deps

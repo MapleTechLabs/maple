@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { NORMALIZED_SPAN_NAME_SQL } from "@maple/domain/tinybird/span-display-name"
 import {
 	serviceOperationsSummaryQuery,
