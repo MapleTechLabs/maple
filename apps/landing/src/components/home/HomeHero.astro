@@ -2,12 +2,13 @@
 /**
  * THESIS: Open observability at architectural scale; a poster opening makes the
  * product's connected systems tangible before the working interface appears.
- * OWN-WORLD: Orange, ivory, heavy grotesk type, square controls and dithered stone.
+ * OWN-WORLD: Maple amber, charcoal, bone, heavy grotesk type, shared rounded buttons and dithered stone.
  * STORY: Understand the offer, see the real product, start a trial or read source.
  * FIRST VIEWPORT: Two-line headline above left-side copy/actions; a monumental
  * generated structure occupies the right and bottom. Proof closes the field.
- * FORM: Orange Dither Monumentalism, explicitly selected by the user.
+ * FORM: Dither Monumentalism with the shared Maple palette, as requested.
  */
+import { buttonVariants } from "@maple/ui/components/ui/button";
 import * as m from "../../paraglide/messages.js";
 import { HeroCta } from "../HeroCta";
 import CustomerLogos from "../CustomerLogos.astro";
@@ -35,11 +36,11 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
             <p class="monument-hero__statement">{m.hero_title_sub()}<br />{m.hero_title_accent()}</p>
             <p class="monument-hero__description">{m.hero_subtitle()}</p>
             <div class="monument-actions">
-                <HeroCta client:load className="monument-button monument-button--solid" />
-                <a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class="monument-button monument-button--outline">{m.cta_github()} <span aria-hidden="true">↗</span></a>
+                <HeroCta client:load className={buttonVariants({ size: "xl" })} />
+                <a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class={buttonVariants({ variant: "outline", size: "xl" })}>{m.cta_github()}</a>
             </div>
         </div>
-        <img class="monument-hero__art" src="/art/orange-monument.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
+        <img class="monument-hero__art" src="/art/maple-monument.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
         <div class="monument-hero__colophon" aria-hidden="true">
             <span>MAPLE / OPEN TELEMETRY</span><span>TRACES · LOGS · METRICS</span>
         </div>

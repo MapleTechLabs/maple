@@ -1,4 +1,4 @@
-# Maple landing — Orange Dither Monumentalism
+# Maple landing — Maple Dither Monumentalism
 
 ## Overview
 
@@ -6,7 +6,7 @@ The homepage is a Persuade surface for engineers evaluating open-source observab
 
 ## Colors
 
-Homepage-only variables: orange `#b9480d`, deep orange `#873207`, ivory `#fff2e2`, warm sand `#f5e2cc`, ink `#422719`, muted ink `#79533b`, rules `#d9b999`. Saturated orange owns the sovereignty and closing sections. Preserve screenshot and semantic data colors. Do not redefine shared application tokens.
+Homepage variables alias the actual shared dark UI tokens: orange → `--primary` (`oklch(0.714 0.154 59)`, approximately `#E8872A`); canvas → `--background`; panels → `--card`; text → `--foreground`; secondary text → `--muted-foreground`; rules → `--border`. The palette is amber, warm charcoal and bone. Use `--primary-foreground` for text on amber. The logo's `#E86F00` is a separate brand asset color, not the UI primary. Never substitute a guessed orange or redefine shared tokens.
 
 ## Typography
 
@@ -22,7 +22,7 @@ Depth comes from the artwork and flat changes of color. No decorative shadows or
 
 ## Shapes
 
-Square buttons, sharp frames, thin orange rules. Dither belongs to generated imagery, not a CSS texture over text.
+Original shared rounded buttons, sharp frames, thin shared border rules. Dither belongs to generated imagery, not a CSS texture over text.
 
 ## Components
 
@@ -31,3 +31,5 @@ Existing navigation, authentication-aware CTAs, carousel, walkthrough, calculato
 ## Do's and Don'ts
 
 Keep localized content and real commercial facts. Use the generated monument at hero scale. Do not tint screenshots, invent metrics, replace working controls with decorative labels, or change the product theme.
+
+Homepage buttons use the original shared `buttonVariants` (hero size `xl`, primary and outline variants). Preserve their radius, shadows, focus rings, hover and pressed states; homepage surface overrides exclude buttons and links.

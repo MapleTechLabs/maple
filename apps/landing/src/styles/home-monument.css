@@ -1,12 +1,12 @@
 /* Homepage-only visual world. Shared application tokens remain untouched. */
 .monumental-home {
-	--home-orange: #b9480d;
-	--home-deep: #873207;
-	--home-paper: #fff2e2;
-	--home-pale: #f5e2cc;
-	--home-ink: #422719;
-	--home-muted: #79533b;
-	--home-rule: #d9b999;
+	--home-orange: var(--primary);
+	--home-deep: var(--amber-deep);
+	--home-paper: var(--background);
+	--home-pale: var(--card);
+	--home-ink: var(--foreground);
+	--home-muted: var(--muted-foreground);
+	--home-rule: var(--border);
 	background: var(--home-paper);
 	color: var(--home-ink);
 	font-family: "Geist Variable", sans-serif;
@@ -15,14 +15,14 @@
 	background: var(--home-orange);
 	color: var(--home-paper);
 }
-.monumental-home :where(a, button, summary, input):focus-visible {
+.monumental-home :where(summary, input):focus-visible {
 	outline: 2px solid var(--home-orange);
 	outline-offset: 5px;
 }
-.monumental-home :where(.bg-bg, .bg-background) {
+.monumental-home :where(.bg-bg, .bg-background):not(a, button) {
 	background-color: var(--home-paper);
 }
-.monumental-home :where(.bg-bg-deep, .bg-bg-elevated, .bg-card, .bg-popover) {
+.monumental-home :where(.bg-bg-deep, .bg-bg-elevated, .bg-card, .bg-popover):not(a, button) {
 	background-color: var(--home-pale);
 }
 .monumental-home :where(.text-fg, .text-foreground, .text-card-foreground, .text-popover-foreground) {
@@ -34,17 +34,17 @@
 .monumental-home :where(.text-primary) {
 	color: var(--home-orange);
 }
-.monumental-home :where(.border-border, .border-input) {
+.monumental-home :where(.border-border, .border-input):not(a, button) {
 	border-color: var(--home-rule);
 }
-.monumental-home :where(.bg-primary) {
+.monumental-home :where(.bg-primary):not(a, button) {
 	background-color: var(--home-orange);
 	color: var(--home-paper);
 }
-.monumental-home :where(.bg-muted) {
+.monumental-home :where(.bg-muted):not(a, button) {
 	background-color: var(--home-pale);
 }
-.monumental-home :where(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-md) {
+.monumental-home :where(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-md):not(a, button) {
 	border-radius: 0;
 }
 .monumental-home #main-nav {
@@ -61,9 +61,6 @@
 	font-size: 22px;
 	font-weight: 750;
 	letter-spacing: -0.04em;
-}
-.monumental-home #main-nav :where(a, button) {
-	border-radius: 0;
 }
 .monumental-home .font-display {
 	font-family: "Geist Variable", sans-serif;
@@ -91,18 +88,8 @@
 .monumental-home .drenched-amber::before {
 	display: none;
 }
-.monumental-home .drenched-amber :where(a, strong) {
-	color: var(--home-paper);
-}
 .monumental-home .drenched-amber :where(a, button):focus-visible {
 	outline-color: var(--home-paper);
-}
-.monumental-home .drenched-amber .ink-button {
-	background: var(--home-paper);
-	color: var(--home-orange);
-}
-.monumental-home .drenched-amber .ink-button:hover {
-	background: var(--home-pale);
 }
 .monumental-home .drenched-amber .ink-link:hover {
 	color: var(--home-paper);
@@ -171,7 +158,7 @@
 	width: min(86%, 1110px);
 	height: 740px;
 	object-fit: cover;
-	mix-blend-mode: multiply;
+	mix-blend-mode: normal;
 	pointer-events: none;
 }
 .monument-hero__copy {
@@ -200,34 +187,6 @@
 	gap: 10px;
 	margin-top: 26px;
 	flex-wrap: wrap;
-}
-.monument-button {
-	min-height: 48px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 20px;
-	padding: 12px 19px;
-	font-size: 13px;
-	font-weight: 600;
-	border: 1px solid var(--home-orange);
-	transition:
-		background-color 150ms,
-		color 150ms;
-}
-.monument-button--solid {
-	background: var(--home-orange);
-	color: var(--home-paper);
-}
-.monument-button--solid:hover {
-	background: var(--home-deep);
-}
-.monument-button--outline {
-	color: var(--home-orange);
-	background: var(--home-paper);
-}
-.monument-button--outline:hover {
-	background: var(--home-pale);
 }
 .monument-hero__colophon {
 	position: absolute;
@@ -454,13 +413,9 @@ html:not([lang="en"]) .monument-hero h1 {
 .monumental-home [class~="bg-primary/[0.04]"] {
 	background-color: var(--home-pale);
 }
-.monumental-home [class~="bg-primary/10"],
-.monumental-home [class~="bg-primary/15"] {
+.monumental-home [class~="bg-primary/10"]:not(a, button),
+.monumental-home [class~="bg-primary/15"]:not(a, button) {
 	background-color: var(--home-pale);
-}
-.monumental-home :where(a, button).bg-primary {
-	box-shadow: none;
-	border-color: var(--home-orange);
 }
 .monument-hero__art {
 	mask-image: linear-gradient(to right, transparent, black 18%);
@@ -469,15 +424,6 @@ html:not([lang="en"]) .monument-hero h1 {
 	.monument-hero__art {
 		mask-image: none;
 	}
-}
-.monumental-home #main-nav button:is(:hover, [data-state="open"], [data-popup-open]) {
-	background-color: var(--home-pale);
-	color: var(--home-orange);
-}
-.monumental-home [data-slot="navigation-menu-link"]:is(:hover, :focus),
-.monumental-home [data-slot="navigation-menu-trigger"]:is(:hover, :focus) {
-	background-color: var(--home-pale);
-	color: var(--home-orange);
 }
 .monumental-home footer .shell > .mt-12 > .flex {
 	flex-wrap: wrap;
