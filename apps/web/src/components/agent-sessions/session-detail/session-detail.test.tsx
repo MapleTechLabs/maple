@@ -537,61 +537,6 @@ describe("SessionOverview", () => {
 		expect(onSelectSpan).toHaveBeenCalledWith("d-tool")
 	})
 
-	// A session reaching for twenty tools would otherwise spend twenty rows on
-	// the ones that cost nothing; a tool that failed keeps its row whatever it
-	// cost, because that is the row a reader came for.
-	it("folds the cheap tail into one row, and keeps the expensive and the failed", () => {
-		const many = sessionOf([
-			agentSpan({ spanId: "m-agent", startMs: 0, durationMs: 60 * SECOND }),
-			toolSpan({
-				spanId: "m-slow",
-				parentSpanId: "m-agent",
-				startMs: 0,
-				durationMs: 30 * SECOND,
-				toolName: "run_tests",
-			}),
-			toolSpan({
-				spanId: "m-cheap-1",
-				parentSpanId: "m-agent",
-				startMs: 31 * SECOND,
-				durationMs: 200,
-				toolName: "list_shards",
-			}),
-			toolSpan({
-				spanId: "m-cheap-2",
-				parentSpanId: "m-agent",
-				startMs: 32 * SECOND,
-				durationMs: 200,
-				toolName: "query_data",
-			}),
-			toolSpan({
-				spanId: "m-cheap-3",
-				parentSpanId: "m-agent",
-				startMs: 33 * SECOND,
-				durationMs: 200,
-				toolName: "search_logs",
-			}),
-			toolSpan({
-				spanId: "m-failed",
-				parentSpanId: "m-agent",
-				startMs: 34 * SECOND,
-				durationMs: 100,
-				toolName: "git_diff",
-				statusCode: "Error",
-			}),
-		])
-		render(<Overview turns={many.turns} summary={many.summary} />)
-
-		expect(screen.getByText("run_tests")).toBeTruthy()
-		// Cheapest of all, but it failed, so it stays a row of its own.
-		expect(screen.getByText("git_diff")).toBeTruthy()
-		expect(screen.queryByText("query_data")).toBeNull()
-
-		const fold = screen.getByRole("button", { name: "3 tools, 1 call each" })
-		fireEvent.click(fold)
-		expect(screen.getByText("query_data")).toBeTruthy()
-	})
-
 	it("says no cost was reported rather than pricing tokens itself", () => {
 		render(<Overview />)
 

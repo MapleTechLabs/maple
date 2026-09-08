@@ -515,16 +515,6 @@ function Rail({ summary }: { summary: SessionSummary }) {
 /* Tools                                                                      */
 /* -------------------------------------------------------------------------- */
 
-/** The cheap tail folds into one summary row from this many up: below it the
- *  fold costs a row to save the same row. */
-const TOOL_FOLD_MIN = 3
-
-/** How much of the session's tool time the folded tail may add up to. Past it a
- *  tool is part of where the time went and keeps its row. */
-const TOOL_FOLD_MAX_SHARE = 0.1
-
-const FOLD_KEY = " fold"
-
 /**
  * What the session reached for, as a ledger rather than a ranking.
  *
@@ -542,9 +532,6 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 		[summary.startMs, summary.endMs],
 	)
 
-	const fold = foldableTail(summary.tools)
-	const listed = summary.tools.filter((tool) => !fold.includes(tool))
-
 	const toggle = (key: string) => setExpanded((current) => (current === key ? undefined : key))
 
 	return (
@@ -557,7 +544,7 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 				<>
 					<div className="flex flex-col">
 						<ToolLedgerColumns axis={axis} />
-						{listed.map((tool) => (
+						{summary.tools.map((tool) => (
 							<ToolLedgerRow
 								key={tool.name}
 								tool={tool}
@@ -568,42 +555,11 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 								onOpenSpan={onOpenSpan}
 							/>
 						))}
-						{fold.length > 0 && (
-							<ToolFoldRow
-								tools={fold}
-								axis={axis}
-								sessionStartMs={summary.startMs}
-								expanded={expanded === FOLD_KEY}
-								onToggle={() => toggle(FOLD_KEY)}
-								onOpenSpan={onOpenSpan}
-							/>
-						)}
 					</div>
 				</>
 			)}
 		</section>
 	)
-}
-
-/**
- * The run of tools at the bottom worth one row between them: no failures, and
- * together a rounding error against the session's tool time. Tools are ordered
- * by reach, so this is the least-called end — and a tool that cost real time
- * keeps its own row however rarely it was reached for.
- */
-function foldableTail(tools: readonly SessionToolUsage[]): readonly SessionToolUsage[] {
-	const budget = tools.reduce((total, tool) => total + tool.totalMs, 0) * TOOL_FOLD_MAX_SHARE
-	const fold: SessionToolUsage[] = []
-	let spent = 0
-	// Cheapest first, and a tool that failed is passed over rather than stopping
-	// the walk: a failure keeps its row however little time it took.
-	for (const tool of [...tools].reverse()) {
-		if (tool.failed > 0) continue
-		if (spent + tool.totalMs > budget) break
-		spent += tool.totalMs
-		fold.push(tool)
-	}
-	return fold.length >= TOOL_FOLD_MIN ? fold : []
 }
 
 function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
@@ -787,112 +743,6 @@ function ToolLedgerRow({
 	)
 }
 
-/** The tail of the ledger: tools called once that worked. Their calls still ride
- *  the lane, so folding them hides a row rather than a fact. */
-function ToolFoldRow({
-	tools,
-	axis,
-	sessionStartMs,
-	expanded,
-	onToggle,
-	onOpenSpan,
-}: {
-	tools: readonly SessionToolUsage[]
-	axis: SessionAxis
-	sessionStartMs: number
-	expanded: boolean
-	onToggle: () => void
-	onOpenSpan: OpenSpan
-}) {
-	const events = tools.flatMap((tool) => tool.events)
-	const totalMs = tools.reduce((total, tool) => total + tool.totalMs, 0)
-	const slowestMs = Math.max(...tools.map((tool) => tool.slowestMs))
-
-	return (
-		<div className="flex flex-col border-border border-t">
-			<div className="flex h-6 items-center gap-4 text-muted-foreground">
-				<button
-					type="button"
-					onClick={onToggle}
-					aria-expanded={expanded}
-					className={cn(
-						LEDGER_NAME,
-						"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary",
-					)}
-				>
-					<ChevronRightIcon
-						aria-hidden
-						size={9}
-						className={cn("shrink-0 transition-transform", expanded && "rotate-90")}
-					/>
-					<span className="min-w-0 truncate font-mono text-xs">{foldLabel(tools)}</span>
-				</button>
-				<span className={cn(LEDGER_COUNT, "font-mono text-xs tabular-nums")}>
-					{tools.reduce((total, tool) => total + tool.calls, 0)}
-				</span>
-				<span className={cn(LEDGER_COUNT, "font-mono text-muted-foreground/50 text-xs tabular-nums")}>
-					.
-				</span>
-				<span className={cn(LEDGER_TIME, "font-mono text-xs tabular-nums")}>
-					{formatToolDuration(totalMs)}
-				</span>
-				<span className={cn(LEDGER_TIME, "font-mono text-xs tabular-nums")}>
-					{formatToolDuration(slowestMs)}
-				</span>
-				<CallLane
-					events={events}
-					axis={axis}
-					sessionStartMs={sessionStartMs}
-					toolName={`${tools.length} tools`}
-					muted
-					onOpenSpan={onOpenSpan}
-				/>
-			</div>
-
-			{expanded &&
-				tools.map((tool) => (
-					<div key={tool.name} className="flex h-6 items-center gap-4">
-						<span
-							className={cn(LEDGER_NAME, "truncate pl-[15px] font-mono text-xs")}
-							title={tool.name}
-						>
-							{tool.name}
-						</span>
-						<span className={cn(LEDGER_COUNT, "font-mono text-xs tabular-nums")}>
-							{tool.calls}
-						</span>
-						<span
-							className={cn(
-								LEDGER_COUNT,
-								"font-mono text-muted-foreground/50 text-xs tabular-nums",
-							)}
-						>
-							.
-						</span>
-						<span className={cn(LEDGER_TIME, "font-mono text-xs tabular-nums")}>
-							{formatToolDuration(tool.totalMs)}
-						</span>
-						<span
-							className={cn(
-								LEDGER_TIME,
-								"font-mono text-muted-foreground text-xs tabular-nums",
-							)}
-						>
-							{formatToolDuration(tool.slowestMs)}
-						</span>
-						<CallLane
-							events={tool.events}
-							axis={axis}
-							sessionStartMs={sessionStartMs}
-							toolName={tool.name}
-							onOpenSpan={onOpenSpan}
-						/>
-					</div>
-				))}
-		</div>
-	)
-}
-
 /** Every call of a tool on the session's clock. The hairline is the session, a
  *  mark is a call; a mark thinner than 3px would otherwise vanish. */
 function CallLane({
@@ -974,14 +824,6 @@ function FailedCallRow({
 			</Button>
 		</div>
 	)
-}
-
-/** `6 tools, 1 call each` where that is the whole story, and a plain count
- *  where it is not. */
-function foldLabel(tools: readonly SessionToolUsage[]): string {
-	return tools.every((tool) => tool.calls === 1)
-		? `${tools.length} tools, 1 call each`
-		: `${tools.length} more tools`
 }
 
 function callWhen(event: SessionToolCall, sessionStartMs: number): string {
