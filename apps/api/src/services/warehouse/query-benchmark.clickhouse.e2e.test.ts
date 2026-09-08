@@ -75,17 +75,24 @@ const artifacts = fileURLToPath(new URL(`../../../scripts/.bench/${database}/`, 
 const benchScript = fileURLToPath(new URL("../../../scripts/bench-queries.ts", import.meta.url))
 const runCli = async (label: string, args: ReadonlyArray<string>) => {
 	const result = await new Promise<{ code: number; output: string }>((resolve, reject) => {
-		const child = spawn("bun", [benchScript, ...args], {
-			env: {
-				...process.env,
-				CLICKHOUSE_URL: clickhouseUrl,
-				CLICKHOUSE_USER: clickhouseUser,
-				CLICKHOUSE_PASSWORD: clickhousePassword,
-				CLICKHOUSE_DATABASE: database,
+		const nodeBin = fileURLToPath(
+			new URL("bin.mjs", import.meta.resolve("@maple-dev/clickhouse-builder/benchmark/cli")),
+		)
+		const child = spawn(
+			label === "baseline" ? "node" : "bun",
+			[label === "baseline" ? nodeBin : benchScript, ...args],
+			{
+				env: {
+					...process.env,
+					CLICKHOUSE_URL: clickhouseUrl,
+					CLICKHOUSE_USER: clickhouseUser,
+					CLICKHOUSE_PASSWORD: clickhousePassword,
+					CLICKHOUSE_DATABASE: database,
+				},
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 90_000,
 			},
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: 90_000,
-		})
+		)
 		let output = ""
 		child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
 			output += chunk
@@ -317,14 +324,27 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 		const makeSuite = (compiled: typeof raw): Suite => ({
 			source: "populated-maple-e2e",
 			samples: [
-				caseFromCompiled("traces/overview/5m", compiled, { ...inputs, ...options }),
-				caseFromCompiled("services/facets", facets, inputs),
+				{
+					...caseFromCompiled("traces/overview/5m", compiled, { ...inputs, ...options }),
+					results: "unordered",
+				},
+				{ ...caseFromCompiled("services/facets", facets, inputs), results: "unordered" },
 			],
 		})
 		const baselineSuite = join(artifacts, "baseline-suite.json")
-		const candidateSuite = join(artifacts, "candidate-suite.json")
+		const candidateSuite = join(artifacts, "candidate-suite.ts")
 		await writeFile(baselineSuite, JSON.stringify(makeSuite(raw)))
-		await writeFile(candidateSuite, JSON.stringify(makeSuite(rollup)))
+		await writeFile(
+			candidateSuite,
+			`
+import * as CH from "@maple/query-engine/ch"
+import * as Bench from "@maple-dev/clickhouse-builder/benchmark"
+export default Bench.defineSuite({ name: "populated-maple-e2e", dataset: ${JSON.stringify(database)}, cases: [
+ Bench.query({ id: "traces/overview/5m", inputs: ${JSON.stringify({ ...inputs, ...options })}, compile: (values) => CH.compile(CH.tracesTimeseriesQuery({ ...values, overviewTiers: "minute" }), values), results: "unordered" }),
+ Bench.query({ id: "services/facets", inputs: ${JSON.stringify(inputs)}, compile: (values) => CH.compileUnion(CH.servicesFacetsQuery(), values), results: "unordered" }),
+] })
+`,
+		)
 		const baselinePath = join(artifacts, "baseline.json")
 		const candidatePath = join(artifacts, "candidate.json")
 		const controls = [

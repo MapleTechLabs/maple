@@ -43,6 +43,18 @@
 		"./sql": {
 			"types": "./dist/sql.d.mts",
 			"import": "./dist/sql.mjs"
+		},
+		"./benchmark": {
+			"types": "./dist/benchmark/index.d.mts",
+			"import": "./dist/benchmark/index.mjs"
+		},
+		"./benchmark/http": {
+			"types": "./dist/benchmark/http.d.mts",
+			"import": "./dist/benchmark/http.mjs"
+		},
+		"./benchmark/cli": {
+			"types": "./dist/benchmark/cli.d.mts",
+			"import": "./dist/benchmark/cli.mjs"
 		}
 	},
 	"publishConfig": {
@@ -70,5 +82,8 @@
 	},
 	"peerDependencies": {
 		"effect": ">=4.0.0-rc.111 <5"
+	},
+	"bin": {
+		"ch-bench": "./dist/benchmark/bin.mjs"
 	}
 }

@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { maskLiteralsAndComments, parseStatement, renderStatement } from "@maple-dev/clickhouse-builder/sql"
+import { maskLiteralsAndComments, parseStatement, renderStatement } from "../sql/index"
 import { BenchmarkError } from "./model"
 
 const withoutTrailingTerminator = (sql: string): string => {

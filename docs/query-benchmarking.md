@@ -4,8 +4,19 @@ Use `bun run bench:queries` from the repository root. The CLI compiles the real
 query catalog, runs fixed workloads against ClickHouse, saves evidence, and compares
 implementations by **case ID**, so changing SQL does not lose the baseline.
 
-The reusable, driver-free API lives at `@maple/query-engine/benchmark`. The CLI is
-`apps/api/scripts/bench-queries.ts`; it owns credentials, HTTP, files, and printing.
+The reusable, driver-free API lives at `@maple-dev/clickhouse-builder/benchmark`.
+`@maple/query-engine/benchmark` composes it with Maple catalog fixtures.
+`apps/api/scripts/bench-queries.ts` owns Maple catalog export and trace mining;
+execution, HTTP, files and printing use the published `ch-bench` CLI. See the
+[public benchmark guide](../lib/clickhouse-builder/docs/benchmarking.md) and
+[agent playbook](../lib/clickhouse-builder/docs/benchmark-agent.md).
+
+`run` accepts a TypeScript suite directly and recompiles it on each invocation.
+`doctor`, `export`, `schema`, `--json`, per-case verification, and multi-metric
+`--budgets` are also available through `bun run bench:queries`. Comparisons now
+always return a nonzero exit code for a failed gate; `--fail-on-regression` remains
+accepted. Artifacts from generic commands default to `.bench/` under the working
+directory; pass `--out apps/api/scripts/.bench/...` for Maple evidence.
 No benchmark code is added to the query engine's root barrel or production paths.
 
 This replaces the previous `@maple/query-engine/sql-catalog` and
@@ -62,7 +73,7 @@ bun run bench:queries inspect apps/api/scripts/.bench/candidate.json \
   --out apps/api/scripts/.bench/candidate-plans.json
 ```
 
-Artifacts default to `apps/api/scripts/.bench/`, which is gitignored. They contain
+Maple catalog/fetch artifacts default to `apps/api/scripts/.bench/`, which is gitignored. They contain
 SQL literals and may contain tenant identifiers. Target credentials are not saved.
 `--dataset` is a revision label, not an automatic snapshot or a data-drift detector.
 The CLI does not create tables, seed data, deploy schema changes, or flush global
@@ -193,7 +204,7 @@ the change. It does not automatically recommend an index or materialized view.
 ## Validate tooling changes
 
 ```sh
-bun run --cwd packages/query-engine test -- src/benchmark/benchmark.test.ts
+bun run --cwd lib/clickhouse-builder test
 bun run --cwd packages/query-engine test -- src/benchmark/catalog.test.ts
 bun run --cwd packages/query-engine-integrations test -- src/benchmark/catalog.test.ts
 bun run --cwd packages/query-engine typecheck

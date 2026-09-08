@@ -43,7 +43,7 @@ import { compilePipeQuery } from "../ch/pipe-dispatch"
 import { compiledQueryOf } from "../execution/compiled-input"
 import { fingerprintSql } from "../execution/fingerprint"
 import { makeQueryEngineExecute, type QueryEngineWarehouse, type QueryTenant } from "../runtime"
-import { BenchmarkError, validateSuite, type Suite } from "./model"
+import { BenchmarkError, validateSuite, type Suite } from "@maple-dev/clickhouse-builder/benchmark"
 
 // Fixture inputs
 

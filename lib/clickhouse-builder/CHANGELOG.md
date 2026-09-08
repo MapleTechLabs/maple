@@ -59,3 +59,10 @@ First public release.
 - `T.int64`, and `arraySort` / `arrayReverseSort` / `arrayDistinct` /
   `arrayPushFront` / `arrayElement` / `hex` join the wrapped catalog.
 - Requires Effect 4 (`effect@rc`) as a peer dependency.
+
+## Unreleased
+
+- Ship the reusable benchmark engine, HTTP transport and `ch-bench` CLI.
+- Add Effect suite definitions, JSON protocol, capability checks, result verification,
+  schema provenance, and multi-metric comparison gates.
+- Include benchmark documentation and an agent playbook in the published package.

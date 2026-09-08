@@ -1,6 +1,3 @@
-// Developer tooling only; deliberately outside the runtime/root barrel.
-export * from "./model"
-export * from "./sql"
-export * from "./compare"
-export * from "./runner"
+// Maple catalog plus the public, driver-free benchmark engine.
+export * from "@maple-dev/clickhouse-builder/benchmark"
 export * from "./catalog"

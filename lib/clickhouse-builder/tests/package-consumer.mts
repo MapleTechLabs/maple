@@ -5,6 +5,9 @@ import { Effect, Schema } from "effect"
 import * as CH from "@maple-dev/clickhouse-builder"
 import * as F from "@maple-dev/clickhouse-builder/expr"
 import * as T from "@maple-dev/clickhouse-builder/types"
+import * as Bench from "@maple-dev/clickhouse-builder/benchmark"
+import { makeHttpClient } from "@maple-dev/clickhouse-builder/benchmark/http"
+import { runCli } from "@maple-dev/clickhouse-builder/benchmark/cli"
 import * as SQL from "@maple-dev/clickhouse-builder/sql"
 
 const events = CH.table("events", { id: T.uint64, name: T.string })
@@ -37,3 +40,25 @@ const checkTypes = () => {
 }
 void checkTypes
 console.log("Isolated tarball imports, types, compilation and codecs passed")
+
+const suite = await Effect.runPromise(
+	Bench.defineSuite({
+		name: "consumer",
+		dataset: "snapshot",
+		cases: [
+			Bench.query({
+				id: "events/name",
+				inputs: { name: "Maple" },
+				compile: (inputs) => CH.compile(query, inputs),
+				results: "unordered",
+			}),
+		],
+	}),
+)
+assert.equal(suite.samples[0]?.id, "events/name")
+assert.match(suite.samples[0]!.sampleSql, /Maple/)
+assert.equal(
+	await Effect.runPromise(makeHttpClient({ url: "http://localhost:8123" }).target),
+	"http://localhost:8123",
+)
+assert.equal(typeof runCli, "function")

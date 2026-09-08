@@ -43,6 +43,7 @@ export const compareRuns = (a: RunOutput, b: RunOutput, options: ComparisonOptio
 		"warmupRuns",
 		"verifyResults",
 		"resultOrder",
+		"schemaHash",
 	] as const) {
 		if (a[key] !== b[key]) incompatible.push(`${key} differs`)
 	}
@@ -92,7 +93,9 @@ export const compareRuns = (a: RunOutput, b: RunOutput, options: ComparisonOptio
 					...(before.profile !== after.profile ? ["profile differs"] : []),
 				].join("; "),
 			)
-		if (a.verifyResults) {
+		if (before.results !== after.results)
+			return finish("incompatible", "Result verification mode differs")
+		if (before.results !== "skip" && (before.results !== undefined || a.verifyResults)) {
 			const ah = hashes(before)
 			const bh = hashes(after)
 			if (
@@ -144,4 +147,63 @@ export const compareRuns = (a: RunOutput, b: RunOutput, options: ComparisonOptio
 		rows,
 		failed: rows.length === 0 || rows.some((r) => r.status !== "ok"),
 	}
+}
+
+export type Verdict = "pass" | "regression" | "inconclusive" | "invalid"
+
+/** Each budget gates independently. Missing evidence never counts as a pass. */
+export const compareBudgets = (
+	baseline: RunOutput,
+	candidate: RunOutput,
+	budgets: ReadonlyArray<ComparisonOptions>,
+) => {
+	const comparisons = budgets.map((budget) => compareRuns(baseline, candidate, budget))
+	const statuses = comparisons.flatMap((comparison) => comparison.rows.map((row) => row.status))
+	const invalid =
+		budgets.length === 0 ||
+		budgets.some(
+			(b) =>
+				!Number.isFinite(b.thresholdPercent) ||
+				b.thresholdPercent < 0 ||
+				!Number.isFinite(b.minDelta) ||
+				b.minDelta < 0,
+		) ||
+		[baseline, candidate].some(
+			(run) => !run.results.length || new Set(run.results.map((r) => r.id)).size !== run.results.length,
+		) ||
+		statuses.some((s) => ["failed", "incompatible", "result-mismatch"].includes(s))
+	const verdict: Verdict = invalid
+		? "invalid"
+		: statuses.includes("regression")
+			? "regression"
+			: statuses.some((s) => s !== "ok") ||
+				  baseline.dataset === "unspecified" ||
+				  candidate.dataset === "unspecified"
+				? "inconclusive"
+				: "pass"
+	const hashesValid =
+		baseline.results.length === candidate.results.length &&
+		baseline.results.every((before) => {
+			const after = candidate.results.find((r) => r.id === before.id)
+			return (
+				after &&
+				[before, after].every(
+					(r) =>
+						!r.error && r.runs.length > 0 && r.runs.every((run) => run.resultHash !== undefined),
+				) &&
+				new Set([...before.runs, ...after.runs].map((r) => r.resultHash)).size === 1
+			)
+		})
+	const correctness = statuses.includes("result-mismatch")
+		? "different-or-unstable"
+		: hashesValid &&
+			  [baseline, candidate].every((run) =>
+					run.results.every(
+						(r) => r.results !== "skip" && (r.results !== undefined || run.verifyResults),
+					),
+			  )
+			? "verified"
+			: "not-fully-verified"
+
+	return { version: 1 as const, verdict, correctness, failed: verdict !== "pass", comparisons }
 }

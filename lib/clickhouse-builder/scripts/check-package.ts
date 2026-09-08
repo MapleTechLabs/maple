@@ -80,6 +80,12 @@ const program = Effect.gen(function* () {
 	yield* runCommand(path.join(temporary, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], temporary)
 	// The script runs on Bun; the published library must also work in Node.
 	yield* runCommand("node", ["consumer.mts"], temporary)
+	yield* runCommand(
+		path.join(temporary, "node_modules/.bin/ch-bench"),
+		["schema", "--json"],
+		temporary,
+		true,
+	)
 })
 
 // This is the CLI entry point; provide platform services once at the boundary.

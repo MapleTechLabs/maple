@@ -202,3 +202,10 @@ and pinned ClickHouse version matrix.
 ## License
 
 MIT
+
+## Query benchmarks
+
+The optional `@maple-dev/clickhouse-builder/benchmark` entry point and bundled
+`ch-bench` CLI measure real queries, compare fixed workloads, and save evidence.
+See [Benchmarking](docs/benchmarking.md) and the
+[agent playbook](docs/benchmark-agent.md). The root SQL builder remains driver-free.

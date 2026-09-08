@@ -1,3 +1,5 @@
+import * as T from "../types"
+import * as CH from "../ch/index"
 import { describe, expect, it } from "vitest"
 import { Effect, Schema } from "effect"
 import {
@@ -6,6 +8,9 @@ import {
 	BenchmarkError,
 	canonicalJson,
 	compareRuns,
+	compareBudgets,
+	defineSuite,
+	query,
 	explainSql,
 	metricNumber,
 	percentile,
@@ -313,5 +318,111 @@ describe("benchmark runner", () => {
 		expect(result.results[0]?.runs).toHaveLength(1)
 		expect(result.results[1]?.runs).toHaveLength(3)
 		expect(result.warnings).toContain("log access denied")
+	})
+})
+
+describe("agent experiment contracts", () => {
+	const budgets = [
+		{ metric: "meanReadBytes", thresholdPercent: 10, minDelta: 10 },
+		{ metric: "p95WallMs", thresholdPercent: 10, minDelta: 1 },
+	] as const
+	it("gates every budget and separates validity from performance", () => {
+		expect(compareBudgets(report(), report(20), budgets).verdict).toBe("regression")
+		expect(compareBudgets(report(), report(), budgets)).toMatchObject({
+			verdict: "pass",
+			correctness: "verified",
+		})
+		expect(compareBudgets(report(), { ...report(), dataset: "changed" }, budgets).verdict).toBe("invalid")
+		expect(
+			compareBudgets(
+				{ ...report(), dataset: "unspecified" },
+				{ ...report(), dataset: "unspecified" },
+				budgets,
+			).verdict,
+		).toBe("inconclusive")
+		expect(compareBudgets(report(), report(), []).verdict).toBe("invalid")
+		expect(
+			compareBudgets(
+				report(),
+				{ ...report(), results: [...report().results, ...report().results] },
+				budgets,
+			).verdict,
+		).toBe("invalid")
+		expect(
+			compareBudgets(
+				{ ...report(), schemaHash: "before" },
+				{ ...report(), schemaHash: "after" },
+				budgets,
+			).verdict,
+		).toBe("invalid")
+	})
+	it("does not claim correctness when verification was skipped or incomplete", () => {
+		const skipped = { ...report(), verifyResults: false }
+		expect(compareBudgets(skipped, skipped, budgets).correctness).toBe("not-fully-verified")
+		const failed = { ...report(), results: report().results.map((r) => ({ ...r, error: "failed" })) }
+		expect(compareBudgets(report(), failed, budgets).correctness).toBe("not-fully-verified")
+		const changed = {
+			...report(),
+			results: report().results.map((r) => ({
+				...r,
+				runs: r.runs.map((v) => ({ ...v, resultHash: "changed" })),
+			})),
+		}
+		expect(compareBudgets(report(), changed, budgets)).toMatchObject({
+			verdict: "invalid",
+			correctness: "different-or-unstable",
+		})
+	})
+	it("compiles lazily from recorded inputs and forwards per-case verification modes", async () => {
+		const table = CH.table("events", { name: T.string })
+		let compilations = 0
+		const definition = defineSuite({
+			name: "events",
+			dataset: "snapshot",
+			cases: [
+				query({
+					id: "events/name",
+					inputs: { name: "checkout" },
+					results: "ordered",
+					compile: (inputs) => {
+						compilations++
+						return CH.compile(
+							CH.from(table)
+								.select("name")
+								.where(($) => [$.name.eq(CH.param.string("name"))]),
+							inputs,
+						)
+					},
+				}),
+			],
+		})
+		expect(compilations).toBe(0)
+		const workload = await Effect.runPromise(definition)
+		expect(compilations).toBe(1)
+		expect(workload.samples[0]).toMatchObject({
+			id: "events/name",
+			inputs: '{"name":"checkout"}',
+			results: "ordered",
+		})
+		const calls: Array<{ sql: string; mode: string | undefined }> = []
+		const measured = await Effect.runPromise(
+			runSuite(
+				{
+					execute: (sql, mode) =>
+						Effect.sync(() => {
+							calls.push({ sql, mode })
+							return { queryId: "q", wallMs: 1, summary: {}, resultHash: "same" }
+						}),
+					collectLogs: () => Effect.succeed({ entries: [], warnings: [] }),
+				},
+				workload,
+				{ runs: 1, warmup: 0, settings: {}, verifyResults: false },
+			),
+		)
+		expect(calls[0]).toMatchObject({
+			mode: "ordered",
+			sql: expect.stringContaining("FORMAT JSONEachRow"),
+		})
+		expect(measured.results[0]?.results).toBe("ordered")
 	})
 })

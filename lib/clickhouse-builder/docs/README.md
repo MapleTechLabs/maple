@@ -15,7 +15,7 @@ well as an Effect application. The database client remains your choice.
 You do not need a Maple account, Maple's schema, or tenant columns. Tenant analysis is an
 optional feature for applications that share tables between tenants.
 
-The package does not manage connections, create tables, run migrations, insert rows, or provide
+The root builder does not manage connections, create tables, run migrations, insert rows, or provide
 an ORM. It does not validate SQL against a live server, choose query plans, enforce authorization,
 or supply retries. Existing ClickHouse tables and your executor own those responsibilities.
 The first npm release is pending; [Getting started](./getting-started.md) includes a source-build
@@ -69,3 +69,10 @@ Roughly in reading order.
 
 The root barrel is curated, not exhaustive — see
 [the reference](./reference.md#whats-only-on-a-subpath) for what lives only on a subpath.
+
+## Query benchmarks
+
+The optional `@maple-dev/clickhouse-builder/benchmark` entry point and bundled
+`ch-bench` CLI measure real queries, compare fixed workloads, and save evidence.
+See [Benchmarking](./benchmarking.md) and the
+[agent playbook](./benchmark-agent.md). The root SQL builder remains driver-free.

@@ -10,7 +10,7 @@ import {
 	type SampleResult,
 	type Suite,
 } from "./model"
-import { fingerprintSql } from "../execution/fingerprint"
+import { fingerprintSql } from "./fingerprint"
 import { benchmarkSql, validateReplaySql } from "./sql"
 
 export interface BenchmarkResponse {
@@ -31,7 +31,10 @@ export interface LogMetrics {
 }
 
 export interface BenchmarkTransport {
-	readonly execute: (sql: string) => Effect.Effect<BenchmarkResponse, BenchmarkError>
+	readonly execute: (
+		sql: string,
+		results?: "ordered" | "unordered" | "skip",
+	) => Effect.Effect<BenchmarkResponse, BenchmarkError>
 	/** Called once, after ALL measured executions, never between iterations. */
 	readonly collectLogs: (queryIds: ReadonlyArray<string>) => Effect.Effect<
 		{
@@ -40,6 +43,14 @@ export interface BenchmarkTransport {
 		},
 		BenchmarkError
 	>
+}
+
+export interface BenchmarkProgress {
+	readonly type: "case-failed" | "round-complete" | "collecting-logs"
+	readonly message: string
+	readonly caseId?: string
+	readonly round?: number
+	readonly warmup?: boolean
 }
 
 export interface RunOptions {
@@ -55,7 +66,7 @@ export const runSuite = (
 	transport: BenchmarkTransport,
 	suite: Suite,
 	options: RunOptions,
-	onProgress: (message: string) => Effect.Effect<void> = () => Effect.void,
+	onProgress: (event: BenchmarkProgress) => Effect.Effect<void> = () => Effect.void,
 ) =>
 	Effect.gen(function* () {
 		yield* validateSuite(suite)
@@ -78,20 +89,28 @@ export const runSuite = (
 			sql: benchmarkSql(
 				sample.sampleSql,
 				options.settings,
-				options.verifyResults ? "JSONEachRow" : undefined,
+				sample.results !== "skip" && (sample.results !== undefined || options.verifyResults)
+					? "JSONEachRow"
+					: undefined,
 			),
 			runs: [] as RunMetrics[],
 			error: undefined as string | undefined,
+			failedQueryId: undefined as string | undefined,
 		}))
 		for (let round = 0; round < options.warmup + options.runs; round++) {
 			const warm = round < options.warmup
 			for (let index = 0; index < states.length; index++) {
 				const state = states[(index + round) % states.length]
 				if (!state || state.error) continue
-				const outcome = yield* transport.execute(state.sql).pipe(Effect.result)
+				const outcome = yield* transport.execute(state.sql, state.sample.results).pipe(Effect.result)
 				if (outcome._tag === "Failure") {
 					state.error = outcome.failure.message
-					yield* onProgress(`${sampleId(state.sample)}: FAILED — ${state.error}`)
+					state.failedQueryId = outcome.failure.queryId
+					yield* onProgress({
+						type: "case-failed",
+						caseId: sampleId(state.sample),
+						message: `${sampleId(state.sample)}: FAILED — ${state.error}`,
+					})
 					continue
 				}
 				if (!warm) {
@@ -111,12 +130,15 @@ export const runSuite = (
 					})
 				}
 			}
-			yield* onProgress(
-				`${warm ? "Warmup" : "Measured"} round ${warm ? round + 1 : round - options.warmup + 1}/${warm ? options.warmup : options.runs}`,
-			)
+			yield* onProgress({
+				type: "round-complete",
+				round: warm ? round + 1 : round - options.warmup + 1,
+				warmup: warm,
+				message: `${warm ? "Warmup" : "Measured"} round ${warm ? round + 1 : round - options.warmup + 1}/${warm ? options.warmup : options.runs}`,
+			})
 		}
 		const queryIds = states.flatMap((state) => state.runs.map((run) => run.queryId))
-		yield* onProgress("Collecting query logs after timing…")
+		yield* onProgress({ type: "collecting-logs", message: "Collecting query logs after timing…" })
 		const logResult = yield* transport.collectLogs(queryIds).pipe(Effect.result)
 		const warnings =
 			logResult._tag === "Failure" ? [logResult.failure.message] : [...logResult.success.warnings]
@@ -150,7 +172,11 @@ export const runSuite = (
 				warnings.push(
 					`${sampleId(state.sample)} read zero rows in at least one run; verify the dataset/window before optimizing.`,
 				)
-			if (options.verifyResults && new Set(runs.map((run) => run.resultHash)).size > 1)
+			if (
+				state.sample.results !== "skip" &&
+				(state.sample.results !== undefined || options.verifyResults) &&
+				new Set(runs.map((run) => run.resultHash)).size > 1
+			)
 				warnings.push(`${sampleId(state.sample)} returned different results across iterations.`)
 			return {
 				id: sampleId(state.sample),
@@ -159,9 +185,10 @@ export const runSuite = (
 				profile: state.sample.profile,
 				inputs: state.sample.inputs ?? canonicalJson({ sql: state.sample.sampleSql }),
 				sql: state.sql,
+				results: state.sample.results,
 				runs,
 				aggregates: aggregate(runs),
-				...(state.error ? { error: state.error } : undefined),
+				...(state.error ? { error: state.error, failedQueryId: state.failedQueryId } : undefined),
 			}
 		})
 		return { results, warnings }

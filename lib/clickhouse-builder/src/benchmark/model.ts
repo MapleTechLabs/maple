@@ -1,14 +1,14 @@
 import { Effect, Schema } from "effect"
-import type { CompiledQuery } from "@maple-dev/clickhouse-builder"
-import { fingerprintSql } from "../execution/fingerprint"
+import type { CompiledQuery } from "../ch/compile"
+import { fingerprintSql } from "./fingerprint"
 
 const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 const Metric = Schema.NullOr(NonNegative)
 const Text = Schema.String.check(Schema.isMinLength(1))
 
 export class BenchmarkError extends Schema.TaggedError<BenchmarkError>()(
-	"@maple/query-engine/BenchmarkError",
-	{ message: Schema.String },
+	"@maple-dev/clickhouse-builder/BenchmarkError",
+	{ message: Schema.String, queryId: Schema.optionalKey(Schema.String) },
 ) {}
 
 /** `id` identifies the experiment, independently of its SQL implementation.
@@ -20,11 +20,17 @@ export const Sample = Schema.Struct({
 	context: Schema.String,
 	profile: Schema.String,
 	sampleSql: Text,
+	results: Schema.optionalKey(Schema.Literals(["ordered", "unordered", "skip"])),
 })
 export type Sample = typeof Sample.Type
 
 /** Also accepts files produced by the production trace miner. */
-export const Suite = Schema.Struct({ source: Text, samples: Schema.Array(Sample) })
+export const Suite = Schema.Struct({
+	version: Schema.optionalKey(Schema.Literal(1)),
+	source: Text,
+	dataset: Schema.optionalKey(Text),
+	samples: Schema.Array(Sample),
+})
 export type Suite = typeof Suite.Type
 
 export const RunMetrics = Schema.Struct({
@@ -59,9 +65,11 @@ export const SampleResult = Schema.Struct({
 	context: Schema.String,
 	profile: Schema.String,
 	sql: Text,
+	results: Schema.optionalKey(Schema.Literals(["ordered", "unordered", "skip"])),
 	runs: Schema.Array(RunMetrics),
 	aggregates: Aggregates,
 	error: Schema.optionalKey(Schema.String),
+	failedQueryId: Schema.optionalKey(Schema.String),
 })
 export type SampleResult = typeof SampleResult.Type
 
@@ -73,6 +81,8 @@ export const RunOutput = Schema.Struct({
 	serverVersion: Text,
 	dataset: Text,
 	sourceFile: Text,
+	sourceRevision: Schema.optionalKey(Text),
+	schemaHash: Schema.optionalKey(Text),
 	source: Text,
 	runsPerQuery: NonNegative.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 	warmupRuns: NonNegative.check(Schema.isInt()),
