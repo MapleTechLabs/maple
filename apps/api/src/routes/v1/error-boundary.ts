@@ -7,6 +7,7 @@ import {
 	V1UnexpectedErrors,
 } from "@maple/domain/http"
 import { describeSchemaIssue, summarizeSchemaError } from "@/routes/schema-error-detail"
+import { observeServerError } from "@/routes/server-error-observability"
 
 class V1RouteExecutionDefect extends Schema.TaggedError<V1RouteExecutionDefect>()(
 	"@maple/api/routes/v1/V1RouteExecutionDefect",
@@ -77,6 +78,7 @@ const V1UnexpectedErrorsLive = Layer.succeed(
 	V1UnexpectedErrors,
 	V1UnexpectedErrors.of((httpEffect, { endpoint, group }) =>
 		httpEffect.pipe(
+			Effect.tapError(observeServerError(endpoint, group)),
 			Effect.catchDefect((cause) => {
 				const defectType = cause instanceof Error ? cause.name : typeof cause
 				const error = new V1RouteExecutionDefect({
