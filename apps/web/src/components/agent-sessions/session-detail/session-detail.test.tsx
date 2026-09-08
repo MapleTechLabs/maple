@@ -1259,34 +1259,41 @@ describe("SessionViews", () => {
 
 describe("SessionHeader", () => {
 	it("names the session after its agent, with the framework as a fact beside it", () => {
-		const { turns: vendorTurns, summary: vendorSummary } = sessionOf([
+		const { summary: vendorSummary } = sessionOf([
 			agentSpan({ spanId: "v-agent", startMs: 0, durationMs: SECOND, vendorId: "langchain" }),
 		])
-		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} turns={vendorTurns} />)
+		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} />)
 		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("billing-agent")
 		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
 	})
 
 	it("demotes the opening prompt to a quoted line rather than making it the title", () => {
-		render(<SessionHeader sessionId="sess-1" summary={summary} turns={turns} />)
+		render(<SessionHeader sessionId="sess-1" summary={summary} />)
 		expect(screen.getByText("“fix the webhook retry backoff”")).toBeTruthy()
 		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("webhook")
 	})
 
 	it("shows the full session id as a copyable fact, never as the heading", () => {
-		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} turns={turns} />)
+		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} />)
 		const copy = screen.getByRole("button", { name: "Copy Session ID" })
-		expect(copy.textContent).toBe("0f3c9a1e-long-session-id")
+		expect(copy.textContent).toContain("0f3c9a1e-long-session-id")
 		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("0f3c9a1e")
 	})
 
-	it("counts turns and names the model beside the duration", () => {
-		render(<SessionHeader sessionId="sess-1" summary={summary} turns={turns} />)
-		expect(screen.getByText("Turns").nextElementSibling?.textContent).toBe("2")
-		expect(screen.getByText("Model").nextElementSibling?.textContent).toBe("claude-sonnet-4-5")
+	it("shows the duration, and neither the model nor a turn count", () => {
+		render(<SessionHeader sessionId="sess-1" summary={summary} />)
 		expect(screen.getByText("Duration").nextElementSibling?.textContent).toBe(
 			formatSessionDuration(summary.wallClockMs),
 		)
+		expect(screen.queryByText("Turns")).toBeNull()
+		expect(screen.queryByText("Model")).toBeNull()
+	})
+
+	it("copies the trace id, under its own label, for a trace-synthesized session", () => {
+		render(<SessionHeader sessionId="trace:0f3c9a1e2b7d4c5e6f708192a3b4c5d6" summary={summary} />)
+		const copy = screen.getByRole("button", { name: "Copy Trace ID" })
+		expect(copy.textContent).toContain("0f3c9a1e2b7d4c5e6f708192a3b4c5d6")
+		expect(copy.textContent).not.toContain("trace:")
 	})
 
 	it("falls back to the framework, then to a generic name, when no agent is named", () => {
