@@ -14,8 +14,8 @@ permissions:
     contents: read
 
 jobs:
-    # Which jobs are worth running for this diff. Every filter carries the `base`
-    # anchor, so a lockfile/turbo/tsconfig/workflow change re-enables everything.
+    # Which jobs are worth running for this diff. Most filters carry the `base`
+    # anchor; standalone builder checks deliberately use only their package path.
     #
     # Push events filter too. paths-filter compares `github.event.before..github.sha`
     # there, which spans the whole push — correct for squash-merges, for direct
@@ -33,6 +33,7 @@ jobs:
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             web: ${{ steps.filter.outputs.web == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
+            clickhouse_builder: ${{ steps.filter.outputs.clickhouse_builder == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
             slack: ${{ steps.filter.outputs.slack == 'true' }}
         steps:
@@ -112,6 +113,11 @@ jobs:
                         - 'packages/ui/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
+                      # Standalone release checks only run for builder changes.
+                      # Do not inherit base: unrelated lockfile, app, or warehouse
+                      # changes should not rerun the live suite or npm tarball install.
+                      clickhouse_builder:
+                        - 'lib/clickhouse-builder/**'
                       clickhouse:
                         - *base
                         - 'lib/clickhouse-builder/**'
@@ -550,6 +556,7 @@ jobs:
               run: bun turbo build --filter=@maple-dev/clickhouse-builder
 
             - name: Verify public ClickHouse builder against the live server
+              if: ${{ needs.changes.outputs.clickhouse_builder == 'true' }}
               env:
                   CLICKHOUSE_BUILDER_TEST_URL: http://127.0.0.1:8123
                   CLICKHOUSE_BUILDER_TEST_USER: maple
@@ -557,6 +564,7 @@ jobs:
               run: bun lib/clickhouse-builder/scripts/test-clickhouse.ts
 
             - name: Verify isolated ClickHouse builder tarball
+              if: ${{ needs.changes.outputs.clickhouse_builder == 'true' }}
               run: bun lib/clickhouse-builder/scripts/check-package.ts
 
             - name: Replay migrations and verify search indexes

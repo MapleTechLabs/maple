@@ -71,8 +71,10 @@ order, and `windowFunnel` with `strict_order` rejects intervening events.
 
 ## Version and CI policy
 
-Regular PR CI reuses the existing ClickHouse 26.2 service for the standalone live and
-tarball checks. Maple's schema/catalog tests remain additional product regression
+Regular PR CI runs the standalone live and tarball checks only when
+`lib/clickhouse-builder/**` changes, reusing the existing ClickHouse 26.2 service.
+Unrelated app, warehouse, root lockfile, and shared CI changes do not trigger these
+two checks. Maple's schema/catalog tests remain additional product regression
 coverage; the standalone suite does not depend on Maple tables or migrations.
 
 Before release, run **ClickHouse builder release checks**
