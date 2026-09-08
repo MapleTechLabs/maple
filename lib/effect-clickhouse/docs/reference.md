@@ -25,17 +25,22 @@ uniformly, which some codebases prefer for exactly this reason.
 
 The root barrel is curated. These are exported by the package but not from it:
 
-| Symbol                                                                                           | Subpath |
-| ------------------------------------------------------------------------------------------------ | ------- |
-| `toFragment` — value → `SqlFragment`, for hand-rolled function wrappers                          | `/expr` |
-| `raw`, `str`, `ident`, `int`, `join`, `as_`, `lazy`, `when`, `compile`, `escapeClickHouseString` | `/sql`  |
-| `SqlQuery`, `compileQuery`                                                                       | `/sql`  |
-| `ClickHouseStatement`, `parseStatement`, `renderStatement`, `withSettings`, `withFormat`         | `/sql`  |
-| `ClickHouseStatementFromString`, `splitTerminalClauses`, `maskLiteralsAndComments`               | `/sql`  |
+| Symbol                                                                                           | Subpath           |
+| ------------------------------------------------------------------------------------------------ | ----------------- |
+| `toFragment` — value → `SqlFragment`, for hand-rolled function wrappers                          | `/expr`           |
+| `raw`, `str`, `ident`, `int`, `join`, `as_`, `lazy`, `when`, `compile`, `escapeClickHouseString` | `/sql`            |
+| `SqlQuery`, `compileQuery`                                                                       | `/sql`            |
+| `ClickHouseStatement`, `parseStatement`, `renderStatement`, `withSettings`, `withFormat`         | `/sql`            |
+| `ClickHouseStatementFromString`, `splitTerminalClauses`, `maskLiteralsAndComments`               | `/sql`            |
+| `defineSuite`, `query`, `caseFromCompiled`, `runSuite`, `compareRuns`, `compareBudgets`          | `/benchmark`      |
+| `Suite`, `RunOutput`, `BenchmarkError` and benchmark contracts                                   | `/benchmark`      |
+| `makeHttpClient`, `makeHttpTransport`, `httpConfigFromEnv`                                       | `/benchmark/http` |
+| `runCli`                                                                                         | `/benchmark/cli`  |
 
 Every column-type constructor and every expression helper is on the root as well as on its
 subpath. See [Running a query](./running-queries.md) for what the `/sql` statement helpers are
-for.
+for. See [Benchmarking](./benchmarking.md) for the complete benchmark API, command
+workflow, result verification, and JSON protocol.
 
 Note `/sql` exports a `compile` (fragment → string) distinct from the root `compile`
 (query → `CompiledQuery`), and a `when` distinct from the root `when` (optional conditions).

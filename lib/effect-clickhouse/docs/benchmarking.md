@@ -9,9 +9,34 @@ imports or application path aliases, use Bun (`bun run ch-bench …`). With Node
 JavaScript modules or TypeScript supported by Node's native type stripping, with
 explicit import extensions. Suite modules execute trusted local code.
 
+## Setup
+
+Install the library with its Effect 4 peer dependency using [Getting started](./getting-started.md#installation-and-compatibility).
+The first npm release is pending; that guide also covers installing a source-built
+tarball. The CLI is included in the same package, with no separate benchmark dependency.
+
+In your project's `package.json`, add:
+
+```json
+{
+	"scripts": {
+		"bench": "ch-bench"
+	}
+}
+```
+
+Run commands with `npm run bench -- <command>` or `bun run bench <command>`.
+Examples below use `ch-bench` directly, as it is available inside package scripts;
+from a shell, use `npm exec -- ch-bench <command>`. Bun users can run the local
+executable with `bun run ch-bench <command>`.
+
+Provide an existing ClickHouse HTTP endpoint, its credentials, and a populated
+snapshot of your workload. `doctor` checks connectivity and measurement capabilities;
+it does not create a dataset or determine whether your query inputs are representative.
+
 ## Define a workload
 
-```ts
+```ts title="benchmark-suite.ts"
 import { compile, from, param, table } from "@maple-dev/effect-clickhouse"
 import { uint32, string } from "@maple-dev/effect-clickhouse/types"
 import * as Bench from "@maple-dev/effect-clickhouse/benchmark"
@@ -35,7 +60,7 @@ export default Bench.defineSuite({
 })
 ```
 
-Save this as `queries.bench.ts`. Point it at an existing, populated dataset.
+Save this as `benchmark-suite.ts`. Point it at an existing, populated dataset.
 `query` creates an Effect; `defineSuite` compiles all cases before measurement.
 Its default export is an Effect, which the CLI runs. Plain `Suite` values and JSON
 suite files are also supported. `caseFromCompiled(id, compiled, inputs)` adapts an
@@ -57,10 +82,10 @@ export CLICKHOUSE_PASSWORD=your-password
 export CLICKHOUSE_DATABASE=default
 
 ch-bench doctor --json
-ch-bench run queries.bench.ts --runs 20 --warmup 2 --threads 2 \
+ch-bench run benchmark-suite.ts --runs 20 --warmup 2 --threads 2 \
   --out .bench/baseline.json --json
 # Edit the query, retaining the case IDs and inputs.
-ch-bench run queries.bench.ts --runs 20 --warmup 2 --threads 2 \
+ch-bench run benchmark-suite.ts --runs 20 --warmup 2 --threads 2 \
   --out .bench/candidate.json --json
 ch-bench compare .bench/baseline.json .bench/candidate.json \
   --metric meanReadBytes --threshold 10 --min-delta 1048576 --json
@@ -69,7 +94,7 @@ ch-bench inspect .bench/candidate.json --case events/by-name \
 ```
 
 Every `run` imports and compiles the current module in a fresh CLI process.
-`export queries.bench.ts --out .bench/suite.json` explicitly freezes SQL for replay.
+`export benchmark-suite.ts --out .bench/suite.json` explicitly freezes SQL for replay.
 Replaying a frozen JSON suite does not pick up source changes. `--match` filters
 case ID/context substrings; `--case` selects an exact ID. Empty selections fail.
 `--dataset` overrides the suite's revision; `--source-revision` records a Git SHA or
@@ -138,6 +163,70 @@ Multiple budgets are supplied with `--budgets budgets.json`:
 ```
 
 Other metrics: `meanServerMs`, `meanReadRows`. Missing measurements never become zeros.
+
+## Use the runner from an Effect program
+
+The CLI owns full report persistence and environment metadata. For a custom harness,
+use the same runner and HTTP adapter directly. This example imports the suite above,
+compiles it before timing, and prints the case measurements and warnings. Its output
+is the runner result, not a complete `RunOutput` file for the CLI's `compare` command.
+
+Save this beside `benchmark-suite.ts` as `benchmark-runner.ts`, set the same
+`CLICKHOUSE_*` environment variables, and run `bun benchmark-runner.ts`:
+
+```ts title="benchmark-runner.ts"
+import { Effect } from "effect"
+import * as Bench from "@maple-dev/effect-clickhouse/benchmark"
+import {
+	httpConfigFromEnv,
+	makeHttpClient,
+	makeHttpTransport,
+} from "@maple-dev/effect-clickhouse/benchmark/http"
+import suiteDefinition from "./benchmark-suite"
+
+const measurements = await Effect.runPromise(
+	Effect.gen(function* () {
+		const suite = yield* suiteDefinition
+		const client = makeHttpClient(yield* httpConfigFromEnv)
+		const transport = makeHttpTransport(client, {
+			timeoutSeconds: 30,
+			logWaitSeconds: 12,
+			verifyResults: true,
+			resultOrder: "unordered",
+		})
+		return yield* Bench.runSuite(transport, suite, {
+			runs: 20,
+			warmup: 2,
+			verifyResults: true,
+			settings: {
+				max_threads: "2",
+				max_execution_time: "30",
+				use_query_cache: "0",
+				use_query_condition_cache: "0",
+				log_queries: "1",
+				log_query_settings: "1",
+				log_queries_probability: "1",
+			},
+		})
+	}),
+)
+console.log(JSON.stringify(measurements, null, 2))
+```
+
+The suite example is compiled and exercised by our offline documentation checks.
+The custom harness is typechecked there; executing it requires your populated database.
+
+## Troubleshooting a benchmark
+
+| Symptom                                | What to check                                                                                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ch-bench` is not found                | Run through the local package script or `npm exec -- ch-bench`; the package must be installed in that project.                                                 |
+| A TypeScript suite cannot be imported  | Use Bun for aliases and extensionless imports; Node requires imports its native module loader can resolve.                                                     |
+| The query reads zero rows              | Confirm the database, fixed time window, and filters match populated data. A metadata-only optimization can also legitimately read zero rows.                  |
+| Memory or `ProfileEvents` are missing  | Run `doctor`; check query-log permissions, `--cluster`, and the log polling window. Missing logs retain available HTTP summary metrics.                        |
+| Comparison is `invalid`                | Inspect each comparison row's reason: inputs, settings, dataset, schema hash, server version, or result contracts may differ; executions may also have failed. |
+| Correctness is `different-or-unstable` | Check ordering, nondeterministic expressions, approximate aggregates, and ingestion during the run. Verify semantics before interpreting a speed change.       |
+| Comparison is `inconclusive`           | Supply a dataset revision and collect the missing cases or metrics. Do not interpret missing evidence as a passing budget.                                     |
 
 ## Programmatic API and machine output
 

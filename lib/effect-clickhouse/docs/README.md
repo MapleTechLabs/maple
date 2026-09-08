@@ -26,7 +26,8 @@ path and installation instructions for the upcoming release.
 1. [Compile and decode offline](./getting-started.md) with one complete file.
 2. [Run a real query](./running-queries.md) against `system.numbers`, without creating a table.
 3. [Adapt a recipe](./recipes.md) to your own schema.
-4. Consult [Troubleshooting](./troubleshooting.md) if installation or results differ from expectations.
+4. [Benchmark a change](./benchmarking.md) with a fixed workload and saved baseline.
+5. Consult [Troubleshooting](./troubleshooting.md) if installation or results differ from expectations.
 
 The named complete examples are extracted from Markdown, typechecked, and exercised by
 [`check-doc-examples.mjs`](../scripts/check-doc-examples.mjs). Focused behavior tests also live in
@@ -37,19 +38,21 @@ the offline checks verify SQL construction and decoding, not database execution 
 
 Roughly in reading order.
 
-| Guide                                                 | What it covers                                                           |
-| ----------------------------------------------------- | ------------------------------------------------------------------------ |
-| [Getting started](./getting-started.md)               | Install, define a table, build → compile → decode                        |
-| [Tables and column types](./tables-and-types.md)      | `table()`, the column-type constructors, `Map`/`Array`/`Nullable`        |
-| [Building queries](./queries.md)                      | `select`, `where`, `groupBy`, `orderBy`, `limit`, `format`, immutability |
-| [Expressions and conditions](./expressions.md)        | Comparisons, arithmetic, optional predicates, aggregates                 |
-| [Joins and subqueries](./joins-and-subqueries.md)     | The join family, `fromQuery`, correlated subqueries                      |
-| [Unions and CTEs](./unions-and-ctes.md)               | `unionAll`, `fromUnion`, `withCTE`                                       |
-| [Params and compilation](./params-and-compilation.md) | `param.*`, how values reach the SQL, `CompiledQuery`                     |
-| [Decoding results](./decoding-results.md)             | `rowSchema`, `decodeRows`, `decodeFirstRow`, decode errors               |
-| [Running a query](./running-queries.md)               | Executing the SQL with a real client, wire settings, `SETTINGS`          |
-| [Tenant scoping](./tenant-scoping.md)                 | `tenantScope`, what marks a query scoped, `crossTenant()`                |
-| [Extending the DSL](./extending.md)                   | `defineFn`, raw escape hatches, handwritten SQL                          |
+| Guide                                                 | What it covers                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [Getting started](./getting-started.md)               | Install, define a table, build → compile → decode                                   |
+| [Tables and column types](./tables-and-types.md)      | `table()`, the column-type constructors, `Map`/`Array`/`Nullable`                   |
+| [Building queries](./queries.md)                      | `select`, `where`, `groupBy`, `orderBy`, `limit`, `format`, immutability            |
+| [Expressions and conditions](./expressions.md)        | Comparisons, arithmetic, optional predicates, aggregates                            |
+| [Joins and subqueries](./joins-and-subqueries.md)     | The join family, `fromQuery`, correlated subqueries                                 |
+| [Unions and CTEs](./unions-and-ctes.md)               | `unionAll`, `fromUnion`, `withCTE`                                                  |
+| [Params and compilation](./params-and-compilation.md) | `param.*`, how values reach the SQL, `CompiledQuery`                                |
+| [Decoding results](./decoding-results.md)             | `rowSchema`, `decodeRows`, `decodeFirstRow`, decode errors                          |
+| [Running a query](./running-queries.md)               | Executing the SQL with a real client, wire settings, `SETTINGS`                     |
+| [Benchmarking](./benchmarking.md)                     | Define suites, measure baseline/candidate runs, verify results, and compare budgets |
+| [Agent benchmark playbook](./benchmark-agent.md)      | Repeatable optimization workflow and evidence checklist                             |
+| [Tenant scoping](./tenant-scoping.md)                 | `tenantScope`, what marks a query scoped, `crossTenant()`                           |
+| [Extending the DSL](./extending.md)                   | `defineFn`, raw escape hatches, handwritten SQL                                     |
 
 ## Reference
 
@@ -60,12 +63,15 @@ Roughly in reading order.
 
 ## Entry points
 
-| Import                               | Contents                                                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@maple-dev/effect-clickhouse`       | Curated public API — `from`, `compile`, `param`, expression helpers, and ClickHouse functions under friendly names (`min`, `max`, `count`, `quantile`, …) |
-| `@maple-dev/effect-clickhouse/types` | Column-type constructors (`string`, `uint64`, `dateTime`, `map`, `array`, `nullable`, …) and the `CH*` type descriptors                                   |
-| `@maple-dev/effect-clickhouse/expr`  | Kitchen-sink namespace: every expression helper plus all ClickHouse functions under their raw names (`min_`, `toString_`, `dynamicColumn`, `not`, …)      |
-| `@maple-dev/effect-clickhouse/sql`   | The low-level `SqlFragment` AST (`raw`, `ident`, `compile`, …) for hand-rolling fragments                                                                 |
+| Import                                        | Contents                                                                                                                                                  |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@maple-dev/effect-clickhouse`                | Curated public API — `from`, `compile`, `param`, expression helpers, and ClickHouse functions under friendly names (`min`, `max`, `count`, `quantile`, …) |
+| `@maple-dev/effect-clickhouse/types`          | Column-type constructors (`string`, `uint64`, `dateTime`, `map`, `array`, `nullable`, …) and the `CH*` type descriptors                                   |
+| `@maple-dev/effect-clickhouse/expr`           | Kitchen-sink namespace: every expression helper plus all ClickHouse functions under their raw names (`min_`, `toString_`, `dynamicColumn`, `not`, …)      |
+| `@maple-dev/effect-clickhouse/sql`            | The low-level `SqlFragment` AST (`raw`, `ident`, `compile`, …) for hand-rolling fragments                                                                 |
+| `@maple-dev/effect-clickhouse/benchmark`      | Driver-free suite definitions, runner, report schemas, and comparisons                                                                                    |
+| `@maple-dev/effect-clickhouse/benchmark/http` | ClickHouse HTTP transport, environment configuration, and query-log collection                                                                            |
+| `@maple-dev/effect-clickhouse/benchmark/cli`  | `runCli(args)` for embedding the bundled `ch-bench` commands                                                                                              |
 
 The root barrel is curated, not exhaustive — see
 [the reference](./reference.md#whats-only-on-a-subpath) for what lives only on a subpath.

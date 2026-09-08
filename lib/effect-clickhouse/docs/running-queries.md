@@ -126,3 +126,10 @@ None of that is here on purpose. A `CompiledQuery` is a value: it can be cached,
 fingerprinted, or handed to a different executor per tenant, and every one of those policies
 belongs to the application rather than the builder. What the builder guarantees is that the value
 describes itself — its SQL, its tenant scope, and how its rows decode.
+
+## Benchmark a query change
+
+Use the [benchmarking guide](./benchmarking.md) to turn a query into a repeatable
+workload, record a baseline, verify results, and compare read volume, memory, and
+latency. The bundled `ch-bench` CLI handles execution and saved evidence. For an
+automated optimization workflow, follow the [agent playbook](./benchmark-agent.md).
