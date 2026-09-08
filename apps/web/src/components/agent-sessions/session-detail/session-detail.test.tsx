@@ -399,12 +399,17 @@ describe("SessionOverview", () => {
 		)
 	}
 
-	it("splits the wall clock into where the time actually went", () => {
+	// Agent time, not the clock: 23s of tools and 18s of model calls inside a
+	// 5m 12s session, with two of those tools running at the same time.
+	it("splits agent time by class of work, and says how wide the fan-out got", () => {
 		render(<Overview />)
 
-		// 5m 12s wall clock, 4m 20s of it idle.
-		expect(screen.getByText("Idle")).toBeTruthy()
-		expect(screen.getByText(/4m 20s · 83%/)).toBeTruthy()
+		expect(screen.getByText("Tool execution")).toBeTruthy()
+		expect(screen.getByText(/^23s · 56%$/)).toBeTruthy()
+		expect(screen.getByText(/41s agent time · up to 2 at once/)).toBeTruthy()
+		// The clock it is measured against stays under the bar, out of the bands.
+		expect(screen.getByText(/5m 12s wall clock/)).toBeTruthy()
+		expect(screen.queryByText("Idle")).toBeNull()
 	})
 
 	// The five-second answer: the verdict names what killed the final turn and

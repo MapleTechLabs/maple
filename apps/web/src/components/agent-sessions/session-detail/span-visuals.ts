@@ -9,23 +9,19 @@
 
 import {
 	BoltIcon,
-	CircleQuestionIcon,
 	DotsIcon,
 	FaceRobotIcon,
 	GearIcon,
-	MediaPauseIcon,
 	PixelSparkleIcon,
 	type IconComponent,
 } from "@/components/icons"
 
 import type { AiSpanCategory } from "@/lib/agent-sessions/session-turns"
-import type { OccupancyKind } from "@/lib/agent-sessions/session-summary"
+import type { AgentTimeKind } from "@/lib/agent-sessions/session-summary"
 
-// Idle and unaccounted are the absence of work, so they get the neutral rather
-// than a hue; unaccounted is denser because it is usually a percent or two of
-// the bar and washes out at that width.
+// A span that is neither a model call nor a tool is not a class of work, so it
+// gets the neutral rather than a hue of its own.
 const NO_WORK_FILL = "bg-muted-foreground/40"
-const UNACCOUNTED_FILL = "bg-muted-foreground/70"
 
 /** Bar and dot background, per span category. */
 export const CATEGORY_FILL = {
@@ -53,40 +49,32 @@ export const CATEGORY_TEXT = {
 	other: "text-muted-foreground",
 } satisfies Record<AiSpanCategory, string>
 
-/** Segment background in the header's occupancy bar. */
-export const OCCUPANCY_FILL = {
-	idle: NO_WORK_FILL,
+/** Band background in the agent-time breakdown. */
+export const AGENT_TIME_FILL = {
 	ttft: "bg-chart-ai-ttft",
 	inference: "bg-chart-ai-inference",
 	tool: "bg-chart-ai-tool",
-	unaccounted: UNACCOUNTED_FILL,
-} satisfies Record<OccupancyKind, string>
+} satisfies Record<AgentTimeKind, string>
 
-/** Legend glyph for an occupancy segment: the kind of time reads by shape
- *  first, with the bar's hue as reinforcement — the same rule the flow view's
+/** Legend glyph for a class of agent time: the kind of work reads by shape
+ *  first, with the band's hue as reinforcement — the same rule the flow view's
  *  nodes follow. */
-export const OCCUPANCY_ICON = {
-	idle: MediaPauseIcon,
+export const AGENT_TIME_ICON = {
 	ttft: BoltIcon,
 	inference: PixelSparkleIcon,
 	tool: GearIcon,
-	unaccounted: CircleQuestionIcon,
-} satisfies Record<OccupancyKind, IconComponent>
+} satisfies Record<AgentTimeKind, IconComponent>
 
-/** The bar's tokens as text color, for the legend glyphs. */
-export const OCCUPANCY_TEXT = {
-	idle: "text-muted-foreground/70",
+/** The bands' tokens as text color, for the legend glyphs. */
+export const AGENT_TIME_TEXT = {
 	ttft: "text-chart-ai-ttft",
 	inference: "text-chart-ai-inference",
 	tool: "text-chart-ai-tool",
-	unaccounted: "text-muted-foreground",
-} satisfies Record<OccupancyKind, string>
+} satisfies Record<AgentTimeKind, string>
 
-/** Legend text for an occupancy segment. */
-export const OCCUPANCY_LABEL = {
-	idle: "Idle",
+/** Legend text for a class of agent time. */
+export const AGENT_TIME_LABEL = {
 	ttft: "Time to first token",
 	inference: "Inference",
 	tool: "Tool execution",
-	unaccounted: "Unaccounted",
-} satisfies Record<OccupancyKind, string>
+} satisfies Record<AgentTimeKind, string>

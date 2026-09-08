@@ -27,7 +27,7 @@ import { useDetectedModels } from "@/hooks/use-detected-models"
 import { ModelLabel } from "../model-label"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
-import { OCCUPANCY_FILL, OCCUPANCY_ICON, OCCUPANCY_LABEL, OCCUPANCY_TEXT } from "./span-visuals"
+import { AGENT_TIME_FILL, AGENT_TIME_ICON, AGENT_TIME_LABEL, AGENT_TIME_TEXT } from "./span-visuals"
 
 const SEVERITY_DOT = {
 	failure: "bg-destructive",
@@ -277,22 +277,25 @@ function FindingRow({ finding, onOpenSpan }: { finding: SessionFinding; onOpenSp
 /* -------------------------------------------------------------------------- */
 
 function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: readonly SessionTurn[] }) {
-	// Under half a percent a legend row reads "0%" and says nothing; the bar
-	// still draws the sliver in place, so nothing disappears from the timeline.
-	const legend = summary.occupancy
-		.map((segment) => ({
-			...segment,
-			percent: sharePercent(segment.ms, summary.wallClockMs),
-		}))
+	const { segments, totalMs, peakParallel } = summary.agentTime
+	// Agent time, not the clock: the bands are sorted by class and each one is
+	// the whole time that class of work ran, summed across every agent. Two
+	// subagents inferring at once are two seconds here per second of wall clock,
+	// which is the fan-out being visible rather than a double count. Where each
+	// piece of that time actually fell is the waterfall's question.
+	const total = Math.max(totalMs, 1)
+	const legend = segments
+		.map((segment) => ({ ...segment, percent: sharePercent(segment.ms, total) }))
+		// Under half a percent a legend row reads "0%" and says nothing; the band
+		// is still drawn, so nothing vanishes from the bar.
 		.filter((segment) => segment.percent >= 0.5)
-	// The bar is chronological — each interval sits where it happened on the
-	// wall clock, so a mid-session stall reads as a hole in the middle, not as
-	// an idle block pinned to the left.
-	const wallClockMs = Math.max(summary.wallClockMs, 1)
-	// The section owns the session's wall clock now: it is the number every
-	// percentage below is a share of, so it belongs beside them rather than
-	// over a strip of turn cells.
-	const caption = [`${formatSessionDuration(summary.wallClockMs)} wall clock`, longestGapText(summary.idleGaps, turns)]
+	const caption = [
+		`${formatSessionDuration(totalMs)} agent time`,
+		peakParallel > 1 ? `up to ${peakParallel} at once` : undefined,
+	]
+		.filter((part) => part !== undefined)
+		.join(" · ")
+	const footnote = [`${formatSessionDuration(summary.wallClockMs)} wall clock`, longestGapText(summary.idleGaps, turns)]
 		.filter((part) => part !== undefined)
 		.join(" · ")
 
@@ -305,33 +308,35 @@ function TimeComposition({ summary, turns }: { summary: SessionSummary; turns: r
 				<span className="font-mono text-muted-foreground text-xs tabular-nums">{caption}</span>
 			</div>
 
-			<div className="relative mt-3.5 h-4 w-full overflow-hidden rounded-sm bg-muted">
-				{summary.occupancyTimeline.map((interval) => (
+			<div className="mt-3.5 flex h-4 w-full overflow-hidden rounded-sm bg-muted">
+				{segments.map((segment) => (
 					<div
-						key={interval.startMs}
-						className={cn("absolute inset-y-0", OCCUPANCY_FILL[interval.kind])}
-						style={{
-							left: `${((interval.startMs - summary.startMs) / wallClockMs) * 100}%`,
-							width: `${((interval.endMs - interval.startMs) / wallClockMs) * 100}%`,
-						}}
+						key={segment.kind}
+						className={AGENT_TIME_FILL[segment.kind]}
+						style={{ width: `${(segment.ms / total) * 100}%` }}
 					/>
 				))}
 			</div>
 
 			<div className="mt-3.5 flex flex-wrap gap-x-6 gap-y-2">
 				{legend.map((segment) => {
-					const Icon = OCCUPANCY_ICON[segment.kind]
+					const Icon = AGENT_TIME_ICON[segment.kind]
 					return (
-					<span key={segment.kind} className="flex items-center gap-2 text-[13px]">
-						<Icon size={14} aria-hidden className={cn("shrink-0", OCCUPANCY_TEXT[segment.kind])} />
-						<span>{OCCUPANCY_LABEL[segment.kind]}</span>
-						<span className="font-mono text-muted-foreground text-xs tabular-nums">
-							{formatSessionDuration(segment.ms)} · {formatPercent(segment.percent / 100)}
+						<span key={segment.kind} className="flex items-center gap-2 text-[13px]">
+							<Icon size={14} aria-hidden className={cn("shrink-0", AGENT_TIME_TEXT[segment.kind])} />
+							<span>{AGENT_TIME_LABEL[segment.kind]}</span>
+							<span className="font-mono text-muted-foreground text-xs tabular-nums">
+								{formatSessionDuration(segment.ms)} · {formatPercent(segment.percent / 100)}
+							</span>
 						</span>
-					</span>
 					)
 				})}
 			</div>
+
+			{/* The clock the agent time is measured against — kept under the bar
+			    rather than in it, so no percentage above is a share of two
+			    different denominators. */}
+			<p className="mt-3 font-mono text-muted-foreground text-xs tabular-nums">{footnote}</p>
 		</section>
 	)
 }
