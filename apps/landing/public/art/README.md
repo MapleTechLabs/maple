@@ -29,3 +29,5 @@ The current hero is now `maple-rome.webp`, a Rome-inspired temple and aqueduct. 
 Current hero: `maple-rome-dither.webp`, a stronger ordered-dither revision of the Roman composition, saved as lossless WebP to preserve pixel clusters. Original engraving retained as `maple-rome.webp`. Generated with built-in GPT Image Gen; revision prompt in [rome-prompt.md](rome-prompt.md).
 
 Current revision: `maple-rome-balanced.webp`. Medium-fine GPT Image Gen dither, between the original engraving and the rejected coarse version. Saved losslessly.
+
+Current closing artwork: `maple-rome-arch.webp`, replacing the brutalist portal with a Roman triumphal arch matching the hero's architecture and balanced dithering. Generated with built-in GPT Image Gen and saved as lossless WebP. Full prompt: [rome-arch-prompt.md](rome-arch-prompt.md).
