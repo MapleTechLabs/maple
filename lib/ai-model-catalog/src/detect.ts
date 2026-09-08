@@ -20,7 +20,10 @@ export interface DetectedAiModel {
 	 * always one OpenRouter answers to; `vendorSlug` never carries it.
 	 */
 	readonly openRouterId: string | null
-	/** `GLM 5.3 Flash` — OpenRouter's name, or one derived from the slug. */
+	/**
+	 * `GLM 5.3 Flash` — OpenRouter's name, or one derived from the slug, with
+	 * any routing variant kept: `GLM 5.3 Flash (nitro)`.
+	 */
 	readonly displayName: string
 	/** `z-ai` — OpenRouter's author segment, the key an icon lookup uses. */
 	readonly vendorSlug: string | null
@@ -53,6 +56,29 @@ const stripVariant = (slug: string): string => {
 	const colon = slug.indexOf(":")
 	return colon === -1 ? slug : slug.slice(0, colon)
 }
+
+/**
+ * What follows a `:` — OpenRouter's routing variants (`:nitro`, `:free`) and
+ * Ollama's tags (`:8b`, `:instruct`) alike. A digits-only suffix is a Bedrock
+ * version (`…-v1:0`) and names nothing.
+ */
+const VARIANT = /^(?!\d+$)[a-z0-9][a-z0-9._-]*$/
+
+const variantOf = (slug: string): string | null => {
+	const colon = slug.indexOf(":")
+	if (colon === -1) return null
+	const variant = slug.slice(colon + 1)
+	return VARIANT.test(variant) ? variant : null
+}
+
+/**
+ * `GLM 5.3 Flash` + `nitro` → `GLM 5.3 Flash (nitro)`. The variant is part of
+ * the name because it is part of the identity: `glm-5.3-flash` and
+ * `glm-5.3-flash:nitro` differ in price and availability, and two rows sharing
+ * one name read as one model that was double-counted.
+ */
+const withVariant = (displayName: string, variant: string | null): string =>
+	variant === null ? displayName : `${displayName} (${variant})`
 
 /** Trailing date stamps and release numbers: `-20250929`, `-2025-08-07`, `-0125`, `-002`, `-05-06`. */
 const DATE_SUFFIX = /-(\d{8}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}|\d{3,4})$/
@@ -198,6 +224,7 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 	// however the segment reads, so the lookup is vendor-qualified and an
 	// unlisted pairing falls through to the heuristic path with that vendor.
 	const base = stripVariant(slug)
+	const variant = variantOf(slug)
 	const spellings = candidates(base)
 	let entry: CatalogEntry | undefined
 	for (const candidate of spellings) {
@@ -211,7 +238,7 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 			slug,
 			normalizedSlug: entry.modelSlug,
 			openRouterId: entry.openRouterId,
-			displayName: displayNameOf(entry.name),
+			displayName: withVariant(displayNameOf(entry.name), variant),
 			vendorSlug: entry.vendorSlug,
 			vendorName: vendorNameOf(entry.vendorSlug),
 			family: familyOf(entry.modelSlug),
@@ -222,13 +249,15 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 	const normalizedSlug = spellings.at(-1) ?? base
 	const vendorSlug =
 		pathVendor ?? VENDOR_PREFIX_RULES.find(([pattern]) => pattern.test(normalizedSlug))?.[1] ?? null
+	// `titleCase` has nothing to say about a punctuation-only string; the raw
+	// input it falls back to already carries its variant.
+	const titled = titleCase(normalizedSlug)
 	return {
 		model,
 		slug,
 		normalizedSlug,
 		openRouterId: null,
-		// `titleCase` has nothing to say about a punctuation-only string.
-		displayName: titleCase(normalizedSlug) || model,
+		displayName: titled === "" ? model : withVariant(titled, variant),
 		vendorSlug,
 		vendorName: vendorSlug === null ? null : vendorNameOf(vendorSlug),
 		family: familyOf(normalizedSlug),

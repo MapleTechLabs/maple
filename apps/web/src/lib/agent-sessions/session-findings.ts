@@ -66,15 +66,10 @@ export interface SessionVerdict {
 	readonly spanId: string | undefined
 }
 
-/** Worst thing the findings attribute to a turn — the shape strip's cell color. */
-export type TurnHealth = "clean" | "anomaly" | "failure"
-
 export interface SessionFindingsReport {
 	readonly verdict: SessionVerdict
 	/** Failures first, the terminal one leading, then anomalies, each in time order. */
 	readonly findings: readonly SessionFinding[]
-	/** Aligned with `turns`. */
-	readonly turnHealth: readonly TurnHealth[]
 }
 
 /** A trace-anchored turn is the fallback partition — one turn per trace — so it
@@ -118,7 +113,7 @@ export function buildSessionFindings(
 		? { status: "failed", label: cause?.label, spanId: cause?.span.spanId }
 		: { status: findings.length > 0 ? "attention" : "clean", label: undefined, spanId: undefined }
 
-	return { verdict, findings, turnHealth: healthOf(turns, findings, turnIndexBySpan) }
+	return { verdict, findings }
 }
 
 function severityRank(severity: FindingSeverity): number {
@@ -373,21 +368,6 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 /* -------------------------------------------------------------------------- */
 /* Attribution                                                                */
 /* -------------------------------------------------------------------------- */
-
-function healthOf(
-	turns: readonly SessionTurn[],
-	findings: readonly SessionFinding[],
-	turnIndexBySpan: ReadonlyMap<string, number>,
-): readonly TurnHealth[] {
-	const health = turns.map((turn): TurnHealth => (turn.failed ? "failure" : "clean"))
-	for (const finding of findings) {
-		const index = turnIndexBySpan.get(finding.spanId)
-		if (index === undefined) continue
-		if (finding.severity === "failure") health[index] = "failure"
-		else if (health[index] === "clean") health[index] = "anomaly"
-	}
-	return health
-}
 
 /** `Turn 4 (final)`, `Turns 9, 11`, `Segments 1, 2`, `6 of 14 turns`. */
 function turnListText(indices: readonly number[], turns: readonly SessionTurn[], terminal: boolean): string {
