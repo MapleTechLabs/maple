@@ -155,12 +155,15 @@
 .monument-hero h1 span {
 	display: block;
 }
+/* The art fills the hero's height (3:2 source → 1.5× the height below the
+   nav) and bleeds off the right edge. No pixel cap: a cap left it stranded in
+   the corner on wide screens, far from the copy in the centered shell. */
 .monument-hero__art {
 	position: absolute;
 	z-index: -1;
 	right: 0;
 	bottom: 0;
-	width: min(86%, 1110px, calc((100svh - 76px) * 1.5));
+	width: min(86%, calc((100svh - 76px) * 1.5));
 	height: auto;
 	object-fit: contain;
 	object-position: right bottom;
@@ -274,11 +277,6 @@ html:not([lang="en"]) .monument-hero h1 {
 	width: auto;
 }
 @media (max-width: 1100px) {
-	.monument-hero__art {
-		right: 0;
-		width: min(86%, calc((100svh - 76px) * 1.5));
-		height: auto;
-	}
 	.monument-hero__copy {
 		width: 330px;
 	}
@@ -357,20 +355,27 @@ html:not([lang="en"]) .monument-hero h1 {
 	}
 }
 .monumental-home .monument-close {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	/* Grows with the screen so the arch can scale instead of being zoom-cropped. */
+	min-height: clamp(560px, 34vw, 900px);
 	background: var(--home-orange);
 	isolation: isolate;
 }
+/* Sized by the section's height; width follows the 3:2 source so the whole
+   arch stays in frame and the left mask fades from the picture's real edge. */
 .monument-close__art {
 	position: absolute;
-	right: -7%;
+	right: 0;
 	bottom: 0;
-	width: 65%;
+	width: auto;
 	height: 100%;
-	object-fit: cover;
-	object-position: right center;
 	z-index: -1;
 }
 .monumental-home .monument-close > .shell {
+	/* A column flex item with auto inline margins shrink-wraps; keep the shell full width. */
+	width: 100%;
 	text-align: left;
 	padding-block: 110px;
 }
@@ -394,6 +399,7 @@ html:not([lang="en"]) .monument-hero h1 {
 		right: 0;
 		width: 100%;
 		height: 340px;
+		object-fit: cover;
 		object-position: right bottom;
 	}
 	.monumental-home .monument-close h2 {

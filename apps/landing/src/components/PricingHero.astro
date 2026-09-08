@@ -43,9 +43,10 @@ const RETENTION_DAYS = 30;
 ---
 
 <section class="pricing-hero relative overflow-hidden">
-        <img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="" decoding="async" />
-
 	<div class="pricing-hero__inner shell">
+		{/* Inside the shell so the artwork tracks the content column on wide screens
+		    instead of drifting to the viewport edge. */}
+		<img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="" decoding="async" />
 		<div class="mb-4">
 			<span
 				class="pricing-hero__label"

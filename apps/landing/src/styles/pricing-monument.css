@@ -83,9 +83,9 @@
 /* Architectural background stays within the compact pricing introduction. */
 .pricing-hero__illustration {
     position: absolute;
-    top: 44px;
+    top: 0;
     right: -60px;
-    width: min(74vw, 960px);
+    width: min(74%, 960px);
     height: 410px;
     object-fit: cover;
     object-position: center 82%;
