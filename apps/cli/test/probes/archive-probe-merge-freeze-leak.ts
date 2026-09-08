@@ -3,7 +3,7 @@
 // merges are confirmed restarted (a later OPTIMIZE is NOT rejected with code
 // 236) after a forced mid-export failure.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-merge-freeze-leak.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-merge-freeze-leak.ts
 
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"

@@ -60,7 +60,7 @@ export const inspectPhysicalSchema = (db: Chdb): PhysicalSchema => {
 			db.query("SELECT table, name FROM system.data_skipping_indices WHERE database = 'default'"),
 		)
 	} catch {
-		// Older supported libchdb builds may not expose this system table. The
+		// Older supported chDB engine builds may not expose this system table. The
 		// CREATE TABLE definitions below still provide a strict index-name fallback.
 	}
 	const columnsByTable = new Map<string, LocalSchemaColumn[]>()

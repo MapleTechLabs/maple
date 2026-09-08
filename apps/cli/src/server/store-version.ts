@@ -29,7 +29,7 @@ export interface StoreMigrationStamp {
 export interface StoreMarkerV2 {
 	readonly formatVersion: typeof STORE_MARKER_FORMAT_VERSION
 	readonly storeId: string
-	/** libchdb package/release identity that owns the on-disk format. */
+	/** chDB engine identity that owns the on-disk format. */
 	readonly chdb: string
 	/** Maple version that first created the store. */
 	readonly maple: string
@@ -409,7 +409,7 @@ export type StoreCompatibility =
 	| { readonly compatible: true }
 	| { readonly compatible: false; readonly found: string; readonly current: string }
 
-/** Decide whether the current libchdb may open the store at `dataDir`. */
+/** Decide whether the current chDB engine may open the store at `dataDir`. */
 export const checkStoreCompatible = (dataDir: string): StoreCompatibility => {
 	if (!storeHasData(dataDir)) return { compatible: true }
 	const state = readMarkerState(dataDir)

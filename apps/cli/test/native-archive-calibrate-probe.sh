@@ -25,6 +25,8 @@ set -euo pipefail
 
 BUNDLE_DIR="${1:?usage: native-archive-calibrate-probe.sh <bundle-dir> [port]}"
 MAPLE="$BUNDLE_DIR/maple"
+CHDB_NODE_MODULES="${MAPLE_CHDB_NODE_MODULES:-$BUNDLE_DIR/node_modules}"
+export MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES"
 PORT="${2:-45261}"
 ROOT="$(realpath "$(mktemp -d "${TMPDIR:-/tmp}/maple-native-calib.XXXXXX")")"
 DATA="$ROOT/data"
@@ -331,7 +333,7 @@ jq -nc \
 	'{peakRssBytes:$rss, wallMs:$wall, physicalBytes:$phys, logicalBytes:$logical, compressionRatio:$comp, writeThroughputBytesPerSec:$tput, peakTempDiskBytes:$temp, rowCount:$rows}' \
 	> "$OBSERVED_JSON"
 COMPARISON_OUT="$ROOT/comparison.txt"
-if ! MAPLE_LIBCHDB="$BUNDLE_DIR/libchdb.so" bun apps/cli/test/probes/calibration-validation-compare.ts \
+if ! MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES" bun apps/cli/test/probes/calibration-validation-compare.ts \
 	"$CFG" "$OBSERVED_JSON" "$TRIAL_OP" "logs" "$OBSERVED_ROWS" 1 \
 	>"$VALREPORT" 2>"$COMPARISON_OUT"; then
 	cat "$COMPARISON_OUT" >&2

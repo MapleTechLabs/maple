@@ -1,79 +1,88 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-// Embedded chDB (in-process ClickHouse) via `bun:ffi` → `libchdb`.
+// Embedded chDB (in-process ClickHouse) through the published `chdb` npm package.
 //
 // Replaces the Rust `apps/ingest/src/chdb.rs`. chDB allows exactly one
 // connection per process and is not safe to call concurrently, so the local
-// server holds a single `Chdb` and `bun:ffi` calls — which are synchronous and
+// server holds a single `Chdb` and npm Session calls — which are synchronous and
 // block the calling thread — serialize naturally on the JS thread.
-//
-// We use the modern `chdb_*` accessor C API (opaque result handles read via
-// `chdb_result_buffer`/`_length`/`_error`), not the older `local_result_v2`
-// struct, so there is no struct-offset fragility across libchdb versions.
 
-import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
+import { dlopen, FFIType, ptr } from "bun:ffi"
 import { Effect, Schema, type Scope } from "effect"
-import { existsSync } from "node:fs"
-import { lstatSync, readFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { createRequire } from "node:module"
+import {
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
 
-/** A chDB failure — locating libchdb, opening the connection, or bootstrapping
+/** A chDB failure — loading the npm addon, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */
 export class ChdbError extends Schema.TaggedError<ChdbError>()("@maple/cli/ChdbError", {
 	message: Schema.String,
 }) {}
 
-/** Locate `libchdb` at runtime, in priority order:
- *  1. `MAPLE_LIBCHDB` env (explicit override)
- *  2. sibling of the executable (the shipped 2-file bundle: `maple` + `libchdb`)
- *  3. `~/.maple/bin/libchdb.{so,dylib}` (dev / installed location)
- */
-function resolveLibchdb(): string {
-	const candidates: string[] = []
-	const override = process.env.MAPLE_LIBCHDB
-	if (override) candidates.push(override)
+interface ChdbSession {
+	query(sql: string, format?: string): string
+	close(): void
+}
 
-	const execDir = dirname(process.execPath)
-	candidates.push(join(execDir, "libchdb.so"), join(execDir, "libchdb.dylib"))
+interface ChdbPackage {
+	Session: new (path?: string) => ChdbSession
+}
 
-	const binDir = join(homedir(), ".maple", "bin")
-	candidates.push(join(binDir, "libchdb.so"), join(binDir, "libchdb.dylib"))
+let chdbPackage: ChdbPackage | undefined
 
-	const found = candidates.find((p) => existsSync(p))
-	if (!found) {
-		throw new Error(
-			`libchdb not found. Looked in:\n  ${candidates.join("\n  ")}\n` +
-				`Set MAPLE_LIBCHDB to its path, or keep libchdb next to the maple binary.`,
-		)
+const requireFromNodeModules = (nodeModulesDir: string): ChdbPackage => {
+	const require = createRequire(join(nodeModulesDir, ".maple-chdb-runtime.cjs"))
+	return require("chdb") as ChdbPackage
+}
+
+const loadChdbPackage = (): ChdbPackage => {
+	if (chdbPackage) return chdbPackage
+	const failures: string[] = []
+	const override = process.env.MAPLE_CHDB_NODE_MODULES
+	if (override) {
+		try {
+			chdbPackage = requireFromNodeModules(resolve(override))
+			return chdbPackage
+		} catch (error) {
+			failures.push(
+				`MAPLE_CHDB_NODE_MODULES=${override}: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
 	}
-	return found
-}
 
-type ChdbSymbols = ReturnType<typeof openLib>["symbols"]
+	const siblingNodeModules = join(dirname(process.execPath), "node_modules")
+	if (existsSync(join(siblingNodeModules, "chdb", "package.json"))) {
+		try {
+			chdbPackage = requireFromNodeModules(siblingNodeModules)
+			return chdbPackage
+		} catch (error) {
+			failures.push(`${siblingNodeModules}: ${error instanceof Error ? error.message : String(error)}`)
+		}
+	}
 
-function openLib(libPath: string) {
-	return dlopen(libPath, {
-		// chdb_connection* chdb_connect(int argc, char** argv)
-		chdb_connect: { args: [FFIType.int, FFIType.ptr], returns: FFIType.ptr },
-		// void chdb_close_conn(chdb_connection* conn)
-		chdb_close_conn: { args: [FFIType.ptr], returns: FFIType.void },
-		// chdb_result* chdb_query(chdb_connection conn, const char* query, const char* format)
-		chdb_query: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
-		chdb_result_buffer: { args: [FFIType.ptr], returns: FFIType.ptr },
-		chdb_result_length: { args: [FFIType.ptr], returns: FFIType.u64 },
-		// const char* chdb_result_error(chdb_result*)  — NULL or EMPTY string means success
-		chdb_result_error: { args: [FFIType.ptr], returns: FFIType.ptr },
-		chdb_destroy_query_result: { args: [FFIType.ptr], returns: FFIType.void },
-	})
-}
+	try {
+		chdbPackage = createRequire(import.meta.url)("chdb") as ChdbPackage
+		return chdbPackage
+	} catch (error) {
+		failures.push(`workspace dependency: ${error instanceof Error ? error.message : String(error)}`)
+	}
 
-let lib: { symbols: ChdbSymbols; close: () => void } | undefined
-
-function symbols(): ChdbSymbols {
-	if (!lib) lib = openLib(resolveLibchdb())
-	return lib.symbols
+	throw new Error(
+		"chdb npm package not found. Expected node_modules/chdb next to the maple binary " +
+			"or installed in the development workspace." +
+			(failures.length > 0 ? ` Tried:\n  ${failures.join("\n  ")}` : ""),
+	)
 }
 
 const encoder = new TextEncoder()
@@ -200,19 +209,25 @@ export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">
 	}
 }
 
-/** Build the embedded ClickHouse argv. Keep table metadata loading and restore
- * work serialized:
+/** Keep table metadata loading and restore work serialized:
  * chDB v26.1.0 can otherwise fail nondeterministically while its loader resolves
  * Maple's materialized-view dependency graph (`recursive_mutex lock failed` /
  * `ASYNC_LOAD_WAIT_FAILED`). `async_load_databases=0` waits for loading, but it
  * does not make the loader pools single-threaded. RESTORE uses a separate
  * 16-thread pool by default and can trip the same invalid recursive-mutex state
- * while restoring that dependency graph. */
+ * while restoring that dependency graph.
+ *
+ * The npm `chdb` 3.3.x Session API does not expose clickhouse-local argv. chDB
+ * does, however, read `config.xml` from the process cwd while opening the first
+ * connection, and ClickHouse merges `config.d/*.xml` after that. `Chdb.open`
+ * uses a temporary cwd with the user config symlinked as `00-user.xml` and these
+ * Maple-required values written as `99-maple-required.xml`, so explicit user
+ * config is still honoured while Maple's safety settings win on conflicts. */
 /**
  * Parser limit for one statement, applied as a session setting at open.
  *
- * The C API has no separate data stream: every INSERT inlines its NDJSON as a
- * string literal, and the parser reads the whole statement against
+ * The Session API has no separate data stream: every INSERT inlines its NDJSON
+ * as a string literal, and the parser reads the whole statement against
  * `max_query_size` (default 256 KiB). `buildInsertStatements` chunks batches
  * under that, but it cannot split a single row — a span carrying a large
  * attribute (a request body, a stack, a prompt) still arrives as one line and
@@ -220,20 +235,54 @@ export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">
  * limit is a parser guard, not a buffer allocation, so raising it well past any
  * single OTLP row costs nothing.
  *
- * A `SET`, not an argv flag: `chdb_connect` accepts `--<setting>=` for some
- * settings but `--max_query_size` measurably does not take (system.settings
- * still reports 262144), while the session `SET` — the same path
- * `session_timezone` uses — does, and holds for the connection's lifetime.
+ * A session `SET`, rather than a server config value, is enough here and holds
+ * for the connection's lifetime.
  */
 export const MAX_QUERY_SIZE_BYTES = 64 * 1024 * 1024
 
+const CHDB_REQUIRED_SERVER_SETTINGS = {
+	async_load_databases: "0",
+	async_load_system_database: "0",
+	tables_loader_foreground_pool_size: "1",
+	tables_loader_background_pool_size: "1",
+	restore_threads: "1",
+} as const
+
+export const requiredChdbConfigXml = (): string => {
+	const settings = Object.entries(CHDB_REQUIRED_SERVER_SETTINGS)
+		.map(([name, value]) => `  <${name}>${value}</${name}>`)
+		.join("\n")
+	return `<clickhouse>\n${settings}\n</clickhouse>\n`
+}
+
+interface PreparedChdbConfig {
+	readonly cwd: string
+	cleanup(): void
+}
+
+const prepareChdbConfig = (configFile?: string): PreparedChdbConfig => {
+	const root = mkdtempChdbConfigRoot()
+	const configDir = join(root, "config.d")
+	mkdirSync(configDir, { recursive: true })
+	writeFileSync(join(root, "config.xml"), "<clickhouse></clickhouse>\n", { mode: 0o600 })
+	if (configFile) {
+		symlinkSync(resolve(configFile), join(configDir, "00-user.xml"))
+	}
+	writeFileSync(join(configDir, "99-maple-required.xml"), requiredChdbConfigXml(), { mode: 0o600 })
+	return {
+		cwd: root,
+		cleanup: () => rmSync(root, { recursive: true, force: true }),
+	}
+}
+
+const mkdtempChdbConfigRoot = (): string => {
+	const root = join(tmpdir(), "maple-chdb-config-")
+	return mkdtempSync(root)
+}
+
 export const chdbArgv = (options: Pick<ChdbOptions, "dataDir" | "configFile">): string[] => [
 	"clickhouse",
-	"--async_load_databases=0",
-	"--async_load_system_database=0",
-	"--tables_loader_foreground_pool_size=1",
-	"--tables_loader_background_pool_size=1",
-	"--restore_threads=1",
+	...Object.entries(CHDB_REQUIRED_SERVER_SETTINGS).map(([name, value]) => `--${name}=${value}`),
 	// Wire-format parity with the cloud read paths (BackendDialect
 	// unquote64BitIntegers): emit 64-bit ints as JSON numbers, not strings, so
 	// local mode decodes rows exactly like managed Tinybird / BYO ClickHouse.
@@ -250,12 +299,13 @@ const LIBC_CANDIDATES =
 let timezonePinned = false
 
 /**
- * Force the embedded engine's SERVER timezone to UTC, before libchdb loads.
+ * Force the embedded engine's SERVER timezone to UTC, before the native chDB
+ * runtime loads.
  *
  * `SET session_timezone = 'UTC'` (in `Chdb.open`) is not enough: every
  * `DateTime64(n)` column in the local schema is declared without an explicit
- * zone, and ClickHouse resolves *those* against the server timezone, which
- * libchdb reads from the host environment when it initialises. On a machine in,
+ * zone. ClickHouse resolves *those* against the server timezone, which the
+ * native chDB runtime reads from the host environment when it initialises. On a machine in,
  * say, `Europe/Berlin` that meant stored timestamps rendered in local time
  * and — the part that actually broke — every datetime **string literal** in a
  * `WHERE` clause parsed as local time, while the UI and CLI build their window
@@ -300,61 +350,58 @@ export const pinProcessTimezoneToUtc = (): void => {
  * a statement and discards output. Both throw on a non-empty chDB error.
  */
 export class Chdb {
-	readonly #sym: ChdbSymbols
-	#connPtrPtr: Pointer | null
-	readonly #conn: Pointer
+	#session: ChdbSession | null
 
-	private constructor(sym: ChdbSymbols, connPtrPtr: Pointer, conn: Pointer) {
-		this.#sym = sym
-		this.#connPtrPtr = connPtrPtr
-		this.#conn = conn
+	private constructor(session: ChdbSession) {
+		this.#session = session
 	}
 
 	static open(options: ChdbOptions): Chdb {
 		pinProcessTimezoneToUtc()
-		const sym = symbols()
-		const args = chdbArgv(options)
-		const argBufs = args.map(cstr)
-		const argv = new BigUint64Array(args.length)
-		argBufs.forEach((b, i) => {
-			argv[i] = BigInt(ptr(b))
-		})
-		const connPtrPtr = sym.chdb_connect(args.length, ptr(argv))
-		if (!connPtrPtr) {
-			throw new Error(
-				Chdb.#connectFailure(options.dataDir, "chdb_connect returned NULL", options.configFile),
-			)
-		}
-		// chdb_connect returns chdb_connection* (a double pointer); chdb_query
-		// wants chdb_connection — dereference once.
-		const conn = read.ptr(connPtrPtr, 0) as Pointer
-		if (!conn)
+		const { Session } = loadChdbPackage()
+		const preparedConfig = prepareChdbConfig(options.configFile)
+		const previousCwd = process.cwd()
+		let session: ChdbSession
+		try {
+			process.chdir(preparedConfig.cwd)
+			session = new Session(options.dataDir)
+		} catch (error) {
 			throw new Error(
 				Chdb.#connectFailure(
 					options.dataDir,
-					"chdb_connect produced a NULL connection",
+					error instanceof Error ? error.message : String(error),
 					options.configFile,
 				),
 			)
+		} finally {
+			process.chdir(previousCwd)
+			preparedConfig.cleanup()
+		}
 
-		const db = new Chdb(sym, connPtrPtr, conn)
-		// Partition expressions, ingest conversions, and retention predicates must
-		// never inherit a host-specific timezone.
-		db.exec("SET session_timezone = 'UTC'")
-		db.exec(`SET max_query_size = ${MAX_QUERY_SIZE_BYTES}`)
-		if (options.bootstrapSchema !== false) {
-			db.#bootstrap(options.schemaSql)
-			if (options.rawTelemetryRetentionDays !== undefined)
-				applyRawTelemetryRetentionFloor(db, options.rawTelemetryRetentionDays)
+		const db = new Chdb(session)
+		try {
+			// Partition expressions, ingest conversions, and retention predicates must
+			// never inherit a host-specific timezone.
+			db.exec("SET session_timezone = 'UTC'")
+			db.exec("SET output_format_json_quote_64bit_integers = 0")
+			db.exec(`SET max_query_size = ${MAX_QUERY_SIZE_BYTES}`)
+			if (options.bootstrapSchema !== false) {
+				db.#bootstrap(options.schemaSql)
+				if (options.rawTelemetryRetentionDays !== undefined)
+					applyRawTelemetryRetentionFloor(db, options.rawTelemetryRetentionDays)
+			}
+		} catch (error) {
+			db.close()
+			throw error
 		}
 		return db
 	}
 
-	// chdb_connect failing over a *populated* store almost always means an
+	// Session construction failing over a *populated* store almost always means an
 	// unloadable on-disk state (e.g. a pipeline left inconsistent by an unclean
-	// kill); point the user at the recovery path rather than the raw libchdb
+	// kill); point the user at the recovery path rather than the raw native addon
 	// message. A failure over an empty dir is a different problem (missing/broken
-	// libchdb), so keep the generic message there.
+	// chdb install), so keep the generic message there.
 	static #connectFailure(dataDir: string, raw: string, configFile?: string): string {
 		if (configFile) {
 			return (
@@ -372,25 +419,8 @@ export class Chdb {
 
 	/** Run a query and return the result bytes decoded as UTF-8 text. */
 	query(sql: string, format = "JSONEachRow"): string {
-		const q = cstr(sql)
-		const f = cstr(format)
-		const res = this.#sym.chdb_query(this.#conn, ptr(q), ptr(f))
-		if (!res) throw new Error("chdb_query returned NULL")
-		try {
-			const errPtr = this.#sym.chdb_result_error(res)
-			// chdb returns a non-null pointer to an EMPTY string on success; only a
-			// non-empty message is a real error (matches chdb-rust `check_error`).
-			const errMsg = errPtr ? new CString(errPtr).toString() : ""
-			if (errMsg.length > 0) throw new Error(errMsg)
-			const len = Number(this.#sym.chdb_result_length(res))
-			if (len === 0) return ""
-			const bufPtr = this.#sym.chdb_result_buffer(res)
-			if (!bufPtr) return ""
-			// Copy out of the chDB-owned buffer before it is destroyed.
-			return new TextDecoder().decode(toArrayBuffer(bufPtr, 0, len).slice(0))
-		} finally {
-			this.#sym.chdb_destroy_query_result(res)
-		}
+		if (!this.#session) throw new Error("No active chDB connection available")
+		return this.#session.query(sql, format)
 	}
 
 	/** Run a statement and discard its output. */
@@ -399,13 +429,12 @@ export class Chdb {
 	}
 
 	close(): void {
-		if (this.#connPtrPtr !== null) {
-			this.#sym.chdb_close_conn(this.#connPtrPtr)
-			this.#connPtrPtr = null
-		}
+		const session = this.#session
+		this.#session = null
+		session?.close()
 	}
 
-	// chDB executes a multi-statement script in a single call. If a given libchdb
+	// chDB executes a multi-statement script in a single call. If a given engine
 	// build rejects that, fall back to running each statement on its own. The
 	// generated schema joins statements with a blank line, so splitting on blank
 	// lines is safe (no statement body contains a blank line).
@@ -427,7 +456,7 @@ export class Chdb {
 /**
  * Acquire a chDB connection as a scoped resource: `Chdb.open` (which bootstraps
  * the schema) on acquire, `close()` as a finalizer. Open failures — a missing
- * libchdb, a NULL connection, a rejected bootstrap — surface as a typed
+ * native addon load, connection construction, and rejected bootstrap — surface as a typed
  * `ChdbError` instead of an unhandled throw. The synchronous `query`/`exec`
  * methods are unchanged; only the lifecycle is Effect-managed.
  */

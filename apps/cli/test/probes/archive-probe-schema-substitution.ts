@@ -4,7 +4,7 @@
 // is accepted. Contract: exit 0 (PASS) when the substitution is rejected AND the
 // valid schema is accepted; exit nonzero if either check is wrong.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-schema-substitution.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-schema-substitution.ts
 
 import { ArchiveProbe } from "../archive-probe-helpers"
 import { compareSchema } from "../../src/server/archives/export"

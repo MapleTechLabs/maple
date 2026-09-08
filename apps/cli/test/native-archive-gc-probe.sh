@@ -21,7 +21,8 @@ set -uo pipefail
 
 BUNDLE_DIR="${1:?usage: $0 <bundle-dir> [port]}"
 MAPLE="$BUNDLE_DIR/maple"
-LIBCHDB="${MAPLE_LIBCHDB:-$BUNDLE_DIR/libchdb.so}"
+CHDB_NODE_MODULES="${MAPLE_CHDB_NODE_MODULES:-$BUNDLE_DIR/node_modules}"
+export MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES"
 PORT="${2:-45401}"
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORKER="$REPO/apps/cli/test/probes/archive-gc-worker.ts"
@@ -36,10 +37,10 @@ SIGNAL="traces"
 
 command -v duckdb >/dev/null 2>&1 || { echo "FAIL: duckdb required" >&2; exit 1; }
 [ -x "$MAPLE" ] || { echo "FAIL: maple binary not found at $MAPLE" >&2; exit 1; }
-[ -f "$LIBCHDB" ] || { echo "FAIL: libchdb not found at $LIBCHDB" >&2; exit 1; }
+[ -d "$CHDB_NODE_MODULES/chdb" ] || { echo "FAIL: chdb runtime not found at $CHDB_NODE_MODULES/chdb" >&2; exit 1; }
 
 CHDB_VER="$("$MAPLE" --version 2>/dev/null | grep -oE 'chdb v[^ ]+' | sed 's/chdb //')"
-[ -z "$CHDB_VER" ] && CHDB_VER="v26.1.0"
+[ -z "$CHDB_VER" ] && CHDB_VER="dev"
 BUN=(bun --define "__CHDB_VERSION__=\"${CHDB_VER}\"")
 
 pass=0
@@ -128,7 +129,7 @@ spawn_and_kill_gc() {
 	local marker="$1" boundary="$2"
 	local data archive
 	data="$(cat "$ROOT/data.path")"; archive="$ROOT/archive"
-	MAPLE_LIBCHDB="$LIBCHDB" "${BUN[@]}" "$WORKER" \
+	"${BUN[@]}" "$WORKER" \
 		--boundary "$boundary" --marker-dir "$marker" \
 		--data-dir "$data" --archive-dir "$archive" --scratch-root "$ROOT/scratch" \
 		--keep 0 --block-ms 60000 >"$ROOT/gc-worker.out" 2>&1 &
@@ -274,7 +275,7 @@ run_gc_crash() {
 	echo "  create-after: OK (crashed GC did not block future work)"
 }
 
-echo "=== Archive interrupted-GC crash-recovery probe (libchdb=$(basename "$LIBCHDB")) ==="
+echo "=== Archive interrupted-GC crash-recovery probe (chdb runtime=$CHDB_NODE_MODULES) ==="
 echo "    real SIGKILL mid-collection → real reconcile CLI → verify convergence + idempotence + create-after"
 echo
 

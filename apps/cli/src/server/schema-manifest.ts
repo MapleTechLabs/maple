@@ -309,7 +309,7 @@ export const viewBody = (definition: string): string | undefined => {
 
 /** Compare a bundled structural manifest with an inspected chDB schema. This
  * is deliberately data-only so migration and startup can share the same
- * fail-closed gate and unit tests do not require native libchdb.
+ * fail-closed gate and unit tests do not require the native chDB runtime.
  *
  * `normalizeSql` renders a view body through a parser so the bundled
  * source text and ClickHouse's own rewritten text become comparable. Without

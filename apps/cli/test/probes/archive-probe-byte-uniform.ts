@@ -3,7 +3,7 @@
 // relocated hermetic. Contract: exit 0 (PASS) when uniform wide rows split into
 // multiple byte-bounded shards with the exact source set.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-byte-uniform.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-byte-uniform.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

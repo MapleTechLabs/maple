@@ -10,7 +10,7 @@
 // so the post-crash state is exactly what a real crash leaves.
 //
 // Usage (parent harness):
-//   MAPLE_LIBCHDB=<bundle>/libchdb.so \
+//   MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules \
 //   bun apps/cli/test/probes/archive-crash-worker.ts \
 //     --boundary <name> --marker-dir <dir> --data-dir <d> --archive-dir <a> \
 //     --scratch-root <s> --range <YYYY-MM-DD> --signal <name> [--block-ms <n>]

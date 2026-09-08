@@ -3,7 +3,7 @@
 // preserve it. Contract: exit 0 (PASS) when the export succeeds with a non-empty
 // digest for a row containing NULL columns.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-null-digest.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-null-digest.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

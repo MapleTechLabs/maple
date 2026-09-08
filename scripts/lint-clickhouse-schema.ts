@@ -50,7 +50,7 @@ for (const mv of materializedViews) {
 }
 
 // Rule: no ICU-gated functions. `lowerUTF8`/`upperUTF8` are only available in
-// ClickHouse builds with ICU (24.8+ gates them), and the libchdb embedded by
+// ClickHouse builds with ICU (24.8+ gates them), and the chDB engine embedded by
 // local mode is built without it — a schema using them bootstraps fine on
 // Tinybird but crashes every fresh `maple start` with UNKNOWN_FUNCTION.
 // For ASCII inputs `lower`/`upper` are byte-identical; for genuinely non-ASCII
@@ -61,7 +61,7 @@ for (const stmt of latestSnapshotStatements) {
 	if (match) {
 		violations.push({
 			kind: "icu_gated_function",
-			message: `Statement uses ${match[1]}(), which is missing from local mode's non-ICU libchdb. Use ${match[1] === "upperUTF8" ? "upper" : "lower"}() (identical for ASCII) or an ICU-free formulation. Statement: ${stmt.split("\n")[0]?.slice(0, 120)}`,
+			message: `Statement uses ${match[1]}(), which is missing from local mode's non-ICU chDB engine. Use ${match[1] === "upperUTF8" ? "upper" : "lower"}() (identical for ASCII) or an ICU-free formulation. Statement: ${stmt.split("\n")[0]?.slice(0, 120)}`,
 		})
 	}
 }

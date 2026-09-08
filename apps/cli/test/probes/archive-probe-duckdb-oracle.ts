@@ -7,7 +7,7 @@
 //
 // Contract: exit 0 (PASS) when every oracle matches; exit nonzero otherwise.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-duckdb-oracle.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-duckdb-oracle.ts
 //      (duckdb must be on PATH)
 
 import { mkdirSync } from "node:fs"

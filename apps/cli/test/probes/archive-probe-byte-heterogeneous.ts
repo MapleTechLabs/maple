@@ -6,7 +6,7 @@
 // Contract: exit 0 (PASS) when every shard's actual uncompressed size <= the
 // bound; exit nonzero (FAIL) when export aborts with "recalibrate"/"exceeds".
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-byte-heterogeneous.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-byte-heterogeneous.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

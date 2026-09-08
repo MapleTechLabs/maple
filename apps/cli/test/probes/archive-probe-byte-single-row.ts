@@ -4,7 +4,7 @@
 // export fails with the distinct single-row message; exit nonzero (FAIL) when it
 // aborts with a generic message or (worse) succeeds.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-byte-single-row.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-byte-single-row.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

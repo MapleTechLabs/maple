@@ -4,7 +4,7 @@
 // {tid0,tid9} (offsets 0 and 9, with hour-13 at offsets 1..8) archive exactly
 // with no cross-hour bleed and the full day's source set is archived once.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-mixed-hour.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-probe-mixed-hour.ts
 
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

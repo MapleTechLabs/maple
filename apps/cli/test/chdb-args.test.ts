@@ -9,6 +9,7 @@ import {
 	configureRawTelemetryRetentionDays,
 	rawTelemetryTtlStatements,
 	readRawTelemetryRetentionDays,
+	requiredChdbConfigXml,
 } from "../src/server/chdb"
 
 describe("embedded chDB arguments", () => {
@@ -37,6 +38,20 @@ describe("embedded chDB arguments", () => {
 			"--path=/tmp/maple-data",
 			"--config-file=/tmp/backups.xml",
 		])
+	})
+
+	it("renders the required server settings as a config overlay", () => {
+		strictEqual(
+			requiredChdbConfigXml(),
+			`<clickhouse>
+  <async_load_databases>0</async_load_databases>
+  <async_load_system_database>0</async_load_system_database>
+  <tables_loader_foreground_pool_size>1</tables_loader_foreground_pool_size>
+  <tables_loader_background_pool_size>1</tables_loader_background_pool_size>
+  <restore_threads>1</restore_threads>
+</clickhouse>
+`,
+		)
 	})
 })
 

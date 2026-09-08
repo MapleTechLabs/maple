@@ -8,18 +8,17 @@
 #  works too.)
 #
 # Downloads the platform bundle from the latest GitHub release, verifies its
-# checksum, and installs the 2-file bundle (`maple` + `libchdb.so`) into
+# checksum, and installs `maple` plus its npm `chdb` runtime sidecar into
 # ~/.maple/bin, then puts `maple` on your PATH.
 #
 # Already installed? `maple update` upgrades in place (same artifact, atomic
 # swap) — re-running this installer is only needed for a first install.
 #
-# The two files MUST stay in the same directory: `maple` (a single Bun-compiled
+# The sidecar MUST stay next to the binary: `maple` (a single Bun-compiled
 # binary that does everything — CLI, OTLP-ingest/query server, and UI host)
-# dlopens `libchdb.so` via bun:ffi, resolving it relative to its own executable
-# path. We install both into ~/.maple/bin and symlink only `maple` onto PATH;
-# the binary also falls back to ~/.maple/bin when resolving libchdb, so the
-# symlink works regardless of how the path resolves.
+# loads `node_modules/chdb`, whose platform package carries the native addon.
+# We install both into ~/.maple/bin and symlink only `maple` onto PATH; resolving
+# the symlink still lands back in the install dir, so the sidecar is found.
 #
 # Env overrides:
 #   MAPLE_VERSION        release tag to install (default: latest)
@@ -139,17 +138,20 @@ else
 	say "Checksum verified."
 fi
 
-# --- install the 2-file bundle ------------------------------------------------
+# --- install the bundle -------------------------------------------------------
 tar -xzf "$tmp/bundle.tar.gz" -C "$tmp"
 [ -d "$tmp/$name" ] || die "unexpected archive layout (no $name/ directory)"
+[ -d "$tmp/$name/node_modules/chdb" ] || die "unexpected archive layout (no node_modules/chdb runtime)"
 
 mkdir -p "$INSTALL_DIR"
-cp "$tmp/$name/maple" "$tmp/$name/libchdb.so" "$INSTALL_DIR/"
+rm -rf "$INSTALL_DIR/node_modules"
+cp "$tmp/$name/maple" "$INSTALL_DIR/"
+cp -R "$tmp/$name/node_modules" "$INSTALL_DIR/node_modules"
 chmod +x "$INSTALL_DIR/maple"
 
 # macOS: clear the Gatekeeper quarantine flag set on downloaded files.
 if [ "$os" = "Darwin" ] && command -v xattr >/dev/null 2>&1; then
-	xattr -dr com.apple.quarantine "$INSTALL_DIR/maple" "$INSTALL_DIR/libchdb.so" 2>/dev/null || true
+	xattr -dr com.apple.quarantine "$INSTALL_DIR/maple" "$INSTALL_DIR/node_modules" 2>/dev/null || true
 fi
 
 # --- put `maple` on PATH ------------------------------------------------------
@@ -165,7 +167,7 @@ mkdir -p "$link_dir"
 ln -sf "$INSTALL_DIR/maple" "$link_dir/maple"
 
 say ""
-say "✓ Installed to $INSTALL_DIR (maple + libchdb.so)"
+say "✓ Installed to $INSTALL_DIR (maple + node_modules/chdb)"
 say "✓ Linked $link_dir/maple"
 case ":$PATH:" in
 	*":$link_dir:"*) ;;

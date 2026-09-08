@@ -6,7 +6,7 @@
 // must be blocked (or harmless), and the exported shards must contain the exact
 // source row set with no duplicates or omissions.
 //
-// Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/merge-injection-probe.ts
+// Run: MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/merge-injection-probe.ts
 
 import { rmSync, mkdirSync } from "node:fs"
 import { join } from "node:path"

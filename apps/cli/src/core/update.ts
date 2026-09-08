@@ -6,12 +6,12 @@
 //     (driven by `maple update`, see commands/update.ts).
 //
 // We mirror scripts/install.sh's conventions (target triples, release URLs,
-// 2-file bundle, checksum, macOS quarantine clear) rather than shelling out to
+// runtime sidecar, checksum, macOS quarantine clear) rather than shelling out to
 // it: the installer uses `cp`, which fails with ETXTBSY when overwriting the
 // *running* executable on Linux. Self-update instead downloads into a temp dir
 // on the same filesystem as the install dir and `rename()`s over the targets —
 // rename swaps the directory entry, so the running process keeps its old inode
-// while new invocations pick up the new binary. Keep the triple/URL logic here
+// while new invocations pick up the new binary and sidecar. Keep the triple/URL logic here
 // in sync with install.sh.
 import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
 import { FileSystem } from "effect/FileSystem"
@@ -152,7 +152,7 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
 		}),
 	)
 
-/** Directory holding the running `maple` binary and its sibling `libchdb.so`
+/** Directory holding the running `maple` binary and its npm runtime sidecar
  *  (the symlink on PATH resolves here). */
 const resolveInstallDir = (): string => dirname(realpathSync(process.execPath))
 
@@ -298,10 +298,10 @@ const clearQuarantine = (paths: ReadonlyArray<string>): Effect.Effect<void, neve
 	)
 
 /**
- * Swap both bundle files into place. Each rename is atomic but the PAIR is
- * not; the previous files are parked inside `tmpDir` first so a failure after
- * the first swap restores the matched old pair instead of leaving a new
- * executable beside an old native library. A hard crash mid-swap can still
+ * Swap the executable and runtime sidecar into place. Each rename is atomic but
+ * the PAIR is not; the previous entries are parked inside `tmpDir` first so a
+ * failure after the first swap restores the matched old pair instead of leaving
+ * a new executable beside an old npm runtime. A hard crash mid-swap can still
  * mismatch — rerunning `maple update` replaces both.
  */
 const swapBundlePair = (
@@ -313,14 +313,14 @@ const swapBundlePair = (
 		const fs = yield* FileSystem
 		const previousDir = join(tmpDir, "previous")
 		const mapleDst = join(installDir, "maple")
-		const libDst = join(installDir, "libchdb.so")
+		const modulesDst = join(installDir, "node_modules")
 		const restorePrevious = Effect.gen(function* () {
 			for (const [parked, dst] of [
 				[join(previousDir, "maple"), mapleDst],
-				[join(previousDir, "libchdb.so"), libDst],
+				[join(previousDir, "node_modules"), modulesDst],
 			] as const) {
 				if (yield* fs.exists(parked)) {
-					yield* fs.remove(dst, { force: true }).pipe(Effect.ignore)
+					yield* fs.remove(dst, { recursive: true, force: true }).pipe(Effect.ignore)
 					yield* fs.rename(parked, dst)
 				}
 			}
@@ -329,8 +329,8 @@ const swapBundlePair = (
 			yield* fs.makeDirectory(previousDir, { recursive: true })
 			if (yield* fs.exists(mapleDst)) yield* fs.rename(mapleDst, join(previousDir, "maple"))
 			yield* fs.rename(join(srcDir, "maple"), mapleDst)
-			if (yield* fs.exists(libDst)) yield* fs.rename(libDst, join(previousDir, "libchdb.so"))
-			yield* fs.rename(join(srcDir, "libchdb.so"), libDst)
+			if (yield* fs.exists(modulesDst)) yield* fs.rename(modulesDst, join(previousDir, "node_modules"))
+			yield* fs.rename(join(srcDir, "node_modules"), modulesDst)
 			yield* fs.chmod(mapleDst, 0o755)
 		}).pipe(Effect.tapError(() => restorePrevious))
 	})
@@ -409,9 +409,8 @@ export const performUpdate = (
 					Effect.mapError((e) => mapFsError(e, installDir)),
 				)
 
-				if (process.platform === "darwin") {
-					yield* clearQuarantine([join(installDir, "maple"), join(installDir, "libchdb.so")])
-				}
+				if (process.platform === "darwin")
+					yield* clearQuarantine([join(installDir, "maple"), join(installDir, "node_modules")])
 			}),
 		)
 

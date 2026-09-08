@@ -15,6 +15,7 @@
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
+		"chdb": "3.3.0",
 		"effect": "catalog:effect",
 		"protobufjs": "^8.6.1"
 	},

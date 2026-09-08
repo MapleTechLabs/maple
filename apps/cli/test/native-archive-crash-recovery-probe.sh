@@ -20,23 +20,24 @@ set -uo pipefail
 
 BUNDLE_DIR="${1:?usage: $0 <bundle-dir> [port]}"
 MAPLE="$BUNDLE_DIR/maple"
-LIBCHDB="${MAPLE_LIBCHDB:-$BUNDLE_DIR/libchdb.so}"
+CHDB_NODE_MODULES="${MAPLE_CHDB_NODE_MODULES:-$BUNDLE_DIR/node_modules}"
+export MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES"
 PORT="${2:-45291}"
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORKER="$REPO/apps/cli/test/probes/archive-crash-worker.ts"
 RECONCILE="$REPO/apps/cli/test/probes/archive-reconcile-worker.ts"
-# The bundled `maple` binary bakes __CHDB_VERSION__=v26.1.0 via bun --define at
+# The bundled `maple` binary bakes __CHDB_VERSION__ via bun --define at
 # compile time; running the workers from SOURCE defaults CHDB_VERSION to "dev",
 # which makes the restore version-check reject a checkpoint made by the bundle.
 # Define it to match so the source-tree workers are version-consistent with the
 # bundle's checkpoints. (The deployed binary is consistent by construction.)
 CHDB_VER="$("$MAPLE" --version 2>/dev/null | grep -oE 'chdb v[^ ]+' | sed 's/chdb //')"
-[ -z "$CHDB_VER" ] && CHDB_VER="v26.1.0"
+[ -z "$CHDB_VER" ] && CHDB_VER="dev"
 BUN=(bun --define "__CHDB_VERSION__=\"${CHDB_VER}\"")
 
 command -v duckdb >/dev/null 2>&1 || { echo "FAIL: duckdb required" >&2; exit 1; }
 [ -x "$MAPLE" ] || { echo "FAIL: maple binary not found at $MAPLE" >&2; exit 1; }
-[ -f "$LIBCHDB" ] || { echo "FAIL: libchdb not found at $LIBCHDB" >&2; exit 1; }
+[ -d "$CHDB_NODE_MODULES/chdb" ] || { echo "FAIL: chdb runtime not found at $CHDB_NODE_MODULES/chdb" >&2; exit 1; }
 
 pass=0
 fail=0
@@ -108,7 +109,7 @@ spawn_and_kill() {
 	archive="$ROOT/archive"
 	scratch="$ROOT/scratch"
 	: >"$ROOT/worker-$boundary.out"
-	MAPLE_LIBCHDB="$LIBCHDB" "${BUN[@]}" "$WORKER" \
+	"${BUN[@]}" "$WORKER" \
 		--boundary "$boundary" --marker-dir "$marker" \
 		--data-dir "$data" --archive-dir "$archive" --scratch-root "$scratch" \
 		--range-date "$RANGE_DATE" --signal "$SIGNAL" --block-ms 60000 \
@@ -321,7 +322,7 @@ run_boundary() {
 	data="$(cat "$ROOT/data.path")"
 	archive="$ROOT/archive"
 	# Reconcile WITHOUT a fresh export.
-	if ! MAPLE_LIBCHDB="$LIBCHDB" "${BUN[@]}" "$RECONCILE" --data-dir "$data" --archive-dir "$archive" --scratch-root "$ROOT/scratch" >"$ROOT/reconcile-$boundary.out" 2>&1; then
+	if ! "${BUN[@]}" "$RECONCILE" --data-dir "$data" --archive-dir "$archive" --scratch-root "$ROOT/scratch" >"$ROOT/reconcile-$boundary.out" 2>&1; then
 		echo "  !! reconcile threw for $boundary:" >&2; tail -3 "$ROOT/reconcile-$boundary.out" >&2
 		fail=$((fail+1)); FAILURES+=("$boundary"); return
 	fi
@@ -333,14 +334,14 @@ run_boundary() {
 	# op must leave telemetry intact.
 	verify_live_store_unchanged "$boundary" || { fail=$((fail+1)); FAILURES+=("$boundary:live-store"); return; }
 	# Idempotence: reconcile AGAIN, expect the same converged state + exit 0.
-	if ! MAPLE_LIBCHDB="$LIBCHDB" "${BUN[@]}" "$RECONCILE" --data-dir "$data" --archive-dir "$archive" --scratch-root "$ROOT/scratch" >"$ROOT/reconcile2-$boundary.out" 2>&1; then
+	if ! "${BUN[@]}" "$RECONCILE" --data-dir "$data" --archive-dir "$archive" --scratch-root "$ROOT/scratch" >"$ROOT/reconcile2-$boundary.out" 2>&1; then
 		echo "  !! second reconcile (idempotence) threw for $boundary" >&2; fail=$((fail+1)); FAILURES+=("$boundary:idempotence"); return
 	fi
 	verify_post_crash "$boundary" "$expect_published" "$expect_quarantine" "$quarantine_layout" >/dev/null || { echo "  !! state drifted after second reconcile for $boundary" >&2; fail=$((fail+1)); FAILURES+=("$boundary:idempotence"); return; }
 	pass=$((pass+1))
 }
 
-echo "=== Archive crash-recovery probe (libchdb=$(basename "$LIBCHDB")) ==="
+echo "=== Archive crash-recovery probe (chdb runtime=$CHDB_NODE_MODULES) ==="
 echo "    boundary crash via real SIGKILL; oracle = reconcile then verify exact state"
 echo
 

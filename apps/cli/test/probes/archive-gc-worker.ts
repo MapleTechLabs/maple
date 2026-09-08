@@ -8,7 +8,7 @@
 // gone, one remaining, journal mid-progress) is exactly what a real crash leaves.
 //
 // Usage:
-//   MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-gc-worker.ts \
+//   MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules bun apps/cli/test/probes/archive-gc-worker.ts \
 //     --boundary <name> --marker-dir <dir> --data-dir <d> --archive-dir <a> \
 //     --scratch-root <s> --keep <n> [--block-ms <n>]
 

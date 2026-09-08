@@ -8,16 +8,17 @@
 #
 # See apps/cli/test/archive-adversarial-matrix.md for the invariant matrix.
 #
-# Usage: apps/cli/test/native-archive-adversarial-probe.sh <bundle-dir> [libchdb-path]
+# Usage: apps/cli/test/native-archive-adversarial-probe.sh <bundle-dir> [node-modules-dir]
 
 set -uo pipefail
 
-BUNDLE="${1:?usage: $0 <bundle-dir> [libchdb-path]}"
-LIBCHDB="${2:-$BUNDLE/libchdb.so}"
-export MAPLE_LIBCHDB="$LIBCHDB"
+BUNDLE="${1:?usage: $0 <bundle-dir> [node-modules-dir]}"
+CHDB_NODE_MODULES="${2:-$BUNDLE/node_modules}"
+export MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES"
 
 cd "$(dirname "$0")/../../.." || exit 1  # apps/cli/test/x.sh -> apps/cli/test -> apps/cli -> apps -> repo root
 PROBE_DIR="apps/cli/test/probes"
+[ -d "$CHDB_NODE_MODULES/chdb" ] || { echo "FAIL: chdb runtime not found at $CHDB_NODE_MODULES/chdb" >&2; exit 1; }
 
 pass=0
 fail=0
@@ -29,7 +30,7 @@ declare -a FAILURES=()
 run_probe() {
   local label="$1" probe="$2"; shift 2
   local out rc
-  out="$(env MAPLE_LIBCHDB="$LIBCHDB" "$@" bun "$PROBE_DIR/$probe" 2>&1)" && rc=0 || rc=$?
+  out="$(env MAPLE_CHDB_NODE_MODULES="$CHDB_NODE_MODULES" "$@" bun "$PROBE_DIR/$probe" 2>&1)" && rc=0 || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf '  OK   %s\n' "$label"
     pass=$((pass+1))
@@ -41,7 +42,7 @@ run_probe() {
   fi
 }
 
-echo "=== Archive adversarial probe suite (libchdb=$(basename "$LIBCHDB")) ==="
+echo "=== Archive adversarial probe suite (chdb runtime=$CHDB_NODE_MODULES) ==="
 echo
 
 echo "--- sharding correctness ---"

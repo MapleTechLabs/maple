@@ -264,23 +264,28 @@ describe("swapBundlePair", () => {
 		await mkdir(installDir, { recursive: true })
 		await mkdir(srcDir, { recursive: true })
 		await mkdir(tmpDir, { recursive: true })
+		await mkdir(join(installDir, "node_modules", "chdb"), { recursive: true })
 		await writeFile(join(installDir, "maple"), "old-maple")
-		await writeFile(join(installDir, "libchdb.so"), "old-lib")
+		await writeFile(join(installDir, "node_modules", "chdb", "package.json"), "old-runtime")
 		return { root, installDir, srcDir, tmpDir }
 	}
 
 	// Plain `it` + `Effect.runPromise` (see archive-candidate-child.test.ts):
 	// `it.effect` hangs on real fs work under bun test.
-	it("installs both files together", () =>
+	it("installs the executable and runtime sidecar together", () =>
 		Effect.runPromise(
 			Effect.gen(function* () {
 				const { root, installDir, srcDir, tmpDir } = yield* Effect.promise(layout)
 				const fs = yield* FileSystem
 				yield* fs.writeFileString(join(srcDir, "maple"), "new-maple")
-				yield* fs.writeFileString(join(srcDir, "libchdb.so"), "new-lib")
+				yield* fs.makeDirectory(join(srcDir, "node_modules", "chdb"), { recursive: true })
+				yield* fs.writeFileString(join(srcDir, "node_modules", "chdb", "package.json"), "new-runtime")
 				yield* __testables.swapBundlePair(srcDir, installDir, tmpDir)
 				strictEqual(yield* fs.readFileString(join(installDir, "maple")), "new-maple")
-				strictEqual(yield* fs.readFileString(join(installDir, "libchdb.so")), "new-lib")
+				strictEqual(
+					yield* fs.readFileString(join(installDir, "node_modules", "chdb", "package.json")),
+					"new-runtime",
+				)
 				yield* fs.remove(root, { recursive: true, force: true })
 			}).pipe(Effect.provide(BunServices.layer)),
 		))
@@ -290,14 +295,17 @@ describe("swapBundlePair", () => {
 			Effect.gen(function* () {
 				const { root, installDir, srcDir, tmpDir } = yield* Effect.promise(layout)
 				const fs = yield* FileSystem
-				// Only the executable extracted — the library rename will fail after
-				// the maple swap already happened. The old code left new-maple beside
-				// old-lib; the swap must put the matched old pair back instead.
+				// Only the executable extracted — the runtime rename will fail after
+				// the maple swap already happened. The swap must put the matched old
+				// pair back instead.
 				yield* fs.writeFileString(join(srcDir, "maple"), "new-maple")
 				const exit = yield* __testables.swapBundlePair(srcDir, installDir, tmpDir).pipe(Effect.exit)
 				ok(Exit.isFailure(exit), "swap must report the failure")
 				strictEqual(yield* fs.readFileString(join(installDir, "maple")), "old-maple")
-				strictEqual(yield* fs.readFileString(join(installDir, "libchdb.so")), "old-lib")
+				strictEqual(
+					yield* fs.readFileString(join(installDir, "node_modules", "chdb", "package.json")),
+					"old-runtime",
+				)
 				yield* fs.remove(root, { recursive: true, force: true })
 			}).pipe(Effect.provide(BunServices.layer)),
 		))

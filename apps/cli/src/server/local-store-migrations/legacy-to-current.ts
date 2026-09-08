@@ -243,7 +243,7 @@ const asProgress = (value: RawReplayProgress | undefined): RawReplayProgress =>
  * Row shapes read back out of chDB.
  *
  * `rowCount` and the hash aggregates are `string | number` on purpose: a UInt64
- * arrives quoted or unquoted depending on the libchdb build, and `numberString`
+ * arrives quoted or unquoted depending on the chDB engine build, and `numberString`
  * normalizes it. What must not happen is a `Number` decode above 2^53, which is
  * why nothing here is `Schema.Number` alone.
  */

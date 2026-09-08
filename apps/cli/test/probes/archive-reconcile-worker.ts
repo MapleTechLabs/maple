@@ -8,7 +8,7 @@
 // export.
 //
 // Usage:
-//   MAPLE_LIBCHDB=<bundle>/libchdb.so \
+//   MAPLE_CHDB_NODE_MODULES=<bundle>/node_modules \
 //   bun apps/cli/test/probes/archive-reconcile-worker.ts \
 //     --data-dir <d> --archive-dir <a>
 //
