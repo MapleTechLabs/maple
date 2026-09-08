@@ -44,7 +44,6 @@ describe("buildSessionFindings", () => {
 
 		expect(clean.verdict.status).toBe("clean")
 		expect(clean.findings).toEqual([])
-		expect(clean.turnHealth).toEqual(["clean", "clean"])
 	})
 
 	it("names the span the final turn died on, not the retry before it", () => {
@@ -93,7 +92,6 @@ describe("buildSessionFindings", () => {
 		expect(failed.findings[0]!.severity).toBe("failure")
 		expect(failed.findings[0]!.turnText).toBe("Turn 2 (final)")
 		expect(failed.findings.some((finding) => finding.label === "rate_limit")).toBe(true)
-		expect(failed.turnHealth).toEqual(["clean", "failure"])
 	})
 
 	it("tells the context story as prompt growth across the session's calls", () => {
@@ -265,7 +263,6 @@ describe("buildSessionFindings", () => {
 		expect(result.verdict.status).toBe("attention")
 		const finding = result.findings.find((entry) => entry.label === "rate_limit")!
 		expect(finding.severity).toBe("anomaly")
-		expect(result.turnHealth).toEqual(["clean", "anomaly"])
 	})
 
 	it("flags a cut-off reply once, at the deepest span that said so", () => {

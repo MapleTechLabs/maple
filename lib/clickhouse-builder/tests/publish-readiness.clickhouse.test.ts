@@ -1,39 +1,12 @@
-import { DateTime, Effect, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { DateTime, Effect } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
 import { describe, expect, it } from "@effect/vitest"
-import * as CH from "../src/ch/index"
-import * as T from "../src/ch/types"
+import * as CH from "@maple-dev/clickhouse-builder"
+import * as T from "@maple-dev/clickhouse-builder/types"
 
-// Opt in with CLICKHOUSE_BUILDER_TEST_URL, plus _USER and _PASSWORD if needed.
-// All fixtures are SELECTs/CTEs; this suite creates no tables and writes no data.
-const endpoint = process.env.CLICKHOUSE_BUILDER_TEST_URL
+import { endpoint, execute } from "./clickhouse-support"
+
 const One = CH.table("system.one", {})
-
-const WireRow = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
-const decodeWireRow = Schema.decodeUnknownEffect(WireRow)
-
-/** POST the compiled SQL and decode the JSONEachRow reply through the query's own codec. */
-const execute = Effect.fn("execute")(function* <Output>(
-	compiled: CH.CompiledQuery<Output>,
-	settings: Record<string, string> = {},
-) {
-	const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
-	const request = HttpClientRequest.post(endpoint!).pipe(
-		HttpClientRequest.setUrlParams({ default_format: "JSONEachRow", ...settings }),
-		HttpClientRequest.setHeaders({
-			"X-ClickHouse-User": process.env.CLICKHOUSE_BUILDER_TEST_USER ?? "default",
-			"X-ClickHouse-Key": process.env.CLICKHOUSE_BUILDER_TEST_PASSWORD ?? "",
-		}),
-		HttpClientRequest.bodyText(compiled.sql),
-	)
-	const text = yield* client.execute(request).pipe(
-		Effect.flatMap((response) => response.text),
-		Effect.timeout("10 seconds"),
-	)
-	const wire = yield* Effect.forEach(text.trim().split("\n").filter(Boolean), (line) => decodeWireRow(line))
-	const rows = yield* compiled.decodeRows(wire)
-	return { wire, rows }
-})
 
 it.layer(FetchHttpClient.layer)("publishing regressions against ClickHouse", (it) => {
 	describe.skipIf(!endpoint)("live", () => {

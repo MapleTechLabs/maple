@@ -16,69 +16,46 @@ export const ONBOARDING_INTENT_IDS = [
 
 export type OnboardingIntent = (typeof ONBOARDING_INTENT_IDS)[number]
 
-type IntentCopy = {
-	label: string
-	/** One line under the label. What the surface shows, not what it promises. */
-	title: string
-	/** Lower-case noun for the combined setup sentence. */
-	focus: string
-	setupHint: string
-}
-
+/** Card copy. Only the quick-start route reads this, so it stays out of the startup bundle. */
 export const ONBOARDING_INTENTS = {
-	traces: {
-		label: "Traces",
-		title: "One request, span by span, across every service.",
-		focus: "traces",
-		setupHint: "Connect a service to see its first trace.",
-	},
-	logs: {
-		label: "Logs",
-		title: "Structured search. Every line links to its trace.",
-		focus: "logs",
-		setupHint: "Ship logs over OTLP and they land next to their traces.",
-	},
-	metrics: {
-		label: "Metrics",
-		title: "Time series per service, on your own dashboards.",
-		focus: "metrics",
-		setupHint: "Send metrics over OTLP to chart them per service.",
-	},
-	errors: {
-		label: "Errors",
-		title: "Exceptions grouped into issues, trace attached.",
-		focus: "errors",
-		setupHint: "Connect your app to see exceptions grouped into issues.",
-	},
+	traces: { label: "Traces", title: "One request, span by span, across every service." },
+	logs: { label: "Logs", title: "Structured search. Every line links to its trace." },
+	metrics: { label: "Metrics", title: "Time series per service, on your own dashboards." },
+	errors: { label: "Errors", title: "Exceptions grouped into issues, trace attached." },
+	replays: { label: "Replays", title: "Browser sessions, with the network trace behind them." },
+	service_map: { label: "Service Map", title: "Which services call which, with latency on every edge." },
+	infrastructure: { label: "Infrastructure", title: "Hosts, containers, Kubernetes, Cloudflare." },
+	alerts: { label: "Alerts", title: "A threshold crossed opens an incident." },
+} satisfies Record<OnboardingIntent, { label: string; title: string }>
+
+/**
+ * What the dashboard's setup checklist says once the wizard is done. `focus` is
+ * the lower-case noun for the combined sentence. Kept apart from the card copy
+ * above: this module is on every dashboard page's startup path.
+ */
+const SETUP_HINTS = {
+	traces: { focus: "traces", hint: "Connect a service to see its first trace." },
+	logs: { focus: "logs", hint: "Ship logs over OTLP and they land next to their traces." },
+	metrics: { focus: "metrics", hint: "Send metrics over OTLP to chart them per service." },
+	errors: { focus: "errors", hint: "Connect your app to see exceptions grouped into issues." },
 	replays: {
-		label: "Replays",
-		title: "Browser sessions, with the network trace behind them.",
 		focus: "session replays",
-		setupHint: "Add the browser SDK to record sessions alongside their traces.",
+		hint: "Add the browser SDK to record sessions alongside their traces.",
 	},
 	service_map: {
-		label: "Service Map",
-		title: "Which services call which, with latency on every edge.",
 		focus: "the service map",
-		setupHint: "Connect two services and the map draws the edge between them.",
+		hint: "Connect two services and the map draws the edge between them.",
 	},
 	infrastructure: {
-		label: "Infrastructure",
-		title: "Hosts, containers, Kubernetes, Cloudflare.",
 		focus: "infrastructure",
-		setupHint: "Point the collector or the Docker agent at Maple to see hosts and containers.",
+		hint: "Point the collector or the Docker agent at Maple to see hosts and containers.",
 	},
-	alerts: {
-		label: "Alerts",
-		title: "A threshold crossed opens an incident.",
-		focus: "alerts",
-		setupHint: "Connect a service, then put a threshold on its first signal.",
-	},
-} satisfies Record<OnboardingIntent, IntentCopy>
+	alerts: { focus: "alerts", hint: "Connect a service, then put a threshold on its first signal." },
+} satisfies Record<OnboardingIntent, { focus: string; hint: string }>
 
 export function getOnboardingSetupHint(intents: readonly OnboardingIntent[]): string {
 	if (intents.length === 0) return "Drop in the snippet and we'll auto-detect your first traces."
-	if (intents.length === 1) return ONBOARDING_INTENTS[intents[0]].setupHint
-	const focuses = intents.map((intent) => ONBOARDING_INTENTS[intent].focus)
+	if (intents.length === 1) return SETUP_HINTS[intents[0]].hint
+	const focuses = intents.map((intent) => SETUP_HINTS[intent].focus)
 	return `Connect your app to explore ${new Intl.ListFormat("en", { type: "conjunction" }).format(focuses)}.`
 }
