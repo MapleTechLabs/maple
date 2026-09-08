@@ -518,11 +518,14 @@ The implementation should refactor decoding/normalization so that:
 When no projection matches, the path adds only bounded predicate work before the
 existing chDB insert.
 
-If the event store cannot stage a required event, ingest returns a retryable
-failure rather than silently losing automation. A source retry reuses the same
-event ID and canonical event bytes, so staging is idempotent. Durable OTLP log
-projection requires `timeUnixNano` or `observedTimeUnixNano`; server receipt
-time is never incorporated into durable identity or event content.
+When the outbox reaches its event or byte cap, new projections are dropped while
+warehouse ingestion continues. Maple preserves existing staged and ready events,
+reports the dropped projection count, and records a durable delivery gap that an
+operator must accept before consumers resume claiming. Infrastructure failures
+while persisting eventing state remain retryable ingest failures. A retry of a
+staged occurrence recovers its original event IDs and canonical bytes. Durable
+OTLP log projection requires `timeUnixNano` or `observedTimeUnixNano`; server
+receipt time is never incorporated into durable identity or event content.
 OTLP permits both timestamp fields to be absent or zero; those records remain
 accepted by the warehouse path but are skipped by durable event projection.
 The same isolation applies to eventing-specific normalization bounds: an
@@ -555,14 +558,13 @@ event is staged. The fingerprint contract orders field keys by explicit
 JavaScript code-unit order, not locale collation, so checkpoint recovery is
 independent of host locale.
 
-Schema 4 introduced this source fingerprint. Opening a schema-3 control store
-therefore fails before migration if it contains staged source-backed rows whose
-fingerprints cannot be reconstructed. Ready rows and stores without unresolved
-source-backed staging remain eligible for migration. Restore copies a signed
-control snapshot into a private scratch store, opens and migrates that copy, and
-serializes the validated current-schema database into the restored data
-directory. An unsafe legacy snapshot therefore fails before restore readiness
-or the live-directory swap; the signed checkpoint artifact itself is unchanged.
+The initial control schema is version 1 and includes source fingerprints.
+Opening a store or validating a snapshot rejects staged source-backed rows with
+missing or malformed fingerprints. Restore verifies the control snapshot against
+its checkpoint manifest, validates it, and copies it through a private scratch
+store before installing the restored data directory. Invalid snapshots fail
+before restore readiness or the live-directory swap. The checkpoint artifact
+remains unchanged.
 
 If atomic exactly-once storage across both systems later becomes a requirement,
 the correct addition is a durable ingress journal before both writes. chDB
@@ -570,15 +572,16 @@ polling does not solve that problem.
 
 ### Provider webhooks
 
-Provider authentication and replay protection run before normalization. The
-host must establish a durable event boundary before acknowledging the provider.
-The hosted PlanetScale route therefore requires the provider timestamp,
-projects a verified payload first, and enqueues only the resulting canonical
-CloudEvent plus bounded routing metadata; the queue is its durable event
-boundary. The complete serialized job is measured against a 120 KiB cap before
-send; oversized factual payloads receive a deterministic `413` rather than a
-retryable queue failure. Consumers continue to read legacy payload-only and
-transitional jobs.
+Provider authentication runs before normalization. The hosted PlanetScale route
+acknowledges test, ignore, and log dispositions inline. Events requiring issue or
+timeline persistence are projected and queued before acknowledgement. Their
+canonical CloudEvent and routing metadata form the durable queue body. When the
+provider omits its timestamp, projection uses the request's `receivedAt` value.
+The complete serialized job is measured against a 120 KiB cap before send;
+oversized queue bodies receive a deterministic `413` rather than a retryable
+queue failure. During rolling upgrades, consumers accept the new event-only body
+and the payload-only body already produced by upstream. Legacy payload-only jobs
+are projected using their stored `receivedAt` when their timestamp is absent.
 
 Current queue jobs are decoded as one relational contract: the event tenant,
 source, embedded connection, type, schema, and timestamp must agree with the
@@ -940,14 +943,15 @@ FULL`. While ingest is quiesced, backup first completes and verifies a blocking
 - The Local TypeScript path is the reference live implementation. Hosted Rust
   ingest remains a later adapter and must pass the shared schemas and fixture
   corpus before claiming parity.
-- Verified non-test PlanetScale webhooks run through a registered
-  `planetscale.webhook` source adapter, selector, and projector before the route
-  acknowledges them. The dedicated Cloudflare Queue durably carries
+- Verified PlanetScale webhooks requiring issue or timeline persistence run
+  through the registered `planetscale.webhook` source adapter, selector, and
+  projector before queueing. Test, ignore, and log dispositions are acknowledged
+  inline. The dedicated Cloudflare Queue carries
   `dev.maple.planetscale.webhook.received.v1` without duplicating the provider
-  payload. Queue consumers accept the event-only message plus transitional and
-  exact pre-migration shapes, reconstructing the deterministic event from older
-  timestamped messages during rolling upgrades. Timestamp-less legacy jobs are
-  terminally acknowledged without durable projection.
+  payload. Consumers support the new event-only body and the existing upstream
+  payload-only body during rolling upgrades. Missing timestamps use `receivedAt`;
+  legacy jobs use the value stored in their queue body, so queue retries retain
+  the same projected identity.
 - Hosted query-alert delivery rows remain that producer's durable outbox. Their
   payload now includes an additive deterministic
   `dev.maple.alert.lifecycle.{trigger,resolve,renotify,test}.v1` CloudEvent while

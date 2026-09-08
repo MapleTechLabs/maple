@@ -148,7 +148,7 @@ X-Maple-Maintenance-Token: <maintenance token>
 
 Abandonment drains admitted requests, validates every ID belongs to this tenant, and atomically deletes the selected staged or ready records. Any missing ID rejects the entire batch. It records another delivery gap and clears tenant leases, so consumers cannot acknowledge a deleted batch. Consumers must accept the new generation before claiming again. This operation loses delivery history deliberately; ordinary inspection and acknowledgement never abandon staged records. Reconcile or replay source facts separately when needed.
 
-The initial public eventing control schema is version 1. Unreleased development schemas are not supported by this build. Snapshot validation rejects staged source-backed rows with missing or malformed fingerprints. A deployment running an earlier development build must qualify a separate migration before using this public build; do not reset or relabel its database.
+The initial eventing control schema is version 1. Its version and DDL digest are recorded in the local schema gate. Snapshot validation rejects staged source-backed rows with missing or malformed fingerprints.
 
 Consumer cursors and leases are part of the same SQLite backup as projection and outbox state.
 Consumer mutations enter the server admission gate, so checkpoint exclusivity cannot capture a
