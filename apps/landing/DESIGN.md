@@ -10,11 +10,11 @@ Homepage variables alias the actual shared dark UI tokens: orange → `--primary
 
 ## Typography
 
-Geist Variable is the heavy, tightly set monumental display face: 800 weight, -0.04em tracking, 0.94 line height for the hero. Body uses Geist Variable with readable 1.65 leading. Geist Mono is reserved for technical identifiers, labels, and code. Display scale is intentionally oversized for this pinned monumental direction; fluid sizes and locale wrapping protect small screens.
+Geist Variable is the heavy, tightly set monumental display face: 700 weight, -0.04em tracking, 1.06 line height for the hero. Body uses Geist Variable with readable 1.65 leading. Geist Mono is reserved for technical identifiers, labels, and code. Display scale is intentionally oversized for this pinned monumental direction; fluid sizes and locale wrapping protect small screens.
 
 ## Layout
 
-A wide poster opening: announcement, oversized two-line title, architectural art occupying the right and lower field, descriptive copy and two CTAs on the left. A compact proof rail leads into the working product. Below, preserve the existing product narrative and interactive demonstrations with stronger headings, asymmetric layouts and two saturated color breaks. The stats and customer proof rail are visible in the opening viewport. At mobile widths the rail follows the copy and actions over the artwork, with a dark backdrop that keeps labels readable.
+A wide poster opening: announcement, oversized three-line title, architectural art occupying the right and lower field, descriptive copy and two CTAs on the left. A compact proof rail leads into the working product. Below, preserve the existing product narrative and interactive demonstrations with stronger headings, asymmetric layouts and two saturated color breaks. The stats and customer proof rail are visible in the opening viewport. At mobile widths the rail follows the copy and actions over the artwork, with a dark backdrop that keeps labels readable.
 
 ## Elevation & Depth
 
@@ -37,3 +37,5 @@ Homepage buttons use the original shared `buttonVariants` (hero size `xl`, prima
 The stats and customer logos overlay the lower hero artwork with a soft charcoal gradient and text shadow for contrast. There is no divider or separate strip. The GitHub count uses the existing PixelStar icon. Keep the proof visible in the opening viewport.
 
 The Roman hero uses medium-fine dithering in stone and shadows, with crisp architectural edges. Avoid large checkerboard blocks or overly smooth engraving.
+
+Hero headline restored: “Open-source observability. / Built on OpenTelemetry. / Your agent reads it too.” The first two lines use bone; the final line uses the shared amber primary. Supporting copy is one short product description without repeating OpenTelemetry or the agent claim.

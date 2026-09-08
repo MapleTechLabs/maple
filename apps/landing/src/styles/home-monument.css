@@ -150,10 +150,10 @@
 	width: max-content;
 	max-width: 100%;
 	margin-top: 24px;
-	color: var(--home-orange);
-	font-size: clamp(4.5rem, min(8.8vw, 12svh), 8rem);
-	font-weight: 800;
-	line-height: 0.94;
+	color: var(--home-ink);
+	font-size: clamp(2.5rem, min(5.3vw, 9svh), 4.5rem);
+	font-weight: 700;
+	line-height: 1.06;
 	letter-spacing: -0.04em;
 }
 .monument-hero h1 span {
@@ -273,7 +273,7 @@
 	color: var(--home-orange);
 }
 html:not([lang="en"]) .monument-hero h1 {
-	font-size: clamp(2.8rem, 6.8vw, 6.1rem);
+	font-size: clamp(2rem, 4.2vw, 4rem);
 	line-height: 1.13;
 	width: auto;
 }
@@ -310,7 +310,7 @@ html:not([lang="en"]) .monument-hero h1 {
 		gap: 8px;
 	}
 	.monument-hero h1 {
-		font-size: clamp(2.5rem, 10.3vw, 5rem);
+		font-size: clamp(1.35rem, 5.8vw, 2.75rem);
 		margin-top: 35px;
 	}
 	.monument-hero__copy {
@@ -351,7 +351,7 @@ html:not([lang="en"]) .monument-hero h1 {
 		font-size: 17px;
 	}
 	html:not([lang="en"]) .monument-hero h1 {
-		font-size: clamp(1.7rem, 6.1vw, 3rem);
+		font-size: clamp(1.2rem, 4.9vw, 2.4rem);
 	}
 }
 @media (prefers-reduced-motion: reduce) {
@@ -564,4 +564,8 @@ html:not([lang="en"]) .monument-hero h1 {
 	display: inline-flex;
 	align-items: center;
 	gap: 9px;
+}
+
+.monument-hero__headline-accent {
+	color: var(--home-orange);
 }
