@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { DemoPreview } from "./demo-preview"
 import { useNavigate } from "@tanstack/react-router"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Exit } from "effect"
@@ -252,57 +253,6 @@ function SeedingBars() {
 				/>
 			))}
 		</span>
-	)
-}
-
-const PREVIEW_SPANS: { label: string; offset: number; width: number; tone: "root" | "ok" | "slow" }[] = [
-	{ label: "GET /checkout", offset: 0, width: 97, tone: "root" },
-	{ label: "auth.verify", offset: 5, width: 19, tone: "ok" },
-	{ label: "db.query orders", offset: 27, width: 16, tone: "ok" },
-	{ label: "payments.charge", offset: 46, width: 47, tone: "slow" },
-	{ label: "cache.write", offset: 93, width: 5, tone: "ok" },
-]
-
-function DemoPreview() {
-	return (
-		<div className="rounded-xl border bg-card/60 overflow-hidden">
-			<div className="flex items-center justify-between border-b px-4 py-2.5">
-				<div className="flex items-center gap-2">
-					<span className="size-2 rounded-full bg-primary" />
-					<span className="text-xs font-medium">demo-api · trace waterfall</span>
-				</div>
-				<span className="text-[10px] font-semibold uppercase tracking-widest text-destructive">
-					Latency spike
-				</span>
-			</div>
-			<div className="space-y-1.5 p-4">
-				{PREVIEW_SPANS.map((span) => (
-					<div key={span.label} className="flex items-center gap-3">
-						<span className="w-28 shrink-0 truncate text-[11px] text-muted-foreground">
-							{span.label}
-						</span>
-						<div className="relative h-3 flex-1 rounded bg-muted/40">
-							<div
-								className={cn(
-									"absolute inset-y-0 rounded",
-									span.tone === "slow"
-										? "bg-destructive/70"
-										: span.tone === "root"
-											? "bg-primary"
-											: "bg-primary/45",
-								)}
-								style={{ left: `${span.offset}%`, width: `${span.width}%` }}
-							/>
-						</div>
-					</div>
-				))}
-			</div>
-			<div className="border-t px-4 py-2.5">
-				<p className="text-[11px] text-muted-foreground">
-					This is what you'll explore — traces, logs, and errors across four demo services.
-				</p>
-			</div>
-		</div>
 	)
 }
 

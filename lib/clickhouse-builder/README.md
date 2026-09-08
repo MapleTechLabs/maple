@@ -2,6 +2,9 @@
 
 A type-safe, immutable ClickHouse SQL query builder for TypeScript.
 
+[Read the documentation](https://effect-clickhouse.maple.dev) ·
+[Getting started](./docs/getting-started.md) · [Recipes](./docs/recipes.md)
+
 - **Schema-first** — a column type _is_ an Effect `Schema`, so a query compiles
   to its own row schema. `decodeRows` validates without you writing one, and the
   wire quirks (64-bit ints arriving quoted, tz-less DateTimes) are modelled once
@@ -21,12 +24,15 @@ Built on [Effect](https://effect.website) (peer dependency).
 
 ## Install
 
+**First npm release pending.** The command below applies after publication. To try it now,
+use the [source-build installation](./docs/getting-started.md#installation-and-compatibility).
+
 ```bash
-bun add @maple-dev/clickhouse-builder effect@rc
-# or: npm i @maple-dev/clickhouse-builder effect@rc
+bun add @maple-dev/clickhouse-builder effect@4.0.0-rc.111
+# or: npm i @maple-dev/clickhouse-builder effect@4.0.0-rc.111
 ```
 
-`effect` is a peer dependency — bring your own. Note the `@rc` tag: this package
+`effect` is a peer dependency — bring your own. The explicit version matters: this package
 requires **Effect 4** (`>=4.0.0-rc.111`), which is not on npm's `latest` tag.
 Installing a bare `effect` gets you 3.x, and the package will throw
 `Schema.TaggedError is not a function` on import.
@@ -91,7 +97,7 @@ const compiled = CH.compileUnsafe(query, { orgId: "org_123", startTime: "2026-01
 compiled.rowSchemaSource // "derived"
 const result = await client.query({ query: compiled.sql, format: "JSONEachRow" })
 const rows = await Effect.runPromise(compiled.decodeRows(await result.json()))
-// -> ReadonlyArray<{ name: string; p95: number; count: number }>
+// -> ReadonlyArray<{ name: string; p95: number | null; count: number }>
 ```
 
 `client` is your own ClickHouse client — the builder brings none.
@@ -146,9 +152,9 @@ Full guides live in [`docs/`](./docs/README.md):
 | [Extending the DSL](./docs/extending.md)                   | `defineFn`, raw escape hatches, handwritten SQL                 |
 | [API reference](./docs/reference.md)                       | Full export catalog by module, plus error types                 |
 
-Every code block in those guides is backed by a test in
-[`src/docs-examples.test.ts`](./src/docs-examples.test.ts) that compiles the
-query and asserts the emitted SQL.
+Named complete examples are extracted and checked by
+[`scripts/check-doc-examples.mjs`](./scripts/check-doc-examples.mjs). Focused query and decoding
+regressions live in [`src/docs-examples.test.ts`](./src/docs-examples.test.ts).
 
 ## Entry points
 
@@ -162,6 +168,7 @@ query and asserts the emitted SQL.
 ## Extending with custom functions
 
 ```ts
+import type { DateTime } from "effect"
 import { defineFn, sameAs } from "@maple-dev/clickhouse-builder"
 
 // Declare any ClickHouse function not already wrapped. The second argument is
@@ -176,6 +183,11 @@ const anyLast = defineFn<[CH.Expr<string>], string>("anyLast", sameAs(0))
 ```
 
 ## Validation
+
+`bun run test` also extracts the named complete Markdown examples, typechecks them against
+the public package exports, and runs the offline examples. Set `CLICKHOUSE_DOCS_LIVE=1` to
+run the client example too, with `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, and
+`CLICKHOUSE_PASSWORD` for its connection. Build the package before running these checks.
 
 Run `bun run typecheck` and `bun run test` from this package. Tests include regressions for
 nullable results, UNION column alignment, tenant scoping, custom parameters, and DateTime64 precision.

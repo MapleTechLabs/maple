@@ -9,7 +9,7 @@
 		"sql",
 		"typescript"
 	],
-	"homepage": "https://github.com/MapleTechLabs/maple/tree/main/lib/clickhouse-builder#readme",
+	"homepage": "https://effect-clickhouse.maple.dev",
 	"bugs": {
 		"url": "https://github.com/MapleTechLabs/maple/issues"
 	},
@@ -51,10 +51,11 @@
 	"scripts": {
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit",
-		"test": "vitest run && node scripts/check-doc-citations.mjs && node scripts/check-exports-documented.mjs",
+		"test": "vitest run && node scripts/check-doc-citations.mjs && node scripts/check-exports-documented.mjs && node scripts/check-doc-examples.mjs",
 		"prepublishOnly": "bun run build"
 	},
 	"devDependencies": {
+		"@clickhouse/client": "1.21.0",
 		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"effect": "catalog:effect",

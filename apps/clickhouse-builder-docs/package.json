@@ -1,0 +1,34 @@
+{
+	"name": "@maple/clickhouse-builder-docs",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"scripts": {
+		"sync:content": "bun scripts/sync-content.ts",
+		"dev": "bun run sync:content && fumapress dev",
+		"build": "bun run sync:content && fumapress build",
+		"typecheck": "tsc --noEmit",
+		"deploy": "bun run build && wrangler deploy"
+	},
+	"dependencies": {
+		"@base-ui/react": "^1.7.0",
+		"fumadocs-core": "^16.15.4",
+		"fumadocs-mdx": "^15.4.0",
+		"fumadocs-ui": "npm:@fumadocs/base-ui@^16.15.4",
+		"fumapress": "1.2.0",
+		"react": "^19.2.8",
+		"react-dom": "^19.2.8",
+		"waku": "^1.0.0-rc.0"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/mdx": "^2.0.14",
+		"@types/node": "^26.4.0",
+		"@types/react": "^19.2.18",
+		"@types/react-dom": "^19.2.5",
+		"tailwindcss": "^4.3.3",
+		"typescript": "^7.0.2",
+		"vite": "^8.2.2",
+		"wrangler": "4.128.0"
+	}
+}

@@ -38,6 +38,7 @@ The constructors are values, not calls (except the parameterised ones):
 | `T.uint16`           | `UInt16`          | `number`            | number or quoted number   |
 | `T.uint32`           | `UInt32`          | `number`            | number or quoted number   |
 | `T.uint64`           | `UInt64`          | `number`            | number or quoted number   |
+| `T.int64`            | `Int64`           | `number`            | number or quoted number   |
 | `T.int32`            | `Int32`           | `number`            | number or quoted number   |
 | `T.float64`          | `Float64`         | `number`            | number or quoted number   |
 | `T.bool`             | `Bool`            | `boolean`           | `true`/`false` or `1`/`0` |
@@ -48,7 +49,7 @@ The constructors are values, not calls (except the parameterised ones):
 | `T.map(k, v)`        | `Map(K, V)`       | `Record<string, V>` | object                    |
 | `T.array(e)`         | `Array(E)`        | `ReadonlyArray<E>`  | array                     |
 | `T.nullable(t)`      | `Nullable(T)`     | `T \| null`         | value or `null`           |
-| `T.unknown(sql)`     | whatever you name | `unknown`           | unvalidated               |
+| `T.untyped(sql)`     | whatever you name | `unknown`           | unvalidated               |
 
 Two of those deserve a note.
 
@@ -56,13 +57,20 @@ Two of those deserve a note.
 `output_format_json_quote_64bit_integers=0` gets them bare, and a gateway
 that refuses `output_format_json_quote_64bit_integers=0` quotes them regardless. Every integer
 type accepts both and decodes to a `number` — which also means a `UInt64` above `2^53` cannot
-survive: emit those as `toString(...)` in the SELECT and declare the column `T.string`.
+survive: select `CH.toString($.Id)` while leaving the actual table column declared `T.uint64`.
+The resulting expression has a string codec; see the [ID recipe](./recipes.md#preserve-large-integer-ids).
 
-**DateTimes.** ClickHouse sends `2026-05-24 14:30:00` — UTC, but with no zone marker, which
-`new Date(…)` reads as _local_ time and shifts by the runtime's offset. `T.dateTime` parses it
-correctly to a `DateTime.Utc`. Use `T.dateTimeString` when the row is being forwarded onto a wire
-of its own and re-serializing the timestamp would change what your clients receive; the date
-functions preserve whichever flavour they are given.
+**DateTimes.** The parsed codecs interpret zone-less strings such as `2026-05-24 14:30:00`
+as UTC. ClickHouse does **not** guarantee that all timestamp strings are UTC: text output follows
+the column/server timezone. Use UTC columns or normalize the selected expression to UTC before
+using `T.dateTime` / `T.dateTime64`. For an unchanged wire string, use `T.dateTimeString` /
+`T.dateTime64String`. See [ClickHouse DateTime timezones](https://clickhouse.com/docs/reference/data-types/datetime).
+
+**Numeric validation.** Built-in numeric codecs accept finite numbers and quoted finite numbers.
+They do not enforce each ClickHouse integer's sign, bit width, safe-integer range, or integrality.
+Use schema checks through `T.custom` when your application needs those constraints; `param.int`
+separately requires a safe integer. A successful decode does not prove an unsafe large number
+retained precision.
 
 > **Import the namespace.** Every constructor is on the root barrel too, but
 > `import * as T from "@maple-dev/clickhouse-builder/types"` — as above — reads better than
@@ -119,3 +127,18 @@ See [Joins and subqueries](./joins-and-subqueries.md).
 `T.dateTime64` preserves milliseconds when encoding `Date`/`DateTime.Utc` comparison bounds
 and decoded rows. JavaScript timestamps have millisecond precision; use `T.dateTime64String`
 when forwarding microseconds or nanoseconds unchanged. `T.dateTime` encodes whole seconds.
+
+## Types not in the built-in list
+
+`T.custom(sqlType, schema)` models types such as UUID, LowCardinality, enums, or decimals using
+their JSON representation. Match your existing database schema rather than redesigning the
+physical table to fit this library's constructors. For a `LowCardinality(String)` column, for
+example, `T.custom("LowCardinality(String)", Schema.String)` decodes the ordinary string it emits.
+
+`T.untyped(sqlType)` accepts an unknown field without validating it. Unlike `CH.untypedExpr`, it
+supplies a `Schema.Unknown` codec, so other selected fields can still be validated. The unknown
+field itself has no guarantee. Prefer a real custom codec where you know the wire representation.
+
+`T.aggregateState(fn, ...argumentTypes)` describes an opaque aggregate-state value passed from
+an inner query into a matching merge function. It is not a decoder for inspecting state bytes.
+See [Extending the DSL](./extending.md#a-column-type-of-your-own).

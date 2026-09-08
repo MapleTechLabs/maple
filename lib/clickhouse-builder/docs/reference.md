@@ -57,36 +57,37 @@ Note `/sql` exports a `compile` (fragment → string) distinct from the root `co
 
 ### `CHQuery` methods
 
-| Method                                                | Notes                                               |
-| ----------------------------------------------------- | --------------------------------------------------- |
-| `select(...names)` / `select(fn)`                     | Required before compiling                           |
-| `where(fn)`                                           | Returns `Array<Condition \| undefined>`; AND-joined |
-| `groupBy(...outputKeys)`                              | Takes select aliases, not column names              |
-| `orderBy(...[col, dir])`                              | **Tuples**, not two strings                         |
-| `limit(n)` / `offset(n)`                              | Rounded before emission                             |
-| `format(fmt)`                                         | `"JSON"` \| `"JSONEachRow"`                         |
-| `innerJoin` / `leftJoin` / `crossJoin`                | `(table, alias, on?)`                               |
-| `innerJoinQuery` / `leftJoinQuery` / `crossJoinQuery` | `(query, alias, on?)`                               |
-| `withCTE(name, sql, options?)`                        | `options.tenantScope`                               |
-| `route("ingest")`                                     | Metadata only                                       |
-| `crossTenant()`                                       | Forces `tenantScope: "cross-tenant"`                |
+| Method                                                  | Notes                                                                 |
+| ------------------------------------------------------- | --------------------------------------------------------------------- |
+| `select(...names)` / `select(fn)`                       | Required before compiling                                             |
+| `where(fn)`                                             | Returns `Array<Condition \| undefined>`; AND-joined                   |
+| `groupBy(...outputKeys)`                                | Takes select aliases, not column names                                |
+| `having(fn)`                                            | Post-aggregation filter; input accessor or `dynamicColumn` aliases    |
+| `orderBy(...[col, dir])`                                | **Tuples**, not two strings                                           |
+| `limit(n)` / `offset(n)`                                | Rounded before emission                                               |
+| `format(fmt)`                                           | `"JSON"` \| `"JSONEachRow"`                                           |
+| `innerJoin` / `leftJoin` / `crossJoin`                  | `(table, alias, on?)`                                                 |
+| `innerJoinQuery` / `leftJoinQuery` / `crossJoinQuery`   | `(query, alias, on?)`                                                 |
+| `withCTE(name, query)` / `withCTE(name, sql, options?)` | Typed query derives scope; SQL form can declare `options.tenantScope` |
+| `route("ingest")`                                       | Metadata only                                                         |
+| `crossTenant()`                                         | Forces `tenantScope: "cross-tenant"`                                  |
 
 `CHUnionQuery` offers only `orderBy`, `limit`, `offset`, `format`.
 
 ### Compilation
 
-| Export               | Signature                                                                       |
-| -------------------- | ------------------------------------------------------------------------------- |
-| `compile`            | `(query, params, options?) => Effect<CompiledQuery<Output>, QueryBuilderError>` |
-| `compileUnsafe`      | The same, returning `CompiledQuery<Output>` and throwing instead                |
-| `compileUnion`       | `(union, params, options?) => Effect<CompiledQuery<Output>, QueryBuilderError>` |
-| `compileUnionUnsafe` | The same, throwing instead                                                      |
-| `rawCompiledQuery`   | `({ sql, tenantScope, reason, note, rowSchema?, route? }) => CompiledQuery`     |
+| Export               | Signature                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `compile`            | `(query, params, options?) => Effect<CompiledQuery<Output>, QueryBuilderError>`      |
+| `compileUnsafe`      | The same, returning `CompiledQuery<Output>` and throwing instead                     |
+| `compileUnion`       | `(union, params, options?) => Effect<CompiledQuery<Output>, QueryBuilderError>`      |
+| `compileUnionUnsafe` | The same, throwing instead                                                           |
+| `rawCompiledQuery`   | `({ sql, tenantScope, reason, justification, rowSchema?, route? }) => CompiledQuery` |
 
 ### Params
 
 `param.string(name)`, `param.int(name)`, `param.float(name)`, `param.bool(name)`,
-`param.dateTime(name)`, `param.dateTimeString(name)`, and `param.of(type, name)` for any column
+`param.dateTime(name)`, `param.dateTimeString(name)`, `param.dateTimeSeconds(name)`, and `param.of(type, name)` for any column
 type. Each checks the value it is handed at compile
 time; see [Params and compilation](./params-and-compilation.md#what-each-kind-accepts).
 
@@ -269,7 +270,8 @@ Types: `WindowSpec`, `CompiledWindowSpec`, `WindowFrameBound`, `WindowRowsFrame`
 
 ## Errors
 
-Both are Effect `Schema.TaggedError`s, catchable by tag.
+These errors are Effect `Schema.TaggedError` classes. Expected failures can be caught by
+their full namespaced tag; `QueryBuilderDefect` remains a defect rather than a typed failure.
 
 ### `QueryBuilderError`
 
@@ -286,7 +288,7 @@ Tag `"@maple-dev/clickhouse-builder/QueryBuilderError"`. Raised while compiling,
 
 Tag `"@maple-dev/clickhouse-builder/QueryBuilderDefect"`. A DSL misuse no runtime value can cause
 — a query with no `select()`, an `orderBy` entry that is not a tuple, a bad param name, a
-comparison called on a param marker, two column types claiming one ClickHouse type name. Always
+comparison called on a param marker. Always
 a defect: `compile` maps only `QueryBuilderError` into the error channel. See
 [Failures and defects](./params-and-compilation.md#failures-and-defects).
 

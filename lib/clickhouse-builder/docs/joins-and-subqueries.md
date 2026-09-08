@@ -6,19 +6,22 @@ Each join takes the table, an alias, and an ON callback receiving both sides:
 
 ```ts
 const query = CH.from(Events, "e")
-	.innerJoin(Services, "s", (main, joined) => main.Name.eq(joined.Name))
+	.innerJoin(Services, "s", (main, joined) => main.Name.eq(joined.Name).and(main.OrgId.eq(joined.OrgId)))
 	.select(($) => ({ name: $.Name, team: $.s.Team }))
 	.where(($) => [$.OrgId.eq("org_123")])
 
 // SELECT e.Name AS name, s.Team AS team
 // FROM events AS e
-// INNER JOIN services AS s ON e.Name = s.Name
+// INNER JOIN services AS s ON (e.Name = s.Name AND e.OrgId = s.OrgId)
 // WHERE e.OrgId = 'org_123'
 ```
 
 Once a join exists, the accessor gains a key per alias. Main-table columns stay at the top
 level (`$.Name`), joined columns sit under their alias (`$.s.Team`). Alias the main table in
 `from()` so its references qualify too.
+
+The tenant-key equality prevents same-named services from another tenant joining the result.
+Filtering only `e.OrgId` does not constrain an independently joined tenant table.
 
 Available: `innerJoin`, `leftJoin`, `crossJoin` (which takes no ON callback).
 
@@ -45,6 +48,7 @@ const perTeam = CH.from(Services)
 CH.from(Events, "e")
 	.innerJoinQuery(perTeam, "s", (main, joined) => main.Name.eq(joined.name))
 	.select(($) => ({ team: $.s.team }))
+	.where(($) => [$.OrgId.eq("org_123")])
 ```
 
 ## Subquery in `FROM`
@@ -90,11 +94,11 @@ column types stay checked:
 ```ts
 const excluded = CH.from(Events)
 	.select(($) => ({ n: $.Name }))
-	.where(($) => [$.OrgId.eq(param.string("orgId"))])
+	.where(($) => [$.OrgId.eq(CH.param.string("orgId"))])
 
 const query = CH.from(Services, "s")
 	.select(($) => ({ team: $.Team }))
-	.where(($) => [$.OrgId.eq(param.string("orgId")), CH.notInSubquery($.Team, excluded)])
+	.where(($) => [$.OrgId.eq(CH.param.string("orgId")), CH.notInSubquery($.Team, excluded)])
 
 const compiled = CH.compileUnsafe(query, { orgId: "org_123" })
 // … WHERE OrgId = 'org_123' AND Team NOT IN (SELECT Name AS n FROM events WHERE OrgId = 'org_123')
@@ -122,8 +126,10 @@ All three also accept a pre-compiled SQL string, for the rare case where that is
 > outer query still needs its own tenant predicate, or a row source that is itself scoped. This
 > is true whether you pass a query or a string.
 
-> **`NOT IN` and NULLs.** If the subquery yields any NULL, `NOT IN` is never true. Project a
-> non-nullable column, or filter the NULLs out inside the subquery.
+> **Membership and NULLs.** Do not assume another SQL database's `NOT IN` behavior applies.
+> ClickHouse membership semantics depend on `transform_null_in`; with its default of `0`,
+> NULL does not match another NULL in a set. Use non-nullable keys or define your NULL policy
+> explicitly. See [ClickHouse NULL processing](https://clickhouse.com/docs/reference/statements/in#null-processing).
 
 ## Splicing a subquery where there is no syntax for one
 
@@ -144,7 +150,7 @@ import { subqueryCond, subqueryExpr } from "@maple-dev/clickhouse-builder"
 // Stage 1: a cheap scan reading only the sort column.
 const cheapScan = CH.from(Events)
 	.select(($) => ({ ts: $.Timestamp }))
-	.where(($) => [$.OrgId.eq(param.string("orgId"))])
+	.where(($) => [$.OrgId.eq(CH.param.string("orgId"))])
 	.orderBy(["ts", "desc"])
 	.limit(100)
 
@@ -153,18 +159,18 @@ const cutoff = subqueryExpr(cheapScan, T.dateTime, (sql) => `(SELECT min(ts) FRO
 // Stage 2: the heavy columns, read only for rows at or after the cutoff.
 const query = CH.from(Events)
 	.select(($) => ({ name: $.Name, attrs: $.Attributes }))
-	.where(($) => [$.OrgId.eq(param.string("orgId")), $.Timestamp.gte(cutoff)])
+	.where(($) => [$.OrgId.eq(CH.param.string("orgId")), $.Timestamp.gte(cutoff)])
 ```
 
 `subqueryCond` is the same thing as a predicate, and `untypedSubqueryExpr` the same thing for a
-value that never becomes a row (which costs the query its row schema — see
+value that never becomes a row (which costs the query its row schema if selected — see
 [Decoding results](./decoding-results.md)):
 
 ```ts
 CH.from(Events)
 	.select(($) => ({ name: $.Name }))
 	.where(($) => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(CH.param.string("orgId")),
 		subqueryCond(cheapScan, (sql) => `Timestamp IN (SELECT ts FROM (${sql}))`),
 	])
 ```
@@ -189,6 +195,19 @@ _(Backed by `docs/joins-and-subqueries.md > subqueryExpr splices an inner query,
 
 - `inList(expr, values)` — `expr IN ('a', 'b')` for a string list
 - `inExprList(expr, exprs)` — same, for expression lists
-- `notInList(expr, values)` — available from the `/expr` subpath
+- `notInList(expr, values)` — available from the root and `/expr` subpath
 
 These predate `.in_()` and remain useful when you have an array in hand rather than varargs.
+
+## Join size and duplicate matches
+
+A normal join can emit several rows for one left-hand row when multiple right-hand rows match.
+If you need one service row per key, aggregate or deduplicate the right side according to your
+business rule before joining. The typed join helpers do not expose ANY/SEMI/ANTI strictness or
+an algorithm selector; compilation alone does not choose a faster algorithm for your data.
+
+Filter derived tables before joining when practical, especially tenant and time filters.
+Inspect the actual plan and pass `join_algorithm` through your client's settings when needed.
+Per `query-join-filter-before` and `query-join-choose-algorithm`, filtering and algorithm choices
+must be checked against the workload; per `query-join-use-any`, ANY semantics are appropriate
+only when one match is sufficient. See [ClickHouse join guidance](https://clickhouse.com/docs/guides/joining-tables).

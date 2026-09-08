@@ -8,9 +8,12 @@ CH.param.int("limit")
 CH.param.float("threshold")
 CH.param.bool("includeDrafts")
 CH.param.dateTime("startTime")
+CH.param.dateTimeString("stringTimestamp")
+CH.param.dateTimeSeconds("secondPrecisionTimestamp")
+CH.param.of(T.uint64, "customNumber")
 ```
 
-Those five are the whole set. A param is an `Expr` placeholder usable anywhere an expression
+A param is an `Expr` placeholder usable anywhere an expression
 is — most often on the right of a comparison:
 
 ```ts
@@ -54,14 +57,15 @@ Reuse type definitions across queries when practical.
 `T.custom`, works as a param.
 
 ```ts
-const Level = T.custom("Enum8", Schema.Literals(["warn", "error"]))
-
-CH.from(Events)
-	.select(($) => ({ n: CH.count() }))
+const Level = T.custom("Enum8('warn' = 1, 'error' = 2)", Schema.Literals(["warn", "error"]))
+const Logs = CH.table("logs", { Level })
+const query = CH.from(Logs)
+	.select("Level")
 	.where(($) => [$.Level.eq(CH.param.of(Level, "level"))])
 
-yield * CH.compile(query, { level: "warn" }) // … WHERE Level = 'warn'
-yield * CH.compile(query, { level: "banana" }) // fails — the schema rejected it
+const compiled = await Effect.runPromise(CH.compile(query, { level: "warn" }))
+// WHERE Level = 'warn'
+// CH.compile(query, { level: "banana" }) fails when run: the codec rejects the value.
 ```
 
 Compilation returns an `Effect`, so a value the query cannot accept is a typed failure rather
@@ -69,15 +73,17 @@ than a throw. That matters because these are runtime values: a param bag comes f
 as often as from your own code, and a route that can `catchTag` a bad one can answer with a
 400 instead of crashing.
 
+Inside an `Effect.gen` program:
+
 ```ts
-yield * CH.compile(query, { startTime: new Date("2026-01-01T00:00:00Z") })
-// … WHERE Timestamp >= '2026-01-01 00:00:00'
+const byDuration = CH.from(Events)
+	.select("Name")
+	.where(($) => [$.DurationMs.gte(CH.param.int("minDurationMs"))])
 
-yield * CH.compile(query, { limit: 10.5 })
-// fails with QueryBuilderError { code: "InvalidLiteral" } — use param.float for fractions
-
-yield * CH.compile(query, {})
-// fails with QueryBuilderError { code: "UnresolvedParam" }: no value given for param 'orgId'
+const compiled = yield * CH.compile(byDuration, { minDurationMs: 100 })
+// WHERE DurationMs >= 100
+// Replacing 100 with 10.5 fails with code "InvalidLiteral".
+// Passing {} fails with code "UnresolvedParam".
 ```
 
 A throw that is _not_ a `QueryBuilderError` — a bug inside one of your callbacks — stays a
@@ -148,7 +154,7 @@ CH.compileUnsafe(query, params, options?)  // CompiledQuery, throws
 ```ts
 interface CompiledQuery<Output> {
 	readonly sql: string
-	readonly tenantScope: "single-tenant" | "cross-tenant"
+	readonly tenantScope: "single-tenant" | "cross-tenant" | "untenanted"
 	readonly rowSchemaSource: "declared" | "derived" | "none"
 	readonly rowSchema: CompiledQueryRowSchema<Output> | undefined
 	readonly untypedColumns: ReadonlyArray<string>
@@ -169,7 +175,7 @@ interface CompiledQuery<Output> {
 | `rowSchema`                     | The codec itself, for a caller that needs a `Schema` rather than a call                  |
 | `untypedColumns`                | When `rowSchemaSource` is `"none"`, the selected aliases responsible                     |
 | `rowSchemaMismatch`             | How a _declared_ schema disagrees with the SELECT by field name, when it does            |
-| `rawSql`                        | Present only for `rawCompiledQuery`: the `reason` and `note` it was given                |
+| `rawSql`                        | Present only for `rawCompiledQuery`: the `reason` and `justification` it was given       |
 | `route`                         | Set by `.route(tag)`; opaque metadata for your executor                                  |
 | `decodeRows` / `decodeFirstRow` | See [Decoding results](./decoding-results.md)                                            |
 | `encodeRows`                    | The same codec backwards — decoded rows to the wire shape                                |
@@ -200,8 +206,42 @@ input, so `compile` puts them in the Effect error channel, catchable by the tag
 
 `QueryBuilderDefect` describes a **call** that could not be right for any value: a query with no
 `select()`, an `orderBy` entry that is not a tuple, a param name that is not an identifier, a
-placeholder compared as if it were resolved, two column types claiming one ClickHouse type name.
+placeholder compared as if it were resolved.
 No input reaches these; only a rewrite does — a missing `select()` is written in the query
 definition, not steered by a request. `compile` maps
 only `QueryBuilderError` into the error channel and dies on everything else, so a defect arrives
 as a defect in the `Cause` — where a bug belongs, and where no `catchTag` can swallow it.
+
+## Handling compilation failures
+
+Use the full namespaced error tag with Effect 4's `catchTag`. This example deliberately omits
+a required parameter and recovers only that typed builder failure; defects are not swallowed.
+
+```ts title="compile-errors.ts"
+import { Effect } from "effect"
+import * as CH from "@maple-dev/clickhouse-builder"
+import * as T from "@maple-dev/clickhouse-builder/types"
+
+const Events = CH.table("events", { Name: T.string })
+const query = CH.from(Events)
+	.select("Name")
+	.where(($) => [$.Name.eq(CH.param.string("name"))])
+
+export const outcome = await Effect.runPromise(
+	CH.compile(query, {}).pipe(
+		Effect.map((compiled) => ({ ok: true as const, sql: compiled.sql })),
+		Effect.catchTag("@maple-dev/clickhouse-builder/QueryBuilderError", (error) =>
+			Effect.succeed({ ok: false as const, code: error.code, message: error.message }),
+		),
+	),
+)
+console.log(outcome) // { ok: false, code: "UnresolvedParam", message: ... }
+```
+
+This is a demonstration result, not an HTTP error contract. In your service, map expected
+failures to your domain errors at the boundary. Validate page sizes, bucket sizes, dates,
+and allowed sort fields before query construction. Do not retry an invalid parameter.
+
+`compile` captures builder failures raised while it evaluates query callbacks. A helper that
+throws before you call `compile` is outside that boundary; avoid eagerly constructing unsafe
+expressions from unchecked input.

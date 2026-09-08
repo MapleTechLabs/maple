@@ -150,18 +150,12 @@ describe("docs/getting-started.md", () => {
 					.where(($) => [$.OrgId.eq("org_123")])
 					.groupBy("name"),
 				{},
-				{
-					rowSchema: Schema.Struct({
-						name: Schema.String,
-						count: Schema.Number,
-					}),
-				},
 			)
 
-			const rows = yield* compiled.decodeRows([{ name: "checkout", count: 3 }])
+			const rows = yield* compiled.decodeRows([{ name: "checkout", count: "3" }])
 
 			expect(rows).toEqual([{ name: "checkout", count: 3 }])
-			expect(compiled.rowSchemaSource).toBe("declared")
+			expect(compiled.rowSchemaSource).toBe("derived")
 		}),
 	)
 })
@@ -378,14 +372,17 @@ describe("docs/joins-and-subqueries.md", () => {
 
 	it("Joining a table", () => {
 		const query = CH.from(Events, "e")
-			.innerJoin(Services, "s", (main, joined) => main.Name.eq(joined.Name))
+			.innerJoin(Services, "s", (main, joined) =>
+				main.Name.eq(joined.Name).and(main.OrgId.eq(joined.OrgId)),
+			)
 			.select(($) => ({ name: $.Name, team: $.s.Team }))
 			.where(($) => [$.OrgId.eq("org_123")])
 
 		expect(oneLine(compileCHUnsafe(query, {}).sql)).toBe(
 			"SELECT e.Name AS name, s.Team AS team FROM events AS e " +
-				"INNER JOIN services AS s ON e.Name = s.Name WHERE e.OrgId = 'org_123'",
+				"INNER JOIN services AS s ON (e.Name = s.Name AND e.OrgId = s.OrgId) WHERE e.OrgId = 'org_123'",
 		)
+		expect(compileCHUnsafe(query, {}).tenantScope).toBe("single-tenant")
 	})
 
 	it("Subquery in FROM uses flat accessors", () => {
@@ -413,11 +410,13 @@ describe("docs/joins-and-subqueries.md", () => {
 		const query = CH.from(Events, "e")
 			.innerJoinQuery(perTeam, "s", (main, joined) => main.Name.eq(joined.name))
 			.select(($) => ({ team: $.s.team }))
+			.where(($) => [$.OrgId.eq("org_123")])
 
 		expect(oneLine(compileCHUnsafe(query, {}).sql)).toContain(
 			"INNER JOIN (SELECT Name AS name, Team AS team FROM services " +
 				"WHERE OrgId = 'org_123') AS s ON e.Name = s.name",
 		)
+		expect(compileCHUnsafe(query, {}).tenantScope).toBe("single-tenant")
 	})
 
 	it("Correlated subquery with outerRef", () => {

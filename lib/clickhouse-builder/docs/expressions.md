@@ -62,8 +62,8 @@ Each accepts a raw value or another `Expr<T>`. String literals are escaped; bool
 // … WHERE OrgId = 'org_123' AND (Name = 'checkout' OR Name = 'cart')
 ```
 
-`.and()` / `.or()` parenthesise their result, so precedence is explicit. `not(condition)` wraps
-in `NOT (…)` and is available from the `/expr` subpath.
+`.and()` / `.or()` parenthesise their result, so precedence is explicit. `CH.not(condition)` wraps
+in `NOT (…)` and is available from the root and `/expr` subpath.
 
 The `where` array is AND-joined. [Tenant scoping](./tenant-scoping.md) preserves evidence
 through both separate entries and `.and()`; `.or()` discards it.
@@ -89,6 +89,17 @@ const build = (nameFilter?: string) =>
 `whenTrue(flag, () => cond)` is the variant for a plain boolean gate.
 
 _(Backed by `docs/expressions.md > Optional predicates with when`.)_
+
+### Empty lists and wildcard searches
+
+Decide what an empty filter list means before building the query: omit it for “no filter”, or
+return no rows for “nothing selected”. Do not accidentally turn an empty selection into an
+unbounded read. The [optional-filter recipe](./recipes.md#optional-filters-and-empty-lists) shows
+an explicit choice.
+
+Escaping SQL strings does not escape LIKE wildcards. `%` and `_` in a `.like()` argument are
+patterns; use `.eq()` for exact text. Keep table names, aliases, and raw SQL under application
+control: value escaping is not an allowlist for identifiers.
 
 ## Arithmetic
 

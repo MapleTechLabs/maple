@@ -10,8 +10,7 @@ const result = await client.query({ query: compiled.sql, format: "JSONEachRow" }
 const rows = await Effect.runPromise(compiled.decodeRows(await result.json()))
 ```
 
-[Running a query](./running-queries.md) has the whole loop, including the two ClickHouse wire
-settings the column types assume.
+[Running a query](./running-queries.md) has the whole loop, including formats and numeric precision.
 
 ## The row schema is derived from the SELECT
 
@@ -74,8 +73,10 @@ const backToWire = await Effect.runPromise(compiled.encodeRows(rows))
 ```
 
 That matters for a service that forwards warehouse rows onto a wire of its own: it can decode to
-the value worth computing with and still emit the exact bytes its clients already parse, instead
-of choosing between them. A query with no row schema passes the rows through, the same contract
+the value worth computing with and still emit the codec's canonical wire representation, instead
+of choosing between them. Encoding is not byte-for-byte round-tripping: quoted numbers can become numbers,
+and parsed timestamps can lose sub-millisecond precision. Use string codecs when the exact
+text matters. A query with no row schema passes the rows through, the same contract
 `decodeRows` has. Failures are `CompiledQueryEncodeError`, carrying the offending `rowIndex`.
 
 ## Declaring one anyway
@@ -129,10 +130,13 @@ _(Backed by `docs/decoding-results.md > An untyped expression leaves the query u
 For point lookups, returning `Option<Output>` rather than making you hand-roll `rows[0] ?? null`:
 
 ```ts
-const first = await Effect.runPromise(compiled.decodeFirstRow(rows))
+import { Option } from "effect"
+
+const first = await Effect.runPromise(compiled.decodeFirstRow(wireRows))
 Option.getOrNull(first) // Output | null
 ```
 
+Pass raw wire rows, just as for `decodeRows`; it decodes only the first row, not every row.
 An empty input yields `Option.none()`.
 
 _(Backed by `docs/decoding-results.md > decodeFirstRow returns an Option`.)_
@@ -161,7 +165,7 @@ Only relevant when you declare one by hand; the column types already handle thes
 
 - **64-bit integers** — accept both wire shapes. A `UInt64` above `2^53` cannot survive as a
   JavaScript number at all; have such columns emitted as strings (`toString(...)`) in the SELECT
-  and declare them `T.string`.
+  and use a string schema for the projected field.
 - **`DateTime` columns** — `T.dateTime` parses them as UTC; `T.dateTimeString` leaves them as
   sent. See [Tables and column types](./tables-and-types.md#column-types).
 - **`leftJoin` columns** — nullable on the SQL side, so pair them with `Schema.NullOr`.

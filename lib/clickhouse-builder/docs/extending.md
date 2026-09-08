@@ -9,7 +9,12 @@ One line for any standard `fn(args…)` function. You supply the argument tuple,
 and the ClickHouse type it produces:
 
 ```ts
-const toStartOfFiveMinute = CH.defineFn<[CH.Expr<string>], string>("toStartOfFiveMinute", T.dateTimeString)
+import type { DateTime } from "effect"
+
+const toStartOfFiveMinute = CH.defineFn<[CH.Expr<DateTime.Utc>], DateTime.Utc>(
+	"toStartOfFiveMinute",
+	T.dateTime,
+)
 
 CH.from(Events)
 	.select(($) => ({ bucket: toStartOfFiveMinute($.Timestamp) }))
@@ -105,11 +110,15 @@ it works everywhere a built-in does: rows decode through it, literals encode thr
 `param.of(type, name)` takes it as a param.
 
 ```ts
-const Level = T.custom("Enum8", Schema.Literals(["warn", "error"]))
-const Decimal = T.custom("Decimal(18, 4)", Schema.FiniteFromString)
+const Level = T.custom("Enum8('warn' = 1, 'error' = 2)", Schema.Literals(["warn", "error"]))
+const Decimal = T.custom("Decimal(18, 4)", Schema.String)
 
 const Logs = CH.table("logs", { OrgId: T.string, Level, Amount: Decimal })
 ```
+
+This Decimal declaration expects decimal text from your client and preserves it as a string.
+Converting a decimal to a JavaScript number can lose precision. Match the codec to the actual
+response format; the SQL type label alone does not validate its scale or precision.
 
 Pass a third argument when comparisons should accept more than the column decodes to — that is
 how a `DateTime` column takes a `DateTime.Utc`, a `Date`, or the string form and writes the same
@@ -135,7 +144,7 @@ CH.from(Events)
 that is only ever an `argMin` tiebreaker, never a selected value. Selecting one costs the query
 its row schema, so it is deliberately a separate name.
 
-`dynamicColumn<T>(name, type?)` (on the `/expr` subpath) is the same idea for a column name only
+`dynamicColumn<T>(name, type?)` (on the root and `/expr` subpath) is the same idea for a column name only
 known at runtime; pass the type where you know it.
 
 _(Backed by `docs/extending.md > rawExpr and rawCond are the last resort`.)_

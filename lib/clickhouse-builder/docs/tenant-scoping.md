@@ -42,7 +42,7 @@ executor that refuses the second should not refuse the first — otherwise every
 dimension or lookup table is refused.
 
 The builder only says `"untenanted"` when it can see every source and none declares a tenant
-column. Anything it cannot see into — a CTE handed to it as a SQL string, a subquery over a
+column. Anything it cannot see into — a CTE handed to it as an unannotated SQL string, an unscoped subquery over a
 table that does declare one — keeps the query at `"cross-tenant"`, so the unknown case is still
 the refused one.
 
@@ -122,7 +122,7 @@ Typed CTEs, FROM-subqueries, and unions inherit their inner scope and bound tena
 A union of `org_a` and `org_b` is cross-tenant even when each branch is individually scoped.
 Apply tenant filters inside each derived query: filtering a projected column outside it
 cannot prove that its aggregates or other columns exclude other tenants. Handwritten CTEs
-require a scope declaration; see [Unions and CTEs](./unions-and-ctes.md#declare-the-ctes-scope).
+require a scope declaration; see [Unions and CTEs](./unions-and-ctes.md#the-string-form-declares-its-own-scope).
 
 ## `crossTenant()` — the explicit opt-out
 
@@ -136,8 +136,10 @@ CH.from(Events)
 
 `crossTenant()` forces `"cross-tenant"` regardless of the predicates, and it wins over everything
 else. The point is to distinguish "this query deliberately spans tenants" from "someone forgot
-the filter" — two states that are otherwise identical from the outside. Use it for admin and
-internal-rollup queries so that reviewers, and your executor, can tell them apart.
+the filter" — two states that are otherwise identical from the outside. Use it to document admin and
+internal-rollup queries. Both cases produce the same `tenantScope` string; an executor cannot
+distinguish an explicit opt-out from a missing filter using that field alone. Keep privileged
+execution paths separately authorized.
 
 _(Backed by `docs/tenant-scoping.md > crossTenant() is the explicit opt-out`.)_
 
@@ -161,4 +163,12 @@ _(Backed by `docs/tenant-scoping.md > route is carried onto the compiled query`.
 `rawCompiledQuery` requires `tenantScope` explicitly, since a raw string cannot be
 inspected. Whatever you pass is taken at face value — which is why it also requires a
 `reason` and a `justification` naming why the query isn't a builder query at all. See
-[Extending](./extending.md#handwritten-queries-unsafecompiledquery).
+[Extending](./extending.md#handwritten-queries-rawcompiledquery).
+
+## Scope is not authorization
+
+`"single-tenant"` proves a structural restriction to one value, not that the requester is allowed
+to access that value. Resolve tenant IDs from trusted context. Treat `"untenanted"` as acceptable
+only for tables your application intentionally models as shared; omitting `tenantColumn` from
+a real tenant table bypasses that evidence. Repeated `.where()` calls replace the earlier
+filter, so assemble tenant and optional predicates in the same callback.

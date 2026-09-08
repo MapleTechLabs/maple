@@ -1,3 +1,5 @@
+import { motion, useReducedMotion } from "motion/react"
+import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
 import {
 	ArrowLeftIcon,
@@ -15,6 +17,13 @@ const ROLE_LABELS: Record<RoleOption, string> = {
 	devops_sre: "DevOps / SRE / Platform",
 	eng_leader: "Engineering leader",
 	founder: "Founder / CTO",
+} satisfies Record<RoleOption, string>
+
+const ROLE_GREETINGS = {
+	engineer: "From your code to the whole story.",
+	devops_sre: "For the quiet shifts. And the other ones.",
+	eng_leader: "A shared view for the people building it.",
+	founder: "You wear enough hats. Let's make this part easier.",
 } satisfies Record<RoleOption, string>
 
 const ROLE_ICONS: Record<RoleOption, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -58,6 +67,8 @@ export function StepQualifyQuestion<T extends string>({
 	onContinue: () => void
 	onBack?: () => void
 }) {
+	const reduceMotion = useReducedMotion()
+	const selectedRole = ROLE_OPTIONS.find((role) => role === value)
 	const iconMap = ROLE_ICONS satisfies unknown as Record<
 		string,
 		React.ComponentType<{ size?: number; className?: string }>
@@ -67,6 +78,16 @@ export function StepQualifyQuestion<T extends string>({
 		<div className="flex-1 flex flex-col items-center justify-center px-6 py-12 overflow-auto">
 			<div className="w-full max-w-xl flex flex-col gap-10">
 				<div className="text-center space-y-3">
+					<motion.div
+						key={value ?? "welcome"}
+						aria-hidden="true"
+						initial={{ rotate: 0 }}
+						animate={{ rotate: reduceMotion || !value ? 0 : [0, -8, 6, 0] }}
+						transition={{ duration: 0.4, ease: "easeOut" }}
+						className="mx-auto mb-6 w-fit origin-bottom text-primary"
+					>
+						<MapleMark size={56} />
+					</motion.div>
 					<span className="text-[11px] font-semibold uppercase tracking-widest text-primary">
 						{intro}
 					</span>
@@ -92,8 +113,9 @@ export function StepQualifyQuestion<T extends string>({
 								key={opt}
 								type="button"
 								onClick={() => onSelect(opt)}
+								aria-pressed={active}
 								className={cn(
-									"group relative flex flex-col items-center justify-center gap-2.5 rounded-xl border px-4 py-5 text-sm font-medium outline-none transition-[color,background-color,border-color,transform] [transition-duration:200ms] animate-in fade-in slide-in-from-bottom-1 [animation-duration:200ms] active:scale-[0.98] motion-reduce:animate-none focus-visible:ring-2 focus-visible:ring-ring",
+									"group relative flex flex-col items-center justify-center gap-2.5 rounded-xl border px-4 py-5 text-sm font-medium outline-none transition-[color,background-color,border-color,transform] [transition-duration:200ms] animate-in fade-in slide-in-from-bottom-1 [animation-duration:200ms] motion-safe:active:scale-[0.98] motion-reduce:transition-none motion-reduce:animate-none focus-visible:ring-2 focus-visible:ring-ring",
 									active
 										? "border-primary bg-primary/5 text-primary"
 										: "border-border hover:border-foreground/30 hover:bg-foreground/[0.02]",
@@ -125,6 +147,14 @@ export function StepQualifyQuestion<T extends string>({
 						)
 					})}
 				</div>
+
+				<p
+					aria-live="polite"
+					aria-atomic="true"
+					className="min-h-10 text-center text-xs leading-relaxed text-muted-foreground"
+				>
+					{selectedRole ? ROLE_GREETINGS[selectedRole] : "A little about you. Then a look inside."}
+				</p>
 
 				<div className="flex items-center justify-between gap-3">
 					{onBack ? (

@@ -1,31 +1,116 @@
 # Getting started
 
-## Install
+Build and decode your first query without connecting to a database. Then follow
+[Running a query](./running-queries.md) to execute one against ClickHouse.
 
-```bash
-bun add @maple-dev/clickhouse-builder effect@rc
-# or: npm i @maple-dev/clickhouse-builder effect@rc
+## Installation and compatibility
+
+This is an ESM-only TypeScript package built on **Effect 4**. You do not need an
+Effect application: `Effect.runPromise` lets you use it from ordinary async code.
+These examples are checked against Effect `4.0.0-rc.111` and the builder in this repository.
+The package declares `effect >=4.0.0-rc.111 <5` as a peer dependency; Effect 3 is incompatible.
+
+**First release pending.** The package has not been published to npm yet. The registry
+command below is for the upcoming release. To try the current source now, build a tarball
+from the repository:
+
+```sh
+git clone https://github.com/MapleTechLabs/maple.git
+cd maple
+bun install --frozen-lockfile
+bun run --cwd lib/clickhouse-builder build
+cd lib/clickhouse-builder
+bun pm pack
 ```
 
-`effect` is a peer dependency — bring your own.
+Install the resulting `.tgz` into your own project with its peer dependency:
 
-> **Note the `@rc` tag.** This package requires **Effect 4** (`>=4.0.0-rc.111`), which is not on
-> npm's `latest` tag — and not on `beta` either, which still points at a 4.0.0-beta. A bare
-> `npm i effect` installs 3.x, and the package then throws `Schema.TaggedError is not a function`
-> on import.
+```sh
+npm install /absolute/path/to/the-generated-package.tgz effect@4.0.0-rc.111
+```
 
-The package is ESM-only and ships its own type declarations.
+Repository access is required for this path. Once the package is available on npm,
+the equivalent registry install is:
 
-## Describe a table
+```sh
+npm install @maple-dev/clickhouse-builder effect@4.0.0-rc.111
+# or: bun add @maple-dev/clickhouse-builder effect@4.0.0-rc.111
+```
 
-A `table()` call is the single source of truth for a query's types. Column names and types
-flow from here into the select callback, the output row shape, and join accessors.
+Keep the Effect version explicit while adopting the prerelease. An unqualified `effect`
+currently installs Effect 3. Use an ESM project (`"type": "module"` in `package.json`)
+and a TypeScript runner such as Bun for the `.ts` files below. A database client is a
+separate dependency, needed only when you execute SQL.
 
-```ts
+## A complete first example
+
+Save this as `quick-start.ts` and run `bun quick-start.ts`. It builds SQL and decodes a sample
+wire response; it does not need a server, credentials, or an existing table.
+
+```ts title="quick-start.ts"
+import { Effect } from "effect"
 import * as CH from "@maple-dev/clickhouse-builder"
 import * as T from "@maple-dev/clickhouse-builder/types"
 
-const Events = CH.table(
+const Events = CH.table("events", {
+	Name: T.string,
+	DurationMs: T.uint64,
+})
+
+const query = CH.from(Events)
+	.select(($) => ({
+		name: $.Name,
+		p95: CH.quantile(0.95)($.DurationMs),
+		count: CH.count(),
+	}))
+	.where(($) => [$.DurationMs.gte(CH.param.int("minDurationMs"))])
+	.groupBy("name")
+	.orderBy(["count", "desc"], ["name", "asc"])
+	.limit(50)
+
+export const compiled = await Effect.runPromise(CH.compile(query, { minDurationMs: 100 }))
+console.log(compiled.sql)
+console.log(compiled.rowSchemaSource) // "derived"
+
+export const rows = await Effect.runPromise(compiled.decodeRows([{ name: "checkout", p95: 420, count: "3" }]))
+console.log(rows) // [{ name: "checkout", p95: 420, count: 3 }]
+```
+
+The generated SQL is:
+
+```sql
+SELECT Name AS name, quantile(0.95)(DurationMs) AS p95, count() AS count
+FROM events
+WHERE DurationMs >= 100
+GROUP BY name
+ORDER BY count DESC, name ASC
+LIMIT 50
+```
+
+`table()` describes a table; it does not create it or check that the database has those columns.
+The keys returned by `select` become both SQL aliases and result properties. This query infers
+`{ name: string; p95: number | null; count: number }`: ClickHouse can return JSON `null` for an
+aggregate with a non-finite result.
+
+`compile` returns an Effect that must be run. Its parameters are validated and escaped into
+the SQL string at compilation time. They are **not** ClickHouse server-side placeholders.
+Use `compileUnsafe(query, params)` if synchronous throwing fits your caller instead.
+
+The result schema is derived from the typed SELECT, so you do not need to write a second schema.
+`count: "3"` becomes `count: 3`. Selecting an untyped expression can disable that derivation;
+[Decoding results](./decoding-results.md) explains how to detect and repair it.
+
+## Shared tables used by the guides
+
+The later guides use `CH`, `T`, `Effect`, and these illustrative tables. Save this as `schema.ts`
+when trying their query snippets. Their table and column names are case-sensitive contracts
+with your own database. Replace them with your real schema before executing.
+
+```ts title="schema.ts"
+import * as CH from "@maple-dev/clickhouse-builder"
+import * as T from "@maple-dev/clickhouse-builder/types"
+
+export const Events = CH.table(
 	"events",
 	{
 		OrgId: T.string,
@@ -34,96 +119,27 @@ const Events = CH.table(
 		DurationMs: T.uint64,
 		Attributes: T.map(T.string, T.string),
 	},
-	// `OrgId` carries row-level tenancy, so filtering on it marks a query scoped.
+	{ tenantColumn: "OrgId" },
+)
+
+export const Services = CH.table(
+	"services",
+	{
+		OrgId: T.string,
+		Name: T.string,
+		Team: T.string,
+	},
 	{ tenantColumn: "OrgId" },
 )
 ```
 
-This declares the shape you intend to query; it does not create or validate anything against a
-real server. See [Tables and column types](./tables-and-types.md).
-
-## Build a query
-
-```ts
-const query = CH.from(Events)
-	.select(($) => ({
-		name: $.Name,
-		p95: CH.quantile(0.95)($.DurationMs),
-		count: CH.count(),
-	}))
-	.where(($) => [$.OrgId.eq(CH.param.string("orgId")), $.Timestamp.gte(CH.param.dateTime("startTime"))])
-	.groupBy("name")
-	.orderBy(["count", "desc"])
-	.limit(50)
-```
-
-The `$` passed to `select` and `where` is a typed accessor over the table's columns. The keys
-of the object returned from `select` become both the SQL aliases and the keys of the output row
-type — here `{ name: string; p95: number; count: number }`.
-
-> `orderBy` takes `[column, direction]` **tuples**. `.orderBy("count", "desc")` is a type
-> error, and fails compilation if you reach it from untyped code.
-
-## Compile it
-
-Compilation returns an `Effect` — a missing param or a value the column cannot hold is a typed
-`QueryBuilderError` rather than a throw. The snippets below `yield*` it; reach for
-`CH.compileUnsafe` where a throw is what you want.
-
-```ts
-const program = Effect.gen(function* () {
-	const compiled = yield* CH.compile(query, {
-		orgId: "org_123",
-		startTime: "2026-01-01 00:00:00",
-	})
-	return compiled
-})
-
-const compiled = await Effect.runPromise(program)
-
-compiled.sql
-// SELECT Name AS name, quantile(0.95)(DurationMs) AS p95, count() AS count
-// FROM events
-// WHERE OrgId = 'org_123' AND Timestamp >= '2026-01-01 00:00:00'
-// GROUP BY name ORDER BY count DESC LIMIT 50
-```
-
-The second argument resolves the `param.*` placeholders. Values are escaped and substituted
-into the SQL text at compile time — this is not server-side parameter binding. See
-[Params and compilation](./params-and-compilation.md).
-
-_(Backed by `docs/getting-started.md > Your first query`.)_
-
-## Run and decode
-
-The builder never talks to ClickHouse. Execute `compiled.sql` with whatever client you already
-use, then hand the rows back for decoding:
-
-```ts
-import { Effect, Schema } from "effect"
-
-const compiled = CH.compileUnsafe(query, params, {
-	rowSchema: Schema.Struct({
-		name: Schema.String,
-		count: Schema.Number,
-	}),
-})
-
-const result = await client.query({ query: compiled.sql, format: "JSONEachRow" })
-const rows = await Effect.runPromise(compiled.decodeRows(await result.json()))
-```
-
-`client` is your own — see [Running a query](./running-queries.md) for the full example.
-
-Passing a `rowSchema` gets you real validation of what came back off the wire. Without one,
-`decodeRows` degrades to a pass-through cast and validates nothing — `compiled.rowSchemaSource`
-tells you which you got (`"declared"`, `"derived"`, or `"none"`). There is deliberately no `castRows`; see
-[Decoding results](./decoding-results.md).
-
-_(Backed by `docs/getting-started.md > Decoding the results`.)_
+Tenant scoping is optional. The first example has no tenant column; the shared tables do.
+Declaring `tenantColumn` adds scope analysis, not a WHERE clause or an authorization policy.
+Always supply the tenant from your trusted application context. See [Tenant scoping](./tenant-scoping.md).
 
 ## Where to next
 
-- [Building queries](./queries.md) — the full builder surface
-- [Expressions and conditions](./expressions.md) — predicates, arithmetic, aggregates
-- [Tenant scoping](./tenant-scoping.md) — what `compiled.tenantScope` means
+- [Running a query](./running-queries.md): a complete client example using `system.numbers`, with no table setup.
+- [Recipes](./recipes.md): time buckets, optional filters, aggregate filters, pagination, and lossless IDs.
+- [Tables and column types](./tables-and-types.md): model your actual schema and wire formats.
+- [Troubleshooting](./troubleshooting.md): installation, compilation, decoding, and unexpected results.

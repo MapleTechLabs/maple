@@ -58,8 +58,13 @@ _(Backed by `docs/queries.md > select by column name`.)_
 Entries may be `undefined`, which drops them — that is what makes optional filters clean. See
 [`when` / `whenTrue`](./expressions.md#optional-predicates).
 
-The top-level array is also where [tenant scoping](./tenant-scoping.md) is detected, so prefer
-listing predicates flatly over folding them together with `.and()`.
+**Calling `where` again replaces the previous callback.** It does not append predicates.
+Put the complete filter set in one callback, including tenant and time bounds. Both flat
+conditions and `.and()` preserve [tenant scoping](./tenant-scoping.md); `.or()` does not.
+
+The same replacement rule applies to `select`, `groupBy`, `having`, `orderBy`, `limit`,
+`offset`, and `format`. Joins and CTEs accumulate. Immutable does not mean additive:
+a second `.where(...)` on a shared base can remove its tenant filter.
 
 ## `groupBy`
 
@@ -69,6 +74,25 @@ Takes **output keys** (the aliases from `select`), not raw column names:
 .select(($) => ({ name: $.Name, count: CH.count() }))
 .groupBy("name")
 ```
+
+## `having`
+
+Filter groups after aggregation. The callback has the input-column accessor, so either repeat
+an aggregate expression or reference an output alias with `CH.dynamicColumn("alias", type)`:
+
+```ts
+const query = CH.from(Events)
+	.select(($) => ({ name: $.Name, count: CH.count() }))
+	.where(($) => [$.OrgId.eq(CH.param.string("orgId"))])
+	.groupBy("name")
+	.having(() => [CH.dynamicColumn("count", T.uint64).gte(CH.param.int("minimumCount"))])
+```
+
+Compile with `{ orgId: "org_123", minimumCount: 10 }` to emit `HAVING count >= 10`.
+Use WHERE for row filters and HAVING for aggregate filters. A tenant predicate in HAVING
+does not establish tenant scope.
+
+The complete [HAVING recipe](./recipes.md#filter-aggregates-with-having) is checked directly from Markdown.
 
 ## `orderBy`
 
@@ -92,8 +116,10 @@ _(Backed by `docs/queries.md > orderBy takes tuples` and `> orderBy rejects a ba
 .limit(50).offset(100)
 ```
 
-Both are rounded with `Math.round` before emission, so a fractional value cannot inject
-anything.
+Both take numbers, not `param.*` expressions, and are rounded with `Math.round` before
+emission. That is not input validation: reject non-finite, negative, or fractional values at
+your request boundary, and enforce an application maximum. Use a stable `orderBy` when paging;
+[Recipes](./recipes.md#paginate-a-grouped-result) shows where an offset is appropriate.
 
 ## `format`
 
@@ -116,7 +142,7 @@ changing the SQL. Both are covered in [Tenant scoping](./tenant-scoping.md).
 ## Compiling
 
 ```ts
-const compiled = CH.compileUnsafe(query, params, options?)
+const compiled = CH.compileUnsafe(query, params)
 ```
 
 `compile` is an alias of `compileCH`; both are exported. Unions compile with `compileUnion`.
