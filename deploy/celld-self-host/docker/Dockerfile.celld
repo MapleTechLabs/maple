@@ -42,7 +42,7 @@ RUN rm -rf node_modules && bun install --production --ignore-scripts
 FROM oven/bun:1.4.0-slim AS runtime
 WORKDIR /app
 
-ARG CELLD_VERSION=v0.4.0
+ARG CELLD_VERSION=v0.4.1
 ARG TARGETARCH
 ARG ESBUILD_VERSION=0.24.2
 

@@ -9,7 +9,6 @@ resources:
   - electric.yaml
   - minio.yaml
   - otel.yaml
-  - proxy.yaml
   - migrate.yaml
   - api.yaml
   - sync.yaml

@@ -28,7 +28,6 @@ x-celld: &celld
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-maplecelld-secret}
     AWS_EC2_METADATA_DISABLED: "true"
     MAPLE_PG_URL: ${MAPLE_PG_URL:-postgres://maple:maple@postgres:5432/maple}
-    MAPLE_PG_WS_PROXY: ${MAPLE_PG_WS_PROXY:-ws://pg-ws-proxy:5498}
     CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
     CLICKHOUSE_PROVIDER: ${CLICKHOUSE_PROVIDER:-clickhouse}
     CLICKHOUSE_USER: ${CLICKHOUSE_USER:-maple}
@@ -59,7 +58,6 @@ services:
       TINYBIRD_HOST: ${TINYBIRD_HOST:-http://127.0.0.1:7181}
       TINYBIRD_TOKEN: ${TINYBIRD_TOKEN:-local-placeholder}
       MAPLE_PG_URL: ${MAPLE_PG_URL:-postgres://maple:maple@postgres:5432/maple}
-      MAPLE_PG_WS_PROXY: ${MAPLE_PG_WS_PROXY:-ws://pg-ws-proxy:5498}
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
       CLICKHOUSE_PROVIDER: clickhouse
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-maple}
@@ -160,16 +158,6 @@ services:
       - "4317:4317"
     user: "0:0"
 
-  pg-ws-proxy:
-    build:
-      context: ../..
-      dockerfile: deploy/celld-self-host/docker/Dockerfile.proxy
-    environment:
-      MAPLE_PG_URL: ${MAPLE_PG_URL:-postgres://maple:maple@postgres:5432/maple}
-      MAPLE_PG_WS_ALLOW: ${MAPLE_PG_WS_ALLOW:-postgres}
-    command: ["bun", "pg-ws-proxy.ts", "--listen", "0.0.0.0:5498", "--target", "postgres:5432"]
-    restart: unless-stopped
-
   migrate:
     <<: *celld
     restart: "no"
@@ -211,14 +199,11 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-maplecelld-secret}
       AWS_EC2_METADATA_DISABLED: "true"
       MAPLE_PG_URL: ${MAPLE_PG_URL:-postgres://maple:maple@postgres:5432/maple}
-      MAPLE_PG_WS_PROXY: ${MAPLE_PG_WS_PROXY:-ws://pg-ws-proxy:5498}
     volumes:
       - celld-vars:/run/maple
       - celld-api-watch:/var/lib/celld
     depends_on:
       vars:
-        condition: service_started
-      pg-ws-proxy:
         condition: service_started
       migrate:
         condition: service_completed_successfully
@@ -272,8 +257,6 @@ services:
       - celld-alerting-watch:/var/lib/celld
     depends_on:
       vars:
-        condition: service_started
-      pg-ws-proxy:
         condition: service_started
       migrate:
         condition: service_completed_successfully

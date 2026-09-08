@@ -17,7 +17,7 @@ Postgres transactions. It is not a rewrite of the hosted Cloud stack.
 ## Why celld
 
 [celld](https://celld.dev) is a self-hosted runtime for Cloudflare Workers and
-Durable Objects. Maple's API is a Worker. celld v0.4.0 runs that Worker from a
+Durable Objects. Maple's API is a Worker. celld v0.4.1 runs that Worker from a
 stripped Wrangler config (`apps/api/wrangler.celld.jsonc`) so we keep one
 codepath instead of a second Node server.
 
@@ -40,16 +40,14 @@ That script:
    the ClickHouse schema (`packages/clickhouse-cli`). It does **not** stop
    unrelated stacks. CH apply is idempotent; it fails the start only on a real
    error, not when the schema is already current.
-2. Starts `scripts/pg-ws-proxy.ts` on `:5498` (Neon-compatible WebSocket ↔ TCP
-   tunnel onto Postgres, plus `POST /sql` for tests).
-3. Installs celld **v0.4.0** into `.tools/celld` if needed (macOS arm64 gzip from
+2. Installs celld **v0.4.1** into `.tools/celld` if needed (macOS arm64 gzip from
    GitHub releases).
-4. Runs **three** `celld dev` processes (one public Worker each; never the same
+3. Runs **three** `celld dev` processes (one public Worker each; never the same
    fleet / `deploy/current.json`):
     - `apps/api` on **`:3472`**
     - `apps/electric-sync` on **`:3476`** (web `VITE_ELECTRIC_SYNC_URL`)
     - `apps/alerting` on **`:8788`** (scheduled-only; `fetch` is 404)
-5. Starts Vite `apps/web` on `:3471` against that API (`START_WEB=0` to skip).
+4. Starts Vite `apps/web` on `:3471` against that API (`START_WEB=0` to skip).
    Reuses an already-running Vite rather than fighting it.
 
 Health:
@@ -64,7 +62,7 @@ Sign in at `http://127.0.0.1:3471` with `MAPLE_AUTH_MODE=self_hosted` and
 `MAPLE_ROOT_PASSWORD` from `.env.local` (docs examples use `change-me`). Login
 itself is HMAC JWT and does **not** hit Postgres. A control-plane route such as
 `GET /v2/dashboards` does. Interactive transactions (alert-rule create, API-key
-roll, share rotate) go through `@neondatabase/serverless` over the WS proxy.
+roll, share rotate) use postgres.js over `cloudflare:sockets` to docker Postgres.
 
 ```bash
 TOKEN=$(curl -sS http://127.0.0.1:3472/api/auth/login \
@@ -94,8 +92,7 @@ at the repo root).
 | 3476 | celld (`maple-electric-sync`) | Own `.celld/dev`. Web `VITE_ELECTRIC_SYNC_URL`                               |
 | 8788 | celld (`maple-alerting`)      | Own `.celld/dev`. `fetch` is 404 "scheduled only"                            |
 | 3471 | Vite `apps/web`               | Slice-1 UI. celld assets are optional later                                  |
-| 5499 | docker Postgres               | Logical URL host for `MAPLE_PG_URL`                                          |
-| 5498 | `pg-ws-proxy`                 | Neon `/v1` WS pipe + `POST /sql` (tests only). celld cannot TCP-dial `:5499` |
+| 5499 | docker Postgres               | `MAPLE_PG_URL`. celld dials this over TCP                                    |
 | 8123 | docker ClickHouse HTTP        | Schema applied by `clickhouse-cli` during `dev:celld`                        |
 | 3473 | docker Electric               | Upstream for `apps/electric-sync` (`ELECTRIC_URL`)                           |
 | 9876 | celld default                 | Unused here; we pass `--port` per process                                    |
@@ -129,7 +126,6 @@ Must be set (Env dies without them; `/health` still 200, everything else 504):
 The script always overlays:
 
 - `MAPLE_PG_URL=postgres://maple:maple@127.0.0.1:5499/maple`
-- `MAPLE_PG_WS_PROXY=ws://127.0.0.1:5498`
 - `CLICKHOUSE_URL=http://127.0.0.1:8123`
 - `CLICKHOUSE_PROVIDER=clickhouse`
 - `ELECTRIC_URL=http://127.0.0.1:3473`
@@ -143,7 +139,7 @@ is still Unavailable on purpose. celld uses `MAPLE_PG_URL` instead.
 
 ## What is stubbed / omitted in slice-2
 
-celld v0.4.0 accepted wrangler keys: `$schema`, `name`, `main`, `no_bundle`,
+celld v0.4.1 accepted wrangler keys: `$schema`, `name`, `main`, `no_bundle`,
 `compatibility_date`, `compatibility_flags`, `durable_objects`, `migrations`,
 `assets`, `services`, `triggers`, `vars`, `d1_databases`, `kv_namespaces`,
 `queues`, `workflows`, `r2_buckets`.
@@ -153,48 +149,33 @@ Forbidden (they stop deploy): `hyperdrive`, `ai`, `ratelimits`, `send_email`,
 
 | Binding / feature                                   | Slice-2                                                                                                                                                                         |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hyperdrive `MAPLE_DB`                               | Absent. Fallback: `MAPLE_PG_URL` + neon-serverless over WS proxy                                                                                                                |
-| TCP `connect()` / `cloudflare:sockets` / `node:net` | Inert stub. Postgres goes through WebSockets                                                                                                                                    |
+| Hyperdrive `MAPLE_DB`                               | Absent. celld uses `MAPLE_PG_URL` over `cloudflare:sockets` (postgres.js)                                                                                                       |
+| TCP `connect()` / `cloudflare:sockets`              | Yes (v0.4.1). Socket dies with the event; the request-scoped pool already matches that. `node:net` is still unimplemented                                                      |
 | EMAIL (`send_email`)                                | Missing → EmailService skips / errors as today                                                                                                                                  |
 | `API_V2_RATE_LIMITER`                               | Missing → fail-open                                                                                                                                                             |
 | Workers AI                                          | Missing. LLM stays on OpenRouter HTTP when configured                                                                                                                           |
 | Queues (VCS sync, PlanetScale webhooks)             | Omitted. celld refuses a queue consumer on a Worker that also exports `fetch`                                                                                                   |
 | Workflows / ChatSession DO / MCP KV                 | Declared with accepted keys; Partial in celld                                                                                                                                   |
-| Cron                                                | Declared; Partial                                                                                                                                                               |
+| Cron                                                | Yes in v0.4.1 (one handler per occurrence; no cron on a service-binding target)                                                                                                 |
 | Landing, AI triage, email, PlanetScale, VCS sync    | Out of slice-2                                                                                                                                                                  |
 | `apps/electric-sync`                                | Second `celld dev` on `:3476`. DB-free HTTP proxy to docker Electric                                                                                                            |
 | Web on celld                                        | Config exists (`apps/web/wrangler.celld.jsonc`); local still uses Vite. Do not `celld deploy` web onto the same local fleet as the API — last deploy owns `deploy/current.json` |
-| Alerting worker                                     | Third `celld dev` on `:8788`. Same `MAPLE_PG_URL` + WS proxy as api. `fetch` 404; crons Partial in celld                                                                        |
+| Alerting worker                                     | Third `celld dev` on `:8788`. Same `MAPLE_PG_URL` as api. `fetch` 404; crons run on celld                                                                                        |
 
 The existing Hyperdrive path is unchanged: wrangler / alchemy still bind
 `MAPLE_DB` as an object, and that branch wins over `MAPLE_PG_URL`.
 
-## Postgres without TCP
+## Postgres
 
-celld cannot dial `127.0.0.1:5499`. Host-side `scripts/pg-ws-proxy.ts` (Bun)
-listens on `127.0.0.1:5498` and copies binary WebSocket frames to Postgres TCP.
+celld v0.4.1 implements outbound TCP through `cloudflare:sockets`.
+`createMaplePgSocket` uses the same postgres.js path as wrangler (`prepare:
+false`, request-scoped pool, `end()` at the boundary). `celld deploy` bundles
+with `--conditions=workerd`, so that path is the `cf` build: `connect()` from
+`cloudflare:sockets`, not `node:net`. The socket cannot outlive the event that
+opened it; Maple already does not reuse a Postgres client across requests.
 
-Inside the Worker, `createMaplePgSocket` sees `MAPLE_PG_WS_PROXY` and uses
-`@neondatabase/serverless` + `drizzle-orm/neon-serverless` through a Neon
-`/v1?address=host:port` WebSocket pipe (`neonConfig.webSocketConstructor =
-WebSocket`, `useSecureWebSocket = false`, `pipelineConnect = false`). The Pool
-is request-scoped (created in the connection scope, `end()` on close) because
-celld closes outbound WebSockets after the response. workerd postgres.js can
-copy bytes through a raw WebSocket tunnel, but SCRAM against real Postgres
-fails (`malformed SCRAM message`) — do not retry that as the primary path.
-Unset `MAPLE_PG_WS_PROXY` keeps today's TCP postgres.js path for wrangler and
-Hyperdrive.
-
-`POST /sql` on the same proxy is tests/fallback only (drizzle-orm/pg-proxy cannot
-`db.transaction()`). The unpathed WebSocket remains a raw byte tunnel for tests
-(`packages/db/src/pg-ws-socket.ts`).
-
-Official `ghcr.io/neondatabase/wsproxy` is an alternative on a **different**
-loopback port (`MAPLE_PG_WS_PROXY` pointed there). On macOS/OrbStack,
-`--network host` may not work; prefer `-p` + `host.docker.internal:5499` in
-`ALLOW_ADDR_REGEX`.
-
-SSL through the tunnel is not in this slice (local docker is unencrypted).
+Local docker Postgres is unencrypted. A TLS origin uses postgres.js SSL over
+`connect()` (`secureTransport`); celld verifies against its Mozilla root store.
 
 ## Production packaging
 
@@ -251,7 +232,6 @@ Already have Postgres or S3? Copy this folder, delete the `postgres` / `minio`
 
 ```
 MAPLE_PG_URL=postgres://user:pass@db.internal:5432/maple
-MAPLE_PG_WS_ALLOW=db.internal
 S3_ENDPOINT=https://s3.amazonaws.com
 AWS_ACCESS_KEY_ID=…
 AWS_SECRET_ACCESS_KEY=…
@@ -268,7 +248,7 @@ kubectl apply -k deploy/celld-self-host/k8s
 ```
 
 Point ConfigMap/Secret `MAPLE_PG_URL` / `CLICKHOUSE_URL` / `ELECTRIC_URL` at existing
-cluster services. Images: `maple-celld:dev`, `maple-web:dev`, `maple-pg-ws-proxy:dev`.
+cluster services. Images: `maple-celld:dev`, `maple-web:dev`.
 
 ### Layout
 
@@ -301,7 +281,6 @@ Measured on arm64 (one image; api/sync/alerting share layers):
 | ----------------------------- | -------------------------------------------------------- |
 | `maple-celld`                 | 559 MB (was 3.35 GB with a full-workspace `bun install`) |
 | `maple-web`                   | 75 MB                                                    |
-| `maple-pg-ws-proxy`           | 185 MB (`bun` slim base)                                 |
 | `maple-otel`                  | 29 MB                                                    |
 | ClickHouse / Electric / Caddy | upstream                                                 |
 
@@ -310,10 +289,9 @@ Measured on arm64 (one image; api/sync/alerting share layers):
 A VPS bring-up is the data plane plus one celld process per public Worker:
 
 1. **docker data plane** — Postgres (logical replication for Electric),
-   ClickHouse HTTP `:8123` (apply schema with `clickhouse-cli`).
-2. **`pg-ws-proxy`** on loopback, targeting docker Postgres. Do not publish
-   `:5498` or `:5499` past localhost.
-3. **three celld processes** — `maple-api`, `maple-electric-sync`, `maple-alerting`.
+   ClickHouse HTTP `:8123` (apply schema with `clickhouse-cli`). Do not publish
+   `:5499` past localhost. celld dials `MAPLE_PG_URL` over `cloudflare:sockets`.
+2. **three celld processes** — `maple-api`, `maple-electric-sync`, `maple-alerting`.
    One `celld` process = one public Worker; do not `celld deploy` them onto the
    same fleet. Locally that is three `celld dev` invocations from three app
    directories (separate `.celld/dev`). Terminate TLS on the ingress proxy;

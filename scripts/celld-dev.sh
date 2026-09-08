@@ -6,14 +6,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-CELLD_VERSION="${CELLD_VERSION:-v0.4.0}"
+CELLD_VERSION="${CELLD_VERSION:-v0.4.1}"
 TOOLS_DIR="$ROOT/.tools"
 CELLD_BIN="${CELLD_BIN:-$TOOLS_DIR/celld}"
 API_PORT="${API_PORT:-3472}"
 WEB_PORT="${WEB_PORT:-3471}"
 ELECTRIC_PORT="${ELECTRIC_PORT:-3476}"
 ALERTING_PORT="${ALERTING_PORT:-8788}"
-PG_PROXY_PORT="${PG_PROXY_PORT:-5498}"
 PG_PORT="${PG_PORT:-5499}"
 START_WEB="${START_WEB:-1}"
 START_ELECTRIC="${START_ELECTRIC:-1}"
@@ -91,9 +90,6 @@ stop_ours_on_port() {
 			log "stopping maple wrangler on :$port (pid $pid)"
 			kill "$pid" 2>/dev/null || true
 			sleep 0.4
-		elif [[ "$cmd" == *pg-ws-proxy* ]]; then
-			log "reusing pg-ws-proxy on :$port (pid $pid)"
-			return 1
 		elif [[ "$cmd" == *celld* ]]; then
 			log "stopping previous celld on :$port (pid $pid)"
 			kill "$pid" 2>/dev/null || true
@@ -127,10 +123,11 @@ read_env_value() {
 }
 
 ensure_celld() {
+	local want="${CELLD_VERSION#v}"
 	local version_ok=0
-	if [[ -x "$CELLD_BIN" ]] && "$CELLD_BIN" --version 2>/dev/null | grep -q "0.4.0"; then
+	if [[ -x "$CELLD_BIN" ]] && "$CELLD_BIN" --version 2>/dev/null | grep -q "$want"; then
 		version_ok=1
-	elif command -v celld >/dev/null 2>&1 && celld --version 2>/dev/null | grep -q "0.4.0"; then
+	elif command -v celld >/dev/null 2>&1 && celld --version 2>/dev/null | grep -q "$want"; then
 		CELLD_BIN="$(command -v celld)"
 		version_ok=1
 	fi
@@ -199,7 +196,6 @@ write_vars_file() {
 	printf 'CLICKHOUSE_URL=%s\n' "${CLICKHOUSE_URL:-http://127.0.0.1:8123}" >> "$VARS_FILE"
 	printf 'CLICKHOUSE_PROVIDER=%s\n' "${CLICKHOUSE_PROVIDER:-clickhouse}" >> "$VARS_FILE"
 	printf 'MAPLE_PG_URL=%s\n' "${MAPLE_PG_URL:-postgres://maple:maple@127.0.0.1:${PG_PORT}/maple}" >> "$VARS_FILE"
-	printf 'MAPLE_PG_WS_PROXY=%s\n' "${MAPLE_PG_WS_PROXY:-ws://127.0.0.1:${PG_PROXY_PORT}}" >> "$VARS_FILE"
 	printf 'MAPLE_APP_BASE_URL=%s\n' "${MAPLE_APP_BASE_URL:-http://127.0.0.1:${WEB_PORT}}" >> "$VARS_FILE"
 	printf 'ELECTRIC_URL=%s\n' "${ELECTRIC_URL:-http://127.0.0.1:3473}" >> "$VARS_FILE"
 	printf 'MAPLE_ALERTING_ALLOW_NONPROD=%s\n' "1" >> "$VARS_FILE"
@@ -245,24 +241,6 @@ ensure_electric_publication() {
 	log "ensuring electric_publication_default tables"
 	DATABASE_URL="postgres://maple:maple@127.0.0.1:${PG_PORT}/maple" \
 		bun run --cwd packages/db db:ensure-electric-publication
-}
-
-start_proxy() {
-	if is_listening "$PG_PROXY_PORT"; then
-		local pid cmd
-		pid="$(port_pids "$PG_PROXY_PORT" | head -n 1)"
-		cmd="$(port_cmd "$pid")"
-		if [[ "$cmd" == *pg-ws-proxy* ]]; then
-			log "pg-ws-proxy already on :$PG_PROXY_PORT"
-			return 0
-		fi
-		log ":$PG_PROXY_PORT is busy; picking another listen port"
-		PG_PROXY_PORT="$(free_port_from $((PG_PROXY_PORT + 1)))"
-	fi
-	log "starting pg-ws-proxy on :$PG_PROXY_PORT → 127.0.0.1:$PG_PORT"
-	bun "$ROOT/scripts/pg-ws-proxy.ts" --listen "127.0.0.1:${PG_PROXY_PORT}" --target "127.0.0.1:${PG_PORT}" &
-	PIDS+=("$!")
-	wait_for_port "$PG_PROXY_PORT" "pg-ws-proxy"
 }
 
 claim_api_port() {
@@ -362,7 +340,6 @@ start_alerting() {
 ensure_data_plane
 ensure_celld
 ensure_esbuild
-start_proxy
 claim_api_port
 write_vars_file
 start_electric

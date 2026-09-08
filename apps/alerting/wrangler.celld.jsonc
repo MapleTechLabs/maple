@@ -21,7 +21,6 @@
 		"CLICKHOUSE_USER": "maple",
 		"CLICKHOUSE_DATABASE": "default",
 		"MAPLE_PG_URL": "postgres://maple:maple@127.0.0.1:5499/maple",
-		"MAPLE_PG_WS_PROXY": "ws://127.0.0.1:5498",
 		"TINYBIRD_HOST": "http://127.0.0.1:7181",
 		"TINYBIRD_TOKEN": "local-placeholder"
 	},

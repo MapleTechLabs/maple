@@ -8,8 +8,6 @@ data:
   MAPLE_DEFAULT_ORG_ID: default
   MAPLE_ENVIRONMENT: production
   MAPLE_PG_URL: postgres://maple:maple@postgres:5432/maple
-  MAPLE_PG_WS_PROXY: ws://pg-ws-proxy:5498
-  MAPLE_PG_WS_ALLOW: postgres
   CLICKHOUSE_URL: http://clickhouse:8123
   CLICKHOUSE_PROVIDER: clickhouse
   CLICKHOUSE_USER: maple
@@ -44,7 +42,6 @@ stringData:
     TINYBIRD_HOST=http://127.0.0.1:7181
     TINYBIRD_TOKEN=local-placeholder
     MAPLE_PG_URL=postgres://maple:maple@postgres:5432/maple
-    MAPLE_PG_WS_PROXY=ws://pg-ws-proxy:5498
     CLICKHOUSE_URL=http://clickhouse:8123
     CLICKHOUSE_PROVIDER=clickhouse
     CLICKHOUSE_USER=maple
