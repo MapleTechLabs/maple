@@ -1,10 +1,11 @@
 // The session page's shared color vocabulary: one token per kind of work, read
 // identically by the header's breakdown bar, the waterfall's dots and bars and
-// the flow view's nodes. The tokens are the app's existing chart tokens rather
-// than new ones. Time-to-first-token gets its own hue (chart-3) rather than a
-// lighter value of the inference token: side by side in the occupancy bar the
-// two values of chart-2 read as one band. chart-5 stays unused here — it and
-// chart-2 are two near-identical cyans in the light palette (ΔL 0.04, Δh 25°).
+// the flow view's nodes. The four kinds have designated `chart-ai-*` hues
+// rather than chart-1..5 slots, for the reason the token buckets do: the
+// numbered slots are spaced per theme, and in dark they landed TTFT (chart-3)
+// and tool (chart-4) 0.08 apart in oklab — one band to the eye in a 16px bar,
+// with inference only 0.18 off the same pair. The designated hues sit ~85°
+// apart in both themes.
 
 import {
 	BoltIcon,
@@ -28,9 +29,9 @@ const UNACCOUNTED_FILL = "bg-muted-foreground/70"
 
 /** Bar and dot background, per span category. */
 export const CATEGORY_FILL = {
-	agent: "bg-chart-1",
-	inference: "bg-chart-2",
-	tool: "bg-chart-4",
+	agent: "bg-chart-ai-agent",
+	inference: "bg-chart-ai-inference",
+	tool: "bg-chart-ai-tool",
 	other: NO_WORK_FILL,
 } satisfies Record<AiSpanCategory, string>
 
@@ -44,20 +45,20 @@ export const CATEGORY_ICON = {
 	other: DotsIcon,
 } satisfies Record<AiSpanCategory, IconComponent>
 
-/** The same chart tokens as `CATEGORY_FILL`, as text color for the glyphs. */
+/** The same tokens as `CATEGORY_FILL`, as text color for the glyphs. */
 export const CATEGORY_TEXT = {
-	agent: "text-chart-1",
-	inference: "text-chart-2",
-	tool: "text-chart-4",
+	agent: "text-chart-ai-agent",
+	inference: "text-chart-ai-inference",
+	tool: "text-chart-ai-tool",
 	other: "text-muted-foreground",
 } satisfies Record<AiSpanCategory, string>
 
 /** Segment background in the header's occupancy bar. */
 export const OCCUPANCY_FILL = {
 	idle: NO_WORK_FILL,
-	ttft: "bg-chart-3",
-	inference: "bg-chart-2",
-	tool: "bg-chart-4",
+	ttft: "bg-chart-ai-ttft",
+	inference: "bg-chart-ai-inference",
+	tool: "bg-chart-ai-tool",
 	unaccounted: UNACCOUNTED_FILL,
 } satisfies Record<OccupancyKind, string>
 
@@ -75,9 +76,9 @@ export const OCCUPANCY_ICON = {
 /** The bar's tokens as text color, for the legend glyphs. */
 export const OCCUPANCY_TEXT = {
 	idle: "text-muted-foreground/70",
-	ttft: "text-chart-3",
-	inference: "text-chart-2",
-	tool: "text-chart-4",
+	ttft: "text-chart-ai-ttft",
+	inference: "text-chart-ai-inference",
+	tool: "text-chart-ai-tool",
 	unaccounted: "text-muted-foreground",
 } satisfies Record<OccupancyKind, string>
 
