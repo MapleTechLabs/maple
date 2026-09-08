@@ -2,8 +2,11 @@
 	"$schema": "https://turborepo.com/schema.json",
 	"extends": ["//"],
 	"tasks": {
-		// This package's test script reads its own dist/ (check-exports-documented.mjs
-		// verifies dist/index.d.mts), so it needs "build", not just the root's "^build".
+		// Public API fixtures and the export/docs checks read this package's dist/,
+		// so both tasks need "build", not just the root's "^build".
+		"typecheck": {
+			"dependsOn": ["build", "^build"]
+		},
 		"test": {
 			"dependsOn": ["build", "^build"],
 			"outputs": []

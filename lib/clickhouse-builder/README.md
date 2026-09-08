@@ -189,10 +189,15 @@ the public package exports, and runs the offline examples. Set `CLICKHOUSE_DOCS_
 run the client example too, with `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, and
 `CLICKHOUSE_PASSWORD` for its connection. Build the package before running these checks.
 
-Run `bun run typecheck` and `bun run test` from this package. Tests include regressions for
+Run `bun run build`, `bun run typecheck`, and `bun run test` from this package. Tests include regressions for
 nullable results, UNION column alignment, tenant scoping, custom parameters, and DateTime64 precision.
 To include the live ClickHouse cases, set `CLICKHOUSE_BUILDER_TEST_URL` and, if needed,
 `CLICKHOUSE_BUILDER_TEST_USER` and `CLICKHOUSE_BUILDER_TEST_PASSWORD`. They use only SELECTs and CTEs.
+
+Use `bun run test:release` before publishing: it requires a live endpoint and checks the
+build, types, tests, docs, and an isolated tarball consumer. `prepublishOnly` enforces
+this check. See [Testing and release checks](./docs/testing.md) for the coverage manifest
+and pinned ClickHouse version matrix.
 
 ## License
 

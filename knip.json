@@ -72,6 +72,8 @@
 			"ignoreDependencies": ["@base-ui/react"]
 		},
 		"lib/clickhouse-builder": {
+			// Copied to a temporary consumer project and executed by path.
+			"entry": ["tests/package-consumer.mts"],
 			// scripts/check-doc-examples.mjs typechecks the docs' own snippets, one of
 			// which imports the real client.
 			"ignoreDependencies": ["@clickhouse/client"]
