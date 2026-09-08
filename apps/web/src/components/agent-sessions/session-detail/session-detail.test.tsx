@@ -302,7 +302,6 @@ function Waterfall(props: {
 	onToggleTurn?: (turnId: string) => void
 	selectedSpanId?: string
 	revealedSpanId?: string
-	revealedTurnId?: string
 	onSelectSpan?: (spanId: string | undefined) => void
 	spanTab?: SpanDetailTab
 }) {
@@ -317,7 +316,6 @@ function Waterfall(props: {
 			onToggleTurn={props.onToggleTurn ?? noop}
 			selectedSpanId={props.selectedSpanId}
 			revealedSpanId={props.revealedSpanId}
-			revealedTurnId={props.revealedTurnId}
 			onSelectSpan={props.onSelectSpan ?? noop}
 			spanTab={props.spanTab}
 			onSpanTabChange={noop}
@@ -383,7 +381,6 @@ describe("SessionOverview", () => {
 		initialSpanId?: string
 		onSelectSpan?: (spanId: string | undefined) => void
 		onOpenTraceView?: () => void
-		onOpenTurnInTraceView?: (turnId: string) => void
 	}) {
 		const [selectedSpanId, setSelectedSpanId] = useState<string | undefined>(props.initialSpanId)
 		return (
@@ -398,17 +395,28 @@ describe("SessionOverview", () => {
 				spanTab={undefined}
 				onSpanTabChange={noop}
 				onOpenTraceView={props.onOpenTraceView ?? noop}
-				onOpenTurnInTraceView={props.onOpenTurnInTraceView ?? noop}
 			/>
 		)
 	}
 
-	it("splits the wall clock into where the time actually went", () => {
+	// Agent time, not the clock: 23s of tools and 18s of model calls inside a
+	// 5m 12s session, with two of those tools running at the same time.
+	it("splits agent time by class of work, and says how wide the fan-out got", () => {
 		render(<Overview />)
 
-		// 5m 12s wall clock, 4m 20s of it idle.
+		expect(screen.getByText("Tool execution")).toBeTruthy()
+		expect(screen.getByText("Agent time").nextElementSibling?.textContent).toBe("41s")
+		expect(screen.getByText("Wall clock").nextElementSibling?.textContent).toBe("5m 12s")
+		expect(screen.getByText("agents in parallel").previousElementSibling?.textContent).toBe("2×")
+	})
+
+	// Idle is not agent time, but nothing at all was running then — disjoint
+	// from every band, so it belongs in the same bar rather than a footnote.
+	it("keeps the idle the session spent waiting on a human in the breakdown", () => {
+		render(<Overview />)
+
 		expect(screen.getByText("Idle")).toBeTruthy()
-		expect(screen.getByText(/4m 20s · 83%/)).toBeTruthy()
+		expect(screen.getByText(/^4m 20s · 86%$/)).toBeTruthy()
 	})
 
 	// The five-second answer: the verdict names what killed the final turn and
@@ -485,20 +493,6 @@ describe("SessionOverview", () => {
 		expect(screen.getByText("No findings.")).toBeTruthy()
 	})
 
-	// The shape strip replaces the turn digest: one cell per turn, colored by
-	// what the findings attribute to it. A cell is a whole turn, so it crosses to
-	// Traces and lands on that turn — opening its root span in the overlay
-	// answered a question nobody asked of a strip of turns.
-	it("draws one cell per turn and sends a click to that turn in Traces", () => {
-		const onSelectSpan = vi.fn()
-		const onOpenTurnInTraceView = vi.fn()
-		render(<Overview onSelectSpan={onSelectSpan} onOpenTurnInTraceView={onOpenTurnInTraceView} />)
-
-		fireEvent.click(screen.getByRole("button", { name: "2" }))
-		expect(onOpenTurnInTraceView).toHaveBeenCalledWith(turns[1]!.id)
-		expect(onSelectSpan).not.toHaveBeenCalled()
-	})
-
 	// A tool called ten times and failing every time reads nothing like one that
 	// never failed; the rail used to draw both as the same bar.
 	it("separates a tool's failed calls from its successful ones", () => {
@@ -566,16 +560,6 @@ describe("SessionOverview", () => {
 })
 
 describe("SessionWaterfall", () => {
-	// The Overview's session shape sends the reader here by turn, not by span:
-	// the header is what they were sent to, so it wears the mark.
-	it("marks the turn header the reader was sent to", () => {
-		render(<Waterfall revealedTurnId={turns[1]!.id} />)
-
-		const marked = document.querySelectorAll("[data-revealed]")
-		expect(marked.length).toBe(1)
-		expect(marked[0]!.textContent).toContain("Turn 2")
-	})
-
 	it("groups spans under their turn and marks the idle between them", () => {
 		render(<Waterfall />)
 
@@ -1134,27 +1118,6 @@ describe("SessionViews", () => {
 		expect(screen.queryByText(/of idle removed/)).toBeNull()
 	})
 
-	// The Overview has no filter box, so a query left behind in Traces is
-	// invisible from where a session-shape cell is clicked — and one matching
-	// nothing in that turn would drop the very row the reader was sent to.
-	it("clears a stale span filter when a session-shape cell crosses to Traces", () => {
-		render(<Views />)
-
-		fireEvent.change(screen.getByPlaceholderText("Filter spans"), {
-			target: { value: "no span says this" },
-		})
-		expect(screen.getByText("No spans match this filter.")).toBeTruthy()
-
-		fireEvent.click(screen.getByRole("tab", { name: /Overview/ }))
-		fireEvent.click(screen.getByRole("button", { name: "2" }))
-
-		// Back in Traces, on the turn that was clicked, with the filter gone.
-		expect(screen.getByPlaceholderText("Filter spans").getAttribute("value")).toBe("")
-		const marked = document.querySelectorAll("[data-revealed]")
-		expect(marked.length).toBe(1)
-		expect(marked[0]!.textContent).toContain("Turn 2")
-	})
-
 	// The state lives in SessionViews rather than the views precisely so a look
 	// at Flow doesn't cost the reader the place they found in a long session.
 	it("survives a Trace → Flow → Trace round trip with the turn still collapsed", () => {
@@ -1267,10 +1230,9 @@ describe("SessionHeader", () => {
 		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
 	})
 
-	it("demotes the opening prompt to a quoted line rather than making it the title", () => {
+	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
 		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.getByText("“fix the webhook retry backoff”")).toBeTruthy()
-		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("webhook")
+		expect(screen.queryByText(/webhook/)).toBeNull()
 	})
 
 	it("shows the full session id as a copyable fact, never as the heading", () => {

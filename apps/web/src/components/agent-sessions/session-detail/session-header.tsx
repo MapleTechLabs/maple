@@ -7,7 +7,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 
 import { CopyableValue } from "@/components/attributes"
-import { CopyIcon, UserIcon } from "@/components/icons"
+import { CopyIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
@@ -20,9 +20,9 @@ import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
  * The heading is the agent's name (or, unnamed, the framework's), never the
  * session id or the opening prompt: the id says nothing to a human, and the
  * first line of a prompt is usually a boilerplate instruction that reads as a
- * title the session doesn't deserve. Both stay on the page, each in its own
- * place — the prompt as a quoted line under the heading, the id as the last
- * fact, in full, one click from the clipboard.
+ * title the session doesn't deserve. The prompt is the transcript's own first
+ * line and is not repeated here; the id stays as the last fact, in full, one
+ * click from the clipboard.
  */
 export function SessionHeader({ sessionId, summary }: { sessionId: string; summary: SessionSummary }) {
 	const identity = sessionIdentity(summary)
@@ -38,18 +38,6 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 				<DashboardLayout.Title title={identity.heading}>{identity.heading}</DashboardLayout.Title>
 				{summary.failed && <Badge variant="error">Failed</Badge>}
 			</div>
-
-			{summary.title !== undefined && (
-				// Quoted and marked with the user glyph so it reads as what it is —
-				// the first thing the user said — and not as a name for the session.
-				<p className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-sm">
-					<UserIcon size={13} className="shrink-0" aria-hidden />
-					<span className="sr-only">Opening prompt:</span>
-					<span className="min-w-0 truncate" title={summary.title}>
-						“{summary.title}”
-					</span>
-				</p>
-			)}
 
 			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
 				{identity.framework !== undefined && <Fact label="Framework">{identity.framework}</Fact>}

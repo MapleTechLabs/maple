@@ -40,21 +40,29 @@ export interface IdleGap {
 	readonly durationMs: number
 }
 
-/** Wall-clock occupancy classes, in the order the breakdown legend lists them. */
-export type OccupancyKind = "idle" | "ttft" | "inference" | "tool" | "unaccounted"
+/** Classes of agent time, in the order the breakdown stacks them. */
+export type AgentTimeKind = "ttft" | "inference" | "tool"
 
-const OCCUPANCY_KIND_ORDER: readonly OccupancyKind[] = ["idle", "ttft", "inference", "tool", "unaccounted"]
+const AGENT_TIME_KIND_ORDER: readonly AgentTimeKind[] = ["ttft", "inference", "tool"]
 
-export interface OccupancySegment {
-	readonly kind: OccupancyKind
+export interface AgentTimeSegment {
+	readonly kind: AgentTimeKind
 	readonly ms: number
 }
 
-/** One classified stretch of the wall clock — the chronological bar draws these. */
-export interface OccupancyInterval {
-	readonly kind: OccupancyKind
-	readonly startMs: number
-	readonly endMs: number
+/**
+ * What the agents spent, rather than what the clock did. Every work span
+ * contributes its whole duration, so two subagents inferring at once cost two
+ * seconds of agent time per second of wall clock — `totalMs` exceeding the wall
+ * clock is the fan-out, not an error, and `peakParallel` says how wide it got.
+ */
+export interface SessionAgentTime {
+	readonly totalMs: number
+	/** Non-zero segments only, stacked in `AGENT_TIME_KIND_ORDER`: an
+	 *  unavailable TTFT is absent, never a zero-width band. */
+	readonly segments: readonly AgentTimeSegment[]
+	/** Most work spans in flight at once — 1 when nothing ever overlapped. */
+	readonly peakParallel: number
 }
 
 export interface SessionTokenTotals {
@@ -141,11 +149,7 @@ export interface SessionSummary {
 	readonly activeMs: number
 	readonly idleMs: number
 	readonly idleGaps: readonly IdleGap[]
-	/** Non-zero segments only: an unavailable TTFT is absent, never a zero bar. */
-	readonly occupancy: readonly OccupancySegment[]
-	/** The same classes as chronological intervals tiling the wall clock — what
-	 *  the breakdown bar draws, while the legend sums `occupancy`. */
-	readonly occupancyTimeline: readonly OccupancyInterval[]
+	readonly agentTime: SessionAgentTime
 	/** The last turn did not close cleanly. */
 	readonly failed: boolean
 	/** The opening user message, when content was captured. */
@@ -207,7 +211,6 @@ export function buildSessionSummary({
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
-	const occupancyTimeline = computeOccupancyTimeline(ordered, startMs, endMs, idleGaps)
 
 	return {
 		startMs,
@@ -216,8 +219,7 @@ export function buildSessionSummary({
 		activeMs: wallClockMs - idleMs,
 		idleMs,
 		idleGaps,
-		occupancy: aggregateOccupancy(occupancyTimeline),
-		occupancyTimeline,
+		agentTime: computeAgentTime(ordered),
 		failed: turns[turns.length - 1]?.failed === true,
 		title: turns[0]?.label,
 		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
@@ -266,22 +268,6 @@ function union(intervals: readonly Interval[]): Interval[] {
 	return merged
 }
 
-/** `a` minus `b`; both are expected to be disjoint covers. */
-function subtract(a: readonly Interval[], b: readonly Interval[]): Interval[] {
-	const out: Interval[] = []
-	for (const interval of a) {
-		let cursor = interval.startMs
-		for (const hole of b) {
-			if (hole.endMs <= cursor) continue
-			if (hole.startMs >= interval.endMs) break
-			if (hole.startMs > cursor) out.push({ startMs: cursor, endMs: hole.startMs })
-			cursor = Math.max(cursor, hole.endMs)
-		}
-		if (cursor < interval.endMs) out.push({ startMs: cursor, endMs: interval.endMs })
-	}
-	return out
-}
-
 /**
  * The stretches where nothing at all was running, long enough to read as the
  * session waiting on a human. Short holes stay in active time — they are the
@@ -301,93 +287,71 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
 }
 
 /**
- * Classify the wall clock into a chronological cover of disjoint intervals.
+ * Sum what the agents spent, by class of work.
  *
- * Overlaps are resolved by a fixed priority — time to first token, then
- * inference, then tool — so the intervals always tile the wall clock exactly.
- * What neither idle nor a gen_ai span accounts for lands in `unaccounted`:
- * agent scaffolding, framework overhead, the app's own spans. That residual is
- * the point of the bar, so it is never folded into a neighbour.
+ * Every work span contributes its whole duration — nothing is unioned and
+ * nothing is resolved by priority, which is the difference from the wall-clock
+ * reading this replaced: a session running four subagents in parallel spent
+ * four seconds of agent time per second, and flattening that onto one clock
+ * hid the fan-out and quietly stole the overlap from whichever class lost the
+ * priority order. The waterfall is where time reads chronologically.
+ *
+ * A TTFT splits its own span: the wait is not inference, and a session whose
+ * time is mostly first-token latency is a different session from one that is
+ * mostly generation. Agent and non-AI spans contribute nothing — an agent span
+ * covers its children, and adding it would count the same work twice.
  */
-export function computeOccupancyTimeline(
-	spans: readonly AiSessionSpan[],
-	startMs: number,
-	endMs: number,
-	idleGaps: readonly IdleGap[],
-): readonly OccupancyInterval[] {
-	const ttftIntervals: Interval[] = []
-	const inferenceIntervals: Interval[] = []
-	const toolIntervals: Interval[] = []
+export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
+	const totals = new Map<AgentTimeKind, number>()
+	const add = (kind: AgentTimeKind, ms: number) => {
+		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
+	}
+	const work: Interval[] = []
 
 	for (const span of spans) {
 		const spanStart = spanStartMs(span)
 		const spanEnd = spanEndMs(span)
 		const category = classifyAiSpan(span)
+		if (category !== "tool" && category !== "inference") continue
+		work.push({ startMs: spanStart, endMs: spanEnd })
 		if (category === "tool") {
-			toolIntervals.push({ startMs: spanStart, endMs: spanEnd })
+			add("tool", spanEnd - spanStart)
 			continue
 		}
-		if (category !== "inference") continue
 		const ttftMs = spanTtftMs(span)
-		if (ttftMs === undefined) {
-			inferenceIntervals.push({ startMs: spanStart, endMs: spanEnd })
-		} else {
-			ttftIntervals.push({ startMs: spanStart, endMs: spanStart + ttftMs })
-			inferenceIntervals.push({ startMs: spanStart + ttftMs, endMs: spanEnd })
-		}
+		// A TTFT longer than the span itself is instrumentation disagreeing with
+		// itself; the span's own duration is the one both classes must fit in.
+		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, spanEnd - spanStart)
+		add("ttft", ttft)
+		add("inference", spanEnd - spanStart - ttft)
 	}
 
-	const ttft = union(ttftIntervals)
-	const inference = subtract(union(inferenceIntervals), ttft)
-	const tool = subtract(
-		union(toolIntervals),
-		[...ttft, ...inference].sort((a, b) => a.startMs - b.startMs),
-	)
-
-	// Idle gaps are stretches where no span at all ran, and the three covers
-	// above live inside spans — so all four sets are mutually disjoint and a
-	// plain sort yields the timeline. Holes between them are the residual.
-	const classified: OccupancyInterval[] = [
-		...idleGaps.map(
-			(gap): OccupancyInterval => ({ kind: "idle", startMs: gap.startMs, endMs: gap.endMs }),
-		),
-		...ttft.map((i): OccupancyInterval => ({ kind: "ttft", ...i })),
-		...inference.map((i): OccupancyInterval => ({ kind: "inference", ...i })),
-		...tool.map((i): OccupancyInterval => ({ kind: "tool", ...i })),
-	].sort((a, b) => a.startMs - b.startMs)
-
-	const timeline: OccupancyInterval[] = []
-	const push = (interval: OccupancyInterval) => {
-		if (interval.endMs <= interval.startMs) return
-		const last = timeline[timeline.length - 1]
-		if (last !== undefined && last.kind === interval.kind && last.endMs === interval.startMs) {
-			timeline[timeline.length - 1] = { ...last, endMs: interval.endMs }
-		} else {
-			timeline.push(interval)
-		}
-	}
-
-	let cursor = startMs
-	for (const interval of classified) {
-		if (interval.startMs > cursor) push({ kind: "unaccounted", startMs: cursor, endMs: interval.startMs })
-		push(interval)
-		cursor = Math.max(cursor, interval.endMs)
-	}
-	if (cursor < endMs) push({ kind: "unaccounted", startMs: cursor, endMs })
-
-	return timeline
-}
-
-/** The legend's totals, summed from the same timeline the bar draws so the two
- *  can never disagree. Zero-total classes are absent, never a zero row. */
-function aggregateOccupancy(timeline: readonly OccupancyInterval[]): readonly OccupancySegment[] {
-	const totals = new Map<OccupancyKind, number>()
-	for (const interval of timeline) {
-		totals.set(interval.kind, (totals.get(interval.kind) ?? 0) + (interval.endMs - interval.startMs))
-	}
-	return OCCUPANCY_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
+	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
 		(segment) => segment.ms > 0,
 	)
+	return {
+		totalMs: segments.reduce((total, segment) => total + segment.ms, 0),
+		segments,
+		peakParallel: peakParallel(work),
+	}
+}
+
+/** Most work spans open at once, by a sweep over their endpoints. Ends are
+ *  processed before starts, so a span beginning as another ends is not overlap. */
+function peakParallel(work: readonly Interval[]): number {
+	const events = work
+		.flatMap((interval) => [
+			{ atMs: interval.startMs, delta: 1 },
+			{ atMs: interval.endMs, delta: -1 },
+		])
+		.sort((a, b) => a.atMs - b.atMs || a.delta - b.delta)
+	let open = 0
+	let peak = 0
+	for (const event of events) {
+		open += event.delta
+		if (open > peak) peak = open
+	}
+	return Math.max(peak, 1)
 }
 
 /* -------------------------------------------------------------------------- */
