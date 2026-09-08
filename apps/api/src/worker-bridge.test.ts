@@ -187,6 +187,7 @@ describe("the api Worker through alchemy's bridge", () => {
 			const app = yield* cachedRecoverable(
 				buildIsolateHandler(
 					Context.empty(),
+					noPorts,
 					HttpApiBuilder.layer(EchoApi).pipe(
 						Layer.provide(EchoHandlersLive),
 						Layer.provide(WorkerPlatformLive),

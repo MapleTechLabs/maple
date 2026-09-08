@@ -31,7 +31,7 @@ import {
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { chatSessionStub, type ChatSessionStub } from "@/chat/session"
 import { AuthService } from "@/services/auth/AuthService"
@@ -39,6 +39,7 @@ import type { TenantContext } from "@/services/auth/tenant-context"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { Env } from "@/platform/Env"
 import { resolveHttpMcpTenant } from "@/mcp/lib/query-warehouse"
+import { provideRequestFromBuild } from "@/runtime/route-requirements"
 
 const json = (body: unknown, status = 200) =>
 	HttpServerResponse.text(JSON.stringify(body), {
@@ -268,11 +269,9 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 		)
 	}),
 ).pipe(
-	// A raw router's handlers run in the request's own context; nothing carries the layer this
-	// router was built from into them. The tenant resolver and the Durable Object lookup read
-	// these per request, so hand them over from the build — reading them inside a handler
-	// answered every chat request with a 500 ("Service not found") until 2026-09-08.
-	HttpRouter.provideRequest(
-		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | WorkerEnvironment>()),
-	),
+	// The tenant resolver and the Durable Object lookup read these per request; a raw router's
+	// handlers see only the request's context, so hand them over from the build. Reading them
+	// inside a handler answered every chat request with a 500 ("Service not found") until
+	// 2026-09-08 — see `provideRequestFromBuild`.
+	provideRequestFromBuild(ApiKeysService, AuthService, Env, WorkerEnvironment),
 )

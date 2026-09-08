@@ -51,6 +51,7 @@ import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommendations.http"
 import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
 import { AuditLogServiceLive } from "@/runtime/service-graph"
+import { AuditLogService } from "@/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
@@ -72,7 +73,7 @@ import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
 import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { OrgMembershipService } from "@/services/auth/OrgMembershipService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
-import type { ApiPortsLayer } from "@/worker/bindings"
+import { provideRequestFromBuild } from "@/runtime/route-requirements"
 
 const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", HttpServerResponse.text("OK")))
 
@@ -100,6 +101,8 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpOrganizationsLive),
 	Layer.provide(HttpSessionReplaysLive),
 	Layer.provide(V1ErrorBoundaryLive),
+	// `recordHttpAudit` reads the audit log inside handlers of all three APIs.
+	provideRequestFromBuild(AuditLogService),
 )
 
 /**
@@ -122,6 +125,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 		Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpChatLive, HttpDemoLive, HttpDigestLive),
 	),
 	Layer.provide(V1ErrorBoundaryLive),
+	provideRequestFromBuild(AuditLogService),
 )
 
 const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
@@ -159,55 +163,31 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		),
 	),
 	Layer.provide(V2TransportErrorBoundaryLive),
+	provideRequestFromBuild(AuditLogService),
 )
 
-/**
- * Services a raw router's handlers still expect from the request context, beyond the Worker's
- * ports, which every request carries. Each is a runtime "Service not found".
- */
-type LeakedRequestServices<Routes extends Layer.Any> =
-	Layer.Services<Routes> extends infer Marker
-		? Marker extends HttpRouter.Request<"Requires", infer Service>
-			? Exclude<Service, Layer.Success<ApiPortsLayer>>
-			: never
-		: never
-
-/**
- * A raw `HttpRouter` handler runs in the request's own context — unlike an `HttpApiBuilder`
- * group, nothing carries the router's build context into it — so a service it reads per request
- * has to arrive through `HttpRouter.provideRequest` (see `ChatSessionsRouter`). Read inside the
- * handler instead, it compiles, because the isolate builder erases the marker, and fails every
- * request with "Service not found", which is what took the chat routes down on 2026-09-08. This
- * turns that into a build failure naming the leaked service.
- */
-const rawRoutes = <Routes extends Layer.Any>(
-	routes: Routes &
-		([LeakedRequestServices<Routes>] extends [never]
-			? unknown
-			: { readonly leakedRequestServices: LeakedRequestServices<Routes> }),
-) => routes
-
-const RawRoutes = rawRoutes(
-	Layer.mergeAll(
-		ChatSessionsRouter,
-		IntegrationsCallbackRouter,
-		SlackCallbackRouter,
-		SlackInternalRouter,
-		OAuthDiscoveryRouter,
-		PlanetScaleWebhookRouter,
-		ScraperInternalRouter,
-		VcsWebhookRouter,
-		ClerkWebhookRouter,
-		AutumnWebhookRouter,
-		McpLive,
-		HealthRouter,
-		DocsRoute,
-		DocsV2Route,
-		DiscoveryRouter,
-		// Last by convention only — find-my-way ranks the wildcard below every other
-		// route regardless of registration order.
-		NotFoundRouter,
-	),
+// Handlers run in the request's context. What a handler reads per request is handed over from
+// the build (`provideRequestFromBuild`, on the router or the API layer above it), and
+// `buildIsolateHandler` rejects the graph if anything else is left.
+const RawRoutes = Layer.mergeAll(
+	ChatSessionsRouter,
+	IntegrationsCallbackRouter,
+	SlackCallbackRouter,
+	SlackInternalRouter,
+	OAuthDiscoveryRouter,
+	PlanetScaleWebhookRouter,
+	ScraperInternalRouter,
+	VcsWebhookRouter,
+	ClerkWebhookRouter,
+	AutumnWebhookRouter,
+	McpLive,
+	HealthRouter,
+	DocsRoute,
+	DocsV2Route,
+	DiscoveryRouter,
+	// Last by convention only — find-my-way ranks the wildcard below every other
+	// route regardless of registration order.
+	NotFoundRouter,
 )
 
 export const AllRoutes = Layer.mergeAll(ApiRoutes, ApiInternalRoutes, ApiV2Routes, RawRoutes).pipe(

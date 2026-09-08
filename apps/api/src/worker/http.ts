@@ -5,7 +5,13 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { Clock, type Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import {
+	type HttpBody,
+	HttpRouter,
+	type HttpServerError,
+	HttpServerRequest,
+	HttpServerResponse,
+} from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "../http/api-cors"
@@ -65,15 +71,37 @@ export const forIsolate =
 			)
 		}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
 
-/** The route graph as the bridge's handler, built for the isolate. */
-export const buildIsolateHandler = <E>(
+/**
+ * The route graph the isolate builder accepts: the router, its error markers, and — as the only
+ * per-request requirements — the Worker's ports, which every request's context carries.
+ *
+ * A route handler runs in the request's own context; nothing carries the layer the router was
+ * built from into it (an `HttpApiBuilder` group hands its handlers a captured copy at runtime, a
+ * raw `HttpRouter` hands them nothing). Either way a service read inside a handler surfaces on
+ * the graph as `Request<"Requires", X>`, and this is the one place it is discharged: `X` outside
+ * the ports does not typecheck, which makes a handler that reads an unprovided service a build
+ * failure rather than a 500 on every request (`ChatSessionsRouter`, 2026-09-08). Hand such a
+ * service over with `provideRequestFromBuild`.
+ */
+export type IsolateRoutes<E, Ports> = Layer.Layer<
+	never,
+	E,
+	| HttpRouter.HttpRouter
+	| HttpRouter.Request<"Error", unknown>
+	| HttpRouter.Request<"GlobalError", unknown>
+	| HttpRouter.Request<"Requires", Ports>
+	| HttpRouter.Request<"GlobalRequires", Ports>
+>
+
+/**
+ * The route graph as the bridge's handler, built for the isolate. `ports` is the layer `makeFetch`
+ * provides around every request; it names what the graph may still ask for per request.
+ */
+export const buildIsolateHandler = <E, Ports>(
 	isolate: Context.Context<never>,
-	routes: Layer.Layer<
-		never,
-		E,
-		HttpRouter.HttpRouter | HttpRouter.Request<"Error" | "GlobalError" | "Requires", unknown>
-	>,
-) => forIsolate(isolate)(HttpRouter.toHttpEffect(routes)).pipe(Effect.map(bridgeHandler))
+	ports: Layer.Layer<Ports>,
+	routes: IsolateRoutes<E, Ports>,
+) => forIsolate(isolate)(HttpRouter.toHttpEffect(routes)).pipe(Effect.map(bridgeHandler<Ports>))
 
 /** The route graph as one request handler, built once per isolate on the first request, over the Worker's ports. */
 export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) =>
@@ -84,6 +112,7 @@ export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) 
 		])
 		return yield* buildIsolateHandler(
 			isolate,
+			ports,
 			AllRoutes.pipe(
 				Layer.provideMerge(HttpServicesLive),
 				Layer.provideMerge(ApiAuthLive),
@@ -95,18 +124,24 @@ export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) 
 	})
 
 /**
- * SAFETY: `toHttpEffect` keeps the routes' error and requirement markers in
- * the handler's type; the bridge's `safeHttpEffect` renders any escaping cause
- * (a Respondable as its own response, anything else as a 500), so the markers
- * are discharged here, once.
+ * SAFETY: only the error channel is widened. `toHttpEffect` keeps the routes' error markers in
+ * the handler's type and the bridge's `safeHttpEffect` renders any escaping cause (a Respondable
+ * as its own response, anything else as a 500), so they are discharged here, once. The
+ * requirements stay typed: whatever a handler still needs per request is `Ports`, which
+ * `makeFetch` provides around the request.
  */
-const bridgeHandler = <E, R>(
+const bridgeHandler = <Ports>(
 	handler: Effect.Effect<
 		HttpServerResponse.HttpServerResponse,
-		E,
-		R | Scope.Scope | HttpServerRequest.HttpServerRequest
+		unknown,
+		Scope.Scope | HttpServerRequest.HttpServerRequest | Ports
 	>,
-): HttpEffect => handler as HttpEffect
+): HttpEffect<Ports> =>
+	handler as Effect.Effect<
+		HttpServerResponse.HttpServerResponse,
+		HttpServerError.HttpServerError | HttpBody.HttpBodyError,
+		Scope.Scope | HttpServerRequest.HttpServerRequest | Ports
+	>
 
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
@@ -136,7 +171,7 @@ const unavailableResponse = (path: string) =>
  * issued. The ports are provided around the whole request, the same way the
  * background events get them.
  */
-export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.Layer<MapleDbConnection>) =>
+export const makeFetch = <Ports>(app: Effect.Effect<HttpEffect<Ports>, unknown>, ports: Layer.Layer<Ports>) =>
 	Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)

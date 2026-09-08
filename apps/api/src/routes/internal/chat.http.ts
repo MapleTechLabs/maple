@@ -49,6 +49,7 @@ const executionDefect = (tool: string, defect: unknown) =>
  * an org, and it arrives in a request body.
  */
 const recordApplyOutcome = (
+	env: Record<string, unknown>,
 	payload: {
 		readonly sessionId?: string
 		readonly messageId?: string
@@ -67,7 +68,6 @@ const recordApplyOutcome = (
 
 		if (orgId !== sessionOrgId) return
 
-		const env = yield* WorkerEnvironment
 		const stub = chatSessionStub(env, sessionId)
 		if (!stub) return
 
@@ -86,80 +86,84 @@ const recordApplyOutcome = (
 	})
 
 export const HttpChatLive = HttpApiBuilder.group(MapleInternalApi, "chat", (handlers) =>
-	handlers.handle("apply", ({ payload }) =>
-		Effect.gen(function* () {
-			const tool = payload.tool
-			const authenticated = yield* CurrentTenant.Context
-			const executor = yield* McpToolExecutor
-			const tenant: TenantContext = {
-				orgId: authenticated.orgId,
-				userId: authenticated.userId,
-				roles: [...authenticated.roles],
-				authMode: authenticated.authMode,
-			}
+	Effect.gen(function* () {
+		// Resolved once, where the group is built, not per request inside the handler.
+		const executor = yield* McpToolExecutor
+		const env = yield* WorkerEnvironment
+		return handlers.handle("apply", ({ payload }) =>
+			Effect.gen(function* () {
+				const tool = payload.tool
+				const authenticated = yield* CurrentTenant.Context
+				const tenant: TenantContext = {
+					orgId: authenticated.orgId,
+					userId: authenticated.userId,
+					roles: [...authenticated.roles],
+					authMode: authenticated.authMode,
+				}
 
-			// Defense in depth: only approval-gated mutations are applicable here.
-			if (!MUTATING_TOOL_NAMES.has(tool)) {
-				return yield* new ChatToolNotApplicableError({
-					tool,
-					message: `Tool "${tool}" is not an approval-applicable mutation.`,
-				})
-			}
+				// Defense in depth: only approval-gated mutations are applicable here.
+				if (!MUTATING_TOOL_NAMES.has(tool)) {
+					return yield* new ChatToolNotApplicableError({
+						tool,
+						message: `Tool "${tool}" is not an approval-applicable mutation.`,
+					})
+				}
 
-			const definition = mapleToolCatalog.find((d) => d.name === tool)
-			if (!definition) {
-				return yield* new ChatToolNotFoundError({ tool, message: `Unknown tool "${tool}".` })
-			}
+				const definition = mapleToolCatalog.find((d) => d.name === tool)
+				if (!definition) {
+					return yield* new ChatToolNotFoundError({ tool, message: `Unknown tool "${tool}".` })
+				}
 
-			yield* Schema.decodeUnknownEffect(definition.schema)(payload.input).pipe(
-				Effect.mapError(
-					(error) =>
-						new ChatToolInvalidInputError({
-							tool,
-							message: `Invalid input for "${tool}": ${String(error)}`,
-						}),
-				),
-			)
+				yield* Schema.decodeUnknownEffect(definition.schema)(payload.input).pipe(
+					Effect.mapError(
+						(error) =>
+							new ChatToolInvalidInputError({
+								tool,
+								message: `Invalid input for "${tool}": ${String(error)}`,
+							}),
+					),
+				)
 
-			// Domain-level tool failures are encoded as `isError` by the shared dispatcher.
-			// A defect remains a transport failure, but it is declared and serialized instead
-			// of falling through HttpApi as a bodyless 500.
-			const result = yield* executor.execute(tenant, tool, payload.input, "chat").pipe(
-				Effect.catchTag("@maple/internal-rpc/ToolNotFoundError", () =>
-					Effect.fail(new ChatToolNotFoundError({ tool, message: `Unknown tool "${tool}".` })),
-				),
-				Effect.catchDefect((defect) => executionDefect(tool, defect)),
-			)
+				// Domain-level tool failures are encoded as `isError` by the shared dispatcher.
+				// A defect remains a transport failure, but it is declared and serialized instead
+				// of falling through HttpApi as a bodyless 500.
+				const result = yield* executor.execute(tenant, tool, payload.input, "chat").pipe(
+					Effect.catchTag("@maple/internal-rpc/ToolNotFoundError", () =>
+						Effect.fail(new ChatToolNotFoundError({ tool, message: `Unknown tool "${tool}".` })),
+					),
+					Effect.catchDefect((defect) => executionDefect(tool, defect)),
+				)
 
-			const content = result.content.map((entry) => entry.text).join("\n")
+				const content = result.content.map((entry) => entry.text).join("\n")
 
-			// Best-effort: the mutation has already run and its outcome is the response. A session
-			// that cannot be reached must not turn a successful apply into a failed request.
-			yield* recordApplyOutcome(payload, tenant.orgId, content, result.isError === true).pipe(
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.interrupt
-						: Effect.annotateCurrentSpan("maple.chat.apply_outcome_record_failed", true).pipe(
-								Effect.andThen(
-									Effect.logWarning("Failed to record a chat approval outcome").pipe(
-										Effect.annotateLogs({
-											orgId: tenant.orgId,
-											tool,
-											sessionId: payload.sessionId ?? "(none)",
-											messageId: payload.messageId ?? "(none)",
-											toolCallId: payload.toolCallId ?? "(none)",
-											cause: summarizeCause(cause),
-										}),
+				// Best-effort: the mutation has already run and its outcome is the response. A session
+				// that cannot be reached must not turn a successful apply into a failed request.
+				yield* recordApplyOutcome(env, payload, tenant.orgId, content, result.isError === true).pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.annotateCurrentSpan("maple.chat.apply_outcome_record_failed", true).pipe(
+									Effect.andThen(
+										Effect.logWarning("Failed to record a chat approval outcome").pipe(
+											Effect.annotateLogs({
+												orgId: tenant.orgId,
+												tool,
+												sessionId: payload.sessionId ?? "(none)",
+												messageId: payload.messageId ?? "(none)",
+												toolCallId: payload.toolCallId ?? "(none)",
+												cause: summarizeCause(cause),
+											}),
+										),
 									),
 								),
-							),
-				),
-			)
+					),
+				)
 
-			return new ChatApplyResponse({
-				content,
-				...(result.isError === true ? { isError: true } : undefined),
-			})
-		}),
-	),
+				return new ChatApplyResponse({
+					content,
+					...(result.isError === true ? { isError: true } : undefined),
+				})
+			}),
+		)
+	}),
 )
