@@ -47,21 +47,6 @@
 .monumental-home :where(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-md):not(a, button) {
 	border-radius: 0;
 }
-.monumental-home #main-nav {
-	background: var(--home-paper);
-	border-color: var(--home-rule);
-}
-.monumental-home #main-nav > .shell {
-	height: 76px;
-}
-.monumental-home #main-nav a[href="/"] {
-	font-size: 22px;
-}
-.monumental-home #main-nav a[href="/"] > span {
-	font-size: 22px;
-	font-weight: 750;
-	letter-spacing: -0.04em;
-}
 .monumental-home .font-display {
 	font-family: "Geist Variable", sans-serif;
 }
@@ -292,9 +277,6 @@ html:not([lang="en"]) .monument-hero h1 {
 	}
 }
 @media (max-width: 767px) {
-	.monumental-home #main-nav > .shell {
-		height: 64px;
-	}
 	.monument-hero {
 		display: block;
 		min-height: 0;
@@ -485,11 +467,7 @@ html:not([lang="en"]) .monument-hero h1 {
 		overflow-x: auto;
 	}
 }
-.monumental-home #main-nav a:is([href="/ja"], [href="/ko"]) > span {
-	font-size: 22px;
-	font-weight: 750;
-	letter-spacing: -0.04em;
-}
+
 .monumental-home .live-frame .bg-bg-elevated {
 	background-color: var(--bg-elevated);
 }
