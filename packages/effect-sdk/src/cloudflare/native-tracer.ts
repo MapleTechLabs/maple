@@ -255,24 +255,29 @@ export const resolveNativeTracerHost = (
 const effectLocalTracer = Tracer.make({ span: (options) => new Tracer.NativeSpan(options) })
 
 /**
- * Tracer layer for native mode. Builds asynchronously (the host modules are
- * imported on first build); when the host APIs are absent it logs one notice
- * and installs Effect-local spans instead.
+ * Tracer layer for native mode. The host modules are imported on the first
+ * build and the result is memoized for the isolate: runtimes that build the
+ * layer per event (alchemy's bridge with `requestLayer`) reuse it instead of
+ * re-importing and repeating the notice. When the host APIs are absent it
+ * logs one notice and installs Effect-local spans instead.
  */
 export const makeNativeTracerLayer = (
 	options: NativeTracerOptions,
 	host: Effect.Effect<NativeTracerHost, NativeTracingUnavailable> = resolveNativeTracerHost(
 		importSpecifier,
 	),
-): Layer.Layer<never> =>
-	Layer.effect(
-		Tracer.Tracer,
-		host.pipe(
-			Effect.map((resolved) => makeNativeTracer(resolved, options)),
-			Effect.catchTag("@maple-dev/effect-sdk/cloudflare/NativeTracingUnavailable", (error) =>
-				Effect.logInfo(
-					`[MapleCloudflareSDK] native tracing unavailable — spans stay Effect-local (${error.message})`,
-				).pipe(Effect.as(effectLocalTracer)),
+): Layer.Layer<never> => {
+	const tracer = Effect.runSync(
+		Effect.cached(
+			host.pipe(
+				Effect.map((resolved) => makeNativeTracer(resolved, options)),
+				Effect.catchTag("@maple-dev/effect-sdk/cloudflare/NativeTracingUnavailable", (error) =>
+					Effect.logInfo(
+						`[MapleCloudflareSDK] native tracing unavailable — spans stay Effect-local (${error.message})`,
+					).pipe(Effect.as(effectLocalTracer)),
+				),
 			),
 		),
 	)
+	return Layer.effect(Tracer.Tracer, tracer)
+}

@@ -405,6 +405,26 @@ describe("makeNativeTracerLayer", () => {
 		}),
 	)
 
+	it.effect("resolves the host once per layer, however often the layer is built", () =>
+		Effect.gen(function* () {
+			let resolutions = 0
+			const notices: Array<string> = []
+			const capture = Logger.make<unknown, void>(({ message }) => {
+				notices.push(Array.isArray(message) ? message.join(" ") : String(message))
+			})
+			const host = Effect.suspend(() => {
+				resolutions += 1
+				return Effect.fail(new NativeTracingUnavailable({ message: "absent" }))
+			})
+			const layer = makeNativeTracerLayer({}, host).pipe(Layer.provide(Logger.layer([capture])))
+			// Two builds, as a per-event `requestLayer` would do.
+			yield* Effect.void.pipe(Effect.withSpan("first"), Effect.provide(layer))
+			yield* Effect.void.pipe(Effect.withSpan("second"), Effect.provide(layer))
+			assert.strictEqual(resolutions, 1)
+			assert.strictEqual(notices.length, 1)
+		}),
+	)
+
 	it.effect("installs the mirroring tracer when the host resolves", () =>
 		Effect.gen(function* () {
 			const host = makeFakeHost()
