@@ -26,6 +26,8 @@ import {
 	errorIssueStates,
 	errorIssues,
 	errorNotificationPolicies,
+	googleAnalyticsLedger,
+	googleAnalyticsState,
 	liveActivities,
 	mcpOAuthAuthorizations,
 	mcpOAuthRefreshTokens,
@@ -108,6 +110,13 @@ const ORG_SCOPED_TABLES = [
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	liveActivities,
+	// GA4 collector state and its reconciliation ledger. Neither holds a secret, so the
+	// unpurged list's criterion would have allowed them — but deletion is terminal, which
+	// removes the one reason to keep them: the ledger exists so a RECONNECT does not re-emit
+	// hours already in the warehouse, and a deleted org never reconnects. What is left is
+	// third-party property and account names belonging to an org that is gone, so they go.
+	googleAnalyticsState,
+	googleAnalyticsLedger,
 ] as const
 
 /**
@@ -142,8 +151,6 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"errorIssueVerifications",
 	"errorNotificationDeliveries",
 	"errorTickStates",
-	"googleAnalyticsLedger",
-	"googleAnalyticsState",
 	"investigationLensRuns",
 	"investigations",
 	"issueEscalationPolicies",
