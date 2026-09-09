@@ -51,7 +51,10 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
         </div>
     </div>
     </div>
-    <img class="monument-hero__art" src="/art/maple-rome-balanced.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
+    <picture>
+        <source media="(min-width: 1800px)" srcset="/art/maple-rome-ultrawide.webp" />
+        <img class="monument-hero__art" src="/art/maple-rome-balanced.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
+    </picture>
 </section>
 <section class="monument-product">
     <div class="shell"><HeroCarousel /></div>

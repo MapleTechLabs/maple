@@ -641,3 +641,16 @@ html:not([lang="en"]) .monument-hero h1 {
 .monument-hero__headline-accent {
 	color: var(--home-orange);
 }
+
+/* The panorama is one continuous scene, cropped from the left as needed.
+   Keep the temple anchored on the right without stretching its proportions. */
+@media (min-width: 1800px) {
+	.monument-hero__art {
+		width: 100%;
+		height: calc(var(--monument-hero-h) - 76px);
+		object-fit: cover;
+		object-position: right bottom;
+		mask-image: linear-gradient(to bottom, transparent, black 8%, black 85%, transparent);
+		mask-composite: add;
+	}
+}
