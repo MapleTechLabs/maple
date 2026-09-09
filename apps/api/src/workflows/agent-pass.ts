@@ -108,7 +108,15 @@ export const runAgentPass = <S extends AnswerSchema>(
 		let toolCalls = 0
 		let deadlineHit = false
 
-		const decodeAnswer = Schema.decodeUnknownEffect(input.schema)
+		/** Decode one submitted answer and keep it. Returns what the model is told. */
+		const record = (params: unknown): string => {
+			const decoded = decodeAnswer(params)
+			if (Option.isNone(decoded)) return "Rejected: the answer did not match its schema."
+			answer = decoded
+			return "Recorded."
+		}
+
+		const decodeAnswer = Schema.decodeUnknownOption(input.schema)
 
 		// One construction, so the toolkit and its handlers cannot disagree. The submit tool is
 		// dynamic like the registry's, so its arguments arrive unknown and are decoded here.
@@ -123,18 +131,10 @@ export const runAgentPass = <S extends AnswerSchema>(
 					name: input.submitToolName,
 					description: input.submitToolDescription,
 					parameters: toInputSchema(input.schema),
-					handler: (params) =>
-						decodeAnswer(params).pipe(
-							Effect.match({
-								onSuccess: (value) => {
-									answer = Option.some(value)
-									return "Recorded."
-								},
-								// The model gets the schema error and one more turn to answer, rather than
-								// the pass silently recording nothing.
-								onFailure: (error) => `Rejected: ${String(error)}`,
-							}),
-						),
+					// The engine projects a completion call into the run's output rather than dispatching
+					// its handler, so this only ever runs when the model calls the tool as an ordinary
+					// one. Recording in both places keeps either path reporting the answer.
+					handler: (params) => Effect.succeed(record(params)),
 				},
 			],
 		})
@@ -148,9 +148,10 @@ export const runAgentPass = <S extends AnswerSchema>(
 			completion: {
 				tool: input.submitToolName,
 				required: true,
-				// The answer is recorded by the handler as it arrives, so nothing has to travel back
-				// through the run's output.
-				project: () => "",
+				// Recording here rather than reading the run's output: wall clock is a hard rail, so a
+				// pass that submits and then runs out of time still has to report what it filed.
+				// Re-evaluation on recovery records the same value, so this stays idempotent.
+				project: ({ parameters }: { readonly parameters: unknown }) => record(parameters),
 			},
 		})
 

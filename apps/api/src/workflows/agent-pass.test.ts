@@ -1,26 +1,27 @@
 /**
  * A headless pass must always be able to report what it found.
  *
- * This is the regression file for the defect that made investigations look lazy:
- * the turn loop's closing step was written for attended chat, where the answer is
- * prose, and sent `tools: []`. A pass whose answer *is* a tool call therefore
- * could not answer once it hit its step cap or its deadline — `runAgentPass`
- * returned `None`, the workflow recorded a `no_finding` lane, and an agent that
- * had investigated for its entire budget was indistinguishable from one that
- * never looked.
+ * This is the regression file for the defect that made investigations look lazy: a pass whose
+ * answer *is* a tool call could not answer once it hit its step cap, so `runAgentPass` returned
+ * `None`, the workflow recorded a `no_finding` lane, and an agent that had investigated for its
+ * entire budget was indistinguishable from one that never looked.
  *
- * The three cases below are the whole contract: out of steps still submits, out
- * of clock still submits, and genuine silence is still reported as silence.
+ * Two of the three cases are unchanged. The deadline case changed shape with the engine: wall clock
+ * is a hard rail there, so a pass that runs out of time *fails* rather than getting a last word —
+ * which is exactly why the answer is recorded by the submit handler as it arrives instead of being
+ * read off a successful result.
  */
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
-import { LLMClient, LLMEvent, type LLMRequest, type LanguageModel } from "@opencode-ai/ai"
-import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare-workers-ai"
+import { Effect, Layer, Option, Schema } from "effect"
+import { Model } from "effect/unstable/ai"
+import { ScriptedModel } from "@effect-agent/testing/ScriptedModel"
+import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import { PermissionRule } from "@maple/domain/permission"
 import { OrgId, UserId } from "@maple/domain"
 import type { AgentDefinition } from "@/chat/agents"
 import { McpToolExecutor } from "@/mcp/dispatcher"
+import type { ResolvedModel } from "@/platform/Llm"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 
@@ -30,16 +31,6 @@ const TENANT: TenantContext = {
 	roles: [],
 	authMode: "self_hosted",
 }
-
-const MODEL: LanguageModel = CloudflareWorkersAI.configure({
-	accountId: "test",
-	apiKey: "test",
-}).model("@cf/test/model")
-
-const finish = (): LLMEvent => ({ type: "finish", reason: { normalized: "stop" } })
-const textDelta = (text: string): LLMEvent => ({ type: "text-delta", id: "t1", text }) as LLMEvent
-const toolCall = (id: string, name: string, input: unknown = {}): LLMEvent =>
-	({ type: "tool-call", id, name, input, providerExecuted: false }) as LLMEvent
 
 /** A lane agent: three steps, read-only, and no ability to spawn anything. */
 const AGENT: AgentDefinition = {
@@ -58,100 +49,137 @@ const SCHEMA = Schema.Struct({ claim: Schema.String })
 
 const ToolExecutorStubLayer = Layer.succeed(McpToolExecutor, {
 	execute: (_tenant, name) =>
-		Effect.succeed({
-			content: [{ type: "text" as const, text: `${name} completed` }],
-		}),
+		Effect.succeed({ content: [{ type: "text" as const, text: `${name} completed` }] }),
 })
 
-const stub = (steps: ReadonlyArray<ReadonlyArray<LLMEvent>>) => {
-	let step = 0
-	const service = {
-		prepare: () => Effect.die(new Error("prepare is not used")),
-		generate: () => Effect.die(new Error("generate is not used")),
-		stream: (_request: LLMRequest) => {
-			const scripted = steps[step] ?? [finish()]
-			step += 1
-			return Stream.fromIterable(scripted)
-		},
-	}
-	return Layer.succeed(LLMClient.Service, service as never)
+/** A spoken part: the engine rejects a delta whose text part was never opened. */
+const text = (delta: string) => [
+	{ type: "text-start" as const, id: "t1" },
+	{ type: "text-delta" as const, id: "t1", delta },
+	{ type: "text-end" as const, id: "t1" },
+]
+
+const call = (id: string, name: string, params: unknown = {}) => ({
+	type: "tool-call" as const,
+	id,
+	name,
+	params,
+	providerExecuted: false,
+})
+
+/** Token counts the engine's usage accounting needs; the values do not matter to these assertions. */
+const USAGE = {
+	inputTokens: { uncached: undefined, total: 10, cacheRead: undefined, cacheWrite: undefined },
+	outputTokens: { total: 5, text: undefined, reasoning: undefined },
 }
 
-const pass = (
-	steps: ReadonlyArray<ReadonlyArray<LLMEvent>>,
-	options: { readonly deadlineAtMs?: number } = {},
-) =>
+/** A scripted turn always ends in a finish part; without one the run fails as a protocol error. */
+/**
+ * A scripted turn always ends in a finish part, and its reason has to agree with what it emitted:
+ * a turn that declared tool calls and reported `stop` is rejected as a protocol error.
+ */
+const turn = (...parts: ReadonlyArray<unknown>) => {
+	const flat = parts.flat()
+	const calls = flat.some((part) => (part as { type?: string }).type === "tool-call")
+	return {
+		_tag: "Stream" as const,
+		parts: [
+			...flat,
+			{
+				type: "finish" as const,
+				reason: calls ? ("tool-calls" as const) : ("stop" as const),
+				usage: USAGE,
+			},
+		],
+		termination: { _tag: "Complete" as const },
+	}
+}
+
+/**
+ * A model that answers from a script, and a `ResolvedModel` wrapping it.
+ *
+ * The pass resolves its model through `provide`, so a scripted one substitutes cleanly without the
+ * pass knowing it is under test.
+ */
+const scripted = (turns: ReadonlyArray<unknown>): ResolvedModel => ({
+	provider: "openrouter",
+	name: "scripted/test-model",
+	limits: { context: 128_000, output: 8_000 },
+	// `Model.make` supplies the provider and model identity services alongside the language model;
+	// the scripted layer alone provides only the model itself.
+	provide: (effect) =>
+		Effect.provide(effect, Model.make("scripted", "test-model", ScriptedModel.layer(turns as never))),
+})
+
+const run = (turns: ReadonlyArray<unknown>, deadlineAtMs?: number) =>
 	runAgentPass({
-		id: "inv_test_pass",
+		id: "pass-1",
 		agent: AGENT,
 		tenant: TENANT,
-		model: MODEL,
-		prompt: "Test it.",
+		model: scripted(turns),
+		prompt: "Is the pool exhausted?",
 		submitToolName: "submit_candidate",
-		submitToolDescription: "Record the candidate.",
+		submitToolDescription: "File the candidate.",
 		schema: SCHEMA,
-		...(!(options.deadlineAtMs === undefined) ? { deadlineAtMs: options.deadlineAtMs } : undefined),
-	}).pipe(Effect.provide(Layer.mergeAll(stub(steps), ToolExecutorStubLayer)))
-
-/** Every step calls a tool, so the agent never voluntarily stops. */
-const grinding = (count: number): ReadonlyArray<ReadonlyArray<LLMEvent>> =>
-	Array.from({ length: count }, (_, i) => [toolCall("c1", "query_data", { page: i }), finish()])
+		...(deadlineAtMs === undefined ? undefined : { deadlineAtMs }),
+	}).pipe(Effect.provide(ToolExecutorStubLayer), Effect.provide(IdGenerator.layer))
 
 describe("runAgentPass", () => {
-	it.live("returns the answer when the agent submits on its own", () =>
+	it.effect("reports the answer when the agent submits", () =>
 		Effect.gen(function* () {
-			const result = yield* pass([
-				[toolCall("c1", "query_data", { page: 0 }), finish()],
-				[toolCall("s1", "submit_candidate", { claim: "pool exhaustion" }), finish()],
+			const result = yield* run([turn(call("c1", "submit_candidate", { claim: "pool exhausted" }))])
+
+			assert.deepEqual(Option.getOrNull(result.answer), { claim: "pool exhausted" })
+			// The submit call is the answer, not a tool the lane used to find it.
+			assert.equal(result.toolCalls, 0)
+		}),
+	)
+
+	it.effect("counts the tools the lane used, excluding its own submit call", () =>
+		Effect.gen(function* () {
+			const result = yield* run([
+				turn(call("c1", "query_data", { sql: "select 1" })),
+				turn(call("c2", "submit_candidate", { claim: "found it" })),
 			])
-			assert.deepEqual(Option.getOrUndefined(result.answer), { claim: "pool exhaustion" })
-			assert.equal(result.deadlineHit, false)
-			// The submit call itself is not evidence gathering, so it is not counted.
+
 			assert.equal(result.toolCalls, 1)
+			assert.isTrue(Option.isSome(result.answer))
 		}),
 	)
 
-	/**
-	 * The core regression. The agent grinds through its whole step budget and only
-	 * gets to answer on the forced closing step — which used to be handed no tools.
-	 */
-	it.live("still submits after exhausting its step budget", () =>
+	it.effect("still submits after spending every step it had", () =>
 		Effect.gen(function* () {
-			const result = yield* pass([
-				...grinding(3),
-				[toolCall("s1", "submit_candidate", { claim: "out of steps" }), finish()],
+			// Three steps of tool calls, then the grace turn the exhaustion policy allows. Without
+			// that turn the lane would be recorded as having found nothing at all.
+			const result = yield* run([
+				turn(call("c1", "query_data")),
+				turn(call("c2", "query_data")),
+				turn(call("c3", "query_data")),
+				turn(call("c4", "submit_candidate", { claim: "late but real" })),
 			])
-			assert.deepEqual(Option.getOrUndefined(result.answer), { claim: "out of steps" })
+
+			assert.deepEqual(Option.getOrNull(result.answer), { claim: "late but real" })
 		}),
 	)
 
-	/**
-	 * The other half of the same defect. The deadline used to ride on `isCurrent`,
-	 * the abort hook, so the loop returned an empty stream rather than closing.
-	 */
-	it.live("still submits, and reports deadlineHit, when the clock runs out", () =>
+	it.effect("reports what it submitted even when the run then fails", () =>
 		Effect.gen(function* () {
-			const result = yield* pass(
-				[
-					[toolCall("c1", "query_data", { page: 0 }), finish()],
-					[toolCall("s1", "submit_candidate", { claim: "out of clock" }), finish()],
-				],
-				// Already past. The first check fires after the opening step's tools settle.
-				{ deadlineAtMs: 0 },
+			// The engine's wall clock is a hard rail, so an out-of-time pass fails rather than
+			// getting a last word. What must survive is the answer it already filed.
+			const result = yield* run(
+				[turn(call("c1", "submit_candidate", { claim: "filed in time" })), turn(text("…"))],
+				Date.now() - 1,
 			)
-			assert.deepEqual(Option.getOrUndefined(result.answer), { claim: "out of clock" })
-			assert.equal(result.deadlineHit, true)
+
+			assert.deepEqual(Option.getOrNull(result.answer), { claim: "filed in time" })
 		}),
 	)
 
-	/**
-	 * Genuine silence is still silence. A pass that answers in prose and never
-	 * calls its submit tool has produced no candidate, and the workflow is right to
-	 * record a no-finding lane for it.
-	 */
-	it.live("returns None when the agent never submits", () =>
+	it.effect("reports genuine silence as silence", () =>
 		Effect.gen(function* () {
-			const result = yield* pass([[textDelta("I could not determine a cause."), finish()]])
+			// "This lens found nothing" is a result the boards render, not an error to propagate.
+			const result = yield* run([turn(text("I could not find anything conclusive."))])
+
 			assert.isTrue(Option.isNone(result.answer))
 		}),
 	)
