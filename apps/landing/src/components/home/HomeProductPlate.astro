@@ -1,0 +1,14 @@
+---
+/**
+ * The hero's product plate, as its own section.
+ *
+ * Split out of `HomeHero` so the page can put something between the headline
+ * and the screenshots. It was never coupled to the hero in CSS — both are plain
+ * `main > section` children — so this is a move, not a rewrite.
+ */
+import HeroCarousel from "./HeroCarousel.astro";
+---
+
+<section class="monument-product">
+    <div class="shell"><HeroCarousel /></div>
+</section>
