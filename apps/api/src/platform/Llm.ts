@@ -352,8 +352,7 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 
 /**
  * Reasons worth sending again unchanged. Effect AI carries this as `isRetryable` on the error
- * itself, so the judgement upstream makes is the one Maple uses; `chat/loop/retry.ts` widens it for
- * the mid-stream failures neither side retries.
+ * itself, so the judgement upstream makes is the one Maple uses.
  */
 const isRetryable = (error: AiError.AiError): boolean => error.isRetryable
 

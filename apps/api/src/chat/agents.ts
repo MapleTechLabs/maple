@@ -13,13 +13,13 @@
 import * as Agent from "@effect-agent/core/Agent"
 import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
 import * as Output from "@effect-agent/engine/Output"
-import { Schema } from "effect"
+import { Duration, Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 import { PermissionRule } from "@maple/domain/permission"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
-import { MAX_STEPS, REPEATED_TOOL_CALLS, SUBAGENT_MAX_STEPS, TOOL_CONCURRENCY, TURN_MAX_DURATION } from "./loop/budgets"
+import { MAX_STEPS, REPEATED_TOOL_CALLS, SUBAGENT_MAX_STEPS, TOOL_CONCURRENCY, TURN_MAX_DURATION } from "./budgets"
 import { buildHypothesisSystemPrompt, hypothesisRuleset } from "@/workflows/hypothesis-catalogue"
 import { PLANNER_MAX_STEPS, PLANNER_SYSTEM_PROMPT, PLANNER_TOOL_NAMES } from "@/workflows/planner-prompt"
 import type { PermissionRuleset } from "@maple/domain/permission"
@@ -232,7 +232,7 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => {
 /**
  * A Maple agent record as a finite policy.
  *
- * Every ceiling comes from `loop/budgets.ts`, which is still the one place they are collected and
+ * Every ceiling comes from `./budgets.ts`, which is still the one place they are collected and
  * reasoned about against each other. `maxToolCalls` is derived rather than declared: a turn's tool
  * calls are bounded by how many turns it gets times how many it may issue at once, and stating it
  * separately would let the two drift.
@@ -240,12 +240,17 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => {
  * `contextTokenLimit` is what makes compaction the engine's job instead of `turn-runner`'s. It
  * arrives from the resolved model rather than the agent, because it is a property of the model.
  */
-export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
+export const agentPolicyFor = (
+	agent: AgentDefinition,
+	contextTokens?: number,
+	/** Overrides the shared wall clock; a headless pass runs to a deadline the workflow set. */
+	maxDuration: Duration.Input = TURN_MAX_DURATION,
+): AgentPolicy => {
 	const maxTurns = agent.steps ?? MAX_STEPS
 	return AgentPolicy.make({
 		maxTurns,
 		maxToolCalls: maxTurns * TOOL_CONCURRENCY,
-		maxDuration: TURN_MAX_DURATION,
+		maxDuration,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
 		// The closing step, as policy: a turn that runs out of turns gets one more, without tools,
