@@ -51,6 +51,15 @@ export const REPEATED_TOOL_CALLS = 3
  */
 export const TURN_STEP_BUDGET = 30
 
+/**
+ * Wall clock one run may take.
+ *
+ * Held well under `ChatSession`'s `TURN_STALE_MS` (15 minutes) so the deadline that stops a turn is
+ * the turn's own, not the Durable Object's watchdog declaring a still-running turn abandoned and
+ * writing a terminal event underneath it.
+ */
+export const TURN_MAX_DURATION = "10 minutes"
+
 /** 1 initial attempt + 3 retries. */
 export const MAX_STEP_ATTEMPTS = 4
 
