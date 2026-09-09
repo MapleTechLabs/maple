@@ -142,6 +142,8 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"errorIssueVerifications",
 	"errorNotificationDeliveries",
 	"errorTickStates",
+	"googleAnalyticsLedger",
+	"googleAnalyticsState",
 	"investigationLensRuns",
 	"investigations",
 	"issueEscalationPolicies",
