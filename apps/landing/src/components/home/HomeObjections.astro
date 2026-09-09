@@ -1,0 +1,165 @@
+---
+/**
+ * The three questions a buyer leaves the homepage to answer.
+ *
+ * Session replay put pricing first among second pages by a factor of four, and
+ * the rows people actually open once they land there are "Can I self-host
+ * Maple?", "Is Maple compatible with OpenTelemetry?" and "Do you offer a free
+ * trial?". Those are objections, not pricing questions — 83% of homepage
+ * visitors leave without ever reaching the page that answers them.
+ *
+ * So the answers move up here, in the hero, stated flatly. The pricing page
+ * keeps its full FAQ; this is the version a visitor reads in eight seconds.
+ *
+ * Numbers come from `getOffer()` for the same reason the pricing hero does:
+ * a hand-typed $39 here is a second source of truth that silently goes stale.
+ */
+import * as m from "../../paraglide/messages.js";
+import { getOffer, money } from "../../lib/pricing-offer";
+
+const offer = await getOffer();
+
+const points = [
+	{
+		key: "selfhost",
+		claim: m.home_objection_selfhost_claim(),
+		detail: m.home_objection_selfhost_detail(),
+		href: "https://github.com/MapleTechLabs/maple",
+		cta: m.home_objection_selfhost_cta(),
+		external: true,
+	},
+	{
+		key: "otel",
+		claim: m.home_objection_otel_claim(),
+		detail: m.home_objection_otel_detail(),
+		href: "/docs/instrumentation",
+		cta: m.home_objection_otel_cta(),
+		external: false,
+	},
+	{
+		key: "trial",
+		claim: offer.trialDuration
+			? m.home_objection_trial_claim({
+					price: money(offer.price),
+					days: String(offer.trialDuration),
+				})
+			: m.home_objection_trial_claim_no_trial({ price: money(offer.price) }),
+		detail: m.home_objection_trial_detail(),
+		href: "/pricing",
+		cta: m.home_objection_trial_cta(),
+		external: false,
+	},
+];
+---
+
+<section class="home-objections" aria-label={m.home_objections_aria()}>
+	<div class="shell">
+		<ul class="home-objections__grid">
+			{
+				points.map((point) => (
+					<li class="home-objections__item">
+						<p class="home-objections__claim">{point.claim}</p>
+						<p class="home-objections__detail">{point.detail}</p>
+						<a
+							href={point.href}
+							class="home-objections__link"
+							data-track="objection_opened"
+							data-track-topic={point.key}
+							data-track-location="home_objections"
+							{...(point.external
+								? { target: "_blank", rel: "noopener noreferrer" }
+								: {})}
+						>
+							{point.cta}
+							<span aria-hidden="true">→</span>
+						</a>
+					</li>
+				))
+			}
+		</ul>
+	</div>
+</section>
+
+<style>
+	.home-objections {
+		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-deep, transparent);
+	}
+
+	.home-objections__grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.home-objections__item {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 2rem 2rem 2rem 0;
+	}
+
+	.home-objections__item + .home-objections__item {
+		padding-left: 2rem;
+		border-left: 1px solid var(--border);
+	}
+
+	.home-objections__claim {
+		margin: 0;
+		font-family: var(--font-display, inherit);
+		font-size: 1rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--fg);
+	}
+
+	.home-objections__detail {
+		margin: 0;
+		max-width: 42ch;
+		font-size: 0.8125rem;
+		line-height: 1.6;
+		color: var(--fg-muted);
+	}
+
+	.home-objections__link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-top: auto;
+		padding-top: 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--primary);
+	}
+
+	.home-objections__link span {
+		transition: transform 150ms ease;
+	}
+
+	.home-objections__link:hover span {
+		transform: translateX(2px);
+	}
+
+	/* Mobile is 26% of sessions and averages 0.37 clicks — it gets the same
+	   three answers stacked, not a truncated version. */
+	@media (max-width: 860px) {
+		.home-objections__grid {
+			grid-template-columns: 1fr;
+		}
+
+		.home-objections__item {
+			padding: 1.5rem 0;
+		}
+
+		.home-objections__item + .home-objections__item {
+			padding-left: 0;
+			border-left: 0;
+			border-top: 1px solid var(--border);
+		}
+	}
+</style>

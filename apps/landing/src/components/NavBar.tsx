@@ -40,14 +40,21 @@ type CTAProps = {
  * `/sign-up`, because the app root sends a session-less visitor to `/sign-in`.
  */
 function CTAButton({ signedIn, trackLocation, ...rest }: CTAProps & { signedIn: boolean }) {
+	const href = signedIn ? APP_URL : APP_SIGN_UP_URL
+	const label = signedIn ? m.nav_dashboard() : m.nav_get_started()
 	return (
 		<a
-			href={signedIn ? APP_URL : APP_SIGN_UP_URL}
+			href={href}
 			data-track="cta_click"
 			data-track-location={trackLocation}
+			// Signed-out "Start free trial" and signed-in "Dashboard" are the same
+			// element in the same slot; without these two the warehouse cannot
+			// tell an acquisition click from a returning visitor's.
+			data-track-label={label}
+			data-track-destination={href}
 			{...rest}
 		>
-			{signedIn ? m.nav_dashboard() : m.nav_get_started()}
+			{label}
 		</a>
 	)
 }
@@ -269,6 +276,8 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 						href={APP_SIGN_IN_URL}
 						data-track="cta_click"
 						data-track-location="nav_login"
+						data-track-label={m.nav_login()}
+						data-track-destination={APP_SIGN_IN_URL}
 						className="hidden text-[15px] font-medium text-fg-muted transition-colors hover:text-fg md:inline-flex"
 					>
 						{m.nav_login()}

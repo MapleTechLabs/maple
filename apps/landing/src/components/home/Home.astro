@@ -6,6 +6,7 @@ import "../../styles/home-monument.css";
 import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
 import HomeHero from "./HomeHero.astro";
+import HomeObjections from "./HomeObjections.astro";
 import SignalsStrip from "./SignalsStrip.astro";
 import IncidentStory from "./IncidentStory.astro";
 import PlatformSheet from "./PlatformSheet.astro";
@@ -46,21 +47,28 @@ const homeFaqs = [
     <main id="main-content">
         <HomeHero />
 
+        <!-- 00 — self-hosting, OpenTelemetry and the trial terms, stated before
+             the page asks for anything. These are the three rows visitors open
+             once they reach /pricing, and 83% of them never get that far. -->
+        <HomeObjections />
+
         <!-- 01 — the three surfaces you actually look at. -->
         <SignalsStrip />
 
         <!-- 02 — the signature section: one incident, four surfaces, one trace id. -->
         <IncidentStory />
 
-        <!-- 03 — everything that didn't get a narrative, and the link hub. -->
+        <!-- 03 — Maple Local. Promoted out of the second half: it holds readers
+             longer than anything else on the site (the deepest read time of any
+             entry point, the lowest bounce), so it earns a slot people reach. -->
+        <LocalSection />
+
+        <!-- 04 — everything that didn't get a narrative, and the link hub. -->
         <PlatformSheet />
 
         <!-- Orange identity section. -->
         <span id="sovereignty"></span>
         <Sovereignty />
-
-        <!-- Local development and infrastructure. -->
-        <LocalSection />
 
         <!-- 06 — the infrastructure proof point. -->
         <KubernetesSection />

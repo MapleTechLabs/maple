@@ -45,6 +45,9 @@ const LANDING_EVENTS = [
 	"docs_snippet_copied",
 	"brand_asset_copied",
 	"brand_asset_downloaded",
+	"media_opened",
+	"objection_opened",
+	"page_scrolled",
 ] as const
 
 export type LandingEvent = (typeof LANDING_EVENTS)[number]
@@ -82,6 +85,52 @@ export function startLandingTelemetry(): void {
 	})
 
 	bindDeclarativeTracking()
+	bindScrollDepth()
+}
+
+/**
+ * Scroll depth, as one `page_scrolled` event per threshold per page view.
+ *
+ * A bounce rate alone cannot tell "read the hero and left" from "read the whole
+ * page and left" — both are one page view — and those two want opposite fixes.
+ * Thresholds are coarse on purpose: quartiles answer "did the fold hold them",
+ * and anything finer just multiplies event volume without moving a decision.
+ */
+const SCROLL_MARKS = [25, 50, 75, 100] as const
+
+function bindScrollDepth(): void {
+	let remaining = [...SCROLL_MARKS]
+	let queued = false
+
+	const measure = () => {
+		queued = false
+		const scrollable = document.documentElement.scrollHeight - window.innerHeight
+		// A page shorter than the viewport is 100% read the moment it is opened;
+		// reporting 25/50/75 for it would inflate every quartile.
+		const percent =
+			scrollable <= 0
+				? 100
+				: ((window.scrollY + window.innerHeight) / document.documentElement.scrollHeight) * 100
+		const reached = remaining.filter((mark) => percent >= mark)
+		if (reached.length === 0) return
+		remaining = remaining.filter((mark) => percent < mark)
+		for (const mark of reached) {
+			trackLanding("page_scrolled", { depth: String(mark), path: window.location.pathname })
+		}
+	}
+
+	// rAF-coalesced: scroll fires far faster than the SDK should be asked to
+	// serialize an event, and the thresholds only need the resting position.
+	const onScroll = () => {
+		if (queued) return
+		queued = true
+		requestAnimationFrame(measure)
+	}
+
+	window.addEventListener("scroll", onScroll, { passive: true })
+	window.addEventListener("resize", onScroll, { passive: true })
+	// Fires the short-page 100% case, and any depth restored from a #fragment.
+	measure()
 }
 
 /** Record a custom event. No-ops before init; the SDK queues pre-init events. */
@@ -136,7 +185,12 @@ function bindDeclarativeTracking(): void {
 				// `data-track-location` → dataset.trackLocation → `location`.
 				props[key.slice(5).replace(/^./, (c) => c.toLowerCase())] = value
 			}
-			trackLanding(name, props)
+			// Which page a CTA was clicked on is not knowable from the markup —
+			// the same nav renders on every route — and stamping it in the
+			// component would make the SSR and client attribute disagree. Read it
+			// here, at click time, where there is only ever one answer. Markup
+			// wins, so a page can still name its own `data-track-path`.
+			trackLanding(name, { path: window.location.pathname, ...props })
 		},
 		// Capture, so a handler that stops propagation (or a React island that
 		// re-renders the node away) can't swallow the event first.
