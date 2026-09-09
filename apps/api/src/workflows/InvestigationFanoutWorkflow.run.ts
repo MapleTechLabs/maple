@@ -43,7 +43,6 @@ import type {
 } from "@maple/domain/investigation-fanout"
 import { InvestigationId, OrgId, UserId } from "@maple/domain/primitives"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import type { LLMClientService } from "@opencode-ai/ai"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { randomUUID } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
@@ -51,7 +50,7 @@ import { Cause, Clock, type Context, Effect, Exit, Layer, Option, Schema, type S
 import type ChatSessionObject from "@/chat/ChatSession"
 import type { McpToolExecutor } from "@/mcp/dispatcher"
 import { Database } from "@/platform/DatabaseLive"
-import { type LlmEnv, layerLlm, resolveLensModel, resolveTriageModel } from "@/platform/Llm"
+import { type LlmClients, type LlmEnv, layerLlm, resolveLensModel, resolveTriageModel } from "@/platform/Llm"
 import { msToDate } from "@/platform/time"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { trackTokenUsage } from "@/services/billing/autumn-tracker"
@@ -145,7 +144,7 @@ const VALIDATE_STEP = { retries: { limit: 1, delay: "5 seconds" }, timeout: "5 m
 const PERSIST_STEP = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } } as const
 
 /** What the three agent passes need from the run: the LLM client and the MCP tools they call through. */
-export type AgentServices = LLMClientService | McpToolExecutor
+export type AgentServices = LlmClients | McpToolExecutor
 
 /**
  * One service graph for the whole instance, built once per run and shared by

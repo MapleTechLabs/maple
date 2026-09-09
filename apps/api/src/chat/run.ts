@@ -8,6 +8,7 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
+import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import { ThreadId } from "@effect-agent/core/Identifiers"
@@ -145,11 +146,12 @@ const decodeThreadId = Schema.decodeSync(ThreadId)
  * stream reports no token usage at all, and both the metering finalizer and `submit_diagnosis` need
  * a running total.
  */
-const accumulateUsage = (usage: RunUsage) => ({
-	guard: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
-	consume: (delta: { readonly inputTokens: number; readonly outputTokens: number }) =>
+const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
+	guard: (effect) => effect,
+	consume: (delta: RunUsageDelta) =>
 		Effect.sync(() => {
 			usage.input += delta.inputTokens
 			usage.output += delta.outputTokens
+			usage.cacheRead += delta.usage.inputTokens.cacheRead ?? 0
 		}),
 })

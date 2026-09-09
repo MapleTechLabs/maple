@@ -11,7 +11,7 @@
 import { makeChatSessionId } from "@maple/domain/chat-session"
 import { InvestigationPlan } from "@maple/domain/http"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { LanguageModel } from "@opencode-ai/ai"
+import type { ResolvedModel } from "@/platform/Llm"
 import { Effect, Option } from "effect"
 import { plannerAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
@@ -23,7 +23,7 @@ export interface PlannerAgentInput {
 	readonly investigationId: string
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
-	readonly model: LanguageModel
+	readonly model: ResolvedModel
 	readonly tenant: TenantContext
 	readonly deadlineAtMs: number
 }
@@ -74,7 +74,7 @@ export const runPlannerAgent = Effect.fn("investigation.plan")(function* (input:
 
 	return {
 		plan: pass.answer,
-		model: String(input.model.id),
+		model: input.model.name,
 		usage: {
 			input: pass.usage.input,
 			output: pass.usage.output,

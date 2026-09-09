@@ -53,9 +53,10 @@ export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export interface RunUsage {
 	input: number
 	output: number
+	cacheRead: number
 }
 
-export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0 })
+export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0 })
 
 export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	description:
