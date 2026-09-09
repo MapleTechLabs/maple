@@ -2,7 +2,7 @@
 
 ## Overview
 
-The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage, pricing page, and their locale variants; other marketing pages and the application retain their existing design.
+The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage, pricing page, feature-page illustrations, and their locale variants; other marketing pages and the application retain their existing design.
 
 ## Colors
 
@@ -43,3 +43,9 @@ Hero headline restored: “Open-source observability. / Built on OpenTelemetry. 
 ## Pricing
 
 Pricing carries the shared orange-and-charcoal palette, Geist typography, sharp panel frames and original rounded buttons into a focused purchasing surface. Use a compact introduction with a distinct Roman countryside engraving with cultivated fields, an aqueduct and a winding merchant route, enlarged across the right background and softly faded behind the copy; rates and the plan price take priority over display typography. Keep the offer, calculator, supported-stack section, deployment options and FAQs. Omit homepage-style artwork, customer-logo bands and a large promotional closing CTA. Prices, trial terms, retention and calculator behavior remain sourced from the existing commercial data. English, Japanese and Korean share the styling. Mobile rate cells form two columns and offer panels stack; text must not overflow.
+
+## Feature illustrations
+
+Each `/features/*` page has its own Roman engraving in the hero, shared across English, Japanese and Korean. Match the balanced hero's amber-on-charcoal palette and medium-fine dithering. Choose a subject that relates to the feature: aqueduct channels for tracing, an archive for logs, a water clock for metrics, a connected city for services, a cracked keystone for errors, a watchtower for alerts, a theater for session replay, a scholar's instrument for MCP, and an organized harbor for Kubernetes.
+
+The illustration occupies the right background and fades behind the copy; on smaller screens its opacity drops to keep the full-width text readable. Preserve all localized copy, breadcrumbs, CTAs, real screenshots and interactive demos. Illustration paths belong to the feature registry; generated WebP assets and prompts live in `public/art/features/`. Use-case and comparison heroes retain their existing layout.
