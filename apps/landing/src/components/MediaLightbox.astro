@@ -63,15 +63,20 @@
 	}
 
 	.media-lightbox {
-		max-width: min(96vw, 1600px);
-		max-height: 92vh;
+		/* Leave room for the dismiss control and a margin of backdrop, so the
+		   frame reads as lifted off the page rather than pinned to its edges. */
+		max-width: min(92vw, 1600px);
+		max-height: 88vh;
 		width: auto;
+		/* Native centring: a modal <dialog> resolves `auto` insets against the
+		   viewport, which `margin: auto` alone does not do once max-height bites. */
+		margin: auto;
 		padding: 0;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--bg-elevated, var(--background));
 		color: var(--fg, currentColor);
-		overflow: visible;
+		overflow: hidden;
 	}
 
 	.media-lightbox::backdrop {
@@ -81,16 +86,20 @@
 
 	.media-lightbox img {
 		display: block;
-		width: 100%;
+		width: auto;
+		max-width: 100%;
+		max-height: 88vh;
 		height: auto;
-		max-height: 92vh;
 		object-fit: contain;
 	}
 
+	/* Inside the frame, not hanging off it: anchored outside, the control is
+	   clipped away entirely whenever the image is tall enough to reach the
+	   top of the viewport. */
 	.media-lightbox__dismiss {
 		position: absolute;
-		top: -0.75rem;
-		right: -0.75rem;
+		top: 0.625rem;
+		right: 0.625rem;
 		z-index: 1;
 		margin: 0;
 	}
@@ -103,7 +112,9 @@
 		height: 2rem;
 		border: 1px solid var(--border);
 		border-radius: 9999px;
-		background: var(--bg-elevated, var(--background));
+		/* Opaque enough to stay legible over any screenshot underneath. */
+		background: color-mix(in oklch, var(--bg-elevated, black) 82%, transparent);
+		backdrop-filter: blur(4px);
 		color: var(--fg-muted, currentColor);
 		cursor: pointer;
 		transition: color 150ms ease;
