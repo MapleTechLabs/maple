@@ -275,15 +275,22 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 				? `HTTP ${serverError} (${method} ${path})`
 				: `HTTP ${serverError}`
 		otelStatus = { code: StatusCode.Error, message }
-		events.push({
-			name: "exception",
-			timeUnixNano: String(status.endTime),
-			droppedAttributesCount: 0,
-			attributes: [
-				{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: "HttpServerErrorResponse" } },
-				{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: message } },
-			],
-		})
+		// Only when nothing named the failure itself. A service that records its own
+		// exception where it renders the response knows the type, message and stack;
+		// replacing that with the status line would collapse every such 5xx into one
+		// anonymous bucket in error tracking. The generic event is the fallback for a
+		// 5xx no one claimed, not a relabelling of one someone did.
+		if (!events.some((event) => event.name === "exception")) {
+			events.push({
+				name: "exception",
+				timeUnixNano: String(status.endTime),
+				droppedAttributesCount: 0,
+				attributes: [
+					{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: "HttpServerErrorResponse" } },
+					{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: message } },
+				],
+			})
+		}
 	} else if (status.exit._tag === "Success") {
 		otelStatus = constOtelStatusSuccess
 	} else if (Cause.hasInterruptsOnly(status.exit.cause)) {
