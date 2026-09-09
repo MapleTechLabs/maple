@@ -128,6 +128,19 @@ const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserIdSchema)("system-google-ana
 
 const floorToHour = (ms: number) => Math.floor(ms / HOUR_MS) * HOUR_MS
 
+/**
+ * The tick's remaining Data API allowance, charged per REQUEST rather than per window.
+ *
+ * Mutable and threaded into `pollWindow` on purpose. A window is no longer one request now that
+ * reports paginate, so charging it once would let 30 "charged" windows issue up to 150 requests
+ * and quietly overrun the ceiling. Returning a page count from `pollWindow` would not fix it
+ * either: `recoverWindow` turns a non-fatal failure into `null` after its requests have already
+ * been spent.
+ */
+interface CallBudget {
+	calls: number
+}
+
 export interface GoogleAnalyticsPropertyStatus {
 	readonly propertyId: string
 	readonly propertyName: string | null
@@ -462,6 +475,7 @@ export class GoogleAnalyticsService extends Context.Service<
 			readonly fromMs: number
 			readonly toMs: number
 			readonly now: number
+			readonly budget: CallBudget
 		}) {
 			const { dataset, fromMs, toMs, timeZone } = context
 			const startDate = utcMsToZonedDate(fromMs, timeZone)
@@ -476,6 +490,7 @@ export class GoogleAnalyticsService extends Context.Service<
 			// data — and flap, re-emitting it next tick as the truncation point moved. `dateHour` ×
 			// `pagePath` over a 48h window exceeds one page on any busy site, so this is reachable,
 			// not theoretical.
+			context.budget.calls += 1
 			let response = yield* runReport({
 				accessToken: context.accessToken,
 				dataBaseUrl,
@@ -496,9 +511,12 @@ export class GoogleAnalyticsService extends Context.Service<
 			const total = response.rowCount ?? merged.length
 			for (
 				let page = 1;
-				merged.length < total && page < MAX_REPORT_PAGES;
+				merged.length < total &&
+				page < MAX_REPORT_PAGES &&
+				context.budget.calls < MAX_CALLS_PER_ORG_TICK;
 				page++
 			) {
+				context.budget.calls += 1
 				const next = yield* runReport({
 					accessToken: context.accessToken,
 					dataBaseUrl,
@@ -522,12 +540,14 @@ export class GoogleAnalyticsService extends Context.Service<
 				merged.push(...nextRows)
 			}
 
-			// Still short: emit nothing rather than retract series the report simply did not reach.
-			// The frontier does not advance, so the window is retried next tick.
+			// Still short — because the page ceiling was hit, or because the tick ran out of
+			// budget mid-report. Either way emit nothing rather than retract series the report
+			// simply did not reach. The frontier does not advance, so the window is retried next
+			// tick with a fresh budget.
 			if (merged.length < total) {
 				return yield* Effect.fail(
 					new IntegrationsUpstreamError({
-						message: `Google Analytics report for ${dataset.id} returned ${merged.length} of ${total} rows after ${MAX_REPORT_PAGES} pages — refusing to reconcile a partial window`,
+						message: `Google Analytics report for ${dataset.id} returned ${merged.length} of ${total} rows — refusing to reconcile a partial window`,
 					}),
 				)
 			}
@@ -730,18 +750,38 @@ export class GoogleAnalyticsService extends Context.Service<
 
 			// Budget is shared across the org's properties: GA4 meters per property, but a grant
 			// covering 200 of them would still blow through a tick's wall-clock and the gateway's
-			// patience without a ceiling here.
-			let calls = 0
+			// patience without a ceiling here. Charged per REQUEST — see `CallBudget`.
+			const budget: CallBudget = { calls: 0 }
 
 			for (const row of pollable) {
-				if (calls >= MAX_CALLS_PER_ORG_TICK) {
+				if (budget.calls >= MAX_CALLS_PER_ORG_TICK) {
 					skipped += 1
 					continue
 				}
 				const dataset = DATASETS.find((candidate) => candidate.id === row.dataset)
 				if (dataset === undefined) continue
 
-				const timeZone = yield* ensureTimeZone(rows, timeZones, accessToken, row.propertyId, now)
+				// Recovered per property, not per tick. A property the account lost access to answers
+				// this lookup with a 403, which is a non-fatal upstream error — but it is raised
+				// outside `recoverWindow`, so left unhandled it would abort `pollOrg` and skip every
+				// property after it. One reshared property must not stop the rest from collecting.
+				const timeZone = yield* ensureTimeZone(
+					rows,
+					timeZones,
+					accessToken,
+					row.propertyId,
+					now,
+				).pipe(
+					Effect.catch((error) => {
+						if (isConnectionFatal(error)) return Effect.fail(error)
+						timeZones.set(row.propertyId, null)
+						return patchRow(row.id, {
+							lastError: String(error instanceof Error ? error.message : error).slice(0, 500),
+							lastErrorAt: msToDate(now),
+							updatedAt: msToDate(now),
+						}).pipe(Effect.ignore, Effect.as(null))
+					}),
+				)
 				if (timeZone === null) {
 					skipped += 1
 					continue
@@ -754,7 +794,6 @@ export class GoogleAnalyticsService extends Context.Service<
 					row.lastSuccessAt == null || now - row.lastSuccessAt.getTime() >= FULL_RECONCILE_INTERVAL_MS
 				const from = Math.max(frozenThrough, head - (fullSweepDue ? RESTATEMENT_WINDOW_MS : HEAD_WINDOW_MS))
 
-				calls += 1
 				const ingested = yield* pollWindow({
 					orgId,
 					row,
@@ -765,6 +804,7 @@ export class GoogleAnalyticsService extends Context.Service<
 					fromMs: from,
 					toMs: head,
 					now,
+					budget,
 				}).pipe(recoverWindow(row.id, now))
 
 				if (ingested === null) {
@@ -788,9 +828,8 @@ export class GoogleAnalyticsService extends Context.Service<
 				// hours GA4 can no longer revise — a backfilled hour needs no ledger entry.
 				const backfillTo = row.backfillAt?.getTime() ?? from
 				const floor = floorToHour(now - BACKFILL_FLOOR_MS)
-				if (backfillTo > floor && calls < MAX_CALLS_PER_ORG_TICK) {
+				if (backfillTo > floor && budget.calls < MAX_CALLS_PER_ORG_TICK) {
 					const backfillFrom = Math.max(floor, backfillTo - BACKFILL_ROUND_MS)
-					calls += 1
 					const backfilled = yield* pollWindow({
 						orgId,
 						row,
@@ -801,6 +840,7 @@ export class GoogleAnalyticsService extends Context.Service<
 						fromMs: backfillFrom,
 						toMs: backfillTo,
 						now,
+						budget,
 					}).pipe(recoverWindow(row.id, now))
 					if (backfilled !== null) {
 						rowsIngested += backfilled

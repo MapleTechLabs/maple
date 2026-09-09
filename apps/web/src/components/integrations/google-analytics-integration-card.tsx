@@ -64,11 +64,13 @@ export function GoogleAnalyticsIntegrationCard() {
 		}
 	}
 
-	// Which property's toggle is in flight. The mutation atom is shared across every row, so a
-	// second toggle cancels the first one's client-side effect without cancelling the PATCH that
-	// already reached the API — and `setPropertyEnabled` is an unconditional write with no ordering
-	// check, so the older request could land last and undo the user's final choice. Disabling the
-	// row that is pending is what keeps the two in order.
+	// Which property's toggle is in flight — and every row is disabled while one is, not just that
+	// row. The mutation atom is shared and non-concurrent, so a second toggle interrupts the first
+	// one's client-side operation without cancelling the PATCH that already reached the API, and
+	// `setPropertyEnabled` is an unconditional write with no ordering check: the older request can
+	// land last and undo the user's final choice. Per-row disabling was not enough on its own —
+	// whichever operation settled first cleared this back to null and re-enabled every row while
+	// another update was still in flight.
 	const [pendingProperty, setPendingProperty] = useState<string | null>(null)
 
 	const handleToggle = async (propertyId: string, enabled: boolean) => {
@@ -210,7 +212,7 @@ export function GoogleAnalyticsIntegrationCard() {
 								</div>
 								<Switch
 									checked={property.enabled}
-									disabled={pendingProperty === property.property_id}
+									disabled={pendingProperty !== null}
 									onCheckedChange={(checked) => void handleToggle(property.property_id, checked)}
 									aria-label={`Collect ${property.property_name ?? property.property_id}`}
 								/>

@@ -434,11 +434,16 @@ function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNod
 		windowName: "maple-google-analytics-connect",
 		label: "Google Analytics",
 		windowFeatures: "popup,width=520,height=680",
-		start: () =>
-			startConnect({
+		start: () => {
+			// Per ATTEMPT, not per mount: the card offers Reconnect on a revoked grant without
+			// unmounting this boundary, so a latched `primed` would skip the first collection on
+			// every attempt after the first and leave the reconnect waiting on cron.
+			primed.current = false
+			return startConnect({
 				payload: { return_to: currentReturnPath() },
 				reactivityKeys: ["googleAnalyticsIntegration"],
-			}).then(Exit.map(({ redirect_url }) => ({ redirectUrl: redirect_url }))),
+			}).then(Exit.map(({ redirect_url }) => ({ redirectUrl: redirect_url })))
+		},
 		startErrorTitle: "Failed to start Google Analytics connect flow",
 		onClosed: () => {
 			refreshStatus()
