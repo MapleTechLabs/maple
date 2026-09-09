@@ -2,7 +2,9 @@
 
 Fumapress site at https://effect-clickhouse.maple.dev, hosted as static assets on Cloudflare Workers.
 
-Edit `lib/clickhouse-builder/docs/*.md`. Builds generate `content/` from those files,
+Edit `docs/*.md` in [effect-clickhouse](https://github.com/MapleTechLabs/effect-clickhouse),
+release the package, then update this app’s pinned dependency. Builds generate `content/`
+from the installed package’s docs,
 add page metadata, and convert relative links to website routes. Generated content is ignored
 by Git; existing package documentation checks continue to use the original files.
 
@@ -23,3 +25,14 @@ the Maple Alchemy stack does not deploy it. Publish docs changes by running `dep
 The static build includes browser-side search, a sitemap, robots.txt, and llms.txt.
 Waku is an explicit dependency so its build adapter resolves with Bun's isolated installs.
 Social-image generation is omitted to avoid native image-rendering dependencies.
+
+For documentation-only corrections, run the library’s documentation checks, then
+build or deploy with an explicit local source directory:
+
+```sh
+EFFECT_CLICKHOUSE_DOCS_DIR=/absolute/path/to/effect-clickhouse/docs \
+bun run --cwd apps/clickhouse-builder-docs deploy
+```
+
+Without this override, builds use the pinned package’s documentation. Keep using the
+override for subsequent deployments until a new package release includes the corrections.

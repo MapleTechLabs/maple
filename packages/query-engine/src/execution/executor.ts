@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { compilePipeQuery, type CompiledQuery, type TenantScope } from "../ch"
-import { parseStatement, withFormat, withSettings } from "@maple-dev/clickhouse-builder/sql"
+import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-clickhouse/sql"
 import type { WarehouseExecutorApi } from "../observability"
 import {
 	settingsClause,

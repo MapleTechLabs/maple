@@ -1,0 +1,643 @@
+/* Homepage-only visual world. Shared application tokens remain untouched. */
+.monumental-home {
+	--home-orange: var(--primary);
+	--home-deep: var(--amber-deep);
+	--home-paper: var(--background);
+	--home-pale: var(--card);
+	--home-ink: var(--foreground);
+	--home-muted: var(--muted-foreground);
+	--home-rule: var(--border);
+	background: var(--home-paper);
+	color: var(--home-ink);
+	font-family: "Geist Variable", sans-serif;
+}
+.monumental-home ::selection {
+	background: var(--home-orange);
+	color: var(--home-paper);
+}
+.monumental-home :where(summary, input):focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 5px;
+}
+.monumental-home :where(.bg-bg, .bg-background):not(a, button) {
+	background-color: var(--home-paper);
+}
+.monumental-home :where(.bg-bg-deep, .bg-bg-elevated, .bg-card, .bg-popover):not(a, button) {
+	background-color: var(--home-pale);
+}
+.monumental-home :where(.text-fg, .text-foreground, .text-card-foreground, .text-popover-foreground) {
+	color: var(--home-ink);
+}
+.monumental-home :where(.text-fg-muted, .text-muted-foreground) {
+	color: var(--home-muted);
+}
+.monumental-home :where(.text-primary) {
+	color: var(--home-orange);
+}
+.monumental-home :where(.border-border, .border-input):not(a, button) {
+	border-color: var(--home-rule);
+}
+.monumental-home :where(.bg-primary):not(a, button) {
+	background-color: var(--home-orange);
+	color: var(--home-paper);
+}
+.monumental-home :where(.bg-muted):not(a, button) {
+	background-color: var(--home-pale);
+}
+.monumental-home :where(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-md):not(a, button) {
+	border-radius: 0;
+}
+.monumental-home .font-display {
+	font-family: "Geist Variable", sans-serif;
+}
+.monumental-home main > section:not(.monument-hero):not(.monument-product) h2 {
+	font-weight: 750;
+	letter-spacing: -0.035em;
+	text-wrap: balance;
+}
+.monumental-home main > section:not(.monument-hero):not(.monument-product) :where(p, dd) {
+	line-height: 1.65;
+}
+.monumental-home .live-frame {
+	border-color: var(--home-rule);
+	border-radius: 0;
+}
+.monumental-home .live-frame__head {
+	background: var(--home-pale);
+	color: var(--home-ink);
+}
+.monumental-home .drenched-amber {
+	background: var(--home-orange);
+	color: var(--home-paper);
+}
+.monumental-home .drenched-amber::before {
+	display: none;
+}
+.monumental-home .drenched-amber :where(a, button):focus-visible {
+	outline-color: var(--home-paper);
+}
+.monumental-home .drenched-amber .ink-link:hover {
+	color: var(--home-paper);
+	opacity: 0.8;
+}
+.monumental-home .drenched-amber h2 {
+	font-size: clamp(2.6rem, 5.2vw, 5.5rem);
+	line-height: 1.02;
+}
+.monumental-home footer {
+	border-color: var(--home-rule);
+}
+
+.monument-hero {
+	/* One viewport tall, but never a 1440px wall: past the cap the next section
+	   peeks in instead of the copy floating in empty space. */
+	--monument-hero-h: min(100svh, 1080px);
+	display: flex;
+	flex-direction: column;
+	min-height: var(--monument-hero-h);
+	position: relative;
+	isolation: isolate;
+	padding-top: 76px;
+	overflow: clip;
+	background: var(--home-paper);
+}
+.monument-hero__field {
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	min-height: 0;
+	flex: 1;
+	width: 100%;
+	padding-top: 24px;
+	padding-bottom: 0;
+}
+.monument-announce {
+	position: relative;
+	z-index: 2;
+	display: inline-flex;
+	align-self: flex-start;
+	align-items: center;
+	gap: 10px;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--home-orange);
+}
+.monument-announce__badge {
+	padding: 4px 6px;
+	background: var(--home-orange);
+	color: var(--home-paper);
+	font-family: "Geist Mono Variable", monospace;
+	font-size: 10px;
+	font-weight: 500;
+	line-height: 1;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.monument-announce__arrow {
+	transition: transform 150ms ease;
+}
+.monument-announce:hover .monument-announce__arrow {
+	transform: translateX(2px);
+}
+.monument-announce:hover .monument-announce__text {
+	text-decoration: underline;
+	text-underline-offset: 4px;
+}
+.monument-hero h1 {
+	position: relative;
+	z-index: 2;
+	width: max-content;
+	max-width: 100%;
+	margin-top: 24px;
+	color: var(--home-ink);
+	font-size: clamp(2.5rem, min(5.3vw, 9svh), 4.5rem);
+	font-weight: 700;
+	line-height: 1.06;
+	letter-spacing: -0.04em;
+}
+.monument-hero h1 span {
+	display: block;
+}
+/* The art fills the hero's height (3:2 source → 1.5× the height below the
+   nav) and bleeds off the right edge. No pixel cap: a cap left it stranded in
+   the corner on wide screens, far from the copy in the centered shell. */
+.monument-hero__art {
+	position: absolute;
+	z-index: -1;
+	right: 0;
+	bottom: 0;
+	width: min(86%, calc((var(--monument-hero-h) - 76px) * 1.5));
+	height: auto;
+	object-fit: contain;
+	object-position: right bottom;
+	mix-blend-mode: normal;
+	pointer-events: none;
+}
+.monument-hero__copy {
+	position: relative;
+	z-index: 2;
+	margin-top: 26px;
+	width: 430px;
+	max-width: 100%;
+}
+
+.monument-hero__description {
+	margin-top: 0;
+	max-width: 42ch;
+	font-size: 18px;
+	line-height: 1.6;
+	color: var(--home-ink);
+}
+.monument-actions {
+	display: flex;
+	gap: 10px;
+	margin-top: 26px;
+	flex-wrap: wrap;
+}
+.monument-hero__colophon {
+	position: absolute;
+	bottom: 21px;
+	left: 52px;
+	right: 52px;
+	display: flex;
+	justify-content: space-between;
+	gap: 20px;
+	color: var(--home-deep);
+	font:
+		10px "Geist Mono Variable",
+		monospace;
+	letter-spacing: 0.06em;
+}
+.monument-proof {
+	position: relative;
+	isolation: isolate;
+	z-index: 2;
+	text-shadow: 0 2px 12px var(--background);
+	margin-top: auto;
+	padding-top: 28px;
+	color: var(--home-ink);
+}
+.monument-proof__inner {
+	min-height: 120px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 42px;
+	padding-block: 24px;
+}
+.monument-proof__stats {
+	display: flex;
+	gap: 40px;
+	flex-shrink: 0;
+}
+.monument-proof__stats > div {
+	display: flex;
+	flex-direction: column-reverse;
+	gap: 4px;
+}
+.monument-proof dt {
+	font-size: 11px;
+}
+.monument-proof dd {
+	font-size: 26px;
+	font-weight: 650;
+	letter-spacing: -0.03em;
+}
+.monument-proof :where(dt, .text-fg-muted) {
+	color: color-mix(in oklab, var(--foreground) 85%, var(--background));
+}
+.monument-proof .text-fg {
+	color: var(--home-ink);
+}
+.monument-proof .text-primary {
+	color: var(--home-orange);
+}
+.monument-proof a:focus-visible {
+	outline-color: var(--home-orange);
+}
+.monument-product {
+	padding-block: 75px 90px;
+	background: var(--home-pale);
+}
+.monument-product .hero-caption {
+	color: var(--home-ink);
+	font-size: 22px;
+	letter-spacing: -0.02em;
+	font-weight: 600;
+}
+.monument-product .hero-seg {
+	background: var(--home-rule);
+}
+.monument-product .hero-seg__fill {
+	background: var(--home-orange);
+}
+.monument-product .hero-tab {
+	color: var(--home-orange);
+}
+html:not([lang="en"]) .monument-hero h1 {
+	font-size: clamp(2rem, 4.2vw, 4rem);
+	line-height: 1.13;
+	width: auto;
+}
+/* Large monitors: fixed-pixel type and a 120px proof rail read as miniature on
+   a 2560px canvas, so the whole composition steps up together. */
+@media (min-width: 1800px) {
+	.monument-hero__field {
+		padding-top: 40px;
+	}
+	.monument-announce {
+		font-size: 14px;
+		gap: 12px;
+	}
+	.monument-announce__badge {
+		font-size: 11px;
+		padding: 5px 7px;
+	}
+	.monument-hero h1 {
+		margin-top: 32px;
+		font-size: clamp(4.5rem, min(3.6vw, 9svh), 5.75rem);
+	}
+	html:not([lang="en"]) .monument-hero h1 {
+		font-size: clamp(4rem, 3.2vw, 5rem);
+	}
+	.monument-hero__copy {
+		width: 560px;
+		margin-top: 32px;
+	}
+	.monument-hero__description {
+		font-size: 21px;
+	}
+	.monument-actions {
+		gap: 12px;
+		margin-top: 32px;
+	}
+	.monument-actions > * {
+		height: 48px;
+		padding-inline: 22px;
+		font-size: 17px;
+	}
+	.monument-proof {
+		padding-top: 40px;
+	}
+	.monument-proof__inner {
+		min-height: 168px;
+		gap: 56px;
+		padding-block: 40px;
+	}
+	.monument-proof__stats {
+		gap: 56px;
+	}
+	.monument-proof__stats > div {
+		gap: 6px;
+	}
+	.monument-proof dt {
+		font-size: 13px;
+	}
+	.monument-proof dd {
+		font-size: 34px;
+	}
+	.monument-proof__github .size-5 {
+		width: 26px;
+		height: 26px;
+	}
+	.monument-proof .gap-x-7 {
+		column-gap: 40px;
+	}
+	.monument-proof [class~="text-[10px]"] {
+		font-size: 12px;
+	}
+	.monument-proof .logo-cell__mark {
+		height: 28px;
+	}
+	.monument-proof .text-sm {
+		font-size: 17px;
+	}
+}
+@media (max-width: 1100px) {
+	.monument-hero__copy {
+		width: 330px;
+	}
+	.monument-proof__inner {
+		flex-wrap: wrap;
+		gap: 24px;
+	}
+}
+@media (max-width: 767px) {
+	.monument-hero {
+		display: block;
+		min-height: 0;
+		padding-top: 64px;
+	}
+	.monument-hero__field {
+		min-height: auto;
+		padding-top: 25px;
+		padding-bottom: 0;
+	}
+	.monument-announce {
+		font-size: 10px;
+		gap: 8px;
+	}
+	.monument-hero h1 {
+		font-size: clamp(1.35rem, 5.8vw, 2.75rem);
+		margin-top: 35px;
+	}
+	.monument-hero__copy {
+		width: 100%;
+		margin-top: 30px;
+	}
+
+	.monument-hero__description {
+		max-width: 48ch;
+		font-size: 16px;
+	}
+	.monument-hero__art {
+		position: absolute;
+		right: 0;
+		width: 100%;
+		height: auto;
+		bottom: 0;
+	}
+	.monument-hero__colophon {
+		bottom: 12px;
+		left: 24px;
+		right: 24px;
+		font-size: 8px;
+	}
+	.monument-hero__colophon span:last-child {
+		display: none;
+	}
+	.monument-proof__inner {
+		padding-block: 27px;
+	}
+	.monument-proof__stats {
+		gap: 30px;
+	}
+	.monument-product {
+		padding-block: 40px;
+	}
+	.monument-product .hero-caption {
+		font-size: 17px;
+	}
+	html:not([lang="en"]) .monument-hero h1 {
+		font-size: clamp(1.2rem, 4.9vw, 2.4rem);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.monumental-home *,
+	.monumental-home *::before,
+	.monumental-home *::after {
+		scroll-behavior: auto;
+		transition-duration: 0s;
+		animation: none;
+	}
+}
+.monumental-home .monument-close {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	/* Grows with the screen so the arch can scale instead of being zoom-cropped. */
+	min-height: clamp(560px, 34vw, 900px);
+	background: var(--home-orange);
+	isolation: isolate;
+}
+/* Sized by the section's height; width follows the 3:2 source so the whole
+   arch stays in frame and the left mask fades from the picture's real edge. */
+.monument-close__art {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	width: auto;
+	height: 100%;
+	z-index: -1;
+}
+.monumental-home .monument-close > .shell {
+	/* A column flex item with auto inline margins shrink-wraps; keep the shell full width. */
+	width: 100%;
+	text-align: left;
+	padding-block: 110px;
+}
+.monumental-home .monument-close h2 {
+	max-width: 11ch;
+	margin-inline: 0;
+}
+.monumental-home .monument-close p {
+	max-width: 36ch;
+	margin-inline: 0;
+}
+.monumental-home .monument-close .justify-center {
+	justify-content: flex-start;
+}
+@media (max-width: 767px) {
+	.monumental-home .monument-close > .shell {
+		padding-top: 60px;
+		padding-bottom: 350px;
+	}
+	.monument-close__art {
+		right: 0;
+		width: 100%;
+		height: 340px;
+		object-fit: cover;
+		object-position: right bottom;
+	}
+	.monumental-home .monument-close h2 {
+		max-width: 15ch;
+	}
+}
+/* Translucent legacy surfaces need an opaque paper ground in the light world. */
+.monumental-home .bg-border {
+	background-color: var(--home-rule);
+}
+.monumental-home [class~="bg-primary/[0.06]"] {
+	background-color: var(--home-paper);
+}
+.monumental-home [class~="bg-primary/[0.04]"] {
+	background-color: var(--home-pale);
+}
+.monumental-home [class~="bg-primary/10"]:not(a, button),
+.monumental-home [class~="bg-primary/15"]:not(a, button) {
+	background-color: var(--home-pale);
+}
+/* Match the element to the image's intrinsic ratio so fades start at the
+   visible artwork edge, not at the top of an object-fit letterbox. */
+.monument-hero__art {
+	mask-image:
+		linear-gradient(to right, transparent, black 18%),
+		linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
+	mask-composite: intersect;
+}
+@media (max-width: 767px) {
+	.monument-hero__art {
+		mask-image: linear-gradient(to bottom, transparent, black 12%, black 90%, transparent);
+		mask-composite: add;
+	}
+}
+.monumental-home footer .shell > .mt-12 > .flex {
+	flex-wrap: wrap;
+	justify-content: center;
+}
+.monument-close__art {
+	mask-image: linear-gradient(to right, transparent, black 18%);
+}
+@media (max-width: 767px) {
+	.monument-hero__colophon {
+		display: none;
+	}
+	.monument-close__art {
+		mask-image: linear-gradient(to bottom, transparent, black 15%);
+	}
+}
+/* Embedded live product demonstrations retain the application's dark palette. */
+.monumental-home .live-frame {
+	color: var(--foreground);
+}
+.monumental-home .live-frame :where(.text-fg, .text-foreground) {
+	color: var(--foreground);
+}
+.monumental-home .live-frame :where(.text-fg-muted, .text-muted-foreground) {
+	color: var(--muted-foreground);
+}
+.monumental-home .live-frame .text-primary {
+	color: var(--primary);
+}
+.monumental-home .live-frame :where(.border-border) {
+	border-color: var(--border);
+}
+.monumental-home .live-frame__head {
+	color: var(--home-ink);
+}
+@media (max-width: 639px) {
+	.monumental-home [class~="sm:justify-end"].shrink-0 {
+		flex-wrap: wrap;
+	}
+	.monumental-home .k8s-hm-legend {
+		flex-wrap: wrap;
+	}
+	.monumental-home .lt-val {
+		flex-wrap: wrap;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.monumental-home [data-mcp-root] .mcp-line:has(> .grid) {
+		overflow-x: auto;
+	}
+}
+
+.monumental-home .live-frame .bg-bg-elevated {
+	background-color: var(--bg-elevated);
+}
+.monumental-home .live-frame__live {
+	color: var(--home-orange);
+}
+.monumental-home .live-frame__live-dot {
+	background-color: var(--home-orange);
+}
+
+/* Fit the proof rail in the opening viewport on shorter desktop screens. */
+@media (min-width: 768px) and (max-height: 820px) {
+	.monument-hero__field {
+		padding-bottom: 0;
+	}
+	.monument-hero h1 {
+		margin-top: 20px;
+	}
+	.monument-hero__copy {
+		margin-top: 20px;
+	}
+
+	.monument-hero__description {
+		font-size: 17px;
+		line-height: 1.55;
+	}
+	.monument-actions {
+		margin-top: 20px;
+	}
+	.monument-hero__colophon {
+		display: none;
+	}
+}
+@media (max-width: 767px) {
+	.monument-proof__inner {
+		gap: 18px;
+		padding-block: 20px;
+	}
+}
+@media (max-width: 767px) and (max-height: 740px) {
+	.monument-hero h1 {
+		margin-top: 24px;
+	}
+	.monument-hero__copy {
+		margin-top: 20px;
+	}
+	.monument-hero__field {
+		padding-bottom: 0;
+	}
+}
+@media (max-width: 767px) and (max-height: 740px) {
+	.monument-proof {
+		padding-top: 24px;
+	}
+}
+
+.monument-proof::before {
+	content: "";
+	position: absolute;
+	/* Span the viewport even when the centered shell reaches its max width. */
+	inset: -32px calc(50% - 50vw) 0;
+	z-index: -1;
+	pointer-events: none;
+	background: linear-gradient(
+		to bottom,
+		transparent,
+		color-mix(in oklab, var(--background) 72%, transparent) 42%,
+		color-mix(in oklab, var(--background) 94%, transparent)
+	);
+}
+.monument-proof__github {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+}
+
+.monument-hero__headline-accent {
+	color: var(--home-orange);
+}

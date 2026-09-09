@@ -1,4 +1,5 @@
 ---
+import "../../styles/pricing-monument.css";
 import Layout from "../../layouts/Layout.astro";
 import Nav from "../../components/Nav.astro";
 import PricingHero from "../../components/PricingHero.astro";
@@ -6,9 +7,7 @@ import PricingTable from "../../components/PricingTable.astro";
 import PricingCalculatorSection from "../../components/PricingCalculatorSection.astro";
 import SupportedStack from "../../components/SupportedStack.astro";
 import PricingPaths from "../../components/PricingPaths.astro";
-import CustomerLogos from "../../components/CustomerLogos.astro";
 import FAQ from "../../components/FAQ.astro";
-import BottomCTA from "../../components/BottomCTA.astro";
 import Footer from "../../components/Footer.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import * as m from "../../paraglide/messages.js";
@@ -20,16 +19,16 @@ const pageDescription = m.page_pricing_desc();
 const faqItems = await pricingFaq();
 ---
 
-<Layout title={pageTitle} description={pageDescription} mdHref="/pricing.md">
+<Layout title={pageTitle} description={pageDescription} mdHref="/pricing.md" bodyClass="monumental-pricing">
     <SeoHead title={pageTitle} description={pageDescription} />
     <Nav />
+    <main class="pricing-page">
     <PricingHero />
-    <PricingTable />
+    <PricingTable class="pricing-offer" />
     <PricingCalculatorSection />
     <SupportedStack />
     <PricingPaths />
-    <CustomerLogos />
     <FAQ items={faqItems} />
-    <BottomCTA />
+    </main>
     <Footer />
 </Layout>

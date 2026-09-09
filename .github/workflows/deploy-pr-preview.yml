@@ -126,13 +126,6 @@ jobs:
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
                   ingest-binary: ${{ env.TEARDOWN != 'true' }}
 
-            # Tinybird's TypeScript resource generator loads @maple/domain from source,
-            # whose span-display helpers import this package through its dist exports.
-            # A clean runner has no dist/ until the workspace dependency is built.
-            - name: Build Tinybird TypeScript workspace dependencies
-              if: ${{ env.TEARDOWN != 'true' }}
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
-
             # Create/refresh an ephemeral Tinybird branch `pr_<n>` seeded with the
             # latest prod partition, deploy this PR's schema into it, and override
             # TINYBIRD_HOST/TINYBIRD_TOKEN (from Infisical `dev`) with the branch's

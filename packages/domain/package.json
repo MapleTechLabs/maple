@@ -47,7 +47,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/clickhouse-builder": "workspace:*",
+		"@maple-dev/effect-clickhouse": "0.1.0",
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",

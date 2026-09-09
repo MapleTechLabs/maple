@@ -3,12 +3,12 @@
 // DSL-based query definitions for listing historical alert rule check rows
 // from the `alert_checks` datasource.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from } from "@maple-dev/effect-clickhouse"
 import { AlertChecks } from "../tables"
 import { ISO_Z_FORMAT } from "./format"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 export interface ListRuleChecksOpts {
 	readonly groupKey?: string

@@ -60,10 +60,12 @@
 	"hero_eyebrow": "OpenTelemetry native",
 	"hero_eyebrow_2": "Open source. Self-hostable.",
 	"hero_keep_reading": "keep reading \u2193",
+	"home_monument_title_1": "Open-source",
+	"home_monument_title_2": "observability.",
 	"hero_title": "Open-source observability.",
 	"hero_title_sub": "Built on OpenTelemetry.",
 	"hero_title_accent": "Your agent reads it too.",
-	"hero_subtitle": "Traces, logs, metrics, and session replay, queried in under a second. $39 a month, then a flat rate per GB. Nothing billed per host or per seat.",
+	"hero_subtitle": "Query your traces, logs, metrics, and session replay in under a second. $39/month, then a flat rate per GB. No per-host or per-seat fees.",
 
 	"customers_eyebrow": "Trusted by teams at",
 	"ingest_stats_label": "traces ingested / month",

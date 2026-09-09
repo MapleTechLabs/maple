@@ -24,7 +24,7 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `statelessMcpServerLayer`.
  */
-import { Cause, Context, Effect, Fiber, Layer, Predicate, Queue, Scope } from "effect"
+import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/unstable/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
@@ -130,105 +130,122 @@ export const layerStatelessMcpHttp = (options: {
 			/**
 			 * One HTTP POST: an ephemeral RPC client, the synthetic handshake when
 			 * the body does not carry its own, then the client's messages.
+			 *
+			 * The request arrives as an argument rather than being read back out of
+			 * the running fiber's context. This is one effect per isolate, shared by
+			 * every request on it, and a request's body is a stream workerd ties to
+			 * the invocation that received it — reaching into ambient state for that
+			 * object is how a POST ends up reading a body it does not own
+			 * ("Cannot perform I/O on behalf of a different request"). `add` hands
+			 * the handler the same request the context carries, middleware included,
+			 * so taking it as a value costs nothing and cannot go stale.
 			 */
-			const httpEffect: Effect.Effect<
-				HttpServerResponse.HttpServerResponse,
-				never,
-				Scope.Scope | HttpServerRequest.HttpServerRequest
-			> = Effect.gen(function* () {
-				const fiber = Fiber.getCurrent()!
-				const request = Context.getUnsafe(fiber.context, HttpServerRequest.HttpServerRequest)
-				const scope = Context.getUnsafe(fiber.context, Scope.Scope)
-				const requestHeaders = Object.entries(request.headers)
-				const body = yield* Effect.orDie(request.text)
-
-				const id = clientId++
-				const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
-				const requestIds: Array<RequestId> = []
-
-				const client: Client = {
-					// Notifications cannot ride a buffered JSON-RPC response, so they
-					// are dropped exactly as Effect's own buffered client does.
-					write: (response) =>
-						response._tag === "Request" && response.isNotification === true
-							? Effect.void
-							: Queue.offer(queue, response),
-					end: Queue.end(queue),
-				}
-
-				yield* Scope.addFinalizerExit(scope, () => {
-					clients.delete(id)
-					clientIds.delete(id)
-					Queue.offerUnsafe(disconnects, id)
-					if (queue.state._tag === "Done") return Effect.void
-					return Effect.forEach(
-						requestIds,
-						(requestId) => writeRequest(id, { _tag: "Interrupt", requestId }),
-						{ discard: true },
+			const httpEffect = (
+				request: HttpServerRequest.HttpServerRequest,
+			): Effect.Effect<HttpServerResponse.HttpServerResponse, never, Scope.Scope> =>
+				Effect.gen(function* () {
+					const scope = yield* Scope.Scope
+					const requestHeaders = Object.entries(request.headers)
+					// A body that cannot be read is a request we can still answer as
+					// JSON-RPC — the same `-32700` an undecodable body gets below.
+					// `Effect.orDie` here made it a defect instead, which escaped every
+					// boundary and left a bare 500 under `HTTP handler failed`.
+					const body = yield* request.text.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logError("MCP request body could not be read", cause).pipe(
+								Effect.as(undefined),
+							),
+						),
 					)
-				})
-				clients.set(id, client)
-				clientIds.add(id)
+					if (body === undefined) return jsonRpcError(null, -32700, "Parse error")
 
-				// The server is already running without `HttpRouter`; keeping the live
-				// request out of the handler's context too is the other half of that
-				// choice — `initialize` checks for it separately, and finding one is
-				// what makes it mint a session id instead of filing the session under
-				// this client. Everything the handlers need from the request travels
-				// on the messages themselves, as `requestHeaders` below.
-				const write = (message: FromClientEncoded) =>
-					Effect.updateContext(writeRequest(id, message), omitRequest)
+					const id = clientId++
+					const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
+					const requestIds: Array<RequestId> = []
 
-				const parser = serialization.makeUnsafe()
+					const client: Client = {
+						// Notifications cannot ride a buffered JSON-RPC response, so they
+						// are dropped exactly as Effect's own buffered client does.
+						write: (response) =>
+							response._tag === "Request" && response.isNotification === true
+								? Effect.void
+								: Queue.offer(queue, response),
+						end: Queue.end(queue),
+					}
 
-				const decoded = yield* Effect.try({
-					try: () => parser.decode(body) as ReadonlyArray<FromClientEncoded>,
-					catch: (cause) => cause,
-				}).pipe(Effect.option)
-				if (decoded._tag === "None") {
-					return jsonRpcError(null, -32700, "Parse error")
-				}
-				const messages = decoded.value
-				if (messages.length > 1 && !options.protocol.transport.acceptsJsonRpcBatches) {
-					return HttpServerResponse.empty({ status: 400 })
-				}
+					yield* Scope.addFinalizerExit(scope, () => {
+						clients.delete(id)
+						clientIds.delete(id)
+						Queue.offerUnsafe(disconnects, id)
+						if (queue.state._tag === "Done") return Effect.void
+						return Effect.forEach(
+							requestIds,
+							(requestId) => writeRequest(id, { _tag: "Interrupt", requestId }),
+							{ discard: true },
+						)
+					})
+					clients.set(id, client)
+					clientIds.add(id)
 
-				// The handshake the client did not send, so the server has a negotiated
-				// profile for this exchange.
-				if (!messages.some(isInitializeMessage)) {
-					const synthetic = parser.decode(
-						JSON.stringify(syntheticInitialize(options.protocol.protocolVersion)),
-					) as ReadonlyArray<FromClientEncoded>
-					for (const message of synthetic) {
+					// The server is already running without `HttpRouter`; keeping the live
+					// request out of the handler's context too is the other half of that
+					// choice — `initialize` checks for it separately, and finding one is
+					// what makes it mint a session id instead of filing the session under
+					// this client. Everything the handlers need from the request travels
+					// on the messages themselves, as `requestHeaders` below.
+					const write = (message: FromClientEncoded) =>
+						Effect.updateContext(writeRequest(id, message), omitRequest)
+
+					const parser = serialization.makeUnsafe()
+
+					const decoded = yield* Effect.try({
+						try: () => parser.decode(body) as ReadonlyArray<FromClientEncoded>,
+						catch: (cause) => cause,
+					}).pipe(Effect.option)
+					if (decoded._tag === "None") {
+						return jsonRpcError(null, -32700, "Parse error")
+					}
+					const messages = decoded.value
+					if (messages.length > 1 && !options.protocol.transport.acceptsJsonRpcBatches) {
+						return HttpServerResponse.empty({ status: 400 })
+					}
+
+					// The handshake the client did not send, so the server has a negotiated
+					// profile for this exchange.
+					if (!messages.some(isInitializeMessage)) {
+						const synthetic = parser.decode(
+							JSON.stringify(syntheticInitialize(options.protocol.protocolVersion)),
+						) as ReadonlyArray<FromClientEncoded>
+						for (const message of synthetic) {
+							yield* write(message)
+						}
+					}
+
+					for (const message of messages) {
+						if (message._tag === "Request") {
+							requestIds.push(RequestId(message.id))
+							;(message as RequestEncoded & { headers: typeof requestHeaders }).headers =
+								requestHeaders.concat(message.headers)
+						}
 						yield* write(message)
 					}
-				}
 
-				for (const message of messages) {
-					if (message._tag === "Request") {
-						requestIds.push(RequestId(message.id))
-						;(message as RequestEncoded & { headers: typeof requestHeaders }).headers =
-							requestHeaders.concat(message.headers)
-					}
-					yield* write(message)
-				}
+					yield* write(constEof)
 
-				yield* write(constEof)
-
-				const responses = yield* Queue.collect(queue)
-				// The synthetic handshake is Maple's, not the caller's; its reply must
-				// not reach the wire.
-				const visible = responses.filter(
-					(response) =>
-						!(
-							Predicate.hasProperty(response, "requestId") &&
-							response.requestId === SYNTHETIC_INITIALIZE_ID
-						),
-				)
-				return HttpServerResponse.text(parser.encode(visible) as string, {
-					contentType: serialization.contentType,
+					const responses = yield* Queue.collect(queue)
+					// The synthetic handshake is Maple's, not the caller's; its reply must
+					// not reach the wire.
+					const visible = responses.filter(
+						(response) =>
+							!(
+								Predicate.hasProperty(response, "requestId") &&
+								response.requestId === SYNTHETIC_INITIALIZE_ID
+							),
+					)
+					return HttpServerResponse.text(parser.encode(visible) as string, {
+						contentType: serialization.contentType,
+					})
 				})
-			})
 
 			yield* router.add("POST", options.path, (request) => {
 				if (!isAllowedOrigin(request, options.allowedOrigins)) {
@@ -241,7 +258,7 @@ export const layerStatelessMcpHttp = (options: {
 				if (!accepted.includes("application/json") || !accepted.includes("text/event-stream")) {
 					return Effect.succeed(HttpServerResponse.empty({ status: 406 }))
 				}
-				return httpEffect
+				return httpEffect(request)
 			})
 
 			const methodNotAllowed = (request: HttpServerRequest.HttpServerRequest) =>

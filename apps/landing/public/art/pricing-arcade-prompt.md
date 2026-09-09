@@ -1,0 +1,7 @@
+# Pricing arcade
+
+Generated using built-in GPT Image Gen, referencing `maple-rome-balanced.webp` for style. Delivery asset: `maple-pricing-arcade.webp` (800×800 WebP). Replaces the rejected balance-scale illustration.
+
+## Prompt
+
+Use case: stylized-concept. New compact editorial architectural illustration for Maple pricing page. Match reference STYLE ONLY: antique Roman architectural engraving, medium-fine ordered dithering, Maple amber #E8872A engraved light on warm charcoal #1A1714. Subject a close three-quarter study of a fragment of an ancient Roman arcade: three rounded stone arches receding in perspective, heavy finely cut masonry piers and a simple cornice, on a shallow stone foundation. Architectural fragment as a sculptural object, complete silhouette, no sprawling landscape, no temple, no triumphal arch, no columns topped with statues. A restrained rhythm of equal arches and beautifully detailed stone. Low architectural viewpoint, three-dimensional, sophisticated and austere. Square composition with building fragment centered, occupying central 76% width and 65% height. Outer 12 percent on all sides flat charcoal, no hard image edges. Sparse medium-fine dither in shadows, crisp linework, solid light planes, not coarse pixel blocks. No scales, coins, money, text, logos, inscriptions, borders, glow, other colors or people. Must look like a companion detail from the Roman world of reference, not a literal finance icon.

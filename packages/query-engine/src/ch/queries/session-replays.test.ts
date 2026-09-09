@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	getSessionReplayQuery,
 	sessionReplaysFacetsQuery,

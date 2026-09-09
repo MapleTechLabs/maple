@@ -17,7 +17,7 @@
 // The discovery window must be a SUPERSET of the per-org scan window so no
 // active org is missed for the tick.
 
-import { from, param } from "@maple-dev/clickhouse-builder"
+import { from, param } from "@maple-dev/effect-clickhouse"
 import type { OrgId } from "@maple/domain"
 import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly } from "../tables"
 

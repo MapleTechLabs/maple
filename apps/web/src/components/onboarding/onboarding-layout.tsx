@@ -4,12 +4,19 @@ import { OnboardingOrgSwitcher, OnboardingUserMenu } from "./onboarding-header-a
 
 export function OnboardingLayout({
 	currentStep,
-	totalSteps = 3,
+	totalSteps = 4,
 	stepLabel,
+	accountActions = (
+		<>
+			<OnboardingOrgSwitcher />
+			<OnboardingUserMenu />
+		</>
+	),
 	children,
 }: {
 	currentStep: number
 	totalSteps?: number
+	accountActions?: React.ReactNode
 	stepLabel?: string
 	children: React.ReactNode
 }) {
@@ -43,31 +50,30 @@ export function OnboardingLayout({
 					{Array.from({ length: totalSteps }).map((_, i) => {
 						const reached = i < currentStep
 						return (
-							<div key={i} className="flex h-1 w-7 items-center justify-center">
+							// Width, not scale: scaling a pill squashes its end caps mid-transition.
+							<div
+								key={i}
+								className={cn(
+									"h-1 overflow-hidden rounded-full bg-muted transition-[width] duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+									reached ? "w-7" : "w-4",
+								)}
+							>
 								<div
 									className={cn(
-										"h-full w-full origin-center overflow-hidden rounded-full bg-muted transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-										reached ? "scale-x-100" : "scale-x-[0.5714]",
+										"h-full origin-left bg-primary transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+										reached ? "scale-x-100" : "scale-x-0",
 									)}
-								>
-									<div
-										className={cn(
-											"h-full origin-left rounded-full bg-primary transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-											reached ? "scale-x-100" : "scale-x-0",
-										)}
-									/>
-								</div>
+								/>
 							</div>
 						)
 					})}
 				</div>
 
 				<div className="flex items-center gap-3">
-					<OnboardingOrgSwitcher />
 					<span className="hidden text-sm text-muted-foreground tabular-nums sm:inline">
 						{stepLabel ?? `Step ${currentStep} of ${totalSteps}`}
 					</span>
-					<OnboardingUserMenu />
+					{accountActions}
 				</div>
 			</header>
 

@@ -7,9 +7,9 @@
 //
 // Plain MergeTree, immutable append; no ReplacingMergeTree dedup needed.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import { SessionEvents } from "../tables"
 
 // The builder's `count`, which knows the result is a `UInt64` — a local

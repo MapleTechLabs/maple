@@ -8,15 +8,15 @@
 import { finiteOrZero } from "./format"
 import { Match } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
-import { compile } from "@maple-dev/clickhouse-builder/sql"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { avg, count, countIf, quantile } from "@maple-dev/clickhouse-builder"
-import { if_ } from "@maple-dev/clickhouse-builder"
-import { round } from "@maple-dev/clickhouse-builder"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from } from "@maple-dev/clickhouse-builder"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { avg, count, countIf, quantile } from "@maple-dev/effect-clickhouse"
+import { if_ } from "@maple-dev/effect-clickhouse"
+import { round } from "@maple-dev/effect-clickhouse"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from } from "@maple-dev/effect-clickhouse"
 import { Traces } from "../tables"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 /**
  * Wrap an expression in parentheses. The DSL's arithmetic combinators

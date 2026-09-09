@@ -17,7 +17,7 @@ import {
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
-import { parseStatement, type ClickHouseStatement } from "@maple-dev/clickhouse-builder/sql"
+import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { makeWarehouseExecutor, type ResolvedWarehouseConfig } from "@maple/query-engine/execution"
 import { __testables, WarehouseQueryService, WarehouseRedirectRefusedError } from "./WarehouseQueryService"

@@ -1,7 +1,7 @@
 import type { MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from } from "@maple-dev/effect-clickhouse"
 import { AttributeKeysHourly, AttributeValuesHourly, MetricsSum } from "../tables"
 import { resolveMetricTable } from "./query-helpers"
 
