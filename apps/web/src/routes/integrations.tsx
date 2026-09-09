@@ -263,7 +263,11 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 		: null
 
 	return (
-		<div className="flex items-center gap-3">
+		// Wraps rather than overflowing: the action group is `shrink-0` (a Connect button that
+		// shrinks becomes an ellipsis), so on a narrow viewport it has to move to its own row or
+		// it runs off the edge. `entry.name` is the other half — the longest one in the catalog is
+		// "Google Analytics", which is what made the collision obvious.
+		<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
 			<Button
 				variant="ghost"
 				size="icon-sm"
@@ -279,11 +283,21 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				size={18}
 				plateClassName="size-9 rounded-lg"
 			/>
-			<div className="flex min-w-0 flex-col gap-0.5">
-				<div className="flex items-center gap-2">
-					<h1 className="text-lg/6 font-semibold">{entry.name}</h1>
+			{/* `basis-48` rather than a bare `flex-1`: with a zero flex basis this block shrinks to
+			    nothing instead of pushing the action group onto the next row, and the `shrink-0`
+			    badge inside it then overflows across the Connect button. Giving it a width to want
+			    is what makes the wrap trigger. */}
+			<div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
+				<div className="flex min-w-0 items-center gap-2">
+					{/* Truncates rather than wrapping — a wrapped title grew a second line UNDER the
+					    row and overlapped the Docs link sitting to its right. */}
+					<h1 className="truncate text-lg/6 font-semibold">{entry.name}</h1>
 					{/* The badge covers the non-connected states; connected reads as the status line. */}
-					{!connected && status ? <Badge variant={status.variant}>{status.label}</Badge> : null}
+					{!connected && status ? (
+						<Badge variant={status.variant} className="shrink-0">
+							{status.label}
+						</Badge>
+					) : null}
 				</div>
 				{connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
