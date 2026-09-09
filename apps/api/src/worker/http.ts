@@ -125,10 +125,8 @@ const unavailableResponse = (path: string) =>
 	)
 
 /**
- * A cause escaping the route graph, recorded at the last point it still exists.
- * Alchemy's `safeHttpEffect` renders it as a response and logs nothing whenever
- * every reason is `ErrorReporter.isIgnored`, which is how a 500 reaches the wire
- * with no cause anywhere. Interrupts are client aborts and stay silent.
+ * The last point the cause still exists: the bridge's `safeHttpEffect` renders it and logs nothing
+ * when every reason is `ErrorReporter.isIgnored`. Interrupts are client aborts and stay silent.
  */
 const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unknown>) => {
 	if (Cause.hasInterruptsOnly(cause)) return Effect.void
@@ -146,10 +144,8 @@ const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unk
 }
 
 /**
- * A 5xx the graph already turned into a response, so no seam recorded it and the
- * cause is gone. Everything the API renders leaves an `exception` event behind,
- * which is what makes this the leftover: a response no owned layer produced. The
- * isolate fields carry the cold-start shape these cluster in.
+ * A 5xx no seam recorded, so the cause is already gone. The isolate fields carry the cold-start
+ * shape these cluster in.
  */
 const recordUnownedServerError = (
 	method: string,
@@ -190,9 +186,8 @@ const recordUnownedServerError = (
  * background events get them.
  */
 export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.Layer<MapleDbConnection>) => {
-	// Isolate-scoped: the Worker's init calls `makeFetch` once. The unattributed
-	// 500s all landed within ~60ms of an isolate's first request, so the span has
-	// to carry that shape for the next one to confirm or kill it.
+	// Isolate-scoped: the Worker's init calls `makeFetch` once. The unattributed 500s all landed
+	// within ~60ms of an isolate's first request, so the span has to carry that shape.
 	let firstRequestAt: number | undefined
 	let served = 0
 	return Effect.gen(function* () {

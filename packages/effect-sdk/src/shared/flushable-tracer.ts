@@ -275,11 +275,8 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 				? `HTTP ${serverError} (${method} ${path})`
 				: `HTTP ${serverError}`
 		otelStatus = { code: StatusCode.Error, message }
-		// Only when nothing named the failure itself. A service that records its own
-		// exception where it renders the response knows the type, message and stack;
-		// replacing that with the status line would collapse every such 5xx into one
-		// anonymous bucket in error tracking. The generic event is the fallback for a
-		// 5xx no one claimed, not a relabelling of one someone did.
+		// Only when nothing named the failure itself — relabelling a recorded exception would
+		// collapse every such 5xx into one anonymous bucket in error tracking.
 		if (!events.some((event) => event.name === "exception")) {
 			events.push({
 				name: "exception",

@@ -35,17 +35,9 @@ const recordException = (failure: RenderedFailure) =>
 	}).pipe(Effect.ignore)
 
 /**
- * Record a failure where it becomes a response — the one seam every renderer goes through.
- *
- * The API renders a failure in four places: an endpoint's declared 5xx, a route defect, a response
- * that failed its own schema, and a cause escaping the route graph. Each conversion is individually
- * correct and each one used to destroy what the next needed, so a crash reached the wire unnamed.
- *
- * The diagnosis goes on the span as a real `exception` event, not only into a log. Spans from a
- * request reach the warehouse when that request's logs do not, and error tracking fingerprints on
- * `exception.type` — so a 500 arrives under its own name instead of as one anonymous bucket. A 5xx
- * span carrying no exception event of its own was rendered below this seam, and the tracer labels
- * exactly those `HttpServerErrorResponse`.
+ * The one seam every renderer goes through. The diagnosis rides the span, not only the log: spans
+ * reach the warehouse when a request's logs do not, and error tracking fingerprints on
+ * `exception.type`. A 5xx span with no exception event was therefore rendered below this seam.
  */
 export const recordRenderedFailure = (failure: RenderedFailure): Effect.Effect<void> =>
 	Effect.gen(function* () {
