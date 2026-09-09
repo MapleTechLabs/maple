@@ -65,7 +65,18 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // the role/intent id literals and legacy-save maps in the quick-start atom the
 // root gate reads, and one lab registry entry. The cards' own copy is split
 // off so the route chunk carries it. main was at 683.4 KB.
-const maxGzipBytes = 685 * 1024
+// 687 KB from the Google Analytics integration (2026-09-09): 1.6 KB of startup,
+// all of it the v2 domain contract every page's API client carries. Measured by
+// registering and unregistering that one group against the same build — 686.2
+// with `V2GoogleAnalyticsIntegrationsApiGroup` on `MapleApiV2`, 684.6 without —
+// so the card, the catalog entry, the icon and the template-icon entry cost
+// nothing measurable between them. It is the same category as the Releases and
+// AI-detect contracts above, just larger: five endpoints and six schemas rather
+// than one. The weight is the OpenAPI descriptions, and those are the public API
+// documentation — cutting them to buy back a kilobyte of startup is the wrong
+// trade. Splitting the group out of the client is not available either: every
+// page's client is built from the whole `MapleApiV2` surface.
+const maxGzipBytes = 687 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
