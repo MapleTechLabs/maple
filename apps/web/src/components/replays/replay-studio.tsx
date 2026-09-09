@@ -2,7 +2,13 @@ import { ReplaySurface, ReplayTransport } from "@/components/replays/replay-play
 import { ReplayPlayerProvider } from "@/components/replays/replay-player-context"
 import { ReplayEditorTimeline } from "@/components/replays/replay-editor-timeline"
 import { SessionRail } from "@/components/replays/session-events-panel"
-import { recordedMarker, replayFormat, type ReplayPartitionWindow } from "@/components/replays/replay-format"
+import {
+	isSessionLive,
+	recordedMarker,
+	replayFormat,
+	sessionDurationMs,
+	type ReplayPartitionWindow,
+} from "@/components/replays/replay-format"
 import { Reveal, SessionIdentityBar } from "@/components/replays/session-detail-parts"
 
 // Replay studio
@@ -38,6 +44,9 @@ interface ReplayStudioSession {
 	readonly serviceName?: string | null
 	readonly userAgent?: string | null
 	readonly status?: string
+	/** Heartbeat timestamp; read with `status` to tell an open session from one
+	 *  whose tab went away without sending an end row. */
+	readonly lastActivityAt?: string | null
 	/** JSON-encoded `session_replays.ResourceAttributes`; carries the SDK's
 	 *  `maple.session.recorded` marker. */
 	readonly resourceAttributes?: string | null
@@ -71,7 +80,17 @@ export function ReplayStudio({
 	/** Partition-pruning window threaded into the detail atoms; matches the route prefetch key. */
 	window?: ReplayPartitionWindow
 }) {
-	const isActive = session.status === "active"
+	// Live-ness is `status` *and* recency. Without the recency half a session
+	// whose tab died keeps the player on "Recording in progress — frames appear
+	// as chunks finish uploading" forever, waiting on an upload that ended when
+	// the tab did.
+	const liveness = {
+		status: session.status ?? "",
+		lastActivityAt: session.lastActivityAt ?? null,
+		startTime: session.startTime,
+		durationMs: session.durationMs,
+	}
+	const isActive = isSessionLive(liveness, Date.now())
 	// Same walk as the list rows: a person is recognizable by name long before
 	// they are by an opaque id, and only a session that was never identified
 	// falls all the way through.
@@ -101,7 +120,7 @@ export function ReplayStudio({
 							urlInitial={session.urlInitial}
 							startTime={session.startTime}
 							isActive={isActive}
-							durationMs={session.durationMs}
+							durationMs={sessionDurationMs(liveness)}
 							errorCount={session.errorCount}
 						/>
 					</Reveal>

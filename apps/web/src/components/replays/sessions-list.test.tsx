@@ -12,6 +12,7 @@ const session: SessionRow = {
 	startTime: "2026-07-17 12:00:00",
 	durationMs: 1000,
 	status: "ended",
+	lastActivityAt: "2026-07-17 12:00:01",
 	userId: null,
 	userName: "",
 	userEmail: "",

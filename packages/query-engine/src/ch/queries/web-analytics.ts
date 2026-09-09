@@ -14,7 +14,7 @@ import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-cl
 import { SessionReplays, SessionEvents, ProductEvents } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"
-import { WEB_ANALYTICS_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
+import { SESSION_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 
 /**
  * The page-view discriminator: `session_events.Type` on the raw path,
@@ -531,7 +531,7 @@ export function webAnalyticsSummaryQuery(
 // Live visitors
 
 export interface WebAnalyticsLiveOpts extends WebAnalyticsFilters {
-	/** Activity recency that counts as "now". Defaults to {@link WEB_ANALYTICS_LIVE_WINDOW_SECONDS}. */
+	/** Activity recency that counts as "now". Defaults to {@link SESSION_LIVE_WINDOW_SECONDS}. */
 	readonly windowSeconds?: number
 }
 
@@ -561,7 +561,7 @@ export interface WebAnalyticsLiveOutput {
 export function webAnalyticsLiveQuery(
 	opts: WebAnalyticsLiveOpts = {},
 ): CHQuery<any, WebAnalyticsLiveOutput, any> {
-	const windowSeconds = opts.windowSeconds ?? WEB_ANALYTICS_LIVE_WINDOW_SECONDS
+	const windowSeconds = opts.windowSeconds ?? SESSION_LIVE_WINDOW_SECONDS
 	return from(SessionReplays)
 		.select(($) => ({
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),
