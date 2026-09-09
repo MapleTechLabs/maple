@@ -88,6 +88,8 @@ interface ArtifactSpec {
 
 export interface Feature {
 	slug: string
+	/** Decorative Roman engraving, shared by all locale variants. */
+	illustration: string
 	navLabel: Msg
 	navDesc: Msg
 	seoTitle: Msg

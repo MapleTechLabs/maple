@@ -2,6 +2,10 @@
 
 Generated using the built-in GPT Image Gen tool, September 2026. WebP files are optimized delivery copies; screenshots of the actual product are separate and unmodified.
 
+## maple-footer-courtyard.webp
+
+Subtle Roman courtyard background behind the footer logo, navigation links and bottom bar. Lazy-loaded, faded into the footer surface at low opacity. Generated with built-in GPT Image Gen; source reference and full prompt in [footer-courtyard-prompt.md](footer-courtyard-prompt.md).
+
 ## cobalt-monument.webp
 
 Use case: stylized-concept. Asset type: full-width landing page hero artwork for Maple, an OpenTelemetry observability platform. Primary request: Cobalt Dither Monumentalism. Create a striking monumental brutalist sculpture made from three interlocking enormous rectangular stone beams, archways and stacked monolithic server-like blocks, with tiny precise connecting pathways evoking distributed systems. Ultra-wide landscape composition, sculpture occupying right two thirds, left third mostly empty pale ice-blue sky for eventual HTML headline overlap. Dramatic low camera angle, hard architectural daylight, long cobalt shadows. Strict duotone palette: vivid cobalt blue #193CF5 and very pale icy blue #EDF1FF. Entire sculpture rendered in crisp retro computer ordered dithering and halftone stippling, visibly pixelated 1-bit print texture, high contrast, editorial architectural poster, monumental scale, clean silhouette, sophisticated and austere. Ground plane extends to bottom edge. No text, no letters, no logos, no borders, no UI, no gradients or other colors. Wide 3:2 image.

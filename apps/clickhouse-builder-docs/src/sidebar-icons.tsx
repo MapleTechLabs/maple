@@ -306,7 +306,9 @@ type SidebarIconName = keyof typeof icons
  * the name is arbitrary text, `in` is the wrong test: it also matches inherited members, so
  * `constructor` or `toString` would pass the guard and render a function as an icon.
  */
-const isSidebarIconName = (name: string): name is SidebarIconName => Object.hasOwn(icons, name)
+function isSidebarIconName(name: string): name is SidebarIconName {
+	return Object.hasOwn(icons, name)
+}
 
 export function sidebarIcon(name: string | undefined) {
 	const icon = name !== undefined && isSidebarIconName(name) ? icons[name] : undefined
