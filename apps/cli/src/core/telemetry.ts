@@ -27,7 +27,7 @@ const resolveEnvironment = (): string => {
 }
 
 /**
- * OpenTelemetry layer for the CLI — traces + logs about the CLI itself
+ * OpenTelemetry layer for the CLI — traces, logs, and metrics about the CLI itself
  * (commands, warehouse queries) and, when running `maple start`, the server's
  * OTLP-ingest and `/local/query` request handling.
  *

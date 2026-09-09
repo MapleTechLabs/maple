@@ -53,6 +53,27 @@ describe("runPlanetScaleEventRetention", () => {
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
+	it.live("expires only receipts older than the replay-protection window", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org_1', 'old', $1), ('org_1', 'recent', $2)",
+					[new Date(NOW - 91 * DAY_MS).toISOString(), new Date(NOW - 89 * DAY_MS).toISOString()],
+				),
+			)
+			yield* runPlanetScaleEventRetention
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ event_id: string }>(
+					testDb,
+					"SELECT event_id FROM planetscale_issue_receipts",
+				),
+			)
+			assert.strictEqual(row?.event_id, "recent")
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.live("is a no-op on an empty table", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

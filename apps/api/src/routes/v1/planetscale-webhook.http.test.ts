@@ -8,6 +8,7 @@ import { Database } from "@/platform/DatabaseLive"
 import { Env } from "@/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
 import {
+	MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES,
 	PlanetScaleWebhookQueue,
 	PlanetScaleWebhookQueueError,
 	type PlanetScaleWebhookJob,
@@ -45,7 +46,7 @@ const makeRouterLayer = (
 ) =>
 	PlanetScaleWebhookRouter.pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send })),
+		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send: (prepared) => send(prepared.body) })),
 		Layer.provide(Env.layer),
 		Layer.provide(makeConfig()),
 	)
@@ -146,6 +147,7 @@ describe("PlanetScaleWebhookRouter", () => {
 				}),
 			)
 			const issueBody = JSON.stringify({
+				timestamp: 1_698_252_879,
 				event: "branch.out_of_memory",
 				organization: "acme",
 				database: "shop",
@@ -171,6 +173,54 @@ describe("PlanetScaleWebhookRouter", () => {
 				assert.strictEqual(rejected.status, 401)
 				assert.strictEqual(jobs.length, 0)
 
+				const timestampLessBody = JSON.stringify({
+					event: "branch.out_of_memory",
+					organization: "acme",
+					database: "shop",
+				})
+				const timestampLess = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
+							method: "POST",
+							headers: {
+								"x-planetscale-signature": createHmac("sha256", SECRET)
+									.update(timestampLessBody, "utf8")
+									.digest("hex"),
+							},
+							body: timestampLessBody,
+						}),
+						Context.make(Database, database),
+					),
+				)
+				assert.strictEqual(timestampLess.status, 202)
+				assert.strictEqual(jobs.length, 1)
+				assert.isString(jobs[0]?.event.time)
+				jobs.length = 0
+
+				const oversizedBody = JSON.stringify({
+					timestamp: 1_698_252_879,
+					event: "branch.out_of_memory",
+					organization: "acme",
+					database: "shop",
+					resource: { payload: "x".repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES) },
+				})
+				const oversized = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
+							method: "POST",
+							headers: {
+								"x-planetscale-signature": createHmac("sha256", SECRET)
+									.update(oversizedBody, "utf8")
+									.digest("hex"),
+							},
+							body: oversizedBody,
+						}),
+						Context.make(Database, database),
+					),
+				)
+				assert.strictEqual(oversized.status, 413)
+				assert.strictEqual(jobs.length, 0)
+
 				const accepted = yield* Effect.promise(() =>
 					handler(
 						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
@@ -186,12 +236,17 @@ describe("PlanetScaleWebhookRouter", () => {
 				assert.strictEqual(jobs[0]?.kind, "planetscale-webhook")
 				assert.strictEqual(jobs[0]?.orgId, "org_1")
 				assert.strictEqual(jobs[0]?.connectionId, CONNECTION_ID)
-				assert.strictEqual(jobs[0]?.payload.event, "branch.out_of_memory")
+				assert.strictEqual(
+					(jobs[0]?.event.data as { readonly event: string }).event,
+					"branch.out_of_memory",
+				)
+				assert.strictEqual(jobs[0]?.event.type, "dev.maple.planetscale.webhook.received.v1")
+				assert.strictEqual(jobs[0]?.event.tenantid, "org_1")
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
-	it.effect("enqueues lifecycle events too, and still drops genuinely unknown ones", () => {
+	it.effect("enqueues every verified factual event before downstream classification", () => {
 		const testDb = createTestDb(trackedDbs)
 		const jobs: PlanetScaleWebhookJob[] = []
 		return Effect.gen(function* () {
@@ -221,7 +276,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			)
 
 			const post = (payload: Record<string, unknown>) => {
-				const body = JSON.stringify(payload)
+				const body = JSON.stringify({ timestamp: 1_698_252_879, ...payload })
 				return Effect.promise(() =>
 					handler(
 						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
@@ -249,7 +304,10 @@ describe("PlanetScaleWebhookRouter", () => {
 				})
 				assert.strictEqual(deploy.status, 202)
 				assert.strictEqual(jobs.length, 1)
-				assert.strictEqual(jobs[0]?.payload.event, "deploy_request.schema_applied")
+				assert.strictEqual(
+					(jobs[0]?.event.data as { readonly event: string }).event,
+					"deploy_request.schema_applied",
+				)
 
 				const branchReady = yield* post({
 					event: "branch.ready",
@@ -260,14 +318,12 @@ describe("PlanetScaleWebhookRouter", () => {
 				assert.strictEqual(branchReady.status, 202)
 				assert.strictEqual(jobs.length, 2)
 
-				// Forward-compatibility must not become "enqueue everything": an
-				// event neither side knows is acknowledged and dropped.
 				const unknown = yield* post({
 					event: "branch.some_future_event",
 					organization: "acme",
 					database: "shop",
 				})
-				assert.strictEqual(unknown.status, 202)
+				assert.strictEqual(unknown.status, 200)
 				assert.strictEqual(jobs.length, 2)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}).pipe(Effect.provide(testDb.layer))
@@ -297,6 +353,7 @@ describe("PlanetScaleWebhookRouter", () => {
 				}),
 			)
 			const issueBody = JSON.stringify({
+				timestamp: 1_698_252_879,
 				event: "branch.anomaly",
 				organization: "acme",
 				database: "shop",

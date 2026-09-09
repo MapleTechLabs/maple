@@ -28,18 +28,18 @@ export interface EncodedBatch {
 
 type AttrMap = Record<string, string>
 
-interface AnyValue {
+export interface AnyValue {
 	stringValue?: string
 	boolValue?: boolean
 	intValue?: string | number
 	doubleValue?: number
 	bytesValue?: string
-	arrayValue?: { values?: AnyValue[] }
-	kvlistValue?: { values?: KeyValue[] }
+	arrayValue?: { values?: readonly AnyValue[] }
+	kvlistValue?: { values?: readonly KeyValue[] }
 	value?: string
 }
 
-interface KeyValue {
+export interface KeyValue {
 	key?: string
 	value?: AnyValue
 }
@@ -314,7 +314,7 @@ function expandExponential(s: string, eIndex: number): string {
  * Port of Rust `attr_map`: `{ [key]: anyValueString(value) }`. Every value is
  * coerced to a string (the ClickHouse columns are `Map(String, String)`).
  */
-function attrMap(attributes: KeyValue[] | undefined): AttrMap {
+function attrMap(attributes: readonly KeyValue[] | undefined): AttrMap {
 	const out: AttrMap = {}
 	if (!attributes) {
 		return out

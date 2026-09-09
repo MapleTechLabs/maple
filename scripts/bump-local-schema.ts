@@ -12,6 +12,7 @@
  * `schema/local-schema.sql` already holds the schema being bumped to.
  *
  *   bun run local-schema:bump <slug> [--description "..."]
+ *   bun run local-schema:bump --control
  */
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
@@ -77,6 +78,11 @@ const pad = (version: number): string => String(version).padStart(4, "0")
 // ---------------------------------------------------------------------------
 // Arguments and current state
 // ---------------------------------------------------------------------------
+
+if (process.argv.includes("--control")) {
+	await import("./bump-local-control-schema")
+	process.exit(0)
+}
 
 const args = process.argv.slice(2)
 const descriptionIndex = args.findIndex((arg) => arg === "--description")

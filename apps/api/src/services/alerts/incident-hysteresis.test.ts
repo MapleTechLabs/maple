@@ -288,3 +288,71 @@ describe("IncidentHysteresis", () => {
 		}
 	})
 })
+
+// PR #363 extracts rule decisions into a pure host-neutral core. Keep the
+// scheduled rule path and upstream's anomaly/preview machine in agreement.
+describe("host-neutral alert lifecycle parity", () => {
+	it("preserves saturated counters and transitions across breached, healthy, and skipped windows", async () => {
+		const { planAlertLifecycle: planEffect } = await import("@maple/alerting-core")
+		const planAlertLifecycle = (...args: Parameters<typeof planEffect>) =>
+			Effect.runSync(planEffect(...args))
+		for (const seed of [1, 17, 222, 363]) {
+			const config: HysteresisConfig = { breachesToOpen: 3, healthyToResolve: 2, cooldownMs: 0 }
+			let row: HysteresisRow = {
+				consecutiveBreaches: 0,
+				consecutiveHealthy: 0,
+				incidentOpen: false,
+				lastResolvedAtMs: null,
+			}
+			for (const [index, status] of sequence(seed, 100).entries()) {
+				const nowMs = START_MS + index * TICK_MS
+				const expected = await Effect.runPromise(foldObservation(row, status, config, nowMs))
+				const actual = planAlertLifecycle({
+					policy: {
+						consecutiveBreachesRequired: 3,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 60,
+					},
+					evaluation: {
+						status,
+						value: 1,
+						sampleCount: 1,
+						threshold: 1,
+						thresholdUpper: null,
+						comparator: "gte",
+						reason: "parity",
+						derivedFromNoData: false,
+					},
+					state: {
+						consecutiveBreaches: row.consecutiveBreaches,
+						consecutiveHealthy: row.consecutiveHealthy,
+					},
+					openIncident: row.incidentOpen
+						? {
+								firstTriggeredAtMs: START_MS,
+								lastNotifiedAtMs: START_MS,
+								lastDeliveredEventType: "trigger",
+							}
+						: null,
+					nowMs,
+				})
+				expect(actual.state).toEqual({
+					consecutiveBreaches: expected.consecutiveBreaches,
+					consecutiveHealthy: expected.consecutiveHealthy,
+				})
+				expect(actual.transition).toBe(
+					{ open: "opened", resolve: "resolved", continue: "continued", noop: "none" }[
+						expected.transition
+					],
+				)
+				row = {
+					...row,
+					...actual.state,
+					incidentOpen:
+						actual.transition === "opened" ||
+						(row.incidentOpen && actual.transition !== "resolved"),
+				}
+			}
+		}
+	})
+})
