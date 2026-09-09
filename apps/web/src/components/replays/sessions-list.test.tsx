@@ -161,3 +161,55 @@ describe("SessionsList identity", () => {
 		expect(view.getByText("Anonymous")).toBeTruthy()
 	})
 })
+
+// The LIVE pill is the one thing on this list whose truth expires without any
+// new data: nothing refetches on an idle `/replays`, so if "now" is only read
+// during render the pill outlives its window until something unrelated
+// repaints the row.
+describe("SessionsList live pill expiry", () => {
+	beforeEach(() => vi.useFakeTimers())
+
+	afterEach(() => {
+		cleanup()
+		vi.useRealTimers()
+	})
+
+	const startedAt = "2026-07-17 12:00:00"
+	const active: SessionRow = {
+		...session,
+		status: "active",
+		startTime: startedAt,
+		lastActivityAt: startedAt,
+		durationMs: null,
+	}
+
+	it("drops the pill once the live window closes, with no prop change", async () => {
+		vi.setSystemTime(new Date(`${startedAt.replace(" ", "T")}Z`))
+		const view = render(<SessionsList sessions={[active]} />)
+		expect(view.queryAllByText("LIVE").length).toBeGreaterThan(0)
+
+		// Past the 300s window, and past the clock's own tick so a re-render is
+		// actually scheduled.
+		await vi.advanceTimersByTimeAsync(400_000)
+		expect(view.queryAllByText("LIVE")).toHaveLength(0)
+	})
+
+	it("keeps the pill while the heartbeat is still inside the window", async () => {
+		vi.setSystemTime(new Date(`${startedAt.replace(" ", "T")}Z`))
+		const view = render(<SessionsList sessions={[active]} />)
+
+		await vi.advanceTimersByTimeAsync(120_000)
+		expect(view.queryAllByText("LIVE").length).toBeGreaterThan(0)
+	})
+
+	// An explicit `nowMs` is the test seam the other suites rely on; the ticking
+	// clock must not override it.
+	it("honours an injected nowMs instead of the wall clock", async () => {
+		vi.setSystemTime(new Date("2030-01-01T00:00:00Z"))
+		const view = render(
+			<SessionsList sessions={[active]} nowMs={Date.parse(`${startedAt.replace(" ", "T")}Z`)} />,
+		)
+		await vi.advanceTimersByTimeAsync(400_000)
+		expect(view.queryAllByText("LIVE").length).toBeGreaterThan(0)
+	})
+})

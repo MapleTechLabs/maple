@@ -10,6 +10,7 @@ import {
 	type ReplayPartitionWindow,
 } from "@/components/replays/replay-format"
 import { Reveal, SessionIdentityBar } from "@/components/replays/session-detail-parts"
+import { useLiveClock } from "@/hooks/use-live-clock"
 
 // Replay studio
 //
@@ -90,7 +91,11 @@ export function ReplayStudio({
 		startTime: session.startTime,
 		durationMs: session.durationMs,
 	}
-	const isActive = isSessionLive(liveness, Date.now())
+	// Ticking, not a render-time `Date.now()`: this session is one row, and the
+	// player's "still uploading" state has to give up on its own once the
+	// heartbeat goes quiet, with no refetch to repaint it.
+	const nowMs = useLiveClock({ enabled: liveness.status === "active" })
+	const isActive = isSessionLive(liveness, nowMs)
 	// Same walk as the list rows: a person is recognizable by name long before
 	// they are by an opaque id, and only a session that was never identified
 	// falls all the way through.

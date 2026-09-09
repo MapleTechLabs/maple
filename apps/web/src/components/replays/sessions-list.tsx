@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@maple/ui/lib/utils"
 import { EyeIcon } from "@/components/icons"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import {
@@ -95,9 +96,10 @@ interface SessionsListProps {
 	 *  "long" chip beside their duration. No chip when unavailable. */
 	durationP95?: number
 	/** "Now" for the live-ness test, injectable so tests don't chase the clock.
-	 *  Sampled once per render: the list refetches on the page's refresh
-	 *  interval, and a pill that re-evaluated per row would let two rows in one
-	 *  frame disagree about what time it is. */
+	 *  Left unset it comes from {@link useLiveClock}, which ticks so a pill stops
+	 *  claiming LIVE once its window closes even on a list nobody is touching.
+	 *  Either way it is sampled once per render, never per row: two rows in one
+	 *  frame must not disagree about what time it is. */
 	nowMs?: number
 }
 
@@ -136,9 +138,15 @@ export function SessionsList({
 	loadingMore = false,
 	isCapped = false,
 	durationP95,
-	nowMs = Date.now(),
+	nowMs,
 }: SessionsListProps) {
 	const navigate = useNavigate()
+	// Only sessions still reading `"active"` can cross the live boundary while
+	// the list sits open; a page of ended ones needs no timer at all.
+	const tickedNowMs = useLiveClock({
+		enabled: nowMs === undefined && sessions.some((session) => session.status === "active"),
+	})
+	const effectiveNowMs = nowMs ?? tickedNowMs
 	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
 	const virtualizer = useVirtualizer({
 		count: sessions.length,
@@ -177,7 +185,7 @@ export function SessionsList({
 				{virtualItems.map((virtualRow) => {
 					const session = sessions[virtualRow.index]!
 					const id = identity(session)
-					const isActive = isSessionLive(session, nowMs)
+					const isActive = isSessionLive(session, effectiveNowMs)
 					const durationMs = sessionDurationMs(session)
 					const isUnrecorded = session.recorded === "false"
 					const hasErrors = session.errorCount > 0
