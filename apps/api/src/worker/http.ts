@@ -144,33 +144,14 @@ const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unk
 }
 
 /**
- * A 5xx no seam recorded, so the cause is already gone. The isolate fields carry the cold-start
- * shape these cluster in.
+ * How cold the isolate was when this 5xx arrived. Which layer rendered it is already on the span: a seam
+ * that named the failure left an `exception` event, and the tracer labels the rest generically.
  */
-const recordUnownedServerError = (
-	method: string,
-	path: string,
-	response: HttpServerResponse.HttpServerResponse,
-	isolate: { readonly ageMs: number; readonly ordinal: number },
-) =>
+const recordIsolateAge = (isolate: { readonly ageMs: number; readonly ordinal: number }) =>
 	Effect.annotateCurrentSpan({
 		"maple.isolate.age_ms": isolate.ageMs,
 		"maple.isolate.request_ordinal": isolate.ordinal,
-		"maple.http.response_content_length": response.headers["content-length"] ?? "",
-	}).pipe(
-		Effect.andThen(
-			Effect.logError("Route graph answered with a server error nothing recorded").pipe(
-				Effect.annotateLogs({
-					method,
-					path,
-					status: response.status,
-					isolateAgeMs: isolate.ageMs,
-					requestOrdinal: isolate.ordinal,
-					contentLength: response.headers["content-length"] ?? "",
-				}),
-			),
-		),
-	)
+	})
 
 /**
  * The request handler the bridge serves. Liveness and preflights answer before
@@ -226,10 +207,7 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 		)
 
 		if (response.status >= 500) {
-			yield* recordUnownedServerError(request.method, path, response, {
-				ageMs: startedAt - firstRequestAt,
-				ordinal,
-			})
+			yield* recordIsolateAge({ ageMs: startedAt - firstRequestAt, ordinal })
 		}
 
 		if (isMcp) {

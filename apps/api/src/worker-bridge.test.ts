@@ -9,6 +9,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { MapleDbConnection } from "./platform/bindings"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
+import { recordRenderedFailure } from "./routes/rendered-failure"
 import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
 
 /**
@@ -168,6 +169,27 @@ const LoggingHandlersLive = HttpApiBuilder.group(LoggingApi, "logging", (handler
 	),
 )
 
+/** One route that records a rendered failure the way the boundaries do, to pin which span it lands on. */
+const RecordingGroup = HttpApiGroup.make("recording").add(
+	HttpApiEndpoint.get("recording", "/recording", { success: Schema.String }),
+)
+class RecordingApi extends HttpApi.make("RecordingApi").add(RecordingGroup) {}
+const RecordingHandlersLive = HttpApiBuilder.group(RecordingApi, "recording", (handlers) =>
+	Effect.succeed(
+		handlers.handle("recording", () =>
+			recordRenderedFailure({
+				group: "recording",
+				operation: "recording",
+				errorType: "WarehouseQueryError",
+				summary: "Route answered with a server error",
+				message: "memory limit exceeded",
+				status: 502,
+				cause: new Error("memory limit exceeded"),
+			}).pipe(Effect.as("recorded")),
+		),
+	),
+)
+
 const event = (
 	method: string,
 	path: string,
@@ -293,13 +315,12 @@ describe("the api Worker through alchemy's bridge", () => {
 
 	it.effect("a 5xx no seam recorded stays anonymous and carries the isolate shape", () =>
 		Effect.gen(function* () {
-			const { response, server, logs } = yield* event("GET", "/boom", renderedServerErrorApp)
+			const { response, server } = yield* event("GET", "/boom", renderedServerErrorApp)
 			assert.strictEqual(response.status, 500)
 			// The exit is a success, so the tracer flags the span from the status alone.
 			assert.strictEqual(server[0]?.status.code, 2 /* Error */)
 			// Nothing named it, which is exactly what the generic type means.
 			assert.strictEqual(exceptionTypeOf(server[0]), "HttpServerErrorResponse")
-			assert.include(logs, "Route graph answered with a server error nothing recorded")
 			assert.strictEqual(Number(attributeOf(server[0], "maple.isolate.age_ms")), 0)
 			assert.strictEqual(Number(attributeOf(server[0], "maple.isolate.request_ordinal")), 1)
 		}),
@@ -313,6 +334,22 @@ describe("the api Worker through alchemy's bridge", () => {
 			assert.strictEqual(attributeOf(server[0], "error.type"), "Error")
 			// The real exception survives instead of being relabelled by the tracer.
 			assert.strictEqual(exceptionTypeOf(server[0]), "Error")
+		}),
+	)
+
+	it.effect("a failure recorded inside an HttpApi handler lands on the server span", () =>
+		Effect.gen(function* () {
+			const app = yield* cachedRecoverable(
+				buildIsolateHandler(
+					Context.empty(),
+					HttpApiBuilder.layer(RecordingApi).pipe(
+						Layer.provide(RecordingHandlersLive),
+						Layer.provide(WorkerPlatformLive),
+					),
+				),
+			)
+			const { server } = yield* event("GET", "/recording", app)
+			assert.strictEqual(exceptionTypeOf(server[0]), "WarehouseQueryError")
 		}),
 	)
 
