@@ -1,5 +1,6 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { resolve } from "node:path"
+import { Schema } from "effect"
 import {
 	cloneStoreForStaging,
 	decodeInstalledProgress,
@@ -8,6 +9,7 @@ import {
 	RAW_TABLES,
 	rawRowCounts,
 	expectedManifest,
+	UnsignedDecimal,
 } from "./journal-codecs"
 import { readRawTelemetryRetentionDays } from "../chdb"
 import type {
@@ -29,6 +31,14 @@ import { assertPhysicalSchema } from "../schema-physical"
 /** Stamped into the journal and matched on the way back out. */
 const MODULE_ID = "local-0019-to-0020-error-events-attribute-fallback" as const
 
+class RowCountMismatch extends Schema.TaggedError<RowCountMismatch>()("@maple/cli/RowCountMismatch", {
+	message: Schema.String,
+	moduleId: Schema.String,
+	table: Schema.String,
+	expected: UnsignedDecimal,
+	actual: UnsignedDecimal,
+}) {}
+
 const V19ToV20StateCodec = makeRawRowsState(MODULE_ID)
 
 type V19ToV20State = typeof V19ToV20StateCodec.schema.Type
@@ -37,25 +47,7 @@ type V19ToV20Progress = InstalledProgress
 const decodeState = V19ToV20StateCodec.decode
 const decodeProgress = decodeInstalledProgress
 
-/**
- * The local mirror of ClickHouse migration 0030.
- *
- * The two error-events views took the exception type, message and stacktrace
- * from the first OTel `exception` span event alone, and fell through to
- * StatusMessage, then 'Unknown Error'. Cloudflare's native Workers tracing
- * records no span events and no status description — a custom span can only
- * `setAttribute()` — so every error span it exported hashed to one "Unknown
- * Error" issue per service. The rebuilt body reads the same three keys off
- * span attributes when there is no event, then semconv `error.type` /
- * `error.message`, before StatusMessage. A span WITH an event keeps exactly
- * the precedence it had.
- *
- * NOTHING IS BACKFILLED. `error_events` keeps no span attributes, so the
- * historical rows cannot be re-derived, and recomputing FingerprintHash would
- * re-bucket every existing local issue. Forward-only, converging as the
- * retention window rolls.
- */
-
+/** Replace the two view definitions from migration 0030, preserving stored rows. */
 const preflight = async (context: MigrationModuleContext): Promise<V19ToV20State> => {
 	await context.ensureCapacity()
 	const retentionDays = readRawTelemetryRetentionDays(context.dataDir)
@@ -119,7 +111,13 @@ const verify = async (
 			const targetRows = rawRowCounts(db)
 			for (const table of RAW_TABLES) {
 				if (targetRows[table] !== state.rawRows[table])
-					throw new Error(`v19 -> v20 raw telemetry verification failed for ${table}`)
+					throw new RowCountMismatch({
+						message: `v19 -> v20 raw telemetry verification failed for ${table}`,
+						moduleId: MODULE_ID,
+						table,
+						expected: state.rawRows[table] ?? "0",
+						actual: targetRows[table] ?? "0",
+					})
 			}
 		},
 		{ schemaSql: LOCAL_SCHEMA_V20_SQL, bootstrapSchema: false },
@@ -169,7 +167,7 @@ const dispositions: ReadonlyArray<StateDispositionEntry> = [
 		// and bounded by the tables' 90-day TTL.
 		name: "error_events",
 		classification: "derived",
-		disposition: "rebuild-within-retention-horizon",
+		disposition: "preserve-exact",
 		guarantee:
 			"Existing rows are preserved untouched; the attribute fallback applies to events materialized after the migration and converges as the retention window rolls.",
 		preservationInterval: "error retention horizon",
@@ -179,7 +177,7 @@ const dispositions: ReadonlyArray<StateDispositionEntry> = [
 	{
 		name: "error_events_by_time",
 		classification: "derived",
-		disposition: "rebuild-within-retention-horizon",
+		disposition: "preserve-exact",
 		guarantee:
 			"Same projection as error_events and treated identically: preserved rows, forward-only correction.",
 		preservationInterval: "error retention horizon",

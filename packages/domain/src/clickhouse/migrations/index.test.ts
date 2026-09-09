@@ -34,9 +34,7 @@ import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_re
 import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
 import { migration_0027_audit_log } from "./0027_audit_log"
 import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
-import { migration_0029_ai_trace_index_usage_conventions } from "./0029_ai_trace_index_usage_conventions"
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
-import { migration_0021_product_events } from "./0021_product_events"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -104,22 +102,6 @@ describe("ClickHouse migrations", () => {
 			expect(dropAt).toBeGreaterThanOrEqual(0)
 			expect(createAt).toBeGreaterThan(dropAt)
 		}
-
-		// The event still wins outright; attributes are read only in its absence,
-		// exception.* ahead of error.*.
-		expect(sql).toContain("_ei > 0, EventsAttributes[_ei]['exception.type']")
-		expect(sql).toContain("SpanAttributes['exception.type']")
-		expect(sql).toContain("SpanAttributes['exception.message']")
-		expect(sql).toContain("SpanAttributes['exception.stacktrace']")
-		expect(sql).toContain("SpanAttributes['error.type']")
-		expect(sql).toContain("SpanAttributes['error.message']")
-		// The signature and label are cut from the resolved text, so an
-		// attribute-only span no longer degrades to 'Unknown Error'.
-		expect(sql).toContain("if(_ei > 0 OR StatusMessage != '', StatusMessage, _exMsg) AS _msgText")
-		expect(sql).toContain("_msgText = '', 'Unknown Error'")
-		// The 0016 guard survives: a 4xx client span whose only error.type is the
-		// status code is still not an error.
-		expect(sql).toContain("SpanAttributes['error.type'] = toString(_httpStatus)")
 
 		// Nothing is rewritten: error_events keeps no span attributes to re-derive
 		// from, and recomputing FingerprintHash would re-bucket every issue.

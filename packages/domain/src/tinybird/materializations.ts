@@ -700,9 +700,9 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
 
 /**
  * Materialized view populating error_events from traces where StatusCode='Error'.
- * Unwraps the first OTel `exception` event — or, when a span has none, the
- * `exception.*` span attributes, then `error.type` / `error.message` — and
- * computes a cityHash64 FingerprintHash used to group occurrences into Issues.
+ * Unwraps the first OTel `exception` event. When both the event and StatusMessage
+ * are absent, reads `exception.*` then `error.*` span attributes. Computes a
+ * cityHash64 FingerprintHash used to group occurrences into Issues.
  *
  * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames,
  * message signature).
@@ -747,34 +747,22 @@ export { errorEventsSelectSql as ERROR_EVENTS_MV_SQL }
 const errorEventsSelectSql = `
         WITH
           arrayFirstIndex(n -> n = 'exception', EventsName) AS _ei,
-          -- Where the exception comes from, in order: the first OTel \`exception\`
-          -- span event; the same three keys carried as span ATTRIBUTES; then the
-          -- semconv \`error.type\` / \`error.message\` pair. Cloudflare's native
-          -- Workers tracing has no span events, no status description and no
-          -- outcome setter — a custom span can only setAttribute() — so without
-          -- the attribute tiers every one of its error spans hashed to a single
-          -- "Unknown Error" issue per service. A span WITH an event keeps the
-          -- precedence it always had: the event's values are taken verbatim,
-          -- empty or not, so no existing hash rotates.
+          -- Only fill the old Unknown Error bucket. Event values (including
+          -- empty fields) and spans with StatusMessage keep every hash input.
+          _ei = 0 AND StatusMessage = '' AS _useAttrs,
           if(
             _ei > 0, EventsAttributes[_ei]['exception.type'],
-            if(SpanAttributes['exception.type'] != '', SpanAttributes['exception.type'], SpanAttributes['error.type'])
+            if(_useAttrs, coalesce(nullIf(SpanAttributes['exception.type'], ''), SpanAttributes['error.type']), '')
           ) AS _exType,
           if(
             _ei > 0, EventsAttributes[_ei]['exception.message'],
-            multiIf(
-              SpanAttributes['exception.message'] != '', SpanAttributes['exception.message'],
-              SpanAttributes['error.message'] != '', SpanAttributes['error.message'],
-              StatusMessage
-            )
+            if(_useAttrs, coalesce(nullIf(SpanAttributes['exception.message'], ''), SpanAttributes['error.message']), StatusMessage)
           ) AS _exMsg,
-          if(_ei > 0, EventsAttributes[_ei]['exception.stacktrace'], SpanAttributes['exception.stacktrace']) AS _exStack,
-          -- The text the message signature and the display label are cut from.
-          -- StatusMessage whenever it is set or an event exists, exactly as
-          -- before; the attribute-carried message stands in only for an
-          -- event-less span whose StatusMessage is empty — the rows that used to
-          -- share the "Unknown Error" bucket — so no other hash rotates.
-          if(_ei > 0 OR StatusMessage != '', StatusMessage, _exMsg) AS _msgText,
+          if(
+            _ei > 0, EventsAttributes[_ei]['exception.stacktrace'],
+            if(_useAttrs, SpanAttributes['exception.stacktrace'], '')
+          ) AS _exStack,
+          if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
           -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
           -- rule accepted any line with a colon-digit, which let non-frame lines
           -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
@@ -918,15 +906,8 @@ export const errorEventsMv = defineMaterializedView("error_events_mv", {
 	description:
 		"Materializes per-occurrence error events from traces. Unwraps the first OTel exception event (falling back to exception.* / error.* span attributes) and computes a cityHash64 FingerprintHash for issue grouping.",
 	datasource: errorEvents,
-	// This change rewrites the pipe's SELECT, and Tinybird treats a changed MV
-	// node as a reason to REBUILD the target by replaying its source. That is
-	// wrong twice over here: `traces` keeps 30 days against this target's 90, so
-	// a rebuild silently drops two months of occurrences, and replaying would
-	// recompute FingerprintHash for every existing row — re-bucketing every
-	// triaged issue, which is exactly what migration 0027 refuses to do. `alter`
-	// swaps the SQL at promotion with no data movement, matching the migration's
-	// forward-only contract: stored rows keep their labels, new events get the
-	// attribute fallback.
+	// Preserve the target's 90d history; replaying traces would retain only 30d
+	// and recompute stored fingerprints. Change the SELECT for future inserts.
 	deploymentMethod: "alter",
 	nodes: [
 		node({
@@ -948,9 +929,7 @@ export const errorEventsByTimeMv = defineMaterializedView("error_events_by_time_
 	description:
 		"Time-ordered copy of error_events_mv's projection, written to error_events_by_time (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans.",
 	datasource: errorEventsByTime,
-	// Same reason as error_events_mv, whose projection this shares byte-for-byte:
-	// a replay would truncate to the 30-day `traces` window and re-bucket every
-	// issue. The two must also deploy the same way, or the tables disagree.
+	// Keep both projections forward-only, with the same retained history.
 	deploymentMethod: "alter",
 	nodes: [
 		node({

@@ -42,7 +42,7 @@ of a table we already have.
 2. **Pre-aggregation for scans.** `*_aggregates_hourly`, `service_overview_*`,
    `service_operations_*`. Trades write amplification for orders-of-magnitude less read.
 3. **Filtered projection.** `error_events` keeps only `StatusCode = 'Error'` and unwraps the
-   exception event — or, for a span without one, the `exception.*` / `error.*` span attributes —
+   exception event — or, when both the event and status message are absent, the `exception.*` / `error.*` span attributes —
    so error queries never touch the Map columns of the full traces table.
 
 Storage is not free and the ratio is worse than it looks: `traces` is 110 GB, and its MV

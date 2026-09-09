@@ -18,22 +18,12 @@ import {
 	LOCAL_SCHEMA_V5_MANIFEST,
 	LOCAL_SCHEMA_V7_MANIFEST,
 	LOCAL_SCHEMA_V6,
-	LOCAL_SCHEMA_V7,
-	LOCAL_SCHEMA_V8,
 	LOCAL_SCHEMA_V10,
 	LOCAL_SCHEMA_V10_MANIFEST,
 	LOCAL_SCHEMA_V11,
 	LOCAL_SCHEMA_V11_MANIFEST,
-	LOCAL_SCHEMA_V12,
 	LOCAL_SCHEMA_V12_MANIFEST,
-	LOCAL_SCHEMA_V13,
 	LOCAL_SCHEMA_V13_MANIFEST,
-	LOCAL_SCHEMA_V14,
-	LOCAL_SCHEMA_V15,
-	LOCAL_SCHEMA_V16,
-	LOCAL_SCHEMA_V17,
-	LOCAL_SCHEMA_V18,
-	LOCAL_SCHEMA_V19,
 	LOCAL_SCHEMA_V20,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
@@ -76,15 +66,14 @@ import {
 	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
 import { v10ToV11ProductEventsModule } from "../src/server/local-store-migrations/v10-to-v11-product-events"
-import { v11ToV12ServiceMapEdgeQuantilesModule } from "../src/server/local-store-migrations/v11-to-v12-service-map-edge-quantiles"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 describe("current local schema identity", () => {
 	it("matches the generated v20 revision and keeps the issue-297 identity frozen", () => {
-		expect(SCHEMA_FINGERPRINT).toBe("30843d6717974b0d")
-		expect(SCHEMA_DIGEST).toBe("30843d6717974b0deb47aad850e630135e4c2eb39e2d476342a824dccd906158")
+		expect(SCHEMA_FINGERPRINT).toBe("ad8e854c9e2bb021")
+		expect(SCHEMA_DIGEST).toBe("ad8e854c9e2bb02184ace30e6b6eb483c978626f8a452f54293ee66c358ad1c5")
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
 		)
