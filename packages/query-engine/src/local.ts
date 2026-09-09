@@ -117,6 +117,9 @@ export const runLocalQuery = (
 	baseUrl = "",
 	signal?: AbortSignal,
 ): Promise<ReadonlyArray<LocalQueryRow>> =>
+	// This is the SPA's entry point into Effect: each call is its own root, so
+	// the fetch layer is provided here rather than composed higher up.
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.runPromise(executeLocalQuery(sql, baseUrl).pipe(Effect.provide(FetchHttpClient.layer)), { signal })
 
 /**
