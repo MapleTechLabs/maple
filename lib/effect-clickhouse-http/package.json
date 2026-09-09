@@ -13,7 +13,6 @@
 		"test:live": "CLICKHOUSE_HTTP_LIVE=1 vitest run src/client.live.test.ts"
 	},
 	"devDependencies": {
-		"@clickhouse/client-web": "catalog:clickhouse",
 		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",

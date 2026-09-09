@@ -525,7 +525,7 @@ jobs:
 
             - uses: ./.github/actions/bun-install
 
-            - name: Native ClickHouse HTTP protocol and live parity tests
+            - name: Native ClickHouse HTTP protocol and live wire-format tests
               env:
                   CLICKHOUSE_HTTP_LIVE: "1"
                   CLICKHOUSE_HTTP_URL: http://127.0.0.1:8123

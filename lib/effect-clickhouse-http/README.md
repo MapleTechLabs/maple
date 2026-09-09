@@ -3,7 +3,7 @@
 `@maple-dev/effect-clickhouse-http` is an independent workspace package for streaming
 ClickHouse queries over HTTP. Its only runtime dependency is Effect 4. It contains
 no Maple schema, tenant routing, retry policy, SQL builder, or Node-specific code.
-The official ClickHouse web client is a **test-only** dependency for live parity.
+It does not depend on the official ClickHouse client, not even for tests.
 
 ## Usage
 
@@ -113,7 +113,8 @@ seeded random fragmentation. HTTP tests cover request framing, auth, settings,
 redirects, bounded error bodies, cleanup, interruption, and transport failures.
 
 Live tests use only read-only `SELECT`s against ClickHouse system functions. They
-compare results with the official client and exercise real server errors, byte limits,
+assert the exact JSONEachRow wire shapes a real server produces (64-bit integers as
+numbers, maps as objects, tuples as arrays) and exercise real server errors, byte limits,
 and an exception after HTTP 200. CI runs them against its ClickHouse 26.2 service;
 these tests do not establish compatibility with every ClickHouse or gateway version.
 

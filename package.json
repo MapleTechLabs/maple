@@ -87,9 +87,6 @@
 			"@tanstack/charts": "0.16.0",
 			"@tanstack/charts-scales": "0.16.0"
 		},
-		"clickhouse": {
-			"@clickhouse/client-web": "^1.21.0"
-		},
 		"effect": {
 			"@effect/atom-react": "4.0.0-rc.112",
 			"@effect/language-service": "^0.87.2",
