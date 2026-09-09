@@ -5,6 +5,7 @@ import {
 	CloudflareIcon,
 	DatabaseIcon,
 	GlobeIcon,
+	GoogleAnalyticsIcon,
 	GridSquareCirclePlusIcon,
 	type IconComponent,
 	KafkaIcon,
@@ -42,6 +43,7 @@ const TEMPLATE_ICONS: Record<string, IconComponent> = {
 	"mongodb-overview": MongodbIcon,
 	cloudflare: CloudflareIcon,
 	planetscale: PlanetScaleIcon,
+	"google-analytics": GoogleAnalyticsIcon,
 	"host-metrics": ServerIcon,
 	"kubernetes-cluster": KubernetesIcon,
 	"kubernetes-pod": KubernetesIcon,
@@ -56,6 +58,7 @@ const CATEGORY_ICONS: Record<string, IconComponent> = {
 	database: DatabaseIcon,
 	infrastructure: ServerIcon,
 	messaging: PaperPlaneIcon,
+	product: ChartLineIcon,
 } satisfies Record<string, IconComponent>
 
 export function templateIcon(templateId: string, category: string): IconComponent {

@@ -19,7 +19,7 @@
  * - Everything else is a plain upstream failure: the watermark simply does not advance.
  */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 
 /**
@@ -29,7 +29,13 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/
  * `Context.Reference` with a default, so a test that overrides it further out still wins.
  */
 const withHttpClient = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.provide(FetchHttpClient.layer))
+	effect.pipe(
+		// Not hoistable into the static service graph: these are leaf calls made from a service
+		// closure, and the layer closes over nothing per-invocation, so providing it here is what
+		// keeps `HttpClient` out of every caller's requirement channel.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(FetchHttpClient.layer),
+	)
 
 /** GA4 quota denial — the caller backs off rather than retrying within the tick. */
 export const GA_QUOTA_STATUS = 429
@@ -87,6 +93,17 @@ export interface GoogleAnalyticsProperty {
 	readonly accountName: string | null
 }
 
+/** The Data API's own `runReport` request body — optional members are OMITTED, never `undefined`. */
+interface RunReportBody {
+	dimensions: Array<{ name: string }>
+	metrics: Array<{ name: string }>
+	dateRanges: Array<{ startDate: string; endDate: string }>
+	keepEmptyRows: boolean
+	limit?: string
+	orderBys?: Array<{ metric: { metricName: string }; desc: boolean }>
+	dimensionFilter?: unknown
+}
+
 /** One `runReport` request, in the Data API's own vocabulary. */
 export interface RunReportRequest {
 	readonly dimensions: ReadonlyArray<string>
@@ -101,27 +118,39 @@ export interface RunReportRequest {
 	readonly dimensionFilter?: unknown
 }
 
-const upstream = (message: string, status?: number, cause?: unknown) =>
-	new IntegrationsUpstreamError({
-		message,
-		...(status === undefined ? {} : { status }),
-		...(cause === undefined ? {} : { cause }),
-	})
+/** Constructor payload for {@link IntegrationsUpstreamError}, whose extras are `optionalKey`. */
+interface UpstreamErrorFields {
+	message: string
+	status?: number
+	cause?: unknown
+}
+
+const upstream = (message: string, status?: number, cause?: unknown) => {
+	// `status` and `cause` are `optionalKey` on the error, so an explicit `undefined` is not the
+	// same as omission — assigned only when present.
+	const fields: UpstreamErrorFields = { message }
+	if (status !== undefined) fields.status = status
+	if (cause !== undefined) fields.cause = cause
+	return new IntegrationsUpstreamError(fields)
+}
 
 /**
  * Google's error envelope: `{ error: { code, status, message } }`. `status` is the symbolic
  * enum ("PERMISSION_DENIED", "RESOURCE_EXHAUSTED"), which is what distinguishes a dead grant
  * from a quota denial — both arrive as HTTP 403.
  */
-const errorStatusOf = (text: string): string | null => {
-	try {
-		const parsed = JSON.parse(text) as { error?: { status?: unknown } }
-		const status = parsed.error?.status
-		return typeof status === "string" ? status : null
-	} catch {
-		return null
-	}
-}
+const GoogleErrorEnvelope = Schema.Struct({
+	error: Schema.optionalKey(Schema.Struct({ status: Schema.optionalKey(Schema.String) })),
+})
+const decodeErrorEnvelope = Schema.decodeUnknownOption(Schema.fromJsonString(GoogleErrorEnvelope))
+
+const errorStatusOf = (text: string): string | null =>
+	Option.match(decodeErrorEnvelope(text), {
+		// Google does not promise this envelope on every failure path (a gateway 502 is plain
+		// HTML), so an undecodable body just means "no symbolic status", not a bug.
+		onNone: () => null,
+		onSome: (envelope) => envelope.error?.status ?? null,
+	})
 
 const classifyFailure = (httpStatus: number, text: string, label: string) => {
 	const symbolic = errorStatusOf(text)
@@ -268,20 +297,21 @@ export const runReport = Effect.fn("GoogleAnalyticsApi.runReport")(function* (op
 }) {
 	const httpClient = yield* HttpClient.HttpClient
 	const { request } = options
-	const body = {
+	// Google's own "(other)" bucket silently replaces the tail once a report exceeds its
+	// cardinality limit. Asking for the totals row would not tell us it happened, so instead the
+	// caller caps with `limit` and folds its own explicit remainder — see the mapper.
+	const body: RunReportBody = {
 		dimensions: request.dimensions.map((name) => ({ name })),
 		metrics: request.metrics.map((name) => ({ name })),
 		dateRanges: [{ startDate: request.startDate, endDate: request.endDate }],
-		...(request.limit === undefined ? {} : { limit: String(request.limit) }),
-		...(request.orderByMetric === undefined
-			? {}
-			: { orderBys: [{ metric: { metricName: request.orderByMetric }, desc: true }] }),
-		...(request.dimensionFilter === undefined ? {} : { dimensionFilter: request.dimensionFilter }),
-		// Google's own "(other)" bucket silently replaces the tail once a report exceeds its
-		// cardinality limit. Asking for the totals row would not tell us it happened, so instead
-		// the caller caps with `limit` and folds its own explicit remainder — see the mapper.
 		keepEmptyRows: false,
 	}
+	// Omitted rather than sent as `undefined`: the Data API rejects a null `limit`.
+	if (request.limit !== undefined) body.limit = String(request.limit)
+	if (request.orderByMetric !== undefined) {
+		body.orderBys = [{ metric: { metricName: request.orderByMetric }, desc: true }]
+	}
+	if (request.dimensionFilter !== undefined) body.dimensionFilter = request.dimensionFilter
 
 	const url = `${options.dataBaseUrl.replace(/\/+$/, "")}/properties/${options.propertyId}:runReport`
 	const response = yield* httpClient

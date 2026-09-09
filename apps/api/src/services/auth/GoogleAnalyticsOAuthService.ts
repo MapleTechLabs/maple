@@ -266,8 +266,12 @@ export class GoogleAnalyticsOAuthService extends Context.Service<
 				)
 			}
 
-			const userInfo = yield* fetchUserInfo(config, tokenResponse.access_token)
-			const identity = Option.getOrElse(userInfo, () => ({}) as { sub?: string; email?: string })
+			// Userinfo is a nicety, not a requirement: it names the connected account in the UI.
+			// An empty identity still yields a valid connection row (see the fallbacks below).
+			const identity = Option.getOrElse(
+				yield* fetchUserInfo(config, tokenResponse.access_token),
+				(): typeof UserInfo.Type => ({}),
+			)
 
 			const accessEnc = yield* oauth.encryptValue(tokenResponse.access_token)
 			const refreshEnc = yield* oauth.encryptValue(tokenResponse.refresh_token)

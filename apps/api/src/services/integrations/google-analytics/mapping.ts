@@ -100,6 +100,15 @@ export const mapReport = (options: {
 		fold = foldTail(weights, breakdown.maxValues)
 	}
 
+	/** A row's metric attributes: the folded breakdown value, or none for the totals dataset. */
+	const attributesFor = (row: (typeof rows)[number]): GaSeriesPoint["attributes"] => {
+		if (breakdown === null) return {}
+		const raw = dimensionValue(row, breakdownIndex)
+		const folded =
+			raw === "" || raw === GA_OTHER_ROW ? OTHER_BUCKET : fold(truncate(raw, breakdown.maxValueLength))
+		return { [breakdown.attributeKey]: folded }
+	}
+
 	// Pass 2: accumulate, because folding merges many raw values into one `other` series and the
 	// same (bucket, series) must arrive at the ledger exactly once.
 	const accumulated = new Map<string, GaSeriesPoint>()
@@ -107,13 +116,7 @@ export const mapReport = (options: {
 		const bucketMs = dateHourToUtcMs(dimensionValue(row, hourIndex), timeZone)
 		if (bucketMs === null) continue
 
-		let attributes: Record<string, string> = {}
-		if (breakdown !== null) {
-			const raw = dimensionValue(row, breakdownIndex)
-			const folded =
-				raw === "" || raw === GA_OTHER_ROW ? OTHER_BUCKET : fold(truncate(raw, breakdown.maxValueLength))
-			attributes = { [breakdown.attributeKey]: folded }
-		}
+		const attributes = attributesFor(row)
 
 		for (const { metric, index } of metricIndexes) {
 			if (index < 0) continue

@@ -455,12 +455,15 @@ export class GoogleAnalyticsService extends Context.Service<
 				dataBaseUrl,
 				propertyId: context.row.propertyId,
 				request: {
-					dimensions: ["dateHour", ...(dataset.breakdown ? [dataset.breakdown.dimension] : [])],
+					dimensions: dataset.breakdown
+						? ["dateHour", dataset.breakdown.dimension]
+						: ["dateHour"],
 					metrics: dataset.metrics.map((metric) => metric.ga),
 					startDate,
 					endDate,
 					limit: REPORT_ROW_LIMIT,
-					...(dataset.breakdown ? { orderByMetric: dataset.breakdown.rankBy } : {}),
+					// Only a breakdown has a tail to rank; the totals dataset returns one row per hour.
+					orderByMetric: dataset.breakdown?.rankBy,
 				},
 			})
 
@@ -820,17 +823,17 @@ export class GoogleAnalyticsService extends Context.Service<
 
 		const getIntegrationStatus = Effect.fn("GoogleAnalyticsService.getIntegrationStatus")(
 			function* (orgId: OrgId) {
+				// A status read must never 500 because the connection row is unreadable: the card
+				// then shows "not connected", which is the honest answer from the caller's side.
 				const connection = yield* oauth.getStatus(orgId).pipe(
-					Effect.catch(() =>
-						Effect.succeed({
-							connected: false,
-							connectedAt: null,
-							externalUserEmail: null,
-							connectedByUserId: null,
-							scope: "",
-							revoked: false,
-						}),
-					),
+					Effect.orElseSucceed(() => ({
+						connected: false,
+						connectedAt: null,
+						externalUserEmail: null,
+						connectedByUserId: null,
+						scope: "",
+						revoked: false,
+					})),
 				)
 				const rows = yield* loadRows(orgId)
 

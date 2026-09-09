@@ -18,7 +18,8 @@
  * temporality and would double-difference the data (see
  * `packages/query-engine/src/query-builder/model.ts`).
  */
-import { fmtMetricTs, type MetricSumRow } from "@/services/warehouse/metric-rows"
+import { Option, Schema } from "effect"
+import { fmtMetricTs, type MetricAttrs, type MetricSumRow } from "@/services/warehouse/metric-rows"
 import type { GaDatasetDef } from "./datasets"
 import { SCOPE_NAME, serviceNameFor } from "./datasets"
 import { type GaSeriesPoint, seriesKey } from "./mapping"
@@ -41,19 +42,23 @@ export interface ReconcileResult {
  * which re-emits the bucket's full current value — a visible double-count in one hour, versus
  * silently freezing that hour forever if we treated the failure as "already up to date".
  */
+const LedgerBlob = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+const decodeLedgerBlob = Schema.decodeUnknownOption(LedgerBlob)
+const decodeEmittedValue = Schema.decodeUnknownOption(Schema.Finite)
+
 export const parseLedger = (json: string | null | undefined): Readonly<Record<string, number>> => {
 	if (json == null || json === "") return {}
-	try {
-		const parsed: unknown = JSON.parse(json)
-		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {}
-		const out: Record<string, number> = {}
-		for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-			if (typeof value === "number" && Number.isFinite(value)) out[key] = value
-		}
-		return out
-	} catch {
-		return {}
+	const blob = Option.getOrNull(decodeLedgerBlob(json))
+	if (blob === null) return {}
+	// Filtered per key rather than validated as a whole: the blob is a map of INDEPENDENT series,
+	// so one unreadable entry should cost that series a re-emission, not force every other series
+	// in the hour to be re-emitted alongside it.
+	const emitted: Record<string, number> = {}
+	for (const [key, value] of Object.entries(blob)) {
+		const parsed = decodeEmittedValue(value)
+		if (Option.isSome(parsed)) emitted[key] = parsed.value
 	}
+	return emitted
 }
 
 export const serializeLedger = (emitted: Readonly<Record<string, number>>): string => JSON.stringify(emitted)
@@ -63,13 +68,18 @@ const resourceAttributes = (options: {
 	readonly propertyId: string
 	readonly propertyName: string | null
 	readonly accountName: string | null
-}): Record<string, string> => ({
-	maple_org_id: options.orgId,
-	"service.name": serviceNameFor(options.propertyId),
-	"google_analytics.property.id": options.propertyId,
-	...(options.propertyName == null ? {} : { "google_analytics.property.name": options.propertyName }),
-	...(options.accountName == null ? {} : { "google_analytics.account.name": options.accountName }),
-})
+}): MetricAttrs => {
+	const attributes: MetricAttrs = {
+		maple_org_id: options.orgId,
+		"service.name": serviceNameFor(options.propertyId),
+		"google_analytics.property.id": options.propertyId,
+	}
+	// Display names are absent until discovery has named the property; an empty-string attribute
+	// would read as "named, blank" everywhere downstream.
+	if (options.propertyName != null) attributes["google_analytics.property.name"] = options.propertyName
+	if (options.accountName != null) attributes["google_analytics.account.name"] = options.accountName
+	return attributes
+}
 
 /**
  * Reconcile one dataset's freshly-polled points against the ledger.
