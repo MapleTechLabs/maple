@@ -437,12 +437,15 @@ describe("SessionOverview", () => {
 	})
 
 	// A mid-session failure the session recovered from is not a failed session —
-	// but it is exactly what the findings list exists to surface.
-	it("completes-with-findings when something failed mid-session, and opens it", () => {
+	// but it is exactly what the findings list exists to surface. There is no
+	// verdict line above it: the findings ARE the verdict, and a headline
+	// counting them said it twice.
+	it("leads with the findings when something failed mid-session, and opens one", () => {
 		const onSelectSpan = vi.fn()
 		render(<Overview onSelectSpan={onSelectSpan} />)
 
-		expect(screen.getByText(/Completed, with 1 finding/)).toBeTruthy()
+		expect(screen.queryByText(/^Completed/)).toBeNull()
+		expect(screen.getByText("Findings")).toBeTruthy()
 		fireEvent.click(screen.getByText("error · run_tests"))
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
@@ -1233,12 +1236,12 @@ describe("SessionViews", () => {
 	// height — which is what sent "Open in Traces view" nowhere near its row.
 	it("takes the view being left out of the page, not just out of sight", () => {
 		render(<Views view="overview" />)
-		expect(screen.getByText(/Completed, with/)).toBeTruthy()
+		expect(screen.getByText("Where the time went")).toBeTruthy()
 
 		fireEvent.click(screen.getByRole("tab", { name: /Traces/ }))
 
 		expect(screen.getByText("Model / target")).toBeTruthy()
-		expect(screen.queryByText(/Completed, with/)).toBeNull()
+		expect(screen.queryByText("Where the time went")).toBeNull()
 	})
 
 	// The tab choice lives beside the other cross-view state in SessionViews:

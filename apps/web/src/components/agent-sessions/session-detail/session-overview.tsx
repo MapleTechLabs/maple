@@ -85,20 +85,23 @@ export function SessionOverview({
 	return (
 		<div className="@container flex grow flex-col pt-5 pb-10">
 			<div className="flex flex-col gap-8 @4xl:flex-row @4xl:gap-8">
-				{/* The verdict and its findings are one reading, so no rule divides
-				    them; each section below answers a different question, and the
-				    hairline is what keeps the verdict from reading as a header over
-				    all of them. */}
-				<div className="flex min-w-0 grow flex-col gap-7">
-					<Verdict
-						verdict={report.verdict}
-						findingCount={report.findings.length}
-						turns={turns}
-						onOpenSpan={openSpan}
-					/>
-					<Findings findings={report.findings} onOpenSpan={openSpan} />
-					<Separator />
+				{/* One rhythm down the column: every section answers a different
+				    question, so every boundary is the same hairline with the same
+				    air either side of it. */}
+				<div className="flex min-w-0 grow flex-col gap-6">
+					{/* A session that completed with findings has no verdict line: the
+					    findings below are the verdict, and a headline counting them
+					    only said it twice. Failed and clean sessions do carry one —
+					    there the line is the only place the outcome is stated. */}
+					{report.verdict.status !== "attention" && (
+						<>
+							<Verdict verdict={report.verdict} turns={turns} onOpenSpan={openSpan} />
+							<Separator />
+						</>
+					)}
 					<TimeComposition summary={summary} />
+					<Separator />
+					<Findings findings={report.findings} onOpenSpan={openSpan} />
 					<Separator />
 					<ToolUsage summary={summary} onOpenSpan={openSpan} />
 				</div>
@@ -127,12 +130,10 @@ type OpenSpan = (spanId: string) => void
 
 function Verdict({
 	verdict,
-	findingCount,
 	turns,
 	onOpenSpan,
 }: {
 	verdict: SessionVerdict
-	findingCount: number
 	turns: readonly SessionTurn[]
 	onOpenSpan: OpenSpan
 }) {
@@ -163,15 +164,6 @@ function Verdict({
 							The final {turnWord} did not close cleanly.
 						</p>
 					</>
-				) : verdict.status === "attention" ? (
-					// No subline: the findings right below are the explanation, and a
-					// sentence pointing at them said nothing the layout doesn't.
-					<p className="flex items-baseline gap-x-2 font-semibold text-lg">
-						<VerdictDot className="bg-severity-warn" />
-						<span>
-							Completed, with {findingCount} {findingCount === 1 ? "finding" : "findings"}
-						</span>
-					</p>
 				) : (
 					<>
 						<p className="flex items-baseline gap-x-2 font-semibold text-lg">
@@ -209,8 +201,8 @@ function VerdictDot({ className }: { className: string }) {
 
 function Findings({ findings, onOpenSpan }: { findings: readonly SessionFinding[]; onOpenSpan: OpenSpan }) {
 	return (
-		<section>
-			<div className="flex items-baseline justify-between gap-2 pb-3.5">
+		<section className="flex flex-col gap-3">
+			<div className="flex items-baseline justify-between gap-2">
 				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
 					Findings
 				</h3>
@@ -229,7 +221,7 @@ function Findings({ findings, onOpenSpan }: { findings: readonly SessionFinding[
 			</div>
 
 			{findings.length === 0 ? (
-				<p className="border-border border-t py-6 text-muted-foreground text-sm">No findings.</p>
+				<p className="border-border border-t py-5 text-muted-foreground text-sm">No findings.</p>
 			) : (
 				findings.map((finding) => (
 					<FindingRow key={finding.id} finding={finding} onOpenSpan={onOpenSpan} />
@@ -246,7 +238,7 @@ function FindingRow({ finding, onOpenSpan }: { finding: SessionFinding; onOpenSp
 			aria-haspopup="dialog"
 			onClick={() => onOpenSpan(finding.spanId)}
 			className={cn(
-				"group flex w-full items-start gap-3 border-border border-t px-3 py-3.5 text-left hover:bg-accent/40",
+				"group flex w-full items-start gap-3 border-border border-t px-3 py-2.5 text-left hover:bg-accent/40",
 				finding.severity === "failure" &&
 					"border-l-2 border-l-destructive bg-destructive/[0.06] pl-2.5",
 			)}
@@ -255,7 +247,7 @@ function FindingRow({ finding, onOpenSpan }: { finding: SessionFinding; onOpenSp
 				aria-hidden
 				className={cn("mt-[0.4rem] size-1.5 shrink-0 rounded-full", SEVERITY_DOT[finding.severity])}
 			/>
-			<span className="flex min-w-0 grow flex-col gap-1">
+			<span className="flex min-w-0 grow flex-col gap-0.5">
 				<span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
 					<span
 						className={cn(
@@ -307,7 +299,7 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 		.filter((band) => band.percent >= 0.5)
 
 	return (
-		<section>
+		<section className="flex flex-col gap-3">
 			<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
 				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
 					Where the time went
@@ -336,7 +328,7 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 				</div>
 			</div>
 
-			<div className="mt-3.5 flex h-4 w-full overflow-hidden rounded-sm bg-muted">
+			<div className="flex h-4 w-full overflow-hidden rounded-sm bg-muted">
 				{bands.map((band) => (
 					<div
 						key={band.kind}
@@ -346,7 +338,7 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 				))}
 			</div>
 
-			<div className="mt-3.5 flex flex-wrap gap-x-6 gap-y-2">
+			<div className="flex flex-wrap gap-x-6 gap-y-2">
 				{legend.map((band) => {
 					const Icon = AGENT_TIME_ICON[band.kind]
 					return (
