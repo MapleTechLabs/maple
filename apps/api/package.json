@@ -32,6 +32,8 @@
 		"@clerk/backend": "^3.16.12",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.6",
 		"@distilled.cloud/core": "1.0.0-rc.6",
+		"@effect/ai-openai-compat": "catalog:effect",
+		"@effect/ai-openrouter": "catalog:effect",
 		"@effect/platform-bun": "catalog:effect",
 		"@maple-dev/effect-clickhouse": "0.1.0",
 		"@maple-dev/effect-clickhouse-http": "workspace:*",
