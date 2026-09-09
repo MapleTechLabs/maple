@@ -1,9 +1,4 @@
-import {
-	AuditActorType,
-	AuditChanges,
-	AuditLogSource,
-	AuditOutcome,
-} from "@maple/domain/http"
+import { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import { ActorId, ApiKeyId, AuditLogEntryId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { Schema, SchemaTransformation } from "effect"

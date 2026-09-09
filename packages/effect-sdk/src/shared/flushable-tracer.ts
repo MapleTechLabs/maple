@@ -211,15 +211,19 @@ const makeOtlpSpan = (self: SpanImpl, outcome: SpanOutcome): OtlpSpan => {
 	let otelStatus: Status
 	if (outcome._tag === "ServerError") {
 		otelStatus = { code: StatusCode.Error, message: outcome.message }
-		events.push({
-			name: "exception",
-			timeUnixNano: String(status.endTime),
-			droppedAttributesCount: 0,
-			attributes: [
-				{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: HTTP_SERVER_ERROR_RESPONSE } },
-				{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: outcome.message } },
-			],
-		})
+		// Only when nothing named the failure itself — relabelling a recorded exception would
+		// collapse every such 5xx into one anonymous bucket in error tracking.
+		if (!events.some((event) => event.name === "exception")) {
+			events.push({
+				name: "exception",
+				timeUnixNano: String(status.endTime),
+				droppedAttributesCount: 0,
+				attributes: [
+					{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: HTTP_SERVER_ERROR_RESPONSE } },
+					{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: outcome.message } },
+				],
+			})
+		}
 	} else if (outcome._tag === "Interrupted") {
 		otelStatus = { code: StatusCode.Ok, message: "Interrupted" }
 		attributes.push(

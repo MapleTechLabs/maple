@@ -39,7 +39,10 @@ const OUTCOME_FILTERS: ReadonlyArray<{ value: OutcomeFilter; label: string }> = 
 	{ value: "denied", label: "Denied" },
 ]
 
-const ACTOR_BADGES: Record<AuditActorType, { label: string; variant: "secondary" | "success" | "info" | "outline" }> = {
+const ACTOR_BADGES: Record<
+	AuditActorType,
+	{ label: string; variant: "secondary" | "success" | "info" | "outline" }
+> = {
 	user: { label: "User", variant: "secondary" },
 	api_key: { label: "API key", variant: "success" },
 	agent: { label: "Agent", variant: "info" },
@@ -247,8 +250,8 @@ export function AuditLogSection() {
 	return (
 		<div className="space-y-3">
 			<p className="text-muted-foreground text-xs">
-				Changes, refused attempts, and every read of telemetry or session replays — from the dashboard,
-				API, and MCP. Select an entry for its full record.
+				Changes, refused attempts, and every read of telemetry or session replays — from the
+				dashboard, API, and MCP. Select an entry for its full record.
 			</p>
 
 			<div className="flex flex-wrap items-center gap-3">
@@ -487,7 +490,9 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 							expanded && "rotate-90",
 						)}
 					/>
-					<span title={formatDateTime(entry.occurred_at)}>{formatRelativeTime(entry.occurred_at)}</span>
+					<span title={formatDateTime(entry.occurred_at)}>
+						{formatRelativeTime(entry.occurred_at)}
+					</span>
 				</span>
 				<ActorCell entry={entry} />
 				<div className={cn(COL.action, "min-w-0")}>
@@ -714,7 +719,10 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 				<DetailField label="Entry">
 					{/* The wire codec hands the client the raw id; show the `alog_…`
 					    form the API itself returns, so it can be quoted back to it. */}
-					<Identifier value={encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id)} label="Entry id" />
+					<Identifier
+						value={encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id)}
+						label="Entry id"
+					/>
 				</DetailField>
 			</dl>
 

@@ -1,5 +1,5 @@
 import type { Row, ShapeStreamOptions as SyncStreamOptions } from "@electric-sql/client"
-import type { StandardSchemaV1 } from "@standard-schema/spec"
+import type { StandardSchemaV1 } from "effect/StandardSchema"
 import type { Collection, CollectionConfig } from "@tanstack/db"
 import { BTreeIndex } from "@tanstack/db"
 import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"

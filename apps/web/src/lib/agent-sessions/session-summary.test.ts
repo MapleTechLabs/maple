@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 import { buildSessionTurns } from "./session-turns"
-import { buildSessionSummary, countTurnTokens, findIdleGaps, type OccupancyKind } from "./session-summary"
+import { buildSessionSummary, countTurnTokens, findIdleGaps, type AgentTimeKind } from "./session-summary"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -11,9 +11,9 @@ const summarize = (spans: Parameters<typeof buildSessionTurns>[0]) =>
 	buildSessionSummary({ spans, turns: buildSessionTurns(spans) })
 
 const segment = (
-	occupancy: readonly { readonly kind: OccupancyKind; readonly ms: number }[],
-	kind: OccupancyKind,
-) => occupancy.find((entry) => entry.kind === kind)?.ms
+	segments: readonly { readonly kind: AgentTimeKind; readonly ms: number }[],
+	kind: AgentTimeKind,
+) => segments.find((entry) => entry.kind === kind)?.ms
 
 describe("findIdleGaps", () => {
 	it("finds the stretches where nothing was running", () => {
@@ -59,10 +59,10 @@ describe("buildSessionSummary — time", () => {
 		expect(summary.activeMs).toBe(20 * SECOND)
 	})
 
-	it("measures occupancy, so parallel tools cannot exceed the wall clock", () => {
+	it("sums agent time, so parallel tools exceed the wall clock and say how wide", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
-			// Four tools, ten seconds each, all at once: 40s of duration inside a
+			// Four tools, ten seconds each, all at once: 40s of agent time inside a
 			// 10s session.
 			toolSpan({ spanId: "t1", parentSpanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 			toolSpan({ spanId: "t2", parentSpanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
@@ -70,19 +70,32 @@ describe("buildSessionSummary — time", () => {
 			toolSpan({ spanId: "t4", parentSpanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 		])
 
-		expect(segment(summary.occupancy, "tool")).toBe(10 * SECOND)
-		expect(summary.occupancy.reduce((total, entry) => total + entry.ms, 0)).toBe(summary.wallClockMs)
+		expect(segment(summary.agentTime.segments, "tool")).toBe(40 * SECOND)
+		expect(summary.agentTime.totalMs).toBe(40 * SECOND)
+		expect(summary.agentTime.peakParallel).toBe(4)
+		expect(summary.wallClockMs).toBe(10 * SECOND)
 	})
 
-	it("charges overlapping inference and tool time once, to inference", () => {
+	it("charges overlapping inference and tool time to both, in full", () => {
 		const summary = summarize([
 			llmSpan({ spanId: "llm", startMs: 0, durationMs: 10 * SECOND }),
 			// A tool that ran while the model was still streaming.
 			toolSpan({ spanId: "tool", startMs: 5 * SECOND, durationMs: 10 * SECOND }),
 		])
 
-		expect(segment(summary.occupancy, "inference")).toBe(10 * SECOND)
-		expect(segment(summary.occupancy, "tool")).toBe(5 * SECOND)
+		expect(segment(summary.agentTime.segments, "inference")).toBe(10 * SECOND)
+		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
+		expect(summary.agentTime.peakParallel).toBe(2)
+	})
+
+	it("counts a span that starts as another ends as no overlap at all", () => {
+		const summary = summarize([
+			toolSpan({ spanId: "a", startMs: 0, durationMs: 5 * SECOND }),
+			toolSpan({ spanId: "b", startMs: 5 * SECOND, durationMs: 5 * SECOND }),
+		])
+
+		expect(summary.agentTime.peakParallel).toBe(1)
+		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
 	})
 
 	it("splits a streaming call into time to first token and the rest", () => {
@@ -90,73 +103,28 @@ describe("buildSessionSummary — time", () => {
 			llmSpan({ spanId: "llm", startMs: 0, durationMs: 10 * SECOND, ttftSeconds: 4 }),
 		])
 
-		expect(segment(summary.occupancy, "ttft")).toBe(4 * SECOND)
-		expect(segment(summary.occupancy, "inference")).toBe(6 * SECOND)
+		expect(segment(summary.agentTime.segments, "ttft")).toBe(4 * SECOND)
+		expect(segment(summary.agentTime.segments, "inference")).toBe(6 * SECOND)
 	})
 
 	it("omits the time-to-first-token segment when no vendor reported one", () => {
 		const summary = summarize([llmSpan({ spanId: "llm", startMs: 0, durationMs: 10 * SECOND })])
 
-		expect(segment(summary.occupancy, "ttft")).toBeUndefined()
+		expect(segment(summary.agentTime.segments, "ttft")).toBeUndefined()
 	})
 
-	it("orders the timeline by the wall clock, not by class", () => {
+	it("orders the bands by class, and counts an agent span as neither", () => {
 		const summary = summarize([
-			// Work, then a mid-session stall, then more work: the stall must sit
-			// between the two inference stretches, not get pinned to the front.
-			llmSpan({ spanId: "a", startMs: 0, durationMs: 10 * SECOND, ttftSeconds: 4 }),
-			llmSpan({ spanId: "b", startMs: 70 * SECOND, durationMs: 10 * SECOND }),
-		])
-
-		expect(summary.occupancyTimeline.map((interval) => interval.kind)).toEqual([
-			"ttft",
-			"inference",
-			"idle",
-			"inference",
-		])
-		expect(summary.occupancyTimeline[2]).toMatchObject({
-			startMs: summary.startMs + 10 * SECOND,
-			endMs: summary.startMs + 70 * SECOND,
-		})
-	})
-
-	it("tiles the wall clock exactly, filling holes as unaccounted", () => {
-		const summary = summarize([
+			// The agent span covers both children, so charging it too would count
+			// the same work twice; the bands read tool-then-inference by class
+			// however the work fell on the clock.
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 12 * SECOND }),
-			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 2 * SECOND, durationMs: 3 * SECOND }),
-			toolSpan({ spanId: "tool", parentSpanId: "agent", startMs: 6 * SECOND, durationMs: 4 * SECOND }),
+			toolSpan({ spanId: "tool", parentSpanId: "agent", startMs: SECOND, durationMs: 4 * SECOND }),
+			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 6 * SECOND, durationMs: 3 * SECOND }),
 		])
 
-		expect(
-			summary.occupancyTimeline.map((interval) => [
-				interval.kind,
-				interval.startMs - summary.startMs,
-				interval.endMs - summary.startMs,
-			]),
-		).toEqual([
-			["unaccounted", 0, 2 * SECOND],
-			["inference", 2 * SECOND, 5 * SECOND],
-			["unaccounted", 5 * SECOND, 6 * SECOND],
-			["tool", 6 * SECOND, 10 * SECOND],
-			["unaccounted", 10 * SECOND, 12 * SECOND],
-		])
-		// The legend sums the same intervals, so bar and legend cannot disagree.
-		const timelineTotal = summary.occupancyTimeline.reduce(
-			(total, interval) => total + (interval.endMs - interval.startMs),
-			0,
-		)
-		expect(timelineTotal).toBe(summary.wallClockMs)
-		expect(summary.occupancy.reduce((total, entry) => total + entry.ms, 0)).toBe(summary.wallClockMs)
-	})
-
-	it("leaves the time no gen_ai span accounts for as the framework's own", () => {
-		const summary = summarize([
-			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
-			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 2 * SECOND, durationMs: 3 * SECOND }),
-		])
-
-		expect(segment(summary.occupancy, "inference")).toBe(3 * SECOND)
-		expect(segment(summary.occupancy, "unaccounted")).toBe(7 * SECOND)
+		expect(summary.agentTime.segments.map((entry) => entry.kind)).toEqual(["inference", "tool"])
+		expect(summary.agentTime.totalMs).toBe(7 * SECOND)
 	})
 })
 
@@ -190,7 +158,10 @@ describe("buildSessionSummary — failed", () => {
 })
 
 describe("buildSessionSummary — tokens and models", () => {
-	it("reports the five usage buckets as the spans reported them", () => {
+	it("reports the five usage buckets, disjoint, summed across the spans", () => {
+		// Anthropic: the prompt excludes the cache buckets, the completion
+		// includes the thinking — so `input` is taken as reported and the
+		// reasoning comes out of `output`.
 		const summary = summarize([
 			llmSpan({
 				spanId: "a",
@@ -201,7 +172,7 @@ describe("buildSessionSummary — tokens and models", () => {
 					usageInputTokens: 100,
 					usageCacheReadInputTokens: 2000,
 					usageCacheCreationInputTokens: 300,
-					usageOutputTokens: 40,
+					usageOutputTokens: 45,
 					usageReasoningOutputTokens: 5,
 				},
 			}),
@@ -214,7 +185,7 @@ describe("buildSessionSummary — tokens and models", () => {
 					usageInputTokens: 10,
 					usageCacheReadInputTokens: 20,
 					usageCacheCreationInputTokens: 30,
-					usageOutputTokens: 4,
+					usageOutputTokens: 9,
 					usageReasoningOutputTokens: 5,
 				},
 			}),
@@ -402,6 +373,146 @@ describe("buildSessionSummary — cache accounting", () => {
 		])
 
 		expect(summary.tokens.total).toBe(1100)
+	})
+
+	it("carves the reasoning out of the completion for OpenAI, which counts it inside", () => {
+		// `completion_tokens` contains `completion_tokens_details.reasoning_tokens`:
+		// 100 visible + 900 reasoning is a 1000-token completion, not 1900.
+		const summary = summarize([
+			llmSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: {
+					providerName: "openai",
+					usageInputTokens: 10,
+					usageOutputTokens: 1000,
+					usageReasoningOutputTokens: 900,
+				},
+			}),
+		])
+
+		expect(summary.tokens.output).toBe(100)
+		expect(summary.tokens.reasoning).toBe(900)
+		expect(summary.tokens.total).toBe(1010)
+	})
+
+	it("keeps the reasoning beside the completion for Gemini, which counts it apart", () => {
+		// `candidatesTokenCount` excludes `thoughtsTokenCount`, while
+		// `promptTokenCount` still contains `cachedContentTokenCount`.
+		const summary = summarize([
+			llmSpan({
+				spanId: "a",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: {
+					providerName: "gcp.gemini",
+					usageInputTokens: 1000,
+					usageCacheReadInputTokens: 900,
+					usageOutputTokens: 100,
+					usageReasoningOutputTokens: 900,
+				},
+			}),
+		])
+
+		expect(summary.tokens).toEqual({
+			input: 100,
+			cacheRead: 900,
+			cacheWrite: 0,
+			output: 100,
+			reasoning: 900,
+			total: 2000,
+		})
+	})
+
+	it("counts a call observed by the app and by a gateway once, at the larger claim", () => {
+		// OpenRouter Broadcast forwards its own trace of the call into the same
+		// session: same response id, the gateway pricing what the app could not.
+		const summary = summarize([
+			llmSpan({
+				spanId: "app",
+				startMs: 0,
+				durationMs: SECOND,
+				vendorId: "maple",
+				genAi: {
+					requestModel: "z-ai/glm-5.3-flash:nitro",
+					responseId: "gen-1",
+					usageInputTokens: 100,
+					usageOutputTokens: 10,
+				},
+			}),
+			llmSpan({
+				spanId: "gateway",
+				traceId: "trace-gateway",
+				startMs: 500,
+				durationMs: SECOND,
+				vendorId: "openrouter",
+				genAi: {
+					requestModel: "z-ai/glm-5.3-flash",
+					responseId: "gen-1",
+					usageInputTokens: 100,
+					usageOutputTokens: 10,
+					usageCost: 0.01,
+				},
+			}),
+			// The gateway's provider attempt under its own span: a model span that
+			// reports nothing while its parent does — the same call, not another.
+			llmSpan({
+				spanId: "attempt",
+				traceId: "trace-gateway",
+				parentSpanId: "gateway",
+				startMs: 600,
+				durationMs: 100,
+				vendorId: "openrouter",
+				genAi: { responseId: "gen-1:attempt-0" },
+			}),
+		])
+
+		expect(summary.tokens.total).toBe(110)
+		expect(summary.cost).toBe(0.01)
+		expect(summary.work.llmCalls).toBe(1)
+		// The app's span represents the call and carries the gateway's price, so
+		// the per-model row adds up to the session's cost.
+		expect(
+			summary.models.map((model) => [model.model, model.llmCalls, model.tokens.total, model.cost]),
+		).toEqual([["z-ai/glm-5.3-flash:nitro", 1, 110, 0.01]])
+	})
+
+	it("counts a failed call that reported no usage, and not a wrapper over calls that did", () => {
+		const summary = summarize([
+			// The SDK's `generateText` reporting the sum of its two steps.
+			llmSpan({
+				spanId: "wrapper",
+				startMs: 0,
+				durationMs: 3 * SECOND,
+				genAi: { requestModel: "gpt-5", usageInputTokens: 20, usageOutputTokens: 2 },
+			}),
+			llmSpan({
+				spanId: "step-1",
+				parentSpanId: "wrapper",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { requestModel: "gpt-5", usageInputTokens: 10, usageOutputTokens: 1 },
+			}),
+			llmSpan({
+				spanId: "step-2",
+				parentSpanId: "wrapper",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "gpt-5", usageInputTokens: 10, usageOutputTokens: 1 },
+			}),
+			// A call that died before usage came back.
+			llmSpan({
+				spanId: "failed",
+				startMs: 5 * SECOND,
+				durationMs: SECOND,
+				statusCode: "Error",
+				genAi: { requestModel: "gpt-5" },
+			}),
+		])
+
+		expect(summary.work.llmCalls).toBe(3)
+		expect(summary.tokens.total).toBe(22)
 	})
 
 	it("subtracts a roll-up's children bucket by bucket, in normalised buckets", () => {

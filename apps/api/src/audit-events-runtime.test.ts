@@ -65,7 +65,11 @@ const warehouse = (fail = false) => {
 			ingest: (tenant, _datasource, rows) =>
 				fail
 					? Effect.fail(
-							new WarehouseUpstreamError({ message: "tinybird down", pipeName: "audit_log", cause: new Error("down") }),
+							new WarehouseUpstreamError({
+								message: "tinybird down",
+								pipeName: "audit_log",
+								cause: new Error("down"),
+							}),
 						)
 					: Effect.sync(() => {
 							// SAFETY: this stub only ever receives the audit datasource's rows.
@@ -92,9 +96,11 @@ describe("processAuditEventsBatch", () => {
 				[OTHER_ORG, 1],
 				[ORG, 2],
 			])
-			expect(store.written.flatMap((write) => write.rows).every((row) => row.Action === "dashboard.created")).toBe(
-				true,
-			)
+			expect(
+				store.written
+					.flatMap((write) => write.rows)
+					.every((row) => row.Action === "dashboard.created"),
+			).toBe(true)
 		}),
 	)
 

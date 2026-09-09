@@ -27,7 +27,7 @@
 		"lint:slack-agent": "oxlint -c .oxlintrc.json --quiet apps/slack-agent",
 		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts apps packages lib examples",
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
-		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser --filter=@maple-dev/clickhouse-builder",
+		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
 		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
 		"alchemy:deploy:stg": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage stg",
@@ -51,8 +51,8 @@
 	},
 	"dependencies": {},
 	"devDependencies": {
-		"@cloudflare/workers-types": "4.20260603.1",
-		"@effect/platform-node": "4.0.0-rc.111",
+		"@cloudflare/workers-types": "catalog:alchemy",
+		"@effect/platform-node": "4.0.0-rc.112",
 		"@effect/tsgo": "0.36.4",
 		"@effect/vitest": "catalog:effect",
 		"@maple/alchemy-portless": "workspace:*",
@@ -60,7 +60,7 @@
 		"@oxlint/plugins": "1.77.0",
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"@types/node": "catalog:tooling",
-		"alchemy": "2.0.0-beta.74",
+		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
 		"knip": "^6.17.1",
 		"oxfmt": "^0.55.0",
@@ -71,7 +71,7 @@
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.0-rc.111"
+		"@effect/sql-d1": "4.0.0-rc.112"
 	},
 	"packageManager": "bun@1.4.0",
 	"catalog": {
@@ -79,19 +79,20 @@
 		"vitest": "^4.1.9"
 	},
 	"catalogs": {
+		"alchemy": {
+			"@cloudflare/workers-types": "4.20260603.1",
+			"alchemy": "2.0.0-beta.74"
+		},
 		"charts": {
 			"@tanstack/charts": "0.16.0",
 			"@tanstack/charts-scales": "0.16.0"
 		},
-		"clickhouse": {
-			"@clickhouse/client-web": "^1.21.0"
-		},
 		"effect": {
-			"@effect/atom-react": "4.0.0-rc.111",
+			"@effect/atom-react": "4.0.0-rc.112",
 			"@effect/language-service": "^0.87.2",
-			"@effect/platform-bun": "4.0.0-rc.111",
-			"@effect/vitest": "4.0.0-rc.111",
-			"effect": "4.0.0-rc.111"
+			"@effect/platform-bun": "4.0.0-rc.112",
+			"@effect/vitest": "4.0.0-rc.112",
+			"effect": "4.0.0-rc.112"
 		},
 		"react": {
 			"@types/react": "^19.2.14",
@@ -120,7 +121,7 @@
 		}
 	},
 	"patchedDependencies": {
-		"@effect/vitest@4.0.0-rc.111": "patches/@effect%2Fvitest@4.0.0-rc.111.patch",
-		"effect@4.0.0-rc.111": "patches/effect@4.0.0-rc.111.patch"
+		"@effect/vitest@4.0.0-rc.112": "patches/@effect%2Fvitest@4.0.0-rc.112.patch",
+		"effect@4.0.0-rc.112": "patches/effect@4.0.0-rc.112.patch"
 	}
 }

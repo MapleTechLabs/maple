@@ -6,6 +6,7 @@
 // asserted — see `serviceMapEdgeJoinQuery` for why that distinction earned its
 // own paragraph.
 
+import { finiteOrZero } from "./format"
 import {
 	DB_QUERY_KEY_SQL,
 	DB_QUERY_LABEL_SQL,
@@ -16,14 +17,14 @@ import {
 } from "@maple/domain/tinybird/db-query-shape-sql"
 import { deploymentEnvExpr, messagingDestinationExpr } from "@maple/domain/tinybird/semconv-renames"
 import { Schema, Effect } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import { defineCondFn, defineFn } from "@maple-dev/clickhouse-builder"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import { defineCondFn, defineFn } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
 // From the root, not `/expr`: this overload takes a `CHQuery`, so the subquery
 // keeps its params, table names and column types checked.
-import { inSubquery } from "@maple-dev/clickhouse-builder"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery, fromUnion } from "@maple-dev/clickhouse-builder"
+import { inSubquery } from "@maple-dev/effect-clickhouse"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, fromUnion } from "@maple-dev/effect-clickhouse"
 import {
 	ServiceAddressResolutionsHourly,
 	ServiceExternalEdgesHourly,
@@ -36,11 +37,11 @@ import {
 	type StringMap,
 	Traces,
 } from "../tables"
-import { unionAll } from "@maple-dev/clickhouse-builder"
+import { unionAll } from "@maple-dev/effect-clickhouse"
 import { edgeCondition, interiorConditions } from "./rollup-splice"
 import { CHNumber, CHNumberOrZero } from "../schema"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import type { QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 
 // Local CH function declarations used by the live topology-join branch's
 // sample-weighting math. Kept here (not promoted to ch/functions/) because
@@ -379,7 +380,9 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 			targetService: $.targetService,
 			callCount: CH.sum($.bucketCallCount),
 			errorCount: CH.sum($.bucketErrorCount),
-			avgDurationMs: CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
+			avgDurationMs: finiteOrZero(
+				CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
+			),
 			maxDurationMs: CH.max_($.bucketMaxDurationMs),
 			estimatedSpanCount: CH.sum($.bucketEstimatedSpanCount),
 		}))
@@ -599,7 +602,9 @@ function serviceDbEdgesQueryBase(opts: { serviceName?: string; deploymentEnv?: s
 			dbNamespace: $.dbNamespace,
 			callCount: CH.sum($.bucketCallCount),
 			errorCount: CH.sum($.bucketErrorCount),
-			avgDurationMs: CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
+			avgDurationMs: finiteOrZero(
+				CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
+			),
 			maxDurationMs: CH.max_($.bucketMaxDurationMs),
 			p95DurationMs: edgeP95Expr,
 			estimatedSpanCount: CH.sum($.bucketEstimatedSpanCount),
@@ -1251,7 +1256,9 @@ export function serviceExternalEdgesSQL(
 			targetName: $.targetName,
 			callCount: CH.sum($.bucketCallCount),
 			errorCount: CH.sum($.bucketErrorCount),
-			avgDurationMs: CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
+			avgDurationMs: finiteOrZero(
+				CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
+			),
 			maxDurationMs: CH.max_($.bucketMaxDurationMs),
 			p95DurationMs: edgeP95Expr,
 			estimatedSpanCount: CH.sum($.bucketEstimatedSpanCount),

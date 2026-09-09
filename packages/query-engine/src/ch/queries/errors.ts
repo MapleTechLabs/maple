@@ -2,15 +2,16 @@
 //
 // DSL-based query definitions for error aggregation and timeseries.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { finiteOrZero } from "./format"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
-import { exists, inSubquery } from "@maple-dev/clickhouse-builder"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
-import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import { exists, inSubquery } from "@maple-dev/effect-clickhouse"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 import {
@@ -155,6 +156,9 @@ export interface UnexpectedIdentityFilter {
 export const DEFAULT_ERROR_NAMESPACE_PREFIX = "@maple/"
 
 export const UNEXPECTED_IDENTITY_MARKERS: readonly string[] = [
+	// The SDK's marker for a server span whose handler rendered a 5xx (the
+	// Worker bridge answers a defect that way); the api's own marker before it.
+	"HttpServerErrorResponse",
 	"@maple/api/http/Http5xxResponseError",
 	"@maple/http/v2/UnexpectedError",
 	"@maple/http/v1/V1UnexpectedError",
@@ -572,8 +576,8 @@ export function tracesDurationStatsQuery(opts: TracesDurationStatsOpts) {
 		.select(($) => ({
 			minDurationMs: CH.min_($.Duration).div(1000000),
 			maxDurationMs: CH.max_($.Duration).div(1000000),
-			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-			p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
@@ -922,11 +926,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			.select(($) => ({
 				totalErrors: $.totalErrors,
 				totalSpans: $.s.totalSpans,
-				errorRate: CH.if_(
-					$.s.totalSpans.gt(0),
-					CH.round_($.totalErrors.div($.s.totalSpans), 6),
-					CH.lit(0),
-				),
+				errorRate: finiteOrZero(CH.round_($.totalErrors.div($.s.totalSpans), 6)),
 				affectedServicesCount: $.affectedServicesCount,
 				affectedTracesCount: $.affectedTracesCount,
 			}))

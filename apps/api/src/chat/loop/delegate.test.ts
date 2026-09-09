@@ -6,7 +6,7 @@
  * land in the card, not the conversation), and the budgets (a `ToolFailure`, never a defect).
  */
 import { LLMClient, type LLMEvent, type LLMRequest, type LanguageModel } from "@opencode-ai/ai"
-import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare"
+import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare-workers-ai"
 import { Effect, Layer, Stream } from "effect"
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"

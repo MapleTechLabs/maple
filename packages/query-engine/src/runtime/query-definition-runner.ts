@@ -1,4 +1,4 @@
-import type { CompiledQuery, CompiledQueryInput, QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { CompiledQuery, CompiledQueryInput, QueryBuilderError } from "@maple-dev/effect-clickhouse"
 import type { Effect, Option } from "effect"
 import { baselineWarehouseCapabilities, type WarehouseCapabilities } from "../capabilities"
 import type { SqlQueryOptions } from "../profiles"

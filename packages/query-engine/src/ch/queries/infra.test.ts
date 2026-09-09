@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
-import { compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
@@ -73,7 +73,9 @@ describe("listPodsQuery", () => {
 
 	it("selects peaks alongside averages so a row can show avg → peak", () => {
 		const { sql } = compileUnsafe(listPodsQuery({}), baseParams)
-		expect(sql).toContain("ifNotFinite(avgIf(Value, MetricName = 'k8s.pod.cpu.usage'), 0) AS cpuUsage")
+		expect(sql).toContain(
+			"ifNull(ifNotFinite(avgIf(Value, MetricName = 'k8s.pod.cpu.usage'), 0), 0) AS cpuUsage",
+		)
 		expect(sql).toContain(
 			"ifNotFinite(maxIf(Value, MetricName = 'k8s.pod.cpu.usage'), 0) AS cpuUsagePeak",
 		)

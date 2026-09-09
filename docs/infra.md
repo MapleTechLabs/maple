@@ -15,24 +15,30 @@ put it here instead. Git blame does not survive a refactor of the line it annota
   (also emitted as GitHub step outputs).
 - `apps/<app>/src/worker.ts` — a Worker as one module: the alchemy Worker class the root
   yields, whose props are an Effect over `MapleStack`, and the bundle alchemy deploys
-  (`alerting`, `electric-sync`, `landing`, `local-ui`; see "Single-module Workers" below).
-- `apps/<app>/alchemy.run.ts` — a `create*` factory, only where the Worker still takes
-  another resource as an argument (`api`, `web`) or the app is not a Worker (`ingest`,
-  `electric` on ECS). Owns that app's resources and bindings and nothing else's.
+  (`api`, `alerting`, `electric-sync`, `web`, `landing`, `local-ui`; see "Single-module
+  Workers" below).
+- `apps/<app>/alchemy.run.ts` — a `create*` factory, only for the apps that are not
+  Workers (`ingest`, `electric` on ECS). Owns that app's resources and nothing else's. The one
+  api resource the ingest gateway shares (the replay bucket) is
+  `apps/api/src/resources/replay-blobs.ts`.
 - `packages/infra` — stage/region/domain/naming logic, the shared deploy-time env groups,
   and the few resources several Worker modules bind.
     - `cloudflare/stage.ts` — `MapleStage`, domains, worker names, Hyperdrive resolution.
       Pure functions, unit-tested, no cloud calls.
     - `cloudflare/stack.ts` — `MapleStack`, what the root stack tells the Worker classes.
-    - `cloudflare/maple-db.ts` / `cloudflare/observability.ts` — the managed Hyperdrive
-      and the Workers Observability destinations, declared once and yielded from every
-      module that binds them (alchemy registers a resource by id; a second yield returns
-      the first's).
+    - `cloudflare/observability.ts` — the Workers Observability destinations, declared once
+      and yielded from every module that binds them (alchemy registers a resource by id; a
+      second yield returns the first's).
     - `aws/stage.ts` — `MapleRegion`, AWS naming, task sizing, Cloud Map.
     - `env.ts` — the deploy-time env primitives and the shared groups the workers spread.
-    - `config-helpers.ts` / `cloudflare/worker-runtime.ts` / `cloudflare/workers-cache.ts` /
-      `cloudflare/r2.ts` — the _runtime_ (in-Worker) side, each behind its own subpath
-      export so a worker bundle never reaches the deploy graph through `./cloudflare`.
+    - `cloudflare/maple-db.ts` — `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
+      Worker's init) and the runtime read of the binding (`readMapleDbBinding`).
+    - `config-helpers.ts` / `cloudflare/worker-runtime.ts` / `cloudflare/workers-cache.ts` —
+      the _runtime_ (in-Worker) side, each behind its own subpath export so a worker bundle
+      never reaches the deploy graph through `./cloudflare`. `worker-runtime.ts` is the
+      `WorkerEnvironment` tag (alchemy's key, typed `Record<string, unknown>`) and
+      `workerEnvLayer(env)`, the env plus its `ConfigProvider` for a graph built over one
+      env record — nothing reaches for `cloudflare:workers`.
 
 **Read deploy-time config through `@maple/infra/env`, not `process.env`.** Alchemy resolves
 config through a ConfigProvider built as `fromDotEnv(--env-file ?? ".env")` **orElse**
@@ -55,7 +61,7 @@ bun dev api web     # a subset: api, alerting, electric-sync, web, landing, inge
 ```
 
 The Workers — **api, alerting, electric-sync** — are served by alchemy's local runtime from
-the same `create*` factories that deploy them. Everything that is not a Worker — web, landing
+the same Worker classes that deploy them. Everything that is not a Worker — web, landing
 and local-ui (vite/astro dev servers), ingest (`cargo run`) and scraper — runs as a
 `Command.Dev` child of the same stack: each app's own `dev` script, started by
 `createDevProcess` in `alchemy.run.ts`, kept alive across stack restarts, stopped with the
@@ -112,7 +118,7 @@ Gotchas worth knowing:
 - **The dev Hyperdrive origin must set `sslmode: "disable"`.** Alchemy defaults a local
   origin to `sslmode=prefer` (`Cloudflare/Hyperdrive/ConnectBinding.ts`), the driver then
   attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s with
-  `CONNECT_TIMEOUT` after the dial budget. See `createManagedMapleDb`.
+  `CONNECT_TIMEOUT` after the dial budget. See `ManagedMapleDb`.
 - **`MAPLE_OTEL_INGEST_KEY` is optional on dev stages only** (`selfObservabilityEnv`). The
   local stack resolves the same env contract as a deploy, and no developer has a real
   ingest key; without the exemption the whole stack refuses to start over a key whose only
@@ -139,30 +145,75 @@ Effect that reads `MapleStack` (`@maple/infra/cloudflare`, provided once by the 
 the shared `ManagedMapleDb` or `WorkersObservabilityDestinations` (alchemy registers a
 resource by id, so a second module yielding the same one gets the first's). `impl` runs once
 per isolate on the first event and returns the handlers. No hand-written `export default
-{ fetch }`, no per-app `alchemy.run.ts`, no factory arguments. electric-sync, alerting,
-landing and local-ui ship this way.
+{ fetch }`, no per-app `alchemy.run.ts`, no factory arguments. Every Worker ships this way.
+A Worker that binds another (web's `API` service binding to the api) takes it as a service
+the root provides after yielding it (`ApiWorker` in `@maple/infra/cloudflare`) — a
+`Worker.ref` reads stored state and cannot see a sibling the same deploy creates.
 
 What each kind of Worker keeps beside the module:
 
-- **Crons** (`alerting`): `Cloudflare.Workers.cron(expression, handler)` in `impl`, under
-  `CronEventSourceLive`, attaches the schedule at plan time and the listener at runtime.
+- **Crons** (`alerting`, `api`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
+  under `CronEventSourceLive`, attaches the schedule at plan time and the listener at runtime.
   The source reports every fire as successful, so the platform's retry never engages — and
   nothing is lost: the ticks already log and swallow their own failures, the schedules
   re-fire, and the shell logs a failure outside a tick. The ticks live in `src/scheduled.ts`
   behind a dynamic import, so the api layer graph is off the startup path and out of the
-  deploy process (where `impl` also runs), and the test imports it without a runtime.
+  deploy process (where `impl` also runs), and the test imports it without a runtime. A
+  cron fire is an event like any other: the bridge builds the telemetry into its scope and
+  flushes after it, so the tick graph carries no tracer or logger of its own (one there
+  would shadow the bridge's — `worker-telemetry.test.ts` pins that a tick's spans export).
+- **Queues** (`api`): `Cloudflare.Queues.consumeQueueMessages(queue, settings, handler)` in
+  `impl`, under `Queues.EventSourceLive`, yields the `Consumer` resource at plan time and the
+  listener at runtime. The consumers carry `renamedFrom({ fqn })` with the ids the retired api
+  factory declared them under (`vcs-sync-consumer`, …): alchemy migrates the state rows, so
+  the deploy plans a noop instead of re-creating each consumer — and the delete of the old
+  row would otherwise have removed the physical consumer the new row had adopted. Drop the
+  decoration once every stage has deployed past it. The init reads the queues back off the
+  host's props at plan time (`boundQueues`) rather than declaring them a second time: a
+  second declaration replaces the first's registration, props included.
+- **Background telemetry** (`api`): queue batches and cron ticks run under their own SDK
+  instance (`eventTelemetry` in `@maple/infra/worker-telemetry`, provided around the event)
+  so `maple-vcs-sync`, `maple-planetscale-webhooks` and `maple-slack-reconcile` keep their
+  own service names — background work sharing `maple-api` skewed its p99 to 32s
+  (2026-09-04). The layer graphs those events build carry no tracer or logger of their own.
+- **Durable Object and Workflows** (`api`): alchemy's Effect-native forms, yielded from the init.
+  `ChatSessionObject` (`src/chat/ChatSession.ts`) is `Cloudflare.DurableObject<Self>()("ChatSession",
+impl)` over the plain `ChatSession` class — the outer Effect resolves state and env (it also runs
+  at plan time against a mock state, so it must not touch storage), the inner one builds the
+  session and returns its methods as Effects, which alchemy's bridge runs per RPC call and hands
+  back as-is. `ClickHouseSchemaApplyWorkflow` and `InvestigationFanoutWorkflow`
+  (`src/workflows/*.ts`) are `Cloudflare.Workflow<Self>()(name, impl)` in the documented shape: the
+  init resolves what the run needs (the fan-out yields `ChatSessionObject` for typed stubs), then
+  returns an `Effect.fn` body. The bodies (`*.run.ts`) are Effects on alchemy's step API —
+  `durableStep` (`src/workflows/durable-step.ts`) is `Cloudflare.Workflows.task` over an Effect
+  whose failure rejects the step, so Cloudflare retries it per config — reading `Database`,
+  `Cloudflare.WorkerEnvironment` and `Cloudflare.WorkflowStep` as services. The class wraps a run
+  in `withPgConnectionScope` + `layerPg` (one Postgres connection per run) and the run's own
+  `eventTelemetry` (`maple-schema-apply`, `maple-investigations`), which flushes when alchemy
+  closes the run's scope. Everything is imported statically: the Worker evaluates in ~80 ms of
+  the 1 s startup-CPU budget on alchemy's bundle (`scripts/bench-startup-cpu.ts`, 2026-09-07).
+  The yield is the whole declaration: the binding (named after the class — `ChatSession`,
+  `ClickHouseSchemaApplyWorkflow`, `InvestigationFanoutWorkflow`, which is what the services read
+  off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
+  `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
+  hand-written entry.
 - **Assets** (`landing`, `local-ui`): the handler reads `Cloudflare.Workers.Request` and
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.
-- **The stg/prd Hyperdrive bound by id** (`alerting`, `api`): alchemy has no `env` form for a
-  binding it did not create (its own `Hyperdrive.Connect` attaches the same raw metadata),
-  so the root stack calls `bindMapleDbRef` after the yield.
+- **The application database** (`alerting`, `api`): `yield* MapleDb(consumer)` in the init
+  binds `MAPLE_DB` in the stage's flavor — `Hyperdrive.Connect(ManagedMapleDb)` on dev
+  stages, `host.bind` of the dashboard-managed config by id on stg/prd (alchemy has no `env`
+  form for a Hyperdrive it did not create; its own `ConnectBinding` attaches the same raw
+  metadata), nothing on previews. The api's Workflows yield it too, from their outer phase.
+  The root yields `ManagedMapleDb` first on dev stages so its `MAPLE_PG_URL` read happens
+  outside any init, where alchemy's plan-time ConfigProvider would bind it as a secret. Every
+  Postgres layer reads the `MapleDbConnection` port (`apps/api/src/platform/bindings.ts`),
+  never the env.
 
-Still factories: `api` (its Durable Object and Workflow classes are exported from the async
-entry, and `web` needs its Worker value for the service binding) and `web` (takes `api`);
-`ingest` and `electric` are ECS services. Alchemy has Effect-native Workflows and a Queues
-event source, so api is the next conversion, and `web` follows once its props can
-`yield* Api`.
+Still a factory: `web` (takes `api`, for the service binding); `ingest` and `electric` are
+ECS services. `web` follows once its props can `yield* MapleApi`; until then its
+`src/worker.ts` is a plain `export default { fetch }` with no telemetry, because
+`Telemetry.layer` only reaches handlers the bridge runs.
 
 Alchemy evaluates that module in three places — the deploy process, `alchemy dev`, and the
 deployed isolate — and two rules keep it honest about which one it is in:
@@ -186,8 +237,13 @@ deployed isolate — and two rules keep it honest about which one it is in:
   → an Ok span with a 404; a defect → a 500, which the SDK records as an Error server span per
   OTEL semconv), so no `orDie` sits on the request path — the one that did turned every 404
   into an Error span. `apps/electric-sync/src/worker-bridge.test.ts` drives the real bridge
-  path and pins all three outcomes. Telemetry is one line on init,
-  `Effect.provide(WorkerTelemetry({ serviceName }))` from `@maple/infra/worker-telemetry`: the
+  path and pins all three outcomes; `apps/api/src/worker-bridge.test.ts` does the same for the
+  api's liveness, preflight and graph-failure fast paths. Telemetry is one line on init,
+  `Effect.provide(WorkerTelemetry({ serviceName }))` from `@maple/infra/worker-telemetry`, on
+  the Workers that do work (api, electric-sync, alerting). The asset Workers (landing, local-ui)
+  deliberately have none: a server span per static page view is ingest volume spent
+  observing a file read, and it would put the internal ingest key in a marketing site's env
+  for it. Workers Observability covers their logs. It is the
   published `Maple.Telemetry` from `@maple-dev/alchemy/telemetry` (Maple's counterpart of
   alchemy's `Axiom.Telemetry` sugar) with Maple's own defaults. It registers the SDK's
   `requestLayer` with alchemy's `Telemetry.layer`, which builds it into each request scope
@@ -200,6 +256,44 @@ typecheck (`tsconfig.alchemy.json`) covers electric-sync's runtime graph and nee
 `@maple-dev/effect-sdk` built first and `@maple/electric-sync` installed in the quality
 shard (`ci.yml`). Measured on the pilot (#745, local workerd A/B): +15ms startup CPU
 (41→56ms, budget ~1s), ~+8ms cold first request, ~+0.2ms/request warm.
+
+### The api Worker's layout (2026-09-07)
+
+`apps/api/src/worker.ts` is the composition root only — props plus an init that reads as a
+list of yields. What it composes lives beside it:
+
+- `src/resources/*` — one file per resource the Worker binds, declared at module scope and
+  inert until yielded (`queues.ts`, `replay-blobs.ts`, `env.ts` for the
+  `Config` catalog). Stage-derived physical names come from `stageNamed` / `stageProps`
+  (`@maple/infra/cloudflare`), which read alchemy's own `Stage` — one of the platform
+  services a Worker's init may require, unlike `MapleStack` — behind the same
+  `__ALCHEMY_RUNTIME__` guard as a Worker's props, because alchemy evaluates a resource's props
+  Effect wherever it is yielded, the bundle included. The ingest factory yields the same
+  `ReplayBlobs` declaration to mint the gateway's writer token.
+- `src/worker/*` — the runtime shell: `http.ts` (the lazily built route graph and `fetch`),
+  `rpc.ts`, `crons.ts`, `consumers.ts` (`consumeQueueMessages` over the declarations, so no
+  binding is read back off the host), `events.ts`, `modules.ts` (the dynamic imports), and
+  `bindings.ts`.
+- **Bindings are alchemy capabilities, read as Maple ports.** The init yields
+  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadBucket(ReplayBlobs)` and the four `Cloudflare.RateLimit(...)`s
+  (`worker/bindings.ts`); each yield attaches the native binding at plan time — under the
+  resource's logical id, so the queue and bucket bindings are `vcs-sync`, `replay-blobs`, … —
+  and resolves it from the env in the isolate. The clients become the ports in
+  `platform/bindings.ts` (`VcsSyncQueueProducer`, `ApiV2RateLimit`, `ReplayBlobBucket`,
+  `McpSessionStore`, …), which is what the services depend on: no service reads a binding off
+  `WorkerEnvironment` by name any more, tests provide fakes, and a host without the binding
+  (alerting, the CLI) provides nothing — the services that can degrade read the port through
+  `Effect.serviceOption`. The clients' methods are colored with alchemy's `RuntimeContext`, a
+  phantom that keeps them out of the init phase; the ports discharge it with
+  `RuntimeContext.phantom`, as alchemy's own runtime helpers do.
+- What stays on `env:`: `AI` (the Gateway resource, read by name by the LLM shim), the stage
+  partition the rate limiters key under, and `EMAIL` on prd — alchemy's capabilities have no
+  "bound on some stages" form, and the plan/runtime split makes a conditional yield lie on
+  one side. `MAPLE_DB` is bound from the init (`MapleDb`, above).
+- The Worker env reaches a graph once, through the ports (`workerEnvLayer(env)` in
+  `apiPorts`): the runtime modules (`vcs-sync-runtime.ts`, …) declare `WorkerEnvironment`
+  and `ConfigProvider` as requirements and wire neither; a Durable Object or a Workflow run
+  hands its own env record to the same helper.
 
 ## The retired AWS opt-in flag (`MAPLE_DEPLOY_AWS_INGEST`)
 
@@ -266,7 +360,7 @@ instead of at script startup. That stepped the cold dial from ~2s to ~9-11s on 2
 (deploy 2679ba80) and produced the CONNECT_TIMEOUT incident; see the 2026-08-11
 investigation.
 
-The override in `apps/api/alchemy.run.ts` moves that cost back to script startup, off the
+The override in `apps/api/src/worker.ts` moves that cost back to script startup, off the
 request path. If chunking ever regresses into upstream #749 (`ScriptStartupError: Cannot
 access '<minified>' before initialization`), the deploy fails loudly at upload — remove the
 override and warm the DB graph off the request path instead.
@@ -277,8 +371,9 @@ The stack was written against alchemy v1 and migrated to v2. Equivalences worth 
 when reading old code or docs:
 
 - **`HyperdriveRef` has no v2 equivalent.** Binding a dashboard-managed config by ID is
-  done by attaching raw `{ type: "hyperdrive", name, id }` binding metadata after the
-  Worker exists (`worker.bind(...)`) — the same mechanism the env binder uses. No cloud
+  done by attaching raw `{ type: "hyperdrive", name, id }` binding metadata from the Worker's
+  init (`host.bind` inside `MapleDb`, `cloudflare/maple-db.ts`) — the same mechanism the env
+  binder uses. No cloud
   resource is created and the origin credentials stay in the dashboard.
 - **`Ai()` became an AI Gateway resource.** v2 emits the `{ type: "ai" }` binding by
   attaching `Cloudflare.AI.Gateway`, which also fronts model calls with caching,
@@ -296,19 +391,15 @@ when reading old code or docs:
   apps/api's own DO and Workflows extend `cloudflare:workers` directly). It was deleted; the
   ~250 lines with consumers live in `packages/infra` behind runtime-only subpaths
   (`/worker-runtime`, `/workers-cache`, `/r2`, `/config-helpers`).
-- **Alchemy's runtime services are not importable from a hand-written Worker entry.** The
-  obvious follow-up — drop our `WorkerEnvironment` and import alchemy's — does not work
-  today. Its exports map has no entry finer than a directory (`./Cloudflare/*` →
-  `*/index.ts`), and the `Cloudflare/Workers` barrel re-exports `Source.ts` /
-  `WorkerProvider.ts` / `LocalWorkerProvider.ts` next to the two runtime services, so
-  bundling it pulls `fdir`, rolldown glue and Node builtins: **426 KB minified against 14 KB
-  for the tag alone**, and `node:module` does not exist in workerd. Same for `R2`, `KV` and
-  service-binding clients, which additionally want the deploy-side resource value and the
-  `Worker` service (`makeBucketBinding` indexes `env[bucket.LogicalId]`). All of it comes
-  for free the day api/alerting move to the class-form `Cloudflare.Worker` and let alchemy's
-  bundler generate the entry — that is the migration these are waiting on. Until then
-  `packages/infra/src/cloudflare/worker-env.ts` defines the tag under alchemy's exact key
-  (`"Cloudflare.Workers.WorkerEnvironment"`), so both resolve to the same service.
+- **Alchemy's runtime services were not importable from a hand-written Worker entry**
+  (its exports map has no entry finer than a directory, and the `Cloudflare/Workers` barrel
+  drags `fdir`, rolldown glue and `node:module` into a bundle — 426 KB against 14 KB for the
+  tag alone). That is why `packages/infra` carried its own `WorkerEnvironment` and R2
+  client. With api and alerting on the class form (2026-09-07) the Workers use alchemy's
+  binding capabilities directly (`Queues.WriteQueue`, `KV.ReadWriteNamespace`,
+  `R2.ReadBucket`, `RateLimit`, `Hyperdrive.Connect`), the R2 client is gone, and the
+  `WorkerEnvironment` tag stays only for its stricter type — alchemy's is
+  `Record<string, any>` — under alchemy's exact key, so both resolve to the same service.
 
 ## Cost decisions
 

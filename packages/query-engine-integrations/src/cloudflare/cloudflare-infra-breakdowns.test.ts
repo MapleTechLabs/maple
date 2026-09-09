@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
 import {
 	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
 	CLOUDFLARE_BREAKDOWN_OTHER_KEY,

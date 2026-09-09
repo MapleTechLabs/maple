@@ -261,6 +261,29 @@ describe("makeNativeTracer", () => {
 		}),
 	)
 
+	it.effect("keeps an exception the handler recorded itself instead of relabelling a 5xx", () =>
+		Effect.gen(function* () {
+			const host = makeFakeHost()
+			yield* Effect.currentSpan.pipe(
+				Effect.flatMap((span) =>
+					Effect.sync(() =>
+						span.event("exception", 1n, {
+							"exception.type": "WarehouseQueryError",
+							"exception.message": "Memory limit exceeded",
+						}),
+					),
+				),
+				Effect.andThen(Effect.annotateCurrentSpan({ "http.response.status_code": 500 })),
+				Effect.withSpan("server-named", { kind: "server" }),
+				withTracer(host),
+			)
+			const attributes = host.byName("server-named")?.attributes ?? {}
+			assert.strictEqual(attributes["exception.type"], "WarehouseQueryError")
+			assert.strictEqual(attributes["exception.message"], "Memory limit exceeded")
+			assert.strictEqual(attributes["error.type"], "WarehouseQueryError")
+		}),
+	)
+
 	it.effect("cascades Cloudflare's isTraced=false into Effect's sampled and opens no descendants", () =>
 		Effect.gen(function* () {
 			const host = makeFakeHost({ isTraced: false })

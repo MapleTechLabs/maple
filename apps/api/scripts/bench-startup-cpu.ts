@@ -30,11 +30,33 @@
 // `wrangler check startup`, which profiles the real worker on workerd).
 
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Predicate, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+
+/**
+ * The entry alchemy generates for the api Worker, for `wrangler check startup`:
+ * the bridge around `src/worker.ts`'s default export plus a stub per Durable
+ * Object / Workflow class the init yields. Kept in step with `makeEffectVirtualEntry`
+ * in alchemy's `Cloudflare/Workers/Sources/Rolldown.ts` by hand — it is not
+ * reachable through alchemy's exports map.
+ */
+const startupCheckEntry = (workerPath: string): string => `
+import { DurableObject, WorkerEntrypoint, WorkflowEntrypoint } from "cloudflare:workers";
+import { makeDurableObjectBridge, makeWorkerBridge, makeWorkflowBridge } from "alchemy/Cloudflare";
+import entrypoint from ${JSON.stringify(workerPath)};
+
+const meta = { entrypoint, stack: { name: "maple", stage: "startup-check" } };
+
+export default makeWorkerBridge(WorkerEntrypoint, meta);
+
+const DurableObjectBridge = makeDurableObjectBridge(DurableObject, meta);
+export class ChatSession extends DurableObjectBridge("ChatSession") {}
+const WorkflowBridgeFn = makeWorkflowBridge(WorkflowEntrypoint, meta);
+export class ClickHouseSchemaApplyWorkflow extends WorkflowBridgeFn("ClickHouseSchemaApplyWorkflow") {}
+export class InvestigationFanoutWorkflow extends WorkflowBridgeFn("InvestigationFanoutWorkflow") {}
+`
 
 // https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
 const CF_STARTUP_BUDGET_MS = 1_000
@@ -355,14 +377,25 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 	}
 	const since = Date.now() - 1000
 	const outfile = join(process.cwd(), "worker-startup.cpuprofile")
-	// The repo has no wrangler config; startup validation only evaluates module
-	// scope, so a throwaway one naming the entry is enough.
-	const configPath = join(mkdtempSync(join(tmpdir(), "maple-startup-check-")), "wrangler.json")
+	// The repo has no wrangler config and no entry file: alchemy generates the
+	// bundle entry around `src/worker.ts` at deploy. Startup validation only
+	// evaluates module scope, so a throwaway config naming a copy of that entry
+	// (mirrors `makeEffectVirtualEntry` in alchemy's Rolldown source) is enough.
+	// The check dir sits under this package's node_modules: wrangler runs its
+	// autoconfig detection against the cwd (and refuses a dir without a config
+	// as "not a Workers project"), while esbuild resolves the entry's imports
+	// upward from the entry file — so the dir must both hold the config and
+	// live inside the package tree.
+	const checkDir = join(process.cwd(), "node_modules", ".cache", "maple-startup-check")
+	mkdirSync(checkDir, { recursive: true })
+	const entryPath = join(checkDir, "entry.ts")
+	writeFileSync(entryPath, startupCheckEntry(join(process.cwd(), "src", "worker.ts")))
+	const configPath = join(checkDir, "wrangler.json")
 	writeFileSync(
 		configPath,
 		JSON.stringify({
 			name: "maple-api-startup-check",
-			main: join(process.cwd(), "src", "worker.ts"),
+			main: "./entry.ts",
 			compatibility_date: "2026-04-08",
 			compatibility_flags: ["nodejs_compat"],
 		}),
@@ -373,7 +406,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 	const res = spawnSync(
 		"bunx",
 		["wrangler", "check", "startup", "--config", configPath, "--outfile", outfile],
-		{ stdio: "inherit", cwd: process.cwd() },
+		{ stdio: "inherit", cwd: checkDir },
 	)
 	if (res.status !== 0) {
 		console.error(

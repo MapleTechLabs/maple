@@ -11,10 +11,10 @@
 //
 // Host identity is carried on the ResourceAttributes map under `host.name`.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
-import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, MetricsSum } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"

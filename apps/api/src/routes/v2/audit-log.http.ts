@@ -100,9 +100,7 @@ export const actorDisplayName = (
 	directory: ReadonlyMap<string, ActorProfile>,
 ): string | null =>
 	row.actorLabel ??
-	(row.actorType !== "user" || row.userId === null
-		? null
-		: (directory.get(row.userId)?.name ?? null))
+	(row.actorType !== "user" || row.userId === null ? null : (directory.get(row.userId)?.name ?? null))
 
 /**
  * The avatar, for user actors only. An API key or an agent has no face, and a
@@ -112,9 +110,7 @@ export const actorAvatarUrl = (
 	row: Pick<AuditLogEntry, "actorType" | "userId">,
 	directory: ReadonlyMap<string, ActorProfile>,
 ): string | null =>
-	row.actorType !== "user" || row.userId === null
-		? null
-		: (directory.get(row.userId)?.imageUrl ?? null)
+	row.actorType !== "user" || row.userId === null ? null : (directory.get(row.userId)?.imageUrl ?? null)
 
 /**
  * Name the humans. An API key freezes its name into `actorLabel` when the entry
@@ -202,7 +198,9 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 						? yield* Option.match(decodeUserIdOption(query.affected_user), {
 								onNone: () =>
 									Effect.fail(
-										V2ParameterInvalid.make("Invalid affected_user.", { param: "affected_user" }),
+										V2ParameterInvalid.make("Invalid affected_user.", {
+											param: "affected_user",
+										}),
 									),
 								onSome: (userId) => Effect.succeed(userId),
 							})

@@ -190,7 +190,7 @@ is one row per (visitor,user) pair.
 
 ### 5. Query engine
 
-`lib/clickhouse-builder`:
+[`effect-clickhouse`](https://github.com/MapleTechLabs/effect-clickhouse):
 
 - Parametric aggregates `windowFunnel(windowSec, mode?)(ts, cond1..condN)` and
   `sequenceMatch(pattern)(ts, cond…)` following the handwritten `quantile(q)` pattern in
@@ -286,11 +286,11 @@ links back to the request that performed it.
 
 ```ts
 span.setAttributes({
-  "maple.product_event.name": "checkout_completed",   // required — presence is the predicate
-  "maple.product_event.user_id": user.id,             // optional identity
-  "maple.product_event.group_id": org.id,
-  "maple.product_event.visitor_id": anonId,
-  "maple.product_event.url": req.url,                 // optional page context
+	"maple.product_event.name": "checkout_completed", // required — presence is the predicate
+	"maple.product_event.user_id": user.id, // optional identity
+	"maple.product_event.group_id": org.id,
+	"maple.product_event.visitor_id": anonId,
+	"maple.product_event.url": req.url, // optional page context
 })
 ```
 
@@ -311,12 +311,12 @@ materialized view is static SQL per cluster and has no per-org config to read.
 
 Three tiers out of one mechanism rather than three modes to pick between:
 
-| `include` | `prop.*` | `Attributes` |
-| --- | --- | --- |
-| absent | — | every span attribute |
-| absent | set | every span attribute, with the props overriding on a key collision |
-| `"plan,seats"` | — | only `plan` and `seats` |
-| `""` | set | only the props — the overwrite case |
+| `include`      | `prop.*` | `Attributes`                                                       |
+| -------------- | -------- | ------------------------------------------------------------------ |
+| absent         | —        | every span attribute                                               |
+| absent         | set      | every span attribute, with the props overriding on a key collision |
+| `"plan,seats"` | —        | only `plan` and `seats`                                            |
+| `""`           | set      | only the props — the overwrite case                                |
 
 `include` switches on **key presence**, not on a non-empty value, which is what makes the empty
 string mean "no span attributes" rather than "no filter". There is no separate replace flag to get
@@ -325,11 +325,11 @@ would be discarded exactly when the key it meant to correct was already present.
 
 Verified against ClickHouse 26.2, all three tiers:
 
-| Scenario | Span attributes | Result |
-| --- | --- | --- |
-| default | `http.method`, `plan=free`, `seats=5`, `prop.plan=pro` | `{http.method, seats, plan:'pro'}` |
-| `include: "plan, seats"` | + `noise` | `{plan:'free', seats:'5'}` |
-| `include: ""` + `prop.plan=pro` | `http.method`, `plan=free` | `{plan:'pro'}` |
+| Scenario                        | Span attributes                                        | Result                             |
+| ------------------------------- | ------------------------------------------------------ | ---------------------------------- |
+| default                         | `http.method`, `plan=free`, `seats=5`, `prop.plan=pro` | `{http.method, seats, plan:'pro'}` |
+| `include: "plan, seats"`        | + `noise`                                              | `{plan:'free', seats:'5'}`         |
+| `include: ""` + `prop.plan=pro` | `http.method`, `plan=free`                             | `{plan:'pro'}`                     |
 
 The contract lives in one place — `packages/domain/src/tinybird/product-event-attributes.ts` —
 and is read by exactly two consumers that must agree byte for byte: `productEventsTracesMv`
@@ -341,7 +341,7 @@ time the live projection changes.
 ### Why an attribute and not a UI action
 
 A product event has to be emitted by the code path that performed the thing, at the moment it
-performed it. Marking a trace by hand in the UI marks *one sampled trace*, cannot be replayed over
+performed it. Marking a trace by hand in the UI marks _one sampled trace_, cannot be replayed over
 history, and puts a mutable user-authored row into an append-only fact table. An attribute marks
 every trace the path produces, applies retroactively across the whole `traces` retention window,
 and is reviewable in the customer's own diff. There is no second store and no write path from the
@@ -354,9 +354,9 @@ dashboard — the span is the record, the product event is its projection.
 `Attributes` keys because both directions filter on them, and a `Map` lookup on this table reads
 the whole map per row — the exact cost `product_events` was split out of `session_events` to avoid.
 
-| Direction | Query | Surface |
-| --- | --- | --- |
-| trace → its product events | `productEventsForTraceQuery` | trace detail page, under the anatomy strip |
+| Direction                    | Query                           | Surface                                          |
+| ---------------------------- | ------------------------------- | ------------------------------------------------ |
+| trace → its product events   | `productEventsForTraceQuery`    | trace detail page, under the anatomy strip       |
 | event → the traces behind it | `productEventTraceSamplesQuery` | `/analytics`, when the `eventName` filter is set |
 
 Both are `profile: "list"` with a flat `cache: 60` rather than `timeRangeCache`: they are point
@@ -392,33 +392,34 @@ lookup.
    Blocked on the same manual step the rest of this document's checklist is — see
    `project_product_events_tinybird_rollout_pending`.
 
-   **The `FORWARD_QUERY` on `product_events` is what makes this deploy safe, and it is not
-   optional.** Adding two defaulted columns is *not* a free change here: without the forward query
-   Tinybird satisfies the new schema by rebuilding the table from the datasources that feed it, and
-   both (`session_events`, `traces`) keep 30 days against `product_events`' 365. It says so and
-   proceeds anyway —
+    **The `FORWARD_QUERY` on `product_events` is what makes this deploy safe, and it is not
+    optional.** Adding two defaulted columns is _not_ a free change here: without the forward query
+    Tinybird satisfies the new schema by rebuilding the table from the datasources that feed it, and
+    both (`session_events`, `traces`) keep 30 days against `product_events`' 365. It says so and
+    proceeds anyway —
 
-   > it is going to be backfilled using the following datasources which would lead to a deleting
-   > historical data
+    > it is going to be backfilled using the following datasources which would lead to a deleting
+    > historical data
 
-   — which on this dual-fed table is worse than it sounds: the server and mobile rows arrive by
-   `POST /v1/events` and have **no source datasource at all**, so a rebuild drops them at every age,
-   not just past 30 days. Verified against a real deploy, not inferred.
+    — which on this dual-fed table is worse than it sounds: the server and mobile rows arrive by
+    `POST /v1/events` and have **no source datasource at all**, so a rebuild drops them at every age,
+    not just past 30 days. Verified against a real deploy, not inferred.
 
-   Two traps around it. `DEPLOYMENT_METHOD alter` on `product_events_mv` does **not** substitute —
-   tested, and the same data-loss warning returns, because it is the datasource schema change that
-   triggers the source backfill, not the view's. And once the forward query is in place Tinybird
-   suggests the inverse ("could be applied with ALTER TABLE and no data movement at promotion time
-   if you remove the FORWARD_QUERY"); following that suggestion reintroduces the loss. Per the
-   Tinybird rules the forward query can be deleted in a *later* deploy, once this one has compacted.
+    Two traps around it. `DEPLOYMENT_METHOD alter` on `product_events_mv` does **not** substitute —
+    tested, and the same data-loss warning returns, because it is the datasource schema change that
+    triggers the source backfill, not the view's. And once the forward query is in place Tinybird
+    suggests the inverse ("could be applied with ALTER TABLE and no data movement at promotion time
+    if you remove the FORWARD*QUERY"); following that suggestion reintroduces the loss. Per the
+    Tinybird rules the forward query can be deleted in a \_later* deploy, once this one has compacted.
 
-   **The populate is one-shot and overlap-prone.** Unlike BYO and local, the managed surface has no
-   `DELETE WHERE Source = 'trace'` step, so running it twice double-inserts, and running it after
-   the MV is already live double-counts every annotated span ingested between MV creation and the
-   populate's own snapshot. BYO risks a gap; managed risks duplicates. Same caveat 0014 and 0021
-   accepted — but on a table feeding customer-visible funnels, a double-counted conversion is worse
-   than a missing one. Populate once, immediately after deploy, and if it fails partway prefer
-   deleting the trace rows by hand over re-running it blind.
+    **The populate is one-shot and overlap-prone.** Unlike BYO and local, the managed surface has no
+    `DELETE WHERE Source = 'trace'` step, so running it twice double-inserts, and running it after
+    the MV is already live double-counts every annotated span ingested between MV creation and the
+    populate's own snapshot. BYO risks a gap; managed risks duplicates. Same caveat 0014 and 0021
+    accepted — but on a table feeding customer-visible funnels, a double-counted conversion is worse
+    than a missing one. Populate once, immediately after deploy, and if it fails partway prefer
+    deleting the trace rows by hand over re-running it blind.
+
 2. **BYO ClickHouse**: migration 0028, `requiredForIngest: false`. That is safe for one reason
    worth knowing before anyone touches `datasources.ts`: `TraceId`/`SpanId` are declared with **no
    `jsonPath`**, so the insert-mapping generator omits them and the Rust gateway's
@@ -431,7 +432,7 @@ lookup.
 
 Both BYO and local scope their idempotency `DELETE` to `Timestamp >= (SELECT min(Timestamp) FROM
 traces)` rather than deleting all trace rows. `product_events` keeps 365 days and `traces` 30, so an
-unbounded delete on a *late* re-apply would clear a year of funnel history and rebuild only a month
+unbounded delete on a _late_ re-apply would clear a year of funnel history and rebuild only a month
 of it. The delete is also guarded by `(SELECT count() FROM traces) > 0`: `min()` over an empty table
 is 1970, which would turn the bound back into "everything".
 

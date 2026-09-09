@@ -10,7 +10,9 @@
  *
  * Layer shape mirrors `CloudflareApi.ts`: `LLMClient.layer <- RequestExecutor.layer <- HttpClient`.
  * `RequestExecutor` already owns retry, backoff and secret redaction, so the HTTP layer underneath
- * is plain `FetchHttpClient.layer` — optionally wrapped by the Workers AI shim.
+ * is plain `FetchHttpClient.layer` — wrapped by the Workers AI shim, and by the response-identity
+ * stamp (`ResponseIdentityHttpClient.ts`) that writes the served id and model to the model-call
+ * span for what goes out over `fetch`, which the package's own protocol drops.
  *
  * Deliberately NOT imported here: `@opencode-ai/ai/providers/amazon-bedrock`. It is the only path
  * that reaches `aws4fetch` and `@smithy/*`; leaving it unimported keeps both out of the Worker
@@ -18,13 +20,14 @@
  * Providers are deep-imported for the same reason — never the `providers/index.ts` barrel.
  */
 import { LlmCallError } from "@maple/domain/llm"
-import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare"
+import { CloudflareWorkersAI } from "@opencode-ai/ai/providers/cloudflare-workers-ai"
 import * as OpenRouter from "@opencode-ai/ai/providers/openrouter"
 import { LLMClient, RequestExecutor } from "@opencode-ai/ai/route"
 import { isContextOverflowFailure, LanguageModel } from "@opencode-ai/ai"
 import type { AIError, LLMClientService } from "@opencode-ai/ai"
 import { Layer, Predicate } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
+import { layerResponseIdentity } from "./ResponseIdentityHttpClient"
 import { layerWorkersAi } from "./WorkersAiHttpClient"
 
 /**
@@ -368,6 +371,10 @@ export const resolveLensModel = (env: LlmEnv, tags?: LlmCallTags): LanguageModel
 export const layerLlm = (env: LlmEnv): Layer.Layer<LLMClientService> =>
 	LLMClient.layer.pipe(
 		Layer.provide(RequestExecutor.layer),
+		// Outermost, so every model call the executor sends over `fetch` stamps
+		// its span with the served response's id and model. A call the shim
+		// answers from the `AI` binding never reaches `fetch` and is not stamped.
+		Layer.provide(layerResponseIdentity),
 		Layer.provide(layerWorkersAi(env)),
 		Layer.provide(FetchHttpClient.layer),
 	)
@@ -379,17 +386,15 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LLMClientService> =>
  * should handle differently (shrink the transcript) from a transport blip (retry as-is).
  */
 export const toLlmCallError = (operation: string, error: AIError): LlmCallError => {
-	// Provider output that fails to decode carries the offending frame on `reason.raw`. It is the
-	// only thing that makes provider drift diagnosable — without it the failure is just "invalid
-	// stream event" — but it is upstream text, so it goes to the log, never to the client error.
-	const raw = Predicate.hasProperty(error.reason, "raw") ? error.reason.raw : undefined
-	if (typeof raw === "string" && raw !== "") {
-		console.error(`[llm] ${operation}: ${error.message}; frame=${raw.slice(0, 500)}`)
+	// A failing provider response carries its offending payload on `reason.body`. It is the only
+	// thing that makes provider drift diagnosable — without it the failure is just "invalid stream
+	// event" — but it is upstream text, so it goes to the log, never to the client error.
+	const body = Predicate.hasProperty(error.reason, "body") ? error.reason.body : undefined
+	if (typeof body === "string" && body !== "") {
+		console.error(`[llm] ${operation}: ${error.message}; body=${body.slice(0, 500)}`)
 	}
 	return new LlmCallError({
 		operation,
-		module: error.module,
-		method: error.method,
 		reason: error.reason._tag,
 		message: error.message,
 		retryable: RETRYABLE_REASONS.has(error.reason._tag),

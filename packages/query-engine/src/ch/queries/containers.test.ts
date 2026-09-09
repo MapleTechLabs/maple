@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
-import { compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	listContainersQuery,
 	listContainersSummaryQuery,
@@ -46,7 +46,7 @@ describe("listContainersQuery", () => {
 	it("normalizes docker's 0..100 percents to the 0..1 scale the pod pages use", () => {
 		const { sql } = compileUnsafe(listContainersQuery({}), baseParams)
 		expect(sql).toContain(
-			"ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100 AS cpuPct",
+			"ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct",
 		)
 		expect(sql).toContain(
 			"ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPctPeak",

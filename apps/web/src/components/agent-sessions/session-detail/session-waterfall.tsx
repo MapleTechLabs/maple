@@ -16,9 +16,11 @@ import {
 	spanTokenBuckets,
 	type IdleGap,
 	type SessionSummary,
+	type SessionTokenTotals,
 } from "@/lib/agent-sessions/session-summary"
 import {
 	classifyAiSpan,
+	GEN_AI_OPERATIONS,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
@@ -28,7 +30,10 @@ import {
 	type SessionTurn,
 	type AiSpanCategory,
 } from "@/lib/agent-sessions/session-turns"
-import { filterSpans, isDelegation, shortTarget } from "@/lib/agent-sessions/span-filters"
+import { filterSpans, isDelegation } from "@/lib/agent-sessions/span-filters"
+import { useDetectedModels, type DetectedModel } from "@/hooks/use-detected-models"
+import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
+import { ModelLabel } from "../model-label"
 import { Pill } from "./pill"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
@@ -52,6 +57,8 @@ const COL_MODEL = "hidden w-[150px] shrink-0 truncate px-2 text-muted-foreground
 /** Rows are fixed-height, so the cell truncates rather than wrapping into the row below. */
 const COL_TOKENS =
 	"hidden w-[132px] shrink-0 truncate px-2 text-right tabular-nums text-muted-foreground @3xl:block"
+/** The same cell as a flex row, for the breakdown bar and the figure beside it. */
+const COL_TOKENS_SPLIT = "hidden w-[132px] shrink-0 items-center gap-1.5 px-2 @3xl:flex"
 /** A margin, not padding: the bars inside position in percent, which resolves
  *  against the padding box and would ignore padding entirely. */
 const COL_AXIS = "relative ml-3 min-w-0 flex-1 self-stretch"
@@ -86,7 +93,6 @@ interface SessionWaterfallProps {
 	revealedSpanId: string | undefined
 	/** A turn sent here from the Overview's session shape: its header row is
 	 *  scrolled to and marked, and the spans under it read as its content. */
-	revealedTurnId: string | undefined
 	/** Raised with a span id to open it, `undefined` to close. */
 	onSelectSpan: (spanId: string | undefined) => void
 	/** The popover's tab, shared with the other views. */
@@ -106,7 +112,6 @@ export function SessionWaterfall({
 	onToggleTurn,
 	selectedSpanId,
 	revealedSpanId,
-	revealedTurnId,
 	onSelectSpan,
 	spanTab,
 	onSpanTabChange,
@@ -114,6 +119,10 @@ export function SessionWaterfall({
 }: SessionWaterfallProps) {
 	// The page scrolls as one, so the virtualizer rides the page's scroller.
 	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
+
+	// The summary's model set, so the header and the rail share this batch —
+	// the column names a model per row, and a raw id is what it named before.
+	const detect = useDetectedModels(summary.models.map((model) => model.model))
 
 	const spansById = useMemo(
 		() => new Map(turns.flatMap((turn) => turn.spans).map((span) => [span.spanId, span])),
@@ -198,21 +207,6 @@ export function SessionWaterfall({
 		// effect, so on the render that mounts this view there is nothing to
 		// scroll and the link would silently land at the top.
 		if (getScrollElement() === null) return
-		// A revealed turn wins over a revealed span: it is the later of the two
-		// gestures, and its header is what the reader was sent to see.
-		if (revealedTurnId !== undefined) {
-			const turnIndex = rows.findIndex((row) => row.kind === "turn" && row.turn.id === revealedTurnId)
-			if (turnIndex === -1) return
-			didInitialScroll.current = true
-			virtualizer.scrollToIndex(turnIndex, { align: "center" })
-			correctionFrame.current = requestAnimationFrame(() => {
-				const header = [...document.querySelectorAll("[data-turn-row]")].find(
-					(candidate) => candidate.getAttribute("data-turn-row") === revealedTurnId,
-				)
-				header?.scrollIntoView({ block: "center" })
-			})
-			return
-		}
 		if (landingSpanId === undefined) return
 		// Nor before the row is in the list: a span the filter is hiding, or one
 		// inside a collapsed turn, has nowhere to land yet — leaving the landing
@@ -230,7 +224,7 @@ export function SessionWaterfall({
 			)
 			row?.scrollIntoView({ block: "center" })
 		})
-	}, [landingSpanId, revealedTurnId, rows, spanRowIndexById, setFocusedId, virtualizer, getScrollElement])
+	}, [landingSpanId, spanRowIndexById, setFocusedId, virtualizer, getScrollElement])
 
 	return (
 		<div className="@container flex grow flex-col">
@@ -240,7 +234,7 @@ export function SessionWaterfall({
 				<div className="flex h-7 items-center border-border border-b px-2.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
 					<span className={COL_SPAN}>Span</span>
 					<span className={COL_MODEL}>Model / target</span>
-					<span className={COL_TOKENS}>Tokens In / Out</span>
+					<span className={COL_TOKENS}>Tokens</span>
 					<span className={cn(COL_AXIS, "flex items-center")}>
 						{ticks.map((tick, index) => (
 							<span
@@ -305,7 +299,6 @@ export function SessionWaterfall({
 											turns={turns}
 											axis={axis}
 											collapsed={collapsedTurns.has(row.turn.id)}
-											revealed={revealedTurnId === row.turn.id}
 											onToggle={() => onToggleTurn(row.turn.id)}
 										/>
 									)}
@@ -314,6 +307,7 @@ export function SessionWaterfall({
 											row={row}
 											axis={axis}
 											spansById={spansById}
+											detect={detect}
 											selected={selected}
 											revealed={revealedSpanId === row.span.spanId}
 											focused={focusedId === row.span.spanId}
@@ -451,7 +445,6 @@ function TurnHeader({
 	turns,
 	axis,
 	collapsed,
-	revealed,
 	onToggle,
 }: {
 	row: Extract<WaterfallRow, { kind: "turn" }>
@@ -459,8 +452,6 @@ function TurnHeader({
 	turns: readonly SessionTurn[]
 	axis: SessionAxis
 	collapsed: boolean
-	/** The turn the reader was sent here to see: marked until they move on. */
-	revealed: boolean
 	onToggle: () => void
 }) {
 	const { turn } = row
@@ -477,18 +468,7 @@ function TurnHeader({
 	const traceId = turn.traceIds[0]
 
 	return (
-		<div
-			// The row the landing correction below scrolls to, a frame after the
-			// virtualizer drew it.
-			data-turn-row={turn.id}
-			// The mark is a background colour; this is how the page's tests — and
-			// anything else looking for it — find the turn wearing it.
-			data-revealed={revealed || undefined}
-			className={cn(
-				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-accent/40",
-				revealed && "border-l-2 border-l-primary bg-primary/12",
-			)}
-		>
+		<div className="flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-accent/40">
 			<span className={COL_SPAN}>
 				<button
 					type="button"
@@ -531,7 +511,7 @@ function TurnHeader({
 				)}
 			</span>
 			<span className={COL_MODEL}>{turn.agentName ?? "—"}</span>
-			<span className={COL_TOKENS}>{tokens.total > 0 ? formatNumber(tokens.total) : "—"}</span>
+			<TokenCell tokens={tokens} />
 			<span className={COL_AXIS}>
 				<AxisGrid ticks={axis.ticks} />
 				<span
@@ -565,6 +545,7 @@ function TraceLink({ traceId, timestamp }: { traceId: string; timestamp: string 
 }
 
 function SpanRow({
+	detect,
 	row,
 	axis,
 	spansById,
@@ -573,6 +554,7 @@ function SpanRow({
 	focused,
 	onClick,
 }: {
+	detect: (model: string) => DetectedModel
 	row: Extract<WaterfallRow, { kind: "span" }>
 	axis: SessionAxis
 	spansById: ReadonlyMap<string, AiSessionSpan>
@@ -589,10 +571,12 @@ function SpanRow({
 	// The same glyph vocabulary as the Flow view's nodes: the kind of work reads
 	// by shape, and a failure takes the glyph over outright.
 	const Glyph = errored ? CircleXmarkIcon : CATEGORY_ICON[category]
+	const heading = spanHeading(span, category)
 	const target = spanTarget(span, category)
-	// Only a model id is a provider path — a tool's target is usually a file path,
-	// whose last segment is not the part worth keeping.
-	const targetLabel = target === undefined ? "—" : category === "tool" ? target : shortTarget(target)
+	// A model is drawn with its vendor's mark and the name the catalog knows it
+	// by; a tool's target is a file path or a query, which nothing but itself can
+	// spell. Either way the value the span carried stays in the cell's `title`.
+	const model = category === "tool" ? undefined : spanModel(span)
 
 	return (
 		<button
@@ -627,15 +611,36 @@ function SpanRow({
 					size={13}
 					className={cn("shrink-0", errored ? "text-destructive" : CATEGORY_TEXT[category])}
 				/>
-				<span className="truncate font-medium">{span.spanName}</span>
-				<span className="min-w-0 truncate text-muted-foreground">{spanMeta(span, category)}</span>
+				{heading.operation !== undefined && (
+					// Chrome, not the label: which operation ran is already the row's
+					// glyph and its hue, so the name it acted on is what carries weight.
+					<span className="shrink-0 text-muted-foreground/70">{heading.operation}</span>
+				)}
+				{heading.subject !== undefined && (
+					// Holds its width against the status message beside it: the tool a
+					// row ran is what the reader is scanning for, so a long error string
+					// yields the space rather than sharing it.
+					<span className="max-w-[60%] shrink-0 truncate font-medium">{heading.subject}</span>
+				)}
+				{span.statusMessage !== "" && (
+					<span className="min-w-0 truncate text-muted-foreground">{span.statusMessage}</span>
+				)}
 				{errored && <Pill tone="error">{span.genAi.errorType ?? "Error"}</Pill>}
 				{isDelegation(span, spansById) && <Pill tone="outline">Subagent</Pill>}
 			</span>
-			<span className={cn(COL_MODEL, errored && "text-destructive")} title={target}>
-				{targetLabel}
+			<span
+				className={cn(COL_MODEL, errored && "text-destructive")}
+				// The raw value the span carried, whichever way the cell draws it —
+				// `ModelLabel` fills the cell, so it is the one that has to hold it.
+				title={model === undefined ? target : undefined}
+			>
+				{model !== undefined ? (
+					<ModelLabel detected={detect(model)} size={12} title={target} />
+				) : (
+					(target ?? "—")
+				)}
 			</span>
-			<span className={cn(COL_TOKENS, errored && "text-destructive")}>{spanTokens(span)}</span>
+			<TokenCell tokens={isLlmCall(span) ? spanTokenBuckets(span) : undefined} errored={errored} />
 			<span className={COL_AXIS}>
 				<AxisGrid ticks={axis.ticks} />
 				<SpanBar span={span} axis={axis} category={category} errored={errored} />
@@ -708,19 +713,49 @@ function GapRow({ gap }: { gap: IdleGap }) {
 /* Cell content                                                               */
 /* -------------------------------------------------------------------------- */
 
-/** Inline meta beside the span name. */
-function spanMeta(span: AiSessionSpan, category: AiSpanCategory): string {
-	const parts: string[] = []
-	const agentName = span.genAi.agentName
-	if (category === "agent" && agentName !== undefined) parts.push(agentName)
-	const toolName = span.genAi.toolName
-	if (category === "tool" && toolName !== undefined) parts.push(toolName)
-	const ttftMs = spanTtftMs(span)
-	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)
-	const reasoning = span.genAi.usageReasoningOutputTokens
-	if (reasoning !== undefined && reasoning > 0) parts.push(`${formatNumber(reasoning)} reasoning`)
-	if (span.statusMessage !== "") parts.push(span.statusMessage)
-	return parts.join(" · ")
+/**
+ * How the SPAN cell reads: the operation as chrome, and the one thing the row
+ * is about as its label.
+ *
+ * A span name conventionally leads with its operation — `execute_tool
+ * read_file`, `chat gpt-5` — so the two are split back apart rather than set as
+ * one string. What follows the operation is the subject, and where the name
+ * carries only the operation the subject comes from the attribute that names
+ * it. A model call has no subject here at all: naming the model is the MODEL
+ * column's job, and one row should say a thing once.
+ */
+function spanHeading(
+	span: AiSessionSpan,
+	category: AiSpanCategory,
+): { operation: string | undefined; subject: string | undefined } {
+	const name = span.spanName.trim()
+	const operation = leadingOperation(span, name)
+	const rest = operation === undefined ? name : name.slice(operation.length).trim()
+	const subject = rest === "" ? undefined : rest
+
+	if (category === "tool") return { operation, subject: subject ?? span.genAi.toolName }
+	if (category === "agent") return { operation, subject: subject ?? span.genAi.agentName }
+	if (category === "inference" && subject !== undefined && namesTheModel(span, subject)) {
+		return { operation, subject: undefined }
+	}
+	return { operation, subject }
+}
+
+/** The operation the span name leads with, when it leads with one at all. The
+ *  reported `gen_ai.operation.name` is trusted first; reporters that skip it
+ *  still spell a known operation into the name. */
+function leadingOperation(span: AiSessionSpan, name: string): string | undefined {
+	const reported = span.genAi.operationName
+	if (reported !== undefined && (name === reported || name.startsWith(`${reported} `))) return reported
+	const head = name.split(" ")[0] ?? ""
+	return GEN_AI_OPERATIONS.has(head) ? head : undefined
+}
+
+function namesTheModel(span: AiSessionSpan, subject: string): boolean {
+	const lower = subject.toLowerCase()
+	return (
+		span.genAi.responseModel?.toLowerCase() === lower || span.genAi.requestModel?.toLowerCase() === lower
+	)
 }
 
 /** The MODEL / TARGET cell: the model that ran, or what the tool acted on. The
@@ -760,15 +795,43 @@ function clipTarget(value: string): string | undefined {
 }
 
 /**
- * `in → out`, taken from the same buckets the header sums, so a row and the
- * session total can never tell different stories. The in half is everything the
- * model read — fresh input plus both cache buckets — and the out half is what
- * it wrote, reasoning included.
+ * The TOKENS cell: the five disjoint buckets as a bar, with their sum beside
+ * it. The same fills as the Overview's Tokens rail and the list row's bar, so
+ * cache-heavy against fresh against generated reads the same everywhere — and
+ * the same buckets the session total sums, so a row and the header can never
+ * tell different stories.
+ *
+ * A bar rather than a prompt/completion pair: the thing a reader wants from a
+ * column of model calls is which of them re-read a cached prompt and which paid
+ * for a fresh one, and that is a shape question rather than two figures.
  */
-function spanTokens(span: AiSessionSpan): string {
-	if (!isLlmCall(span)) return "—"
-	const buckets = spanTokenBuckets(span)
-	if (buckets === undefined || buckets.total === 0) return "—"
-	const completion = buckets.output + buckets.reasoning
-	return `${formatNumber(buckets.total - completion)} → ${formatNumber(completion)}`
+function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined; errored?: boolean }) {
+	const drawn = tokens === undefined ? [] : TOKEN_BUCKETS.filter((bucket) => tokens[bucket.key] > 0)
+	if (tokens === undefined || tokens.total === 0 || drawn.length === 0) {
+		return <span className={cn(COL_TOKENS, errored && "text-destructive")}>—</span>
+	}
+
+	const title = [
+		`${formatNumber(tokens.total)} tokens`,
+		...drawn.map((bucket) => `${bucket.label}: ${tokens[bucket.key].toLocaleString()}`),
+	].join("\n")
+
+	return (
+		<span className={COL_TOKENS_SPLIT} title={title}>
+			<span aria-hidden className="flex h-1.5 flex-1 gap-px overflow-hidden rounded-xs bg-muted">
+				{drawn.map((bucket) => (
+					<span
+						key={bucket.key}
+						className={bucket.fill}
+						style={{ width: `${(tokens[bucket.key] / tokens.total) * 100}%` }}
+					/>
+				))}
+			</span>
+			<span
+				className={cn("shrink-0 tabular-nums text-muted-foreground", errored && "text-destructive")}
+			>
+				{formatNumber(tokens.total)}
+			</span>
+		</span>
+	)
 }

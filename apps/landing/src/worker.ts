@@ -13,6 +13,7 @@ import {
 	resolveWorkerName,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
+import { plainWithDefault } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
@@ -40,7 +41,8 @@ const props = Effect.gen(function* () {
 		// ingest key the web app uses, so both surfaces land in one org and a
 		// visitor's marketing and product sessions sit side by side.
 		env: {
-			PUBLIC_MAPLE_INGEST_KEY: process.env.MAPLE_OTEL_PUBLIC_INGEST_KEY ?? "",
+			PUBLIC_MAPLE_INGEST_KEY: (yield* plainWithDefault("MAPLE_OTEL_PUBLIC_INGEST_KEY", ""))
+				.MAPLE_OTEL_PUBLIC_INGEST_KEY,
 			PUBLIC_INGEST_URL: urls.ingest,
 		},
 	})

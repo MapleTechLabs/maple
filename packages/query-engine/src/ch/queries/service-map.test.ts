@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { compileUnsafe, param, toDateTime } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-clickhouse"
 import {
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,

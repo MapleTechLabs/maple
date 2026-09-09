@@ -1,0 +1,17 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "effect-clickhouse-docs",
+	"account_id": "189f0e30f67d42ffb26513efbc104cf1",
+	"compatibility_date": "2026-09-08",
+	"workers_dev": false,
+	"routes": [
+		{
+			"pattern": "effect-clickhouse.maple.dev",
+			"custom_domain": true,
+		},
+	],
+	"assets": {
+		"directory": "./dist/public",
+		"not_found_handling": "404-page",
+	},
+}

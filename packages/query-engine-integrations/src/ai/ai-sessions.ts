@@ -105,8 +105,9 @@
 // inherits `org` scope from it.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
 	compileFnCall,
 	from,
@@ -118,7 +119,7 @@ import {
 	type CHUnionQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/clickhouse-builder"
+} from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans, Traces } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { AI_SESSION_SPANS_MAX_SPANS, type AiSessionSortDir, type AiSessionSortKey } from "@maple/domain/http"
@@ -128,7 +129,17 @@ import {
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_AI_VENDOR_VERSION_ATTR,
 } from "@maple/domain/gen-ai"
-import { deepestReporterSum, usageReportersExpr } from "./ai-span-columns"
+import {
+	genAiResponseIdExpr,
+	genAiUsageBucketsExpr,
+	type MapColumnLike,
+} from "@maple/domain/tinybird/gen-ai-columns"
+import {
+	MAX_USAGE_REPORTERS_PER_TRACE,
+	sessionLlmCalls,
+	sessionUsageSum,
+	usageReportersExpr,
+} from "./ai-span-columns"
 
 const SESSION_ID_ATTR = MAPLE_AI_SESSION_ID_ATTR
 const VENDOR_ID_ATTR = MAPLE_AI_VENDOR_ID_ATTR
@@ -203,6 +214,89 @@ const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH
 	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
 
 /**
+ * One trace's failed agent spans — `(SpanId, ParentSpanId, IsToolCall)` per
+ * failed index row — for the tool/turn split one level up, which needs the
+ * whole trace's failures in hand at once. Same shape and cap as
+ * `usageReportersExpr`, for the same reason: a framework that fails the turn
+ * span because the call beneath it failed reports one failure as two, and
+ * only the deepest span carrying the failure counts — `failureEvents` in
+ * `apps/web/src/lib/agent-sessions/session-summary.ts`, one level deep.
+ */
+const failedSpansExpr = ($: {
+	readonly SpanId: CH.Expr<string>
+	readonly ParentSpanId: CH.Expr<string>
+	readonly IsToolCall: CH.Expr<number>
+	readonly IsError: CH.Expr<number>
+}): CH.Expr<unknown> =>
+	CH.untypedExpr(
+		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1)`,
+	)
+
+/**
+ * Failed spans of one kind, summed over the traces' `failedSpans`, with a
+ * failed span whose own child also failed left out: the child is the failure,
+ * the parent its echo. `tool` counts the failed tool calls; the rest — failed
+ * model calls and turn spans that failed on their own — are the turn's.
+ *
+ * One level, and without the signal, where `shadowedAncestorIds` walks every
+ * ancestor and shadows only a match: the index carries no error signal (its
+ * `IsError` is a flag), and a framework that echoes a failure copies it onto
+ * the span that WRAPS the call, not two levels up — the roll-ups seen in
+ * production are all parent-and-child. The two counts can disagree for a
+ * turn span that fails on its own while a tool beneath it also fails (the
+ * detail counts both, this counts one), which reads as one turn failing
+ * either way; the cost of an exact copy is an error column on the index.
+ */
+const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Expr<number> =>
+	CH.rawExpr(
+		`sum(arrayCount(f -> f.3 ${kind === "tool" ? "=" : "!="} 1 AND NOT arrayExists(c -> c.2 = f.1, ${failedSpans}), ${failedSpans}))`,
+		T.float64,
+	)
+
+/**
+ * One trace's usage reporters with their buckets —
+ * `(SpanId, ParentSpanId, input, cacheRead, cacheWrite, output, reasoning,
+ * responseId)` per span that reported any — the five disjoint buckets
+ * `spanTokenBuckets` sums, read off the raw attributes because the index
+ * carries only the total, under the same convention (`genAiUsageBucketsExpr`).
+ * The response id rides along so two observations of one call collapse here
+ * as they do on the page.
+ */
+const usageBucketsExpr = ($: {
+	readonly SpanId: CH.Expr<string>
+	readonly ParentSpanId: CH.Expr<string>
+	readonly SpanAttributes: MapColumnLike
+}): CH.Expr<unknown> => {
+	const buckets = genAiUsageBucketsExpr($.SpanAttributes)
+	const reporter = compileFnCall<unknown>(
+		"tuple",
+		$.SpanId,
+		$.ParentSpanId,
+		buckets.input,
+		buckets.cacheRead,
+		buckets.cacheWrite,
+		buckets.output,
+		buckets.reasoning,
+		genAiResponseIdExpr($.SpanAttributes),
+	)
+	const reports = buckets.input
+		.add(buckets.cacheRead)
+		.add(buckets.cacheWrite)
+		.add(buckets.output)
+		.add(buckets.reasoning)
+		.gt(0)
+	return CH.untypedExpr(
+		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(${compile(reporter.toFragment())}, ${compile(
+			reports.toFragment(),
+		)})`,
+	)
+}
+
+/** `sessionUsageSum` over a bucket of `usageBucketsExpr` (elements 3–7). */
+const sessionBucketSum = (reporters: string, element: 3 | 4 | 5 | 6 | 7): CH.Expr<number> =>
+	sessionUsageSum(reporters, element, { responseId: 8 })
+
+/**
  * The filters the page and the list share; both apply them on `ai_trace_index`,
  * each as a per-trace existence test — see `indexTraces`. One per index
  * column, so each selects exactly the population `aiSessionFacetsQuery`
@@ -263,13 +357,21 @@ export interface AiSessionPageOutput {
 	readonly agentEnd: string
 	/** Every model any agent span of the session ran on, dialects coalesced. */
 	readonly models: readonly string[]
-	/** Every agent named on any agent span of the session. */
+	/** Every agent named on any agent span of the session, in no order. */
 	readonly agentNames: readonly string[]
+	/** The agent on the session's earliest-starting named span — what the list
+	 *  row calls the session, and what the detail page's heading resolves to
+	 *  from the spans themselves. `''` when no span named an agent. */
+	readonly firstAgentName: string
 	readonly llmCalls: number
 	readonly toolCalls: number
 	/** Failed agent spans — what `hasErrors` tests; not the row's all-span count. */
 	readonly errorAgentSpans: number
-	/** Tokens across every bucket, deepest reporter counted — see `deepestReporterSum`. */
+	/** Failed tool calls, deepest failure counted — see `deepestFailureCount`. */
+	readonly toolErrors: number
+	/** Failed model calls and turn spans that failed on their own — the rest. */
+	readonly turnErrors: number
+	/** Tokens across every bucket, deepest reporter counted, one claim per response id — see `sessionUsageSum`. */
 	readonly totalTokens: number
 	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
 	readonly cost: number
@@ -302,6 +404,14 @@ export interface AiSessionListOutput {
 	readonly spanCount: number
 	readonly errorSpanCount: number
 	readonly serviceNames: readonly string[]
+	// The five token buckets, deepest reporter counted like `totalTokens` —
+	// which is the index's figure and can differ by a rounding of convention;
+	// the buckets are what the row draws, the total what it sorts on.
+	readonly inputTokens: number
+	readonly cacheReadTokens: number
+	readonly cacheWriteTokens: number
+	readonly outputTokens: number
+	readonly reasoningTokens: number
 	/** ClickHouse datetime literal, e.g. `2026-08-19 10:33:25.825000000`. */
 	readonly startTime: string
 	readonly endTime: string
@@ -370,27 +480,54 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 	const search = opts.search?.trim() || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
-		.select(($) => ({
-			traceId: $.TraceId,
-			rawSessionId: CH.max_($.SessionId),
-			// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
-			// shadows the derived table's column of the same name, so `min(…)` of
-			// it would resolve to the outer `toString(…)` String and fail — see
-			// `traceStart` in `aiSessionListQuery`.
-			traceAgentStart: CH.min_($.Timestamp),
-			traceAgentEnd: CH.max_($.Timestamp),
-			// `Timestamp` is the span's START; the extent ends where the
-			// last-starting agent span ended. Same idiom as `traceEndNanos`.
-			traceAgentEndNanos: CH.max_(CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration))),
-			// Bounded per trace: a row is a list cell, and a trace that somehow
-			// names more models than that is not one the cell can show anyway.
-			models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
-			agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
-			llmCalls: CH.sum($.IsLlmCall),
-			toolCalls: CH.sum($.IsToolCall),
-			errorAgentSpans: CH.sum($.IsError),
-			usageReporters: usageReportersExpr($),
-		}))
+		.select(($) => {
+			// Ranks the trace's spans for the agent-name `argMin`: a span that
+			// names an agent sorts at its own timestamp, one that does not sorts
+			// at the sentinel and can never win — here, or one level up where the
+			// same column orders the traces. Same idiom as `sessionOrder` in
+			// `aiSessionListQuery`, and the same reason: the DSL has no `argMinIf`.
+			// A trace that names no agent at all ties every span at the sentinel,
+			// and the tie is harmless because every candidate's name is `''`.
+			const agentOrder = CH.if_(
+				$.AgentName.neq(""),
+				$.Timestamp,
+				CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
+			)
+			return {
+				traceId: $.TraceId,
+				rawSessionId: CH.max_($.SessionId),
+				// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
+				// shadows the derived table's column of the same name, so `min(…)` of
+				// it would resolve to the outer `toString(…)` String and fail — see
+				// `traceStart` in `aiSessionListQuery`.
+				traceAgentStart: CH.min_($.Timestamp),
+				traceAgentEnd: CH.max_($.Timestamp),
+				// `Timestamp` is the span's START; the extent ends where the
+				// last-starting agent span ended. Same idiom as `traceEndNanos`.
+				traceAgentEndNanos: CH.max_(
+					CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration)),
+				),
+				// Bounded per trace: a row is a list cell, and a trace that somehow
+				// names more models than that is not one the cell can show anyway.
+				models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
+				agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
+				// The name the session goes by, and when that name first appeared.
+				// `agentNames` is a set — `groupUniqArrayIf`, then `groupUniqArrayArray`
+				// across traces — so its first element is whatever the aggregate
+				// happened to emit, while the detail page's heading is the agent on the
+				// session's earliest-starting named span. Taking the heading from the
+				// set left a multi-agent session titled one thing in the list and
+				// another on its own page.
+				firstAgentName: CH.argMin($.AgentName, agentOrder),
+				firstAgentAt: CH.min_(agentOrder),
+				toolCalls: CH.sum($.IsToolCall),
+				errorAgentSpans: CH.sum($.IsError),
+				failedSpans: failedSpansExpr($),
+				// Usage AND model calls travel as reporters: both are counted one level
+				// up, where every trace of the session is in hand — see `ai-span-columns`.
+				usageReporters: usageReportersExpr($),
+			}
+		})
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString(bounds === "window" ? "startTime" : "fanOutStart")),
@@ -490,11 +627,17 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 			agentEnd: CH.toString_(CH.max_($.traceAgentEnd)),
 			models: CH.groupUniqArrayArray($.models),
 			agentNames: CH.groupUniqArrayArray($.agentNames),
-			llmCalls: CH.sum($.llmCalls),
+			// Across traces the same ordering resolves the session's own first
+			// named agent: a trace that named none carries the sentinel and loses
+			// to any trace that did.
+			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
+			llmCalls: sessionLlmCalls("usageReporters"),
 			toolCalls: CH.sum($.toolCalls),
 			errorAgentSpans: CH.sum($.errorAgentSpans),
-			totalTokens: deepestReporterSum("usageReporters", 3),
-			cost: deepestReporterSum("usageReporters", 4),
+			toolErrors: deepestFailureCount("failedSpans", "tool"),
+			turnErrors: deepestFailureCount("failedSpans", "turn"),
+			totalTokens: sessionUsageSum("usageReporters", 3),
+			cost: sessionUsageSum("usageReporters", 4),
 			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
 			// `aiSessionListQuery` for both.
 			agentDurationMs: CH.intDiv(
@@ -635,6 +778,7 @@ export function aiSessionListQuery(opts: AiSessionListOpts) {
 					),
 				),
 				serviceNames: CH.groupUniqArray($.ServiceName),
+				usageBuckets: usageBucketsExpr($),
 				// Named apart from the outer `startTime`/`endTime` on purpose: an
 				// outer alias shadows the derived table's column of the same name,
 				// so `min(startTime)` would resolve to the outer `toString(…)` String
@@ -674,6 +818,11 @@ export function aiSessionListQuery(opts: AiSessionListOpts) {
 			spanCount: CH.sum($.spanCount),
 			errorSpanCount: CH.sum($.errorSpanCount),
 			serviceNames: CH.groupUniqArrayArray($.serviceNames),
+			inputTokens: sessionBucketSum("usageBuckets", 3),
+			cacheReadTokens: sessionBucketSum("usageBuckets", 4),
+			cacheWriteTokens: sessionBucketSum("usageBuckets", 5),
+			outputTokens: sessionBucketSum("usageBuckets", 6),
+			reasoningTokens: sessionBucketSum("usageBuckets", 7),
 			startTime: CH.toString_(CH.min_($.traceStart)),
 			endTime: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceEndNanos))),
 			// Nanoseconds first: `Timestamp` is DateTime64(9), and subtracting two
@@ -734,8 +883,15 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 		const perTrace = from(AiTraceIndex)
 			.select(($) => ({
 				traceId: $.TraceId,
+				// Over EVERY span of the trace, not only those carrying the value:
+				// the session id sits on the turn-owning span and the model on the
+				// chat span beneath it, so keying the trace off the value-bearing
+				// rows alone would file it as a sessionless trace of its own — and
+				// count a session once per trace that names the value. A blank
+				// option filters nothing and is not offered, hence the `If`; a trace
+				// naming nothing yields no row from the `arrayJoin` below.
 				rawSessionId: CH.max_($.SessionId),
-				names: CH.groupUniqArray(name($)),
+				names: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)(name($), name($).neq("")),
 			}))
 			.where(($) => [
 				// Every UNION ALL branch reads a table, so every branch carries the org
@@ -743,8 +899,6 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 				$.OrgId.eq(param.string("orgId")),
 				$.Timestamp.gte(param.dateTimeString("startTime")),
 				$.Timestamp.lte(param.dateTimeString("endTime")),
-				// A blank option filters nothing and is not offered.
-				name($).neq(""),
 			])
 			.groupBy("traceId")
 

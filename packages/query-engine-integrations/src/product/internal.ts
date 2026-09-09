@@ -5,9 +5,10 @@
 // product code. Keeping them out of the user-facing query modules makes
 // their scope explicit.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from } from "@maple-dev/clickhouse-builder"
+import { finiteOrZero } from "@maple/query-engine/ch/format"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from } from "@maple-dev/effect-clickhouse"
 import { Traces } from "@maple/query-engine/ch/tables"
 
 // db.statement samples
@@ -67,9 +68,9 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 			),
 			sampleCount: CH.count(),
 			// Duration is microseconds (uint64) — convert to ms for display.
-			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-			p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
-			p99DurationMs: CH.quantile(0.99)($.Duration).div(1000000),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.Duration).div(1000000)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.Duration).div(1000000)),
+			p99DurationMs: finiteOrZero(CH.quantile(0.99)($.Duration).div(1000000)),
 			maxDurationMs: CH.max_($.Duration).div(1000000),
 		}))
 		.where(($) => [

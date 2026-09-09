@@ -10,6 +10,7 @@
  * MAPLE_DB binding), pins each shape's org scope, and forwards to Electric.
  */
 import {
+	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
 	type MapleStage,
@@ -42,9 +43,6 @@ const configuredEnv = (stage: MapleStage) =>
 					optionalSecret("ELECTRIC_SECRET"),
 				]),
 		// Self-observability (OTLP export through the ingest gateway).
-		// NOTE: MAPLE_ENVIRONMENT used to be `optionalPlain(…, stageDefault)` here,
-		// which let the environment win — the exact override `api` and `alerting`
-		// both guard against. It is stage-derived now, like theirs.
 		selfObservabilityEnv(stage),
 	)
 
@@ -125,12 +123,12 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 		// teardown), so everything in the layer stays value-shaped.
 		//
 		// A `ConfigError` here is a misconfigured deploy — `SyncConfig` already dies
-		// on the fatal ones — so the build dies too, and the bridge answers 500
-		// until the isolate is replaced. The handler itself keeps the router's
+		// on the fatal ones — so the build dies too: the bridge answers 500 and the
+		// next request rebuilds. The handler itself keeps the router's
 		// typed failures: the bridge renders them before its tracer runs, so an
 		// unmatched route is an Ok span with a 404, and a defect a 500 that the SDK
 		// records as an Error server span (`worker-bridge.test.ts` pins both).
-		const app = yield* Effect.cached(
+		const app = yield* cachedRecoverable(
 			Effect.gen(function* () {
 				const scope = yield* Scope.make()
 				return yield* HttpRouter.toHttpEffect(AppLayer).pipe(Scope.provide(scope))

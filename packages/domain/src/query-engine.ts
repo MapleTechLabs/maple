@@ -662,10 +662,14 @@ export class CompiledAlertQueryPlan extends Schema.Class<CompiledAlertQueryPlan>
 export const WEB_ANALYTICS_UNSET = "(none)"
 
 /**
- * How far back "live" reaches: a visitor counts as on the site now if their
- * session showed activity within this many seconds.
+ * How far back "live" reaches: a session counts as happening now if it showed
+ * activity within this many seconds.
  *
- * Shared so the badge's own copy ("in the last 5 minutes") and the window the
- * query actually applies cannot drift apart.
+ * Shared by every surface that renders live-ness — the analytics badge, the
+ * replay list's LIVE pill, the replay player's "still uploading" state — so the
+ * copy ("in the last 5 minutes") and the window the query applies cannot drift
+ * apart, and so two pages looking at one session cannot disagree about whether
+ * it is live. `Status` alone answers a different question: it stays `active`
+ * forever when a tab dies without sending its unload row.
  */
-export const WEB_ANALYTICS_LIVE_WINDOW_SECONDS = 300
+export const SESSION_LIVE_WINDOW_SECONDS = 300

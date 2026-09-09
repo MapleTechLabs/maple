@@ -17,7 +17,7 @@ import { sdkSnippets, type FrameworkId } from "@/components/quick-start/sdk-snip
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { useQuickStart } from "@/hooks/use-quick-start"
-import type { RoleOption } from "@/atoms/quick-start-atoms"
+import type { OnboardingRole } from "@/lib/onboarding-role"
 import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 
 const frameworkIconMap: Record<FrameworkId, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -29,12 +29,14 @@ const frameworkIconMap: Record<FrameworkId, React.ComponentType<{ size?: number;
 	otel: OpenTelemetryIcon,
 } satisfies Record<FrameworkId, React.ComponentType<{ size?: number; className?: string }>>
 
-const ROLE_DEFAULT_FRAMEWORK: Record<RoleOption, FrameworkId> = {
-	engineer: "nodejs",
+const ROLE_DEFAULT_FRAMEWORK = {
+	backend: "nodejs",
+	frontend: "nextjs",
 	devops_sre: "otel",
 	eng_leader: "nodejs",
 	founder: "nextjs",
-} satisfies Record<RoleOption, FrameworkId>
+	other: "nodejs",
+} satisfies Record<OnboardingRole, FrameworkId>
 
 interface GuidedSetupProps {
 	/** Public ingest key, interpolated into the instrument snippet. */

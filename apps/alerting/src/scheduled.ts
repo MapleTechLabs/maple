@@ -6,7 +6,6 @@
  * not in the deploy process, where the Worker's init also runs.
  */
 import {
-	ANTICIPATED_ERROR_IDENTIFIERS,
 	AlertDestinationsService,
 	AlertReadModelsService,
 	AlertRuntime,
@@ -43,32 +42,31 @@ import {
 	TinybirdOrgTokenService,
 	VcsSourceServiceLayer,
 	WarehouseQueryService,
+	mapleDbConnectionLayer,
 	summarizeCause,
 	withPgConnectionScope,
 } from "@maple/api/alerting"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { layerFromEnv, layerFromEnvRecord } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { Cause, Effect, Layer, Match } from "effect"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
-// Module-scope construction; `flush(env)` resolves env on first call. The
-// in-isolate buffers coalesce concurrent scheduled ticks into one POST per
-// signal. Exported for the shell, which drains it after each fire.
-export const telemetry = MapleCloudflareSDK.make({
-	serviceName: "alerting",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
-
+/**
+ * The tick graph for one fire. Deliberately without a tracer or logger of its
+ * own: those come from the SDK the Worker bridge builds into each fire's
+ * scope (`WorkerTelemetry` on the shell's init), and a layer here that
+ * provided either would shadow them — `worker-telemetry.test.ts` pins that
+ * a tick's spans still reach the export.
+ */
 export const buildLayer = (env: AlertingWorkerEnv) => {
 	// Keep config and binding services on the same invocation-scoped env record;
 	// scheduled handlers already receive the authoritative Cloudflare bindings.
-	const ConfigLive = layerFromEnv(env)
-	const WorkerEnvironmentLive = layerFromEnvRecord(env)
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
+	// The fire's env as `WorkerEnvironment` and the `ConfigProvider` `Env` reads.
+	const WorkerEnvironmentLive = workerEnvLayer(env)
+	const EnvLive = Env.layer
 
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironmentLive))
+	// `MAPLE_DB` off this fire's env, bound to the Worker by its init (`MapleDb`).
+	const MapleDbConnectionLive = mapleDbConnectionLayer(env)
+	const DatabaseLive = layerPg.pipe(Layer.provide(MapleDbConnectionLive))
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 	const AlertRuntimeLive = AlertRuntime.layer
@@ -254,18 +252,19 @@ export const buildLayer = (env: AlertingWorkerEnv) => {
 		FixVerificationTickServiceLive,
 		EscalationServiceLive,
 		ServiceMapRollupServiceLive,
-		// Exposed in the output, not just provided inward: `withPgConnectionScope`
-		// resolves the `MAPLE_DB` binding from it when it opens the tick's socket.
 		WorkerEnvironmentLive,
-	).pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
+		// Exposed in the output, not just provided inward: `withPgConnectionScope`
+		// opens the tick's socket on it.
+		MapleDbConnectionLive,
+	).pipe(Layer.provideMerge(WorkerEnvironmentLive))
 }
 
 /**
  * Standard tick failure isolation. A broken tick must not fail the whole scheduled
  * invocation (several ticks share one cron dispatch), so genuine failures are logged and
- * swallowed — but interrupt-only causes (isolate teardown) are re-raised so they reach
- * `runScheduledEffect`'s `onInterrupt: "graceful"` handling instead of logging a phantom
- * tick failure. Mirrors the per-org guards inside the tick services.
+ * swallowed — but interrupt-only causes (isolate teardown) are re-raised so the shell can
+ * treat them as a cancelled fire instead of logging a phantom tick failure. Mirrors the
+ * per-org guards inside the tick services.
  */
 export const catchTickFailure = (label: string) =>
 	Effect.catchCause((cause: Cause.Cause<unknown>) =>

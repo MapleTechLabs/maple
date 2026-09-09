@@ -16,12 +16,13 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { compileFnCallCond } from "@maple-dev/clickhouse-builder"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/clickhouse-builder"
-import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { compileFnCallCond } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
 import type { FacetOutput } from "./query-helpers"
@@ -75,8 +76,8 @@ function assumeNotNull<T>(value: CH.Expr<T | null>): CH.Expr<T> {
 
 // ifNotFinite(x, fallback) — quantile() over an empty set yields nan, and
 // casting that to an integer is a hard error.
-function ifNotFinite(value: CH.Expr<number>, fallback: number): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("ifNotFinite", T.float64.schema, value, CH.lit(fallback))
+function ifNotFinite(value: CH.Expr<number | null>, fallback: number): CH.Expr<number> {
+	return CH.ifNull(CH.ifNotFinite(value, fallback), CH.lit(fallback))
 }
 
 // List query
@@ -108,8 +109,18 @@ export interface SessionReplaysListOpts {
 	hasErrors?: boolean
 	/** Substring match on the initial page URL. */
 	search?: string
-	/** Keyset cursor: only sessions with StartTime strictly before this. */
-	cursor?: string
+	/**
+	 * Keyset cursor: the (StartTime, SessionId) of the last row of the previous
+	 * page, matching this query's `ORDER BY startTime DESC, sessionId DESC`.
+	 *
+	 * The session id is the tie-break, and it is load-bearing rather than
+	 * defensive: the SDK stamps `start_time` from a JS `Date`, so StartTime lands
+	 * on millisecond boundaries and two sessions sharing one is ordinary at
+	 * traffic. Without it a page boundary that fell inside such a tie would drop
+	 * every session on the far side of it. `sessionId` is optional only for the
+	 * v1 endpoint, whose cursor is a bare timestamp.
+	 */
+	cursor?: { startTime: string; sessionId?: string }
 	/** Min/max wall-clock duration (ms). Filters on the stored DurationMs; only
 	 *  completed (Version=2) sessions carry it, so in-progress sessions are
 	 *  excluded when either bound is set. */
@@ -148,6 +159,17 @@ export interface SessionReplaysListOutput {
 	readonly endTime: string | null
 	readonly durationMs: number | null
 	readonly status: string
+	/**
+	 * Last heartbeat, or NULL on a session whose only row is the v1 start row.
+	 *
+	 * The pair (`status`, `lastActivityAt`) is what decides live-ness. `status`
+	 * alone cannot: it only reaches `"ended"` if the tab lived long enough to
+	 * send an unload row, so a killed tab, a crash or a slept phone leaves it
+	 * `"active"` for the rest of the session's retention. Reading this column is
+	 * also what recovers a duration for those sessions, whose `durationMs` stays
+	 * NULL forever.
+	 */
+	readonly lastActivityAt: string | null
 	readonly userId: string
 	// identify() identity (migration 0011). `''` when the session was never
 	// identified — the list renders its existing session-id/host line in that case,
@@ -205,6 +227,10 @@ export function sessionReplaysListQuery(
 			endTime: argMax($.EndTime, $.Version),
 			durationMs: argMax($.DurationMs, $.Version),
 			status: argMax($.Status, $.Version),
+			// Heartbeat-refreshed, so it is the only column that can tell a session
+			// that is open right now from one whose `Status` merely never got its
+			// unload row. Every consumer of `status` needs it alongside.
+			lastActivityAt: argMax($.LastActivityAt, $.Version),
 			userId: argMax($.UserId, $.Version),
 			// identify() writes these on every row version (see meta-row.ts) — the
 			// ReplacingMergeTree replaces whole rows, so anything written on only one
@@ -259,7 +285,15 @@ export function sessionReplaysListQuery(
 			CH.when(opts.groupName, (v: string) => $.GroupName.eq(v)),
 			CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
-			CH.when(opts.cursor, (v: string) => $.StartTime.lt(v)),
+			// Version-invariant, so the keyset can sit in WHERE ahead of the GROUP BY
+			// rather than becoming another post-aggregate predicate.
+			CH.when(opts.cursor, (c: { startTime: string; sessionId?: string }) =>
+				c.sessionId === undefined
+					? $.StartTime.lt(c.startTime)
+					: $.StartTime.lt(c.startTime).or(
+							$.StartTime.eq(c.startTime).and($.SessionId.lt(c.sessionId)),
+						),
+			),
 		])
 		.groupBy("sessionId")
 
@@ -298,6 +332,7 @@ export function sessionReplaysListQuery(
 				endTime: $.endTime,
 				durationMs: $.durationMs,
 				status: $.status,
+				lastActivityAt: $.lastActivityAt,
 				userId: $.userId,
 				userName: $.userName,
 				userEmail: $.userEmail,
@@ -362,6 +397,7 @@ export function sessionReplaysListQuery(
 				endTime: $.endTime,
 				durationMs: $.durationMs,
 				status: $.status,
+				lastActivityAt: $.lastActivityAt,
 				userId: $.userId,
 				userName: $.userName,
 				userEmail: $.userEmail,
@@ -411,6 +447,7 @@ export function sessionReplaysListQuery(
 			endTime: $.endTime,
 			durationMs: $.durationMs,
 			status: $.status,
+			lastActivityAt: $.lastActivityAt,
 			userId: $.userId,
 			userName: $.userName,
 			userEmail: $.userEmail,
@@ -463,6 +500,14 @@ export interface SessionReplaysFacetsOpts {
 	userSearch?: string
 	/** Exact match on the identified group name — excluded from its own branch. */
 	groupName?: string
+	/**
+	 * Exact match on the persistent visitor id, mirroring the list query.
+	 *
+	 * It has no facet branch of its own, so like `userId` it narrows every
+	 * dimension. Omitting it left the sidebar and the header counts describing
+	 * the whole org while the list beside them showed one browser's sessions.
+	 */
+	visitorId?: string
 	hasErrors?: boolean
 	search?: string
 }
@@ -491,6 +536,7 @@ export function sessionReplaysFacetsQuery(
 		// UserId has no facet branch (high cardinality), so it's never excluded — it
 		// narrows every dimension's counts to the selected user.
 		CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
+		CH.when(opts.visitorId, (v: string) => $.VisitorId.eq(v)),
 		CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 		CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 	]
@@ -554,6 +600,47 @@ export function sessionReplaysFacetsQuery(
 			}))
 			.where(($) => [...baseWhere($), $.DurationMs.gt(0)])
 
+	// Window totals for the page header. The header used to count the rows the
+	// client had scrolled into memory while the chips beside it counted the whole
+	// window, so "50 sessions" sat next to "2,018 with errors" as if the two were
+	// comparable. Both branches carry every active filter, so the header always
+	// describes the same population as the list under it.
+	const totalSessions = from(SessionReplays)
+		.select(($) => ({
+			name: CH.lit("total"),
+			count: CH.uniq($.SessionId),
+			facetType: CH.lit("total"),
+		}))
+		.where(baseWhere)
+
+	// Sessions happening right now, on the same definition the analytics live
+	// badge uses: recent activity, not a `Status` that never got its unload row.
+	// `endTime` is the window's own anchor rather than now(), so the number a
+	// historical window reports stays put instead of decaying to zero.
+	//
+	// Counted over raw rows, so a session that *ended* inside the window still
+	// has an earlier `active` row and is counted. That over-counts by the
+	// sessions which finished in the last five minutes — bounded, and every one
+	// of them was live moments ago. Excluding them exactly would need argMax
+	// dedup, which no other branch of this flat UNION does.
+	const liveSessions = from(SessionReplays)
+		.select(($) => ({
+			name: CH.lit("live"),
+			count: CH.uniqIf(
+				$.SessionId,
+				$.Status.eq("active").and(
+					CH.coalesce($.LastActivityAt, $.StartTime).gte(
+						CH.intervalSub(
+							CH.toDateTime(param.dateTimeString("endTime")),
+							SESSION_LIVE_WINDOW_SECONDS,
+						),
+					),
+				),
+			),
+			facetType: CH.lit("live"),
+		}))
+		.where(baseWhere)
+
 	return unionAll(
 		makeFacet("service", ($) => $.ServiceName),
 		makeFacet("browser", ($) => $.BrowserName),
@@ -566,6 +653,8 @@ export function sessionReplaysFacetsQuery(
 		durationHistogram,
 		durationStat("p50", 0.5),
 		durationStat("p95", 0.95),
+		totalSessions,
+		liveSessions,
 		// Distinct sessions with at least one recorded error (drives the "Has
 		// errors" toggle count). Its own hasErrors filter is omitted here.
 		from(SessionReplays)
@@ -583,6 +672,7 @@ export function sessionReplaysFacetsQuery(
 				CH.when(opts.country, (v: string) => $.Country.eq(v)),
 				CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
 				CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
+				CH.when(opts.visitorId, (v: string) => $.VisitorId.eq(v)),
 				CH.when(opts.groupName, (v: string) => $.GroupName.eq(v)),
 				CH.when(opts.userSearch, (v: string) =>
 					$.UserName.ilike(`%${v}%`).or($.UserEmail.ilike(`%${v}%`)),

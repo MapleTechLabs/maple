@@ -1,0 +1,7 @@
+# Footer courtyard background
+
+Asset: `maple-footer-courtyard.webp`. Generated with built-in GPT Image Gen using `maple-rome-balanced.webp` as the style reference, then optimized to WebP. Rendered behind the actual footer directory and bottom bar at 28% opacity (22% on mobile). The image is enlarged and anchored to the bottom to crop out the empty sky and bring the colonnade behind the link columns, with a fade at the top.
+
+## Prompt
+
+Use case: stylized-concept. Generate a NEW illustration, using attached image only as a style reference. Asset: very subtle panoramic background behind a website's footer navigation links, not a foreground illustration or hero. Wide 3:2 landscape. A quiet ancient Roman garden courtyard: weathered classical columns and an open colonnade receding along the bottom edge, low stone terraces, sparse cypress silhouettes at the far sides. No temple, no bridge, no river. Architecture concentrated in bottom third and corners, upper two thirds nearly empty dark warm charcoal. Restrained amber #E8872A fine engraved linework and medium-fine ordered dithering on warm charcoal #1A1714. Matching reference's precise Roman engraving but much more sparse, atmospheric and low contrast, mostly dark ground. Fade architecture gently into charcoal toward top and sides; no bright solid amber planes. Designed to sit behind small footer text unobtrusively. No text, letters, logos, frame, UI or watermark.

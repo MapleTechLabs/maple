@@ -9,7 +9,6 @@ import { AuthService } from "@/services/auth/AuthService"
 import type { RateLimiterApi } from "@/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
 import { McpToolExecutor, type McpToolExecutorApi } from "./dispatcher"
-import { type SessionPayload, sessionStore } from "./lib/session-store"
 import { McpLive } from "./app"
 
 const createdDbs: TestDb[] = []
@@ -142,8 +141,8 @@ describe("MCP HTTP authorization", () => {
 			)
 			expect(response.status).toBe(200)
 
-			const sessionId = response.headers.get("mcp-session-id")
-			expect(sessionId).not.toBeNull()
+			// Stateless: no session id is issued, and the follow-ups below need none.
+			expect(response.headers.get("mcp-session-id")).toBeNull()
 			await handler(
 				new Request("http://internal-worker.invalid/mcp", {
 					method: "POST",
@@ -154,7 +153,6 @@ describe("MCP HTTP authorization", () => {
 						host: "internal-worker.invalid",
 						"x-forwarded-host": "api.example.com",
 						"x-forwarded-proto": "https",
-						"mcp-session-id": sessionId!,
 						"mcp-protocol-version": "2025-06-18",
 					},
 					body: JSON.stringify({
@@ -174,7 +172,6 @@ describe("MCP HTTP authorization", () => {
 						host: "internal-worker.invalid",
 						"x-forwarded-host": "api.example.com",
 						"x-forwarded-proto": "https",
-						"mcp-session-id": sessionId!,
 						"mcp-protocol-version": "2025-06-18",
 					},
 					body: JSON.stringify({
@@ -258,16 +255,12 @@ describe("MCP HTTP authorization", () => {
 				protocolVersion: "2025-06-18",
 			})
 
-			const sessionId = initialized.headers.get("mcp-session-id")
-			expect(sessionId).not.toBeNull()
-
-			// The client keeps sending its own version on follow-ups; McpServer
-			// re-checks the header on every post-initialize request because
-			// v2025_06_18 sets `requiresVersionHeader`, so this must pass too.
+			// The client keeps sending its own version on follow-ups, and the
+			// transport issues no session id to send back with it.
 			const called = await handler(
 				new Request("https://api.example.com/mcp", {
 					method: "POST",
-					headers: headers({ "mcp-session-id": sessionId! }),
+					headers: headers(),
 					body: JSON.stringify({
 						jsonrpc: "2.0",
 						id: 2,
@@ -282,13 +275,13 @@ describe("MCP HTTP authorization", () => {
 			await dispose()
 		}
 	})
-	it("serves tools/list on a session rehydrated by a fresh worker isolate", async () => {
-		// Regression: `clientSessions` (our effect patch) persists only the initialize
-		// payload, so a second isolate rebuilds the session from scratch. rc.111 reads
-		// `session?.negotiatedProfile.protocolVersion` — the `?.` guards the session but
-		// not the profile — so a rehydrate without one died with a defect that Effect
-		// serialized under id -32603, which no client can match. tools/list hung until
-		// the client timed out, and the server looked merely slow.
+	it("serves every request without prior session state", async () => {
+		// Regression: Effect's HTTP transport pins each negotiated session to a map
+		// created per layer build — per isolate on Workers — and answers a session id
+		// it did not issue with a bare 404. Every call after `initialize` therefore
+		// failed whenever it landed on another isolate, which in production was about
+		// half of them. Maple's transport is stateless: it issues no session id, and
+		// serves a request that carries a stale one anyway.
 		const db = createTestDb(createdDbs)
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
@@ -302,7 +295,7 @@ describe("MCP HTTP authorization", () => {
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
-				return yield* apiKeys.create(orgId, userId, { name: "Rehydrate test", kind: "mcp" })
+				return yield* apiKeys.create(orgId, userId, { name: "Stateless test", kind: "mcp" })
 			}).pipe(Effect.provide(services)),
 		)
 		const headers = (extra: Record<string, string> = {}) => ({
@@ -314,12 +307,9 @@ describe("MCP HTTP authorization", () => {
 			...extra,
 		})
 
-		// First isolate: initialize, which is the only call that writes to `sessionStore`.
 		const first = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
 			disableLogger: true,
 		})
-		let sessionId: string | null = null
-		let persisted: SessionPayload | undefined
 		try {
 			const initialized = await first.handler(
 				new Request("https://api.example.com/mcp", {
@@ -338,19 +328,16 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			expect(initialized.status).toBe(200)
-			sessionId = initialized.headers.get("mcp-session-id")
-			expect(sessionId).not.toBeNull()
-			// What worker.ts hands to KV, and what the next isolate preloads back.
-			persisted = sessionStore.get(sessionId!)
-			expect(persisted).toBeDefined()
+			// No session id on the wire is what keeps clients off the 404 branch.
+			expect({
+				status: initialized.status,
+				sessionId: initialized.headers.get("mcp-session-id"),
+			}).toEqual({ status: 200, sessionId: null })
 		} finally {
 			await first.dispose()
 		}
-		sessionStore.set(sessionId!, persisted!)
 
-		// Second isolate: a fresh McpProtocolState whose in-memory session map is empty,
-		// so this request can only be served through the `clientSessions` rehydrate path.
+		// A build that never saw the handshake above, as the next isolate would not.
 		const second = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
 			disableLogger: true,
 		})
@@ -358,10 +345,7 @@ describe("MCP HTTP authorization", () => {
 			const listed = await second.handler(
 				new Request("https://api.example.com/mcp", {
 					method: "POST",
-					headers: headers({
-						"mcp-session-id": sessionId!,
-						"mcp-protocol-version": "2025-06-18",
-					}),
+					headers: headers({ "mcp-protocol-version": "2025-06-18" }),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
 				}),
 				Context.empty() as never,
@@ -372,6 +356,20 @@ describe("MCP HTTP authorization", () => {
 				defect: false,
 			})
 			expect(body).toContain("inspect_trace")
+
+			// A session id left over from an earlier isolate is ignored, not rejected.
+			const stale = await second.handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: headers({
+						"mcp-session-id": "00000000-0000-4000-8000-000000000000",
+						"mcp-protocol-version": "2025-06-18",
+					}),
+					body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
+				}),
+				Context.empty() as never,
+			)
+			expect(stale.status).toBe(200)
 		} finally {
 			await second.dispose()
 		}
@@ -438,6 +436,63 @@ describe("MCP HTTP authorization", () => {
 			// Buckets are per internal key id, so a rolled key gets a fresh budget
 			// and the raw secret never reaches the counter key.
 			expect(limitedKeys).toEqual([`key:${key.id}`])
+		} finally {
+			await dispose()
+		}
+	})
+
+	it("answers JSON-RPC when the request body cannot be read", async () => {
+		// Regression: `Effect.orDie(request.text)` turned an unreadable body into a
+		// defect, which escaped every boundary and left a bare 500 logged only as
+		// alchemy's `HTTP handler failed`. In production the cause was workerd
+		// refusing a body stream owned by another invocation ("Cannot perform I/O
+		// on behalf of a different request") — ~10 MCP calls a day, each opaque to
+		// the client. An unreadable body is a request we can still answer.
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Unreadable body test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const routes = McpLive.pipe(Layer.provideMerge(services))
+		const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+		try {
+			const response = await handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${key.secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+					},
+					body: new ReadableStream({
+						start: (controller) =>
+							controller.error(
+								new Error("Cannot perform I/O on behalf of a different request"),
+							),
+					}),
+					// @ts-expect-error -- undici requires this for a stream body; not in the DOM lib.
+					duplex: "half",
+				}),
+				Context.empty() as never,
+			)
+			const body = await response.clone().json()
+			expect({ status: response.status, code: body.error?.code }).toEqual({
+				status: 200,
+				code: -32700,
+			})
 		} finally {
 			await dispose()
 		}

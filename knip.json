@@ -12,7 +12,6 @@
 			"entry": [
 				"src/routes/**/*.tsx",
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
 				"src/lib/effect-atom.ts"
@@ -29,7 +28,6 @@
 			// import off the CLI's --suite argument), so knip cannot see the edge.
 			"entry": [
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"autumn.config.ts",
 				"scripts/cold-path/*.mjs",
 				"scripts/bench-suites/*.ts"
@@ -67,9 +65,14 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		"packages/infra": {
-			// `cloudflare:workers` is a Workers runtime module, not a package.
-			"ignoreDependencies": ["cloudflare"]
+		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
+		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
+		"apps/clickhouse-builder-docs": {
+			"entry": ["press.config.tsx", "src/app.css"],
+			"ignoreDependencies": ["@base-ui/react"]
+		},
+		"lib/ai-model-catalog": {
+			"entry": ["scripts/**/*.ts"]
 		},
 		"lib/alchemy-portless": {
 			// The dev-sidecar entry alchemy loads by URL, not by import.

@@ -17,6 +17,8 @@ import schemaV15Sql from "./schema/local-schema-v15.sql" with { type: "text" }
 import schemaV16Sql from "./schema/local-schema-v16.sql" with { type: "text" }
 import schemaV17Sql from "./schema/local-schema-v17.sql" with { type: "text" }
 import schemaV18Sql from "./schema/local-schema-v18.sql" with { type: "text" }
+import schemaV19Sql from "./schema/local-schema-v19.sql" with { type: "text" }
+import schemaV20Sql from "./schema/local-schema-v20.sql" with { type: "text" }
 import { schemaDigest as digestSchema, schemaFingerprint as fingerprintSchema } from "./store-version"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LOCAL_SCHEMA_VERSION } from "./local-schema-version"
@@ -79,6 +81,8 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV16Sql,
 	schemaV17Sql,
 	schemaV18Sql,
+	schemaV19Sql,
+	schemaV20Sql,
 ]
 
 export interface LocalSchemaSnapshot {
@@ -139,6 +143,10 @@ export const LOCAL_SCHEMA_V17_SQL = snapshotAt(17).sql
 export const LOCAL_SCHEMA_V17_MANIFEST = snapshotAt(17).manifest
 export const LOCAL_SCHEMA_V18_SQL = snapshotAt(18).sql
 export const LOCAL_SCHEMA_V18_MANIFEST = snapshotAt(18).manifest
+export const LOCAL_SCHEMA_V19_SQL = snapshotAt(19).sql
+export const LOCAL_SCHEMA_V19_MANIFEST = snapshotAt(19).manifest
+export const LOCAL_SCHEMA_V20_SQL = snapshotAt(20).sql
+export const LOCAL_SCHEMA_V20_MANIFEST = snapshotAt(20).manifest
 
 export interface LocalSchemaIdentity {
 	readonly version: number
@@ -187,6 +195,8 @@ export const LOCAL_SCHEMA_V15 = identityAt(15)
 export const LOCAL_SCHEMA_V16 = identityAt(16)
 export const LOCAL_SCHEMA_V17 = identityAt(17)
 export const LOCAL_SCHEMA_V18 = identityAt(18)
+export const LOCAL_SCHEMA_V19 = identityAt(19)
+export const LOCAL_SCHEMA_V20 = identityAt(20)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

@@ -13,10 +13,10 @@
 // only reachable from ErrorsService/telemetry. Remaining modules live on the
 // exemption list and shrink batch by batch.
 
-import type { CompiledQuery } from "@maple-dev/clickhouse-builder"
+import type { CompiledQuery } from "@maple-dev/effect-clickhouse"
 import * as CH from "../ch"
 import { Effect } from "effect"
-import type { QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 
 /**
  * Run a compile that is now Effect-returning, throwing on failure.
@@ -343,8 +343,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "audit-log",
 		name: "auditLogEntriesQuery",
 		label: "default",
-		compile: () =>
-			CH.compileUnsafe(CH.auditLogEntriesQuery({ limit: 50, offset: 0 }), { orgId: ORG_ID }),
+		compile: () => CH.compileUnsafe(CH.auditLogEntriesQuery({ limit: 50, offset: 0 }), { orgId: ORG_ID }),
 	},
 	{
 		// Every optional filter bound at once, including the raw `has(...)` clause.

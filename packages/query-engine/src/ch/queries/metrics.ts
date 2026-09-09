@@ -3,12 +3,13 @@
 // DSL-based query definitions for metrics timeseries, breakdown, and
 // a raw-SQL builder for counter rate/increase (which requires CTEs).
 
+import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, type CHQuery } from "@maple-dev/clickhouse-builder"
-import { table } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, type CHQuery } from "@maple-dev/effect-clickhouse"
+import { table } from "@maple-dev/effect-clickhouse"
 import { MetricsSum, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
@@ -284,7 +285,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			serviceName: $.ServiceName,
 			attributeValue: opts.groupByAttributeKey === "span.kind" ? $.SpanKind : CH.lit(""),
 			groupName: opts.groupByAttributeKey === "span.kind" ? $.SpanKind : $.ServiceName,
-			rateValue: CH.sumIf($.delta.div(param.int("bucketSeconds")), $.delta.gte(0)),
+			rateValue: finiteOrZero(CH.sumIf($.delta.div(param.int("bucketSeconds")), $.delta.gte(0))),
 			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
 			dataPointCount: CH.count(),
 		}))
@@ -397,7 +398,9 @@ export function metricsTimeseriesRateQuery(
 				: opts.groupByAttributeKey
 					? $.Attributes.get(opts.groupByAttributeKey)
 					: $.ServiceName,
-			rateValue: CH.sumIf($.delta.div($.time_delta), $.delta.gte(0).and($.time_delta.gt(0))),
+			rateValue: finiteOrZero(
+				CH.sumIf($.delta.div($.time_delta), $.delta.gte(0).and($.time_delta.gt(0))),
+			),
 			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
 			dataPointCount: CH.count(),
 		}))

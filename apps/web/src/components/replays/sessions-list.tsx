@@ -4,15 +4,25 @@ import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@maple/ui/lib/utils"
 import { EyeIcon } from "@/components/icons"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { browserIconFor, deviceIconFor } from "./session-icons"
-import { formatSessionDuration, gradientFor, hostFromUrl } from "./replay-format"
+import {
+	formatSessionDuration,
+	gradientFor,
+	hostFromUrl,
+	isSessionLive,
+	sessionDurationMs,
+} from "./replay-format"
 
 export interface SessionRow {
 	readonly sessionId: string
 	readonly startTime: string
 	readonly durationMs: number | null
 	readonly status: string
+	/** Heartbeat timestamp. Paired with `status` to decide live-ness — see
+	 *  `isSessionLive`; `status` on its own never stops saying `"active"`. */
+	readonly lastActivityAt: string | null
 	readonly userId: string | null
 	/** identify() identity. `""` on sessions that were never identified. */
 	readonly userName: string
@@ -85,6 +95,12 @@ interface SessionsListProps {
 	/** p95 session duration (ms) from the facets query — sessions above it get a
 	 *  "long" chip beside their duration. No chip when unavailable. */
 	durationP95?: number
+	/** "Now" for the live-ness test, injectable so tests don't chase the clock.
+	 *  Left unset it comes from {@link useLiveClock}, which ticks so a pill stops
+	 *  claiming LIVE once its window closes even on a list nobody is touching.
+	 *  Either way it is sampled once per render, never per row: two rows in one
+	 *  frame must not disagree about what time it is. */
+	nowMs?: number
 }
 
 function observeReachEnd(element: HTMLDivElement, onReachEnd: () => void): () => void {
@@ -122,8 +138,15 @@ export function SessionsList({
 	loadingMore = false,
 	isCapped = false,
 	durationP95,
+	nowMs,
 }: SessionsListProps) {
 	const navigate = useNavigate()
+	// Only sessions still reading `"active"` can cross the live boundary while
+	// the list sits open; a page of ended ones needs no timer at all.
+	const tickedNowMs = useLiveClock({
+		enabled: nowMs === undefined && sessions.some((session) => session.status === "active"),
+	})
+	const effectiveNowMs = nowMs ?? tickedNowMs
 	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
 	const virtualizer = useVirtualizer({
 		count: sessions.length,
@@ -162,7 +185,8 @@ export function SessionsList({
 				{virtualItems.map((virtualRow) => {
 					const session = sessions[virtualRow.index]!
 					const id = identity(session)
-					const isActive = session.status === "active"
+					const isActive = isSessionLive(session, effectiveNowMs)
+					const durationMs = sessionDurationMs(session)
 					const isUnrecorded = session.recorded === "false"
 					const hasErrors = session.errorCount > 0
 					const BrowserIcon = browserIconFor(session.browserName)
@@ -269,12 +293,12 @@ export function SessionsList({
 								{/* Activity lane: duration (flagged when unusually long) + pages/clicks */}
 								<div className="hidden w-[13.5rem] shrink-0 items-baseline gap-2 overflow-hidden whitespace-nowrap @3xl:flex">
 									<span className="font-mono text-[13px] font-semibold tabular-nums">
-										{formatSessionDuration(session.durationMs)}
+										{formatSessionDuration(durationMs)}
 									</span>
 									{durationP95 != null &&
 										durationP95 > 0 &&
-										session.durationMs != null &&
-										session.durationMs > durationP95 && (
+										durationMs != null &&
+										durationMs > durationP95 && (
 											<span
 												className="shrink-0 self-center rounded-full bg-accent px-1.5 py-px text-[10px] font-medium text-accent-foreground"
 												title={`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(durationP95)})`}

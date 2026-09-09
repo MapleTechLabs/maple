@@ -114,9 +114,25 @@ class MirroredSpan extends Tracer.NativeSpan {
 			this.#anticipated,
 		)
 		if (outcome._tag === "ServerError") {
-			handle.setAttribute(ATTR_EXCEPTION_TYPE, HTTP_SERVER_ERROR_RESPONSE)
-			handle.setAttribute(ATTR_EXCEPTION_MESSAGE, outcome.message)
-			handle.setAttribute(ATTR_ERROR_TYPE, HTTP_SERVER_ERROR_RESPONSE)
+			// A handler that named the failure itself (an `exception` event) wins over
+			// the generic type, which would collapse every such 5xx into one bucket.
+			const recorded = this.events.find(([name]) => name === "exception")?.[2]
+			const type = recorded?.[ATTR_EXCEPTION_TYPE]
+			if (Predicate.isString(type)) {
+				handle.setAttribute(ATTR_EXCEPTION_TYPE, type)
+				const message = recorded?.[ATTR_EXCEPTION_MESSAGE]
+				handle.setAttribute(
+					ATTR_EXCEPTION_MESSAGE,
+					Predicate.isString(message) ? message : outcome.message,
+				)
+				const stacktrace = recorded?.[ATTR_EXCEPTION_STACKTRACE]
+				if (Predicate.isString(stacktrace)) handle.setAttribute(ATTR_EXCEPTION_STACKTRACE, stacktrace)
+				handle.setAttribute(ATTR_ERROR_TYPE, type)
+			} else {
+				handle.setAttribute(ATTR_EXCEPTION_TYPE, HTTP_SERVER_ERROR_RESPONSE)
+				handle.setAttribute(ATTR_EXCEPTION_MESSAGE, outcome.message)
+				handle.setAttribute(ATTR_ERROR_TYPE, HTTP_SERVER_ERROR_RESPONSE)
+			}
 		} else if (outcome._tag === "Interrupted") {
 			handle.setAttribute(ATTR_STATUS_INTERRUPTED, true)
 		} else if (outcome._tag === "Failed") {

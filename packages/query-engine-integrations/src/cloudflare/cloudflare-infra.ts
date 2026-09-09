@@ -12,8 +12,8 @@
 // and pre-computed percentiles live in `metrics_gauge` (one row per
 // `quantile`). The API handlers merge the two by ServiceName.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {

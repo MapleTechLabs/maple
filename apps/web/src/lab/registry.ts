@@ -37,6 +37,14 @@ export interface LabEntry {
 
 export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
+		path: "/lab/onboarding",
+		title: "Onboarding",
+		description:
+			"Click through onboarding with simulated plan selection and a restart button. No account changes.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:
@@ -80,6 +88,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Service map 3D",
 		description:
 			"Two 3D perspectives over one sample topology: Atlas groups infrastructure by namespace; Cascade follows dependency depth.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/agent-sessions",
+		title: "Agent sessions list",
+		description:
+			"The `/agent-sessions` list over rows that break its lanes — a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
 		kind: "lab",
 		session: "none",
 	},

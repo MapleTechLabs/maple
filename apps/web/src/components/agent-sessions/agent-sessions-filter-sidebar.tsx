@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { getRouteApi } from "@tanstack/react-router"
 
 import { Result } from "@/lib/effect-atom"
@@ -16,9 +17,10 @@ import {
 } from "@/components/filters/filter-sidebar"
 import { RangeFilterSection, type RangePreset } from "@maple/ui/components/filters/range-filter-section"
 import { Separator } from "@maple/ui/components/ui/separator"
+import { modelVendorIcon } from "@/lib/agent-sessions/model-vendor-icon"
+import { useDetectedModels } from "@/hooks/use-detected-models"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
-import { shortTarget } from "@/lib/agent-sessions/span-filters"
 import {
 	AGENT_SESSIONS_FILTER_KEYS,
 	hasAgentSessionsFilters,
@@ -98,6 +100,17 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 	const navigate = routeApi.useNavigate()
 	const search: AgentSessionsSearchState = routeApi.useSearch()
 
+	// Detection is a hook, so the model names have to be read out of the result
+	// here rather than inside the success branch below.
+	const modelNames = useMemo(
+		() =>
+			Result.builder(facetsResult)
+				.onSuccess((value) => value.models.map((option) => option.name))
+				.orElse(() => [] as ReadonlyArray<string>),
+		[facetsResult],
+	)
+	const detectModel = useDetectedModels(modelNames)
+
 	const setList = (key: ListKey, values: string[]) => {
 		navigate({ search: (prev) => ({ ...prev, [key]: values.length > 0 ? values : undefined }) })
 	}
@@ -107,7 +120,7 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 			navigate({ search: (prev) => ({ ...prev, [minKey]: min, [maxKey]: max }) })
 		}
 
-	// Everything the sidebar and the toolbar own; the window and the sort stay.
+	// Everything the sidebar and the toolbar own; the sort stays.
 	const clearAllFilters = () => {
 		navigate({
 			search: (prev) => ({
@@ -140,44 +153,9 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 						    toggle. "With errors" is deliberately absent: the toolbar chip is
 						    that filter, and two controls for one boolean read as a question
 						    about whether they agree. */}
-						<FilterSection
-							title="Framework"
-							options={vendors}
-							selected={search.vendors ?? []}
-							onChange={(vals) => setList("vendors", vals)}
-							getOptionLabel={vendorLabel}
-							getOptionIcon={vendorIcon}
-						/>
-
-						<SearchableFilterSection
-							title="Service"
-							options={services}
-							selected={search.services ?? []}
-							onChange={(vals) => setList("services", vals)}
-						/>
-
 						{/* Sections with nothing to offer hide themselves: most orgs never
 						    set an environment, and a framework that names no agents or tools
 						    would leave an empty list that reads as broken. */}
-						{environments.length > 0 && (
-							<FilterSection
-								title="Environment"
-								options={environments}
-								selected={search.environments ?? []}
-								onChange={(vals) => setList("environments", vals)}
-							/>
-						)}
-
-						{models.length > 0 && (
-							<SearchableFilterSection
-								title="Model"
-								options={models}
-								selected={search.models ?? []}
-								onChange={(vals) => setList("models", vals)}
-								getOptionLabel={shortTarget}
-							/>
-						)}
-
 						{agents.length > 0 && (
 							<SearchableFilterSection
 								title="Agent"
@@ -193,6 +171,42 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 								options={tools}
 								selected={search.tools ?? []}
 								onChange={(vals) => setList("tools", vals)}
+							/>
+						)}
+
+						<SearchableFilterSection
+							title="Service"
+							options={services}
+							selected={search.services ?? []}
+							onChange={(vals) => setList("services", vals)}
+						/>
+
+						<FilterSection
+							title="Framework"
+							options={vendors}
+							selected={search.vendors ?? []}
+							onChange={(vals) => setList("vendors", vals)}
+							getOptionLabel={vendorLabel}
+							getOptionIcon={vendorIcon}
+						/>
+
+						{models.length > 0 && (
+							<SearchableFilterSection
+								title="Model"
+								options={models}
+								selected={search.models ?? []}
+								onChange={(vals) => setList("models", vals)}
+								getOptionLabel={(name) => detectModel(name).displayName}
+								getOptionIcon={(name) => modelVendorIcon(detectModel(name))}
+							/>
+						)}
+
+						{environments.length > 0 && (
+							<FilterSection
+								title="Environment"
+								options={environments}
+								selected={search.environments ?? []}
+								onChange={(vals) => setList("environments", vals)}
 							/>
 						)}
 
@@ -264,7 +278,7 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 
 						{vendors.length === 0 && services.length === 0 && (
 							<p className="py-4 text-sm text-muted-foreground">
-								No sessions in the selected time range
+								No sessions in the last 7 days
 							</p>
 						)}
 					</FilterSidebarBody>

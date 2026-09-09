@@ -5,7 +5,7 @@ import {
 	compileUnionUnsafe,
 	QueryBuilderDefect,
 	type CompiledQuery,
-} from "@maple-dev/clickhouse-builder"
+} from "@maple-dev/effect-clickhouse"
 import {
 	aiSessionFacetsQuery,
 	aiSessionListQuery,
@@ -43,7 +43,11 @@ const FAN_OUT_START = "2026-08-18 10:00:00"
 const FAN_OUT_END = "2026-08-18 12:00:00"
 
 /** Stage 2's ENTIRE param set — the caller's window is not among them. */
-const listParams = { orgId: params.orgId, fanOutStart: FAN_OUT_START, fanOutEnd: FAN_OUT_END }
+const listParams = {
+	orgId: params.orgId,
+	fanOutStart: FAN_OUT_START,
+	fanOutEnd: FAN_OUT_END,
+}
 
 /** A page of two sessions, one of each kind — the list never runs without one. */
 const listOpts = {
@@ -120,7 +124,10 @@ describe("aiSessionPageQuery", () => {
 
 	it("applies both filters as trace-level existence tests, after the grouping", () => {
 		const { sql } = compileUnsafe(
-			aiSessionPageQuery({ vendorIds: ["eve"], serviceNames: ["maple-slack-agent"] }),
+			aiSessionPageQuery({
+				vendorIds: ["eve"],
+				serviceNames: ["maple-slack-agent"],
+			}),
 			params,
 		)
 
@@ -136,7 +143,10 @@ describe("aiSessionPageQuery", () => {
 
 	it("tests each filter dimension separately, not one row against both", () => {
 		const { sql } = compileUnsafe(
-			aiSessionPageQuery({ vendorIds: ["eve"], serviceNames: ["maple-slack-agent"] }),
+			aiSessionPageQuery({
+				vendorIds: ["eve"],
+				serviceNames: ["maple-slack-agent"],
+			}),
 			params,
 		)
 		const [where] = sql.split("GROUP BY traceId")
@@ -198,10 +208,13 @@ describe("aiSessionPageQuery", () => {
 					agentStart: "2026-08-19 10:33:25.825000000",
 					agentEnd: "2026-08-19 10:33:36.242000000",
 					models: ["claude-sonnet-5"],
-					agentNames: ["slack-agent"],
+					agentNames: ["web-fetcher", "slack-agent"],
+					firstAgentName: "slack-agent",
 					llmCalls: "12",
 					toolCalls: "7",
 					errorAgentSpans: "1",
+					toolErrors: 1,
+					turnErrors: 0,
 					totalTokens: 184_320,
 					cost: 0.4125,
 					agentDurationMs: "10417",
@@ -213,10 +226,13 @@ describe("aiSessionPageQuery", () => {
 				agentStart: "2026-08-19 10:33:25.825000000",
 				agentEnd: "2026-08-19 10:33:36.242000000",
 				models: ["claude-sonnet-5"],
-				agentNames: ["slack-agent"],
+				agentNames: ["web-fetcher", "slack-agent"],
+				firstAgentName: "slack-agent",
 				llmCalls: 12,
 				toolCalls: 7,
 				errorAgentSpans: 1,
+				toolErrors: 1,
+				turnErrors: 0,
 				totalTokens: 184_320,
 				cost: 0.4125,
 				agentDurationMs: 10_417,
@@ -259,31 +275,71 @@ describe("aiSessionPageQuery", () => {
 
 		expect(inner).toContain("groupUniqArrayIf(20)(Model, Model != '') AS models")
 		expect(inner).toContain("groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames")
-		expect(inner).toContain("sum(IsLlmCall) AS llmCalls")
 		expect(inner).toContain("sum(IsToolCall) AS toolCalls")
 		expect(inner).toContain("sum(IsError) AS errorAgentSpans")
+		// Model calls travel as reporters too: they are counted one level up.
+		expect(inner).not.toContain("AS llmCalls")
 		expect(inner).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost), (Tokens > 0 OR Cost > 0)) AS usageReporters",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
 		)
 		expect(inner).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
 		)
 
 		expect(outer).toContain("groupUniqArrayArray(models) AS models")
-		expect(outer).toContain("sum(llmCalls) AS llmCalls")
 		expect(outer).toContain("sum(errorAgentSpans) AS errorAgentSpans")
-		// Deepest reporter: a parent keeps only its excess over its reporting children.
+		// The session's reporters, every trace's flattened, so a gateway's mirror
+		// trace of a call is in hand next to the app's own span of it.
+		const all = "arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)"
+		// Deepest reporter: a parent keeps only its excess over its reporting
+		// children; then one claim per response id.
 		expect(outer).toContain(
-			"sum(arraySum(r -> greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), usageReporters)), usageReporters)) AS totalTokens",
+			`arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), ${all}))), ${all})`,
 		)
-		expect(outer).toContain(
-			"sum(arraySum(r -> greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), usageReporters)), usageReporters)) AS cost",
-		)
+		expect(outer).toContain("arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1,")
+		expect(outer).toContain(") AS totalTokens")
+		expect(outer).toContain(") AS cost")
+		expect(outer).toContain("toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0),")
+		expect(outer).toContain(") AS llmCalls")
 		expect(outer).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
 		// Still index-only: none of it reaches for the fan-out table.
 		expect(sql).not.toContain("trace_detail_spans")
+	})
+
+	it("names the session by its earliest named agent, not by the unordered set", () => {
+		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
+		const [outer, inner] = sql.split("FROM (SELECT")
+
+		// Per trace: a span with no agent name sorts to the sentinel and can never
+		// win the argMin, so a trace that has one always resolves to it.
+		const agentOrder = "if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))"
+		expect(inner).toContain(`argMin(AgentName, ${agentOrder}) AS firstAgentName`)
+		expect(inner).toContain(`min(${agentOrder}) AS firstAgentAt`)
+		// Across traces: the same column ranks the traces, so a trace that named
+		// no agent carries the sentinel and loses to any trace that did.
+		expect(outer).toContain("argMin(firstAgentName, firstAgentAt) AS firstAgentName")
+		// The set is still the set — it feeds the filter rail and the overview, and
+		// says nothing about which name comes first.
+		expect(outer).toContain("groupUniqArrayArray(agentNames) AS agentNames")
+	})
+
+	it("splits the failures into tool and turn, deepest failed span counted", () => {
+		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
+		const [outer, inner] = sql.split("FROM (SELECT")
+
+		expect(inner).toContain(
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans",
+		)
+		// A failed span whose own child also failed is the child's echo, not a
+		// second failure — the turn span a framework fails alongside its call.
+		expect(outer).toContain(
+			"sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors",
+		)
+		expect(outer).toContain(
+			"sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors",
+		)
 	})
 
 	it("filters the ranked row with HAVING, after the session grouping", () => {
@@ -390,7 +446,9 @@ describe("aiSessionListQuery", () => {
 
 	it("restricts both index reads to the page's sessions, escaping the ids", () => {
 		const { sql } = compileUnsafe(
-			aiSessionListQuery({ sessionIds: ["wrun_01M0CSAEW96BH2W9185XZPRPKH", "sess'evil"] }),
+			aiSessionListQuery({
+				sessionIds: ["wrun_01M0CSAEW96BH2W9185XZPRPKH", "sess'evil"],
+			}),
 			listParams,
 		)
 
@@ -578,6 +636,43 @@ describe("aiSessionListQuery", () => {
 		expect(compileUnsafe(aiSessionListQuery(listOpts), listParams).sql).not.toContain("__PARAM_")
 	})
 
+	it("splits the usage into the detail page's five buckets, deepest reporter counted", () => {
+		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+
+		// Per trace: the reporters with their buckets under the shared convention
+		// — the cache carved out of the prompt and the reasoning out of the
+		// completion where the figure nests them (vendor first, then provider),
+		// left whole where it does not — and the response id last.
+		expect(sql).toContain(
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, ",
+		)
+		expect(sql).toContain(
+			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
+		expect(sql).toContain(
+			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
+		)
+		expect(sql).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(",
+		)
+		expect(sql).toContain(") AS usageBuckets")
+		// Per session: one sum per bucket, children off their parent and one
+		// claim per response id — the tuple's eighth element.
+		const all = "arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)"
+		for (const [element, name] of [
+			[3, "inputTokens"],
+			[4, "cacheReadTokens"],
+			[5, "cacheWriteTokens"],
+			[6, "outputTokens"],
+			[7, "reasoningTokens"],
+		] as const) {
+			expect(sql).toContain(
+				`arrayMap(r -> tuple(r.8, greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), ${all}))), ${all})`,
+			)
+			expect(sql).toContain(`) AS ${name}`)
+		}
+	})
+
 	it("decodes quoted 64-bit aggregates and the service-name array", () => {
 		const compiled = compileUnsafe(aiSessionListQuery(listOpts), listParams)
 
@@ -590,6 +685,11 @@ describe("aiSessionListQuery", () => {
 				spanCount: "250",
 				errorSpanCount: "4",
 				serviceNames: ["maple-slack-agent", "maple-api"],
+				inputTokens: 120_000,
+				cacheReadTokens: 60_000,
+				cacheWriteTokens: 0,
+				outputTokens: 4_000,
+				reasoningTokens: 320,
 				startTime: "2026-08-19 10:33:25.825000000",
 				endTime: "2026-08-19 10:33:36.242000000",
 				durationMs: "10417",
@@ -604,6 +704,11 @@ describe("aiSessionListQuery", () => {
 			spanCount: 250,
 			errorSpanCount: 4,
 			serviceNames: ["maple-slack-agent", "maple-api"],
+			inputTokens: 120_000,
+			cacheReadTokens: 60_000,
+			cacheWriteTokens: 0,
+			outputTokens: 4_000,
+			reasoningTokens: 320,
 			startTime: "2026-08-19 10:33:25.825000000",
 			endTime: "2026-08-19 10:33:36.242000000",
 			durationMs: 10_417,
@@ -634,7 +739,8 @@ describe("aiSessionFacetsQuery", () => {
 			["tool", "ToolName"],
 		] as const
 		for (const [facetType, column] of dimensions) {
-			expect(sql).toContain(`groupUniqArray(${column}) AS names`)
+			// Keyed over every span of the trace; the value filter is on the array.
+			expect(sql).toContain(`groupUniqArrayIf(20)(${column}, ${column} != '') AS names`)
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		expect(sql.split("arrayJoin(names) AS name").length - 1).toBe(dimensions.length)
@@ -727,7 +833,10 @@ describe("aiSessionSpansQuery", () => {
 		const { sql } = compileUnsafe(aiSessionSpansQuery(), spanParams)
 		expect(sql).toContain("SpanAttributes['maple_ai.session.id'] = 'wrun_01M0CSAEW96BH2W9185XZPRPKH'")
 
-		const escaped = compileUnsafe(aiSessionSpansQuery(), { ...spanParams, sessionId: "sess'evil" })
+		const escaped = compileUnsafe(aiSessionSpansQuery(), {
+			...spanParams,
+			sessionId: "sess'evil",
+		})
 		expect(escaped.sql).toContain("SpanAttributes['maple_ai.session.id'] = 'sess\\'evil'")
 	})
 
@@ -778,7 +887,9 @@ describe("aiSessionSpansQuery", () => {
 			"maple_ai.vendor.id": "eve",
 			"maple_ai.session.id": "wrun_01M0CSAEW96BH2W9185XZPRPKH",
 		})
-		expect(row?.resourceAttributes).toEqual({ "service.name": "maple-slack-agent" })
+		expect(row?.resourceAttributes).toEqual({
+			"service.name": "maple-slack-agent",
+		})
 	})
 })
 
@@ -812,7 +923,10 @@ describe("aiSessionWindowQuery", () => {
 			"(mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != '')",
 		)
 
-		const escaped = compileUnsafe(aiSessionWindowQuery(), { ...windowParams, sessionId: "sess'evil" })
+		const escaped = compileUnsafe(aiSessionWindowQuery(), {
+			...windowParams,
+			sessionId: "sess'evil",
+		})
 		expect(escaped.sql).toContain("SpanAttributes['maple_ai.session.id'] = 'sess\\'evil'")
 	})
 
@@ -948,7 +1062,10 @@ describe("aiTraceSpansQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		expect(orgPredicateCount(compiled.sql)).toBe(1)
 
-		const escaped = compileUnsafe(aiTraceSpansQuery(), { ...traceParams, traceId: "trace'evil" })
+		const escaped = compileUnsafe(aiTraceSpansQuery(), {
+			...traceParams,
+			traceId: "trace'evil",
+		})
 		expect(escaped.sql).toContain("TraceId = 'trace\\'evil'")
 	})
 

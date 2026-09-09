@@ -6,10 +6,12 @@
 // deepest span that reports them, because frameworks that also roll usage up to
 // the agent span would otherwise double the bill. And token buckets are
 // normalised to be disjoint at the point they are read off a span: a provider
-// that counts cached tokens inside its prompt figure has them carved back out
-// (see `cacheInclusiveInput`), so `input` always means the uncached prompt and
-// a total is always the plain sum of the buckets.
+// that counts cached tokens inside its prompt figure, or reasoning inside its
+// completion figure, has them carved back out (see `genAiUsageConvention`), so
+// `input` always means the uncached prompt, `output` the visible completion,
+// and a total is always the plain sum of the buckets.
 
+import { genAiUsageConvention } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 
@@ -38,29 +40,39 @@ export interface IdleGap {
 	readonly durationMs: number
 }
 
-/** Wall-clock occupancy classes, in the order the breakdown legend lists them. */
-export type OccupancyKind = "idle" | "ttft" | "inference" | "tool" | "unaccounted"
+/** Classes of agent time, in the order the breakdown stacks them. */
+export type AgentTimeKind = "ttft" | "inference" | "tool"
 
-const OCCUPANCY_KIND_ORDER: readonly OccupancyKind[] = ["idle", "ttft", "inference", "tool", "unaccounted"]
+const AGENT_TIME_KIND_ORDER: readonly AgentTimeKind[] = ["ttft", "inference", "tool"]
 
-export interface OccupancySegment {
-	readonly kind: OccupancyKind
+export interface AgentTimeSegment {
+	readonly kind: AgentTimeKind
 	readonly ms: number
 }
 
-/** One classified stretch of the wall clock — the chronological bar draws these. */
-export interface OccupancyInterval {
-	readonly kind: OccupancyKind
-	readonly startMs: number
-	readonly endMs: number
+/**
+ * What the agents spent, rather than what the clock did. Every work span
+ * contributes its whole duration, so two subagents inferring at once cost two
+ * seconds of agent time per second of wall clock — `totalMs` exceeding the wall
+ * clock is the fan-out, not an error, and `peakParallel` says how wide it got.
+ */
+export interface SessionAgentTime {
+	readonly totalMs: number
+	/** Non-zero segments only, stacked in `AGENT_TIME_KIND_ORDER`: an
+	 *  unavailable TTFT is absent, never a zero-width band. */
+	readonly segments: readonly AgentTimeSegment[]
+	/** Most work spans in flight at once — 1 when nothing ever overlapped. */
+	readonly peakParallel: number
 }
 
 export interface SessionTokenTotals {
 	/** Uncached prompt tokens: providers whose prompt figure contains the cache
-	 *  buckets have them carved back out. See `cacheInclusiveInput`. */
+	 *  buckets have them carved back out. See `spanTokenBuckets`. */
 	readonly input: number
 	readonly cacheRead: number
 	readonly cacheWrite: number
+	/** Visible completion tokens: providers whose completion figure contains
+	 *  the reasoning have it carved back out, the same way. */
 	readonly output: number
 	readonly reasoning: number
 	/** The buckets are disjoint after normalisation, so this is their sum. */
@@ -137,11 +149,7 @@ export interface SessionSummary {
 	readonly activeMs: number
 	readonly idleMs: number
 	readonly idleGaps: readonly IdleGap[]
-	/** Non-zero segments only: an unavailable TTFT is absent, never a zero bar. */
-	readonly occupancy: readonly OccupancySegment[]
-	/** The same classes as chronological intervals tiling the wall clock — what
-	 *  the breakdown bar draws, while the legend sums `occupancy`. */
-	readonly occupancyTimeline: readonly OccupancyInterval[]
+	readonly agentTime: SessionAgentTime
 	/** The last turn did not close cleanly. */
 	readonly failed: boolean
 	/** The opening user message, when content was captured. */
@@ -202,7 +210,7 @@ export function buildSessionSummary({
 	const idleMs = idleGaps.reduce((total, gap) => total + gap.durationMs, 0)
 
 	const usage = countableUsageSpans(ordered, byId)
-	const occupancyTimeline = computeOccupancyTimeline(ordered, startMs, endMs, idleGaps)
+	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
 
 	return {
 		startMs,
@@ -211,20 +219,19 @@ export function buildSessionSummary({
 		activeMs: wallClockMs - idleMs,
 		idleMs,
 		idleGaps,
-		occupancy: aggregateOccupancy(occupancyTimeline),
-		occupancyTimeline,
+		agentTime: computeAgentTime(ordered),
 		failed: turns[turns.length - 1]?.failed === true,
 		title: turns[0]?.label,
 		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
 		vendorIds: distinctInOrder(ordered.map((span) => span.vendorId)),
 		serviceNames: byFrequency(ordered.map((span) => span.serviceName)),
-		models: modelUsage(ordered, usage.bySpan, costBySpan(ordered, byId)),
+		models: modelUsage(calls, usage.bySpan, usage.costs),
 		tokens: sumTokens([...usage.bySpan.values()]),
 		tokenReporting: classifyTokenReporting(usage, byId, turns),
-		cost: sessionCost(ordered, byId),
+		cost: usage.costs.size === 0 ? undefined : sumCosts(usage.costs.values()),
 		work: {
 			turns: turns.length,
-			llmCalls: ordered.filter(isLlmCall).length,
+			llmCalls: calls.length,
 			toolCalls: ordered.filter((span) => classifyAiSpan(span) === "tool").length,
 		},
 		failures: countFailures(ordered),
@@ -261,22 +268,6 @@ function union(intervals: readonly Interval[]): Interval[] {
 	return merged
 }
 
-/** `a` minus `b`; both are expected to be disjoint covers. */
-function subtract(a: readonly Interval[], b: readonly Interval[]): Interval[] {
-	const out: Interval[] = []
-	for (const interval of a) {
-		let cursor = interval.startMs
-		for (const hole of b) {
-			if (hole.endMs <= cursor) continue
-			if (hole.startMs >= interval.endMs) break
-			if (hole.startMs > cursor) out.push({ startMs: cursor, endMs: hole.startMs })
-			cursor = Math.max(cursor, hole.endMs)
-		}
-		if (cursor < interval.endMs) out.push({ startMs: cursor, endMs: interval.endMs })
-	}
-	return out
-}
-
 /**
  * The stretches where nothing at all was running, long enough to read as the
  * session waiting on a human. Short holes stay in active time — they are the
@@ -296,93 +287,71 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
 }
 
 /**
- * Classify the wall clock into a chronological cover of disjoint intervals.
+ * Sum what the agents spent, by class of work.
  *
- * Overlaps are resolved by a fixed priority — time to first token, then
- * inference, then tool — so the intervals always tile the wall clock exactly.
- * What neither idle nor a gen_ai span accounts for lands in `unaccounted`:
- * agent scaffolding, framework overhead, the app's own spans. That residual is
- * the point of the bar, so it is never folded into a neighbour.
+ * Every work span contributes its whole duration — nothing is unioned and
+ * nothing is resolved by priority, which is the difference from the wall-clock
+ * reading this replaced: a session running four subagents in parallel spent
+ * four seconds of agent time per second, and flattening that onto one clock
+ * hid the fan-out and quietly stole the overlap from whichever class lost the
+ * priority order. The waterfall is where time reads chronologically.
+ *
+ * A TTFT splits its own span: the wait is not inference, and a session whose
+ * time is mostly first-token latency is a different session from one that is
+ * mostly generation. Agent and non-AI spans contribute nothing — an agent span
+ * covers its children, and adding it would count the same work twice.
  */
-export function computeOccupancyTimeline(
-	spans: readonly AiSessionSpan[],
-	startMs: number,
-	endMs: number,
-	idleGaps: readonly IdleGap[],
-): readonly OccupancyInterval[] {
-	const ttftIntervals: Interval[] = []
-	const inferenceIntervals: Interval[] = []
-	const toolIntervals: Interval[] = []
+export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
+	const totals = new Map<AgentTimeKind, number>()
+	const add = (kind: AgentTimeKind, ms: number) => {
+		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
+	}
+	const work: Interval[] = []
 
 	for (const span of spans) {
 		const spanStart = spanStartMs(span)
 		const spanEnd = spanEndMs(span)
 		const category = classifyAiSpan(span)
+		if (category !== "tool" && category !== "inference") continue
+		work.push({ startMs: spanStart, endMs: spanEnd })
 		if (category === "tool") {
-			toolIntervals.push({ startMs: spanStart, endMs: spanEnd })
+			add("tool", spanEnd - spanStart)
 			continue
 		}
-		if (category !== "inference") continue
 		const ttftMs = spanTtftMs(span)
-		if (ttftMs === undefined) {
-			inferenceIntervals.push({ startMs: spanStart, endMs: spanEnd })
-		} else {
-			ttftIntervals.push({ startMs: spanStart, endMs: spanStart + ttftMs })
-			inferenceIntervals.push({ startMs: spanStart + ttftMs, endMs: spanEnd })
-		}
+		// A TTFT longer than the span itself is instrumentation disagreeing with
+		// itself; the span's own duration is the one both classes must fit in.
+		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, spanEnd - spanStart)
+		add("ttft", ttft)
+		add("inference", spanEnd - spanStart - ttft)
 	}
 
-	const ttft = union(ttftIntervals)
-	const inference = subtract(union(inferenceIntervals), ttft)
-	const tool = subtract(
-		union(toolIntervals),
-		[...ttft, ...inference].sort((a, b) => a.startMs - b.startMs),
-	)
-
-	// Idle gaps are stretches where no span at all ran, and the three covers
-	// above live inside spans — so all four sets are mutually disjoint and a
-	// plain sort yields the timeline. Holes between them are the residual.
-	const classified: OccupancyInterval[] = [
-		...idleGaps.map(
-			(gap): OccupancyInterval => ({ kind: "idle", startMs: gap.startMs, endMs: gap.endMs }),
-		),
-		...ttft.map((i): OccupancyInterval => ({ kind: "ttft", ...i })),
-		...inference.map((i): OccupancyInterval => ({ kind: "inference", ...i })),
-		...tool.map((i): OccupancyInterval => ({ kind: "tool", ...i })),
-	].sort((a, b) => a.startMs - b.startMs)
-
-	const timeline: OccupancyInterval[] = []
-	const push = (interval: OccupancyInterval) => {
-		if (interval.endMs <= interval.startMs) return
-		const last = timeline[timeline.length - 1]
-		if (last !== undefined && last.kind === interval.kind && last.endMs === interval.startMs) {
-			timeline[timeline.length - 1] = { ...last, endMs: interval.endMs }
-		} else {
-			timeline.push(interval)
-		}
-	}
-
-	let cursor = startMs
-	for (const interval of classified) {
-		if (interval.startMs > cursor) push({ kind: "unaccounted", startMs: cursor, endMs: interval.startMs })
-		push(interval)
-		cursor = Math.max(cursor, interval.endMs)
-	}
-	if (cursor < endMs) push({ kind: "unaccounted", startMs: cursor, endMs })
-
-	return timeline
-}
-
-/** The legend's totals, summed from the same timeline the bar draws so the two
- *  can never disagree. Zero-total classes are absent, never a zero row. */
-function aggregateOccupancy(timeline: readonly OccupancyInterval[]): readonly OccupancySegment[] {
-	const totals = new Map<OccupancyKind, number>()
-	for (const interval of timeline) {
-		totals.set(interval.kind, (totals.get(interval.kind) ?? 0) + (interval.endMs - interval.startMs))
-	}
-	return OCCUPANCY_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
+	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
 		(segment) => segment.ms > 0,
 	)
+	return {
+		totalMs: segments.reduce((total, segment) => total + segment.ms, 0),
+		segments,
+		peakParallel: peakParallel(work),
+	}
+}
+
+/** Most work spans open at once, by a sweep over their endpoints. Ends are
+ *  processed before starts, so a span beginning as another ends is not overlap. */
+function peakParallel(work: readonly Interval[]): number {
+	const events = work
+		.flatMap((interval) => [
+			{ atMs: interval.startMs, delta: 1 },
+			{ atMs: interval.endMs, delta: -1 },
+		])
+		.sort((a, b) => a.atMs - b.atMs || a.delta - b.delta)
+	let open = 0
+	let peak = 0
+	for (const event of events) {
+		open += event.delta
+		if (open > peak) peak = open
+	}
+	return Math.max(peak, 1)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -398,77 +367,18 @@ const EMPTY_TOKENS: SessionTokenTotals = {
 	total: 0,
 }
 
-/** Whether a reporter's `input` bucket already contains its cache buckets. */
-type CacheConvention = "inclusive" | "exclusive"
-
-/**
- * `gen_ai.provider.name` → whether that provider's prompt count already
- * CONTAINS the cached tokens reported beside it.
- *
- * Anthropic's Messages API bills the three separately: `input_tokens` excludes
- * both `cache_read_input_tokens` and `cache_creation_input_tokens`, so its
- * total really is the sum of the buckets. Everyone else folds the cache into
- * the prompt figure — OpenAI's `prompt_tokens` contains
- * `prompt_tokens_details.cached_tokens`, Gemini's `promptTokenCount` contains
- * `cachedContentTokenCount`, OpenRouter is OpenAI-shaped — and adding the cache
- * on top of that bills those tokens twice, which on a cache-heavy agent loop is
- * a near-doubling rather than a rounding error.
- *
- * Only providers whose wire shape was checked are listed. Anything else takes
- * the dominant convention, `"inclusive"`: it is what most of the field does,
- * and it errs toward the smaller number rather than inventing tokens.
- */
-const PROVIDER_CACHE_CONVENTION = new Map<string, CacheConvention>([
-	["anthropic", "exclusive"],
-	["openai", "inclusive"],
-	["gcp.gemini", "inclusive"],
-	["gcp.vertex_ai", "inclusive"],
-	["openrouter", "inclusive"],
-])
-
-/**
- * Vendors that re-normalise usage before emitting it, whichever provider ran
- * the call — so the vendor, not the provider, decides.
- *
- * The Vercel AI SDK emits `gen_ai.usage.input_tokens` as
- * `result.usage.inputTokens.total`, and its Anthropic provider builds that
- * total as `noCache + cacheRead + cacheWrite`: an Anthropic call made through
- * the SDK is inclusive even though the raw API is not. Verified against the
- * installed packages — `ai/dist/index.mjs` for the attribute and
- * `@ai-sdk/anthropic` (vendored under `eve`) for the sum.
- */
-const VENDOR_CACHE_CONVENTION = new Map<string, CacheConvention>([
-	["vercel_ai_sdk", "inclusive"],
-	// `@opencode-ai/ai` normalises `inputTokens` to the inclusive total for every
-	// provider (see `sumTokens` in its anthropic-messages/bedrock-converse
-	// protocols), so Maple's own spans are inclusive even when the provider's
-	// raw API is not — pinning it here keeps totals right the day a direct
-	// anthropic/bedrock provider is wired.
-	["maple", "inclusive"],
-])
-
-/**
- * True when the span's reported `input` figure already covers its cache
- * buckets, so `spanTokenBuckets` subtracts them back out — counting them both
- * inside `input` and beside it would bill the same tokens twice.
- *
- * The vendor is asked first: a framework that re-added the buckets before
- * emitting them has overwritten whatever its provider's own API said.
- */
-function cacheInclusiveInput(span: AiSessionSpan): boolean {
-	const vendor = VENDOR_CACHE_CONVENTION.get(span.vendorId ?? "")
-	const provider = PROVIDER_CACHE_CONVENTION.get(span.genAi.providerName ?? "")
-	return (vendor ?? provider ?? "inclusive") === "inclusive"
-}
-
 /**
  * The five `gen_ai.usage.*` buckets a span reports, normalised to disjoint
- * buckets — or nothing when it reports none. A provider whose prompt figure
- * already contains its cache buckets has them subtracted back out, so `input`
- * is always the uncached prompt and the total is always the sum, whichever
- * convention the reporter billed under. Exported so the waterfall and the flow
- * split a span's usage the same way the header does rather than re-deriving
- * the prompt/completion halves.
+ * buckets — or nothing when it reports none. A reporter whose prompt figure
+ * already contains its cache buckets, or whose completion figure contains its
+ * reasoning, has them carved back out (`genAiUsageConvention` says which), so
+ * `input` is always the uncached prompt, `output` the visible completion, and
+ * the total is always the sum, whichever convention the reporter billed under.
+ * `ai_trace_index`'s `Tokens` column reaches the same sum at insert
+ * (`genAiTokensExpr`), which is what keeps the list's usage equal to the
+ * detail page's. Exported so the waterfall and the flow split a span's usage
+ * the same way the header does rather than re-deriving the prompt/completion
+ * halves.
  */
 export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
 	const { usageInputTokens, usageCacheReadInputTokens, usageCacheCreationInputTokens } = span.genAi
@@ -482,19 +392,23 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 	) {
 		return undefined
 	}
+	const convention = genAiUsageConvention(span.vendorId, span.genAi.providerName)
 	const cacheRead = usageCacheReadInputTokens ?? 0
 	const cacheWrite = usageCacheCreationInputTokens ?? 0
+	const reasoning = usageReasoningOutputTokens ?? 0
 	const reportedInput = usageInputTokens ?? 0
+	const reportedOutput = usageOutputTokens ?? 0
 	return tokenTotals({
-		// Clamped: a reporter whose cache figures exceed its own prompt figure is
-		// mis-stamped, and a negative bucket would be a worse lie than a zero.
-		input: cacheInclusiveInput(span)
+		// Clamped: a reporter whose nested figures exceed the figure that is
+		// supposed to contain them is mis-stamped, and a negative bucket would be
+		// a worse lie than a zero.
+		input: convention.inputIncludesCache
 			? Math.max(0, reportedInput - cacheRead - cacheWrite)
 			: reportedInput,
 		cacheRead,
 		cacheWrite,
-		output: usageOutputTokens ?? 0,
-		reasoning: usageReasoningOutputTokens ?? 0,
+		output: convention.outputIncludesReasoning ? Math.max(0, reportedOutput - reasoning) : reportedOutput,
+		reasoning,
 	})
 }
 
@@ -509,6 +423,9 @@ function tokenTotals(buckets: Omit<SessionTokenTotals, "total">): SessionTokenTo
 interface CountableUsage {
 	/** Dedup-adjusted usage per reporting span; reporters left with nothing are absent. */
 	readonly bySpan: ReadonlyMap<string, SessionTokenTotals>
+	/** Reported cost per span under the same rules; an empty map means nothing
+	 *  reported a cost at all — "not measured", not "free". */
+	readonly costs: ReadonlyMap<string, number>
 	/** Some reporter summed usage that a span beneath it also reported. */
 	readonly rolledUp: boolean
 }
@@ -540,7 +457,93 @@ function countableUsageSpans(
 		const tokens = excessTokens(reported.get(spanId)!, sumTokens(beneath))
 		if (tokens.total > 0) bySpan.set(spanId, tokens)
 	}
-	return { bySpan, rolledUp }
+	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
+	return { bySpan: collapsed.tokens, costs: collapsed.costs, rolledUp }
+}
+
+/**
+ * Reporters sharing a `gen_ai.response.id` are one model call observed twice —
+ * the app's own span and a gateway's mirror of it (OpenRouter Broadcast,
+ * Helicone, …), which lands in the same session as a separate trace, out of
+ * reach of the parent/child netting above. The provider's response id is the
+ * one fact both observations carry, so the call is counted once, at the
+ * larger claim: the observation with the most tokens represents it (the
+ * first, on a tie), and it carries the largest cost any of them reported — a
+ * gateway prices a call the app's SDK could not, and the per-model table must
+ * find that price on the same span it finds the tokens. Reporters without an
+ * id are kept as they are — the page does not guess.
+ */
+function collapseObservations(
+	tokens: ReadonlyMap<string, SessionTokenTotals>,
+	costs: ReadonlyMap<string, number>,
+	byId: ReadonlyMap<string, AiSessionSpan>,
+): { readonly tokens: ReadonlyMap<string, SessionTokenTotals>; readonly costs: ReadonlyMap<string, number> } {
+	const groups = new Map<string, string[]>()
+	for (const spanId of new Set([...tokens.keys(), ...costs.keys()])) {
+		const responseId = byId.get(spanId)?.genAi.responseId
+		if (responseId === undefined || responseId === "") continue
+		groups.set(responseId, [...(groups.get(responseId) ?? []), spanId])
+	}
+	const keptTokens = new Map(tokens)
+	const keptCosts = new Map(costs)
+	for (const group of groups.values()) {
+		const total = (spanId: string) => tokens.get(spanId)?.total ?? 0
+		const representative = group.reduce((best, spanId) => (total(spanId) > total(best) ? spanId : best))
+		const reported = group.flatMap((spanId) => costs.get(spanId) ?? [])
+		for (const spanId of group) {
+			if (spanId === representative) continue
+			keptTokens.delete(spanId)
+			keptCosts.delete(spanId)
+		}
+		if (reported.length > 0) keptCosts.set(representative, Math.max(...reported))
+	}
+	return { tokens: keptTokens, costs: keptCosts }
+}
+
+/**
+ * The model calls the session made, each counted once. A model span counts
+ * when it is the deepest account of its call: it reported usage its children
+ * do not already cover, or it reported none and neither did any span above it
+ * — so a failed call still counts, while a gateway's provider attempt under
+ * the call that reports (OpenRouter's `provider attempt N`) and an SDK's
+ * `generateText` over its `doGenerate` do not. Calls sharing a response id
+ * are one call, represented by the observation whose usage claim was kept so
+ * the per-model table finds its tokens.
+ */
+function countedLlmCalls(
+	spans: readonly AiSessionSpan[],
+	byId: ReadonlyMap<string, AiSessionSpan>,
+	tokensBySpan: ReadonlyMap<string, SessionTokenTotals>,
+	costsBySpan: ReadonlyMap<string, number>,
+): readonly AiSessionSpan[] {
+	const reportsUsage = (span: AiSessionSpan) =>
+		(spanTokenBuckets(span)?.total ?? 0) > 0 || (span.genAi.usageCost ?? 0) > 0
+	const claimed = (span: AiSessionSpan) =>
+		tokensBySpan.has(span.spanId) || (costsBySpan.get(span.spanId) ?? 0) > 0
+	const deepest = spans.filter((span) => {
+		if (!isLlmCall(span)) return false
+		if (reportsUsage(span)) return claimed(span)
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			if (reportsUsage(parent)) return false
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+		return true
+	})
+	const byResponse = new Map<string, AiSessionSpan>()
+	const unkeyed: AiSessionSpan[] = []
+	for (const span of deepest) {
+		const responseId = span.genAi.responseId
+		if (responseId === undefined || responseId === "") {
+			unkeyed.push(span)
+			continue
+		}
+		const current = byResponse.get(responseId)
+		if (current === undefined || (!claimed(current) && claimed(span))) byResponse.set(responseId, span)
+	}
+	return [...unkeyed, ...byResponse.values()].sort((a, b) => spanStartMs(a) - spanStartMs(b))
 }
 
 /**
@@ -596,14 +599,6 @@ function sumCosts(costs: Iterable<number>): number {
 	let usd = 0
 	for (const cost of costs) usd += cost
 	return usd
-}
-
-function sessionCost(
-	spans: readonly AiSessionSpan[],
-	byId: ReadonlyMap<string, AiSessionSpan>,
-): number | undefined {
-	const bySpan = costBySpan(spans, byId)
-	return bySpan.size === 0 ? undefined : sumCosts(bySpan.values())
 }
 
 /** Per bucket, what `reported` claims over `counted`. Never negative: a wrapper
@@ -680,19 +675,19 @@ function sumTokens(totals: readonly SessionTokenTotals[]): SessionTokenTotals {
 }
 
 /**
- * Tokens and calls per model, over the model calls alone. A span that reported
- * usage without naming a model gets no row — its tokens are in the session
- * total, which is where a number with no model belongs.
+ * Tokens and calls per model, over the counted model calls alone
+ * (`countedLlmCalls`). A call that reported usage without naming a model gets
+ * no row — its tokens are in the session total, which is where a number with
+ * no model belongs.
  */
 function modelUsage(
-	spans: readonly AiSessionSpan[],
+	calls: readonly AiSessionSpan[],
 	tokensBySpan: ReadonlyMap<string, SessionTokenTotals>,
 	costsBySpan: ReadonlyMap<string, number>,
 ): readonly SessionModelUsage[] {
 	const byModel = new Map<string, { llmCalls: number; tokens: SessionTokenTotals[]; costs: number[] }>()
 
-	for (const span of spans) {
-		if (!isLlmCall(span)) continue
+	for (const span of calls) {
 		const model = spanModel(span)
 		if (model === undefined) continue
 		let entry = byModel.get(model)

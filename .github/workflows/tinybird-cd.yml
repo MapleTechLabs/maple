@@ -1,3 +1,7 @@
+# DORMANT — disabled in the GitHub UI. Both Tinybird workspaces (EU prod and
+# `maple_us`) are deployed by hand from a `tb login` (see
+# docs/tinybird-pr-branches.md and the notes in the memory index); this file is
+# kept for the day that moves back into CI.
 name: Tinybird - CD Workflow
 
 on:
@@ -45,7 +49,7 @@ jobs:
                       environment: tinybird-cd-us
         environment: ${{ matrix.target.environment }}
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
             - name: Install dependencies
               # Run install before any secrets are scoped to the deploy step.

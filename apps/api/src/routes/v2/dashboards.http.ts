@@ -410,7 +410,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const changes =
 							previous === undefined
 								? undefined
-								: dashboardAuditDiff(payload, toV2Dashboard(previous), toV2Dashboard(dashboard))
+								: dashboardAuditDiff(
+										payload,
+										toV2Dashboard(previous),
+										toV2Dashboard(dashboard),
+									)
 						yield* recordHttpAudit("dashboard.updated", {
 							resourceId: dashboard.id,
 							changes,

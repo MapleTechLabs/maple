@@ -17,9 +17,10 @@
 // the frontend matches rows to existing trace-derived DB nodes by database
 // name and attaches the numbers.
 
+import { finiteOrZero } from "@maple/query-engine/ch/format"
 import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { MetricsGauge } from "@maple/query-engine/ch/tables"
 
@@ -336,7 +337,7 @@ export function planetscaleConnectionsSQL() {
 	return fromQuery(inner, "conn")
 		.select(($) => ({
 			database: $.database,
-			connectionsAvg: CH.avg($.totalConnections),
+			connectionsAvg: finiteOrZero(CH.avg($.totalConnections)),
 			connectionsMax: CH.max_($.totalConnections),
 		}))
 		.groupBy("database")
@@ -375,7 +376,7 @@ export function planetscaleBranchConnectionsSQL() {
 		.select(($) => ({
 			database: $.database,
 			branch: $.branch,
-			connectionsAvg: CH.avg($.totalConnections),
+			connectionsAvg: finiteOrZero(CH.avg($.totalConnections)),
 			connectionsMax: CH.max_($.totalConnections),
 		}))
 		.groupBy("database", "branch")

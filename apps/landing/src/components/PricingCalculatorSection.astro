@@ -17,9 +17,16 @@ interface Props {
     // switcher so the visitor can compare against any vendor (used by /pricing).
     competitor?: "datadog" | "grafana" | "new-relic" | "dash0";
     competitorName?: string;
+    /**
+     * Hydrate on load instead of on scroll. Set where the section sits near the
+     * top of the page: `client:visible` is a scroll race the visitor can win,
+     * and an estimator that is still inert when it is already on screen reads
+     * as broken. Sections further down keep the default.
+     */
+    eager?: boolean;
 }
 
-const { competitor, competitorName } = Astro.props;
+const { competitor, competitorName, eager = false } = Astro.props;
 
 const compareEyebrow = competitor ? "Pricing" : m.pricing_calc_label();
 const compareHeading = competitor
@@ -46,9 +53,9 @@ const compareSub = competitor
 
         <div class="mt-10">
             {competitor ? (
-                <PricingCalculator competitor={competitor} client:visible />
+                eager ? <PricingCalculator competitor={competitor} client:load /> : <PricingCalculator competitor={competitor} client:visible />
             ) : (
-                <PricingComparisonCalculator client:visible />
+                eager ? <PricingComparisonCalculator client:load /> : <PricingComparisonCalculator client:visible />
             )}
         </div>
     </div>

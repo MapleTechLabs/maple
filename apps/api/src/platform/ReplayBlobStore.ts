@@ -1,6 +1,5 @@
 import { Array as Arr, Context, Effect, Layer, Option } from "effect"
-import { R2Bucket, type R2BucketClient } from "@maple/infra/r2"
-import { WorkerEnvironment, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
+import { type ObjectStore, ReplayBlobBucket } from "@/platform/bindings"
 
 // ReplayBlobStore — reads rrweb chunk payloads out of R2.
 //
@@ -12,16 +11,13 @@ import { WorkerEnvironment, workerEnvironmentLayer } from "@maple/infra/worker-r
 //
 // Two states are normal, not errors:
 //
-//   - **No binding.** Self-hosted installs and the Docker image of this API have
-//     no R2. `WorkerEnvironment` resolves to `{}` outside a Worker isolate, so
-//     `bindOptional` yields `None` and hydration becomes a no-op.
+//   - **No bucket.** Self-hosted installs and the Docker image of this API have
+//     no R2, so no host provides `ReplayBlobBucket` and hydration becomes a
+//     no-op.
 //   - **Non-empty `events` on a row.** That row predates the R2 cutover (or came
 //     from a BYO-ClickHouse org, which never stops writing inline). It passes
 //     through untouched. This is the dual-read, and it is the whole migration
 //     strategy: no backfill, the old rows age out on the table's 30-day TTL.
-
-/** Binding name; must match the key in `apps/api/alchemy.run.ts`. */
-export const REPLAY_BLOBS_BINDING = "REPLAY_BLOBS"
 
 /**
  * Object key for one replay chunk.
@@ -65,7 +61,7 @@ const decodeGzip = (bytes: Uint8Array): Promise<string> =>
 	new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"))).text()
 
 const makeHydrate =
-	(bucket: R2BucketClient) =>
+	(bucket: ObjectStore) =>
 	<T extends HydratableChunk>(orgId: string, sessionId: string, chunks: readonly T[]) =>
 		Effect.forEach(
 			chunks,
@@ -73,14 +69,15 @@ const makeHydrate =
 				// Pre-cutover row: the payload is already in hand.
 				if (chunk.events !== "") return Effect.succeed(Option.some(chunk))
 				const key = replayObjectKey(orgId, sessionId, chunk.chunkSeq)
-				return bucket.get(key).pipe(
-					Effect.flatMap((object) =>
-						object === null
-							? Effect.succeed(Option.none<T>())
-							: object.bytes().pipe(
-									Effect.flatMap((bytes) => Effect.promise(() => decodeGzip(bytes))),
+				return bucket.getBytes(key).pipe(
+					Effect.flatMap(
+						Option.match({
+							onNone: () => Effect.succeed(Option.none<T>()),
+							onSome: (bytes) =>
+								Effect.promise(() => decodeGzip(bytes)).pipe(
 									Effect.map((events) => Option.some({ ...chunk, events })),
 								),
+						}),
 					),
 					// A failed fetch degrades the recording rather than the request.
 					// Logged at warning because a nonzero rate here means either the
@@ -101,26 +98,15 @@ export class ReplayBlobStore extends Context.Service<ReplayBlobStore, ReplayBlob
 	"@maple/api/platform/ReplayBlobStore",
 	{
 		make: Effect.gen(function* () {
-			// The R2 client's methods each demand `WorkerEnvironment` again at call
-			// time, so capture it here and close over it. Otherwise the requirement
-			// leaks into every caller's type, and the routes would have to know
-			// they're on Cloudflare.
-			const env = yield* WorkerEnvironment
-			const bucket = yield* R2Bucket.bindOptional(R2Bucket(REPLAY_BLOBS_BINDING))
+			const bucket = yield* Effect.serviceOption(ReplayBlobBucket)
 			if (Option.isNone(bucket)) {
 				// Expected on self-hosted / Docker / tests. Every row will carry its
 				// payload inline there, so hydration has nothing to do.
 				return { hydrate: (_orgId, _sessionId, chunks) => Effect.succeed([...chunks]) }
 			}
-			const hydrate = makeHydrate(bucket.value)
-			return {
-				hydrate: (orgId, sessionId, chunks) =>
-					hydrate(orgId, sessionId, chunks).pipe(Effect.provideService(WorkerEnvironment, env)),
-			}
+			return { hydrate: makeHydrate(bucket.value) }
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
 }
-
-export const ReplayBlobStoreLive = ReplayBlobStore.layer.pipe(Layer.provide(workerEnvironmentLayer))

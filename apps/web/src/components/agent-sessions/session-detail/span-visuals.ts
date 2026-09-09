@@ -1,26 +1,34 @@
 // The session page's shared color vocabulary: one token per kind of work, read
 // identically by the header's breakdown bar, the waterfall's dots and bars and
-// the flow view's nodes. The tokens are the app's existing chart tokens rather
-// than new ones, and time-to-first-token is a lighter value of the inference
-// token rather than a fifth hue — chart-5 and chart-2 are two near-identical
-// cyans in the light palette (ΔL 0.04, Δh 25°).
+// the flow view's nodes. The four kinds have designated `chart-ai-*` hues
+// rather than chart-1..5 slots, for the reason the token buckets do: the
+// numbered slots are spaced per theme, and in dark they landed TTFT (chart-3)
+// and tool (chart-4) 0.08 apart in oklab — one band to the eye in a 16px bar,
+// with inference only 0.18 off the same pair. The designated hues sit ~85°
+// apart in both themes.
 
-import { DotsIcon, FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@/components/icons"
+import {
+	BoltIcon,
+	DotsIcon,
+	FaceRobotIcon,
+	GearIcon,
+	MediaPauseIcon,
+	PixelSparkleIcon,
+	type IconComponent,
+} from "@/components/icons"
 
 import type { AiSpanCategory } from "@/lib/agent-sessions/session-turns"
-import type { OccupancyKind } from "@/lib/agent-sessions/session-summary"
+import type { AgentTimeKind } from "@/lib/agent-sessions/session-summary"
 
-// Idle and unaccounted are the absence of work, so they get the neutral rather
-// than a hue; unaccounted is denser because it is usually a percent or two of
-// the bar and washes out at that width.
+// A span that is neither a model call nor a tool is not a class of work, so it
+// gets the neutral rather than a hue of its own.
 const NO_WORK_FILL = "bg-muted-foreground/40"
-const UNACCOUNTED_FILL = "bg-muted-foreground/70"
 
 /** Bar and dot background, per span category. */
 export const CATEGORY_FILL = {
-	agent: "bg-chart-1",
-	inference: "bg-chart-2",
-	tool: "bg-chart-4",
+	agent: "bg-chart-ai-agent",
+	inference: "bg-chart-ai-inference",
+	tool: "bg-chart-ai-tool",
 	other: NO_WORK_FILL,
 } satisfies Record<AiSpanCategory, string>
 
@@ -34,37 +42,52 @@ export const CATEGORY_ICON = {
 	other: DotsIcon,
 } satisfies Record<AiSpanCategory, IconComponent>
 
-/** The same chart tokens as `CATEGORY_FILL`, as text color for the glyphs. */
+/** The same tokens as `CATEGORY_FILL`, as text color for the glyphs. */
 export const CATEGORY_TEXT = {
-	agent: "text-chart-1",
-	inference: "text-chart-2",
-	tool: "text-chart-4",
+	agent: "text-chart-ai-agent",
+	inference: "text-chart-ai-inference",
+	tool: "text-chart-ai-tool",
 	other: "text-muted-foreground",
 } satisfies Record<AiSpanCategory, string>
 
-/** Segment background in the header's occupancy bar. */
-export const OCCUPANCY_FILL = {
-	idle: NO_WORK_FILL,
-	ttft: "bg-chart-2/45",
-	inference: "bg-chart-2",
-	tool: "bg-chart-4",
-	unaccounted: UNACCOUNTED_FILL,
-} satisfies Record<OccupancyKind, string>
+/**
+ * The breakdown's bands: the classes of agent time, plus the idle the session
+ * spent waiting on a human. Idle is not agent time and gets the neutral rather
+ * than a hue, but it is disjoint from all the work — nothing at all was running
+ * — so the four sum honestly to the time the section accounts for.
+ */
+export type TimeBandKind = AgentTimeKind | "idle"
 
-/** The same vocabulary at 6px, where the 45% ttft fill washes out. */
-export const OCCUPANCY_DOT_FILL = {
+/** Band background in the breakdown. */
+export const AGENT_TIME_FILL = {
+	ttft: "bg-chart-ai-ttft",
+	inference: "bg-chart-ai-inference",
+	tool: "bg-chart-ai-tool",
 	idle: NO_WORK_FILL,
-	ttft: "bg-chart-2/70",
-	inference: "bg-chart-2",
-	tool: "bg-chart-4",
-	unaccounted: UNACCOUNTED_FILL,
-} satisfies Record<OccupancyKind, string>
+} satisfies Record<TimeBandKind, string>
 
-/** Legend text for an occupancy segment. */
-export const OCCUPANCY_LABEL = {
-	idle: "Idle",
+/** Legend glyph for a class of agent time: the kind of work reads by shape
+ *  first, with the band's hue as reinforcement — the same rule the flow view's
+ *  nodes follow. */
+export const AGENT_TIME_ICON = {
+	ttft: BoltIcon,
+	inference: PixelSparkleIcon,
+	tool: GearIcon,
+	idle: MediaPauseIcon,
+} satisfies Record<TimeBandKind, IconComponent>
+
+/** The bands' tokens as text color, for the legend glyphs. */
+export const AGENT_TIME_TEXT = {
+	ttft: "text-chart-ai-ttft",
+	inference: "text-chart-ai-inference",
+	tool: "text-chart-ai-tool",
+	idle: "text-muted-foreground/70",
+} satisfies Record<TimeBandKind, string>
+
+/** Legend text for a class of agent time. */
+export const AGENT_TIME_LABEL = {
 	ttft: "Time to first token",
 	inference: "Inference",
 	tool: "Tool execution",
-	unaccounted: "Unaccounted",
-} satisfies Record<OccupancyKind, string>
+	idle: "Idle",
+} satisfies Record<TimeBandKind, string>

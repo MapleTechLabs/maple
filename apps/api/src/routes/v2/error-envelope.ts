@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer } from "effect"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import { HttpEffect, HttpServerResponse } from "effect/unstable/http"
 import {
@@ -8,29 +8,9 @@ import {
 	V2UnexpectedFailure,
 	V2UnexpectedErrors,
 } from "@maple/domain/http/v2"
+import { failureStackOf, failureTypeOf, recordRenderedFailure } from "@/routes/rendered-failure"
 import { describeSchemaIssue } from "@/routes/schema-error-detail"
-
-class V2RouteExecutionDefect extends Schema.TaggedError<V2RouteExecutionDefect>()(
-	"@maple/api/routes/v2/V2RouteExecutionDefect",
-	{
-		group: Schema.String,
-		operation: Schema.String,
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-class V2ResponseSchemaError extends Schema.TaggedError<V2ResponseSchemaError>()(
-	"@maple/api/routes/v2/V2ResponseSchemaError",
-	{
-		group: Schema.String,
-		operation: Schema.String,
-		component: Schema.Literals(["Body", "ResponseHeaders"]),
-		message: Schema.String,
-		details: Schema.Array(Schema.String),
-		cause: Schema.Defect(),
-	},
-) {}
+import { observeServerError } from "@/routes/server-error-observability"
 
 type V2SchemaBoundaryError =
 	| ReturnType<typeof V2InvalidRequest.make>
@@ -53,25 +33,16 @@ const V2SchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 		Effect.suspend((): Effect.Effect<never, V2SchemaBoundaryError> => {
 			const details = describeSchemaIssue(schemaError.cause.issue)
 			if (schemaError.kind === "Body" || schemaError.kind === "ResponseHeaders") {
-				const error = new V2ResponseSchemaError({
+				return recordRenderedFailure({
 					group: group.identifier,
 					operation: endpoint.identifier,
-					component: schemaError.kind,
-					message: "V2 response failed its declared HTTP schema",
-					details: details.map(({ line }) => line),
+					errorType: `@maple/api/routes/v2/V2ResponseSchemaError/${schemaError.kind}`,
+					summary: "V2 response failed its declared HTTP schema",
+					message: details.map(({ line }) => line).join("; "),
+					status: 500,
+					detail: details.map(({ line }) => line),
 					cause: schemaError.cause,
-				})
-				return Effect.logError(error.message).pipe(
-					Effect.annotateLogs({
-						errorTag: error._tag,
-						group: error.group,
-						operation: error.operation,
-						component: error.component,
-						details: error.details,
-						cause: error.cause,
-					}),
-					Effect.andThen(Effect.fail(V2ResponseSchemaFailure.make())),
-				)
+				}).pipe(Effect.andThen(Effect.fail(V2ResponseSchemaFailure.make())))
 			}
 			const first = details[0]
 			if (first === undefined) {
@@ -119,25 +90,19 @@ export const V2UnexpectedErrorsLive = Layer.succeed(
 	V2UnexpectedErrors.of((httpEffect, { endpoint, group }) =>
 		httpEffect.pipe(
 			Effect.tapError(appendRetryAfter),
-			Effect.catchDefect((cause) => {
-				const defectType = cause instanceof Error ? cause.name : typeof cause
-				const error = new V2RouteExecutionDefect({
+			Effect.tapError(observeServerError(endpoint, group)),
+			Effect.catchDefect((cause) =>
+				recordRenderedFailure({
 					group: group.identifier,
 					operation: endpoint.identifier,
-					message: "Unexpected v2 route execution defect",
+					errorType: failureTypeOf(cause),
+					summary: "Unexpected v2 route execution defect",
+					message: cause instanceof Error ? cause.message : String(cause),
+					status: 500,
+					stack: failureStackOf(cause),
 					cause,
-				})
-				return Effect.logError(error.message).pipe(
-					Effect.annotateLogs({
-						errorTag: error._tag,
-						group: error.group,
-						operation: error.operation,
-						defectType,
-						cause: error.cause,
-					}),
-					Effect.andThen(Effect.fail(V2UnexpectedFailure.make())),
-				)
-			}),
+				}).pipe(Effect.andThen(Effect.fail(V2UnexpectedFailure.make()))),
+			),
 		),
 	),
 )

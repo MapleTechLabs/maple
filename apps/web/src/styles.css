@@ -65,28 +65,6 @@
 	animation-delay: 0.32s;
 }
 
-/* Demo seed — telemetry bars rising in a staggered wave. */
-@keyframes seeding-bar {
-	0%,
-	100% {
-		transform: scaleY(0.35);
-	}
-	50% {
-		transform: scaleY(1);
-	}
-}
-
-.seeding-bar {
-	animation: seeding-bar 0.9s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.seeding-bar {
-		animation: none;
-		transform: scaleY(0.6);
-	}
-}
-
 /* Investigation provenance canvas — the dashes drift from source to target, which
    is what tells you which way the causality runs now that the arrowheads are gone.
    Each keyframe travels exactly one dash cycle (dasharray 3+3, 4+4) so the loop

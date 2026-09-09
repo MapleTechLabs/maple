@@ -19,8 +19,8 @@
 // schemas are built from `CHNumber`.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { ProductEvents, ServiceUsage, SessionReplays } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { hourFloor } from "@maple/query-engine/ch/query-helpers"

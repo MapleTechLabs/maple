@@ -14,8 +14,8 @@
 // the pre-computed percentiles live in `metrics_gauge` (one row per quantile).
 // The caller (the `serviceCloudflareStats` handler) merges both by ServiceName.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 import { avgWhere } from "@maple/query-engine/ch/format"
 

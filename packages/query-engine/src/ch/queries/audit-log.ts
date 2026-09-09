@@ -1,5 +1,5 @@
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, paramPlaceholder } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, paramPlaceholder } from "@maple-dev/effect-clickhouse"
 import { AuditLog } from "../tables"
 
 /**
