@@ -1,6 +1,12 @@
 # Ultrawide hero
 
-Generated using built-in imagegen from `maple-rome-balanced.webp`. Used above 1800px as a continuous full-width scene, preserving proportions with object-fit cover.
+Originally generated using built-in imagegen from `maple-rome-balanced.webp`. Used above 1800px as a continuous full-width scene, preserving proportions with object-fit cover.
+
+Restored with the imagegen CLI (`gpt-image-2`, high quality, explicit `3840x1280` size) from the original panorama and `maple-rome-balanced.webp` as the texture reference. Verified output dimensions: 3840 × 1280 (previously 2172 × 724). Exported to `maple-rome-ultrawide.webp` with `cwebp -q 95 -m 6` to preserve fine engraving detail. Full-resolution source: `output/imagegen/maple-rome-ultrawide-4k.png`.
+
+## Resolution restoration prompt
+
+Use case: precise-object-edit. Image 1 is the edit target: preserve its exact 3:1 panorama composition, temple position and scale, aqueduct route, landscape, framing and amber/charcoal palette. Image 2 is a texture reference only: match its crisp fine dithered engraving, sharp stone edges and resolved architectural details. Restore image 1 at native 3840x1280 with genuinely detailed engraving throughout. Preserve the scene without redesigning it. Resolve fine masonry, columns, foliage, rocks and water with consistent sharpness and fine stippling. Keep upper left sky quiet and dark for website text. No blur, smudging, painterly shading, halos, text, borders or new structures.
 
 ## Prompt
 
