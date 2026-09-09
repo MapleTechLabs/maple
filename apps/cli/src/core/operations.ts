@@ -30,7 +30,14 @@ import {
 } from "@maple/query-engine/observability"
 import { WarehouseClientError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { executeLocalQuery } from "@maple/query-engine/local"
-import { fingerprintSql, mapWarehouseError, SQL_TRACE_MAX, truncateSql } from "@maple/query-engine/execution"
+import {
+	fingerprintSql,
+	mapWarehouseError,
+	SQL_TRACE_MAX,
+	truncateSql,
+	warehouseFailureAttributes,
+	warehouseHttpClient,
+} from "@maple/query-engine/execution"
 import { HttpClient } from "effect/unstable/http"
 import { localDriverError } from "./executor"
 import { Mode } from "./mode"
@@ -320,17 +327,24 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 		"query.pipe": "rawSqlQuery",
 		"query.context": "cli.rawQuery",
 	})
+	// This span is the database span; the request underneath adds no `http.client` span.
+	const http = warehouseHttpClient(yield* HttpClient.HttpClient)
 	const rows = yield* executeLocalQuery(sql, baseUrl).pipe(
+		Effect.provideService(HttpClient.HttpClient, http),
 		Effect.mapError((error) => mapWarehouseError("rawQuery", localDriverError(error))),
-		Effect.tapError(() =>
+		Effect.tapError((error) =>
 			Clock.currentTimeMillis.pipe(
 				Effect.flatMap((completedAtMs) =>
-					Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - startedAtMs),
+					Effect.annotateCurrentSpan({
+						"db.duration_ms": completedAtMs - startedAtMs,
+						...warehouseFailureAttributes(error),
+					}),
 				),
 			),
 		),
 	)
 	yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
+	yield* Effect.annotateCurrentSpan("db.response.returned_rows", rows.length)
 	yield* Effect.annotateCurrentSpan("db.duration_ms", (yield* Clock.currentTimeMillis) - startedAtMs)
 	return rows
 })

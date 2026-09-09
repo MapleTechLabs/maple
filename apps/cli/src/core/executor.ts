@@ -4,6 +4,7 @@ import { OrgId, UserId } from "@maple/domain/http"
 import {
 	makeWarehouseExecutor,
 	WarehouseDriverError,
+	warehouseHttpClient,
 	type WarehouseSqlClient,
 } from "@maple/query-engine/execution"
 import type { WarehouseExecutorApi } from "@maple/query-engine/observability"
@@ -85,7 +86,7 @@ export const makeLocalWarehouseExecutorApi = (
 ): Effect.Effect<WarehouseExecutorApi, never, HttpClient.HttpClient> =>
 	Effect.map(HttpClient.HttpClient, (http) =>
 		makeWarehouseExecutor({
-			createClient: () => Effect.succeed(localChdbClient(baseUrl, http)),
+			createClient: () => Effect.succeed(localChdbClient(baseUrl, warehouseHttpClient(http))),
 			resolveRoute: () =>
 				Effect.succeed({
 					source: "managed" as const,

@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Tracer } from "effect"
 import {
 	MAX_RAW_SQL_RESULT_BYTES,
 	OrgClickHouseSettingsEncryptionError,
@@ -1074,6 +1074,21 @@ describe("Tinybird response decoding", () => {
 			assert.match(driver.message, /^Request failed with status 502: /)
 		}),
 	)
+
+	it.effect("keeps the first 16 KiB of an oversized error body instead of dropping it", () =>
+		Effect.gen(function* () {
+			const client = makeTinybirdTestClient(
+				tbConfig,
+				async () => new Response(`access denied ${"x".repeat(32 * 1024)}`, { status: 403 }),
+			)
+			const error = yield* Effect.flip(client.sql(statement))
+			assert.instanceOf(error, WarehouseDriverError)
+			const driver = error as WarehouseDriverError
+			assert.strictEqual(driver.status, 403)
+			assert.match(driver.message, /^Request failed with status 403: access denied/)
+			assert.strictEqual(String(driver.cause).length, 16 * 1024)
+		}),
+	)
 })
 
 describe("BYO ClickHouse redirect refusal", () => {
@@ -1241,6 +1256,19 @@ describe("warehouse driver Effect boundaries", () => {
 		}
 	}
 
+	it.effect("ClickHouse reports a single oversized row as a row limit, not the total", () =>
+		Effect.gen(function* () {
+			// No response limits: the native client's 16 MiB per-row default applies.
+			const request: typeof fetch = async () => new Response(`{"value":"${"x".repeat(16 * 1024 * 1024)}"}\n`)
+			const error = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, request).sql(parseStatement("SELECT 1 FORMAT JSON")),
+			)
+			assert.instanceOf(error, WarehouseResponseLimitError)
+			assert.strictEqual((error as WarehouseResponseLimitError).kind, "bytes")
+			assert.match(error.message, /^A single result row exceeded 16777216 encoded bytes$/)
+		}),
+	)
+
 	it.effect("Tinybird inserts are lazy and abort on interruption", () =>
 		Effect.gen(function* () {
 			const started = yield* Deferred.make<AbortSignal>()
@@ -1299,6 +1327,50 @@ it.effect("the executor's query budget aborts the adapter request without retryi
 		assert.strictEqual(attempts, 1)
 	}),
 )
+
+describe("warehouse spans follow the database conventions", () => {
+	const recordingTracer = () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return { spans, tracer }
+	}
+	const okFetch: typeof fetch = async () => new Response('{"data":[]}')
+
+	it.effect("emits one database span per query and no http.client span beneath it", () => {
+		const layer = buildLayer(createTestDb(trackedDbs))
+		return Effect.gen(function* () {
+			const { spans, tracer } = recordingTracer()
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(makeTenant(), scopedSql("SELECT 1 WHERE OrgId = 'org_test'"), {
+					context: "spanShape",
+				}),
+			).pipe(Effect.withTracer(tracer))
+			const names = spans.map((span) => span.name)
+			assert.include(names, "WarehouseQueryService.executeSql")
+			assert.isFalse(names.some((name) => name.startsWith("http.client")))
+		}).pipe(Effect.provide(layer), Effect.provideService(FetchHttpClient.Fetch, okFetch))
+	})
+
+	// Proves the assertion above can see an HTTP span at all: the same fetch on
+	// a bare Effect HttpClient does produce one.
+	it.effect("a driver on the bare fetch client would emit an http.client span", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = recordingTracer()
+			const client = makeTinybirdTestClient(
+				{ kind: "tinybird", host: "https://api.tinybird.co", token: "token" },
+				okFetch,
+			)
+			yield* client.sql(parseStatement("SELECT 1 FORMAT JSON")).pipe(Effect.withTracer(tracer))
+			assert.isTrue(spans.some((span) => span.name === "http.client POST"))
+		}),
+	)
+})
 
 /** An HttpClient whose transport is the given fetch stand-in. */
 const httpWith = (request: typeof fetch) =>

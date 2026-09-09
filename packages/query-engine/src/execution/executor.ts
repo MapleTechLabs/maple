@@ -25,11 +25,12 @@ import {
 import {
 	mapWarehouseError,
 	toWarehouseQueryError,
+	warehouseFailureAttributes,
 	type WarehouseExecutionError,
 	type WarehouseReadExecutionError,
 } from "./errors"
 import { WarehouseResponseLimitError, type WarehouseResponseLimits } from "./response-limits"
-import { SQL_LOG_MAX, SQL_TRACE_MAX, fingerprintSql, truncateSql } from "./fingerprint"
+import { SQL_LOG_MAX, SQL_TRACE_MAX, fingerprintSql, summarizeSql, truncateSql } from "./fingerprint"
 import { BackendDialect, warehouseTargetAttributes } from "./backend"
 import { managedWarehouseCapabilities } from "./managed-capabilities"
 import { resolveCompiledQuery } from "./compiled-input"
@@ -475,6 +476,13 @@ WHERE name = 'enable_full_text_index'`,
 		// vary with the backend and the cost profile, and hashing them forks one
 		// query into several shapes in the query-shape rollup, which keys on this.
 		yield* Effect.annotateCurrentSpan("db.query.fingerprint", fingerprintSql(statement.body))
+		// The conventions' low-cardinality identity: verb, first table, and their
+		// summary. Identical to what the shape rollup derives when the summary is
+		// absent, so emitting it forks no existing shape.
+		const { operation, collection, summary } = summarizeSql(statement.body)
+		if (operation !== "") yield* Effect.annotateCurrentSpan("db.operation.name", operation)
+		if (collection !== "") yield* Effect.annotateCurrentSpan("db.collection.name", collection)
+		if (summary !== "") yield* Effect.annotateCurrentSpan("db.query.summary", summary)
 		if (settings) yield* Effect.annotateCurrentSpan("ch.settings", JSON.stringify(settings))
 
 		const client = yield* getCachedOrCreateClient(
@@ -568,6 +576,7 @@ WHERE name = 'enable_full_text_index'`,
 					yield* Effect.annotateCurrentSpan("db.duration_ms", elapsedMs)
 					yield* Effect.annotateCurrentSpan("db.total_duration_ms", totalElapsedMs)
 					yield* Effect.annotateCurrentSpan("db.retry.attempts", attempts)
+					yield* Effect.annotateCurrentSpan(warehouseFailureAttributes(error))
 					yield* Effect.logError("WarehouseQueryService.executeSql failed", {
 						pipe,
 						context: options?.context,
@@ -587,6 +596,7 @@ WHERE name = 'enable_full_text_index'`,
 		)
 
 		yield* Effect.annotateCurrentSpan("result.rowCount", result.data.length)
+		yield* Effect.annotateCurrentSpan("db.response.returned_rows", result.data.length)
 		const completedAtMs = yield* Clock.currentTimeMillis
 		yield* Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - sqlStartedMs)
 		yield* Effect.annotateCurrentSpan("db.total_duration_ms", completedAtMs - startedAtMs)
@@ -1113,6 +1123,12 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("datasource", datasource)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("rowCount", rows.length)
+		yield* Effect.annotateCurrentSpan({
+			"db.operation.name": "INSERT",
+			"db.collection.name": datasource,
+			"db.query.summary": `INSERT ${datasource}`,
+			"db.operation.batch.size": rows.length,
+		})
 
 		if (rows.length === 0) return
 
@@ -1160,7 +1176,10 @@ WHERE name = 'enable_full_text_index'`,
 			Effect.tapError((error) =>
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((completedAtMs) =>
-						Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - insertStartedAtMs),
+						Effect.annotateCurrentSpan({
+							"db.duration_ms": completedAtMs - insertStartedAtMs,
+							...warehouseFailureAttributes(error),
+						}),
 					),
 					Effect.andThen(
 						Effect.logError("WarehouseQueryService.ingest failed", {

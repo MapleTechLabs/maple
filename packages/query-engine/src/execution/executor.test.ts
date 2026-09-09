@@ -168,8 +168,52 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			assert.strictEqual(span.attributes.get("query.context"), "spanContract")
 			assert.strictEqual(span.attributes.get("query.profile"), "list")
 			assert.strictEqual(span.attributes.get("result.rowCount"), 0)
+			assert.strictEqual(span.attributes.get("db.response.returned_rows"), 0)
+			assert.strictEqual(span.attributes.get("db.operation.name"), "SELECT")
+			assert.strictEqual(span.attributes.get("db.query.summary"), "SELECT")
+			assert.isFalse(span.attributes.has("db.collection.name"))
+			assert.isFalse(span.attributes.has("error.type"))
 			assert.isNumber(span.attributes.get("db.duration_ms"))
 			assert.match(span.attributes.get("db.query.fingerprint") as string, /^[0-9a-f]{8}$/)
+		}),
+	)
+
+	it.effect("names the table and records the database's own failure code on the span", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const executor = makeWarehouseExecutor({
+				...makeDeps([]),
+				createClient: () =>
+					Effect.succeed<WarehouseSqlClient>({
+						sql: () =>
+							Effect.fail(
+								new WarehouseDriverError({
+									reason: "server",
+									status: 500,
+									code: "60",
+									type: "UNKNOWN_TABLE",
+									message: "Code: 60. DB::Exception: Unknown table spans_missing (UNKNOWN_TABLE)",
+								}),
+							),
+						insert: () => Effect.void,
+					}),
+			})
+
+			const exit = yield* executor
+				.compiledQuery(tenant, scoped("SELECT 1 FROM spans_missing WHERE OrgId = 'org_test'"), {
+					context: "failureContract",
+				})
+				.pipe(Effect.exit, Effect.withTracer(tracer))
+			assert.isTrue(Exit.isFailure(exit))
+
+			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.executeSql")
+			assert.isDefined(span)
+			assert.strictEqual(span.attributes.get("db.operation.name"), "SELECT")
+			assert.strictEqual(span.attributes.get("db.collection.name"), "spans_missing")
+			assert.strictEqual(span.attributes.get("db.query.summary"), "SELECT spans_missing")
+			assert.strictEqual(span.attributes.get("error.type"), "UNKNOWN_TABLE")
+			assert.strictEqual(span.attributes.get("db.response.status_code"), "60")
+			assert.isFalse(span.attributes.has("db.response.returned_rows"))
 		}),
 	)
 

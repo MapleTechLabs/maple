@@ -7,6 +7,7 @@ import {
 	makeWarehouseExecutor,
 	WarehouseResponseLimitError,
 	WarehouseDriverError,
+	warehouseHttpClient,
 	type ClickHouseProtocolBackendConfig,
 	type ExecutionTenant,
 	type ResolvedWarehouseConfig,
@@ -45,10 +46,16 @@ import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgToke
 // Re-export the executor types so existing import sites stay stable.
 export type { WarehouseQueryServiceApi, SqlQueryOptions }
 
-const responseLimitError = (kind: "rows" | "bytes", limit: number) =>
+// `rowBytes` is the native client's per-row ceiling (16 MiB unless a caller
+// sets one). Raw SQL caps total bytes at 5 MB, so only a trusted query can
+// reach it; it keeps the `bytes` kind but must not be described as the total.
+const responseLimitError = (kind: "rows" | "bytes" | "rowBytes", limit: number) =>
 	new WarehouseResponseLimitError({
-		kind,
-		message: `Raw SQL results may contain at most ${limit} ${kind === "rows" ? "rows" : "encoded bytes"}`,
+		kind: kind === "rows" ? "rows" : "bytes",
+		message:
+			kind === "rowBytes"
+				? `A single result row exceeded ${limit} encoded bytes`
+				: `Raw SQL results may contain at most ${limit} ${kind === "rows" ? "rows" : "encoded bytes"}`,
 	})
 
 const clickHouseDriverError = (
@@ -56,7 +63,7 @@ const clickHouseDriverError = (
 ): WarehouseDriverError | WarehouseResponseLimitError => {
 	switch (error._tag) {
 		case "@effect-clickhouse-http/LimitError":
-			return responseLimitError(error.kind === "rows" ? "rows" : "bytes", error.limit)
+			return responseLimitError(error.kind, error.limit)
 		case "@effect-clickhouse-http/ServerError":
 			return new WarehouseDriverError({
 				reason: "server",
@@ -116,6 +123,9 @@ const createClickHouseSqlClient = (
 				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
 				// executor has already stripped any FORMAT clause and the client appends
 				// its own.
+				// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
+				// default still applies: it bounds the buffer a single unfinished row can
+				// take and is far above anything a Maple query returns.
 				sql: (statement, options) =>
 					client
 						.query({ sql: statement.text, ...(options?.responseLimits ? { limits: options.responseLimits } : undefined) })
@@ -191,6 +201,34 @@ const readBody = <E, E2>(
 		}),
 	)
 
+/**
+ * Buffer at most `maxBytes` of a body and stop pulling; closing the request
+ * scope discards the rest. For error bodies, where a truncated message still
+ * classifies and an absent one does not.
+ */
+const readBodyPrefix = <E>(body: Stream.Stream<Uint8Array, E>, maxBytes: number): Effect.Effect<string, E> =>
+	Effect.suspend(() => {
+		let remaining = maxBytes
+		return body.pipe(
+			Stream.map((chunk) => {
+				const part = chunk.subarray(0, remaining)
+				remaining -= part.length
+				return part
+			}),
+			Stream.takeUntil(() => remaining === 0),
+			Stream.runCollect,
+			Effect.map((parts) => {
+				const bytes = new Uint8Array(maxBytes - remaining)
+				let offset = 0
+				for (const part of parts) {
+					bytes.set(part, offset)
+					offset += part.length
+				}
+				return new TextDecoder().decode(bytes)
+			}),
+		)
+	})
+
 const createTinybirdSqlClient = (
 	config: TinybirdBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, never, HttpClient.HttpClient> =>
@@ -221,8 +259,9 @@ const createTinybirdSqlClient = (
 					.execute(HttpClientRequest.bearerToken(request, token))
 					.pipe(Effect.mapError(tinybirdTransportError))
 				if (response.status >= 200 && response.status < 300) return response
-				// An error body past 16 KiB is not worth keeping; the status still classifies.
-				const body = yield* readBody(bodyOf(response), TINYBIRD_ERROR_BODY_BYTES, () => undefined).pipe(
+				// Keep the first 16 KiB of an error body: the classifier's message rules
+				// still see it, and the rest is discarded with the request scope.
+				const body = yield* readBodyPrefix(bodyOf(response), TINYBIRD_ERROR_BODY_BYTES).pipe(
 					Effect.orElseSucceed(() => ""),
 				)
 				return yield* serverError(response.status, body)
@@ -293,7 +332,8 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 	{
 		make: Effect.gen(function* () {
 			// Captured once: every driver the executor builds runs on this client.
-			const http = yield* HttpClient.HttpClient
+			// `executeSql` is the database span; the drivers' round-trips add none.
+			const http = warehouseHttpClient(yield* HttpClient.HttpClient)
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 			const orgTokens = yield* TinybirdOrgTokenService

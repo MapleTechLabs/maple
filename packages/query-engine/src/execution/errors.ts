@@ -17,6 +17,28 @@ import {
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
 
+/**
+ * The OTel database conventions' failure attributes for a warehouse span.
+ * `db.response.status_code` is the code the database answered with — the
+ * ClickHouse error code where the driver saw one, otherwise the HTTP status
+ * an upstream returned. `error.type` names the failure at low cardinality:
+ * the ClickHouse exception type (`UNKNOWN_TABLE`), then the code, then the
+ * error's own tag for failures that never reached a database.
+ */
+export const warehouseFailureAttributes = (error: {
+	readonly _tag: string
+	readonly clickhouseCode?: string | undefined
+	readonly clickhouseType?: string | undefined
+	readonly upstreamStatus?: number | undefined
+}): Record<string, string> => {
+	const statusCode =
+		error.clickhouseCode ?? (error.upstreamStatus === undefined ? undefined : String(error.upstreamStatus))
+	return {
+		"error.type": error.clickhouseType ?? error.clickhouseCode ?? error._tag,
+		...(statusCode === undefined ? undefined : { "db.response.status_code": statusCode }),
+	}
+}
+
 const redactWarehouseCredentials = (message: string): string =>
 	message
 		.replace(/(Invalid token\s+b?)(['"])[\s\S]*?\2/gi, "$1$2[redacted]$2")
