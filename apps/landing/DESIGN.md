@@ -49,3 +49,9 @@ Pricing carries the shared orange-and-charcoal palette, Geist typography, sharp 
 Each `/features/*` page has its own Roman engraving in the hero, shared across English, Japanese and Korean. Match the balanced hero's amber-on-charcoal palette and medium-fine dithering. Choose a subject that relates to the feature: aqueduct channels for tracing, an archive for logs, a water clock for metrics, a connected city for services, a cracked keystone for errors, a watchtower for alerts, a theater for session replay, a scholar's instrument for MCP, and an organized harbor for Kubernetes.
 
 The illustration occupies the right background and fades behind the copy; on smaller screens its opacity drops to keep the full-width text readable. Preserve all localized copy, breadcrumbs, CTAs, real screenshots and interactive demos. Illustration paths belong to the feature registry; generated WebP assets and prompts live in `public/art/features/`. Use-case and comparison heroes retain their existing layout.
+
+## Social previews
+
+The 1200 × 630 OG cards use the same shared dark tokens, local Geist fonts and tree mark. The general card reuses `maple-rome-balanced.webp`; docs uses the Roman archive from `features/log-management.webp`. Large left-aligned text sits over a charcoal fade, with the architecture filling the right side. Keep the graphics recognizable at social-preview size.
+
+Run `bun run --cwd apps/landing generate:og` to regenerate both public PNGs and the application's matching `og-image.png`. The script uses the workspace's existing `apps/web` Playwright dependency (install its Chromium browser with `apps/web/node_modules/.bin/playwright install chromium` if needed). It renders local HTML with embedded assets, so generation needs no running app or network. Existing metadata paths continue to point to these files.
