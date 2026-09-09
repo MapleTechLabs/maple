@@ -145,13 +145,19 @@ const readString = (env: LlmEnv, key: keyof LlmEnv): string | undefined => {
 /** The client services a resolved model needs. `layerLlm` provides both, so either branch runs. */
 export type LlmClients = OpenRouterClient.OpenRouterClient | OpenAiClient.OpenAiClient
 
+/** The services a resolved model provides to a run. */
+type ModelServices = LanguageModel.LanguageModel | AiModel.ProviderName | AiModel.ModelName
+
 /**
- * The model Layer either branch produces. A union rather than one type over {@link LlmClients}: a
- * `Model` is a Layer, and a Layer requiring one client is not assignable to one requiring the union.
+ * Supplies the model to an Effect.
+ *
+ * A function rather than the Layer itself, because the two branches produce Layers that need
+ * different clients and a `Model` requiring one is not assignable to a `Model` requiring either.
+ * Closing over the concrete Layer at resolution keeps that union out of every call site.
  */
-export type LlmModelLayer =
-	| AiModel.Model<"openai", LanguageModel.LanguageModel, OpenRouterClient.OpenRouterClient>
-	| AiModel.Model<"openai", LanguageModel.LanguageModel, OpenAiClient.OpenAiClient>
+export type ProvideModel = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
+) => Effect.Effect<A, E, Exclude<R, ModelServices> | LlmClients>
 
 /**
  * A model Maple resolved, with the facts callers need alongside it.
@@ -164,7 +170,7 @@ export interface ResolvedModel {
 	readonly provider: LlmProvider
 	/** The provider's own model id, as sent on the wire. */
 	readonly name: string
-	readonly layer: LlmModelLayer
+	readonly provide: ProvideModel
 	readonly limits: { readonly context: number; readonly output: number }
 }
 
@@ -207,14 +213,21 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 const openRouterModel = (env: LlmEnv, name: string, effortKey: keyof LlmEnv, fallbackEffort: ReasoningEffort | undefined, tags: LlmCallTags | undefined): ResolvedModel => ({
 	provider: "openrouter",
 	name,
-	layer: OpenRouterLanguageModel.model(name, openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags)),
+	provide: (effect) =>
+		Effect.provide(
+			effect,
+			OpenRouterLanguageModel.model(
+				name,
+				openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags),
+			),
+		),
 	limits: limitsFor(env, name),
 })
 
 const workersAiModel = (env: LlmEnv, name: string): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
-	layer: OpenAiLanguageModel.model(name),
+	provide: (effect) => Effect.provide(effect, OpenAiLanguageModel.model(name)),
 	limits: limitsFor(env, name),
 })
 

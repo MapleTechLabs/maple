@@ -265,12 +265,28 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 export const chatAgent = (
 	agent: AgentDefinition,
 	toolkit: Toolkit.Any,
-	contextTokens?: number,
+	options: {
+		readonly contextTokens?: number
+		/**
+		 * Set when this run answers *through* a tool. Present means the run cannot settle in prose,
+		 * which is what an autonomous investigation needs and what a human follow-up must not have.
+		 */
+		readonly completion?: { readonly tool: string; readonly required: boolean }
+	} = {},
 ) =>
 	Agent.make(agent.name, {
 		input: Schema.String,
 		output: Output.text(Schema.String),
 		instructions: buildSystemPrompt(agent),
 		toolkit,
-		policy: agentPolicyFor(agent, contextTokens),
+		policy: agentPolicyFor(agent, options.contextTokens),
+		...(options.completion === undefined
+			? undefined
+			: {
+					completion: {
+						tool: options.completion.tool,
+						required: options.completion.required,
+						project: ({ parameters }: { readonly parameters: unknown }) => JSON.stringify(parameters),
+					},
+				}),
 	})
