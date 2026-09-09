@@ -25,6 +25,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Layer, Option, Schema } from "effect"
+import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 import { ReplayBlobStore } from "@/platform/ReplayBlobStore"
 
@@ -112,115 +113,117 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const tenant = yield* CurrentTenant.Context
 					const startTime = yield* toTinybird(payload.start_time, "start_time")
 					const endTime = yield* toTinybird(payload.end_time, "end_time")
-					const page = yield* paginateOffsetQuery(payload, ({ limit, offset }) =>
-						Effect.gen(function* () {
-							const compiled = CH.compile(
-								CH.sessionReplaysListQuery({
-									...(payload.service_name !== undefined
-										? {
-												serviceName: payload.service_name,
-											}
-										: undefined),
-									...(payload.browser !== undefined
-										? { browser: payload.browser }
-										: undefined),
-									...(payload.country !== undefined
-										? { country: payload.country }
-										: undefined),
-									...(payload.device_type !== undefined
-										? { deviceType: payload.device_type }
-										: undefined),
-									...(payload.user_id !== undefined
-										? { userId: payload.user_id }
-										: undefined),
-									...(payload.user_search !== undefined
-										? { userSearch: payload.user_search }
-										: undefined),
-									...(payload.group_name !== undefined
-										? { groupName: payload.group_name }
-										: undefined),
-									...(payload.visitor_id !== undefined
-										? { visitorId: payload.visitor_id }
-										: undefined),
-									...(payload.has_errors !== undefined
-										? { hasErrors: payload.has_errors }
-										: undefined),
-									...(payload.search !== undefined
-										? { search: payload.search }
-										: undefined),
-									...(payload.duration_min_ms !== undefined
-										? {
-												durationMinMs: payload.duration_min_ms,
-											}
-										: undefined),
-									...(payload.duration_max_ms !== undefined
-										? {
-												durationMaxMs: payload.duration_max_ms,
-											}
-										: undefined),
-									...(payload.active_time_min_ms !== undefined
-										? {
-												activeTimeMinMs: payload.active_time_min_ms,
-											}
-										: undefined),
-									...(payload.active_time_max_ms !== undefined
-										? {
-												activeTimeMaxMs: payload.active_time_max_ms,
-											}
-										: undefined),
-									limit,
-									offset,
-								}),
-								{ orgId: tenant.orgId, startTime, endTime },
-							)
-							return yield* warehouse
-								.compiledQuery(tenant, compiled, {
-									profile: "list",
-									context: "v2SearchReplays",
-								})
-								.pipe(
-									Effect.map(
-										(rows): ReadonlyArray<V2SessionReplayListItem> =>
-											rows.map((row) => ({
-												id: decodeSessionId(row.sessionId),
-												object: "session_replay" as const,
-												start_time: chToIso(row.startTime),
-												end_time: chToIsoOrNull(row.endTime),
-												duration_ms: row.durationMs,
-												status: row.status,
-												user_id: nullableUserId(row.userId),
-												user_name: row.userName,
-												user_email: row.userEmail,
-												group_id: row.groupId,
-												group_name: row.groupName,
-												visitor_id: row.visitorId,
-												utm_source: row.utmSource,
-												entry_path: row.entryPath,
-												recorded:
-													row.recorded === "true"
-														? true
-														: row.recorded === "false"
-															? false
-															: null,
-												url_initial: row.urlInitial,
-												browser_name: row.browserName,
-												os_name: row.osName,
-												device_type: row.deviceType,
-												country: row.country,
-												service_name: row.serviceName,
-												page_views: row.pageViews,
-												click_count: row.clickCount,
-												error_count: row.errorCount,
-												// `length()` is UInt64 — ClickHouse JSON-quotes it as a string.
-												trace_count: Number(row.traceCount),
-											})),
-									),
-								)
+					// Keyset, not offset. This list is newest-first over a table the
+					// SDK is writing to continuously, so by the time the reader asks
+					// for the next page the sessions that arrived since page one have
+					// pushed everything down — an offset then re-slices the shifted
+					// window and returns rows page one already showed. The keyset
+					// walks (StartTime, SessionId) instead, which no insert at the
+					// head can disturb.
+					const limit = payload.limit ?? LIST_LIMIT_DEFAULT
+					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "ses", 2)
+					const compiled = CH.compile(
+						CH.sessionReplaysListQuery({
+							...(payload.service_name !== undefined
+								? {
+										serviceName: payload.service_name,
+									}
+								: undefined),
+							...(payload.browser !== undefined ? { browser: payload.browser } : undefined),
+							...(payload.country !== undefined ? { country: payload.country } : undefined),
+							...(payload.device_type !== undefined
+								? { deviceType: payload.device_type }
+								: undefined),
+							...(payload.user_id !== undefined ? { userId: payload.user_id } : undefined),
+							...(payload.user_search !== undefined
+								? { userSearch: payload.user_search }
+								: undefined),
+							...(payload.group_name !== undefined
+								? { groupName: payload.group_name }
+								: undefined),
+							...(payload.visitor_id !== undefined
+								? { visitorId: payload.visitor_id }
+								: undefined),
+							...(payload.has_errors !== undefined
+								? { hasErrors: payload.has_errors }
+								: undefined),
+							...(payload.search !== undefined ? { search: payload.search } : undefined),
+							...(payload.duration_min_ms !== undefined
+								? {
+										durationMinMs: payload.duration_min_ms,
+									}
+								: undefined),
+							...(payload.duration_max_ms !== undefined
+								? {
+										durationMaxMs: payload.duration_max_ms,
+									}
+								: undefined),
+							...(payload.active_time_min_ms !== undefined
+								? {
+										activeTimeMinMs: payload.active_time_min_ms,
+									}
+								: undefined),
+							...(payload.active_time_max_ms !== undefined
+								? {
+										activeTimeMaxMs: payload.active_time_max_ms,
+									}
+								: undefined),
+							cursor: cursorParts
+								? { startTime: cursorParts[0]!, sessionId: cursorParts[1]! }
+								: undefined,
+							// One row of lookahead decides `has_more` without a
+							// second count query.
+							limit: limit + 1,
 						}),
+						{ orgId: tenant.orgId, startTime, endTime },
 					)
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "v2SearchReplays",
+					})
+
+					const dataRows = rows.slice(0, limit)
+					const last = dataRows.at(-1)
+					const hasMore = rows.length > limit
 					return {
 						object: "list" as const,
-						...page,
+						data: dataRows.map(
+							(row): V2SessionReplayListItem => ({
+								id: decodeSessionId(row.sessionId),
+								object: "session_replay" as const,
+								start_time: chToIso(row.startTime),
+								end_time: chToIsoOrNull(row.endTime),
+								duration_ms: row.durationMs,
+								status: row.status,
+								last_activity_at: chToIsoOrNull(row.lastActivityAt),
+								user_id: nullableUserId(row.userId),
+								user_name: row.userName,
+								user_email: row.userEmail,
+								group_id: row.groupId,
+								group_name: row.groupName,
+								visitor_id: row.visitorId,
+								utm_source: row.utmSource,
+								entry_path: row.entryPath,
+								recorded:
+									row.recorded === "true" ? true : row.recorded === "false" ? false : null,
+								url_initial: row.urlInitial,
+								browser_name: row.browserName,
+								os_name: row.osName,
+								device_type: row.deviceType,
+								country: row.country,
+								service_name: row.serviceName,
+								page_views: row.pageViews,
+								click_count: row.clickCount,
+								error_count: row.errorCount,
+								// `length()` is UInt64 — ClickHouse JSON-quotes it as a string.
+								trace_count: Number(row.traceCount),
+							}),
+						),
+						has_more: hasMore,
+						next_cursor:
+							hasMore && last
+								? encodeKeysetCursor("ses", [last.startTime, last.sessionId])
+								: null,
 					}
 				}),
 			)

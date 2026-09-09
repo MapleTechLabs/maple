@@ -123,18 +123,33 @@ function ReplaysPage() {
 	}
 
 	const sessions = allData
-	const errorSessions = Result.isSuccess(facetsResult) ? facetsResult.value.errorCount : 0
-	const durationP95 = Result.isSuccess(facetsResult) ? facetsResult.value.durationP95 : undefined
+	// Every header number comes off the facets query, which counts the whole
+	// window under the current filters. They used to be mixed: "sessions" and
+	// "live" counted the rows scrolled into memory while the error chip counted
+	// the window, so "50 sessions" sat beside "2,018 with errors" as though the
+	// two were the same kind of thing.
+	const facets = Result.isSuccess(facetsResult) ? facetsResult.value : undefined
+	const errorSessions = facets?.errorCount ?? 0
+	const totalSessions = facets?.totalSessions
+	const liveSessions = facets?.liveSessions
+	const durationP95 = facets?.durationP95
 	// "Engaged" chip mirrors the sidebar preset exactly (activeMin=30, no max), so
 	// toggling either surface keeps the other in sync.
 	const engagedOnly = search.activeMin === 30 && search.activeMax == null
 
 	const headerActions = (
 		<div className="flex flex-wrap items-center gap-2">
-			<div className="hidden items-center gap-4 sm:flex">
-				<ToolbarStat value={sessions.length} label="sessions" />
-				<ToolbarStat value={sessions.filter((s) => s.status === "active").length} label="live" dot />
-			</div>
+			{/* Held back until the counts exist rather than shown as zeros: a header
+			    that reads "0 sessions" for a beat above a list that is about to fill
+			    is worse than one that arrives a beat late. */}
+			{totalSessions !== undefined && (
+				<div className="hidden items-center gap-4 sm:flex">
+					<ToolbarStat value={totalSessions} label="sessions" />
+					{liveSessions !== undefined && liveSessions > 0 && (
+						<ToolbarStat value={liveSessions} label="live" dot />
+					)}
+				</div>
+			)}
 			{/* Replays and Web Analytics read the same session data from opposite ends —
 			    one session at a time versus the aggregate — so each is the obvious next
 			    question from the other. The time range travels with the link; arriving

@@ -90,7 +90,7 @@ import {
 	TraceId,
 	SpanId,
 } from "@maple/domain/http"
-import { WEB_ANALYTICS_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { Clock, Effect, Match, Option, Schema } from "effect"
 import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
 import { isMissingProductEvents, isMissingServiceOperationsRollup } from "@/services/warehouse/missing-table"
@@ -1970,7 +1970,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: {
 								visitors: Number(row?.visitors) || 0,
 								sessions: Number(row?.sessions) || 0,
-								windowSeconds: WEB_ANALYTICS_LIVE_WINDOW_SECONDS,
+								windowSeconds: SESSION_LIVE_WINDOW_SECONDS,
 							},
 						})
 					}),

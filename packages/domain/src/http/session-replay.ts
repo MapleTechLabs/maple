@@ -47,6 +47,16 @@ export class ListReplaysRequest extends Schema.Class<ListReplaysRequest>("ListRe
 	 * value is exactly what this boundary is for.
 	 */
 	cursor: Schema.optional(TinybirdDateTime),
+	/**
+	 * Tie-break for `cursor`: the `SessionId` of that same last row.
+	 *
+	 * `StartTime` comes off a JS `Date` in the SDK, so it is only
+	 * millisecond-resolution and sessions do share one. Sent alongside the
+	 * timestamp, the keyset walks `(StartTime, SessionId)` and a page boundary
+	 * inside a tie keeps the sessions on the far side of it; sent alone, the
+	 * cursor falls back to the plain `StartTime <` comparison it has always been.
+	 */
+	cursorSessionId: Schema.optional(SessionId),
 	// Session-time range filters (ms). `durationMin/Max` filter the stored
 	// wall-clock duration; `activeTimeMin/Max` filter active (non-idle) time
 	// computed from session_events gaps (server-side: setting either active bound
@@ -65,6 +75,10 @@ export const SessionReplayListItem = Schema.Struct({
 	endTime: Schema.NullOr(Schema.String),
 	durationMs: Schema.NullOr(Schema.Number),
 	status: Schema.String,
+	/** Heartbeat-refreshed. Read it with `status`: a session whose tab died without
+	 *  sending its unload row stays `"active"` for the rest of its retention, so
+	 *  `status` alone cannot say whether a session is happening now. */
+	lastActivityAt: Schema.NullOr(Schema.String),
 	userId: Schema.NullOr(UserId),
 	// identify() identity. `""` when the session was never identified (including
 	// every session recorded before the SDK had identify()) — the list falls back
@@ -110,6 +124,8 @@ export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("Re
 	userId: Schema.optional(Schema.String),
 	userSearch: Schema.optional(Schema.String),
 	groupName: Schema.optional(Schema.String),
+	/** Scopes every facet and both header counts to one browser, like the list. */
+	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 }) {}
@@ -129,6 +145,14 @@ export class ReplaysFacetsResponse extends Schema.Class<ReplaysFacetsResponse>("
 	groups: Schema.Array(ReplayFacetItem),
 	/** Distinct sessions with at least one recorded error, within the current filter. */
 	errorCount: Schema.Number,
+	/** Every session in the window under the current filters — the header's own
+	 *  count, so it stops describing however many rows the client has scrolled
+	 *  into memory while the chips beside it describe the whole window. */
+	totalSessions: Schema.Number,
+	/** Sessions with activity inside the live window, on the same definition the
+	 *  analytics live badge uses. Slightly over-counts sessions that ended within
+	 *  that window; see the query. */
+	liveSessions: Schema.Number,
 	/** Session-length distribution: `name` is the bucket floor in ms, `count` the
 	 *  sessions in it. Buckets are half-octaves from 1s, so each ceiling is
 	 *  floor × √2. Unordered — the client sorts numerically. */

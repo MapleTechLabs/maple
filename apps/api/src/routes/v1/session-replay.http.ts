@@ -39,7 +39,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							visitorId: payload.visitorId,
 							hasErrors: payload.hasErrors,
 							search: payload.search,
-							cursor: payload.cursor,
+							cursor:
+								payload.cursor === undefined
+									? undefined
+									: { startTime: payload.cursor, sessionId: payload.cursorSessionId },
 							durationMinMs: payload.durationMinMs,
 							durationMaxMs: payload.durationMaxMs,
 							activeTimeMinMs: payload.activeTimeMinMs,
