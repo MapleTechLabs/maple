@@ -25,7 +25,17 @@ const stars = await getGitHubStars();
         </div>
     </div>
 
-    <div class="shell py-12">
+    <div class="footer-directory">
+        <img
+            class="footer-directory__art"
+            src="/art/maple-footer-courtyard.webp"
+            width="1536"
+            height="1024"
+            alt=""
+            loading="lazy"
+            decoding="async"
+        />
+    <div class="shell footer-directory__content py-12">
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 lg:gap-12">
             <!-- Col 1: Logo + tagline -->
             <div class="col-span-2 md:col-span-3 lg:col-span-2">
@@ -142,4 +152,39 @@ const stars = await getGitHubStars();
             </div>
         </div>
     </div>
+    </div>
 </footer>
+
+<style>
+    .footer-directory {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+    }
+
+    .footer-directory__content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .footer-directory__art {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 0;
+        display: block;
+        width: 100%;
+        /* Crop away the empty sky so the colonnade sits behind the links. */
+        height: 240%;
+        object-fit: cover;
+        object-position: center bottom;
+        opacity: 0.28;
+        pointer-events: none;
+        mask-image: linear-gradient(to bottom, transparent 45%, black 65%);
+    }
+
+    @media (max-width: 767px) {
+        .footer-directory__art {
+            opacity: 0.22;
+        }
+    }
+</style>
