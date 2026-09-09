@@ -11,9 +11,10 @@
  * ambient `HttpClient`, so there is nothing heavy to defer and the extra hop would only obscure.
  *
  * Error mapping is the contract the poll loop reads:
- * - 401, and 403 whose reason names the credential, are {@link IntegrationsRevokedError} — the
- *   grant is gone and the connection must be stamped revoked.
- * - 403 `RESOURCE_EXHAUSTED`-shaped quota denials and 429 keep `status` on
+ * - 401 alone is {@link IntegrationsRevokedError} — the grant is gone and the connection is
+ *   stamped revoked. 403 deliberately is NOT: Google overloads it for per-property permission
+ *   loss and for a disabled API, neither of which a reconnect fixes.
+ * - Quota denials (429, or `RESOURCE_EXHAUSTED`) keep `status` on
  *   {@link IntegrationsUpstreamError} so the caller can hold its lease through a backoff instead
  *   of re-depleting the property's token budget.
  * - Everything else is a plain upstream failure: the watermark simply does not advance.
@@ -100,6 +101,7 @@ interface RunReportBody {
 	dateRanges: Array<{ startDate: string; endDate: string }>
 	keepEmptyRows: boolean
 	limit?: string
+	offset?: string
 	orderBys?: Array<{ metric: { metricName: string }; desc: boolean }>
 	dimensionFilter?: unknown
 }
@@ -112,6 +114,8 @@ export interface RunReportRequest {
 	readonly startDate: string
 	readonly endDate: string
 	readonly limit?: number
+	/** Row offset, for walking a report whose match count exceeds `limit`. */
+	readonly offset?: number
 	/** Descending order-by on this metric — how a breakdown dataset takes its top N. */
 	readonly orderByMetric?: string
 	/** Sent verbatim as the Data API's `dimensionFilter`. */
@@ -155,12 +159,19 @@ const errorStatusOf = (text: string): string | null =>
 const classifyFailure = (httpStatus: number, text: string, label: string) => {
 	const symbolic = errorStatusOf(text)
 	const snippet = text.slice(0, 300)
-	// A 403 is overloaded: quota denials and dead grants share it. Only the credential-shaped
-	// ones may stamp the connection revoked — treating a quota denial as revoked would
-	// disconnect an org for being popular.
-	if (httpStatus === 401 || (httpStatus === 403 && symbolic !== "RESOURCE_EXHAUSTED")) {
+	// Only a 401 means the GRANT is dead, and revoking is drastic: it stops collection for every
+	// property the org has and puts "Reconnect needed" on the card.
+	//
+	// 403 must NOT be treated that way, even though it is the shape a dead grant can also take.
+	// Google overloads it for conditions that say nothing about the credential:
+	// `PERMISSION_DENIED` when the account lost access to ONE property, `SERVICE_DISABLED` when
+	// the Data API is not enabled on the Cloud project, `RESOURCE_EXHAUSTED` for quota. Revoking
+	// on any of those would disconnect a whole org because one property was reshared, or because
+	// of a project setting no reconnect can fix. They stay per-window failures: the window is
+	// recorded and retried, and the other properties keep collecting.
+	if (httpStatus === 401) {
 		return new IntegrationsRevokedError({
-			message: `Google Analytics ${label} rejected the stored grant (${httpStatus}${symbolic ? ` ${symbolic}` : ""}) — reconnect required`,
+			message: `Google Analytics ${label} rejected the stored grant (401${symbolic ? ` ${symbolic}` : ""}) — reconnect required`,
 		})
 	}
 	if (httpStatus === 429 || symbolic === "RESOURCE_EXHAUSTED") {
@@ -308,6 +319,7 @@ export const runReport = Effect.fn("GoogleAnalyticsApi.runReport")(function* (op
 	}
 	// Omitted rather than sent as `undefined`: the Data API rejects a null `limit`.
 	if (request.limit !== undefined) body.limit = String(request.limit)
+	if (request.offset !== undefined) body.offset = String(request.offset)
 	if (request.orderByMetric !== undefined) {
 		body.orderBys = [{ metric: { metricName: request.orderByMetric }, desc: true }]
 	}

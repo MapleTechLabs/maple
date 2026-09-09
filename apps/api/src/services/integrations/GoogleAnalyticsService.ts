@@ -114,8 +114,14 @@ const ORG_CONCURRENCY = 3
 /** Property discovery TTL. Properties are created rarely; hourly is generous. */
 const DISCOVERY_TTL_MS = HOUR_MS
 
-/** GA4 caps a report at 250k rows; 10k is ample per window and keeps responses small. */
+/** GA4 caps a report at 250k rows; 10k is ample per page and keeps responses small. */
 const REPORT_ROW_LIMIT = 10_000
+
+/**
+ * Page ceiling per (property, dataset, window). A report needing more than this is not one we can
+ * reconcile honestly, so the window fails rather than half-landing — see `pollWindow`.
+ */
+const MAX_REPORT_PAGES = 5
 
 /** Attribution for the ingest key this collector mints on an org's behalf. */
 const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserIdSchema)("system-google-analytics")
@@ -162,9 +168,23 @@ interface GoogleAnalyticsServiceApi {
 		propertyId: string,
 		enabled: boolean,
 	) => Effect.Effect<void, IntegrationsPersistenceError>
-	/** Drop all collector state for an org — called after a disconnect. */
-	readonly resetOrgState: (orgId: OrgId) => Effect.Effect<void, IntegrationsPersistenceError>
 }
+
+/**
+ * There is deliberately no `resetOrgState`, and a disconnect leaves both tables alone.
+ *
+ * Metrics already collected are RETAINED when an org disconnects, so the ledger is the only record
+ * of what has been emitted for the hours still inside the restatement window. Dropping it and then
+ * reconnecting within 48h would re-emit each of those hours in full on top of rows already in the
+ * warehouse — the exact double-count the ledger exists to prevent. Dropping the state rows is worse
+ * again: it resets `backfillAt`, so the 30-day backfill re-runs over hours whose ledger entries have
+ * already been pruned, and every one of them double-counts with nothing left to reconcile against.
+ *
+ * Reconnecting with a different Google account needs no cleanup either — discovery soft-disables
+ * properties the new grant cannot see, and their ledger rows age out of the restatement window.
+ * Org DELETION is the case where these rows genuinely should go, and that is handled deliberately
+ * by the registry in `OrganizationService` rather than here.
+ */
 
 export class GoogleAnalyticsService extends Context.Service<
 	GoogleAnalyticsService,
@@ -450,7 +470,13 @@ export class GoogleAnalyticsService extends Context.Service<
 			const endDate = utcMsToZonedDate(toMs - 1, timeZone)
 			if (startDate === null || endDate === null) return 0
 
-			const response = yield* runReport({
+			// Paged to COMPLETION, and that is a correctness requirement rather than a nicety.
+			// Reconciliation reads a series that is in the ledger but absent from the response as
+			// "revised to zero" and retracts it. A half-fetched report would therefore retract real
+			// data — and flap, re-emitting it next tick as the truncation point moved. `dateHour` ×
+			// `pagePath` over a 48h window exceeds one page on any busy site, so this is reachable,
+			// not theoretical.
+			let response = yield* runReport({
 				accessToken: context.accessToken,
 				dataBaseUrl,
 				propertyId: context.row.propertyId,
@@ -466,6 +492,46 @@ export class GoogleAnalyticsService extends Context.Service<
 					orderByMetric: dataset.breakdown?.rankBy,
 				},
 			})
+			const merged = [...(response.rows ?? [])]
+			const total = response.rowCount ?? merged.length
+			for (
+				let page = 1;
+				merged.length < total && page < MAX_REPORT_PAGES;
+				page++
+			) {
+				const next = yield* runReport({
+					accessToken: context.accessToken,
+					dataBaseUrl,
+					propertyId: context.row.propertyId,
+					request: {
+						dimensions: dataset.breakdown
+							? ["dateHour", dataset.breakdown.dimension]
+							: ["dateHour"],
+						metrics: dataset.metrics.map((metric) => metric.ga),
+						startDate,
+						endDate,
+						limit: REPORT_ROW_LIMIT,
+						offset: merged.length,
+						orderByMetric: dataset.breakdown?.rankBy,
+					},
+				})
+				const nextRows = next.rows ?? []
+				// A page that returns nothing while `rowCount` still claims more would spin the
+				// loop; stop and let the incompleteness check below decide.
+				if (nextRows.length === 0) break
+				merged.push(...nextRows)
+			}
+
+			// Still short: emit nothing rather than retract series the report simply did not reach.
+			// The frontier does not advance, so the window is retried next tick.
+			if (merged.length < total) {
+				return yield* Effect.fail(
+					new IntegrationsUpstreamError({
+						message: `Google Analytics report for ${dataset.id} returned ${merged.length} of ${total} rows after ${MAX_REPORT_PAGES} pages — refusing to reconcile a partial window`,
+					}),
+				)
+			}
+			response = { ...response, rows: merged }
 
 			// The date range is whole property-local DAYS, so it necessarily overreaches the
 			// requested hour window at both ends. Reconciliation must only judge the hours actually
@@ -557,16 +623,32 @@ export class GoogleAnalyticsService extends Context.Service<
 			return properties
 		})
 
-		/** Resolve and cache a property's reporting timezone. Without it nothing can be polled. */
+		/**
+		 * Resolve and cache a property's reporting timezone. Without it nothing can be polled.
+		 *
+		 * `resolved` is the per-tick memo, and it is what makes this once per PROPERTY rather than
+		 * once per property × dataset. `rows` is a snapshot taken before the loop and `patchRow`
+		 * writes the database, not the snapshot — so without the memo every one of a property's six
+		 * dataset rows would miss, and a newly connected property would spend six Admin API calls
+		 * and thirty-six row writes resolving one timezone. The memo also holds a null, so a
+		 * property whose zone cannot be resolved is asked about once per tick, not six times.
+		 */
 		const ensureTimeZone = Effect.fn("GoogleAnalyticsService.ensureTimeZone")(function* (
 			rows: ReadonlyArray<GoogleAnalyticsStateRow>,
+			resolved: Map<string, string | null>,
 			accessToken: string,
 			propertyId: string,
 			now: number,
 		) {
+			const memoized = resolved.get(propertyId)
+			if (memoized !== undefined) return memoized
 			const known = rows.find((row) => row.propertyId === propertyId && row.timeZone != null)
-			if (known?.timeZone != null) return known.timeZone
+			if (known?.timeZone != null) {
+				resolved.set(propertyId, known.timeZone)
+				return known.timeZone
+			}
 			const detail = yield* getPropertyTimeZone({ accessToken, adminBaseUrl, propertyId })
+			resolved.set(propertyId, detail.timeZone)
 			if (detail.timeZone === null) return null
 			for (const row of rows.filter((candidate) => candidate.propertyId === propertyId)) {
 				yield* patchRow(row.id, { timeZone: detail.timeZone, updatedAt: msToDate(now) })
@@ -643,6 +725,9 @@ export class GoogleAnalyticsService extends Context.Service<
 			const rows = yield* loadRows(orgId)
 			const pollable = rows.filter((row) => row.dataset !== DISCOVERY_DATASET && row.enabled)
 
+			/** Per-tick timezone memo — see `ensureTimeZone`. */
+			const timeZones = new Map<string, string | null>()
+
 			// Budget is shared across the org's properties: GA4 meters per property, but a grant
 			// covering 200 of them would still blow through a tick's wall-clock and the gateway's
 			// patience without a ceiling here.
@@ -656,7 +741,7 @@ export class GoogleAnalyticsService extends Context.Service<
 				const dataset = DATASETS.find((candidate) => candidate.id === row.dataset)
 				if (dataset === undefined) continue
 
-				const timeZone = yield* ensureTimeZone(rows, accessToken, row.propertyId, now)
+				const timeZone = yield* ensureTimeZone(rows, timeZones, accessToken, row.propertyId, now)
 				if (timeZone === null) {
 					skipped += 1
 					continue
@@ -902,21 +987,11 @@ export class GoogleAnalyticsService extends Context.Service<
 			)
 		})
 
-		const resetOrgState = Effect.fn("GoogleAnalyticsService.resetOrgState")(function* (orgId: OrgId) {
-			yield* dbExecute((db) =>
-				db.delete(googleAnalyticsLedger).where(eq(googleAnalyticsLedger.orgId, orgId)),
-			)
-			yield* dbExecute((db) =>
-				db.delete(googleAnalyticsState).where(eq(googleAnalyticsState.orgId, orgId)),
-			)
-		})
-
 		return {
 			pollAllOrgs,
 			pollOrg: (orgId: OrgId) => pollOrgSafely(orgId),
 			getIntegrationStatus,
 			setPropertyEnabled,
-			resetOrgState,
 		} satisfies GoogleAnalyticsServiceApi
 	}),
 }) {

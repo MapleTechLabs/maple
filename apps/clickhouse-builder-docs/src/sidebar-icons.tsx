@@ -301,8 +301,12 @@ const icons = {
 
 type SidebarIconName = keyof typeof icons
 
-/** Sidebar names come from doc frontmatter, so an unknown one is expected, not a bug. */
-const isSidebarIconName = (name: string): name is SidebarIconName => name in icons
+/**
+ * Sidebar names come from doc frontmatter, so an unknown one is expected, not a bug — and since
+ * the name is arbitrary text, `in` is the wrong test: it also matches inherited members, so
+ * `constructor` or `toString` would pass the guard and render a function as an icon.
+ */
+const isSidebarIconName = (name: string): name is SidebarIconName => Object.hasOwn(icons, name)
 
 export function sidebarIcon(name: string | undefined) {
 	const icon = name !== undefined && isSidebarIconName(name) ? icons[name] : undefined

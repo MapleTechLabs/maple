@@ -406,12 +406,24 @@ function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNod
 		mode: "promiseExit",
 	})
 
+	// The callback deliberately does NOT run the first collection — it takes tens of seconds on a
+	// grant with several properties and the popup would sit blank for all of it. This tab is still
+	// open, so it runs it here.
+	//
+	// Two paths can reach it: the success message, and the popup simply closing (`postMessage` is
+	// lost under COOP, which `useOAuthPopupFlow` documents). Both are needed — without the close
+	// path, a COOP-blocked browser connects successfully and then waits up to fifteen minutes for
+	// the cron before showing a single number. The ref is what stops them running it twice.
+	const primed = useRef(false)
+	const primeOnce = useEffectEvent(() => {
+		if (primed.current) return
+		primed.current = true
+		void prime({ reactivityKeys: ["googleAnalyticsIntegration"] }).finally(refreshStatus)
+	})
+
 	useIntegrationMessage("maple:integration:google-analytics", (data) => {
 		if (data.status === "success") {
-			// The callback deliberately does NOT run the first collection — it takes tens of
-			// seconds on a grant with several properties and the popup would sit blank for all
-			// of it. This tab is still open, so it runs it here and refreshes when it lands.
-			void prime({ reactivityKeys: ["googleAnalyticsIntegration"] }).finally(refreshStatus)
+			primeOnce()
 			refreshStatus()
 		} else if (data.status === "error") {
 			toastManager.add({ title: data.message ?? "Google Analytics connection failed", type: "error" })
@@ -428,7 +440,10 @@ function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNod
 				reactivityKeys: ["googleAnalyticsIntegration"],
 			}).then(Exit.map(({ redirect_url }) => ({ redirectUrl: redirect_url }))),
 		startErrorTitle: "Failed to start Google Analytics connect flow",
-		onClosed: refreshStatus,
+		onClosed: () => {
+			refreshStatus()
+			primeOnce()
+		},
 	})
 
 	return <IntegrationConnectContext value={value}>{children}</IntegrationConnectContext>

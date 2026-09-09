@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Exit } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -63,12 +64,21 @@ export function GoogleAnalyticsIntegrationCard() {
 		}
 	}
 
+	// Which property's toggle is in flight. The mutation atom is shared across every row, so a
+	// second toggle cancels the first one's client-side effect without cancelling the PATCH that
+	// already reached the API — and `setPropertyEnabled` is an unconditional write with no ordering
+	// check, so the older request could land last and undo the user's final choice. Disabling the
+	// row that is pending is what keeps the two in order.
+	const [pendingProperty, setPendingProperty] = useState<string | null>(null)
+
 	const handleToggle = async (propertyId: string, enabled: boolean) => {
+		setPendingProperty(propertyId)
 		const result = await updateProperty({
 			params: { property_id: propertyId },
 			payload: { enabled },
 			reactivityKeys: ["googleAnalyticsIntegration"],
 		})
+		setPendingProperty(null)
 		if (Exit.isSuccess(result)) {
 			refreshStatus()
 		} else {
@@ -200,6 +210,7 @@ export function GoogleAnalyticsIntegrationCard() {
 								</div>
 								<Switch
 									checked={property.enabled}
+									disabled={pendingProperty === property.property_id}
 									onCheckedChange={(checked) => void handleToggle(property.property_id, checked)}
 									aria-label={`Collect ${property.property_name ?? property.property_id}`}
 								/>

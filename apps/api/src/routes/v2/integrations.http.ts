@@ -692,10 +692,10 @@ export const HttpV2GoogleAnalyticsIntegrationsLive = HttpApiBuilder.group(
 						const result = yield* googleOAuth
 							.disconnect(tenant.orgId)
 							.pipe(tapHttpErrors("Google Analytics disconnect failed"))
-						// Collector state goes with the grant: leaving it would make a later
-						// reconnect resume against a ledger describing a connection that no longer
-						// exists, and emit deltas against values nobody can verify.
-						yield* analytics.resetOrgState(tenant.orgId).pipe(Effect.ignore)
+						// Collector state is deliberately NOT cleared here — see the note above
+						// `GoogleAnalyticsService`. Metrics already collected are retained, so the
+						// ledger has to outlive the grant or a reconnect inside the restatement
+						// window re-emits those hours on top of rows already in the warehouse.
 						yield* recordHttpAudit("google_analytics_integration.disconnected")
 						return {
 							object: "google_analytics_integration.disconnect" as const,

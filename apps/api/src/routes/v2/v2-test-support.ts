@@ -339,7 +339,6 @@ export const GoogleAnalyticsServiceStubsLayer = Layer.mergeAll(
 		pollOrg: die,
 		getIntegrationStatus: die,
 		setPropertyEnabled: die,
-		resetOrgState: die,
 	}),
 	Layer.succeed(GoogleAnalyticsOAuthService, {
 		startConnect: die,

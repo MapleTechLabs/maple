@@ -1326,7 +1326,9 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				// The first collection is NOT run here. It takes tens of seconds on a grant with
 				// several properties, and the popup would sit blank for all of it; the dashboard
 				// calls `prime` from the tab that stays open instead.
-				Effect.tap((result) => googleAnalytics.resetOrgState(result.orgId).pipe(Effect.ignore)),
+				// Collector state is deliberately preserved across a reconnect — the ledger is what
+				// stops the restatement window's hours being emitted twice. See the note above
+				// `GoogleAnalyticsService`.
 				// The callback page reduces failures to short human copy — make sure the real
 				// cause still lands in the server log for diagnosis.
 				Effect.tapError((error) =>

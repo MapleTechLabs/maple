@@ -23,8 +23,21 @@ import type { TemplateDefinition, WidgetDef } from "@/dashboard-templates/types"
 // The `.by_*` suffixes matter too: `channels`, `geo` and `device` each report the same session
 // total sliced differently, so they are separate metrics rather than one metric with three
 // attributes. Charting `google_analytics.sessions` never double-counts as a result.
+/**
+ * GA4 property IDs are decimal, and this is interpolated into a filter expression — so anything
+ * else is rejected rather than embedded. A value carrying a quote would close the string early and
+ * leave an unparseable clause, and a clause the builder cannot parse is dropped, which would
+ * silently widen every widget from one property to ALL of them. Failing the parameter is the only
+ * safe response; an unfiltered dashboard is not a degraded result, it is the wrong one.
+ */
+const GA4_PROPERTY_ID = /^[0-9]+$/
+
 function propertyWhere(propertyId?: string): string {
-	return propertyId ? `service.name = "google-analytics/${propertyId}"` : ""
+	if (propertyId === undefined || propertyId === "") return ""
+	if (!GA4_PROPERTY_ID.test(propertyId)) {
+		throw new Error(`Google Analytics property must be a numeric GA4 property ID, got "${propertyId}"`)
+	}
+	return `service.name = "google-analytics/${propertyId}"`
 }
 
 /** A single-metric stat: reduce one query-builder series to one number. */

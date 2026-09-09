@@ -48,6 +48,8 @@ interface FetchOptions {
 	readonly dataApiBody?: string
 	otlpCalls: Array<OtlpMetricsPayload>
 	reportCalls: Array<{ propertyId: string; body: unknown }>
+	/** How many times the Admin API was asked for a property's timezone. */
+	propertyLookups: number
 }
 
 /** T0's property-local date — see {@link T0}. Declared here because the fetch mock needs it. */
@@ -127,6 +129,7 @@ const mockGoogleFetch = (options: FetchOptions): typeof globalThis.fetch => {
 
 		// properties/{id} — the timezone lookup.
 		if (url.includes("/properties/")) {
+			options.propertyLookups += 1
 			return json({ displayName: "example.com", timeZone: options.timeZone ?? "UTC" })
 		}
 
@@ -167,9 +170,12 @@ const seedConnection = Effect.gen(function* () {
 			refreshTokenIv: refreshEnc.iv,
 			refreshTokenTag: refreshEnc.tag,
 			// Far future: the refresh path is exercised by the shared OAuth helper's own tests.
-			expiresAt: new Date(Date.now() + 86_400_000),
-			createdAt: new Date(),
-			updatedAt: new Date(),
+			// Derived from T0, not the real clock: the service reads token expiry through the
+			// Effect clock, which is pinned to T0, so a wall-clock value would read as expired
+			// once real time moved a day past it and silently divert into the refresh path.
+			expiresAt: new Date(T0 + 86_400_000),
+			createdAt: new Date(T0),
+			updatedAt: new Date(T0),
 		}),
 	)
 })
@@ -198,7 +204,7 @@ const T0 = Date.parse("2026-09-09T14:00:00Z")
 const HOUR = "2026090914"
 
 const options = (reports: ReadonlyArray<ReadonlyMap<string, number>>, extra: Partial<FetchOptions> = {}) =>
-	({ reports, otlpCalls: [], reportCalls: [], ...extra }) satisfies FetchOptions
+	({ reports, otlpCalls: [], reportCalls: [], propertyLookups: 0, ...extra }) satisfies FetchOptions
 
 describe("GoogleAnalyticsService", () => {
 	it.effect("discovers properties and creates a state row per dataset", () =>
@@ -375,7 +381,9 @@ describe("GoogleAnalyticsService", () => {
 				const rows = yield* database.execute((db) =>
 					db.select().from(googleAnalyticsState).where(eq(googleAnalyticsState.orgId, ORG)),
 				)
-				const leased = rows.filter((row) => row.leaseUntil != null && row.leaseUntil > new Date())
+				// Compared against T0, not `new Date()`: `leaseUntil` is derived from the TestClock,
+				// so a real-clock comparison would start failing on a date rather than on a change.
+				const leased = rows.filter((row) => row.leaseUntil != null && row.leaseUntil.getTime() > T0)
 				// The lease must still be in the future — clearing it would let the next tick spend
 				// the rest of the org's GA4 budget immediately.
 				assert.isAbove(leased.length, 0)
@@ -424,7 +432,7 @@ describe("GoogleAnalyticsService", () => {
 		}),
 	)
 
-	it.effect("clears all collector state on reset", () =>
+	it.effect("resolves a property's timezone once per tick, not once per dataset", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)
 			const fetchOptions = options([new Map([[HOUR, 10]])])
@@ -434,13 +442,40 @@ describe("GoogleAnalyticsService", () => {
 				yield* seedConnection
 				const service = yield* GoogleAnalyticsService
 				yield* service.pollOrg(ORG)
-				yield* service.resetOrgState(ORG)
 
+				// `rows` is snapshotted before the loop and `patchRow` writes the database, not the
+				// snapshot — without the per-tick memo each of the property's six dataset rows
+				// would miss and re-resolve.
+				assert.strictEqual(fetchOptions.propertyLookups, 1)
+			}).pipe(Effect.provide(makeLayer(testDb, fetchOptions)))
+		}),
+	)
+
+	it.effect("does not re-emit a bucket after a disconnect and reconnect", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const fetchOptions = options([new Map([[HOUR, 100]]), new Map([[HOUR, 100]])])
+
+			yield* Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection
+				const service = yield* GoogleAnalyticsService
+				yield* service.pollOrg(ORG)
+
+				// Disconnect drops the grant but deliberately leaves the ledger: metrics already
+				// collected are retained, so re-emitting this hour on reconnect would double it.
 				const database = yield* Database
-				const rows = yield* database.execute((db) =>
-					db.select().from(googleAnalyticsState).where(eq(googleAnalyticsState.orgId, ORG)),
+				yield* database.execute((db) =>
+					db.delete(oauthConnections).where(eq(oauthConnections.orgId, ORG)),
 				)
-				assert.strictEqual(rows.length, 0)
+				yield* seedConnection
+				yield* service.pollOrg(ORG)
+
+				const points = sessionPoints(fetchOptions.otlpCalls)
+				assert.deepStrictEqual(
+					points.map((point) => point.asDouble),
+					[100],
+				)
 			}).pipe(Effect.provide(makeLayer(testDb, fetchOptions)))
 		}),
 	)
