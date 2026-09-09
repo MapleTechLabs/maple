@@ -112,6 +112,7 @@ jobs:
                         - 'packages/query-engine/**'
                       clickhouse:
                         - *base
+                        - 'lib/effect-clickhouse-http/**'
                         - 'apps/api/src/services/warehouse/**'
                         - 'packages/db/**'
                         - 'scripts/*clickhouse*'
@@ -523,6 +524,14 @@ jobs:
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
             - uses: ./.github/actions/bun-install
+
+            - name: Native ClickHouse HTTP protocol and live wire-format tests
+              env:
+                  CLICKHOUSE_HTTP_LIVE: "1"
+                  CLICKHOUSE_HTTP_URL: http://127.0.0.1:8123
+                  CLICKHOUSE_HTTP_USER: maple
+                  CLICKHOUSE_HTTP_PASSWORD: maple
+              run: bun run --cwd lib/effect-clickhouse-http test
 
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
