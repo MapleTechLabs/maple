@@ -17,6 +17,12 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Investigation | `investigations`                        | One AI diagnostic run. Zero or more per issue.          |
 | Verification  | `error_issue_verifications`             | One post-merge "did that actually work?" check.         |
 
+The exception comes from the first OTel `exception` event, or the status message when
+there is no event. Only spans missing both fall back to `exception.*` span attributes,
+then `error.type` / `error.message`, then `Unknown Error`. This keeps existing fingerprints
+stable while separating previously unlabelled errors. The SQL in `error_events_mv`
+(`packages/domain/src/tinybird/materializations.ts`) owns this precedence.
+
 The distinction that matters: **an incident is a flare-up, an issue is the bug**. An issue can flare
 up ten times; it gets fixed once.
 
