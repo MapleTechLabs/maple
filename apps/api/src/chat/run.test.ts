@@ -1,12 +1,12 @@
 /**
- * `toLlmMessages` — what a new turn actually replays to the model.
+ * `promptFromHistory` — what a new run actually replays to the model.
  *
  * This is where a long conversation either keeps its beginning or loses it. The head-drop is the
  * fallback and must stay byte-for-byte what it was; the compaction path is the improvement.
  */
 import type { ChatMessage } from "@maple/domain/chat-session"
 import { assert, describe, it } from "vitest"
-import { toLlmMessages } from "./turn-runner"
+import { promptFromHistory } from "./run"
 
 let seq = 0
 
@@ -23,10 +23,10 @@ const message = (role: "user" | "assistant", text: string, toolCalls: unknown[] 
 const textOf = (messages: ReadonlyArray<{ content: ReadonlyArray<unknown> }>) =>
 	messages.map((m) => m.content.map((part) => (part as { text?: string }).text ?? "").join(""))
 
-describe("toLlmMessages without a compaction", () => {
+describe("promptFromHistory without a compaction", () => {
 	it("replays the conversation in order", () => {
 		seq = 0
-		const replayed = toLlmMessages([
+		const replayed = promptFromHistory([
 			message("user", "why is checkout slow?"),
 			message("assistant", "Looking."),
 			message("user", "and payments?"),
@@ -41,7 +41,7 @@ describe("toLlmMessages without a compaction", () => {
 
 	it("drops messages with no text, so a pure tool turn is not replayed as an empty one", () => {
 		seq = 0
-		const replayed = toLlmMessages([
+		const replayed = promptFromHistory([
 			message("user", "check it"),
 			message("assistant", "", [{ id: "c1" }]),
 			message("assistant", "Done."),
@@ -53,7 +53,7 @@ describe("toLlmMessages without a compaction", () => {
 	it("drops from the head when the transcript exceeds the message cap", () => {
 		seq = 0
 		const history = Array.from({ length: 50 }, (_, i) => message("user", `turn ${i}`))
-		const replayed = toLlmMessages(history)
+		const replayed = promptFromHistory(history)
 
 		assert.lengthOf(replayed, 40)
 		// The tail is what the next turn needs; the head is what a human skimming would skip.
@@ -64,13 +64,13 @@ describe("toLlmMessages without a compaction", () => {
 		// The `kept.length > 0` guard: otherwise a single pasted stack trace replays as *nothing*,
 		// and the model answers the next question with no context at all.
 		seq = 0
-		const replayed = toLlmMessages([message("user", "x".repeat(80_000))])
+		const replayed = promptFromHistory([message("user", "x".repeat(80_000))])
 
 		assert.lengthOf(replayed, 1)
 	})
 })
 
-describe("toLlmMessages with a compaction", () => {
+describe("promptFromHistory with a compaction", () => {
 	it("replaces the head with its summary instead of dropping it", () => {
 		seq = 0
 		const history = [
@@ -79,7 +79,7 @@ describe("toLlmMessages with a compaction", () => {
 			message("user", "and payments?"),
 			message("assistant", "Payments is fine."),
 		]
-		const replayed = toLlmMessages(history, {
+		const replayed = promptFromHistory(history, {
 			summary: "The user asked about checkout; p99 was 4.2s in trace abc123.",
 			throughSeq: history[1]!.startSeq,
 		})
@@ -97,7 +97,7 @@ describe("toLlmMessages with a compaction", () => {
 		// several protocols dislike a conversation opening on an assistant turn.
 		seq = 0
 		const history = [message("user", "old"), message("user", "new")]
-		const replayed = toLlmMessages(history, { summary: "s", throughSeq: history[0]!.startSeq })
+		const replayed = promptFromHistory(history, { summary: "s", throughSeq: history[0]!.startSeq })
 
 		assert.equal(replayed[0]?.role, "user")
 	})
@@ -105,7 +105,7 @@ describe("toLlmMessages with a compaction", () => {
 	it("still bounds the tail, because a compaction can be arbitrarily stale", () => {
 		seq = 0
 		const history = Array.from({ length: 60 }, (_, i) => message("user", `turn ${i}`))
-		const replayed = toLlmMessages(history, { summary: "s", throughSeq: 0 })
+		const replayed = promptFromHistory(history, { summary: "s", throughSeq: 0 })
 
 		// One summary plus the capped tail — not sixty-one messages.
 		assert.lengthOf(replayed, 41)
@@ -114,7 +114,7 @@ describe("toLlmMessages with a compaction", () => {
 	it("replays everything when the compaction predates the whole transcript", () => {
 		seq = 0
 		const history = [message("user", "a"), message("user", "b")]
-		const replayed = toLlmMessages(history, { summary: "s", throughSeq: 0 })
+		const replayed = promptFromHistory(history, { summary: "s", throughSeq: 0 })
 
 		assert.deepEqual(textOf(replayed).slice(1), ["a", "b"])
 	})

@@ -15,7 +15,7 @@
  *   that investigated for its whole budget and submitted must not be recorded like one that never
  *   looked.
  */
-import { Cause, Duration, Effect, Option, Schema, Stream } from "effect"
+import { Cause, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import * as Agent from "@effect-agent/core/Agent"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
@@ -163,10 +163,11 @@ export const runAgentPass = <S extends AnswerSchema>(
 					}
 				}),
 			),
-			Effect.provide(tools.layer),
+			// One provide, so the pass's services share a lifetime. A pass is an entry point: the
+			// workflow step owns this scope and nothing outside it composes these layers.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(Layer.mergeAll(tools.layer, ThreadHistory.layerTransient, IdGenerator.layer)),
 			input.model.provide,
-			Effect.provide(ThreadHistory.layerTransient),
-			Effect.provide(IdGenerator.layer),
 			// A pass that dies mid-run still reports whatever it managed to submit. Workflow
 			// cancellation remains an interruption rather than a false successful pass.
 			Effect.catchCause((cause) => {

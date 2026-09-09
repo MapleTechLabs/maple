@@ -31,13 +31,28 @@ import { buildChatToolkit, buildDiagnosisCompletion, SUBMIT_DIAGNOSIS, type RunU
 export const promptFromHistory = (
 	history: ReadonlyArray<ChatMessage>,
 	compaction?: { readonly summary: string; readonly throughSeq: number },
-): Prompt.RawInput => {
+): ReadonlyArray<PromptMessage> => {
 	const spoken = (
 		compaction === undefined
 			? history
 			: history.filter((message) => message.startSeq > compaction.throughSeq)
 	).filter((message) => message.text.trim() !== "")
-	const messages = spoken.map((message) => ({
+
+	// Bounded here as well as by the policy's context limit. Compaction acts once a request crosses
+	// the limit; this keeps the *first* request of a long conversation from being the one that does.
+	// Walk backwards so the newest turns are the ones kept — the tail is what the next turn needs.
+	const kept: Array<ChatMessage> = []
+	let chars = 0
+	for (let i = spoken.length - 1; i >= 0; i--) {
+		const message = spoken[i]!
+		if (kept.length >= MAX_REPLAYED_MESSAGES) break
+		if (chars + message.text.length > MAX_REPLAYED_CHARS && kept.length > 0) break
+		chars += message.text.length
+		kept.push(message)
+	}
+	kept.reverse()
+
+	const messages = kept.map((message) => ({
 		role: message.role === "user" ? ("user" as const) : ("assistant" as const),
 		content: [{ type: "text" as const, text: message.text }],
 	}))
@@ -51,6 +66,15 @@ export const promptFromHistory = (
 				...messages,
 			]
 }
+
+/** One replayed turn, in the shape `Prompt.make` accepts. */
+export interface PromptMessage {
+	readonly role: "user" | "assistant"
+	readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>
+}
+
+const MAX_REPLAYED_MESSAGES = 40
+const MAX_REPLAYED_CHARS = 60_000
 
 /** How the summary is introduced to the model. */
 const COMPACTION_PREAMBLE =
@@ -127,11 +151,12 @@ export const runChatTurn = (input: ChatRunInput) => {
 				}
 			}),
 		),
-		Effect.provide(handlers),
+		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
+		// which is why the engine's is transient. A run is an entry point: the Durable Object
+		// invocation owns this scope and nothing outside it composes these layers.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layerTransient, IdGenerator.layer)),
 		input.model.provide,
-		// `ChatSession` is the history owner; the engine retains nothing.
-		Effect.provide(ThreadHistory.layerTransient),
-		Effect.provide(IdGenerator.layer),
 	)
 }
 

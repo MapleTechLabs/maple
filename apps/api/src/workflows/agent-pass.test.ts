@@ -122,7 +122,7 @@ const run = (turns: ReadonlyArray<unknown>, deadlineAtMs?: number) =>
 		submitToolDescription: "File the candidate.",
 		schema: SCHEMA,
 		...(deadlineAtMs === undefined ? undefined : { deadlineAtMs }),
-	}).pipe(Effect.provide(ToolExecutorStubLayer), Effect.provide(IdGenerator.layer))
+	}).pipe(Effect.provide(Layer.merge(ToolExecutorStubLayer, IdGenerator.layer)))
 
 describe("runAgentPass", () => {
 	it.effect("reports the answer when the agent submits", () =>

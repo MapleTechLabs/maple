@@ -95,6 +95,9 @@ export interface ExtraTool {
 	readonly name: string
 	readonly description: string
 	readonly parameters: Record<string, unknown>
+	// Model-authored JSON by definition: a dynamic tool's shape is known only at runtime, so the
+	// handler parses it rather than receiving it parsed.
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters
 	readonly handler: (params: unknown) => Effect.Effect<string, MapleToolFailure>
 }
 
@@ -169,7 +172,9 @@ export const buildMapleToolkit = (
 									Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 								),
 			]
-		}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>),
+			// Same reason as ExtraTool.handler: the model's arguments arrive unparsed.
+			// oxlint-disable-next-line anti-slop/no-unknown-parameters
+			}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>),
 	)
 	// `handlers` is exposed alongside the layer because a caller that merges this toolkit with one
 	// of its own must build a single handler map: two partial layers would each be missing the

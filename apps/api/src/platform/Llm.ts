@@ -213,7 +213,10 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 const openRouterModel = (env: LlmEnv, name: string, effortKey: keyof LlmEnv, fallbackEffort: ReasoningEffort | undefined, tags: LlmCallTags | undefined): ResolvedModel => ({
 	provider: "openrouter",
 	name,
+	// The model Layer is composed at the caller's entry point; this only applies it, which is the
+	// whole reason `provide` is a function rather than the Layer itself.
 	provide: (effect) =>
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			effect,
 			OpenRouterLanguageModel.model(
@@ -227,6 +230,8 @@ const openRouterModel = (env: LlmEnv, name: string, effortKey: keyof LlmEnv, fal
 const workersAiModel = (env: LlmEnv, name: string): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
+	// See the OpenRouter branch above.
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	provide: (effect) => Effect.provide(effect, OpenAiLanguageModel.model(name)),
 	limits: limitsFor(env, name),
 })

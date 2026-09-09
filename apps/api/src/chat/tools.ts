@@ -96,7 +96,7 @@ export const buildDiagnosisCompletion = (
 	return {
 		toolkit,
 		layer: toolkit.toLayer({
-			[SUBMIT_DIAGNOSIS]: (report: typeof AiTriageResult.Type) =>
+			[SUBMIT_DIAGNOSIS]: (report: AiTriageResult) =>
 				submitDiagnosis(
 					tenant.orgId,
 					investigationId,
