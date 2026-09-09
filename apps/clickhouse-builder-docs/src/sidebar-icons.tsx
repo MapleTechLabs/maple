@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 // Nucleo geometry from Maple’s existing icon set (apps/web/src/components/icons).
-const icons: Record<string, ReactNode> = {
+const icons = {
 	"branch-fork": (
 		<>
 			{" "}
@@ -297,10 +297,12 @@ const icons: Record<string, ReactNode> = {
 			))}{" "}
 		</>
 	),
-}
+} satisfies Record<string, ReactNode>
+
+const isIconName = (name: string): name is keyof typeof icons => Object.hasOwn(icons, name)
 
 export function sidebarIcon(name: string | undefined) {
-	const icon = name ? icons[name] : undefined
+	const icon = name !== undefined && isIconName(name) ? icons[name] : undefined
 	if (!icon) return undefined
 	return (
 		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true" focusable="false">
