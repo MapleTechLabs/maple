@@ -31,6 +31,41 @@ export interface AdapterContext {
 	readonly isProposed?: (toolName: string) => boolean
 }
 
+/**
+ * The card a sub-agent's events hang off.
+ *
+ * `id` is the parent's delegation tool call, which is what `ChatSession` looks the card up by — so
+ * an event whose call id does not match a `tool-call` already in the transcript is dropped rather
+ * than corrupting the parent conversation.
+ */
+const childTask = (
+	event: { readonly toolCallId: string; readonly targetAgentId: string },
+	context: AdapterContext,
+): ChatTaskRef => ({
+	id: event.toolCallId,
+	agent: event.targetAgentId,
+	parentMessageId: context.messageId,
+})
+
+/**
+ * A sub-agent's own events are its own.
+ *
+ * The engine keeps a child's tool history and working notes in the child's thread, and relays only
+ * a summary — so the card shows what the sub-agent reports, not a live replay of it searching.
+ * `messageId` is the delegation call id, which is what gives the card its own message to fold into.
+ */
+const childEvent = (
+	event: { readonly toolCallId: string; readonly targetAgentId: string },
+	context: AdapterContext,
+	body: { readonly type: "turn-start" } | { readonly type: "text-delta"; readonly text: string } | {
+		readonly type: "turn-end"
+		readonly reason: "stop" | "error" | "aborted" | "max-steps"
+		readonly error?: string
+	},
+): ReadonlyArray<ChatTurnEvent> => [
+	{ ...body, messageId: event.toolCallId, task: childTask(event, context) } as ChatTurnEvent,
+]
+
 /** Stamp an event with the ref that routes it into a parent's task card. */
 const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =>
 	context.task === undefined ? event : { ...event, task: context.task }
@@ -111,6 +146,23 @@ export const toChatEvents = (
 		case "RunInterrupted":
 			return [tagged(context, { type: "turn-end", messageId: context.messageId, reason: "aborted" })]
 		// Observable in traces, with no word on the wire.
+		case "SubagentStarted":
+			return childEvent(event, context, { type: "turn-start" })
+		case "SubagentProgress":
+			return childEvent(event, context, { type: "text-delta", text: event.summary })
+		case "SubagentCompleted":
+			return childEvent(event, context, {
+				type: "turn-end",
+				reason: completedReason(event.finishReason),
+			})
+		case "SubagentFailed":
+			return childEvent(event, context, {
+				type: "turn-end",
+				reason: "error",
+				error: event.message,
+			})
+		case "SubagentInterrupted":
+			return childEvent(event, context, { type: "turn-end", reason: "aborted" })
 		case "ApprovalRequested":
 		case "TurnStarted":
 		case "ModelStarted":
@@ -121,12 +173,9 @@ export const toChatEvents = (
 		case "BudgetWarning":
 		case "CompactionPerformed":
 		case "RunSuspended":
+		// `Requested` precedes the delegation tool call that opens the card; `Joined` follows the
+		// result that closes it. Both would render as a duplicate of an event already sent.
 		case "SubagentRequested":
-		case "SubagentStarted":
-		case "SubagentProgress":
-		case "SubagentCompleted":
-		case "SubagentFailed":
-		case "SubagentInterrupted":
 		case "SubagentJoined":
 			return []
 	}

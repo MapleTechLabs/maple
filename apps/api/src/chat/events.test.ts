@@ -115,8 +115,51 @@ describe("toChatEvents", () => {
 		})
 	})
 
-	it("routes a sub-agent's events into its task card", () => {
-		const task = { id: "task-1", agent: "explore" } as const
+	describe("sub-agents", () => {
+		const delegation = { toolCallId: "call-9", targetAgentId: "explore" }
+		const task = { id: "call-9", agent: "explore", parentMessageId: "msg-1" }
+
+		it("opens a card keyed by the delegation call", () => {
+			// `ChatSession` looks the card up by the parent's tool call id and drops anything it
+			// cannot match, so this id is the whole routing decision.
+			assert.deepEqual(toChatEvents(event("SubagentStarted", delegation), base), [
+				{ type: "turn-start", messageId: "call-9", task },
+			])
+		})
+
+		it("shows what the sub-agent reports, not a replay of its work", () => {
+			// The engine keeps the child's tool history in the child's thread and relays a summary.
+			assert.deepEqual(
+				toChatEvents(event("SubagentProgress", { ...delegation, summary: "found 3 spans" }), base),
+				[{ type: "text-delta", messageId: "call-9", text: "found 3 spans", task }],
+			)
+		})
+
+		it("closes the card on each terminal outcome", () => {
+			assert.deepEqual(
+				toChatEvents(event("SubagentCompleted", { ...delegation, finishReason: "stop" }), base),
+				[{ type: "turn-end", messageId: "call-9", reason: "stop", task }],
+			)
+			assert.deepEqual(
+				toChatEvents(
+					event("SubagentCompleted", { ...delegation, finishReason: "budget-exhausted" }),
+					base,
+				),
+				[{ type: "turn-end", messageId: "call-9", reason: "max-steps", task }],
+			)
+			assert.deepEqual(
+				toChatEvents(event("SubagentFailed", { ...delegation, message: "tool gone" }), base),
+				[{ type: "turn-end", messageId: "call-9", reason: "error", error: "tool gone", task }],
+			)
+			assert.deepEqual(
+				toChatEvents(event("SubagentInterrupted", { ...delegation, reason: "cancelled" }), base),
+				[{ type: "turn-end", messageId: "call-9", reason: "aborted", task }],
+			)
+		})
+	})
+
+	it("tags a nested run's own events with the card it belongs to", () => {
+		const task = { id: "task-1", agent: "explore", parentMessageId: "msg-0" }
 		for (const engine of [
 			event("RunStarted"),
 			event("TextDelta", { text: "x" }),
@@ -144,12 +187,9 @@ describe("toChatEvents", () => {
 			"CompactionPerformed",
 			"RunSuspended",
 			"ApprovalRequested",
+			// `Requested` precedes the delegation call that opens the card; `Joined` follows the
+			// result that closes it. Either would duplicate an event already sent.
 			"SubagentRequested",
-			"SubagentStarted",
-			"SubagentProgress",
-			"SubagentCompleted",
-			"SubagentFailed",
-			"SubagentInterrupted",
 			"SubagentJoined",
 		]) {
 			assert.deepEqual(toChatEvents(event(tag), base), [], `${tag} must not reach the transcript`)
