@@ -32,6 +32,7 @@ import { WarehouseClientError, WarehouseQueryError } from "@maple/domain/http/wa
 import { executeLocalQuery } from "@maple/query-engine/local"
 import { fingerprintSql, mapWarehouseError, SQL_TRACE_MAX, truncateSql } from "@maple/query-engine/execution"
 import { HttpClient } from "effect/unstable/http"
+import { localDriverError } from "./executor"
 import { Mode } from "./mode"
 import * as Remote from "./remote-ops"
 import { makeV2Client, toWarehouseError, unsupportedInRemote } from "./v2-client"
@@ -319,10 +320,8 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 		"query.pipe": "rawSqlQuery",
 		"query.context": "cli.rawQuery",
 	})
-	const rows = yield* Effect.tryPromise({
-		try: () => executeLocalQuery<Record<string, unknown>>(sql, baseUrl),
-		catch: (error) => mapWarehouseError("rawQuery", error),
-	}).pipe(
+	const rows = yield* executeLocalQuery(sql, baseUrl).pipe(
+		Effect.mapError((error) => mapWarehouseError("rawQuery", localDriverError(error))),
 		Effect.tapError(() =>
 			Clock.currentTimeMillis.pipe(
 				Effect.flatMap((completedAtMs) =>

@@ -1,11 +1,12 @@
-import { createClient as createClickHouseClient } from "@clickhouse/client-web"
-import { Tinybird } from "@tinybirdco/sdk"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/unstable/http"
+import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { WarehouseConfigError, type WarehouseQueryRequest } from "@maple/domain/http"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
 	WarehouseResponseLimitError,
+	WarehouseDriverError,
 	type ClickHouseProtocolBackendConfig,
 	type ExecutionTenant,
 	type ResolvedWarehouseConfig,
@@ -15,6 +16,7 @@ import {
 	type WarehouseExecutorDeps,
 	type WarehouseQueryServiceApi,
 	type WarehouseRawRouteError,
+	type WarehouseResponseLimits,
 	type WarehouseRoute,
 	type WarehouseSqlClient,
 	type WarehouseTrustedRouteError,
@@ -31,247 +33,258 @@ import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgToke
 // The execution logic (SQL run, retry, error mapping, client cache, OrgId
 // scoping, span instrumentation) lives in `@maple/query-engine/execution`. This
 // file is the host-app wiring: it constructs the actual ClickHouse / Tinybird
-// drivers (the ONLY place `@clickhouse/client-web` + `@tinybirdco/sdk` are
-// used) and resolves the per-org upstream config from the DB + env, injecting
-// both into `makeWarehouseExecutor`.
+// drivers — both on Effect's `HttpClient`, the ClickHouse one through
+// `@maple-dev/effect-clickhouse-http` — and resolves the per-org upstream config
+// from the DB + env, injecting both into `makeWarehouseExecutor`.
+//
+// A driver's whole job at this seam is to turn its transport's failures into
+// `WarehouseDriverError` with the structure the classifier reads: HTTP status,
+// ClickHouse code/type, and a `reason` saying whether the database answered at
+// all. Response limits keep their own identity so they never enter the retry loop.
 
 // Re-export the executor types so existing import sites stay stable.
 export type { WarehouseQueryServiceApi, SqlQueryOptions }
 
-/**
- * A ClickHouse-protocol endpoint answering a query with a redirect is never
- * legitimate, and a BYO cluster's URL is org-configured and validated when
- * saved, not when used — so a target that passed validation can still answer a
- * query with a 307 into the internal network. Refused here, and named so it is
- * distinguishable from an ordinary 4xx (same reasoning as the ingest exporter's
- * `redirect_refused` drop, which keeps redirects for Tinybird and R2).
- */
-export class WarehouseRedirectRefusedError extends Schema.TaggedError<WarehouseRedirectRefusedError>()(
-	"@maple/api/warehouse/WarehouseRedirectRefusedError",
-	{
-		status: Schema.Number,
-		location: Schema.optionalKey(Schema.String),
-		message: Schema.String,
-	},
-) {}
+const responseLimitError = (kind: "rows" | "bytes", limit: number) =>
+	new WarehouseResponseLimitError({
+		kind,
+		message: `Raw SQL results may contain at most ${limit} ${kind === "rows" ? "rows" : "encoded bytes"}`,
+	})
 
-const redirectRefusingFetch =
-	(requestFetch: typeof fetch = fetch): typeof fetch =>
-	async (input, init) => {
-		const response = await requestFetch(input, { ...init, redirect: "manual" })
-		// `redirect: "manual"` surfaces the 3xx itself on Workers/undici, and an
-		// `opaqueredirect` response (status 0) in browser-shaped runtimes.
-		if ((response.status >= 300 && response.status < 400) || response.type === "opaqueredirect") {
-			const location = response.headers.get("location")
-			throw new WarehouseRedirectRefusedError({
-				status: response.status,
-				...(location === null ? undefined : { location }),
-				message: `ClickHouse redirect responses are not allowed (${response.status})`,
+const clickHouseDriverError = (
+	error: ClickHouseHttp.ClickHouseError,
+): WarehouseDriverError | WarehouseResponseLimitError => {
+	switch (error._tag) {
+		case "@effect-clickhouse-http/LimitError":
+			return responseLimitError(error.kind === "rows" ? "rows" : "bytes", error.limit)
+		case "@effect-clickhouse-http/ServerError":
+			return new WarehouseDriverError({
+				reason: "server",
+				status: error.status,
+				message: error.message,
+				...(error.code === undefined ? undefined : { code: error.code }),
+				...(error.type === undefined ? undefined : { type: error.type }),
+				cause: error,
 			})
-		}
-		return response
+		case "@effect-clickhouse-http/TransportError":
+			return new WarehouseDriverError({ reason: "transport", message: error.message, cause: error })
+		case "@effect-clickhouse-http/ProtocolError":
+			return new WarehouseDriverError({
+				reason: "protocol",
+				status: error.status,
+				message: error.message,
+				cause: error,
+			})
+		// A ClickHouse-protocol endpoint answering a query with a redirect is never
+		// legitimate, and a BYO cluster's URL is validated when saved, not when
+		// used — so a target that passed validation can still answer a query with
+		// a 307 into the internal network. The client refuses to follow it; here
+		// that is a configuration failure, and the `Location` stays on the cause.
+		case "@effect-clickhouse-http/RedirectError":
+			return new WarehouseDriverError({
+				reason: "config",
+				status: error.status,
+				message: error.message,
+				cause: error,
+			})
+		case "@effect-clickhouse-http/ConfigError":
+			return new WarehouseDriverError({ reason: "config", message: error.message, cause: error })
 	}
+}
 
 const createClickHouseSqlClient = (
 	config: ClickHouseProtocolBackendConfig,
-	requestFetch: typeof fetch = fetch,
-): WarehouseSqlClient => {
-	const client = createClickHouseClient({
+): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
+	ClickHouseHttp.make({
 		url: config.url,
 		username: config.username,
-		password: config.password,
+		password: Redacted.make(config.password),
 		database: config.database,
-		fetch: redirectRefusingFetch(requestFetch),
+		// Wire-format parity with the Tinybird SDK: without this, JSONEachRow quotes
+		// 64-bit ints ("count":"42") and every schema-less query leaks strings into
+		// Schema.Number responses on BYO-CH orgs. Sent as a per-query URL param, so
+		// the compiled SQL text (and its fingerprint) is untouched.
+		...(BackendDialect[config.kind].unquote64BitIntegers
+			? { settings: { output_format_json_quote_64bit_integers: 0 } }
+			: undefined),
+	}).pipe(
+		Effect.mapError(
+			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
+		),
+		Effect.map(
+			(client): WarehouseSqlClient => ({
+				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
+				// executor has already stripped any FORMAT clause and the client appends
+				// its own.
+				sql: (statement, options) =>
+					client
+						.query({ sql: statement.text, ...(options?.responseLimits ? { limits: options.responseLimits } : undefined) })
+						.pipe(
+							Effect.map(({ data }) => ({ data })),
+							Effect.mapError(clickHouseDriverError),
+						),
+				insert: () =>
+					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
+					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
+					// supported. Got: InsertQuery"), and a BYO org override is a read concern.
+					// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
+					// must never be reached — fail loudly instead of silently 500'ing.
+					Effect.fail(
+						new WarehouseDriverError({
+							reason: "config",
+							message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
+						}),
+					),
+			}),
+		),
+	)
+
+// Tinybird's `/v0/sql` speaks plain HTTP: POST the SQL as text with a bearer
+// token, get `{ data: [...] }` back (this backend's dialect is `wireFormat:
+// "in-statement"`, so the executor has already put `FORMAT JSON` on the
+// statement). Errors come as `{ error: "..." }` with an HTTP status.
+const TinybirdSqlResponse = Schema.Struct({
+	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+})
+const decodeTinybirdSqlResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(TinybirdSqlResponse))
+const TinybirdErrorBody = Schema.Struct({ error: Schema.String })
+const decodeTinybirdErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(TinybirdErrorBody))
+
+const TINYBIRD_ERROR_BODY_BYTES = 16 * 1024
+
+const tinybirdTransportError = (error: HttpClientError.HttpClientError) =>
+	new WarehouseDriverError({
+		reason: "transport",
+		message: "Tinybird HTTP transport failed",
+		// Never retain the request: its Authorization header is the org token.
+		cause: "cause" in error.reason ? error.reason.cause : error.reason._tag,
 	})
-	// Wire-format parity with the Tinybird SDK: without this, JSONEachRow quotes
-	// 64-bit ints ("count":"42") and every schema-less query leaks strings into
-	// Schema.Number responses on BYO-CH orgs. Sent as a per-query URL param, so
-	// the compiled SQL text (and its fingerprint) is untouched.
-	const clickhouseSettings = BackendDialect[config.kind].unquote64BitIntegers
-		? ({ output_format_json_quote_64bit_integers: 0 } as const)
-		: undefined
-	return {
-		// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend, so the
-		// executor has already stripped any FORMAT clause and the format travels as
-		// a request field instead.
-		sql: async (statement, options) => {
-			const resultSet = await client.query({
-				query: statement.text,
-				format: "JSONEachRow",
-				...(clickhouseSettings ? { clickhouse_settings: clickhouseSettings } : undefined),
-			})
-			const limits = options?.responseLimits
-			if (limits === undefined) {
-				const data = await resultSet.json<Record<string, unknown>>()
-				return { data }
+
+/**
+ * Buffer a response body, failing as soon as it exceeds `maxBytes`. Counts
+ * network bytes before decoding, so an oversized result is refused without
+ * being materialised.
+ */
+const readBody = <E, E2>(
+	body: Stream.Stream<Uint8Array, E>,
+	maxBytes: number | undefined,
+	onLimit: (maxBytes: number) => E2,
+): Effect.Effect<string, E | E2> =>
+	body.pipe(
+		Stream.runFoldEffect(
+			() => ({ chunks: [] as Array<Uint8Array>, total: 0 }),
+			(acc, chunk): Effect.Effect<{ chunks: Array<Uint8Array>; total: number }, E2> => {
+				const total = acc.total + chunk.byteLength
+				if (maxBytes !== undefined && total > maxBytes) return Effect.fail(onLimit(maxBytes))
+				acc.chunks.push(chunk)
+				return Effect.succeed({ chunks: acc.chunks, total })
+			},
+		),
+		Effect.map(({ chunks, total }) => {
+			const bytes = new Uint8Array(total)
+			let offset = 0
+			for (const chunk of chunks) {
+				bytes.set(chunk, offset)
+				offset += chunk.byteLength
 			}
+			return new TextDecoder().decode(bytes)
+		}),
+	)
 
-			const data: Array<Record<string, unknown>> = []
-			const encoder = new TextEncoder()
-			let encodedBytes = 0
-			const reader = resultSet.stream().getReader()
-			try {
-				while (true) {
-					const chunk = await reader.read()
-					if (chunk.done) break
-					for (const row of chunk.value) {
-						encodedBytes += encoder.encode(row.text).byteLength + 1
-						if (encodedBytes > limits.maxBytes) {
-							await reader.cancel().catch(() => undefined)
-							throw new WarehouseResponseLimitError({
-								kind: "bytes",
-								message: `Raw SQL results may contain at most ${limits.maxBytes} encoded bytes`,
-							})
-						}
-						data.push(row.json<Record<string, unknown>>())
-						if (data.length > limits.maxRows) {
-							await reader.cancel().catch(() => undefined)
-							throw new WarehouseResponseLimitError({
-								kind: "rows",
-								message: `Raw SQL results may contain at most ${limits.maxRows} rows`,
-							})
-						}
-					}
-				}
-			} finally {
-				reader.releaseLock()
-			}
-			return { data }
-		},
-		insert: async (_datasource, _rows) => {
-			// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
-			// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
-			// supported. Got: InsertQuery"), and a BYO org override is a read concern.
-			// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
-			// must never be reached — fail loudly instead of silently 500'ing.
-			throw new Error("ClickHouse is read-only for Maple — ingest must use Tinybird")
-		},
-	}
-}
-
-// The Tinybird SDK's `sql()` calls `response.json()` on the raw response with no empty-body guard,
-// so a successful (2xx) query that matches zero rows — which can come back with an empty body —
-// throws `SyntaxError: "Unexpected end of JSON input"`. Treat ONLY that exact shape as zero rows: a
-// `SyntaxError` with any other message (e.g. "Unexpected token < in JSON") means Tinybird returned
-// an HTML error page and must keep propagating as a real WarehouseClientError.
-const isEmptyJsonBodyError = (error: unknown): boolean =>
-	error instanceof SyntaxError && /unexpected end of json input/i.test(error.message)
-
-const boundedResponseFetch =
-	(maxBytes: number, requestFetch: typeof fetch = fetch): typeof fetch =>
-	async (input, init) => {
-		const response = await requestFetch(input, init)
-		if (response.body === null) return response
-
-		const reader = response.body.getReader()
-		const chunks: Uint8Array[] = []
-		let totalBytes = 0
-		try {
-			while (true) {
-				const chunk = await reader.read()
-				if (chunk.done) break
-				totalBytes += chunk.value.byteLength
-				if (totalBytes > maxBytes) {
-					await reader.cancel().catch(() => undefined)
-					throw new WarehouseResponseLimitError({
-						kind: "bytes",
-						message: `Raw SQL results may contain at most ${maxBytes} encoded bytes`,
-					})
-				}
-				chunks.push(chunk.value)
-			}
-		} finally {
-			reader.releaseLock()
-		}
-
-		const body = new Uint8Array(totalBytes)
-		let offset = 0
-		for (const chunk of chunks) {
-			body.set(chunk, offset)
-			offset += chunk.byteLength
-		}
-		return new Response(body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers: response.headers,
-		})
-	}
-
-const createTinybirdSdkSqlClient = (
+const createTinybirdSqlClient = (
 	config: TinybirdBackendConfig,
-	requestFetch: typeof fetch = fetch,
-): WarehouseSqlClient => {
-	const makeClient = (fetchAdapter: typeof fetch = requestFetch) =>
-		new Tinybird({
-			baseUrl: config.host,
-			token: config.token,
-			datasources: {},
-			pipes: {},
-			devMode: false,
-			fetch: fetchAdapter,
-		})
-	const client = makeClient()
-	const boundedClients = new Map<number, typeof client>()
-	return {
-		sql: async (statement, options) => {
-			try {
-				// Tinybird Cloud currently defaults /v0/sql to JSON, while Tinybird Local
-				// defaults to tab-separated output, and the SDK always calls
-				// response.json() — so the format has to be explicit for both. This
-				// backend's dialect is `wireFormat: "in-statement"`, so the executor has
-				// already put a FORMAT clause on the statement; rendering it is all this
-				// driver has to do.
-				const jsonSql = statement.text
-				const limits = options?.responseLimits
-				// The SDK normally buffers through response.json(). Raw execution gets
-				// a fetch adapter that aborts before constructing an oversized Response.
-				let queryClient = client
-				if (limits !== undefined) {
-					queryClient =
-						boundedClients.get(limits.maxBytes) ??
-						makeClient(boundedResponseFetch(limits.maxBytes, requestFetch))
-					boundedClients.set(limits.maxBytes, queryClient)
-				}
-				const result = await queryClient.sql<Record<string, unknown>>(jsonSql)
-				if (limits !== undefined && result.data.length > limits.maxRows) {
-					throw new WarehouseResponseLimitError({
-						kind: "rows",
-						message: `Raw SQL results may contain at most ${limits.maxRows} rows`,
-					})
-				}
-				return { data: result.data }
-			} catch (error) {
-				// Empty 2xx body ⇒ zero rows. Return an empty result set so the caller's no-data path
-				// runs instead of surfacing a spurious WarehouseClientError.
-				if (isEmptyJsonBodyError(error)) return { data: [] }
-				throw error
-			}
-		},
-		insert: async (datasource, rows) => {
-			if (rows.length === 0) return
-			const ndjson = rows.map((row) => JSON.stringify(row)).join("\n")
-			const url = `${config.host.replace(/\/$/, "")}/v0/events?name=${encodeURIComponent(datasource)}&wait=false`
-			const response = await requestFetch(url, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/x-ndjson",
-					Authorization: `Bearer ${config.token}`,
-				},
-				body: ndjson,
+): Effect.Effect<WarehouseSqlClient, never, HttpClient.HttpClient> =>
+	Effect.map(HttpClient.HttpClient, (http): WarehouseSqlClient => {
+		const base = config.host.replace(/\/$/, "")
+		const token = Redacted.make(config.token)
+		const bodyOf = (response: { readonly stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError> }) =>
+			response.stream.pipe(
+				Stream.catchTag("HttpClientError", (error) =>
+					error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(tinybirdTransportError(error)),
+				),
+			)
+		// Mirrors the SDK's rendering: the JSON `error` field when there is one,
+		// otherwise the status and a bounded slice of whatever the body was.
+		const serverError = (status: number, body: string) =>
+			new WarehouseDriverError({
+				reason: "server",
+				status,
+				message: Option.getOrElse(
+					Option.map(decodeTinybirdErrorBody(body), (decoded) => decoded.error),
+					() => (body ? `Request failed with status ${status}: ${body.slice(0, 500)}` : `Request failed with status ${status}`),
+				),
+				cause: body,
 			})
-			if (!response.ok) {
-				const body = await response.text().catch(() => "")
-				throw new Error(`HTTP ${response.status} ${response.statusText}: ${body.slice(0, 500)}`)
-			}
-		},
-	}
-}
+		const send = (request: HttpClientRequest.HttpClientRequest) =>
+			Effect.gen(function* () {
+				const response = yield* HttpClient.withScope(http)
+					.execute(HttpClientRequest.bearerToken(request, token))
+					.pipe(Effect.mapError(tinybirdTransportError))
+				if (response.status >= 200 && response.status < 300) return response
+				// An error body past 16 KiB is not worth keeping; the status still classifies.
+				const body = yield* readBody(bodyOf(response), TINYBIRD_ERROR_BODY_BYTES, () => undefined).pipe(
+					Effect.orElseSucceed(() => ""),
+				)
+				return yield* serverError(response.status, body)
+			})
+		return {
+			sql: (statement, options) =>
+				Effect.scoped(
+					Effect.gen(function* () {
+						const limits: WarehouseResponseLimits | undefined = options?.responseLimits
+						const response = yield* send(
+							HttpClientRequest.post(`${base}/v0/sql`).pipe(
+								HttpClientRequest.bodyText(statement.text, "text/plain"),
+							),
+						)
+						const body = yield* readBody(bodyOf(response), limits?.maxBytes, (maxBytes) =>
+							responseLimitError("bytes", maxBytes),
+						)
+						// A 2xx with an empty body is how zero rows can come back; it is a
+						// result, not a decode failure.
+						if (body.trim() === "") return { data: [] }
+						const decoded = yield* decodeTinybirdSqlResponse(body).pipe(
+							Effect.mapError(
+								(cause) =>
+									new WarehouseDriverError({
+										reason: "protocol",
+										status: response.status,
+										message: "Tinybird returned a response that is not a JSON result set",
+										cause,
+									}),
+							),
+						)
+						if (limits !== undefined && decoded.data.length > limits.maxRows)
+							return yield* responseLimitError("rows", limits.maxRows)
+						return { data: decoded.data }
+					}),
+				),
+			insert: (datasource, rows) =>
+				rows.length === 0
+					? Effect.void
+					: Effect.scoped(
+							Effect.asVoid(
+								send(
+									HttpClientRequest.post(`${base}/v0/events`).pipe(
+										HttpClientRequest.setUrlParams({ name: datasource, wait: "false" }),
+										HttpClientRequest.bodyText(
+											rows.map((row) => JSON.stringify(row)).join("\n"),
+											"application/x-ndjson",
+										),
+									),
+								),
+							),
+						),
+		}
+	})
 
 // Driver selection follows `BackendDialect[kind].driver`: the `tinybird` kind is
-// the only one on the SDK; every ClickHouse-protocol kind (gateway, BYO/vanilla
-// CH, chdb) uses the official web client.
-const createClient = (config: ResolvedWarehouseConfig): WarehouseSqlClient =>
-	config.kind === "tinybird" ? createTinybirdSdkSqlClient(config) : createClickHouseSqlClient(config)
+// the only one on the Events/SQL API; every ClickHouse-protocol kind (gateway,
+// BYO/vanilla CH, chdb) uses the ClickHouse HTTP client.
+const createClient = (
+	config: ResolvedWarehouseConfig,
+): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
+	config.kind === "tinybird" ? createTinybirdSqlClient(config) : createClickHouseSqlClient(config)
 
 let sqlClientFactory: typeof createClient = createClient
 
@@ -279,6 +292,8 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 	"@maple/api/lib/WarehouseQueryService",
 	{
 		make: Effect.gen(function* () {
+			// Captured once: every driver the executor builds runs on this client.
+			const http = yield* HttpClient.HttpClient
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 			const orgTokens = yield* TinybirdOrgTokenService
@@ -485,14 +500,15 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				orgClickHouseSettings.invalidateRuntimeConfig(tenant.orgId)
 
 			return makeWarehouseExecutor({
-				createClient: (config) => sqlClientFactory(config),
+				createClient: (config) =>
+					sqlClientFactory(config).pipe(Effect.provideService(HttpClient.HttpClient, http)),
 				resolveRoute,
 				invalidateRoute,
 			})
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 
 	static readonly query = (
 		tenant: TenantContext,
@@ -550,8 +566,5 @@ export const __testables = {
 		sqlClientFactory = createClient
 	},
 	createClickHouseSqlClient,
-	createTinybirdSdkSqlClient,
-	boundedResponseFetch,
-	redirectRefusingFetch,
-	isEmptyJsonBodyError,
+	createTinybirdSqlClient,
 }

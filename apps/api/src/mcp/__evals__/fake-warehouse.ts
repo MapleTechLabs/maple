@@ -1,3 +1,5 @@
+import { Effect } from "effect"
+import { WarehouseDriverError } from "@maple/query-engine/execution"
 import { __testables } from "@/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
 
@@ -24,17 +26,25 @@ const defaultTraceFixtures = (): FixtureRule[] => [
  * throws loudly so missing fixtures never look like an empty result.
  */
 export const installFakeWarehouse = (rules: FixtureRule[] = defaultTraceFixtures()): void => {
-	__testables.setClientFactory(() => ({
-		sql: async (statement) => {
-			const sql = statement.text
-			const rule = rules.find((r) => r.match(sql))
-			if (!rule) {
-				throw new Error(`[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`)
-			}
-			return { data: rule.rows as ReadonlyArray<Record<string, unknown>> }
-		},
-		insert: async () => {},
-	}))
+	__testables.setClientFactory(() =>
+		Effect.succeed({
+			sql: (statement) =>
+				Effect.suspend(() => {
+					const sql = statement.text
+					const rule = rules.find((r) => r.match(sql))
+					if (!rule) {
+						return Effect.fail(
+							new WarehouseDriverError({
+								reason: "unknown",
+								message: `[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
+							}),
+						)
+					}
+					return Effect.succeed({ data: rule.rows as ReadonlyArray<Record<string, unknown>> })
+				}),
+			insert: () => Effect.void,
+		}),
+	)
 }
 
 export const restoreWarehouse = (): void => __testables.reset()

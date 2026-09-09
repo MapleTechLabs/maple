@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect"
+import { HttpClient } from "effect/unstable/http"
 import { WarehouseExecutor, type SqlQueryOptions } from "@maple/query-engine/observability"
 import { WarehouseConfigError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
@@ -24,11 +25,16 @@ export const WarehouseExecutorFromMode = Layer.effect(
 	WarehouseExecutor,
 	Effect.gen(function* () {
 		const mode = yield* Mode
+		// Captured at layer build so the executor's methods stay requirement-free:
+		// the local driver runs on the CLI's one HttpClient.
+		const http = yield* HttpClient.HttpClient
 		const getExecutor = yield* Effect.cached(
 			mode.resolve.pipe(
 				Effect.flatMap((m) =>
 					m._tag === "local"
-						? Effect.succeed(makeLocalWarehouseExecutorApi(m.baseUrl))
+						? makeLocalWarehouseExecutorApi(m.baseUrl).pipe(
+								Effect.provideService(HttpClient.HttpClient, http),
+							)
 						: // Remote mode never reaches the executor: `operations.ts`
 							// dispatches to the v2 client before asking for one. Anything
 							// that lands here is an operation that forgot to branch, so

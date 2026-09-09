@@ -47,11 +47,11 @@
       "name": "@maple/api",
       "dependencies": {
         "@clerk/backend": "^3.16.12",
-        "@clickhouse/client-web": "catalog:clickhouse",
         "@distilled.cloud/cloudflare": "1.0.0-rc.6",
         "@distilled.cloud/core": "1.0.0-rc.6",
         "@effect/platform-bun": "catalog:effect",
         "@maple-dev/effect-clickhouse": "0.1.0",
+        "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/ai-model-catalog": "workspace:*",
         "@maple/auth": "workspace:*",
@@ -438,6 +438,21 @@
       "peerDependencies": {
         "@opentelemetry/api": ">=1.9.0",
       },
+    },
+    "lib/effect-clickhouse-http": {
+      "name": "@maple-dev/effect-clickhouse-http",
+      "devDependencies": {
+        "effect": "catalog:effect",
+        "@effect/language-service": "catalog:effect",
+        "@effect/vitest": "catalog:effect",
+        "@clickhouse/client-web": "catalog:clickhouse",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:"
+      },
+      "peerDependencies": {
+        "effect": ">=4.0.0-rc.112 <5"
+      }
     },
     "lib/safe-fetch": {
       "name": "@maple/safe-fetch",
@@ -1375,6 +1390,8 @@
     "@maple-dev/browser": ["@maple-dev/browser@workspace:packages/browser"],
 
     "@maple-dev/effect-clickhouse": ["@maple-dev/effect-clickhouse@0.1.0", "", {"peerDependencies": {"effect": ">=4.0.0-rc.111 <5"}, "bin": {"ch-bench": "dist/benchmark/bin.mjs"}}, "sha512-4bt+mTCRzrCHGHhRJ5/hwh5W/MbVKeepCk5/o1dd+hjV2tQ+qOO3xwQhnAfVf0nBu/oC+SfryGcF/sheNdU8Aw=="],
+
+    "@maple-dev/effect-clickhouse-http": ["@maple-dev/effect-clickhouse-http@workspace:lib/effect-clickhouse-http"],
 
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
 
