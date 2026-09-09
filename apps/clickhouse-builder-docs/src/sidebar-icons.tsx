@@ -299,10 +299,14 @@ const icons = {
 	),
 } satisfies Record<string, ReactNode>
 
-const isIconName = (name: string): name is keyof typeof icons => Object.hasOwn(icons, name)
+type SidebarIconName = keyof typeof icons
+
+function isSidebarIconName(name: string): name is SidebarIconName {
+	return name in icons
+}
 
 export function sidebarIcon(name: string | undefined) {
-	const icon = name !== undefined && isIconName(name) ? icons[name] : undefined
+	const icon = name !== undefined && isSidebarIconName(name) ? icons[name] : undefined
 	if (!icon) return undefined
 	return (
 		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true" focusable="false">
