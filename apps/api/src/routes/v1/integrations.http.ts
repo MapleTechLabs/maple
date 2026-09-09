@@ -62,6 +62,11 @@ import {
 } from "@/services/integrations/cloudflare-analytics/queries"
 import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
+import {
+	GOOGLE_ANALYTICS_CALLBACK_PATH,
+	GoogleAnalyticsOAuthService,
+} from "@/services/auth/GoogleAnalyticsOAuthService"
+import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
 import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
 import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@/services/integrations/vcs/VcsCommitService"
@@ -80,6 +85,7 @@ const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 const PLANETSCALE_MESSAGE_TYPE = "maple:integration:planetscale"
+const GOOGLE_ANALYTICS_MESSAGE_TYPE = "maple:integration:google-analytics"
 
 /**
  * How long `cloudflarePrime` spends on the post-connect poll. Long enough for zone discovery plus
@@ -831,6 +837,8 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const planetscaleOAuth = yield* PlanetScaleOAuthService
 		const planetscaleConnection = yield* PlanetScaleConnectionService
+		const googleAnalyticsOAuth = yield* GoogleAnalyticsOAuthService
+		const googleAnalytics = yield* GoogleAnalyticsService
 		const env = yield* Env
 
 		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
@@ -855,6 +863,14 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				messageType: CLOUDFLARE_MESSAGE_TYPE,
 				label: "Cloudflare",
 			})
+		const googleAnalyticsCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
+			renderCallbackPage({
+				...params,
+				targetOrigin: dashboardTargetOrigin,
+				messageType: GOOGLE_ANALYTICS_MESSAGE_TYPE,
+				label: "Google Analytics",
+			})
+
 		const planetscaleCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
 			renderCallbackPage({
 				...params,
@@ -1276,5 +1292,79 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		})
 
 		yield* router.add("GET", PLANETSCALE_CALLBACK_PATH, handlePlanetScale)
+
+		const googleAnalyticsErrorPage = (message: string) =>
+			htmlResponse(googleAnalyticsCallbackPage({ status: "error", message, returnTo: null }), 400)
+
+		const handleGoogleAnalytics = Effect.fn("integrations.googleAnalyticsOAuthCallback")(function* (
+			req: HttpServerRequest.HttpServerRequest,
+		) {
+			const urlOption = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
+			if (Option.isNone(urlOption)) {
+				return googleAnalyticsErrorPage("Malformed callback URL")
+			}
+			const url = urlOption.value
+			const code = url.searchParams.get("code")
+			const state = url.searchParams.get("state")
+			const oauthError = url.searchParams.get("error")
+
+			if (oauthError) {
+				// Google's own codes are terse; `access_denied` is the one users actually hit,
+				// by closing the consent screen.
+				return googleAnalyticsErrorPage(
+					oauthError === "access_denied"
+						? "Google sign-in was cancelled — the connection wasn't authorized."
+						: `Google returned an error (${oauthError})`,
+				)
+			}
+
+			if (!code || !state) {
+				return googleAnalyticsErrorPage("Missing code or state in callback")
+			}
+
+			return yield* googleAnalyticsOAuth.completeConnect(code, state).pipe(
+				// The first collection is NOT run here. It takes tens of seconds on a grant with
+				// several properties, and the popup would sit blank for all of it; the dashboard
+				// calls `prime` from the tab that stays open instead.
+				Effect.tap((result) => googleAnalytics.resetOrgState(result.orgId).pipe(Effect.ignore)),
+				// The callback page reduces failures to short human copy — make sure the real
+				// cause still lands in the server log for diagnosis.
+				Effect.tapError((error) =>
+					Effect.logError("Google Analytics OAuth completeConnect failed", {
+						tag: error._tag,
+						message: error.message,
+					}),
+				),
+				Effect.map((result) =>
+					htmlResponse(
+						googleAnalyticsCallbackPage({
+							status: "success",
+							message: "Google Analytics connected. You can close this window and return to Maple.",
+							returnTo: result.returnTo,
+						}),
+					),
+				),
+				Effect.catchTags({
+					// Validation/upstream messages are our own sanitized strings — and for this
+					// provider they carry the two refusals a user can actually act on: a grant
+					// with no refresh token, and one that reaches no GA4 property.
+					"@maple/http/errors/IntegrationsValidationError": (error) =>
+						Effect.succeed(googleAnalyticsErrorPage(error.message)),
+					"@maple/http/errors/IntegrationsUpstreamError": (error) =>
+						Effect.succeed(googleAnalyticsErrorPage(error.message)),
+					"@maple/http/errors/IntegrationsRevokedError": () =>
+						Effect.succeed(
+							googleAnalyticsErrorPage(
+								"Google rejected the authorization — reconnect and try again",
+							),
+						),
+					"@maple/http/errors/IntegrationsPersistenceError": () =>
+						Effect.succeed(googleAnalyticsErrorPage("Failed to complete Google Analytics connection")),
+				}),
+			)
+		})
+
+		yield* router.add("GET", GOOGLE_ANALYTICS_CALLBACK_PATH, handleGoogleAnalytics)
+
 	}),
 )

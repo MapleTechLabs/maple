@@ -33,6 +33,12 @@ import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS } from "./oauth/connecti
 
 const GOOGLE_ANALYTICS_PROVIDER = "google_analytics"
 
+/**
+ * Must match a redirect URI registered on the Google OAuth client exactly, path included —
+ * Google rejects the exchange otherwise.
+ */
+export const GOOGLE_ANALYTICS_CALLBACK_PATH = "/api/integrations/google-analytics/callback"
+
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 
 const UserInfo = Schema.Struct({

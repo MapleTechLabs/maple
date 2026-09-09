@@ -8,6 +8,10 @@ import type {
 import { CurrentTenant } from "@maple/domain/http"
 import type { PlanetScaleDatabaseRow } from "@maple/db"
 import type {
+	V2GoogleAnalyticsConnectResponse,
+	V2GoogleAnalyticsDisconnectResponse,
+	V2GoogleAnalyticsIntegration,
+	V2GoogleAnalyticsPrimeResponse,
 	V2PlanetScaleConnectResponse,
 	V2PlanetScaleDatabase,
 	V2PlanetScaleDatabaseList,
@@ -35,11 +39,23 @@ import { recordHttpAudit } from "@/services/audit/AuditLogService"
 import { requireAdmin } from "@/services/auth/auth"
 import { Env } from "@/platform/Env"
 import { EdgeCacheService } from "@maple/cache"
+import {
+	GOOGLE_ANALYTICS_CALLBACK_PATH,
+	GoogleAnalyticsOAuthService,
+} from "@/services/auth/GoogleAnalyticsOAuthService"
+import type { GoogleAnalyticsIntegrationStatus } from "@/services/integrations/GoogleAnalyticsService"
+import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
 import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
 import type { SlackChannelList, SlackInstallStatus } from "@/services/integrations/SlackIntegrationService"
 import { SLACK_CALLBACK_PATH, SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
+
+/**
+ * How long `prime` spends on the post-connect poll. Long enough for property discovery plus a
+ * first window on an ordinary grant; a many-propertied one resumes on the next cron tick.
+ */
+const GOOGLE_ANALYTICS_PRIME_TIMEOUT = "20 seconds"
 
 /**
  * Best-effort origin of the incoming request. `x-forwarded-*` is client-supplied
@@ -585,5 +601,154 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 						}),
 					)
 			)
+		}),
+)
+
+/**
+ * Google Analytics 4. Reads are open to any org member; every mutation is admin-gated, matching
+ * the other integrations. The connect flow is the same trusted-origin dance as PlanetScale: the
+ * callback URL is persisted and replayed as `redirect_uri` at token exchange, and the origin is
+ * derived from a client-settable header, so an untrusted one would mint an authorize URL pointing
+ * at a host the caller controls.
+ */
+export const HttpV2GoogleAnalyticsIntegrationsLive = HttpApiBuilder.group(
+	MapleApiV2,
+	"googleAnalyticsIntegration",
+	(handlers) =>
+		Effect.gen(function* () {
+			const analytics = yield* GoogleAnalyticsService
+			const googleOAuth = yield* GoogleAnalyticsOAuthService
+			const env = yield* Env
+
+			const toStatus = (status: GoogleAnalyticsIntegrationStatus): V2GoogleAnalyticsIntegration => ({
+				object: "google_analytics_integration" as const,
+				connected: status.connected,
+				connected_at: isoTimestampOrNull(status.connectedAt),
+				connected_email: status.externalUserEmail,
+				revoked: status.revoked,
+				properties: status.properties.map((property) => ({
+					object: "google_analytics_property" as const,
+					property_id: property.propertyId,
+					property_name: property.propertyName,
+					account_name: property.accountName,
+					time_zone: property.timeZone,
+					enabled: property.enabled,
+					last_synced_at: isoTimestampOrNull(property.lastSyncedAt),
+					last_error: property.lastError,
+					watermark_at: isoTimestampOrNull(property.watermarkAt),
+					backfill_at: isoTimestampOrNull(property.backfillAt),
+				})),
+			})
+
+			return handlers
+				.handle("status", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* analytics
+							.getIntegrationStatus(tenant.orgId)
+							.pipe(tapHttpErrors("Google Analytics status failed"))
+						return toStatus(status)
+					}),
+				)
+				.handle("connect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles, () =>
+							V2InsufficientPermissions.make("Only org admins can connect Google Analytics"),
+						)
+						const req = yield* HttpServerRequest.HttpServerRequest
+						const origin = resolveRequestOrigin(req)
+						if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+							yield* Effect.logError(
+								"Rejected Google Analytics connect: untrusted callback origin",
+								{ origin },
+							)
+							return yield* Effect.fail(
+								V2CallbackHostUnavailable.make(
+									"Google Analytics connections are not available from this host",
+								),
+							)
+						}
+						const result = yield* googleOAuth
+							.startConnect(tenant.orgId, tenant.userId, {
+								callbackUrl: `${origin}${GOOGLE_ANALYTICS_CALLBACK_PATH}`,
+								returnTo: payload.return_to,
+							})
+							.pipe(tapHttpErrors("Google Analytics connect failed"))
+						yield* recordHttpAudit("google_analytics_integration.connect_started")
+						return {
+							object: "google_analytics_integration.connect" as const,
+							redirect_url: result.redirectUrl,
+							state: result.state,
+						} satisfies V2GoogleAnalyticsConnectResponse
+					}),
+				)
+				.handle("disconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles, () =>
+							V2InsufficientPermissions.make("Only org admins can disconnect Google Analytics"),
+						)
+						const result = yield* googleOAuth
+							.disconnect(tenant.orgId)
+							.pipe(tapHttpErrors("Google Analytics disconnect failed"))
+						// Collector state goes with the grant: leaving it would make a later
+						// reconnect resume against a ledger describing a connection that no longer
+						// exists, and emit deltas against values nobody can verify.
+						yield* analytics.resetOrgState(tenant.orgId).pipe(Effect.ignore)
+						yield* recordHttpAudit("google_analytics_integration.disconnected")
+						return {
+							object: "google_analytics_integration.disconnect" as const,
+							disconnected: result.disconnected,
+						} satisfies V2GoogleAnalyticsDisconnectResponse
+					}),
+				)
+				.handle("prime", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles, () =>
+							V2InsufficientPermissions.make("Only org admins can run a Google Analytics sync"),
+						)
+						// Bounded: discovery plus a first window on an ordinary account fits well
+						// inside this, and whatever a many-propertied grant does not finish simply
+						// resumes on the next cron tick.
+						const result = yield* analytics
+							.pollOrg(tenant.orgId)
+							.pipe(Effect.timeoutOption(GOOGLE_ANALYTICS_PRIME_TIMEOUT))
+						return {
+							object: "google_analytics_integration.prime" as const,
+							properties: Option.match(result, {
+								onNone: () => 0,
+								onSome: (value) => value.properties,
+							}),
+							rows_ingested: Option.match(result, {
+								onNone: () => 0,
+								onSome: (value) => value.rowsIngested,
+							}),
+						} satisfies V2GoogleAnalyticsPrimeResponse
+					}),
+				)
+				.handle("updateProperty", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles, () =>
+							V2InsufficientPermissions.make(
+								"Only org admins can change Google Analytics collection",
+							),
+						)
+						yield* analytics
+							.setPropertyEnabled(tenant.orgId, params.property_id, payload.enabled)
+							.pipe(tapHttpErrors("Google Analytics property update failed"))
+						yield* recordHttpAudit(
+							payload.enabled
+								? "google_analytics_integration.property_enabled"
+								: "google_analytics_integration.property_disabled",
+						)
+						const status = yield* analytics
+							.getIntegrationStatus(tenant.orgId)
+							.pipe(tapHttpErrors("Google Analytics status failed"))
+						return toStatus(status)
+					}),
+				)
 		}),
 )

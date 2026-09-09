@@ -44,7 +44,11 @@ import { HttpV2DashboardsLive } from "@/routes/v2/dashboards.http"
 import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
 import { HttpV2ErrorIssuesLive } from "@/routes/v2/error-issues.http"
 import { HttpV2IngestKeysLive } from "@/routes/v2/ingest-keys.http"
-import { HttpV2PlanetScaleIntegrationsLive, HttpV2SlackIntegrationsLive } from "@/routes/v2/integrations.http"
+import {
+	HttpV2GoogleAnalyticsIntegrationsLive,
+	HttpV2PlanetScaleIntegrationsLive,
+	HttpV2SlackIntegrationsLive,
+} from "@/routes/v2/integrations.http"
 import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
@@ -136,6 +140,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2IngestKeysLive,
 			HttpV2SlackIntegrationsLive,
 			HttpV2PlanetScaleIntegrationsLive,
+			HttpV2GoogleAnalyticsIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
 			HttpV2AuditLogLive,

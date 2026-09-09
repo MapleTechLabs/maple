@@ -14,6 +14,7 @@ import { PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService
 import { AuthService } from "@/services/auth/AuthService"
 import { CliDeviceAuthService } from "@/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@/services/auth/CloudflareOAuthService"
+import { GoogleAnalyticsOAuthService } from "@/services/auth/GoogleAnalyticsOAuthService"
 import { HazelOAuthService } from "@/services/auth/HazelOAuthService"
 import { McpOAuthService } from "@/services/auth/McpOAuthService"
 import { OAuthStateRepository } from "@/services/auth/OAuthStateRepository"
@@ -35,6 +36,7 @@ import { ErrorsService } from "@/services/errors/ErrorsService"
 import { InvestigationService } from "@/services/errors/InvestigationService"
 import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
 import { CloudflareAnalyticsService } from "@/services/integrations/CloudflareAnalyticsService"
+import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
 import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
@@ -81,6 +83,7 @@ const CoreServicesLive = Layer.mergeAll(
 	CliDeviceAuthService.layer,
 	McpOAuthService.layer,
 	CloudflareOAuthService.layer,
+	GoogleAnalyticsOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
 	HazelOAuthService.layer,
@@ -115,6 +118,12 @@ export const AuditLogServiceLive = AuditLogService.layer.pipe(Layer.provide(Ware
 // runs in the alerting worker's cron, not here.
 const CloudflareAnalyticsServiceLive = CloudflareAnalyticsService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
+)
+
+// Serves the integration card's per-property collection status; the poll loop
+// itself runs in the alerting worker's cron, not here.
+const GoogleAnalyticsServiceLive = GoogleAnalyticsService.layer.pipe(
+	Layer.provideMerge(CoreServicesLive),
 )
 
 const DemoServiceLive = DemoService.layer.pipe(
@@ -293,6 +302,7 @@ const MainServicesLive = Layer.mergeAll(
 	ProductEventsServiceLive,
 	DailySpendServiceLive,
 	CloudflareAnalyticsServiceLive,
+	GoogleAnalyticsServiceLive,
 	AuditLogServiceLive,
 	WarehouseQueryServiceLive,
 	EdgeCacheServiceLive,

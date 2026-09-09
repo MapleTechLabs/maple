@@ -10,6 +10,7 @@ import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
 import { V2SlackIntegrationsApiGroup } from "./integrations"
+import { V2GoogleAnalyticsIntegrationsApiGroup } from "./integrations-google-analytics"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
 import { V2InvestigationsApiGroup } from "./investigations"
@@ -93,6 +94,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2IngestKeysApiGroup)
 	.add(V2SlackIntegrationsApiGroup)
 	.add(V2PlanetScaleIntegrationsApiGroup)
+	.add(V2GoogleAnalyticsIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
 	.add(V2AuditLogApiGroup)

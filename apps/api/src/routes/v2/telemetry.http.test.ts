@@ -27,6 +27,7 @@ import {
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
+	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	SlackIntegrationServiceStubLayer,
 } from "./v2-test-support"
@@ -273,6 +274,7 @@ const makeHarness = (
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
