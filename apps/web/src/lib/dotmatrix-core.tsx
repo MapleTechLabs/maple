@@ -7,9 +7,6 @@ import { useMemo } from "react"
 import { useDotMatrixPhases, usePrefersReducedMotion, useCyclePhase } from "@/lib/dotmatrix-hooks"
 
 export type MatrixPattern = "diamond" | "full" | "outline" | "rose" | "cross" | "rings"
-
-/** Inline style carrying the `--dmx-*` custom properties the loader CSS reads. */
-type DmxVarStyle = CSSProperties & Record<`--dmx-${string}`, string | number>
 export type DotMark = "circle" | "square" | "diamond" | "hearts"
 export type DotMatrixPhase = "idle" | "collapse" | "hoverRipple" | "loadingRipple"
 export type DotMatrixColorPreset =
@@ -21,6 +18,9 @@ export type DotMatrixColorPreset =
 	| "grad-aurora"
 	| "grad-fire"
 	| "grad-prism"
+
+/** Inline style carrying the `--dmx-*` custom properties the loader CSS reads. */
+type DmxVarStyle = CSSProperties & Record<`--dmx-${string}`, string | number>
 
 const DOT_MATRIX_COLOR_PRESETS = {
 	"solid-theme": {
