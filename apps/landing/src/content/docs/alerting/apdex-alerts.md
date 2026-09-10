@@ -22,26 +22,6 @@ A p95 latency alert tells you that 5% of requests were slower than some number. 
   </div>
 </div>
 
-This page covers how to choose the one input that decides everything about the score, and how to turn it into an alert rule in Maple. For the score itself, start with the [What is Apdex?](/guides/what-is-apdex) guide.
-
-<div class="my-6 grid gap-3 sm:grid-cols-3 not-prose">
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">The score</div>
-    <div class="mt-1.5 font-mono text-sm" style="color: var(--primary)">(A + 0.5B) / C</div>
-    <div class="mt-1 text-xs text-fg-muted">Satisfied, half-credit tolerating, over total.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Maple's default T</div>
-    <div class="mt-1.5 font-mono text-sm" style="color: var(--primary)">500ms</div>
-    <div class="mt-1 text-xs text-fg-muted">Frustrated follows automatically at 4T, so 2s.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Usual alert line</div>
-    <div class="mt-1.5 font-mono text-sm" style="color: var(--destructive)">&lt; 0.80 for 5 min</div>
-    <div class="mt-1 text-xs text-fg-muted">The <strong>Low Apdex score</strong> template in Maple.</div>
-  </div>
-</div>
-
 ## The score in one line
 
 Apdex compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>: the share of requests that were fast enough to keep a user happy. You set one target time, <span class="hl-t">T</span>. Requests under <span class="hl-t">T</span> are <span class="hl-ok">satisfied</span> and score a point, requests under <span class="hl-t">4T</span> are <span class="hl-warn">tolerating</span> and score half, and everything slower — plus everything that failed, at any speed — is <span class="hl-bad">frustrated</span> and scores nothing.
