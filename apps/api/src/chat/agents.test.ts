@@ -8,7 +8,13 @@
 import { ChatMode, makeChatSessionId } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
 import { assert, describe, it } from "vitest"
-import { AGENTS, agentForSession, buildSystemPrompt, spawnableFor } from "./agents"
+import {
+	AGENTS,
+	agentForSession,
+	buildSystemPrompt,
+	delegationToolName,
+	spawnableFor,
+} from "./agents"
 import { mapleToolCatalog } from "@/mcp/tools/registry"
 
 const subagents = Object.values(AGENTS).filter((agent) => agent.mode === "subagent")
@@ -48,11 +54,12 @@ describe("AGENTS", () => {
 		}
 	})
 
-	it("denies `task` to every sub-agent, capping nesting structurally", () => {
-		// The numeric depth cap in the task tool is the belt; this is the braces. A sub-agent whose
-		// ruleset offered `task` could nest regardless of what the counter said.
+	it("lets no sub-agent spawn another, capping nesting structurally", () => {
+		// The engine's own ceiling is the belt: a delegation's default grant is depth one, so a child
+		// is never offered a delegation tool whatever its record says. This is the braces, and it is
+		// the half a reader of the registry can see.
 		for (const agent of subagents) {
-			assert.equal(evaluatePermission(agent.permission, "task"), "deny", agent.name)
+			assert.isEmpty(spawnableFor(agent), agent.name)
 		}
 	})
 
@@ -76,8 +83,7 @@ describe("buildSystemPrompt", () => {
 	it("appends delegation guidance naming exactly the agents this one can spawn", () => {
 		const prompt = buildSystemPrompt(AGENTS.default!)
 
-		assert.include(prompt, "explore")
-		assert.include(prompt, "task")
+		assert.include(prompt, delegationToolName("explore"))
 		// Generated from the registry, so the prompt and the tool description cannot disagree about
 		// what is delegable.
 		for (const agent of subagents.filter((candidate) => candidate.name !== "explore")) {

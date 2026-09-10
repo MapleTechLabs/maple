@@ -50,9 +50,11 @@ const childTask = (
 /**
  * A sub-agent's own events are its own.
  *
- * The engine keeps a child's tool history and working notes in the child's thread, and relays only
- * a summary — so the card shows what the sub-agent reports, not a live replay of it searching.
- * `messageId` is the delegation call id, which is what gives the card its own message to fold into.
+ * The engine keeps a child's tool history and working notes in the child's thread and relays only
+ * its lifecycle, so the card shows that the sub-agent ran and how it ended — never a live replay of
+ * it searching. Its answer arrives separately, as the result of the delegation call on the parent's
+ * message. `messageId` is that call's id, which is what gives the card its own message to fold
+ * into.
  */
 const childEvent = (
 	event: { readonly toolCallId: string; readonly targetAgentId: string },
@@ -148,6 +150,9 @@ export const toChatEvents = (
 		// Observable in traces, with no word on the wire.
 		case "SubagentStarted":
 			return childEvent(event, context, { type: "turn-start" })
+		// Nothing emits this at `@effect-agent` 0.1.0-beta.74 — a delegation reports its lifecycle and
+		// its result, not its progress. Mapped anyway so the day one arrives it lands on the card
+		// instead of being silently dropped by a filtered switch.
 		case "SubagentProgress":
 			return childEvent(event, context, { type: "text-delta", text: event.summary })
 		case "SubagentCompleted":

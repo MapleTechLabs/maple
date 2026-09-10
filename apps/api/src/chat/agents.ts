@@ -204,23 +204,35 @@ export const spawnableFor = (agent: AgentDefinition): ReadonlyArray<AgentDefinit
 		.filter((candidate): candidate is AgentDefinition => candidate?.mode === "subagent")
 
 /**
+ * The tool that delegates to `agent`.
+ *
+ * Prefixed so a delegation can never collide with a registry tool, and one tool per sub-agent
+ * rather than one `task` tool taking an agent name: a model picks a tool reliably, where it can
+ * get a name wrong inside a free-text argument. The convention lives here, next to `spawns`, so
+ * the prompt and `./delegation.ts` cannot disagree about what a tool is called.
+ */
+export const delegationToolName = (agent: string): string => `task_${agent}`
+
+/**
  * The delegation paragraph appended to a system prompt when an agent can spawn.
  *
- * The prompt-side twin of the `task` tool's generated description: the tool tells the model *how*
- * to call, this tells it *when*. Both are generated from the registry so there is one source of
- * truth for what a given agent can delegate to.
+ * The prompt-side twin of the delegation tools' own descriptions: they tell the model *how* to
+ * call, this tells it *when*. Both are generated from the registry so there is one source of truth
+ * for what a given agent can delegate to.
  */
 const taskGuidance = (spawnable: ReadonlyArray<AgentDefinition>): string =>
 	[
 		"## Delegating",
 		"",
-		"You can hand a self-contained research question to a sub-agent with the `task` tool. The " +
-			"sub-agent runs its own tool loop and returns a written answer — its raw tool output never " +
-			"enters this conversation, so delegation is how you search broadly without burying the " +
-			"thread in payloads. It sees NOTHING of this conversation, so its prompt must stand alone.",
+		"You can hand a self-contained research question to a sub-agent. Each one has its own tool. " +
+			"The sub-agent runs its own tool loop and returns a written answer — its raw tool output " +
+			"never enters this conversation, so delegation is how you search broadly without burying " +
+			"the thread in payloads. It sees NOTHING of this conversation, so its prompt must stand " +
+			"alone, and you cannot ask it a follow-up. Launch several at once when the questions are " +
+			"independent.",
 		"",
 		"Available sub-agents:",
-		...spawnable.map((agent) => `- \`${agent.name}\`: ${agent.description}`),
+		...spawnable.map((agent) => `- \`${delegationToolName(agent.name)}\`: ${agent.description}`),
 	].join("\n")
 
 /** The system prompt for a turn: the agent's own persona, plus delegation guidance if it can. */
