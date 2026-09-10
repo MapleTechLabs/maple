@@ -33,9 +33,11 @@ import {
 	isToolPart,
 	toolNameFor,
 	toolPartsOf,
+	isMachineTurn,
 	type ToolPart,
 	type TranscriptRow,
 } from "./transcript-rows"
+import { TurnMinimap } from "./turn-minimap"
 import type { UIMessage } from "@/components/ai-elements/types"
 import type { AiTriageResult } from "@maple/domain/http"
 
@@ -255,11 +257,6 @@ export interface ChatTranscriptProps {
  * `apps/api` sends to open an investigation. Nobody typed it, so it shouldn't
  * appear as though someone did.
  */
-const isMachineTurn = (message: UIMessage): boolean =>
-	message.role === "user" &&
-	message.parts.length > 0 &&
-	message.parts.every((part) => part.type === "text" && stripContextPreamble(part.text).length === 0)
-
 /** Leading marker for a thread that can't be continued. */
 const READ_ONLY_LABEL: Record<"shared" | "resolved" | "transcript", string> = {
 	shared: "Shared conversation · read-only",
@@ -453,6 +450,7 @@ export function ChatTranscript({
 						) : null}
 					</MessageScrollerContent>
 				</MessageScrollerViewport>
+				<TurnMinimap rows={rows} />
 				<MessageScrollerButton />
 				{focusMessageId ? <FocusMessageOnMount messageId={focusMessageId} /> : null}
 				{diagnosisMessageId ? <JumpToDiagnosis messageId={diagnosisMessageId} /> : null}
