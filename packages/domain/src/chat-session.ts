@@ -52,12 +52,7 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
-export const ChatMode = Schema.Literals([
-	"default",
-	"alert",
-	"widget-fix",
-	"investigate",
-])
+export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -182,6 +177,28 @@ export const ChatTaskRef = Schema.Struct({
 	parentMessageId: Schema.String,
 })
 export type ChatTaskRef = Schema.Schema.Type<typeof ChatTaskRef>
+
+/**
+ * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`.
+ *
+ * Here rather than in `apps/api/src/chat/agents.ts`, where it started, because the *client* has to
+ * recognise a delegation from the tool name alone. A streamed `tool-call` carries the tool's name
+ * and nothing else that says "this opens a sub-agent" — the `task` ref only ever rides on the
+ * child's own events — so the web client matched the name against a literal `"task"` and never
+ * recognised a single delegation live: every sub-agent rendered as an ordinary tool row until the
+ * conversation was reloaded and the server's `ChatToolCall.task` took over. Two spellings of one
+ * convention in two apps is exactly the drift this file exists to prevent.
+ */
+export const DELEGATION_TOOL_PREFIX = "task_"
+
+/** The tool that delegates to `agent`. */
+export const delegationToolName = (agent: string): string => `${DELEGATION_TOOL_PREFIX}${agent}`
+
+/** The sub-agent a tool name delegates to, or `undefined` for an ordinary tool. */
+export const delegatedAgentOf = (toolName: string): string | undefined =>
+	toolName.startsWith(DELEGATION_TOOL_PREFIX) && toolName.length > DELEGATION_TOOL_PREFIX.length
+		? toolName.slice(DELEGATION_TOOL_PREFIX.length)
+		: undefined
 
 const task = { task: Schema.optionalKey(ChatTaskRef) }
 

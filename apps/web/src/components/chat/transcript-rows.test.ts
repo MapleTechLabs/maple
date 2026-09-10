@@ -106,7 +106,7 @@ describe("sub-agent parts", () => {
 					type: "task",
 					toolCallId: `${id}-t`,
 					agent: "explore",
-					description: "trace checkout latency",
+					prompt: "trace checkout latency",
 					status: "completed",
 					messages: [],
 				},

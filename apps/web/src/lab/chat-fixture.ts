@@ -226,12 +226,27 @@ export function buildChatLabMessages(): UIMessage[] {
 			id: "m9",
 			role: "assistant",
 			parts: [
+				// Two delegations side by side, the pair that used to collapse into a `2 tools`
+				// header: one still running (loader, activity verb, clock) and one answered.
+				{
+					type: "task",
+					toolCallId: "t0",
+					agent: "explore",
+					prompt: 'Deep-dive the service "subscriptions-api": which operation regressed after the 14:20 deploy, and by how much?',
+					status: "running",
+					messages: [],
+				},
 				{
 					type: "task",
 					toolCallId: "t1",
 					agent: "trace-analyst",
-					description: "Find every trace where the entitlement lookup returned an empty body",
+					prompt: "Find every trace where the entitlement lookup returned an empty body",
 					status: "completed",
+					answer:
+						"212 traces hit the empty-body path, all of them on `web-paywall-worker`.\n\n" +
+						"Every one carries `entitlement.cache_hit=false`, so the lookup is reaching the " +
+						"upstream and getting a 204 back rather than falling back to the cached grant.",
+					budgetExhausted: true,
 					messages: [
 						{
 							id: "t1-1",

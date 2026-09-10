@@ -62,6 +62,10 @@ function showsThinkingRow(message: UIMessage, isLoading: boolean, isLastMessage:
 	// Streaming prose is its own progress signal.
 	if (lastPart.type === "text" && (lastPart as { state?: string }).state === "streaming") return false
 	for (const part of parts) {
+		// A running sub-agent card carries its own loader and clock — the same deferral a running
+		// tool row gets, and for the same reason: a delegation runs for minutes, and a "Thinking…"
+		// row under it animated a second time against the one already saying so.
+		if (part.type === "task" && part.status === "running") return false
 		if (!isToolPart(part)) continue
 		// A proposal renders as an approval card, which is not a live row — it has no orb to defer to.
 		if (part.state === "proposed") continue
@@ -114,7 +118,7 @@ function renderToolNodes(buf: readonly ToolPart[], keyHint: string): ReactNode {
 	return (
 		<ToolGroup
 			key={`group-${buf[0]!.toolCallId ?? keyHint}`}
-			count={buf.length}
+			toolNames={buf.map(toolNameFor)}
 			runningCount={runningCount}
 			errorCount={errorCount}
 			completedCount={buf.length - runningCount}
@@ -179,8 +183,11 @@ function renderMessageParts({
 				<TaskCard
 					key={part.toolCallId ?? `task-${i}`}
 					agent={part.agent}
-					description={part.description}
+					prompt={part.prompt}
 					status={part.status}
+					answer={part.answer}
+					errorText={part.errorText}
+					budgetExhausted={part.budgetExhausted}
 					messages={part.messages}
 				/>,
 			)

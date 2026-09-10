@@ -15,17 +15,11 @@ import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
 import * as Output from "@effect-agent/engine/Output"
 import { Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
-import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
+import { chatModeFromSessionId, delegationToolName, type ChatMode } from "@maple/domain/chat-session"
 import { PermissionRule } from "@maple/domain/permission"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
-import {
-	MAX_STEPS,
-	REPEATED_TOOL_CALLS,
-	SUBAGENT_MAX_STEPS,
-	TOOL_CONCURRENCY,
-	TURN_MAX_DURATION,
-} from "./budgets"
+import { MAX_TOOL_CALLS, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY, TURN_MAX_DURATION } from "./budgets"
 import { buildHypothesisSystemPrompt, hypothesisRuleset } from "@/workflows/hypothesis-catalogue"
 import { PLANNER_MAX_STEPS, PLANNER_SYSTEM_PROMPT, PLANNER_TOOL_NAMES } from "@/workflows/planner-prompt"
 import type { PermissionRuleset } from "@maple/domain/permission"
@@ -46,7 +40,12 @@ export interface AgentDefinition {
 	readonly mode: "primary" | "subagent"
 	readonly prompt: string
 	readonly permission: PermissionRuleset
-	/** Overrides the turn's default step cap. */
+	/**
+	 * Caps assistant turns, for a headless pass that budgets by turn rather than by tool call.
+	 *
+	 * Left unset by every attended agent: a chat turn answers to `MAX_TOOL_CALLS` and to the
+	 * duration, so nothing stops it mid-investigation for having thought too many times.
+	 */
 	readonly steps?: number
 	/**
 	 * Sub-agents this agent may spawn. Empty (the default) means it gets no `task` tool at all —
@@ -163,16 +162,6 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		prompt: INVESTIGATE_SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		spawns: ["explore"],
-		/**
-		 * Four steps above the shared default.
-		 *
-		 * The per-agent override exists so this can move without moving `MAX_STEPS`,
-		 * which every attended surface reads. An investigation that must both gather
-		 * evidence and test an alternative before concluding needs the room; a chat
-		 * turn answering a question does not, and giving it the same budget mostly
-		 * buys latency.
-		 */
-		steps: 14,
 	},
 	explore: {
 		name: "explore",
@@ -184,7 +173,6 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		mode: "subagent",
 		prompt: EXPLORE_SYSTEM_PROMPT,
 		permission: READ_ONLY_RULESET,
-		steps: SUBAGENT_MAX_STEPS,
 	},
 } as const satisfies Readonly<Record<string, AgentDefinition>>
 
@@ -206,10 +194,11 @@ export const spawnableFor = (agent: AgentDefinition): ReadonlyArray<AgentDefinit
  *
  * Prefixed so a delegation can never collide with a registry tool, and one tool per sub-agent
  * rather than one `task` tool taking an agent name: a model picks a tool reliably, where it can
- * get a name wrong inside a free-text argument. The convention lives here, next to `spawns`, so
- * the prompt and `./delegation.ts` cannot disagree about what a tool is called.
+ * get a name wrong inside a free-text argument. Re-exported from the wire contract rather than
+ * spelled again here — the web client reads the same convention off a streamed tool name to know
+ * a delegation opens a sub-agent card, so the two must be one definition.
  */
-export const delegationToolName = (agent: string): string => `task_${agent}`
+export { delegationToolName }
 
 /**
  * The delegation paragraph appended to a system prompt when an agent can spawn.
@@ -229,6 +218,10 @@ const taskGuidance = (spawnable: ReadonlyArray<AgentDefinition>): string =>
 			"alone, and you cannot ask it a follow-up. Launch several at once when the questions are " +
 			"independent.",
 		"",
+		"Delegation is plumbing: report what a sub-agent found as part of your own answer. Never " +
+			"tell the user that you delegated, how the work was split, or that a sub-agent ran out " +
+			"of anything.",
+		"",
 		"Available sub-agents:",
 		...spawnable.map((agent) => `- \`${delegationToolName(agent.name)}\`: ${agent.description}`),
 	].join("\n")
@@ -243,18 +236,17 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => {
  * A Maple agent record as a finite policy.
  *
  * Every ceiling comes from `./budgets.ts`, which is still the one place they are collected and
- * reasoned about against each other. `maxToolCalls` is derived rather than declared: a turn's tool
- * calls are bounded by how many turns it gets times how many it may issue at once, and stating it
- * separately would let the two drift.
+ * reasoned about against each other. `maxToolCalls` is the ceiling that actually binds an attended
+ * turn; `maxTurns` defaults to it so a turn can never be stopped for thinking more often than it
+ * called a tool. Only a headless pass that budgets by turn declares `steps`.
  *
  * `contextTokenLimit` is what makes compaction the engine's job instead of `turn-runner`'s. It
  * arrives from the resolved model rather than the agent, because it is a property of the model.
  */
 export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
-	const maxTurns = agent.steps ?? MAX_STEPS
 	return AgentPolicy.make({
-		maxTurns,
-		maxToolCalls: maxTurns * TOOL_CONCURRENCY,
+		maxTurns: agent.steps ?? MAX_TOOL_CALLS,
+		maxToolCalls: MAX_TOOL_CALLS,
 		// The shared ceiling. A headless pass tightens it per run with `durationDeadline`, which the
 		// engine takes as the earlier of the two — a run option can never widen the definition.
 		maxDuration: TURN_MAX_DURATION,

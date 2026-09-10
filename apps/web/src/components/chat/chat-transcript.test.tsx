@@ -304,7 +304,7 @@ describe("ChatTranscript", () => {
 	})
 
 	// An agent loop emits one message per round-trip; six of them used to read as six
-	// identical `2 tools` groups stacked down the page.
+	// identical `List Services ×2` groups stacked down the page.
 	it("collapses a run of tool-only turns into a single tool group", () => {
 		// SAFETY: this fixture constructs the repeated tool-only message variant consumed by ChatTranscript.
 		const burst = (id: string): UIMessage =>
@@ -328,7 +328,10 @@ describe("ChatTranscript", () => {
 			/>,
 		)
 
-		expect(screen.getByText("6 tools")).toBeTruthy()
+		// The header names the work rather than counting it: one tool, called six times.
+		const groupHeader = document.querySelector('[data-slot="tool-group"] button')
+		expect(groupHeader?.textContent).toContain("List Services")
+		expect(groupHeader?.textContent).toContain("×6")
 		expect(items()).toHaveLength(1)
 		// Nothing to copy, so no invisible hover-action row reserving height either.
 		expect(document.querySelectorAll('[data-slot="message-footer"]')).toHaveLength(0)
@@ -391,7 +394,7 @@ describe("ChatTranscript sub-agent cards", () => {
 					type: "task",
 					toolCallId: "t1",
 					agent: "explore",
-					description: "trace checkout latency",
+					prompt: "trace checkout latency",
 					status,
 					messages: [
 						{
@@ -404,28 +407,47 @@ describe("ChatTranscript sub-agent cards", () => {
 			],
 		}) as UIMessage
 
-	it("renders a collapsed card naming the sub-agent and what it was asked", () => {
+	it("renders a single line naming the sub-agent and what it was asked", () => {
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		expect(screen.getByText("explore")).toBeTruthy()
+		expect(screen.getByText("Explore")).toBeTruthy()
 		expect(screen.getByText("trace checkout latency")).toBeTruthy()
-		// Collapsed by default: the point of delegating is that the parent thread does not carry
-		// the sub-agent's search.
+		// The line is all the transcript spends on it: the point of delegating is that the parent
+		// thread does not carry the sub-agent's search.
 		expect(screen.queryByText("p99 is 4.2s in checkout-api.")).toBeNull()
 	})
 
-	it("expands to the sub-agent's own transcript on click", () => {
+	it("opens the sub-agent's own run in a sheet on click", () => {
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		fireEvent.click(screen.getByText("explore"))
+		fireEvent.click(screen.getByText("Explore"))
 		expect(screen.getByText("p99 is 4.2s in checkout-api.")).toBeTruthy()
+	})
+
+	it("shows the answer the sub-agent returned, which is all the parent thread sees of the run", () => {
+		const answered = {
+			...taskMessage(),
+			parts: [{ ...(taskMessage().parts[0] as object), answer: "Checkout p99 is 4.2s." }],
+		} as UIMessage
+		render(<ChatTranscript {...baseProps} messages={[answered]} />)
+
+		fireEvent.click(screen.getByText("Explore"))
+		expect(screen.getByText("Checkout p99 is 4.2s.")).toBeTruthy()
+	})
+
+	it("says what the sub-agent is doing while it runs, and defers the thinking row to it", () => {
+		render(<ChatTranscript {...baseProps} messages={[taskMessage("running")]} isLoading />)
+
+		expect(screen.getByText("Exploring…")).toBeTruthy()
+		// One live element per turn: the card's own loader, not a second "Thinking…" under it.
+		expect(screen.queryByText("Thinking…")).toBeNull()
 	})
 
 	it("never folds a sub-agent into a tool group header", () => {
 		// A sub-agent run is content, not plumbing.
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		expect(screen.queryByText(/^\d+ tools$/)).toBeNull()
+		expect(document.querySelector('[data-slot="tool-group"]')).toBeNull()
 		expect(items().map((el) => (el as HTMLElement).dataset.messageId)).toEqual(["m1"])
 	})
 })

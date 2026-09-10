@@ -1,12 +1,14 @@
-import { useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import type { IconComponent } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { RunningClock } from "./tool"
 import { DotLoader } from "./dot-loader"
-import { toolActivity } from "./tool-metadata"
+import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
 
 interface ToolGroupProps {
-	count: number
+	/** Raw names of every call in the group, in call order — the header says what they were. */
+	toolNames: readonly string[]
 	runningCount: number
 	errorCount: number
 	/** Raw name of the call in flight, so the header says what is actually happening. */
@@ -16,6 +18,27 @@ interface ToolGroupProps {
 	children: ReactNode
 }
 
+interface ToolTally {
+	label: string
+	icon: IconComponent
+	count: number
+}
+
+/** Distinct tools in call order, each with how many times it was called. */
+function tally(toolNames: readonly string[]): ToolTally[] {
+	const byLabel = new Map<string, ToolTally>()
+	for (const name of toolNames) {
+		const label = toolLabel(name)
+		const seen = byLabel.get(label)
+		if (seen) seen.count += 1
+		else byLabel.set(label, { label, icon: toolIcon(name), count: 1 })
+	}
+	return [...byLabel.values()]
+}
+
+/** How many distinct tools the header names before falling back to `+N more`. */
+const NAMED_TOOLS = 3
+
 /**
  * A run of tool calls behind one line.
  *
@@ -23,9 +46,13 @@ interface ToolGroupProps {
  * investigation costs the reader a single line instead of a screen of chrome. Expanding drops
  * the rows into a hairline rail rather than a bordered panel — the group is an aside to the
  * turn's prose, and a filled card reads as the main event.
+ *
+ * The settled header names the work — `Search Traces · Inspect Trace ×4` — because `4 tools`
+ * told the reader only that something happened. Naming it is what makes the collapsed line
+ * worth leaving collapsed.
  */
 export function ToolGroup({
-	count,
+	toolNames,
 	runningCount,
 	errorCount,
 	currentToolName,
@@ -34,9 +61,13 @@ export function ToolGroup({
 }: ToolGroupProps) {
 	const [open, setOpen] = useState(false)
 	const running = runningCount > 0
+	const count = toolNames.length
+	const tools = useMemo(() => tally(toolNames), [toolNames])
+	const named = tools.slice(0, NAMED_TOOLS)
+	const hidden = tools.length - named.length
 
 	return (
-		<div className="text-xs">
+		<div className="text-xs" data-slot="tool-group">
 			<button
 				type="button"
 				className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
@@ -64,14 +95,40 @@ export function ToolGroup({
 						</span>
 					</span>
 				) : (
-					<span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
-						{count} tool{count === 1 ? "" : "s"}
+					<>
+						{/* One glyph per distinct tool: the shape of the burst is readable before
+						    the text is, and it survives the truncation the labels don't. */}
+						<span className="flex shrink-0 items-center gap-1">
+							{named.map((tool) => (
+								<tool.icon
+									key={tool.label}
+									className="size-3.5 shrink-0 text-muted-foreground/70"
+								/>
+							))}
+						</span>
+						<span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
+							{named.map((tool, i) => (
+								<span key={tool.label}>
+									{i > 0 ? <span className="text-muted-foreground/40"> · </span> : null}
+									{tool.label}
+									{tool.count > 1 ? (
+										<span className="font-normal tabular-nums text-muted-foreground/60">
+											{" "}
+											×{tool.count}
+										</span>
+									) : null}
+								</span>
+							))}
+							{hidden > 0 ? (
+								<span className="font-normal text-muted-foreground/60"> +{hidden} more</span>
+							) : null}
+						</span>
 						{errorCount > 0 ? (
-							<span className="ml-1 font-normal tabular-nums text-destructive">
-								· {errorCount} failed
+							<span className="shrink-0 font-normal tabular-nums text-destructive">
+								{errorCount} failed
 							</span>
 						) : null}
-					</span>
+					</>
 				)}
 				{running ? <RunningClock /> : null}
 				<ChevronDownIcon
