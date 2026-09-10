@@ -11,6 +11,7 @@ import {
 	BellIcon,
 	ClockIcon,
 	CircleInfoIcon,
+	ExternalLinkIcon,
 } from "@/components/icons"
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
@@ -141,8 +142,11 @@ export function WidgetShell({
 							<TooltipContent className="max-w-xs text-xs leading-relaxed">
 								{titleHint.text}
 								{titleHint.href && (
-									<span className="mt-1 block text-muted-foreground">
-										Click to read the docs
+									// Styled as the link it is: the whole icon is the anchor, so the
+									// tooltip has to say where a click lands.
+									<span className="mt-2 flex items-center gap-1 font-medium text-primary">
+										<span className="underline underline-offset-2">Read the docs</span>
+										<ExternalLinkIcon size={10} />
 									</span>
 								)}
 							</TooltipContent>

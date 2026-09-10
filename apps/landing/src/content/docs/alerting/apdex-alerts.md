@@ -273,6 +273,12 @@ curl -X POST https://api.maple.dev/v2/alerts/rules \
 
 `POST /v2/alerts/rules/preview` accepts the same body and returns what the rule would have done over a past window, which is the cheapest way to find out that your threshold is too tight before it wakes anyone. See the [API reference](/docs/api) for the full schema.
 
+### Or hand it to an agent
+
+Maple's [MCP server](/docs/mcp) exposes the same alerting surface as tools, so an agent connected to your organisation can build the rule for you. Ask Claude, Cursor, or any MCP client for "an Apdex alert on checkout, target 500ms, page below 0.8" and it calls `create_alert_rule` with `template: "low_apdex"`, or with `signal_type: "apdex"` and an `apdex_threshold_ms` of your own.
+
+`list_alert_rules`, `get_alert_rule`, `update_alert_rule` and `delete_alert_rule` are there too, along with `list_alert_incidents` and `list_alert_checks` for asking why a rule fired. It is the same API underneath, so the same validation applies: an Apdex rule without a target is rejected, with the fix in the error. The [MCP page](/docs/mcp) covers the endpoint, authentication and the full tool list.
+
 ## Known limitations
 
 - **Apdex is computed on sampled spans.** If you sample at 10%, the score is the ratio measured across the requests you kept. That stays representative under uniform sampling, but a sampling policy that keeps slow or failed traces preferentially will drag the score down relative to reality.
