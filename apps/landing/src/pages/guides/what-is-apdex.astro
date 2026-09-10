@@ -178,10 +178,10 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        The specification comes from the Apdex Alliance, and two of its rules are what make scores comparable between tools. The tolerating threshold is fixed at <strong>4T</strong> rather than configured separately, and T is reported with the score as a subscript: <code>Apdex(0.5) = 0.94</code> means a score of 0.94 measured against a 500ms target. A score quoted without its T cannot be compared to anything.
+                        Apdex comes from a published specification, so the same traffic scores the same way in any tool that implements it. The only thing you configure is T.
                     </p>
                     <p>
-                        A score of <strong>1</strong> means every request beat the target and <strong>0</strong> means none did. Failures are the part that catches people out: a request that returns an error counts as frustrated regardless of its duration, so a service returning 500s in 40ms scores zero on those requests, exactly as if they had timed out at 30 seconds.
+                        A score of <strong>1</strong> means every request beat the target and <strong>0</strong> means none did. Errors count as frustrated whatever their duration, which is the part that catches people out.
                     </p>
 
                     <h3>Apdex answers a different question than a p95 alert</h3>
