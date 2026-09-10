@@ -99,6 +99,14 @@ export interface EnvConfig {
 	 */
 	readonly SLACK_INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
 	/**
+	 * Dedicated bearer secret for the repository sandbox Worker, kept distinct
+	 * from `INTERNAL_SERVICE_TOKEN` for the same reason as the Slack one above:
+	 * that token lets its holder act as any organization, and this one reaches a
+	 * deployment whose job is running model-chosen commands. There is no fallback
+	 * — the sandbox tools report themselves unavailable while it is unset.
+	 */
+	readonly SANDBOX_INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
+	/**
 	 * Apple Push Notification service — token auth for the iOS app. All three
 	 * must be set for push to be live; otherwise the fan-out is a no-op and
 	 * device registration still works (so a later key drop needs no client
@@ -204,6 +212,7 @@ const envConfig = Config.all({
 	SLACK_CLIENT_ID: optionalString("SLACK_CLIENT_ID"),
 	SLACK_CLIENT_SECRET: optionalRedacted("SLACK_CLIENT_SECRET"),
 	SLACK_INTERNAL_SERVICE_TOKEN: optionalRedacted("SLACK_INTERNAL_SERVICE_TOKEN"),
+	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),
 	APNS_TEAM_ID: optionalString("APNS_TEAM_ID"),
 	APNS_KEY_ID: optionalString("APNS_KEY_ID"),
 	APNS_PRIVATE_KEY: optionalRedacted("APNS_PRIVATE_KEY"),

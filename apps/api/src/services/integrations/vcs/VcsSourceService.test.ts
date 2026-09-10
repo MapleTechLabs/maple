@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/http"
+import { type GitCommitSha, OrgId } from "@maple/domain/http"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
@@ -49,6 +49,19 @@ const makeLayer = (providerCalls: string[]) => {
 					},
 				]
 			}),
+		resolveRef: (_installation, repo, ref) =>
+			Effect.sync(() => {
+				providerCalls.push(`resolve:${repo.owner}/${repo.name}:${ref}`)
+				return ref === "gone" ? Option.none() : Option.some("d".repeat(40) as GitCommitSha)
+			}),
+		fetchCloneCredentials: (_installation, repo) =>
+			Effect.sync(() => {
+				providerCalls.push(`clone:${repo.owner}/${repo.name}`)
+				return {
+					remoteUrl: `https://github.test/${repo.owner}/${repo.name}.git`,
+					token: "ghs_scoped",
+				}
+			}),
 		fetchSourceFile: (_installation, repo, path, ref) =>
 			Effect.sync(() => {
 				providerCalls.push(`read:${repo.owner}/${repo.name}:${path}:${ref}`)
@@ -92,6 +105,31 @@ describe("VcsSourceService", () => {
 			assert.deepStrictEqual(calls, [
 				"search:octo/shop:checkout",
 				"read:octo/shop:src/checkout.ts:production",
+			])
+		}).pipe(Effect.provide(makeLayer(calls)))
+	})
+
+	it.effect("resolves a checkout at the tracked branch, at a named ref, and straight from a SHA", () => {
+		const calls: string[] = []
+		return Effect.gen(function* () {
+			const source = yield* VcsSourceService
+			const tracked = yield* source.resolveCheckout(ORG, "octo/shop")
+			assert.strictEqual(tracked.ref, "production")
+			assert.strictEqual(tracked.sha, "d".repeat(40))
+			assert.strictEqual(tracked.remoteUrl, "https://github.test/octo/shop.git")
+			// The credential stays apart from the URL, so nothing downstream can put it
+			// in a command's arguments by accident.
+			assert.strictEqual(tracked.token, "ghs_scoped")
+			assert.notInclude(tracked.remoteUrl, "ghs_scoped")
+			const pinned = yield* source.resolveCheckout(ORG, "octo/shop", "e".repeat(40))
+			assert.strictEqual(pinned.sha, "e".repeat(40))
+			const missing = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", "gone"))
+			assert.isTrue(Exit.isFailure(missing))
+			assert.deepStrictEqual(calls, [
+				"resolve:octo/shop:production",
+				"clone:octo/shop",
+				"clone:octo/shop",
+				"resolve:octo/shop:gone",
 			])
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})

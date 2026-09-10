@@ -122,6 +122,22 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 		}),
 	)
 
+	it.live("stamps the calling span's ids on the trace field so Broadcast nests under it", () =>
+		Effect.gen(function* () {
+			const span = yield* Effect.currentSpan
+			const captured = yield* captureRequest(openRouterEnv, tags)
+
+			// OpenRouter's exporter uses these verbatim as the W3C ids of the trace it emits.
+			expect(captured.body.trace).toMatchObject({ trace_name: "chat", trace_id: span.traceId })
+			// The parent is whichever span is innermost at the transport — the model's, not ours —
+			// but it must be a real 16-hex span id that lives in our trace.
+			expect((captured.body.trace as { parent_span_id: string }).parent_span_id).toMatch(
+				/^[0-9a-f]{16}$/,
+			)
+			expect(captured.body.usage).toEqual({ include: true })
+		}).pipe(Effect.withSpan("chat")),
+	)
+
 	it.live("keeps the headers and tags off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(

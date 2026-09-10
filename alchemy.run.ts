@@ -24,6 +24,8 @@ import {
 } from "@maple/infra/aws"
 import {
 	ApiWorker,
+	SandboxWorker,
+	stageDeploysSandbox,
 	formatMapleStage,
 	ManagedMapleDb,
 	MapleStack,
@@ -38,6 +40,7 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import Alerting from "./apps/alerting/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
+import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
@@ -210,7 +213,14 @@ export default Alchemy.Stack(
 		// happens outside any Worker init, where alchemy would bind it as a secret.
 		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
 
-		const api = yield* MapleApi
+		// The agents' repository sandbox: it hosts Cloudflare's Sandbox Durable
+		// Object, and the api binds it as `SANDBOX`. Yielded first so the binding
+		// sees a Worker this deploy created rather than stored state, and only on
+		// the stages that run it — see `stageDeploysSandbox`.
+		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
+		const api = yield* sandbox === undefined
+			? MapleApi
+			: Effect.provideService(MapleApi, SandboxWorker, sandbox)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the

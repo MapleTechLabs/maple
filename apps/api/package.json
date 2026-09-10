@@ -35,6 +35,7 @@
 		"@effect-agent/capabilities": "0.1.0-beta.74",
 		"@effect-agent/core": "0.1.0-beta.74",
 		"@effect-agent/engine": "0.1.0-beta.74",
+		"@effect-agent/sandbox": "0.1.0-beta.74",
 		"@effect/ai-openai-compat": "catalog:effect",
 		"@effect/ai-openrouter": "catalog:effect",
 		"@effect/platform-bun": "catalog:effect",

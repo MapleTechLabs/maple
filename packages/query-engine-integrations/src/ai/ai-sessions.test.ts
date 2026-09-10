@@ -8,8 +8,10 @@ import {
 } from "@maple-dev/effect-clickhouse"
 import {
 	aiSessionDetailsQuery,
+	aiSessionDetailsSlices,
 	aiSessionFacetsQuery,
 	idSearchPattern,
+	mergeAiSessionDetails,
 	aiSessionPageQuery,
 	aiSessionSpansQuery,
 	aiSessionSpansRowSchema,
@@ -47,11 +49,24 @@ const LIST_SESSION_KEY =
 const FAN_OUT_START = "2026-08-18 10:00:00"
 const FAN_OUT_END = "2026-08-18 12:00:00"
 
+/** One slice of the page's padded extent — the bounds one fan-out read seeks in. */
+const SPANS_START = "2026-08-18 09:00:00.000000000"
+const SPANS_END = "2026-08-18 13:00:00.000000000"
+
 /** The details read's ENTIRE param set — the caller's window is not among them. */
 const listParams = {
 	orgId: params.orgId,
 	fanOutStart: FAN_OUT_START,
 	fanOutEnd: FAN_OUT_END,
+	spansStart: SPANS_START,
+	spansEnd: SPANS_END,
+}
+
+/** The page's levels, outermost first: the usage sums, the netting, the
+ *  session grouping, and the per-trace grouping over the index. */
+const levels = (sql: string) => {
+	const [sums = "", netted = "", sessions = "", traces = ""] = sql.split("FROM (SELECT")
+	return { sums, netted, sessions, traces }
 }
 
 /** A page of two sessions, one of each kind — the details read never runs without one. */
@@ -106,7 +121,7 @@ describe("aiSessionPageQuery", () => {
 
 	it("resolves the vendor from the earliest session-bearing agent span, not max()", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
-		const [outer, inner] = sql.split("FROM (SELECT")
+		const { sessions: outer, traces: inner } = levels(sql)
 
 		// Per trace: session-bearing spans rank first, then the earliest wins —
 		// a tuple, so ties at one rank fall through to time rather than to
@@ -124,7 +139,7 @@ describe("aiSessionPageQuery", () => {
 
 	it("counts the session's traces, agent spans and services off the index", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
-		const [outer, inner] = sql.split("FROM (SELECT")
+		const { sessions: outer, traces: inner } = levels(sql)
 
 		expect(inner).toContain("count() AS agentSpanCount")
 		expect(inner).toContain("groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames")
@@ -140,8 +155,11 @@ describe("aiSessionPageQuery", () => {
 		// `agentStart` is a fixed-width literal, so the String order is the
 		// instant order. The tiebreak is what stops a page boundary splitting two
 		// sessions that share a start — one would be shown twice and one never.
-		expect(sql).toContain("ORDER BY agentStart DESC, sessionId ASC")
-		expect(sql).toContain("LIMIT 50")
+		// The session level ranks and cuts the page, and the level that sums
+		// the usage keeps the order; the netting between them sees 50 rows.
+		expect(sql.split("ORDER BY agentStart DESC, sessionId ASC").length - 1).toBe(2)
+		expect(sql.split("LIMIT 50").length - 1).toBe(1)
+		expect(sql.indexOf("LIMIT 50")).toBeLessThan(sql.indexOf(") AS ranked_sessions"))
 	})
 
 	it("skips past the previous pages on the ordered session rows", () => {
@@ -207,6 +225,8 @@ describe("aiSessionPageQuery", () => {
 		expect(sql).not.toContain("HAVING")
 		expect(sql).not.toContain("VendorId IN")
 		expect(sql).not.toContain("ServiceName IN")
+		// The one WHERE is the index read's; the usage level filters nothing.
+		expect(sql.split("WHERE ").length - 1).toBe(1)
 	})
 
 	it("is org-scoped, and escapes an org id carrying a quote", () => {
@@ -325,62 +345,66 @@ describe("aiSessionPageQuery", () => {
 		expect(compileUnsafe(aiSessionPageQuery({ search: "   " }), params).sql).not.toContain("LIKE")
 	})
 
-	it("collects the measures per trace off the index, and sums them per session", () => {
+	it("collects the measures per trace off the index, and nets and sums them per session", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
-		const [outer, inner] = sql.split("FROM (SELECT")
+		const { sums, netted, sessions, traces } = levels(sql)
 
-		expect(inner).toContain("groupUniqArrayIf(20)(Model, Model != '') AS models")
-		expect(inner).toContain("groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames")
-		expect(inner).toContain("sum(IsToolCall) AS toolCalls")
-		expect(inner).toContain("sum(IsError) AS errorAgentSpans")
-		// Model calls travel as reporters too: they are counted one level up.
-		expect(inner).not.toContain("AS llmCalls")
-		expect(inner).toContain(
+		expect(traces).toContain("groupUniqArrayIf(20)(Model, Model != '') AS models")
+		expect(traces).toContain("groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames")
+		expect(traces).toContain("sum(IsToolCall) AS toolCalls")
+		expect(traces).toContain("sum(IsError) AS errorAgentSpans")
+		// Model calls travel as reporters too: they are counted two levels up.
+		expect(traces).not.toContain("AS llmCalls")
+		expect(traces).toContain(
 			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
 		)
-		expect(inner).toContain(
+		expect(traces).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
 		)
 
-		expect(outer).toContain("groupUniqArrayArray(models) AS models")
-		expect(outer).toContain("sum(errorAgentSpans) AS errorAgentSpans")
+		expect(sessions).toContain("groupUniqArrayArray(models) AS models")
+		expect(sessions).toContain("sum(errorAgentSpans) AS errorAgentSpans")
 		// The session's reporters, every trace's flattened, so a gateway's mirror
-		// trace of a call is in hand next to the app's own span of it.
-		const all = "arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)"
-		// Deepest reporter: a parent keeps only its excess over its reporting
-		// children; then one claim per response id.
-		expect(outer).toContain(
-			`arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), ${all}))), ${all})`,
-		)
-		expect(outer).toContain("arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1,")
-		expect(outer).toContain(") AS totalTokens")
-		expect(outer).toContain(") AS cost")
-		// The five buckets the row draws, summed the same way off the tuple's
-		// tail — the detail page's split, which is the index's since 0031.
-		for (const [element, name] of [
-			[7, "inputTokens"],
-			[8, "cacheReadTokens"],
-			[9, "cacheWriteTokens"],
-			[10, "outputTokens"],
-			[11, "reasoningTokens"],
-		] as const) {
-			expect(outer).toContain(
-				`arrayMap(r -> tuple(r.5, greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), ${all}))), ${all})`,
-			)
-			expect(outer).toContain(`) AS ${name}`)
-		}
-		expect(outer).toContain("toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0),")
-		expect(outer).toContain(") AS llmCalls")
-		expect(outer).toContain(
+		// trace of a call is in hand next to the app's own span of it — and the
+		// two lookups the netting makes, taken off them once per session.
+		expect(sessions).toContain("arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters")
+		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.2], reporters)")
+		expect(sessions).toContain(") AS childClaims")
+		expect(sessions).toContain("tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds")
+		expect(sessions).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
+		// Deepest reporter: a parent keeps only its excess over its reporting
+		// children — one pass over the reporters, on a level of its own.
+		expect(netted).toContain("arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0),")
+		expect(netted).toContain(", reporters) AS netted")
+		expect(netted).not.toContain("AS totalTokens")
+		// Then one claim per response id, per measure, off the netted column.
+		for (const [element, name] of [
+			[3, "totalTokens"],
+			[4, "cost"],
+			[5, "inputTokens"],
+			[6, "cacheReadTokens"],
+			[7, "cacheWriteTokens"],
+			[8, "outputTokens"],
+			[9, "reasoningTokens"],
+		] as const) {
+			expect(sums).toContain(
+				`arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), ${element})) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.${element}), arrayFilter(n -> n.1 != '', netted))))) AS ${name}`,
+			)
+		}
+		expect(sums).toContain("toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2))")
+		expect(sums).toContain(") AS llmCalls")
+		// The row's own columns ride through both upper levels by name.
+		expect(sums).toContain("agentDurationMs AS agentDurationMs")
+		expect(netted).toContain("agentDurationMs AS agentDurationMs")
 		// Still index-only: none of it reaches for the fan-out table.
 		expect(sql).not.toContain("trace_detail_spans")
 	})
 
 	it("names the session by its earliest named agent, not by the unordered set", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
-		const [outer, inner] = sql.split("FROM (SELECT")
+		const { sessions: outer, traces: inner } = levels(sql)
 
 		// Per trace: a span with no agent name sorts to the sentinel and can never
 		// win the argMin, so a trace that has one always resolves to it.
@@ -397,7 +421,7 @@ describe("aiSessionPageQuery", () => {
 
 	it("splits the failures into tool and turn, deepest failed span counted", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
-		const [outer, inner] = sql.split("FROM (SELECT")
+		const { sessions: outer, traces: inner } = levels(sql)
 
 		expect(inner).toContain(
 			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans",
@@ -405,10 +429,10 @@ describe("aiSessionPageQuery", () => {
 		// A failed span whose own child also failed is the child's echo, not a
 		// second failure — the turn span a framework fails alongside its call.
 		expect(outer).toContain(
-			"sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors",
+			"sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors",
 		)
 		expect(outer).toContain(
-			"sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors",
+			"sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors",
 		)
 	})
 
@@ -431,19 +455,26 @@ describe("aiSessionPageQuery", () => {
 			params,
 		)
 
-		const having = sql.slice(sql.indexOf("GROUP BY sessionId"), sql.indexOf("ORDER BY"))
-		expect(having).toContain("errorAgentSpans > 0")
+		// The measures the session level has: HAVING on the ranked row.
+		const having = sql.slice(sql.indexOf("GROUP BY sessionId"), sql.indexOf(") AS ranked_sessions"))
+		expect(having).toContain("HAVING errorAgentSpans > 0")
 		expect(having).toContain("NOT (sessionId LIKE 'trace:%')")
 		expect(having).toContain("agentDurationMs >= 1000")
 		expect(having).toContain("agentDurationMs <= 60000")
-		expect(having).toContain("cost >= 0.5")
-		expect(having).toContain("cost <= 2")
-		expect(having).toContain("totalTokens >= 100")
-		expect(having).toContain("totalTokens <= 200000")
-		expect(having).toContain("llmCalls >= 1")
-		expect(having).toContain("llmCalls <= 40")
 		expect(having).toContain("toolCalls >= 2")
 		expect(having).toContain("toolCalls <= 9")
+		expect(having).not.toContain("cost")
+		// The usage measures exist only once netted and summed: WHERE on that
+		// level, which then has to see every session — no LIMIT below it.
+		const where = sql.slice(sql.indexOf(") AS netted_sessions"), sql.indexOf("ORDER BY"))
+		expect(where).toContain("WHERE cost >= 0.5")
+		expect(where).toContain("cost <= 2")
+		expect(where).toContain("totalTokens >= 100")
+		expect(where).toContain("totalTokens <= 200000")
+		expect(where).toContain("llmCalls >= 1")
+		expect(where).toContain("llmCalls <= 40")
+		expect(having).not.toContain("LIMIT")
+		expect(sql.slice(sql.indexOf("ORDER BY"))).toContain("LIMIT 50")
 	})
 
 	it("treats an explicit false as no filter, and the default sort as the baseline order", () => {
@@ -457,12 +488,16 @@ describe("aiSessionPageQuery", () => {
 	})
 
 	it("sorts by the requested measure with newest-first and the session id as tiebreaks", () => {
-		expect(compileUnsafe(aiSessionPageQuery({ sortBy: "cost", sortDir: "asc" }), params).sql).toContain(
-			"ORDER BY cost ASC, agentStart DESC, sessionId ASC",
-		)
-		expect(compileUnsafe(aiSessionPageQuery({ sortBy: "durationMs" }), params).sql).toContain(
-			"ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC",
-		)
+		// A usage sort ranks on the level that has the sums, over every session
+		// in the window: the LIMIT is the query's last clause.
+		const byCost = compileUnsafe(aiSessionPageQuery({ sortBy: "cost", sortDir: "asc" }), params).sql
+		expect(byCost.split("ORDER BY cost ASC, agentStart DESC, sessionId ASC").length - 1).toBe(1)
+		expect(byCost.indexOf("LIMIT 50")).toBeGreaterThan(byCost.indexOf(") AS netted_sessions"))
+		expect(byCost.split("ORDER BY").length - 1).toBe(1)
+		// A session-level sort ranks and cuts the page before the netting.
+		const byDuration = compileUnsafe(aiSessionPageQuery({ sortBy: "durationMs" }), params).sql
+		expect(byDuration.split("ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC").length - 1).toBe(2)
+		expect(byDuration.indexOf("LIMIT 50")).toBeLessThan(byDuration.indexOf(") AS ranked_sessions"))
 		expect(compileUnsafe(aiSessionPageQuery({ sortBy: "errorSpanCount" }), params).sql).toContain(
 			"ORDER BY errorAgentSpans DESC, agentStart DESC, sessionId ASC",
 		)
@@ -644,22 +679,24 @@ describe("aiSessionDetailsQuery", () => {
 		expect(fanOut).not.toContain("IN ('eve')")
 	})
 
-	it("reads every level over the page's bounds — padded for the fan-out only", () => {
+	it("reads the index over the page's bounds and the spans over one slice of them", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 		const [fanOut, detection] = sql.split("TraceId IN (SELECT")
 
 		// `trace_detail_spans` is PARTITION BY toDate(Timestamp), so this predicate
-		// is the only thing that prunes partitions there — and the bounds are the
-		// page's own agent spans, which span hours, not the caller's 30 days.
-		expect(fanOut).toContain(`Timestamp >= '${FAN_OUT_START}' - INTERVAL 3600 SECOND`)
-		expect(fanOut).toContain(`Timestamp <= '${FAN_OUT_END}' + INTERVAL 3600 SECOND`)
-		// The index levels take the same bounds unpadded: a page trace's index rows
-		// lie between its own session's agentStart and agentEnd by construction, so
+		// is the only thing that prunes partitions there — and the bounds are one
+		// slice of the page's own padded extent (`aiSessionDetailsSlices`), which
+		// spans hours inside one partition, not the caller's 30 days.
+		expect(fanOut).toContain(`Timestamp >= '${SPANS_START}'`)
+		expect(fanOut).toContain(`Timestamp <= '${SPANS_END}'`)
+		expect(fanOut).not.toContain("INTERVAL")
+		// The index levels take the page's bounds: a page trace's index rows lie
+		// between its own session's agentStart and agentEnd by construction, so
 		// the key and the filters come out of hours of the index rather than the
-		// caller's month, and the two index scans stop being the cost they were.
+		// caller's month, and the same rows whichever slice is being read.
 		expect(detection).toContain(`Timestamp >= '${FAN_OUT_START}'`)
 		expect(detection).toContain(`Timestamp <= '${FAN_OUT_END}'`)
-		expect(detection).not.toContain("INTERVAL")
+		expect(detection).not.toContain(SPANS_START)
 	})
 
 	it("takes no window param from the caller at all", () => {
@@ -708,6 +745,83 @@ describe("aiSessionDetailsQuery", () => {
 			endTime: "2026-08-19 10:33:36.242000000",
 			durationMs: 10_417,
 		})
+	})
+})
+
+describe("aiSessionDetailsSlices", () => {
+	it("pads the page's extent by an hour and reads it as one slice inside a day", () => {
+		expect(aiSessionDetailsSlices("2026-08-18 10:00:00", "2026-08-18 12:00:00")).toEqual([
+			{ spansStart: "2026-08-18 09:00:00.000000000", spansEnd: "2026-08-18 13:00:00.000000000" },
+		])
+	})
+
+	it("cuts the padded extent at midnight, contiguous to the nanosecond", () => {
+		// The bounds come back off the page's rows with their nanoseconds, and
+		// the cut has to keep them: a span at 23:59:59.999999999 belongs to the
+		// first slice and one at 00:00:00.000000000 to the second, never both.
+		expect(aiSessionDetailsSlices("2026-08-18 23:30:00.500000000", "2026-08-19 00:10:00")).toEqual([
+			{ spansStart: "2026-08-18 22:30:00.500000000", spansEnd: "2026-08-18 23:59:59.999999999" },
+			{ spansStart: "2026-08-19 00:00:00.000000000", spansEnd: "2026-08-19 01:10:00.000000000" },
+		])
+	})
+
+	it("reads a sparse page's extent as one slice per day it touches", () => {
+		const slices = aiSessionDetailsSlices("2026-08-18 12:00:00", "2026-08-21 06:00:00")
+		expect(slices.map((slice) => slice.spansStart)).toEqual([
+			"2026-08-18 11:00:00.000000000",
+			"2026-08-19 00:00:00.000000000",
+			"2026-08-20 00:00:00.000000000",
+			"2026-08-21 00:00:00.000000000",
+		])
+		expect(slices.at(-1)?.spansEnd).toBe("2026-08-21 07:00:00.000000000")
+	})
+})
+
+describe("mergeAiSessionDetails", () => {
+	const row = (overrides: Partial<Parameters<typeof mergeAiSessionDetails>[0][number][number]>) => ({
+		sessionId: "wrun_01",
+		spanCount: 3,
+		errorSpanCount: 1,
+		serviceNames: ["agent"],
+		startTime: "2026-08-18 23:59:59.900000000",
+		endTime: "2026-08-18 23:59:59.950000000",
+		durationMs: 0,
+		...overrides,
+	})
+
+	it("folds a session that straddles midnight into the row one read would return", () => {
+		const merged = mergeAiSessionDetails([
+			[row({})],
+			[
+				row({
+					spanCount: 2,
+					errorSpanCount: 0,
+					serviceNames: ["gateway", "agent"],
+					startTime: "2026-08-19 00:00:00.100000000",
+					endTime: "2026-08-19 00:00:00.350000000",
+				}),
+				row({ sessionId: "trace:abc", serviceNames: ["web"] }),
+			],
+		])
+
+		expect(merged).toEqual([
+			{
+				sessionId: "wrun_01",
+				spanCount: 5,
+				errorSpanCount: 1,
+				serviceNames: ["agent", "gateway"],
+				startTime: "2026-08-18 23:59:59.900000000",
+				endTime: "2026-08-19 00:00:00.350000000",
+				// The whole nanosecond difference in milliseconds, as `intDiv` takes it.
+				durationMs: 450,
+			},
+			row({ sessionId: "trace:abc", serviceNames: ["web"] }),
+		])
+	})
+
+	it("passes a session found in one slice through untouched", () => {
+		const only = row({ durationMs: 50 })
+		expect(mergeAiSessionDetails([[only], []])).toEqual([only])
 	})
 })
 

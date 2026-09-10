@@ -190,6 +190,29 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/** The commit a ref (branch, tag or SHA) names right now. `Option.none` is an unknown ref. */
+	readonly resolveRef: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		ref: string,
+	) => Effect.Effect<
+		Option.Option<GitCommitSha>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/**
+	 * How to clone one repository: the credential-free remote, and a short-lived
+	 * credential scoped to that repository alone. The two are kept apart so the
+	 * token never has to travel inside a URL.
+	 */
+	readonly fetchCloneCredentials: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+	) => Effect.Effect<
+		{ readonly remoteUrl: string; readonly token: string },
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
 	/** Fetch a UTF-8 source file. `Option.none` is an expected missing path/ref. */
 	readonly fetchSourceFile: (
 		installation: VcsInstallation,

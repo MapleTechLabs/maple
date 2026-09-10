@@ -13,7 +13,7 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Effect, Layer, Redacted, Schema } from "effect"
+import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as AiModel from "effect/unstable/ai/Model"
 import * as Telemetry from "effect/unstable/ai/Telemetry"
@@ -197,7 +197,7 @@ export const resolveLlmProvider = (env: LlmEnv): LlmProvider =>
  *
  * `reasoning`, `user`, `session_id` and `trace` are all first-class fields on OpenRouter's chat
  * request, so they ride as model config rather than as a hand-built body. `usage` is the one
- * exception and is injected by {@link withUsageAccounting}.
+ * exception, spliced per call by {@link withPerCallFields} together with the span ids.
  */
 const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags | undefined) => ({
 	...(effort === undefined || effort === "off" ? undefined : { reasoning: { effort } }),
@@ -329,21 +329,27 @@ export const resolveLensModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel
 			)
 
 /**
- * Add OpenRouter's `usage: { include: true }` to every outgoing chat request.
+ * Splice the per-call fields into every outgoing OpenRouter chat request.
  *
- * It is the only field Maple needs that OpenRouter's generated request schema does not declare, and
- * a closed `Schema.Struct` drops what it does not know — so it is spliced into the encoded body
- * here instead. Without it the response carries no `cost`, and `gen_ai.usage.cost` is the only way
- * Maple ever reports spend: the provider's own bill, never a price table.
+ * `usage: { include: true }` is the one field Maple needs that OpenRouter's generated request
+ * schema does not declare, and a closed `Schema.Struct` drops what it does not know. Without it the
+ * response carries no `cost`, and `gen_ai.usage.cost` is the only way Maple ever reports spend: the
+ * provider's own bill, never a price table.
+ *
+ * `trace.trace_id` / `trace.parent_span_id` are the current span's W3C ids. OpenRouter's Broadcast
+ * exporter uses them verbatim, so the `LLM Generation` trace it emits (provider attempts, fallbacks,
+ * router latency) nests under the span that made the call instead of arriving as a twin trace that
+ * only shares a session id. The model config cannot carry them — it is built once per layer, and the
+ * ids are per call — which is why they ride here with `usage`.
  */
-const withUsageAccounting = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
+const withPerCallFields = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
 	HttpClient.mapRequestEffect(client, (request) =>
-		spliceUsageAccounting(request).pipe(Effect.orElseSucceed(() => request)),
+		splicePerCallFields(request).pipe(Effect.orElseSucceed(() => request)),
 	)
 
 const decodeJsonBody = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-const spliceUsageAccounting = (
+const splicePerCallFields = (
 	request: HttpClientRequest.HttpClientRequest,
 ): Effect.Effect<HttpClientRequest.HttpClientRequest, Schema.SchemaError | HttpBody.HttpBodyError> =>
 	Effect.gen(function* () {
@@ -351,7 +357,18 @@ const spliceUsageAccounting = (
 		if (body._tag !== "Uint8Array") return request
 		const decoded = yield* decodeJsonBody(new TextDecoder().decode(body.body))
 		if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) return request
-		return yield* HttpClientRequest.bodyJson(request, { ...decoded, usage: { include: true } })
+		const span = yield* Effect.option(Effect.currentParentSpan)
+		const trace = {
+			...("trace" in decoded && typeof decoded.trace === "object" ? decoded.trace : undefined),
+			...(Option.isSome(span)
+				? { trace_id: span.value.traceId, parent_span_id: span.value.spanId }
+				: undefined),
+		}
+		return yield* HttpClientRequest.bodyJson(request, {
+			...decoded,
+			usage: { include: true },
+			...(Object.keys(trace).length === 0 ? undefined : { trace }),
+		})
 	})
 
 /**
@@ -369,7 +386,7 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 	return Layer.mergeAll(
 		OpenRouterClient.layer({
 			apiKey: Redacted.make(readString(env, "OPENROUTER_API_KEY") ?? ""),
-			transformClient: withUsageAccounting,
+			transformClient: withPerCallFields,
 		}).pipe(
 			Layer.provide(
 				Layer.effect(HttpClient.HttpClient)(
