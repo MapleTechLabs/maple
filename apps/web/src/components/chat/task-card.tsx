@@ -54,11 +54,11 @@ export function TaskCard({ agent, description, status, messages }: TaskCardProps
 	const tools = toolCount(messages)
 
 	return (
-		<div className="overflow-hidden rounded-xl border bg-muted/20 text-xs">
+		<div className="overflow-hidden rounded-lg border border-border bg-muted text-sm">
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}
-				className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40"
+				className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/40"
 			>
 				{open ? (
 					<ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
@@ -66,9 +66,14 @@ export function TaskCard({ agent, description, status, messages }: TaskCardProps
 					<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
 				)}
 				<ChatBubbleSparkleIcon className="size-3.5 shrink-0 text-muted-foreground" />
-				<span className="font-medium">{agent}</span>
-				<span className="truncate text-muted-foreground">{description}</span>
-				<span className="ml-auto flex shrink-0 items-center gap-1.5 text-muted-foreground">
+				<span className="shrink-0 font-medium text-foreground">{agent}</span>
+				{/* The same lane a tool row gives its argument summary: a dotted separator, then
+				    the detail, truncated by the row rather than allowed to push the meta off. */}
+				<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+					<span className="mr-1 text-muted-foreground/40">·</span>
+					{description}
+				</span>
+				<span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
 					{tools > 0 ? <span>{tools === 1 ? "1 tool" : `${tools} tools`}</span> : null}
 					<Icon
 						className={`size-3.5 ${STATUS_TINT[status]} ${status === "running" ? "animate-spin" : ""}`}
@@ -77,7 +82,7 @@ export function TaskCard({ agent, description, status, messages }: TaskCardProps
 			</button>
 
 			{open ? (
-				<div className="flex flex-col gap-2 border-t bg-background/50 p-3">
+				<div className="flex flex-col gap-2 border-t border-border/40 bg-background/50 p-3">
 					{messages.length === 0 ? (
 						<p className="text-muted-foreground">Nothing yet.</p>
 					) : (

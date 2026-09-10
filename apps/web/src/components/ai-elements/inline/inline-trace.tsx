@@ -1,48 +1,63 @@
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
-import { formatDuration } from "@maple/ui/lib/format"
+import { LatencyValue } from "@maple/ui/components/latency-value"
+import { PulseIcon } from "@/components/icons"
+import {
+	INLINE_CARD_META,
+	INLINE_CARD_ROW,
+	InlineCardChevron,
+	InlineMetric,
+	InlineServiceChips,
+	inlineCardClass,
+} from "./inline-card"
 import type { InlineTraceData } from "./types"
 
 export function InlineTrace({ data }: { data: InlineTraceData }) {
+	const services = data.services ?? []
 	return (
 		<Link
 			to="/traces/$traceId"
 			params={{ traceId: data.id }}
-			className="my-1 flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-[11px] transition-colors hover:bg-muted/60"
+			target="_blank"
+			rel="noreferrer"
+			className={cn("group/inline", inlineCardClass(true))}
 		>
-			<span className="font-mono text-primary">{data.id.slice(0, 12)}</span>
-			{data.hasError && <span className="inline-block size-1.5 rounded-full bg-severity-error" />}
-			<span className="min-w-0 truncate text-foreground">{data.name}</span>
-			<span
-				className={cn(
-					"ml-auto shrink-0 font-mono",
-					data.durationMs > 5000
-						? "text-severity-error"
-						: data.durationMs > 1000
-							? "text-severity-warn"
-							: "text-muted-foreground",
-				)}
-			>
-				{formatDuration(data.durationMs)}
-			</span>
-			{data.spanCount != null && (
-				<span className="shrink-0 text-[10px] text-muted-foreground">{data.spanCount} spans</span>
-			)}
-			{data.services && data.services.length > 0 && (
-				<div className="flex shrink-0 gap-1">
-					{data.services.slice(0, 3).map((svc) => (
-						<span
-							key={svc}
-							className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground"
-						>
-							{svc}
-						</span>
-					))}
-					{data.services.length > 3 && (
-						<span className="text-[10px] text-muted-foreground">+{data.services.length - 3}</span>
+			<div className={INLINE_CARD_ROW}>
+				<PulseIcon
+					className={cn(
+						"size-3.5 shrink-0",
+						data.hasError ? "text-severity-error" : "text-muted-foreground",
 					)}
-				</div>
-			)}
+				/>
+				<span
+					className="min-w-0 flex-1 truncate text-xs font-medium text-foreground"
+					title={data.name}
+				>
+					{data.name}
+				</span>
+				{data.spanCount != null && (
+					<InlineMetric
+						width="min-w-12"
+						unit="spans"
+						tone="text-muted-foreground"
+						className="hidden @[26rem]/inline:inline"
+					>
+						{data.spanCount}
+					</InlineMetric>
+				)}
+				<InlineMetric width="min-w-14">
+					<LatencyValue ms={data.durationMs} scale="p99" />
+				</InlineMetric>
+				<InlineCardChevron />
+			</div>
+			<div className={INLINE_CARD_META}>
+				{/* The id is evidence rather than a label — it is what a follow-up question
+				    names — so it sits under the span name instead of competing with it. */}
+				<span className="shrink-0 font-mono text-[11px] text-muted-foreground/70" title={data.id}>
+					{data.id.slice(0, 12)}
+				</span>
+				<InlineServiceChips services={services} />
+			</div>
 		</Link>
 	)
 }

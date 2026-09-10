@@ -1,32 +1,46 @@
-export interface InlineTraceData {
-	id: string
-	name: string
-	durationMs: number
-	hasError: boolean
-	spanCount?: number
-	services?: string[]
-}
+import { Schema } from "effect"
 
-export interface InlineServiceData {
-	name: string
-	throughput?: number
-	errorRate?: number
-	p99Ms?: number
-}
+/**
+ * The payloads a model may embed in a reply. They are model output, not tool
+ * output, so every field is validated before it reaches a card — a hallucinated
+ * shape renders as text rather than crashing the transcript.
+ */
 
-export interface InlineErrorData {
-	errorType: string
-	count: number
-	affectedServices?: string[]
-}
+export const InlineTraceData = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	durationMs: Schema.Number,
+	hasError: Schema.optionalKey(Schema.Boolean),
+	spanCount: Schema.optionalKey(Schema.Number),
+	services: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type InlineTraceData = Schema.Schema.Type<typeof InlineTraceData>
 
-export interface InlineLogData {
-	severity: string
-	body: string
-	serviceName?: string
-	timestamp?: string
-	traceId?: string
-}
+export const InlineServiceData = Schema.Struct({
+	name: Schema.String,
+	/** Requests per second. */
+	throughput: Schema.optionalKey(Schema.Number),
+	/** Percent, not a fraction: 45.45 means 45.45%. */
+	errorRate: Schema.optionalKey(Schema.Number),
+	p99Ms: Schema.optionalKey(Schema.Number),
+})
+export type InlineServiceData = Schema.Schema.Type<typeof InlineServiceData>
+
+export const InlineErrorData = Schema.Struct({
+	errorType: Schema.String,
+	count: Schema.optionalKey(Schema.Number),
+	affectedServices: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type InlineErrorData = Schema.Schema.Type<typeof InlineErrorData>
+
+export const InlineLogData = Schema.Struct({
+	severity: Schema.String,
+	body: Schema.String,
+	serviceName: Schema.optionalKey(Schema.String),
+	timestamp: Schema.optionalKey(Schema.String),
+	traceId: Schema.optionalKey(Schema.String),
+})
+export type InlineLogData = Schema.Schema.Type<typeof InlineLogData>
 
 export type Segment =
 	| { type: "text"; content: string }

@@ -312,7 +312,7 @@ const TranscriptMessageRow = memo(function TranscriptMessageRow({
 			<Message align={isUser ? "end" : "start"} className="text-sm">
 				<MessageContent>
 					<Bubble variant={isUser ? "secondary" : "ghost"} align={isUser ? "end" : "start"}>
-						<BubbleContent className={isUser ? "rounded-lg px-4 py-3 text-sm" : "text-sm"}>
+						<BubbleContent className={isUser ? "rounded-lg px-3.5 py-2.5 text-sm" : "text-sm"}>
 							<div className={PART_STACK}>
 								{renderMessageParts({ message, resolvedApprovals, onApprove, onDeny })}
 								{showThinking ? <StatusMarker /> : null}
@@ -322,7 +322,7 @@ const TranscriptMessageRow = memo(function TranscriptMessageRow({
 					{/* An empty footer still reserves the height of the hover actions, so only
 					    text-bearing turns get one. */}
 					{isUser || !messageText(message) ? null : (
-						<MessageFooter>
+						<MessageFooter className="-mt-1">
 							<MessageActions message={message} permalink={permalink} />
 						</MessageFooter>
 					)}

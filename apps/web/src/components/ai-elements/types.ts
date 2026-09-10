@@ -75,6 +75,9 @@ export interface UIMessage {
 	id: string
 	role: "user" | "assistant"
 	parts: UIMessagePart[]
+	/** Epoch ms the message opened. Absent on transcripts that carry no clock — a
+	 *  sub-agent's nested messages, and fixtures. */
+	createdAt?: number
 }
 
 /** Composer status. Flue's `idle`/`connecting` map to `ready` for the submit button. */

@@ -160,12 +160,12 @@ function historyMessageToUIMessage(message: ChatSessionMessage): UIMessage {
 	const parts: UIMessagePart[] = []
 	if (message.text) parts.push({ type: "text", text: message.text, state: "done" })
 	for (const call of message.toolCalls) parts.push(toolCallToPart(call))
-	return { id: message.id, role: message.role, parts }
+	return { id: message.id, role: message.role, parts, createdAt: message.createdAt }
 }
 
 function ensureAssistantMessage(messages: UIMessage[], messageId: string): UIMessage[] {
 	if (messages.some((m) => m.id === messageId)) return messages
-	return [...messages, { id: messageId, role: "assistant", parts: [] }]
+	return [...messages, { id: messageId, role: "assistant", parts: [], createdAt: Date.now() }]
 }
 
 function updateMessage(
@@ -659,7 +659,12 @@ export function useMapleChat({ tabId, context }: UseMapleChatOptions): UseMapleC
 			const localId = `local-${crypto.randomUUID()}`
 			setMessages((prev) => [
 				...prev,
-				{ id: localId, role: "user", parts: [{ type: "text", text: outgoing, state: "done" }] },
+				{
+					id: localId,
+					role: "user",
+					parts: [{ type: "text", text: outgoing, state: "done" }],
+					createdAt: Date.now(),
+				},
 			])
 			setStatus("submitted")
 			setError(undefined)

@@ -1,4 +1,5 @@
 import { memo } from "react"
+import { cn } from "@maple/ui/lib/utils"
 import { MessageResponse } from "./message-response"
 import { parseAnnotations, InlineTrace, InlineService, InlineError, InlineLog } from "./inline"
 
@@ -16,8 +17,11 @@ export const RichText = memo(
 			return <MessageResponse className={className}>{children}</MessageResponse>
 		}
 
+		// Cards and prose used to space themselves — the cards with `my-1`, the markdown
+		// with its own paragraph margins — so a card next to a paragraph sat 4px from it
+		// while two paragraphs sat 16px apart. One flex gap owns the rhythm instead.
 		return (
-			<div className={className}>
+			<div className={cn("flex flex-col gap-2", className)}>
 				{segments.map((segment, i) => {
 					switch (segment.type) {
 						case "text": {

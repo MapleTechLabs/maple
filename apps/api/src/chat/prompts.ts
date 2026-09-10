@@ -63,15 +63,16 @@ ${APPROVAL_NOTE}
 
 ## Inline References
 
-When referencing a specific trace, service, error, or log in your response, embed an inline reference card so the user can see details at a glance and click through to the detail page. Place each annotation on its own line.
+When referencing a specific trace, service, error, or log in your response, embed an inline reference card so the user can see details at a glance and click through to the detail page.
 
-Syntax: <<maple:TYPE:JSON>>
+Syntax: <<maple:TYPE:JSON>> — two angle brackets on each side, one card per line, never inside a sentence, a table cell, or a code fence. The JSON must be valid and match the fields below exactly; a card whose payload does not match is shown to the user as raw text.
 
 ### trace
 <<maple:trace:{"id":"TRACE_ID","name":"ROOT_SPAN_NAME","durationMs":DURATION,"hasError":BOOL,"spanCount":N,"services":["svc1","svc2"]}>>
 
 ### service
 <<maple:service:{"name":"SERVICE_NAME","throughput":REQ_PER_SEC,"errorRate":PERCENT,"p99Ms":LATENCY}>>
+\`errorRate\` is a percentage, so 4.5 means 4.5%. Omit any field you did not measure rather than guessing it.
 
 ### error
 <<maple:error:{"errorType":"ERROR_MESSAGE","count":N,"affectedServices":["svc1"]}>>
