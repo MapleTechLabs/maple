@@ -47,8 +47,10 @@ import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
 	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
-	// for this resource.
-	AI: Cloudflare.AI.Gateway("maple-api-ai"),
+	// for this resource. Deployed stages only: the gateway has no local emulation,
+	// so declaring it under `alchemy dev` diffs it against Cloudflare and demands
+	// an `alchemy login`; without the binding the Llm shim is a no-op.
+	...(stage.kind === "dev" ? undefined : { AI: Cloudflare.AI.Gateway("maple-api-ai") }),
 	...emailBinding(stage),
 })
 
