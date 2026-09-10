@@ -185,14 +185,31 @@ describe("runAgentPass", () => {
 
 	it.effect("reports what it submitted even when the run then fails", () =>
 		Effect.gen(function* () {
-			// The engine's wall clock is a hard rail, so an out-of-time pass fails rather than
-			// getting a last word. What must survive is the answer it already filed.
-			const result = yield* run(
-				[turn(call("c1", "submit_candidate", { claim: "filed in time" })), turn(text("…"))],
-				Date.now() - 1,
-			)
+			// A required completion tool has to be the sole call in its batch, so this run fails on
+			// the very turn that filed the answer. What must survive is the answer.
+			const result = yield* run([
+				turn(call("s1", "submit_candidate", { claim: "filed in time" }), call("c1", "query_data")),
+			])
 
 			assert.deepEqual(Option.getOrNull(result.answer), { claim: "filed in time" })
+			// It failed, but not on the clock — and the row must not say it was cut short.
+			assert.isFalse(result.deadlineHit)
+		}),
+	)
+
+	it.live("records a pass that ran out of clock as one", () =>
+		Effect.gen(function* () {
+			// The one case `deadlineHit` exists for, and the reason it is read off the engine's typed
+			// policy failure rather than off a clock comparison afterwards: the validator ranks a lane
+			// that was cut short differently from one that simply reported nothing.
+			const stalling: ScriptedTurnInput = {
+				...turn(text("thinking…")),
+				onStreamStart: Effect.sleep("3 seconds"),
+			}
+			const result = yield* run([stalling], Date.now())
+
+			assert.isTrue(result.deadlineHit)
+			assert.isTrue(Option.isNone(result.answer))
 		}),
 	)
 
