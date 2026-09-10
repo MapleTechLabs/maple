@@ -178,10 +178,10 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        The standard came out of the Apdex Alliance to solve a reporting problem. A latency histogram is hard to compare between two services, or between this week and last, and it is close to useless in a conversation with someone who does not read percentiles for a living. A single number, defined the same way everywhere, survives that trip.
+                        The specification comes from the Apdex Alliance, and two of its rules are what make scores comparable between tools. The tolerating threshold is fixed at <strong>4T</strong> rather than configured separately, and T is reported with the score as a subscript: <code>Apdex(0.5) = 0.94</code> means a score of 0.94 measured against a 500ms target. A score quoted without its T cannot be compared to anything.
                     </p>
                     <p>
-                        A score of <strong>1</strong> means every request beat the target, and <strong>0</strong> means none of them did. What separates Apdex from a rounded-off latency chart is how it handles failures: a request that returns an error counts as frustrated no matter how fast it came back, so the score follows what was delivered rather than how quickly it was delivered.
+                        A score of <strong>1</strong> means every request beat the target and <strong>0</strong> means none did. Failures are the part that catches people out: a request that returns an error counts as frustrated regardless of its duration, so a service returning 500s in 40ms scores zero on those requests, exactly as if they had timed out at 30 seconds.
                     </p>
 
                     <h3>Apdex answers a different question than a p95 alert</h3>
