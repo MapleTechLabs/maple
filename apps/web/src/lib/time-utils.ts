@@ -196,17 +196,6 @@ export const QUICK_SELECT_OPTIONS: QuickSelectOption[] = [
 	{ label: "today", value: "today" },
 ]
 
-export function getTimezoneDisplay(): string {
-	const offset = new Date().getTimezoneOffset()
-	const hours = Math.abs(Math.floor(offset / 60))
-	const sign = offset <= 0 ? "+" : "-"
-	return `UTC${sign}${hours}`
-}
-
-export function getTimezoneAbbr(): string {
-	return Intl.DateTimeFormat().resolvedOptions().timeZone
-}
-
 const CACHE_SNAP_INTERVAL_S = 15
 
 /**
