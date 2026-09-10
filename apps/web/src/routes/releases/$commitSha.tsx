@@ -434,7 +434,10 @@ function ReleaseBody({
 					first seen{" "}
 					<span
 						className="text-foreground"
-						title={formatTimestampInTimezone(impact.firstSeen, { timeZone: effectiveTimezone })}
+						title={formatTimestampInTimezone(impact.firstSeen, {
+							timeZone: effectiveTimezone,
+							withYear: true,
+						})}
 					>
 						{formatRelativeTimeOrDate(impact.firstSeen, undefined, effectiveTimezone)}
 					</span>{" "}

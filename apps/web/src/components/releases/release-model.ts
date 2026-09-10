@@ -3,6 +3,7 @@
 // all describe a release the same way.
 
 import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
 
 /**
@@ -300,7 +301,7 @@ export function shortReleaseLabel(sha: string): string {
  * "Today" / "Yesterday" / a medium date.
  */
 export function releaseDayLabel(iso: string, nowMs: number, timeZone: string): string {
-	const date = new Date(iso)
+	const date = new Date(toEpochMs(iso))
 	if (Number.isNaN(date.getTime())) return iso
 	const startOfDay = (ms: number) => startOfDayInTimeZone(ms, timeZone)
 	const dayDiff = Math.round((startOfDay(nowMs) - startOfDay(date.getTime())) / 86_400_000)

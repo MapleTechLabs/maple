@@ -385,7 +385,7 @@ export function ErrorSignalRow({
 
 				<span
 					className={cn(LANE.lastSeen, "text-right text-xs tabular-nums text-muted-foreground")}
-					title={`Last seen ${formatTimestampInTimezone(signal.lastSeenAt, { timeZone: effectiveTimezone })}`}
+					title={`Last seen ${formatTimestampInTimezone(signal.lastSeenAt, { timeZone: effectiveTimezone, withYear: true })}`}
 				>
 					{formatLastSeen(signal.lastSeenAt, effectiveTimezone)}
 				</span>

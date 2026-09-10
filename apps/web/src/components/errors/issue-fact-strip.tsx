@@ -95,7 +95,7 @@ function Stamp({ iso }: { iso: string }) {
 	return (
 		<span
 			className="text-foreground tabular-nums"
-			title={formatTimestampInTimezone(iso, { timeZone: effectiveTimezone })}
+			title={formatTimestampInTimezone(iso, { timeZone: effectiveTimezone, withYear: true })}
 		>
 			{formatRelativeTime(iso)}
 		</span>

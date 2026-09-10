@@ -29,14 +29,14 @@ const compactTimeFormatters = new Map<string, Intl.DateTimeFormat>()
 
 export function formatTimestampInTimezone(
 	input: TimezoneFormatInput,
-	options: { timeZone: string; withMilliseconds?: boolean; style?: "full" | "range" },
+	options: { timeZone: string; withMilliseconds?: boolean; withYear?: boolean; style?: "full" | "range" },
 ): string {
 	const date = toValidDate(input)
 	if (!date) return "-"
 
 	const tz = resolveTimeZone(options.timeZone)
 	const style = options.style ?? "full"
-	const key = `${tz}|${style}|${options.withMilliseconds ? "ms" : ""}`
+	const key = `${tz}|${style}|${options.withMilliseconds ? "ms" : ""}|${options.withYear ? "y" : ""}`
 	let formatter = timestampFormatters.get(key)
 	if (!formatter) {
 		formatter =
@@ -53,6 +53,9 @@ export function formatTimestampInTimezone(
 					})
 				: new Intl.DateTimeFormat("en-US", {
 						timeZone: tz,
+						// A timestamp inside the selected window reads without its year;
+						// a first-seen months old needs one.
+						year: options.withYear ? "numeric" : undefined,
 						month: "short",
 						day: "numeric",
 						hour: "2-digit",

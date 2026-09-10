@@ -282,13 +282,15 @@ export function formatBucketLabel(
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
 			return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
 		}
-		return date.toLocaleString(undefined, {
-			timeZone,
-			month: "short",
-			day: "numeric",
-			hour: "2-digit",
-			minute: "2-digit",
-		})
+		return date
+			.toLocaleString(undefined, {
+				timeZone,
+				month: "short",
+				day: "numeric",
+				hour: "2-digit",
+				minute: "2-digit",
+			})
+			.replace(/ 24:/, " 00:")
 	}
 
 	return date

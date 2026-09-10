@@ -257,8 +257,7 @@ function zoned(scale: TimeScale, timeZone: string): TimeScale {
 			toWallClock(timeZone, start),
 			toWallClock(timeZone, end),
 		])
-		const raw =
-			count === undefined ? wallClock.ticks() : typeof count === "number" ? wallClock.ticks(count) : wallClock.ticks(count)
+		const raw = typeof count === "number" ? wallClock.ticks(count) : wallClock.ticks(count)
 		return raw
 			.map((tick) => fromWallClock(timeZone, tick))
 			.filter((tick) => tick.getTime() >= startMs && tick.getTime() <= endMs)

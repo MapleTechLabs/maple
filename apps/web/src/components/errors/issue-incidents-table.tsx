@@ -103,6 +103,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 								className="tabular-nums text-muted-foreground"
 								title={formatTimestampInTimezone(incident.firstTriggeredAt, {
 									timeZone: effectiveTimezone,
+									withYear: true,
 								})}
 							>
 								{formatRelativeTime(incident.firstTriggeredAt)}
@@ -111,6 +112,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 								className="tabular-nums"
 								title={formatTimestampInTimezone(incident.lastTriggeredAt, {
 									timeZone: effectiveTimezone,
+									withYear: true,
 								})}
 							>
 								{formatRelativeTime(incident.lastTriggeredAt)}

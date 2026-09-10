@@ -4,6 +4,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scalePoint } from "@tanstack/charts-scales/point"
 import { curveMonotoneX } from "d3-shape"
 import { zonedDateParts } from "@maple/query-engine/datetime"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import {
 	PlotFrame,
@@ -147,7 +148,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 		const dayTicks: string[] = []
 		let lastDay = ""
 		for (const bucket of buckets) {
-			const parts = zonedDateParts(Date.parse(bucket), effectiveTimezone)
+			const parts = zonedDateParts(toEpochMs(bucket), effectiveTimezone)
 			const day = `${parts.year}-${parts.month}-${parts.day}`
 			if (day !== lastDay) {
 				dayTicks.push(bucket)
@@ -158,7 +159,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 		// few pixels wide — its label collides with the next day's and thinning
 		// drops the FULL day. Below half a day of coverage the sliver goes untitled.
 		if (dayTicks.length > 1) {
-			const leadSpan = new Date(dayTicks[1]!).getTime() - new Date(dayTicks[0]!).getTime()
+			const leadSpan = toEpochMs(dayTicks[1]!) - toEpochMs(dayTicks[0]!)
 			if (leadSpan < 12 * 60 * 60 * 1000) dayTicks.shift()
 		}
 		return {
@@ -268,13 +269,17 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 									padding: 8,
 									values: dayTicks,
 									format: (bucket: string) =>
-										new Date(bucket).toLocaleDateString("en-US", {
+										new Date(toEpochMs(bucket)).toLocaleDateString("en-US", {
 											timeZone: effectiveTimezone,
 											month: "short",
 											day: "numeric",
 										}),
 								}
-							: { size: 0, padding: 8, format: (iso: string) => isoToLabel(iso, effectiveTimezone) },
+							: {
+									size: 0,
+									padding: 8,
+									format: (iso: string) => isoToLabel(iso, effectiveTimezone),
+								},
 						tickLabels: { thin: { minGap: 12 } },
 					},
 				},

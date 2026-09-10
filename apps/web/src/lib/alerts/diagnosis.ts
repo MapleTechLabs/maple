@@ -116,7 +116,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			label: "Evaluated recently",
 			status: "warn",
 			summary: `Scheduled ${relative(now, scheduledAt)} but no evaluation has completed yet`,
-			evidence: [`Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone })}`],
+			evidence: [
+				`Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`,
+			],
 		})
 	} else if (evaluatedAt != null) {
 		const stale = now - evaluatedAt > staleThresholdMs()
@@ -128,9 +130,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				? `Last evaluated ${relative(now, evaluatedAt)} — expected roughly every minute`
 				: `Last evaluated ${relative(now, evaluatedAt)}`,
 			evidence: [
-				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone })}`,
+				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
 				scheduledAt != null
-					? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone })}`
+					? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
 					: null,
 			].filter((line): line is string => line != null),
 		})

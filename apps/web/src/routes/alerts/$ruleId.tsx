@@ -1511,7 +1511,10 @@ function ChecksPanel({
 											className="font-mono text-xs"
 											title={`Evaluated in ${check.evaluationDurationMs}ms`}
 										>
-											{formatTimestampInTimezone(check.timestamp, { timeZone: effectiveTimezone })}
+											{formatTimestampInTimezone(check.timestamp, {
+												timeZone: effectiveTimezone,
+												withYear: true,
+											})}
 										</TableCell>
 										<TableCell>
 											<AlertStatusBadge

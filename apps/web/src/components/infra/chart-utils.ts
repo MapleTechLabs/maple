@@ -106,7 +106,7 @@ export interface TransformedPoint extends Record<string, string | number | Date>
 
 /** Axis label for a bucket timestamp ("14:35"), in `timeZone` or the browser's. */
 export function isoToLabel(iso: string, timeZone?: string): string {
-	const d = new Date(iso)
+	const d = new Date(toEpochMs(iso))
 	return d.toLocaleTimeString("en-US", { timeZone, hour: "2-digit", minute: "2-digit" })
 }
 
@@ -134,7 +134,7 @@ export function makeBucketLabeler(
 	let min = Number.POSITIVE_INFINITY
 	let max = Number.NEGATIVE_INFINITY
 	for (const iso of bucketIsos) {
-		const ms = new Date(iso).getTime()
+		const ms = toEpochMs(iso)
 		if (Number.isFinite(ms)) {
 			min = Math.min(min, ms)
 			max = Math.max(max, ms)
@@ -142,7 +142,7 @@ export function makeBucketLabeler(
 	}
 	if (max - min <= 24 * 60 * 60 * 1000) return (iso) => isoToLabel(iso, timeZone)
 	return (iso) => {
-		const d = new Date(iso)
+		const d = new Date(toEpochMs(iso))
 		return `${d.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric" })}, ${compactTimeOfDay(d, timeZone)}`
 	}
 }
@@ -199,7 +199,10 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 		/** Feed to `defineChart({ scales: { x } })`. */
 		x:
 			domainMs && domainMs[0] < domainMs[1]
-				? { ...axis, scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])], timeZone) }
+				? {
+						...axis,
+						scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])], timeZone),
+					}
 				: axis,
 		/** `[first, last]` epoch ms, absent when there is nothing to plot. */
 		domainMs,

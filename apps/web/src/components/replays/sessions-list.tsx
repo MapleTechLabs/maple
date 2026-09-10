@@ -48,7 +48,7 @@ export interface SessionRow {
 
 function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone })
+	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
 interface RowIdentity {
@@ -253,7 +253,11 @@ export function SessionsList({
 											className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
 											title={absoluteTs(session.startTime, effectiveTimezone)}
 										>
-											{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
+											{formatRelativeTimeOrDate(
+												session.startTime,
+												undefined,
+												effectiveTimezone,
+											)}
 										</span>
 									</div>
 									<div
@@ -327,7 +331,11 @@ export function SessionsList({
 										className="whitespace-nowrap text-xs text-muted-foreground"
 										title={absoluteTs(session.startTime, effectiveTimezone)}
 									>
-										{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
+										{formatRelativeTimeOrDate(
+											session.startTime,
+											undefined,
+											effectiveTimezone,
+										)}
 									</span>
 									<span
 										className={cn(

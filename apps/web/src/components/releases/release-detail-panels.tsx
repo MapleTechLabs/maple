@@ -238,7 +238,10 @@ export function ReleaseVersionsRail({
 							</span>
 							<span
 								className="w-16 shrink-0 text-right font-mono tabular-nums text-muted-foreground/70"
-								title={formatTimestampInTimezone(version.firstSeen, { timeZone: effectiveTimezone })}
+								title={formatTimestampInTimezone(version.firstSeen, {
+									timeZone: effectiveTimezone,
+									withYear: true,
+								})}
 							>
 								{formatRelativeTimeOrDate(version.firstSeen, undefined, effectiveTimezone)}
 							</span>

@@ -44,7 +44,10 @@ export function IssueOccurrencesTable({ traces }: IssueOccurrencesTableProps) {
 					<TableRow key={`${trace.traceId}-${trace.spanId}`}>
 						<TableCell
 							className="tabular-nums text-muted-foreground"
-							title={formatTimestampInTimezone(trace.timestamp, { timeZone: effectiveTimezone })}
+							title={formatTimestampInTimezone(trace.timestamp, {
+								timeZone: effectiveTimezone,
+								withYear: true,
+							})}
 						>
 							{formatRelativeTime(trace.timestamp)}
 						</TableCell>

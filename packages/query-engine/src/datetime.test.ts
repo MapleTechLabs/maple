@@ -650,6 +650,21 @@ describe("calendar arithmetic in an IANA zone", () => {
 		}
 	})
 
+	it("moves forward across a skipped hour and takes the earlier of a repeated one", () => {
+		// Havana springs forward at 00:00 on 2026-03-08: midnight does not exist, so
+		// the day starts at 01:00 CDT (05:00Z), not 23:00 of the 7th.
+		expect(startOfDayInTimeZone(Date.parse("2026-03-08T12:00:00Z"), "America/Havana")).toBe(
+			Date.parse("2026-03-08T05:00:00Z"),
+		)
+		// Berlin repeats 02:00–03:00 on 2026-10-25; 02:30 is first CEST (00:30Z).
+		expect(
+			zonedPartsToEpochMs(
+				{ year: 2026, month: 10, day: 25, hour: 2, minute: 30, second: 0 },
+				"Europe/Berlin",
+			),
+		).toBe(Date.parse("2026-10-25T00:30:00Z"))
+	})
+
 	it("finds midnight in the zone, not the runtime's", () => {
 		// 2026-03-08 14:30Z is 09:30 in New York and 23:30 in Tokyo, both on the 8th.
 		const at = Date.parse("2026-03-08T14:30:00Z")
@@ -673,6 +688,8 @@ describe("calendar arithmetic in an IANA zone", () => {
 	it("counts months on the zone's calendar and clamps the day", () => {
 		// 31 Mar 00:30 Tokyo is 30 Mar 15:30Z; one month back is 28 Feb 00:30 Tokyo.
 		const now = Date.parse("2026-03-30T15:30:00Z")
-		expect(resolveRelativeRange("1mo", now, "Asia/Tokyo")!.startMs).toBe(Date.parse("2026-02-27T15:30:00Z"))
+		expect(resolveRelativeRange("1mo", now, "Asia/Tokyo")!.startMs).toBe(
+			Date.parse("2026-02-27T15:30:00Z"),
+		)
 	})
 })

@@ -58,7 +58,7 @@ export interface AgentSessionRow {
 
 function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone })
+	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
@@ -200,7 +200,11 @@ export function AgentSessionsList({
 									className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
 									title={absoluteTs(session.startTime, effectiveTimezone)}
 								>
-									{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
+									{formatRelativeTimeOrDate(
+										session.startTime,
+										undefined,
+										effectiveTimezone,
+									)}
 								</span>
 							</div>
 							<div

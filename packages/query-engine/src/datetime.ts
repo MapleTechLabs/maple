@@ -293,16 +293,40 @@ export function zonedDateParts(epochMs: number, timeZone: string): ZonedDatePart
 	}
 }
 
-/** The instant a wall clock in `timeZone` names. Out-of-range components roll over like `Date.UTC`. */
+const HALF_DAY_MS = 12 * 60 * 60 * 1000
+
+/**
+ * The instant a wall clock in `timeZone` names. Out-of-range components roll
+ * over like `Date.UTC`.
+ *
+ * A wall clock can name two instants (the hour repeated when clocks fall back)
+ * or none (the hour skipped when they spring forward). Every offset the zone
+ * uses within half a day of the reading is tried; of the candidates that read
+ * back as the requested wall clock the earlier wins, and when none does — a
+ * skipped hour — the later one, so the clock moves forward across the gap the
+ * way a wall clock does. That is what makes "midnight" of a day whose DST
+ * change is at 00:00 (Havana, Santiago) land on 01:00 of that day rather than
+ * 23:00 of the previous one.
+ */
 export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): number {
 	const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
-	// First guess with the offset at the UTC reading, then correct once: across a
-	// DST transition the offset at the guess can differ from the offset at the
-	// answer, and a second pass settles it (an ambiguous wall clock takes the
-	// earlier offset; a skipped one moves forward).
-	const first = asUtc - timeZoneOffsetMs(timeZone, asUtc)
-	const second = asUtc - timeZoneOffsetMs(timeZone, first)
-	return second
+	const offsets = new Set<number>()
+	for (const probe of [asUtc - HALF_DAY_MS, asUtc, asUtc + HALF_DAY_MS]) {
+		offsets.add(timeZoneOffsetMs(timeZone, probe))
+	}
+	const candidates = [...offsets].map((offset) => asUtc - offset).sort((a, b) => a - b)
+	const readsBack = (instant: number): boolean => {
+		const wall = zonedDateParts(instant, timeZone)
+		return (
+			wall.year === parts.year &&
+			wall.month === parts.month &&
+			wall.day === parts.day &&
+			wall.hour === parts.hour &&
+			wall.minute === parts.minute &&
+			wall.second === parts.second
+		)
+	}
+	return candidates.find(readsBack) ?? candidates.at(-1) ?? asUtc
 }
 
 /** `timeZone`'s offset from UTC at `epochMs`, in ms; positive east of Greenwich. */
@@ -354,7 +378,9 @@ function addCalendarMonths(epochMs: number, months: number, timeZone: string | u
 	const parts = zonedDateParts(epochMs, timeZone)
 	// Zero-based month arithmetic on the 1st, then clamp the day the same way.
 	const target = new Date(Date.UTC(parts.year, parts.month - 1 + months, 1))
-	const daysInTargetMonth = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+	const daysInTargetMonth = new Date(
+		Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+	).getUTCDate()
 	return zonedPartsToEpochMs(
 		{
 			...parts,
@@ -555,6 +581,8 @@ export interface ResolveTimeRangeWindowOptions {
 	readonly snap?: boolean
 	/** Injectable clock for tests. */
 	readonly nowMs?: number
+	/** The zone day-aligned presets ("today", "7d") start their day in; the runtime's local zone by default. */
+	readonly timeZone?: string
 }
 
 /**
@@ -588,7 +616,11 @@ export function resolveTimeRangeWindow(
 		}
 	}
 
-	const resolved = resolveRelativeRangeToWarehouse(timeRange.value, options?.nowMs ?? Date.now())
+	const resolved = resolveRelativeRangeToWarehouse(
+		timeRange.value,
+		options?.nowMs ?? Date.now(),
+		options?.timeZone,
+	)
 	if (resolved === null) return null
 	return options?.snap === false ? resolved : snapRangeForCache(resolved)
 }
