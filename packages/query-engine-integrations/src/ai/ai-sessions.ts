@@ -45,8 +45,12 @@
 //     spans: their count, every service they touched, failures outside the
 //     agent's own spans, and the true extent — and the client asks for it
 //     after the page has rendered, replacing the index's agent-only figures
-//     as it lands. The same fan-out against raw `traces` times out at 10s on a
-//     7-day window in production: that table is sorted
+//     as it lands. The route runs it once per partition the page's padded
+//     extent touches, side by side (`aiSessionDetailsSlices`), and folds the
+//     rows back together (`mergeAiSessionDetails`): a cold day then costs its
+//     own seconds rather than every other day's, and the 15s ceiling is per
+//     day rather than per page. The same fan-out against raw `traces` times
+//     out at 10s on a 7-day window in production: that table is sorted
 //     `(OrgId, ServiceName, SpanName, Timestamp)` and `idx_trace_id` is only a
 //     bloom skip index, which prunes far too little at this org's volume.
 //
@@ -89,14 +93,13 @@
 // The window predicate on the fan-out is the PAGE's, not the caller's: the
 // bounds of the page's agent spans as the page rows report them, padded by
 // `FAN_OUT_PAD_SECONDS` so a trace's non-agent spans on either side are
-// counted too. `trace_detail_spans`
-// is `PARTITION BY toDate(Timestamp)`, so the predicate is the only thing that
-// prunes partitions there. What that buys depends on how densely an org runs
-// agents: at production volume a page of sessions ordered by start spans
-// hours — one partition, two around midnight — while an org with a few
-// sessions a day has a first page that spans weeks, and its fan-out probes
-// every partition in between exactly as the old shape did (no worse, no
-// better; a chunked or per-partition fan-out is the follow-up if that bites).
+// counted too. `trace_detail_spans` is `PARTITION BY toDate(Timestamp)`, so
+// the predicate is the only thing that prunes partitions there, and the
+// padded extent is cut at every midnight into one read per partition. At
+// production volume a page of sessions ordered by start spans hours — one
+// read, two around midnight — while an org with a few sessions a day has a
+// first page that spans weeks, and its details are as many reads as days,
+// each the cost of one partition rather than all of them in one query.
 //
 // A caller that has no window — a deep link carrying only a session id —
 // resolves one with `aiSessionWindowQuery` first, rather than running the
@@ -155,8 +158,12 @@ import {
 } from "@maple/domain/gen-ai"
 import { aiFieldSourceKeys, aiSpanAttributeKeys } from "./ai-integrations"
 import {
+	childClaimsExpr,
 	MAX_USAGE_REPORTERS_PER_TRACE,
+	nettedReportersExpr,
+	reportingSpanIdsExpr,
 	sessionLlmCalls,
+	sessionReportersExpr,
 	sessionUsageSum,
 	usageReportersExpr,
 } from "./ai-span-columns"
@@ -183,7 +190,8 @@ const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
 
 /**
  * How far past the page's own agent-span bounds the `trace_detail_spans`
- * fan-out reads, in seconds — see `aiSessionDetailsQuery`.
+ * fan-out reads, in seconds — applied by `aiSessionDetailsSlices`, which cuts
+ * the padded extent into the reads `aiSessionDetailsQuery` is run as.
  *
  * The pad exists because a trace's non-agent spans lie outside its agent
  * spans: measured over two days of production (4,920 agent traces,
@@ -195,7 +203,7 @@ const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
  * the fan-out's cost is made of. A trace whose spans reach further than an
  * hour past its agent spans is clamped in the list row alone.
  */
-const FAN_OUT_PAD_SECONDS = 3_600
+export const FAN_OUT_PAD_SECONDS = 3_600
 
 /**
  * The pad on the bounds `aiSessionWindowQuery`/`aiTraceWindowQuery` report for
@@ -268,7 +276,7 @@ const failedSpansExpr = ($: {
  */
 const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Expr<number> =>
 	CH.rawExpr(
-		`sum(arrayCount(f -> f.3 ${kind === "tool" ? "=" : "!="} 1 AND NOT arrayExists(c -> c.2 = f.1, ${failedSpans}), ${failedSpans}))`,
+		`sum(arrayCount(f -> f.3 ${kind === "tool" ? "=" : "!="} 1 AND NOT has(tupleElement(${failedSpans}, 2), f.1), ${failedSpans}))`,
 		T.float64,
 	)
 
@@ -569,6 +577,32 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 		])
 }
 
+/** The session-level columns of the page, carried through every level above
+ *  the one that computes them — the row as the index answers it, less the
+ *  usage the netting still has to sum. */
+const SESSION_COLUMNS = [
+	"sessionId",
+	"vendorId",
+	"vendorVersion",
+	"agentStart",
+	"agentEnd",
+	"traceCount",
+	"spanCount",
+	"serviceNames",
+	"models",
+	"agentNames",
+	"firstAgentName",
+	"toolCalls",
+	"errorAgentSpans",
+	"toolErrors",
+	"turnErrors",
+	"agentDurationMs",
+] as const
+type SessionColumn = (typeof SESSION_COLUMNS)[number]
+
+const carry = <Row extends Record<SessionColumn, unknown>>(row: Row): Pick<Row, SessionColumn> =>
+	Object.fromEntries(SESSION_COLUMNS.map((column) => [column, row[column]])) as Pick<Row, SessionColumn>
+
 /**
  * The page: which sessions the list shows, in what order, and everything a
  * row shows about them that the index can answer — the read the list renders
@@ -582,6 +616,17 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
  * its own, keyed `trace:<TraceId>`. Sessionless is the normal state for whole
  * vendors, not an edge case; see this file's header.
  *
+ * Three levels above the trace. The session level groups the traces: every
+ * measure the index carries per span, summed, and the session's usage
+ * reporters collected for the two levels above it, which net them into
+ * claims and sum the claims (`nettedReportersExpr`, `sessionUsageSum`). What
+ * a level computes is what it costs — not per row but per query: the
+ * warehouse analyses every lambda in a SELECT before it reads a row, and the
+ * netting written out per measure at one level was most of a page read in
+ * production (~300ms of a 450ms read over a week, the same on an empty
+ * window). One netting pass, then eight small sums off its result, is half
+ * of that.
+ *
  * Ordered by the first AGENT span, not the first span of any kind: the index
  * carries only agent spans, and the two differ by under a second in practice
  * (see `FAN_OUT_PAD_SECONDS`). The row's `startTime` still reports the true
@@ -591,8 +636,12 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
  * `sessionId` breaking ties, so a page boundary never splits two sessions that
  * share a start.
  *
- * The session-level filters are `HAVING` on the ranked row, over the measures
- * the index carries per span, and cost nothing beyond the index scan the page
+ * Which level ranks follows the sort: the session level has every measure
+ * but usage in hand, so it orders and cuts the page before the netting runs,
+ * which then grades the page alone; a sort or a filter on cost, tokens or
+ * model calls nets every session in the window and ranks on the level that
+ * has the sums. The session-level filters are `HAVING` on the ranked row, or
+ * `WHERE` on the summed one, and cost nothing beyond the index scan the page
  * already is. What they cannot do is count — a facet for "sessions over $1"
  * would be another pass over the same index per bucket, which the sidebar
  * does not ask for.
@@ -605,8 +654,8 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
 
-	// The `HAVING` level sees the outer aliases by name only.
-	const having = {
+	// The `HAVING` and `WHERE` levels see the aliases by name only.
+	const column = {
 		sessionId: CH.dynamicColumn<string>("sessionId", T.string),
 		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
 		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
@@ -629,7 +678,9 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 		llmCalls: "llmCalls",
 		toolCalls: "toolCalls",
 	} as const satisfies Record<AiSessionSortKey, string>
-	const order: Array<[(typeof sortColumn)[AiSessionSortKey] | "sessionId", AiSessionSortDir]> =
+	type UsageSort = "cost" | "totalTokens" | "llmCalls"
+	type SessionSort = Exclude<(typeof sortColumn)[AiSessionSortKey], UsageSort> | "sessionId"
+	const order: Array<[SessionSort | UsageSort, AiSessionSortDir]> =
 		sortBy === "startTime"
 			? [["agentStart", sortDir]]
 			: [
@@ -637,8 +688,24 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 					["agentStart", "desc"],
 				]
 	order.push(["sessionId", "asc"])
+	// Usage exists only once the reporters are netted, two levels up; the
+	// session level orders on everything else.
+	const sortsOnSession = (specs: typeof order): specs is Array<[SessionSort, AiSessionSortDir]> =>
+		sortBy !== "cost" && sortBy !== "totalTokens" && sortBy !== "llmCalls"
+	const filtersOnUsage = [
+		opts.costMin,
+		opts.costMax,
+		opts.tokensMin,
+		opts.tokensMax,
+		opts.llmCallsMin,
+		opts.llmCallsMax,
+	].some((bound) => bound !== undefined)
+	// Only a positive offset is emitted: `OFFSET 0` is a no-op that would still
+	// change the compiled SQL of every first-page read.
+	const paged = <Q extends { limit(n: number): Q; offset(n: number): Q }>(query: Q): Q =>
+		offset > 0 ? query.limit(limit).offset(offset) : query.limit(limit)
 
-	const page = fromQuery(indexTraces(opts, "window"), "index_traces")
+	const sessions = fromQuery(indexTraces(opts, "window"), "index_traces")
 		.select(($) => ({
 			// The grouping key, and the only level that can compute it: the
 			// derived table is one row per trace, so a trace with no session id
@@ -664,49 +731,68 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 			// named agent: a trace that named none carries the sentinel and loses
 			// to any trace that did.
 			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
-			llmCalls: sessionLlmCalls("usageReporters"),
 			toolCalls: CH.sum($.toolCalls),
 			errorAgentSpans: CH.sum($.errorAgentSpans),
 			toolErrors: deepestFailureCount("failedSpans", "tool"),
 			turnErrors: deepestFailureCount("failedSpans", "turn"),
-			totalTokens: sessionUsageSum("usageReporters", 3),
-			cost: sessionUsageSum("usageReporters", 4),
-			inputTokens: sessionUsageSum("usageReporters", 7),
-			cacheReadTokens: sessionUsageSum("usageReporters", 8),
-			cacheWriteTokens: sessionUsageSum("usageReporters", 9),
-			outputTokens: sessionUsageSum("usageReporters", 10),
-			reasoningTokens: sessionUsageSum("usageReporters", 11),
 			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
 			// `aiSessionDetailsQuery` for both.
 			agentDurationMs: CH.intDiv(
 				CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
 				1_000_000,
 			),
+			// The usage, still as reporters: netted one level up, summed two —
+			// with the two lookups the netting makes taken off the reporters here,
+			// once per session, rather than once per reporter inside the netting.
+			reporters: sessionReportersExpr("usageReporters"),
+			childClaims: childClaimsExpr("reporters"),
+			reportingIds: reportingSpanIdsExpr("reporters"),
 		}))
 		.groupBy("sessionId")
 		.having(() => [
-			CH.whenTrue(opts.hasErrors, () => having.errorAgentSpans.gt(0)),
+			CH.whenTrue(opts.hasErrors, () => column.errorAgentSpans.gt(0)),
 			CH.whenTrue(opts.excludeTraceSessions, () =>
-				CH.not(having.sessionId.like(`${MAPLE_AI_TRACE_SESSION_PREFIX}%`)),
+				CH.not(column.sessionId.like(`${MAPLE_AI_TRACE_SESSION_PREFIX}%`)),
 			),
-			CH.when(opts.durationMinMs, (v) => having.agentDurationMs.gte(v)),
-			CH.when(opts.durationMaxMs, (v) => having.agentDurationMs.lte(v)),
-			CH.when(opts.costMin, (v) => having.cost.gte(v)),
-			CH.when(opts.costMax, (v) => having.cost.lte(v)),
-			CH.when(opts.tokensMin, (v) => having.totalTokens.gte(v)),
-			CH.when(opts.tokensMax, (v) => having.totalTokens.lte(v)),
-			CH.when(opts.llmCallsMin, (v) => having.llmCalls.gte(v)),
-			CH.when(opts.llmCallsMax, (v) => having.llmCalls.lte(v)),
-			CH.when(opts.toolCallsMin, (v) => having.toolCalls.gte(v)),
-			CH.when(opts.toolCallsMax, (v) => having.toolCalls.lte(v)),
+			CH.when(opts.durationMinMs, (v) => column.agentDurationMs.gte(v)),
+			CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
+			CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
+			CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
 		])
-		// A String order, and a correct one: the literal is fixed-width
-		// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
+	// A String order, and a correct one: the literal is fixed-width
+	// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
+	const ranked =
+		sortsOnSession(order) && !filtersOnUsage ? paged(sessions.orderBy(...order)) : sessions
+
+	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
+		...carry($),
+		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
+	}))
+
+	const page = fromQuery(netted, "netted_sessions")
+		.select(($) => ({
+			...carry($),
+			llmCalls: sessionLlmCalls("netted"),
+			totalTokens: sessionUsageSum("netted", "tokens"),
+			cost: sessionUsageSum("netted", "cost"),
+			inputTokens: sessionUsageSum("netted", "inputTokens"),
+			cacheReadTokens: sessionUsageSum("netted", "cacheReadTokens"),
+			cacheWriteTokens: sessionUsageSum("netted", "cacheWriteTokens"),
+			outputTokens: sessionUsageSum("netted", "outputTokens"),
+			reasoningTokens: sessionUsageSum("netted", "reasoningTokens"),
+		}))
+		.where(() => [
+			CH.when(opts.costMin, (v) => column.cost.gte(v)),
+			CH.when(opts.costMax, (v) => column.cost.lte(v)),
+			CH.when(opts.tokensMin, (v) => column.totalTokens.gte(v)),
+			CH.when(opts.tokensMax, (v) => column.totalTokens.lte(v)),
+			CH.when(opts.llmCallsMin, (v) => column.llmCalls.gte(v)),
+			CH.when(opts.llmCallsMax, (v) => column.llmCalls.lte(v)),
+		])
+		// Re-ordered even when the session level already did: a level of its
+		// own keeps no order, and the page's order is the page's.
 		.orderBy(...order)
-		.limit(limit)
-	// Only a positive offset is emitted: `OFFSET 0` is a no-op that would still
-	// change the compiled SQL of every first-page read.
-	return (offset > 0 ? page.offset(offset) : page).format("JSON")
+	return (sortsOnSession(order) && !filtersOnUsage ? page : paged(page)).format("JSON")
 }
 
 /**
@@ -715,9 +801,12 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
  * spans. The client asks for it once the page has rendered, and each field
  * replaces the row's agent-only figure of the same name. Bounded by the page
  * alone: `fanOutStart`/`fanOutEnd` are the extent of the page's agent spans,
- * and both the index reads and the fan-out run inside them (padded, for the
- * fan-out) — see `indexTraces` for why the index level resolves a page trace
- * exactly as the page did without the caller's window.
+ * and the index reads run inside them — see `indexTraces` for why the index
+ * level resolves a page trace exactly as the page did without the caller's
+ * window. The fan-out runs inside `spansStart`/`spansEnd`: one slice of the
+ * padded extent, as `aiSessionDetailsSlices` cuts it, so a read touches one
+ * partition of `trace_detail_spans`; the caller runs the slices side by side
+ * and folds the rows with `mergeAiSessionDetails`.
  *
  * The filters land on the index level, which means "the trace's agent spans
  * came from this service" rather than "the trace touched this service". A
@@ -726,12 +815,14 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
  * spans come from the agent's own service, which is the one a user filtering by
  * service means.
  *
- * Once a trace is on the page it is aggregated across the padded fan-out window
- * rather than the caller's, so `startTime`/`endTime`/`durationMs`/`spanCount`/
- * `errorSpanCount`/`serviceNames` describe the whole trace rather than the
- * slice of it that fell inside the range — a session that began an hour before
- * the range no longer reports the range edge as its start, and the detail page
- * can read the bounds this row carries as the session's own.
+ * Once a trace is on the page it is aggregated across the padded extent
+ * rather than the caller's window, so `startTime`/`endTime`/`durationMs`/
+ * `spanCount`/`errorSpanCount`/`serviceNames` describe the whole trace rather
+ * than the slice of it that fell inside the range — a session that began an
+ * hour before the range no longer reports the range edge as its start, and
+ * the detail page can read the bounds this row carries as the session's own.
+ * Whole, that is, once the slices are merged: a trace whose spans straddle
+ * midnight is two rows until then.
  *
  * Ordered by `startTime` for a caller that reads it alone; the list's caller
  * merges by session id, and the page's order is the page's.
@@ -801,8 +892,8 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 		})
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(CH.intervalSub(param.dateTimeString("fanOutStart"), FAN_OUT_PAD_SECONDS)),
-			$.Timestamp.lte(CH.intervalAdd(param.dateTimeString("fanOutEnd"), FAN_OUT_PAD_SECONDS)),
+			$.Timestamp.gte(param.dateTimeString("spansStart")),
+			$.Timestamp.lte(param.dateTimeString("spansEnd")),
 			inSubquery($.TraceId, pageTraceIds),
 		])
 		.groupBy("traceId")
@@ -829,6 +920,107 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 		.groupBy("sessionId")
 		.orderBy(["startTime", "desc"])
 		.format("JSON")
+}
+
+/** One read of `aiSessionDetailsQuery`: the bounds of its `trace_detail_spans`
+ *  seek, warehouse datetime literals — the `spansStart`/`spansEnd` params. */
+export interface AiSessionDetailsSlice {
+	readonly spansStart: string
+	readonly spansEnd: string
+}
+
+const NANOS_PER_SECOND = 1_000_000_000n
+const NANOS_PER_MS = 1_000_000n
+
+/** `YYYY-MM-DD hh:mm:ss[.fffffffff]`, read as UTC, to nanoseconds since the epoch. */
+const warehouseNanos = (literal: string): bigint => {
+	const [datetime = "", fraction = ""] = literal.split(".")
+	return (
+		BigInt(Date.parse(`${datetime.replace(" ", "T")}Z`)) * NANOS_PER_MS +
+		BigInt(fraction.padEnd(9, "0"))
+	)
+}
+
+/** Nanoseconds since the epoch as the literal the warehouse renders — nine
+ *  fractional digits, so a bound round-trips exactly. */
+const warehouseDateTime = (nanos: bigint): string => {
+	const seconds = new Date(Number(nanos / NANOS_PER_SECOND) * 1000).toISOString()
+	return `${seconds.slice(0, 19).replace("T", " ")}.${(nanos % NANOS_PER_SECOND).toString().padStart(9, "0")}`
+}
+
+const nextUtcMidnight = (nanos: bigint): bigint => {
+	const day = new Date(Number(nanos / NANOS_PER_SECOND) * 1000)
+	return BigInt(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + 1)) * NANOS_PER_MS
+}
+
+/**
+ * The reads one page's details are split into: the page's extent, padded by
+ * `FAN_OUT_PAD_SECONDS`, cut at every midnight — one slice per partition of
+ * `trace_detail_spans` (`PARTITION BY toDate(Timestamp)`), contiguous to the
+ * nanosecond, for the caller to run side by side.
+ *
+ * A seek on that table costs by the partitions it touches, and a cold one
+ * costs seconds: measured in production before this, a page spanning three
+ * days ran 5s at the median and hit the profile's 15s ceiling at the 90th
+ * percentile, whole. Sliced, each read pays for one day, the page for the
+ * slowest of them, and a page over a sparse month is as many one-partition
+ * reads as it has days rather than one read over all of them.
+ *
+ * Bounds are read and rendered as UTC, the zone the warehouse renders its
+ * literals in; a warehouse in another zone would cut at its own midnight
+ * plus the offset, which costs a slice two partitions and nothing else.
+ */
+export function aiSessionDetailsSlices(
+	fanOutStart: string,
+	fanOutEnd: string,
+): ReadonlyArray<AiSessionDetailsSlice> {
+	const pad = BigInt(FAN_OUT_PAD_SECONDS) * NANOS_PER_SECOND
+	const end = warehouseNanos(fanOutEnd) + pad
+	const slices: Array<AiSessionDetailsSlice> = []
+	for (let at = warehouseNanos(fanOutStart) - pad; at <= end; ) {
+		const midnight = nextUtcMidnight(at)
+		slices.push({
+			spansStart: warehouseDateTime(at),
+			spansEnd: warehouseDateTime(midnight - 1n < end ? midnight - 1n : end),
+		})
+		at = midnight
+	}
+	return slices
+}
+
+/**
+ * The slices' rows folded back into one per session — what one read over the
+ * whole padded extent returns. A session whose spans straddle midnight is a
+ * row in each slice: the counts add, the services union, the extent is the
+ * outermost bounds, and the duration is those bounds' difference the way the
+ * query takes it, whole milliseconds of the nanosecond difference. The
+ * literals carry nine fractional digits, so the difference is exact.
+ */
+export function mergeAiSessionDetails(
+	slices: ReadonlyArray<ReadonlyArray<AiSessionDetailsOutput>>,
+): ReadonlyArray<AiSessionDetailsOutput> {
+	const merged = new Map<string, AiSessionDetailsOutput>()
+	for (const rows of slices) {
+		for (const row of rows) {
+			const prior = merged.get(row.sessionId)
+			if (prior === undefined) {
+				merged.set(row.sessionId, row)
+				continue
+			}
+			const startTime = prior.startTime < row.startTime ? prior.startTime : row.startTime
+			const endTime = prior.endTime > row.endTime ? prior.endTime : row.endTime
+			merged.set(row.sessionId, {
+				sessionId: row.sessionId,
+				spanCount: prior.spanCount + row.spanCount,
+				errorSpanCount: prior.errorSpanCount + row.errorSpanCount,
+				serviceNames: [...new Set([...prior.serviceNames, ...row.serviceNames])],
+				startTime,
+				endTime,
+				durationMs: Number((warehouseNanos(endTime) - warehouseNanos(startTime)) / NANOS_PER_MS),
+			})
+		}
+	}
+	return [...merged.values()]
 }
 
 // List facets (UNION ALL — one branch per index dimension)
