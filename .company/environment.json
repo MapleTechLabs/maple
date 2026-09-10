@@ -1,0 +1,13 @@
+{
+	"$schema": "https://api.thecompany.company/schemas/v1/environment.json",
+	"scripts": {
+		"install": {
+			"command": "bun install --frozen-lockfile",
+			"timeout": 1200
+		},
+		"prepare": {
+			"command": "bun install --frozen-lockfile",
+			"timeout": 600
+		}
+	}
+}
