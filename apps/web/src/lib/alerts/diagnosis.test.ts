@@ -75,6 +75,7 @@ const diagnose = (overrides: Partial<DiagnosisInput> = {}) =>
 		destinations: [],
 		deliveryEvents: [],
 		now: NOW,
+		timeZone: "UTC",
 		...overrides,
 	})
 

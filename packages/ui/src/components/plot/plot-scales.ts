@@ -1,5 +1,6 @@
+import { timeZoneOffsetMs } from "@maple/query-engine/datetime"
 import { scaleLinear as niceableScaleLinear } from "@tanstack/charts-scales/linear"
-import { scaleLinear, scaleLog, scaleTime } from "d3-scale"
+import { scaleLinear, scaleLog, scaleTime, scaleUtc, type ScaleTime } from "d3-scale"
 
 /**
  * Scales, and the three rules about them that are easy to get wrong.
@@ -16,10 +17,12 @@ import { scaleLinear, scaleLog, scaleTime } from "d3-scale"
  *    (called) keeps whatever domain you gave it. Every helper here returns an
  *    instance, deliberately.
  *
- * 3. **Use `scaleTime`, not `scaleUtc`.** Bucket labels are formatted in local
- *    time by `formatBucketLabel`; a UTC scale would place ticks against a
- *    different clock than the one printing them, so labels drift off their
- *    gridlines by the browser's offset.
+ * 3. **The tick clock must be the label clock.** `formatBucketLabel` prints in
+ *    the viewer's selected zone (or the browser's, without one), so the scale
+ *    that picks the ticks has to count round boundaries in that same zone; a
+ *    UTC scale under local labels put "01:00" on a gridline drawn at 02:00, off
+ *    by the browser's offset. `zonedTimeScale` builds the matching scale for a
+ *    zone; `scaleTime` remains right only for the browser's own zone.
  */
 
 /** A threshold whose value has to stay inside the plot. */
@@ -213,9 +216,69 @@ export function linearYScale(domain: [number, number]) {
 	return scaleLinear().domain(domain)
 }
 
-/** The time scale for bucketed series — local, not UTC. See rule 3 above. */
-export function bucketTimeScale(domain: [Date, Date]) {
-	return scaleTime().domain(domain)
+type TimeScale = ScaleTime<number, number, never>
+/** d3's interval overload of `ticks`, named without a direct `d3-time` dependency. */
+type TickInterval = Parameters<TimeScale["ticks"]>[0]
+
+/** An instant re-expressed as its wall clock in `timeZone`, read as if it were UTC. */
+function toWallClock(timeZone: string, date: Date): Date {
+	const ms = date.getTime()
+	return new Date(ms + timeZoneOffsetMs(timeZone, ms))
+}
+
+/** The inverse of `toWallClock`: the instant a wall clock in `timeZone` names. */
+function fromWallClock(timeZone: string, wallClock: Date): Date {
+	const wall = wallClock.getTime()
+	// Two passes settle a DST transition — see `zonedPartsToEpochMs`.
+	const first = wall - timeZoneOffsetMs(timeZone, wall)
+	return new Date(wall - timeZoneOffsetMs(timeZone, first))
+}
+
+/**
+ * Makes `scale` pick its ticks on round boundaries in `timeZone`.
+ *
+ * d3 only knows two calendars, UTC and the runtime's local zone, so a third is
+ * reached by translation: the domain is re-expressed as wall clock in the zone,
+ * a UTC scale over that picks its usual round ticks, and each tick is translated
+ * back to the instant it names. The scale's mapping is untouched — a linear map
+ * of instants to pixels does not care which clock labels them — only `ticks`
+ * and, because the renderer copies every scale before using it, `copy`.
+ */
+function zoned(scale: TimeScale, timeZone: string): TimeScale {
+	const copy = scale.copy
+	// d3 overloads `ticks` on a count or an interval; the wall-clock scale takes
+	// whichever it was handed.
+	scale.ticks = (count?: number | TickInterval) => {
+		const [start, end] = scale.domain()
+		if (!start || !end) return []
+		const startMs = start.getTime()
+		const endMs = end.getTime()
+		const wallClock = scaleUtc<number, number, never>().domain([
+			toWallClock(timeZone, start),
+			toWallClock(timeZone, end),
+		])
+		const raw =
+			count === undefined ? wallClock.ticks() : typeof count === "number" ? wallClock.ticks(count) : wallClock.ticks(count)
+		return raw
+			.map((tick) => fromWallClock(timeZone, tick))
+			.filter((tick) => tick.getTime() >= startMs && tick.getTime() <= endMs)
+	}
+	scale.copy = () => zoned(copy.call(scale), timeZone)
+	return scale
+}
+
+/**
+ * A time-scale FACTORY (inferred domain) whose ticks land on round boundaries
+ * in `timeZone`, or plain `scaleTime` for the browser's zone. See rule 3.
+ */
+export function zonedTimeScale(timeZone: string | undefined): () => TimeScale {
+	if (timeZone === undefined) return () => scaleTime<number, number, never>()
+	return () => zoned(scaleUtc<number, number, never>(), timeZone)
+}
+
+/** The PINNED time scale for bucketed series, ticking in `timeZone`. See rule 3 above. */
+export function bucketTimeScale(domain: [Date, Date], timeZone?: string) {
+	return zonedTimeScale(timeZone)().domain(domain)
 }
 
 /**

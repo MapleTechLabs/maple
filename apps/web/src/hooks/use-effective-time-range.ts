@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { useOptionalPageRefreshContext } from "@/components/time-range-picker/page-refresh-context"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { relativeToAbsolute, snapRangeForCache } from "@/lib/time-utils"
 
 interface TimeRange {
@@ -8,6 +9,8 @@ interface TimeRange {
 }
 
 export interface ResolveEffectiveTimeRangeOptions {
+	/** The zone day-aligned presets ("today", "7d") start their day in. Defaults to the selected one. */
+	timeZone?: string
 	/**
 	 * Floor the endpoint to the cache-key grid. Default `true`.
 	 *
@@ -40,7 +43,8 @@ export function resolveEffectiveTimeRange(
 	if (startTime && endTime) {
 		return { startTime, endTime }
 	}
-	const resolved = relativeToAbsolute(defaultRange) ?? relativeToAbsolute("12h")!
+	const resolved =
+		relativeToAbsolute(defaultRange, options?.timeZone) ?? relativeToAbsolute("12h", options?.timeZone)!
 	return options?.snap === false ? resolved : snapRangeForCache(resolved)
 }
 
@@ -60,6 +64,9 @@ export function useEffectiveTimeRange(
 ): TimeRange {
 	const pageRefresh = useOptionalPageRefreshContext()
 	const refreshVersion = pageRefresh?.refreshVersion ?? 0
+	// A day-aligned preset starts at the selected zone's midnight, so a zone
+	// change re-resolves the window.
+	const { effectiveTimezone } = useTimezonePreference()
 
 	return useMemo(
 		// Snap while idle, but not once the user has asked for fresh data. Snapping
@@ -67,8 +74,12 @@ export function useEffectiveTimeRange(
 		// newest rows stay invisible however many times they click it. The bypass
 		// lasts only for this mount — `refreshVersion` is back to 0 on the next
 		// one, so navigation returns to stable, cache-friendly keys.
-		() => resolveEffectiveTimeRange(startTime, endTime, defaultRange, { snap: refreshVersion === 0 }),
+		() =>
+			resolveEffectiveTimeRange(startTime, endTime, defaultRange, {
+				snap: refreshVersion === 0,
+				timeZone: effectiveTimezone,
+			}),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[startTime, endTime, defaultRange, refreshVersion],
+		[startTime, endTime, defaultRange, refreshVersion, effectiveTimezone],
 	)
 }

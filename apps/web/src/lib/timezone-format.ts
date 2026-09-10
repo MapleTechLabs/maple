@@ -29,24 +29,37 @@ const compactTimeFormatters = new Map<string, Intl.DateTimeFormat>()
 
 export function formatTimestampInTimezone(
 	input: TimezoneFormatInput,
-	options: { timeZone: string; withMilliseconds?: boolean },
+	options: { timeZone: string; withMilliseconds?: boolean; style?: "full" | "range" },
 ): string {
 	const date = toValidDate(input)
 	if (!date) return "-"
 
 	const tz = resolveTimeZone(options.timeZone)
-	const key = `${tz}|${options.withMilliseconds ? "ms" : ""}`
+	const style = options.style ?? "full"
+	const key = `${tz}|${style}|${options.withMilliseconds ? "ms" : ""}`
 	let formatter = timestampFormatters.get(key)
 	if (!formatter) {
-		formatter = new Intl.DateTimeFormat("en-US", {
-			timeZone: tz,
-			month: "short",
-			day: "numeric",
-			hour: "2-digit",
-			minute: "2-digit",
-			second: "2-digit",
-			fractionalSecondDigits: options.withMilliseconds ? 3 : undefined,
-		})
+		formatter =
+			style === "range"
+				? // `Sep 10, 14:05` — the time-range picker's label, where seconds are
+					// noise and a 24h clock keeps the two ends the same width.
+					new Intl.DateTimeFormat("en-US", {
+						timeZone: tz,
+						month: "short",
+						day: "numeric",
+						hour: "2-digit",
+						minute: "2-digit",
+						hourCycle: "h23",
+					})
+				: new Intl.DateTimeFormat("en-US", {
+						timeZone: tz,
+						month: "short",
+						day: "numeric",
+						hour: "2-digit",
+						minute: "2-digit",
+						second: "2-digit",
+						fractionalSecondDigits: options.withMilliseconds ? 3 : undefined,
+					})
 		timestampFormatters.set(key, formatter)
 	}
 

@@ -248,7 +248,7 @@ export function inferRangeMs(data: ReadonlyArray<Record<string, unknown>>): numb
  */
 export function formatBucketLabel(
 	value: unknown,
-	context: { rangeMs: number; bucketSeconds: number | undefined },
+	context: { rangeMs: number; bucketSeconds: number | undefined; timeZone?: string },
 	mode: "tick" | "tooltip",
 ): string {
 	if (typeof value !== "string") return ""
@@ -260,11 +260,15 @@ export function formatBucketLabel(
 
 	const includeDate = context.rangeMs >= 24 * 60 * 60 * 1000 || (context.bucketSeconds ?? 0) >= 24 * 60 * 60
 	const includeSeconds = context.rangeMs <= 30 * 60 * 1000 && !includeDate
+	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
+	// the browser's otherwise.
+	const timeZone = context.timeZone
 
 	if (mode === "tooltip") {
 		// The tooltip header always carries the full date — ticks stay terse, but a
 		// hovered point should never make the reader work out which day it was.
 		return date.toLocaleString(undefined, {
+			timeZone,
 			year: "numeric",
 			month: "short",
 			day: "numeric",
@@ -276,9 +280,10 @@ export function formatBucketLabel(
 
 	if (includeDate) {
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
-			return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+			return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
 		}
 		return date.toLocaleString(undefined, {
+			timeZone,
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",
@@ -288,6 +293,7 @@ export function formatBucketLabel(
 
 	return date
 		.toLocaleTimeString(undefined, {
+			timeZone,
 			hour: "2-digit",
 			minute: "2-digit",
 			second: includeSeconds ? "2-digit" : undefined,

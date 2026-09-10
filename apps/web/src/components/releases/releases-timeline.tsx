@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure } from "./release-health"
 import {
 	RELEASE_HEALTH_ORDER,
@@ -143,28 +144,29 @@ function useTrackWidth(): [(node: HTMLDivElement | null) => void | (() => void),
 	return [ref, width]
 }
 
-function axisLabels(startMs: number, endMs: number): string[] {
+function axisLabels(startMs: number, endMs: number, timeZone: string): string[] {
 	const span = endMs - startMs
 	const showTime = span <= 3 * 86_400_000
 	return [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
 		const date = new Date(startMs + span * ratio)
 		return showTime
 			? date.toLocaleString(undefined, {
+					timeZone,
 					month: "short",
 					day: "numeric",
 					hour: "numeric",
 					minute: "2-digit",
 				})
-			: date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+			: date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
 	})
 }
 
-function markerTitle(marker: Marker): string {
+function markerTitle(marker: Marker, timeZone: string): string {
 	const [newest] = marker.members
 	if (newest === undefined) return ""
 	if (marker.members.length === 1) {
 		const figure = releaseHealthFigure(newest)
-		return `${shortReleaseLabel(newest.commitSha)} · ${formatRelativeTimeOrDate(newest.firstSeen)}${figure ? ` · ${figure}` : ""}`
+		return `${shortReleaseLabel(newest.commitSha)} · ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}${figure ? ` · ${figure}` : ""}`
 	}
 	const oldest = marker.members[marker.members.length - 1]!
 	const listed = marker.members
@@ -172,7 +174,7 @@ function markerTitle(marker: Marker): string {
 		.map((m) => shortReleaseLabel(m.commitSha))
 		.join(", ")
 	const more = marker.members.length > 6 ? `, +${marker.members.length - 6} more` : ""
-	return `${marker.members.length} deploys · ${formatRelativeTimeOrDate(oldest.firstSeen)} → ${formatRelativeTimeOrDate(newest.firstSeen)}\n${listed}${more}`
+	return `${marker.members.length} deploys · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
 }
 
 /**
@@ -203,7 +205,8 @@ export function ReleasesTimeline({
 	)
 	const visible = lanes.slice(0, MAX_LANES)
 	const hidden = lanes.length - visible.length
-	const labels = useMemo(() => axisLabels(startMs, endMs), [startMs, endMs])
+	const { effectiveTimezone } = useTimezonePreference()
+	const labels = useMemo(() => axisLabels(startMs, endMs, effectiveTimezone), [startMs, endMs, effectiveTimezone])
 
 	return (
 		<div className="flex flex-col rounded-md border bg-card">
@@ -255,7 +258,7 @@ export function ReleasesTimeline({
 												(newest.environment ? [newest.environment] : undefined),
 											...timeSearch,
 										}}
-										title={markerTitle(marker)}
+										title={markerTitle(marker, effectiveTimezone)}
 										aria-label={`${lane.serviceName}: ${count === 1 ? shortReleaseLabel(newest.commitSha) : `${count} deploys`}`}
 										className="group absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center focus-visible:outline-none"
 										style={{

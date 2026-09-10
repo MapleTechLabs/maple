@@ -25,6 +25,7 @@ import {
 	DropdownMenuSeparator,
 } from "@maple/ui/components/ui/dropdown-menu"
 import type { WidgetMode, WidgetDataState } from "@/components/dashboard-builder/types"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useWidgetActions } from "@/components/dashboard-builder/widgets/widget-actions-context"
 import { MoveWidgetToSectionMenu } from "@/components/dashboard-builder/sections/move-widget-to-section-menu"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
@@ -91,7 +92,8 @@ export function WidgetShell({
 	// reader has no way to tell that one card on a 7-day board is showing the
 	// last 30 minutes.
 	const timeRangeOverride = useWidgetTimeRangeOverride()
-	const timeRangeLabel = timeRangeOverride ? widgetTimeRangeLabel(timeRangeOverride) : null
+	const { effectiveTimezone } = useTimezonePreference()
+	const timeRangeLabel = timeRangeOverride ? widgetTimeRangeLabel(timeRangeOverride, effectiveTimezone) : null
 
 	return (
 		// `@container/widget` is the size anchor for every widget body. Tiles are

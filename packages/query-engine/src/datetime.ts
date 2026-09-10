@@ -229,12 +229,102 @@ export function warehouseDateTime(epochMs: number): WarehouseDateTime {
 // month as 30 days), and in the query engine's own limits module — which is how
 // `mo` came to mean different spans depending on which one you asked.
 //
-// Month and day arithmetic is done on **local** calendar components, matching
-// date-fns' `subMonths`/`startOfDay`. Day and week windows additionally snap
-// their start to local midnight and count today as day one, so "7d" is seven
-// calendar days rather than a rolling 168 hours. In the browser that is the viewer's
-// calendar (unchanged behaviour); on a Worker, local is UTC, which is the only
+// Month and day arithmetic is done on calendar components in the caller's
+// `timeZone` — the viewer's selected zone in the browser — matching date-fns'
+// `subMonths`/`startOfDay` in that zone. Day and week windows additionally snap
+// their start to that zone's midnight and count today as day one, so "7d" is
+// seven calendar days rather than a rolling 168 hours. Without a `timeZone` the
+// runtime's local calendar is used: on a Worker, local is UTC, which is the only
 // sensible reading server-side. One implementation serves both.
+
+// Calendar arithmetic in an IANA zone
+//
+// `Date` only knows two calendars — UTC and the runtime's local zone — so every
+// "midnight in Europe/Berlin" question goes through `Intl`. The trick is the
+// standard one: read the wall-clock components in the zone, do the calendar
+// arithmetic on those components as if they were UTC, then convert the result
+// back to an instant by subtracting the zone's offset at that wall-clock time.
+
+/** Wall-clock components of `epochMs` in `timeZone`. */
+export interface ZonedDateParts {
+	year: number
+	month: number
+	day: number
+	hour: number
+	minute: number
+	second: number
+}
+
+const zonedPartsFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zonedPartsFormatter(timeZone: string): Intl.DateTimeFormat {
+	let formatter = zonedPartsFormatters.get(timeZone)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			hourCycle: "h23",
+			year: "numeric",
+			month: "numeric",
+			day: "numeric",
+			hour: "numeric",
+			minute: "numeric",
+			second: "numeric",
+		})
+		zonedPartsFormatters.set(timeZone, formatter)
+	}
+	return formatter
+}
+
+/** The wall clock in `timeZone` at `epochMs`. */
+export function zonedDateParts(epochMs: number, timeZone: string): ZonedDateParts {
+	const parts = zonedPartsFormatter(timeZone).formatToParts(new Date(epochMs))
+	const read = (type: Intl.DateTimeFormatPartTypes): number => {
+		const part = parts.find((candidate) => candidate.type === type)
+		return part ? Number.parseInt(part.value, 10) : 0
+	}
+	return {
+		year: read("year"),
+		month: read("month"),
+		day: read("day"),
+		// `hourCycle: "h23"` is not honoured by every engine; "24" still shows up.
+		hour: read("hour") % 24,
+		minute: read("minute"),
+		second: read("second"),
+	}
+}
+
+/** The instant a wall clock in `timeZone` names. Out-of-range components roll over like `Date.UTC`. */
+export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): number {
+	const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+	// First guess with the offset at the UTC reading, then correct once: across a
+	// DST transition the offset at the guess can differ from the offset at the
+	// answer, and a second pass settles it (an ambiguous wall clock takes the
+	// earlier offset; a skipped one moves forward).
+	const first = asUtc - timeZoneOffsetMs(timeZone, asUtc)
+	const second = asUtc - timeZoneOffsetMs(timeZone, first)
+	return second
+}
+
+/** `timeZone`'s offset from UTC at `epochMs`, in ms; positive east of Greenwich. */
+export function timeZoneOffsetMs(timeZone: string, epochMs: number): number {
+	const parts = zonedDateParts(epochMs, timeZone)
+	const wallClockAsUtc = Date.UTC(
+		parts.year,
+		parts.month - 1,
+		parts.day,
+		parts.hour,
+		parts.minute,
+		parts.second,
+	)
+	// Drop the sub-second part: the wall clock was read at whole seconds.
+	return wallClockAsUtc - Math.floor(epochMs / 1000) * 1000
+}
+
+/** Midnight in `timeZone` for the day containing `epochMs`. */
+export function startOfDayInTimeZone(epochMs: number, timeZone: string): number {
+	const parts = zonedDateParts(epochMs, timeZone)
+	return zonedPartsToEpochMs({ ...parts, hour: 0, minute: 0, second: 0 }, timeZone)
+}
 
 const RELATIVE_RANGE_PATTERN = /^(\d+)(mo|m|h|d|w)$/
 
@@ -250,22 +340,38 @@ const MS: Record<string, number> = {
  * target month's length (31 Mar − 1mo → 28 Feb, never 3 Mar). Mirrors
  * date-fns' `subMonths` so the web app's behaviour is preserved exactly.
  */
-function addCalendarMonths(date: Date, months: number): Date {
-	const shifted = new Date(date.getTime())
-	const day = shifted.getDate()
-	// Park on the 1st before changing month, so the month set can't overflow.
-	shifted.setDate(1)
-	shifted.setMonth(shifted.getMonth() + months)
-	const daysInTargetMonth = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate()
-	shifted.setDate(Math.min(day, daysInTargetMonth))
-	return shifted
+function addCalendarMonths(epochMs: number, months: number, timeZone: string | undefined): number {
+	if (timeZone === undefined) {
+		const shifted = new Date(epochMs)
+		const day = shifted.getDate()
+		// Park on the 1st before changing month, so the month set can't overflow.
+		shifted.setDate(1)
+		shifted.setMonth(shifted.getMonth() + months)
+		const daysInTargetMonth = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate()
+		shifted.setDate(Math.min(day, daysInTargetMonth))
+		return shifted.getTime()
+	}
+	const parts = zonedDateParts(epochMs, timeZone)
+	// Zero-based month arithmetic on the 1st, then clamp the day the same way.
+	const target = new Date(Date.UTC(parts.year, parts.month - 1 + months, 1))
+	const daysInTargetMonth = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+	return zonedPartsToEpochMs(
+		{
+			...parts,
+			year: target.getUTCFullYear(),
+			month: target.getUTCMonth() + 1,
+			day: Math.min(parts.day, daysInTargetMonth),
+		},
+		timeZone,
+	)
 }
 
-/** Local midnight for the day containing `date`. Mirrors date-fns' `startOfDay`. */
-function startOfLocalDay(date: Date): Date {
-	const start = new Date(date.getTime())
+/** Midnight for the day containing `epochMs`: in `timeZone`, or the runtime's local zone. */
+function startOfDay(epochMs: number, timeZone: string | undefined): number {
+	if (timeZone !== undefined) return startOfDayInTimeZone(epochMs, timeZone)
+	const start = new Date(epochMs)
 	start.setHours(0, 0, 0, 0)
-	return start
+	return start.getTime()
 }
 
 /**
@@ -302,12 +408,12 @@ export function relativeRangeSeconds(shorthand: string): number | null {
 export function resolveRelativeRange(
 	shorthand: string,
 	nowMs: number = Date.now(),
+	timeZone?: string,
 ): { startMs: number; endMs: number } | null {
 	const trimmed = shorthand.trim().toLowerCase()
-	const now = new Date(nowMs)
 
 	if (trimmed === "today") {
-		return { startMs: startOfLocalDay(now).getTime(), endMs: nowMs }
+		return { startMs: startOfDay(nowMs, timeZone), endMs: nowMs }
 	}
 
 	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
@@ -318,10 +424,10 @@ export function resolveRelativeRange(
 
 	const unit = match[2]
 	if (unit === "mo") {
-		return { startMs: addCalendarMonths(now, -amount).getTime(), endMs: nowMs }
+		return { startMs: addCalendarMonths(nowMs, -amount, timeZone), endMs: nowMs }
 	}
 
-	// Day-or-wider windows are counted in whole local calendar days, inclusive
+	// Day-or-wider windows are counted in whole calendar days, inclusive
 	// of today: "7d" is the last seven days *on the calendar* — midnight six
 	// days ago through now — not a rolling 168-hour window that starts mid-
 	// afternoon. Counting today as one of the N keeps the span at or under the
@@ -329,7 +435,7 @@ export function resolveRelativeRange(
 	// exact 365-day limit the service and alert endpoints enforce) still pass.
 	if (unit === "d" || unit === "w") {
 		const days = unit === "w" ? amount * 7 : amount
-		return { startMs: startOfLocalDay(new Date(nowMs - (days - 1) * MS.d)).getTime(), endMs: nowMs }
+		return { startMs: startOfDay(nowMs - (days - 1) * MS.d, timeZone), endMs: nowMs }
 	}
 
 	const unitMs = MS[unit]
@@ -344,8 +450,9 @@ export function resolveRelativeRange(
 export function resolveRelativeRangeToWarehouse(
 	shorthand: string,
 	nowMs: number = Date.now(),
+	timeZone?: string,
 ): { startTime: string; endTime: string } | null {
-	const resolved = resolveRelativeRange(shorthand, nowMs)
+	const resolved = resolveRelativeRange(shorthand, nowMs, timeZone)
 	if (!resolved) return null
 	return {
 		startTime: formatWarehouseDateTime(resolved.startMs),

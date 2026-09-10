@@ -1,3 +1,4 @@
+import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
 import { isValidRawSql } from "@maple/domain/raw-sql"
 import {
 	AlertCheckDocument,
@@ -785,9 +786,10 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 /*  Shared Formatters                                                         */
 /* -------------------------------------------------------------------------- */
 
-export function formatAlertDateTime(value: string | null): string {
+export function formatAlertDateTime(value: string | null, timeZone?: string): string {
 	if (!value) return "Never"
 	return new Date(value).toLocaleString(undefined, {
+		timeZone,
 		month: "short",
 		day: "numeric",
 		year: "numeric",
@@ -796,9 +798,10 @@ export function formatAlertDateTime(value: string | null): string {
 	})
 }
 
-export function formatAlertDateTimeFull(value: string | null): string {
+export function formatAlertDateTimeFull(value: string | null, timeZone?: string): string {
 	if (!value) return "—"
 	return new Date(value).toLocaleString(undefined, {
+		timeZone,
 		month: "short",
 		day: "numeric",
 		hour: "2-digit",
@@ -808,25 +811,31 @@ export function formatAlertDateTimeFull(value: string | null): string {
 }
 
 /** Time of day only (`03:10 PM`) — used where a day header already carries the date. */
-export function formatAlertTime(value: string | null): string {
+export function formatAlertTime(value: string | null, timeZone?: string): string {
 	if (!value) return "—"
 	return new Date(value).toLocaleTimeString(undefined, {
+		timeZone,
 		hour: "2-digit",
 		minute: "2-digit",
 	})
 }
 
-const startOfLocalDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+/** Midnight of the day holding `ms`, in `timeZone` or the browser's zone. */
+const startOfDay = (ms: number, timeZone: string | undefined): number => {
+	if (timeZone !== undefined) return startOfDayInTimeZone(ms, timeZone)
+	const d = new Date(ms)
+	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
 
 /** Day-bucket heading: `Today` / `Yesterday` / `Jun 4, 2026`. */
-function formatAlertDayHeading(value: string): string {
+function formatAlertDayHeading(value: string, timeZone: string | undefined): string {
 	const date = new Date(value)
-	const today = startOfLocalDay(new Date())
-	const target = startOfLocalDay(date)
+	const today = startOfDay(Date.now(), timeZone)
+	const target = startOfDay(date.getTime(), timeZone)
 	const dayMs = 86_400_000
 	if (target === today) return "Today"
 	if (target === today - dayMs) return "Yesterday"
-	return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+	return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric", year: "numeric" })
 }
 
 /* -------------------------------------------------------------------------- */
@@ -870,16 +879,16 @@ export interface DeliveryEventDayGroup {
  */
 export function groupDeliveryEventsByDay(
 	events: ReadonlyArray<AlertDeliveryEventDocument>,
+	timeZone?: string,
 ): DeliveryEventDayGroup[] {
 	const groups: DeliveryEventDayGroup[] = []
 	for (const event of events) {
-		const d = new Date(event.scheduledAt)
-		const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+		const key = String(startOfDay(Date.parse(event.scheduledAt), timeZone))
 		const last = groups[groups.length - 1]
 		if (last && last.key === key) {
 			last.events.push(event)
 		} else {
-			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt), events: [event] })
+			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone), events: [event] })
 		}
 	}
 	return groups

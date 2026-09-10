@@ -3,6 +3,7 @@ import { areaY, d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scalePoint } from "@tanstack/charts-scales/point"
 import { curveMonotoneX } from "d3-shape"
+import { zonedDateParts } from "@maple/query-engine/datetime"
 
 import {
 	PlotFrame,
@@ -21,6 +22,7 @@ import {
 import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 import { CHART_EMPTY_MESSAGE, isoToLabel, makeBucketLabeler } from "../infra/chart-utils"
 import { CHART_HEIGHT, ChartCard, ChartCardMessage } from "../infra/primitives/chart-card"
@@ -90,6 +92,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 	// Tokens resolved to literals: canvas cannot read `var()`, and `useTheme` is
 	// the invalidation key that repaints them when the theme flips.
 	const { theme } = useTheme()
+	const { effectiveTimezone } = useTimezonePreference()
 	const colors = useMemo(
 		() => ({
 			primary: resolvePlotColor(PRIMARY_TOKEN, PRIMARY_FALLBACK),
@@ -136,15 +139,16 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 		zeroFill("primary", metric, primaryPoints)
 		zeroFill("companion", companion, companionPoints)
 
-		const label = makeBucketLabeler(buckets)
-		// The first bucket of each local calendar day. Over a multi-day window the
+		const label = makeBucketLabeler(buckets, effectiveTimezone)
+		// The first bucket of each calendar day in the selected zone. Over a multi-day window the
 		// axis ticks there and nowhere else — one dated label per day reads; a
 		// thinned run of "Aug 14, 9:30pm" labels does not. Within a single day the
 		// list has one entry and the axis keeps its time-of-day ticks instead.
 		const dayTicks: string[] = []
 		let lastDay = ""
 		for (const bucket of buckets) {
-			const day = new Date(bucket).toDateString()
+			const parts = zonedDateParts(Date.parse(bucket), effectiveTimezone)
+			const day = `${parts.year}-${parts.month}-${parts.day}`
 			if (day !== lastDay) {
 				dayTicks.push(bucket)
 				lastDay = day
@@ -165,7 +169,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 				companion: companionPoints.reduce((sum, point) => sum + point.value, 0),
 			},
 		}
-	}, [metric, companion, source])
+	}, [metric, companion, source, effectiveTimezone])
 
 	// Selected metric first — this order is the legend's, where it should lead.
 	const series = [
@@ -265,11 +269,12 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 									values: dayTicks,
 									format: (bucket: string) =>
 										new Date(bucket).toLocaleDateString("en-US", {
+											timeZone: effectiveTimezone,
 											month: "short",
 											day: "numeric",
 										}),
 								}
-							: { size: 0, padding: 8, format: isoToLabel },
+							: { size: 0, padding: 8, format: (iso: string) => isoToLabel(iso, effectiveTimezone) },
 						tickLabels: { thin: { minGap: 12 } },
 					},
 				},
@@ -297,7 +302,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [data, dayTicks, painted, gradientPrefix, chromeColors, metric, focusStore, narrow])
+	}, [data, dayTicks, painted, gradientPrefix, chromeColors, metric, focusStore, narrow, effectiveTimezone])
 
 	// Only when there are two series to tell apart — a lone series is already
 	// named by the card title, and a legend restating it is one accessory too many.

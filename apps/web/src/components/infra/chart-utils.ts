@@ -4,6 +4,7 @@
 // value formatting used by tooltips, legend chips, and axes. Series colors come
 // from `resolveSeriesColors` — a host/pod/zone keeps its color across windows.
 
+import { zonedDateParts } from "@maple/query-engine/datetime"
 import { bucketTimeScale, timeseriesXAxis, type TimeseriesAxisContext } from "@maple/ui/components/plot"
 import {
 	formatBucketLabel,
@@ -103,16 +104,17 @@ export interface TransformedPoint extends Record<string, string | number | Date>
 	date: Date
 }
 
-/** Axis label for a bucket timestamp ("14:35"). */
-export function isoToLabel(iso: string): string {
+/** Axis label for a bucket timestamp ("14:35"), in `timeZone` or the browser's. */
+export function isoToLabel(iso: string, timeZone?: string): string {
 	const d = new Date(iso)
-	return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+	return d.toLocaleTimeString("en-US", { timeZone, hour: "2-digit", minute: "2-digit" })
 }
 
 /** Compact time-of-day for a dated label: "3pm", or "3:35pm" off the hour. */
-function compactTimeOfDay(d: Date): string {
-	const hours24 = d.getHours()
-	const minutes = d.getMinutes()
+function compactTimeOfDay(d: Date, timeZone: string | undefined): string {
+	const { hour: hours24, minute: minutes } = timeZone
+		? zonedDateParts(d.getTime(), timeZone)
+		: { hour: d.getHours(), minute: d.getMinutes() }
 	const hour = hours24 % 12 === 0 ? 12 : hours24 % 12
 	const suffix = hours24 < 12 ? "am" : "pm"
 	return minutes === 0 ? `${hour}${suffix}` : `${hour}:${String(minutes).padStart(2, "0")}${suffix}`
@@ -125,7 +127,10 @@ function compactTimeOfDay(d: Date): string {
  * the date already takes the width; multi-day buckets land on the hour, so
  * the minutes only appear when they carry information.
  */
-export function makeBucketLabeler(bucketIsos: ReadonlyArray<string>): (iso: string) => string {
+export function makeBucketLabeler(
+	bucketIsos: ReadonlyArray<string>,
+	timeZone?: string,
+): (iso: string) => string {
 	let min = Number.POSITIVE_INFINITY
 	let max = Number.NEGATIVE_INFINITY
 	for (const iso of bucketIsos) {
@@ -135,10 +140,10 @@ export function makeBucketLabeler(bucketIsos: ReadonlyArray<string>): (iso: stri
 			max = Math.max(max, ms)
 		}
 	}
-	if (max - min <= 24 * 60 * 60 * 1000) return isoToLabel
+	if (max - min <= 24 * 60 * 60 * 1000) return (iso) => isoToLabel(iso, timeZone)
 	return (iso) => {
 		const d = new Date(iso)
-		return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${compactTimeOfDay(d)}`
+		return `${d.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric" })}, ${compactTimeOfDay(d, timeZone)}`
 	}
 }
 
@@ -161,9 +166,10 @@ export function bucketDate(iso: string): Date {
  * boundaries and keeps the end labels inside the plot.
  *
  * Pass the union of every sibling's buckets when charts are read down one
- * vertical line, so they agree on where a minute sits.
+ * vertical line, so they agree on where a minute sits. `timeZone` is the
+ * viewer's selected zone (`useTimezonePreference`): ticks and labels follow it.
  */
-export function makeBucketAxis(bucketIsos: ReadonlyArray<string>) {
+export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: string) {
 	const epochs = bucketIsos
 		.map((iso) => toEpochMs(iso))
 		.filter((ms) => Number.isFinite(ms))
@@ -185,6 +191,7 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>) {
 		rangeMs: domainMs ? domainMs[1] - domainMs[0] : 0,
 		bucketSeconds: stepMs === undefined ? undefined : stepMs / 1000,
 		domainMs,
+		timeZone,
 	}
 	const axis = timeseriesXAxis(context)
 
@@ -192,7 +199,7 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>) {
 		/** Feed to `defineChart({ scales: { x } })`. */
 		x:
 			domainMs && domainMs[0] < domainMs[1]
-				? { ...axis, scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])]) }
+				? { ...axis, scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])], timeZone) }
 				: axis,
 		/** `[first, last]` epoch ms, absent when there is nothing to plot. */
 		domainMs,

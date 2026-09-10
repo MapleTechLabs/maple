@@ -83,3 +83,18 @@ export const timezonePreferenceAtom = Atom.kvs({
 	schema: Schema.String,
 	defaultValue: () => SYSTEM_VALUE,
 })
+
+/**
+ * The selected zone, read synchronously off storage — for code that runs
+ * outside React (a preset's `getRange`, a search middleware). Components use
+ * `useTimezonePreference`, which re-renders when the preference changes; this
+ * is a point-in-time read of the same key the atom writes through to. Falls
+ * back to the browser's zone where there is no storage to read (SSR, tests).
+ */
+export function getEffectiveTimezone(): string {
+	try {
+		return resolveEffectiveTimezone(normalizeStoredTimezoneValue(localStorage.getItem(TIMEZONE_STORAGE_KEY)))
+	} catch {
+		return getBrowserTimeZone()
+	}
+}

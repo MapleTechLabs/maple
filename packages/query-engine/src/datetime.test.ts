@@ -19,7 +19,11 @@ import {
 	roundIntervalSeconds,
 	MAX_AUTO_DATA_POINTS,
 	snapRangeForCache,
+	startOfDayInTimeZone,
+	timeZoneOffsetMs,
 	warehouseDateTimeToIso,
+	zonedDateParts,
+	zonedPartsToEpochMs,
 } from "./datetime"
 
 describe("warehouseDateTimeToIso", () => {
@@ -615,5 +619,60 @@ describe("resolveTimeRangeWindow", () => {
 				endTime: "2026-03-02 00:00:00",
 			}),
 		).toBeNull()
+	})
+})
+
+describe("calendar arithmetic in an IANA zone", () => {
+	it("reads the wall clock in the zone", () => {
+		const at = Date.parse("2026-03-08T14:30:00.000Z")
+		expect(zonedDateParts(at, "America/New_York")).toEqual({
+			year: 2026,
+			month: 3,
+			day: 8,
+			hour: 10,
+			minute: 30,
+			second: 0,
+		})
+		expect(zonedDateParts(at, "Asia/Tokyo").hour).toBe(23)
+	})
+
+	it("reports the offset with its sign and across DST", () => {
+		expect(timeZoneOffsetMs("Asia/Tokyo", Date.parse("2026-03-08T14:30:00Z"))).toBe(9 * 3_600_000)
+		expect(timeZoneOffsetMs("America/New_York", Date.parse("2026-01-15T12:00:00Z"))).toBe(-5 * 3_600_000)
+		expect(timeZoneOffsetMs("America/New_York", Date.parse("2026-07-15T12:00:00Z"))).toBe(-4 * 3_600_000)
+		expect(timeZoneOffsetMs("UTC", Date.parse("2026-07-15T12:00:00.750Z"))).toBe(0)
+	})
+
+	it("round-trips a wall clock through the instant it names", () => {
+		const at = Date.parse("2026-07-15T03:45:12Z")
+		for (const zone of ["UTC", "Europe/Berlin", "America/Los_Angeles", "Asia/Kolkata"]) {
+			expect(zonedPartsToEpochMs(zonedDateParts(at, zone), zone)).toBe(at)
+		}
+	})
+
+	it("finds midnight in the zone, not the runtime's", () => {
+		// 2026-03-08 14:30Z is 09:30 in New York and 23:30 in Tokyo, both on the 8th.
+		const at = Date.parse("2026-03-08T14:30:00Z")
+		expect(startOfDayInTimeZone(at, "America/New_York")).toBe(Date.parse("2026-03-08T05:00:00Z"))
+		expect(startOfDayInTimeZone(at, "Asia/Tokyo")).toBe(Date.parse("2026-03-07T15:00:00Z"))
+		expect(startOfDayInTimeZone(at, "UTC")).toBe(Date.parse("2026-03-08T00:00:00Z"))
+	})
+
+	it("resolves 'today' and day presets at the zone's midnight", () => {
+		const now = Date.parse("2026-03-08T14:30:00Z")
+		expect(resolveRelativeRange("today", now, "Asia/Tokyo")).toEqual({
+			startMs: Date.parse("2026-03-07T15:00:00Z"),
+			endMs: now,
+		})
+		// Midnight New York six days earlier: EST (-5) on the 2nd, DST starts on the 8th.
+		expect(resolveRelativeRange("7d", now, "America/New_York")!.startMs).toBe(
+			Date.parse("2026-03-02T05:00:00Z"),
+		)
+	})
+
+	it("counts months on the zone's calendar and clamps the day", () => {
+		// 31 Mar 00:30 Tokyo is 30 Mar 15:30Z; one month back is 28 Feb 00:30 Tokyo.
+		const now = Date.parse("2026-03-30T15:30:00Z")
+		expect(resolveRelativeRange("1mo", now, "Asia/Tokyo")!.startMs).toBe(Date.parse("2026-02-27T15:30:00Z"))
 	})
 })

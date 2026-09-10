@@ -17,6 +17,7 @@ import {
 	createSequentialColorScale,
 	resolveSequentialDomain,
 	usePlotColors,
+	usePlotTimeZone,
 	type PlotColorToken,
 } from "../../plot"
 import type { QueryBuilderHeatmapChartProps } from "../_shared/chart-types"
@@ -230,15 +231,24 @@ function roundTick(value: number, min: number, span: number): number {
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/
 
-function shortenYLabel(raw: string, allIso: boolean): string {
+const clockFormatters = new Map<string, Intl.DateTimeFormat>()
+
+/** `HH:MM` of an ISO timestamp in `timeZone` — the browser's when none is set. */
+function clockLabel(iso: string, timeZone: string | undefined): string {
+	const ms = Date.parse(iso)
+	if (!Number.isFinite(ms)) return iso
+	const key = timeZone ?? ""
+	let formatter = clockFormatters.get(key)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false })
+		clockFormatters.set(key, formatter)
+	}
+	return formatter.format(ms).replace(/^24:/, "00:")
+}
+
+function shortenYLabel(raw: string, allIso: boolean, timeZone: string | undefined): string {
 	if (!allIso) return raw
-	const tIdx = raw.indexOf("T")
-	if (tIdx < 0) return raw
-	return raw
-		.slice(tIdx + 1)
-		.replace(/\.\d+Z?$/, "")
-		.replace(/Z$/, "")
-		.slice(0, 5)
+	return clockLabel(raw, timeZone)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -718,6 +728,7 @@ export function QueryBuilderHeatmapChart({
 	const { width, height } = useContainerSize(containerRef)
 
 	const allYIso = React.useMemo(() => model.yDomain.every((v) => ISO_RE.test(v)), [model.yDomain])
+	const timeZone = usePlotTimeZone()
 
 	// Pruned axes are reported, never dropped silently — otherwise a trimmed grid
 	// reads as the whole result. Resolved before the layout because the strip it
@@ -735,10 +746,10 @@ export function QueryBuilderHeatmapChart({
 	const longestYLabelChars = React.useMemo(
 		() =>
 			model.yDomain.reduce(
-				(longest, value) => Math.max(longest, shortenYLabel(value, allYIso).length),
+				(longest, value) => Math.max(longest, shortenYLabel(value, allYIso, timeZone).length),
 				0,
 			),
-		[model.yDomain, allYIso],
+		[model.yDomain, allYIso, timeZone],
 	)
 
 	const layout = React.useMemo(
@@ -882,7 +893,7 @@ export function QueryBuilderHeatmapChart({
 							// axis would otherwise measure the full string and want a gutter
 							// it is not going to get.
 							format: (value: string) =>
-								truncateYLabel(shortenYLabel(value, allYIso), layout.yLabelChars),
+								truncateYLabel(shortenYLabel(value, allYIso, timeZone), layout.yLabelChars),
 						},
 						// `thinTickLabels` only prioritises the ends automatically for a
 						// categorical X, so a y axis was thinned middle-out and could drop the
@@ -911,7 +922,7 @@ export function QueryBuilderHeatmapChart({
 							offset: 6,
 						},
 		})
-	}, [model, layout, colors, chrome, allYIso, tooltipMode])
+	}, [model, layout, colors, chrome, allYIso, timeZone, tooltipMode])
 
 	// Empty state — a quiet placeholder with a tiny suggestive grid. A chart over
 	// an empty domain is not worth mounting; it would draw axes for nothing.

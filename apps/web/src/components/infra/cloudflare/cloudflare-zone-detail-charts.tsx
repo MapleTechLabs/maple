@@ -21,6 +21,7 @@ import {
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 import type {
 	CloudflareZoneCacheBucket,
@@ -160,7 +161,14 @@ export function StackedBreakdownChart({
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
-	const axis = useMemo(() => makeBucketAxis(data.map((point) => point.bucket)), [data])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() => makeBucketAxis(
+			data.map((point) => point.bucket),
+			effectiveTimezone,
+		),
+		[data, effectiveTimezone],
+	)
 
 	const yDomain = useMemo<[number, number]>(
 		() => niceLinearDomain(linearYDomain({ rows: data, keys: series, stacked: true })),
@@ -387,7 +395,14 @@ export function CloudflareZoneLatencyChart({
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
-	const axis = useMemo(() => makeBucketAxis(buckets.map((b) => b.bucket)), [buckets])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() => makeBucketAxis(
+			buckets.map((b) => b.bucket),
+			effectiveTimezone,
+		),
+		[buckets, effectiveTimezone],
+	)
 
 	const chromeColors = usePlotChromeColors()
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])

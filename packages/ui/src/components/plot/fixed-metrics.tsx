@@ -12,6 +12,7 @@ import {
 	type TooltipFocusStore,
 } from "./plot-tooltip"
 import { usePlotChromeColors, type PlotChromeColors } from "./theme"
+import { usePlotTimeZone } from "./time-zone-context"
 import { rowsDomainMs, type TimeseriesAxisContext, type TimeseriesRow } from "./timeseries"
 
 /**
@@ -174,15 +175,17 @@ export function useFixedMetricModel(
 	// DRAWN. Inferring them from the untrimmed rows would format ticks for a
 	// window whose tail nothing paints.
 	const bucketSeconds = React.useMemo(() => inferBucketSeconds(plotRows), [plotRows])
-	const axisContext = React.useMemo(
+	const timeZone = usePlotTimeZone()
+	const axisContext = React.useMemo<TimeseriesAxisContext>(
 		() => ({
 			rangeMs: inferRangeMs(plotRows),
 			bucketSeconds,
 			// The DRAWN span, so an edge tick label clamps inward instead of
 			// overhanging the plot and pushing the margin solver — see `timeseriesXAxis`.
 			domainMs: rowsDomainMs(plotRows),
+			timeZone,
 		}),
-		[plotRows, bucketSeconds],
+		[plotRows, bucketSeconds, timeZone],
 	)
 	const chromeColors = usePlotChromeColors()
 	const focusStore = React.useMemo(() => createTooltipFocusStore(), [])

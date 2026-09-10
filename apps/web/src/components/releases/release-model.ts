@@ -2,6 +2,7 @@
 // thresholds unit-test cleanly and the list, the swimlanes and the detail page
 // all describe a release the same way.
 
+import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
 import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
 
 /**
@@ -298,16 +299,12 @@ export function shortReleaseLabel(sha: string): string {
  * Calendar-day bucket for the table's group headers, in the viewer's zone.
  * "Today" / "Yesterday" / a medium date.
  */
-export function releaseDayLabel(iso: string, nowMs: number): string {
+export function releaseDayLabel(iso: string, nowMs: number, timeZone: string): string {
 	const date = new Date(iso)
 	if (Number.isNaN(date.getTime())) return iso
-	const startOfDay = (ms: number) => {
-		const d = new Date(ms)
-		d.setHours(0, 0, 0, 0)
-		return d.getTime()
-	}
+	const startOfDay = (ms: number) => startOfDayInTimeZone(ms, timeZone)
 	const dayDiff = Math.round((startOfDay(nowMs) - startOfDay(date.getTime())) / 86_400_000)
 	if (dayDiff === 0) return "Today"
 	if (dayDiff === 1) return "Yesterday"
-	return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+	return date.toLocaleDateString(undefined, { timeZone, weekday: "short", month: "short", day: "numeric" })
 }

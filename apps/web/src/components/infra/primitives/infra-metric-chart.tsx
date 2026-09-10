@@ -34,6 +34,7 @@ import {
 	type TransformedPoint,
 } from "../chart-utils"
 import { LinkedCursorOverlay, linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**
  * The utilization chart behind `/infra`'s host and Kubernetes detail pages.
@@ -164,7 +165,11 @@ export function InfraMetricChart({
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
-	const axis = useMemo(() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket)), [xDomain, data])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket), effectiveTimezone),
+		[xDomain, data, effectiveTimezone],
+	)
 
 	/**
 	 * Series names carry dots and slashes (container names, mount points), which

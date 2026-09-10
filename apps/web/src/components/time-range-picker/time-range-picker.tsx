@@ -5,6 +5,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ClockIcon } from "@/components/icons"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useRecentlyUsedTimes, type RecentTimeRange } from "@/hooks/use-recently-used-times"
 import {
 	formatTimeRangeDisplay,
@@ -35,12 +36,15 @@ export function TimeRangePicker({
 	const [open, setOpen] = useState(false)
 	const [tab, setTab] = useState<TimeRangeTab>("relative")
 	const { recentTimes, addRecentTime } = useRecentlyUsedTimes()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	// Only the page-level picker opts in (hotkey prop) so secondary pickers
 	// (e.g. the widget builder's) don't double-register "D".
 	useAppHotkey("time.open", () => setOpen(true), { enabled: hotkey })
 
-	const displayText = presetValue ? presetLabel(presetValue) : formatTimeRangeDisplay(startTime, endTime)
+	const displayText = presetValue
+		? presetLabel(presetValue)
+		: formatTimeRangeDisplay(startTime, endTime, effectiveTimezone)
 	const rangeAllowed = useCallback(
 		(range: { startTime: string; endTime: string }) => {
 			if (maxRangeSeconds == null) return true
@@ -100,7 +104,7 @@ export function TimeRangePicker({
 	const handleRecentSelect = useCallback(
 		(item: RecentTimeRange) => {
 			// Refresh the time range based on the relative value
-			const range = relativeToAbsolute(item.value)
+			const range = relativeToAbsolute(item.value, effectiveTimezone)
 			if (range) {
 				if (!rangeAllowed(range)) return
 				onChange({ ...range, presetValue: item.value })
@@ -115,7 +119,7 @@ export function TimeRangePicker({
 			}
 			setOpen(false)
 		},
-		[onChange, addRecentTime, rangeAllowed],
+		[onChange, addRecentTime, rangeAllowed, effectiveTimezone],
 	)
 
 	const handleCustomApply = useCallback(

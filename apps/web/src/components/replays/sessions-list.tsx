@@ -6,6 +6,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { EyeIcon } from "@/components/icons"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import {
 	formatSessionDuration,
@@ -44,9 +46,9 @@ export interface SessionRow {
 	readonly recorded: string
 }
 
-function absoluteTs(startTime: string): string {
+function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : new Date(parsed).toLocaleString()
+	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone })
 }
 
 interface RowIdentity {
@@ -141,6 +143,7 @@ export function SessionsList({
 	nowMs,
 }: SessionsListProps) {
 	const navigate = useNavigate()
+	const { effectiveTimezone } = useTimezonePreference()
 	// Only sessions still reading `"active"` can cross the live boundary while
 	// the list sits open; a page of ended ones needs no timer at all.
 	const tickedNowMs = useLiveClock({
@@ -248,9 +251,9 @@ export function SessionsList({
 										    anchors the top-right corner of the stacked row. */}
 										<span
 											className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
-											title={absoluteTs(session.startTime)}
+											title={absoluteTs(session.startTime, effectiveTimezone)}
 										>
-											{formatRelativeTimeOrDate(session.startTime)}
+											{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
 										</span>
 									</div>
 									<div
@@ -322,9 +325,9 @@ export function SessionsList({
 								<div className="hidden shrink-0 items-center gap-2 @2xl:flex">
 									<span
 										className="whitespace-nowrap text-xs text-muted-foreground"
-										title={absoluteTs(session.startTime)}
+										title={absoluteTs(session.startTime, effectiveTimezone)}
 									>
-										{formatRelativeTimeOrDate(session.startTime)}
+										{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
 									</span>
 									<span
 										className={cn(
