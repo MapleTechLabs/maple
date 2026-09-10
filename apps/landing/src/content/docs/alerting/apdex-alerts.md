@@ -275,9 +275,13 @@ curl -X POST https://api.maple.dev/v2/alerts/rules \
 
 ### Or hand it to an agent
 
-Maple's [MCP server](/docs/mcp) exposes the same alerting surface as tools, so an agent connected to your organisation can build the rule for you. Ask Claude, Cursor, or any MCP client for "an Apdex alert on checkout, target 500ms, page below 0.8" and it calls `create_alert_rule` with `template: "low_apdex"`, or with `signal_type: "apdex"` and an `apdex_threshold_ms` of your own.
+If you already talk to your telemetry through an AI assistant, you can skip the form. Connect Maple's [MCP server](/docs/mcp) to Claude, Cursor, or any MCP client, then ask for the rule in plain language:
 
-`list_alert_rules`, `get_alert_rule`, `update_alert_rule` and `delete_alert_rule` are there too, along with `list_alert_incidents` and `list_alert_checks` for asking why a rule fired. It is the same API underneath, so the same validation applies: an Apdex rule without a target is rejected, with the fix in the error. The [MCP page](/docs/mcp) covers the endpoint, authentication and the full tool list.
+> Create an Apdex alert on the checkout service. Target 500ms, page me when the score drops below 0.8, and send it to the on-call Slack channel.
+
+The agent builds the same rule you would have built by hand, under the same constraints: it cannot save an Apdex alert without a target, and it only ever sees your own organisation's data.
+
+The connection stays useful after the rule exists. Ask which of your Apdex rules would never fire, or why one paged last night, and the agent can read the rule's history to answer. The [MCP page](/docs/mcp) has the setup steps.
 
 ## Known limitations
 
