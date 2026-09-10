@@ -23,11 +23,10 @@ import {
 import {
 	Sandbox,
 	SandboxArtifact,
+	SANDBOX_DIAGNOSTIC_MAX_LENGTH,
 	SandboxExited,
-	SandboxExitError,
 	SandboxImplementation,
 	SandboxOutput,
-	SandboxOutputLimitError,
 	SandboxResourceUse,
 	SandboxSpawnError,
 	SandboxStarted,
@@ -49,6 +48,13 @@ export const IMPLEMENTATION = new SandboxImplementation({
 
 const unsupported = (feature: SandboxUnsupportedRequestError["feature"], message: string) =>
 	new SandboxUnsupportedRequestError({ implementation: IMPLEMENTATION, feature, message })
+
+/**
+ * The contract's own ceiling on a `SandboxOutput`'s `bytes`, mirrored because it
+ * is module-private there. `bytes` carries the stream's true size, so a caller
+ * can tell a truncated prefix from a whole answer by comparing it to the text.
+ */
+const CONTRACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 
@@ -78,7 +84,9 @@ export const admit = (
 				"network",
 				"this sandbox can only switch egress off entirely; it cannot enforce a destination allowlist",
 			)
-		const unknownEnv = request.environment.allow.filter((name) => !(name in SANDBOX_COMMAND_ENV))
+		const unknownEnv = request.environment.allow.filter(
+			(name) => !Object.hasOwn(SANDBOX_COMMAND_ENV, name),
+		)
 		if (unknownEnv.length > 0)
 			return yield* unsupported(
 				"runtime",
@@ -119,7 +127,7 @@ const spawnError = (command: string, message: string, cause?: unknown) =>
 	new SandboxSpawnError({
 		implementation: IMPLEMENTATION,
 		command,
-		message: message.slice(0, 8 * 1024),
+		message: message.slice(0, SANDBOX_DIAGNOSTIC_MAX_LENGTH),
 		...(cause === undefined ? undefined : { cause }),
 	})
 
@@ -129,7 +137,7 @@ export const toEvents = (
 	response: SandboxExecResponse,
 ): Effect.Effect<ReadonlyArray<SandboxEvent>, SandboxError> => {
 	switch (response._tag) {
-		case "SandboxExited": {
+		case "SandboxRunExited": {
 			const events: SandboxEvent[] = [
 				new SandboxStarted({
 					eventVersion: 1,
@@ -137,24 +145,27 @@ export const toEvents = (
 					runtime: request.runtime,
 				}),
 			]
-			if (response.stdoutBytes > 0)
+			// `bytes` is the stream's true size, which can exceed the text that came
+			// back: the container cut each stream at the requested bound. That
+			// difference is how a caller detects truncation.
+			if (response.stdout.length > 0)
 				events.push(
 					new SandboxOutput({
 						eventVersion: 1,
 						implementation: IMPLEMENTATION,
 						stream: "stdout",
 						text: response.stdout,
-						bytes: response.stdoutBytes,
+						bytes: Math.min(response.stdoutBytes, CONTRACT_MAX_OUTPUT_BYTES),
 					}),
 				)
-			if (response.stderrBytes > 0)
+			if (response.stderr.length > 0)
 				events.push(
 					new SandboxOutput({
 						eventVersion: 1,
 						implementation: IMPLEMENTATION,
 						stream: "stderr",
 						text: response.stderr,
-						bytes: response.stderrBytes,
+						bytes: Math.min(response.stderrBytes, CONTRACT_MAX_OUTPUT_BYTES),
 					}),
 				)
 			events.push(
@@ -164,50 +175,58 @@ export const toEvents = (
 					exitCode: response.exitCode,
 					resourceUse: new SandboxResourceUse({
 						wallTime: Duration.millis(response.wallTimeMs),
-						stdoutBytes: response.stdoutBytes,
-						stderrBytes: response.stderrBytes,
+						stdoutBytes: Math.min(response.stdoutBytes, CONTRACT_MAX_OUTPUT_BYTES),
+						stderrBytes: Math.min(response.stderrBytes, CONTRACT_MAX_OUTPUT_BYTES),
 					}),
 					artifacts: [] as ReadonlyArray<SandboxArtifact>,
 				}),
 			)
 			return Effect.succeed(events)
 		}
-		case "SandboxTimedOut":
+		case "SandboxRunTimedOut":
 			return Effect.fail(
 				new SandboxTimeoutError({
 					implementation: IMPLEMENTATION,
 					maxWallTime: request.limits.maxWallTime,
 				}),
 			)
-		case "SandboxOutputExceeded":
-			return Effect.fail(
-				new SandboxOutputLimitError({
-					implementation: IMPLEMENTATION,
-					stream: response.stream,
-					limit: response.limit,
-					observed: response.observed,
-				}),
-			)
-		case "SandboxIsolationUnavailable":
-			// Declared as unsupported rather than as a spawn failure: the container is
-			// working, it simply cannot provide the network posture that was asked for.
+		case "SandboxRunIsolationUnavailable":
+			// Declared unsupported rather than a spawn failure: the container works,
+			// it simply cannot provide the network posture that was asked for.
 			return Effect.fail(unsupported("network", response.message))
-		case "SandboxCheckoutFailed":
+		case "SandboxRunCheckoutPending":
+		case "SandboxRunCheckoutFailed":
+		case "SandboxRunUnavailable":
+			// All three mean the command never started. The contract reserves
+			// `SandboxExitError` for a process that ran, and says an exit is never
+			// fabricated, so none of these may borrow it.
 			return Effect.fail(spawnError(request.command, response.message))
-		case "SandboxUnavailable":
-			return Effect.fail(
-				new SandboxExitError({
-					implementation: IMPLEMENTATION,
-					exitCode: -1,
-					message: response.message,
-				}),
-			)
 	}
 }
 
-/** One Cloudflare sandbox per repository per organization; the org is in the key. */
-export const sandboxKey = (orgId: OrgId, checkout: RepositoryCheckout): string =>
-	`${orgId}:${checkout.provider}:${checkout.fullName.toLowerCase()}`
+/**
+ * One Cloudflare sandbox per repository per organization.
+ *
+ * Hashed rather than concatenated: the SDK refuses an id over 63 characters, and
+ * an organization id plus `owner/name` passes that for ordinary repositories. A
+ * digest is also unambiguous, where a separator could in principle be part of one
+ * of the parts it separates.
+ */
+export const sandboxKey = (orgId: OrgId, checkout: RepositoryCheckout): Effect.Effect<string> =>
+	Effect.map(
+		Effect.promise(() =>
+			crypto.subtle.digest(
+				"SHA-256",
+				new TextEncoder().encode(
+					`${orgId}\u0000${checkout.provider}\u0000${checkout.fullName.toLowerCase()}`,
+				),
+			),
+		),
+		(digest) =>
+			`repo-${Array.from(new Uint8Array(digest).slice(0, 16))
+				.map((byte) => byte.toString(16).padStart(2, "0"))
+				.join("")}`,
+	)
 
 export interface CloudflareRepoSandboxDeps {
 	readonly resolveCheckout: VcsSourceService["Service"]["resolveCheckout"]
@@ -234,17 +253,16 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 				const answered = yield* deps
 					.exec(
 						new SandboxExecRequest({
-							sandboxKey: sandboxKey(admitted.orgId, checkout),
+							sandboxKey: yield* sandboxKey(admitted.orgId, checkout),
 							checkout: new SandboxCheckout({
 								repository: checkout.fullName,
 								sha: checkout.sha,
-								cloneUrl: checkout.cloneUrl,
 								remoteUrl: checkout.remoteUrl,
+								token: checkout.token,
 							}),
 							command: request.command,
 							args: request.args,
 							cwd: admitted.cwd,
-							network: "disabled",
 							timeoutMs: Duration.toMillis(request.limits.maxWallTime),
 							maxOutputBytes: request.limits.maxOutputBytes,
 						}),

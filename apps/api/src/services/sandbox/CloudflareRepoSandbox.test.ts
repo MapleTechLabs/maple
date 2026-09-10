@@ -1,12 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import {
-	SandboxCheckoutFailed,
-	SandboxExited,
-	SandboxIsolationUnavailable,
-	SandboxOutputExceeded,
-	SandboxTimedOut,
-	SandboxUnavailable,
+	SandboxRunCheckoutFailed,
+	SandboxRunCheckoutPending,
+	SandboxRunExited,
+	SandboxRunIsolationUnavailable,
+	SandboxRunTimedOut,
+	SandboxRunUnavailable,
 	type SandboxExecRequest,
 	type SandboxExecResponse,
 } from "@maple/domain/sandbox"
@@ -48,8 +48,8 @@ const checkout: RepositoryCheckout = {
 	fullName: "octo/shop",
 	ref: "main",
 	sha: SHA as RepositoryCheckout["sha"],
-	cloneUrl: "https://x-access-token:scoped@github.test/octo/shop.git",
 	remoteUrl: "https://github.test/octo/shop.git",
+	token: "ghs_scoped",
 }
 
 /** The sandbox Worker as the port sees it: one call, one answer. `bound: false` is a deployment without one. */
@@ -66,7 +66,7 @@ const makeSandbox = (
 		exec: (execRequest) => {
 			if (!bound) return Effect.succeed(Option.none())
 			calls.push(
-				`exec:${execRequest.sandboxKey}|${execRequest.command} ${execRequest.args.join(" ")}|@${execRequest.cwd}|net=${execRequest.network}|sha=${execRequest.checkout.sha}`,
+				`exec:${execRequest.command} ${execRequest.args.join(" ")}|@${execRequest.cwd}|sha=${execRequest.checkout.sha}`,
 			)
 			return Effect.succeed(Option.some(answer(execRequest)))
 		},
@@ -165,12 +165,14 @@ describe("the Cloudflare repository sandbox", () => {
 			const calls: string[] = []
 			const sandbox = makeSandbox(
 				() =>
-					new SandboxExited({
+					new SandboxRunExited({
 						exitCode: 1,
 						stdout: "src/a.ts:1:boom",
 						stderr: "",
 						stdoutBytes: 15,
 						stderrBytes: 0,
+						stdoutTruncated: false,
+						stderrTruncated: false,
 						wallTimeMs: 40,
 					}),
 				calls,
@@ -183,7 +185,7 @@ describe("the Cloudflare repository sandbox", () => {
 			assert.isTrue(events.every((event) => event.implementation.isolation === "isolated"))
 			assert.deepStrictEqual(calls, [
 				`checkout:${ORG}:octo/shop:main`,
-				`exec:${ORG}:github:octo/shop|git grep -e boom|@src|net=disabled|sha=${SHA}`,
+				`exec:git grep -e boom|@src|sha=${SHA}`,
 			])
 		}),
 	)
@@ -192,23 +194,25 @@ describe("the Cloudflare repository sandbox", () => {
 		Effect.gen(function* () {
 			const timedOut = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => new SandboxTimedOut({ wallTimeMs: 5000 })).execute(request()),
+					makeSandbox(() => new SandboxRunTimedOut({ wallTimeMs: 5000 })).execute(request()),
 				),
 			)
 			assert.strictEqual(failureTag(timedOut), "SandboxTimeoutError")
 
-			const overflowed = yield* Effect.exit(
+			const pending = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(
-						() => new SandboxOutputExceeded({ stream: "stdout", limit: 1024, observed: 4096 }),
-					).execute(request()),
+					makeSandbox(() => new SandboxRunCheckoutPending({ message: "still preparing" })).execute(
+						request(),
+					),
 				),
 			)
-			assert.strictEqual(failureTag(overflowed), "SandboxOutputLimitError")
+			// A checkout that is not ready never started a process, so it must not
+			// borrow the contract's "the process ran and exited" failure.
+			assert.strictEqual(failureTag(pending), "SandboxSpawnError")
 
 			const brokenCheckout = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => new SandboxCheckoutFailed({ message: "git clone failed" })).execute(
+					makeSandbox(() => new SandboxRunCheckoutFailed({ message: "git clone failed" })).execute(
 						request(),
 					),
 				),
@@ -217,10 +221,12 @@ describe("the Cloudflare repository sandbox", () => {
 
 			const gone = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => new SandboxUnavailable({ message: "no instance" })).execute(request()),
+					makeSandbox(() => new SandboxRunUnavailable({ message: "no instance" })).execute(
+						request(),
+					),
 				),
 			)
-			assert.strictEqual(failureTag(gone), "SandboxExitError")
+			assert.strictEqual(failureTag(gone), "SandboxSpawnError")
 		}),
 	)
 
@@ -228,7 +234,7 @@ describe("the Cloudflare repository sandbox", () => {
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => new SandboxIsolationUnavailable({ message: "no netns" })).execute(
+					makeSandbox(() => new SandboxRunIsolationUnavailable({ message: "no netns" })).execute(
 						request(),
 					),
 				),
@@ -241,7 +247,9 @@ describe("the Cloudflare repository sandbox", () => {
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => new SandboxTimedOut({ wallTimeMs: 0 }), [], false).execute(request()),
+					makeSandbox(() => new SandboxRunTimedOut({ wallTimeMs: 0 }), [], false).execute(
+						request(),
+					),
 				),
 			)
 			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")

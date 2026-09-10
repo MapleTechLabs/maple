@@ -161,6 +161,21 @@ export function resolveDatabaseMode(stage: MapleStage): MapleDatabaseMode {
 	}
 }
 
+/**
+ * Which stages get the agents' repository sandbox.
+ *
+ * Deployed stages only. A PR preview has no application database
+ * ({@link resolveDatabaseMode} returns `"none"`), so no repository can be
+ * resolved there and a container would be provisioned to do nothing but cost
+ * money. Dev stages are excluded for a sharper reason: `alchemy dev` resolves a
+ * container image by pulling it locally, so provisioning one would put a
+ * multi-gigabyte pull and a running Docker daemon between every developer and
+ * `bun dev`, whichever apps they asked for.
+ */
+export function stageDeploysSandbox(stage: MapleStage): boolean {
+	return stage.kind === "prd" || stage.kind === "stg"
+}
+
 /** Which worker is binding `MAPLE_DB`. prd gives each its own Hyperdrive config — see docs/infra.md. */
 export type MapleDbConsumer = "api" | "alerting"
 

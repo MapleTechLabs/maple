@@ -201,15 +201,15 @@ export interface VcsProviderClient {
 	>
 
 	/**
-	 * A clone URL for one repository, carrying a short-lived credential scoped to
-	 * that repository alone, plus the credential-free URL the checkout's remote is
-	 * rewritten to once the clone is done.
+	 * How to clone one repository: the credential-free remote, and a short-lived
+	 * credential scoped to that repository alone. The two are kept apart so the
+	 * token never has to travel inside a URL.
 	 */
 	readonly fetchCloneCredentials: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 	) => Effect.Effect<
-		{ readonly cloneUrl: string; readonly remoteUrl: string },
+		{ readonly remoteUrl: string; readonly token: string },
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 

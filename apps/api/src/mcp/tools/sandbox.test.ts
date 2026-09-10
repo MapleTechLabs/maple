@@ -20,7 +20,6 @@ interface SandboxToolParams {
 	readonly ref?: string
 	readonly case_sensitive?: boolean
 	readonly context_lines?: number
-	readonly max_per_file?: number
 	readonly start_line?: number
 	readonly end_line?: number
 	readonly command?: string
@@ -90,13 +89,13 @@ describe("the sandbox tools", () => {
 				path: undefined,
 				glob: "*.ts",
 				caseSensitive: false,
+				// Clamped to the documented maximum rather than passed through.
 				contextLines: 5,
-				maxPerFile: 20,
 			})
 		}),
 	)
 
-	it.effect("says so when nothing matched, and surfaces ripgrep's own errors", () =>
+	it.effect("says so when nothing matched, and surfaces git's own errors", () =>
 		Effect.gen(function* () {
 			const none = yield* call(
 				"sandbox_grep",
@@ -107,10 +106,10 @@ describe("the sandbox tools", () => {
 			const broken = yield* call(
 				"sandbox_grep",
 				{ repository: "octo/shop", pattern: "(" },
-				{ grep: () => Effect.succeed(ok("", 2, "regex parse error")) },
+				{ grep: () => Effect.succeed(ok("", 129, "unknown option")) },
 			)
 			assert.isTrue(broken.isError)
-			assert.include(textOf(broken), "regex parse error")
+			assert.include(textOf(broken), "unknown option")
 		}),
 	)
 

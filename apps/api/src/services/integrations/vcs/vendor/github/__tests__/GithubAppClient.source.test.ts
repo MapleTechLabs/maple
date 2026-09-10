@@ -34,7 +34,37 @@ const jsonResponse = (body: unknown) =>
 	new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
 describe("GithubAppClient source access", () => {
-	it.effect("mints a clone credential scoped to one repository and keeps it out of the remote", () => {
+	it.effect("encodes a committish, so a ref cannot walk the token onto another repository", () => {
+		const requests: Array<{ url: string }> = []
+		const responses = [
+			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
+			jsonResponse({
+				sha: "a".repeat(40),
+				html_url: "https://github.com/octo/shop/commit/a",
+				commit: { message: "m", author: null },
+				author: null,
+			}),
+		]
+		let nextResponse = 0
+		const http = Layer.succeed(GithubHttp, {
+			fetch: async (url) => {
+				requests.push({ url })
+				return responses[nextResponse++]!
+			},
+		} satisfies GithubHttpApi)
+		const layer = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			yield* client.getCommit("42", "octo", "shop", "../../../../repos/evil/private/commits/main")
+			// URL parsing collapses an unencoded `..`; the encoded form stays inside
+			// the repository the org actually connected.
+			assert.include(requests[1]!.url, "/repos/octo/shop/commits/")
+			assert.notInclude(new URL(requests[1]!.url).pathname, "/repos/evil/")
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("mints a clone credential scoped to one repository, apart from the remote URL", () => {
 		const requests: Array<{ url: string; init?: RequestInit }> = []
 		const responses = [jsonResponse({ token: "ghs_scoped", expires_at: "2099-01-01T00:00:00Z" })]
 		let nextResponse = 0
@@ -48,9 +78,9 @@ describe("GithubAppClient source access", () => {
 
 		return Effect.gen(function* () {
 			const client = yield* GithubAppClient
-			const { cloneUrl, remoteUrl } = yield* client.mintCloneUrl("42", "octo", "shop")
-			assert.strictEqual(cloneUrl, "https://x-access-token:ghs_scoped@github.com/octo/shop.git")
+			const { remoteUrl, token } = yield* client.mintCloneCredentials("42", "octo", "shop")
 			assert.strictEqual(remoteUrl, "https://github.com/octo/shop.git")
+			assert.strictEqual(token, "ghs_scoped")
 			// The App JWT mints it, and the body narrows it to read-only contents on one repo.
 			assert.match(requests[0]!.url, /\/app\/installations\/42\/access_tokens$/)
 			const body = yield* Schema.decodeUnknownEffect(

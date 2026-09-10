@@ -58,8 +58,8 @@ const makeLayer = (providerCalls: string[]) => {
 			Effect.sync(() => {
 				providerCalls.push(`clone:${repo.owner}/${repo.name}`)
 				return {
-					cloneUrl: `https://x-access-token:scoped@github.test/${repo.owner}/${repo.name}.git`,
 					remoteUrl: `https://github.test/${repo.owner}/${repo.name}.git`,
+					token: "ghs_scoped",
 				}
 			}),
 		fetchSourceFile: (_installation, repo, path, ref) =>
@@ -116,8 +116,11 @@ describe("VcsSourceService", () => {
 			const tracked = yield* source.resolveCheckout(ORG, "octo/shop")
 			assert.strictEqual(tracked.ref, "production")
 			assert.strictEqual(tracked.sha, "d".repeat(40))
-			assert.match(tracked.cloneUrl, /x-access-token:scoped@/)
 			assert.strictEqual(tracked.remoteUrl, "https://github.test/octo/shop.git")
+			// The credential stays apart from the URL, so nothing downstream can put it
+			// in a command's arguments by accident.
+			assert.strictEqual(tracked.token, "ghs_scoped")
+			assert.notInclude(tracked.remoteUrl, "ghs_scoped")
 			const pinned = yield* source.resolveCheckout(ORG, "octo/shop", "e".repeat(40))
 			assert.strictEqual(pinned.sha, "e".repeat(40))
 			const missing = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", "gone"))

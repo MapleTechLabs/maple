@@ -48,7 +48,21 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 			const env = yield* WorkerEnvironment
 			const config = yield* Env
 			const binding = env[SANDBOX_BINDING]
-			const token = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
+			const token = Option.map(config.SANDBOX_INTERNAL_SERVICE_TOKEN, Redacted.value)
+
+			// Decided once, at build: both values are fixed for the isolate's life, and
+			// a deployment missing either turns four agent tools off for good. Without
+			// a line here the only trace of that is a sentence in a model's tool result.
+			const reachable = isServiceBinding(binding) && Option.isSome(token)
+			if (!reachable) {
+				yield* Effect.logWarning("repository sandbox is not available").pipe(
+					Effect.annotateLogs({
+						"maple.sandbox.reason": isServiceBinding(binding)
+							? "SANDBOX_INTERNAL_SERVICE_TOKEN is not configured"
+							: "no SANDBOX service binding on this deployment",
+					}),
+				)
+			}
 
 			const exec: SandboxClientApi["exec"] = Effect.fn("SandboxClient.exec")(function* (request) {
 				if (!isServiceBinding(binding) || Option.isNone(token)) return Option.none()

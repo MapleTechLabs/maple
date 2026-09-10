@@ -50,10 +50,10 @@ export interface RepositoryCheckout {
 	readonly fullName: string
 	readonly ref: string
 	readonly sha: GitCommitSha
-	/** Carries a short-lived, repository-scoped credential. Used once, by the clone. */
-	readonly cloneUrl: string
-	/** The same remote without the credential; the checkout's git config keeps this one. */
+	/** The remote to clone. Carries no credential of its own. */
 	readonly remoteUrl: string
+	/** Short-lived and scoped to this repository; staged into the sandbox, never put in a URL. */
+	readonly token: string
 }
 
 const isCommitSha = Schema.is(GitCommitSha)

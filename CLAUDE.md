@@ -196,11 +196,16 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
 When an org has connected GitHub, every agent surface (chat, investigation lanes, public MCP)
 gets `sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
 (`apps/api/src/mcp/tools/sandbox.ts`). They run against a **full git clone at an exact commit**
-inside Cloudflare's Sandbox container, so history works (`git log`, `git blame`, `git show`);
+inside Cloudflare's Sandbox container, so history works (`git log`, `git blame`, `git show`).
 `git grep` and `git ls-files` back the search and listing tools, because the image ships git and
-not ripgrep. A command runs as an unprivileged account over a tree it cannot write, in an empty
-environment, inside a network namespace with no egress — and is refused outright if the container
-cannot open one.
+not ripgrep — and its git is old enough to lack `git grep --max-count`, which is the kind of thing
+`RepoSandboxService.test.ts` exists to catch: it runs the real argument vectors against a real
+repository, where every other test in this area stubs the container.
+
+A command runs as an unprivileged account over a tree it cannot write, in a three-variable
+environment, inside a network namespace with no egress, and is refused outright if the container
+cannot open one. `sandbox_exec` passes arguments directly rather than through a shell, but the
+checkout has real interpreters, so treat it as general code execution inside that container.
 
 The port is effect-agent's `Sandbox` contract (`@effect-agent/sandbox/Sandbox`): one
 `SandboxRequest` per command, the repository named as the single read-only mount
@@ -208,10 +213,14 @@ The port is effect-agent's `Sandbox` contract (`@effect-agent/sandbox/Sandbox`):
 cannot enforce (`admit` in `apps/api/src/services/sandbox/CloudflareRepoSandbox.ts`). Swapping the
 container out again is a change below that port and nothing above it.
 
-The container itself is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the
-script must export, and an Effect-native Worker's generated entry exports only its own bridge
-classes. It lives in `apps/sandbox`, reached over a service binding; see `docs/infra.md`
-§ Single-module Workers → The sandbox Worker.
+Two rules worth keeping: a **ref reaching the provider is validated** (`unsafeRef`) and encoded at
+the GitHub call, because an unencoded `..` is normalised away and would walk an installation-wide
+token onto a repository the org never connected; and the **clone credential never enters a command's
+arguments**, because `/proc/<pid>/cmdline` is readable by the account agent commands run as.
+
+The container is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the script
+must export, and an Effect-native Worker's generated entry exports only its own bridge classes. It
+lives in `apps/sandbox`, on `prd`/`stg` only; see `docs/infra.md` § Single-module Workers.
 
 ## Self-observability (trace loop prevention)
 

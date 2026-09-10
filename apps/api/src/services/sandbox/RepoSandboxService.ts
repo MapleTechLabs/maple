@@ -28,11 +28,27 @@ export const SANDBOX_MAX_TIMEOUT_SECONDS = 120
  */
 const GIT_COMMON = ["--no-optional-locks", "-c", "core.quotePath=false"]
 
+/**
+ * One pathspec from a directory and a glob.
+ *
+ * Git ORs multiple pathspecs, so passing a directory and a glob separately
+ * *widens* the search: it returns every file the glob matches anywhere in the
+ * repository, plus everything under the directory. The tools present the two as
+ * filters, so they are combined into a single pattern instead.
+ */
+export const gitPathspec = (path: string | undefined, glob: string | undefined): ReadonlyArray<string> => {
+	const dir = path?.replace(/\/+$/, "")
+	if (glob === undefined) return dir === undefined ? [] : [dir]
+	return [`:(glob)${dir === undefined ? glob : `${dir}/${glob}`}`]
+}
+
 export interface SandboxCommandResult {
 	readonly exitCode: number
 	readonly stdout: string
 	readonly stderr: string
 	readonly wallTimeMs: number
+	/** The container cut the stream at the output bound; this is its prefix. */
+	readonly truncated: boolean
 }
 
 export interface RepositoryTarget {
@@ -46,8 +62,6 @@ export interface GrepOptions {
 	readonly glob?: string | undefined
 	readonly caseSensitive?: boolean | undefined
 	readonly contextLines?: number | undefined
-	/** Matches per file; the total is capped by the output bound. */
-	readonly maxPerFile: number
 }
 
 export interface ReadFileOptions {
@@ -101,20 +115,32 @@ const inWorkspace = (relative: string | undefined): string =>
 		: `${REPO_MOUNT_TARGET}/${relative.replace(/^\/+/, "")}`
 
 /** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `rg` exits 1 on no match. */
+const utf8 = new TextEncoder()
+
 const drain = (
 	events: Stream.Stream<SandboxEvent, SandboxError>,
 ): Effect.Effect<SandboxCommandResult, SandboxError> =>
 	Stream.runFold(
 		events,
-		(): SandboxCommandResult => ({ exitCode: 0, stdout: "", stderr: "", wallTimeMs: 0 }),
+		(): SandboxCommandResult => ({
+			exitCode: 0,
+			stdout: "",
+			stderr: "",
+			wallTimeMs: 0,
+			truncated: false,
+		}),
 		(result, event): SandboxCommandResult => {
 			switch (event._tag) {
 				case "SandboxStarted":
 					return result
-				case "SandboxOutput":
+				case "SandboxOutput": {
+					// `bytes` is the stream's real size; more of it than arrived means the
+					// container cut it at the bound.
+					const truncated = result.truncated || event.bytes > utf8.encode(event.text).length
 					return event.stream === "stdout"
-						? { ...result, stdout: result.stdout + event.text }
-						: { ...result, stderr: result.stderr + event.text }
+						? { ...result, stdout: result.stdout + event.text, truncated }
+						: { ...result, stderr: result.stderr + event.text, truncated }
+				}
 				case "SandboxExited":
 					return {
 						...result,
@@ -165,9 +191,10 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						"--no-color",
 						// Binary hits are noise in a source search, and their bytes still
 						// count against the output bound.
+						// `git grep` gained --max-count after the version this image ships,
+						// so per-file capping is not available; the output bound and the
+						// tool's own line cap are what keep a result readable.
 						"-I",
-						"--max-count",
-						String(options.maxPerFile),
 						...(options.caseSensitive === false ? ["--ignore-case"] : []),
 						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
 						"-e",
@@ -175,8 +202,7 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// Everything past `--` is a pathspec, so a pattern that starts with a
 						// dash can never be read as an option.
 						"--",
-						...(options.glob ? [`:(glob)${options.glob}`] : []),
-						...(options.path ? [options.path] : []),
+						...gitPathspec(options.path, options.glob),
 					]
 					return yield* run(orgId, target, "git", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
@@ -189,8 +215,7 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						"ls-files",
 						"--cached",
 						"--",
-						...(options.glob ? [`:(glob)${options.glob}`] : []),
-						...(options.path ? [options.path] : []),
+						...gitPathspec(options.path, options.glob),
 					]
 					return yield* run(orgId, target, "git", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
@@ -198,7 +223,10 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 
 			const readFile: RepoSandboxServiceApi["readFile"] = Effect.fn("RepoSandboxService.readFile")(
 				function* (orgId, target, options) {
-					// One pass numbers the requested lines and reports the total, so a truncated read can say how far it is from the end.
+					// `git ls-files --error-unmatch` first: `awk` would follow a symlink out
+					// of the checkout, and only tracked files are readable through this tool.
+					// One pass then numbers the requested lines and reports the total, so a
+					// truncated read can say how far it is from the end.
 					const program = `NR>=s && NR<=e { printf "%d: %s\\n", NR, $0 } END { printf "__MAPLE_TOTAL_LINES__ %d\\n", NR }`
 					const args = [
 						"-v",
@@ -209,6 +237,15 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// mawk reads `--` as a file name; anchoring the path keeps a leading `-` from parsing as an option.
 						`./${options.path}`,
 					]
+					const tracked = yield* run(
+						orgId,
+						target,
+						"git",
+						[...GIT_COMMON, "ls-files", "--error-unmatch", "--", options.path],
+						undefined,
+						SANDBOX_DEFAULT_TIMEOUT_SECONDS,
+					)
+					if (tracked.exitCode !== 0) return tracked
 					return yield* run(orgId, target, "awk", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
 			)

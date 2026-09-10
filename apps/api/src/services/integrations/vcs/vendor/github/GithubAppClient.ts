@@ -601,6 +601,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					: { commits, complete: false as const, reason: "page-budget" as const }
 			})
 
+			// `sha` is any committish the caller names, not only a 40-hex sha — ref
+			// resolution shares this call. It is encoded because an unencoded `..`
+			// segment is normalised away by URL parsing, which would walk this
+			// installation-wide token onto a repository the org never connected.
 			const getCommit = Effect.fn("GithubAppClient.getCommit")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -612,7 +616,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const response = yield* authedGet(
 					config,
 					token,
-					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
 				if (!response.ok) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
@@ -624,17 +628,17 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			})
 
 			/**
-			 * A clone URL for one repository, carrying a token minted for that
-			 * repository alone.
+			 * A clone credential for one repository: the plain remote, plus a token
+			 * minted for that repository alone.
 			 *
 			 * Deliberately not `mintInstallationToken`: that token reaches every
 			 * repository the installation can see and is cached for an hour, and this
 			 * one travels into a container that also runs model-chosen commands. The
 			 * `repositories` + `permissions` body narrows it to read-only contents on a
-			 * single repository, and it is never cached — a clone uses it once, and the
-			 * checkout's remote is rewritten to `remoteUrl` immediately afterwards.
+			 * single repository, and it is never cached. It is returned apart from the
+			 * URL so nothing downstream is tempted to put it in a command's arguments.
 			 */
-			const mintCloneUrl = Effect.fn("GithubAppClient.mintCloneUrl")(function* (
+			const mintCloneCredentials = Effect.fn("GithubAppClient.mintCloneCredentials")(function* (
 				externalInstallationId: string,
 				owner: string,
 				repo: string,
@@ -671,10 +675,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					),
 				)
 				const web = githubWebBaseUrl(config.apiBaseUrl)
-				const path = `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`
 				return {
-					cloneUrl: `${web.replace("://", `://x-access-token:${decoded.token}@`)}/${path}`,
-					remoteUrl: `${web}/${path}`,
+					remoteUrl: `${web}/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`,
+					token: decoded.token,
 				}
 			})
 
@@ -922,7 +925,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getPullRequest,
 				searchCode,
 				getSourceFile,
-				mintCloneUrl,
+				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,
 				listUserInstallationIds,

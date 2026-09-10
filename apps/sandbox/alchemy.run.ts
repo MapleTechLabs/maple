@@ -35,11 +35,22 @@ const props = Effect.gen(function* () {
 		env: {
 			Sandbox: Cloudflare.Container<Sandbox>("Sandbox", {
 				image: SANDBOX_IMAGE,
-				instanceType: production ? ("standard-1" as const) : ("dev" as const),
-				maxInstances: production ? 20 : stage.kind === "stg" ? 5 : 2,
+				// Sized for the work, not for the stage. The checkout is a full clone,
+				// so the smaller tiers are not a cheaper version of this container —
+				// `lite`/`dev` is 1/16 vCPU with 256 MiB and 2 GB of disk, which any
+				// real repository exhausts. Staging runs the same shape as production
+				// because a sandbox that only fails there tells us nothing.
+				instanceType: production ? ("standard-2" as const) : ("standard-1" as const),
+				disk: { size: production ? "20GB" : "10GB" },
+				// The cap is per application, and the key is one container per
+				// repository per organization, so this is how many distinct repositories
+				// can be under investigation at once before calls start being refused.
+				maxInstances: production ? 40 : 5,
 				observability: { logs: { enabled: true } },
 			}),
-			...(yield* optionalSecret("INTERNAL_SERVICE_TOKEN")),
+			// Deliberately not the shared `INTERNAL_SERVICE_TOKEN`: that one lets its
+			// holder act as any organization, and this Worker runs model-chosen commands.
+			...(yield* optionalSecret("SANDBOX_INTERNAL_SERVICE_TOKEN")),
 		},
 	}
 })

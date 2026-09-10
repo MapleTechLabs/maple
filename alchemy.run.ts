@@ -25,6 +25,7 @@ import {
 import {
 	ApiWorker,
 	SandboxWorker,
+	stageDeploysSandbox,
 	formatMapleStage,
 	ManagedMapleDb,
 	MapleStack,
@@ -214,9 +215,12 @@ export default Alchemy.Stack(
 
 		// The agents' repository sandbox: it hosts Cloudflare's Sandbox Durable
 		// Object, and the api binds it as `SANDBOX`. Yielded first so the binding
-		// sees a Worker this deploy created rather than stored state.
-		const sandbox = yield* MapleSandbox
-		const api = yield* Effect.provideService(MapleApi, SandboxWorker, sandbox)
+		// sees a Worker this deploy created rather than stored state, and only on
+		// the stages that run it — see `stageDeploysSandbox`.
+		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
+		const api = yield* sandbox === undefined
+			? MapleApi
+			: Effect.provideService(MapleApi, SandboxWorker, sandbox)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the

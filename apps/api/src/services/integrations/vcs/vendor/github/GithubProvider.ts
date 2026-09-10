@@ -834,7 +834,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
-					.mintCloneUrl(installation.externalInstallationId, repo.owner, repo.name)
+					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
 					.pipe(Effect.mapError(toVcsCommitError))
 
 			return {
