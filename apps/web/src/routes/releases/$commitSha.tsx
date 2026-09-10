@@ -16,6 +16,7 @@ import { getReleaseDetailResultAtom, getReleasesResultAtom } from "@/lib/service
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
+import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import {
 	TimeRangeSearchFields,
@@ -59,6 +60,7 @@ interface ReleaseChartConfig {
 	id: string
 	chartId: string
 	title: string
+	titleHint?: { text: string; href?: string }
 	layout: { x: number; y: number; w: number; h: number }
 	legend?: ChartLegendMode
 	tooltip?: ChartTooltipMode
@@ -88,6 +90,7 @@ const RELEASE_CHARTS: ReleaseChartConfig[] = [
 		id: "apdex",
 		chartId: "apdex-area",
 		title: "Apdex",
+		titleHint: APDEX_HINT,
 		layout: { x: 0, y: 4, w: 6, h: 4 },
 		tooltip: "visible",
 	},
@@ -365,6 +368,7 @@ function ReleaseBody({
 				id: chart.id,
 				chartId: chart.chartId,
 				title: chart.title,
+				titleHint: chart.titleHint,
 				layout: chart.layout,
 				data: detailPoints,
 				legend: chart.legend,

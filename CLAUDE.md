@@ -28,8 +28,11 @@ Anything in `lib/` that starts importing `@maple/domain` has stopped qualifying 
 
 ## Local dev
 
-Sign in at `https://web.localhost` with the Clerk test account `david+clerk_test@gmail.com` /
-`Maple-Dev-Kx92qZ!` when you need an authenticated browser session.
+Need an authenticated browser session? `bun run dev:signin` prints a one-shot Clerk ticket link
+(`/sign-in?__clerk_ticket=…`, 10 minutes, dev instance only) that lands signed in as
+`david+clerk_test@gmail.com` — no password typing, and nothing in the app bypasses auth. Pass another
+email as the first argument for a different dev user. The password `Maple-Dev-Kx92qZ!` still works if
+you want the form.
 
 ```bash
 bun dev                        # everything, ONE `alchemy dev` stack → https://[<worktree>.]<app>.localhost

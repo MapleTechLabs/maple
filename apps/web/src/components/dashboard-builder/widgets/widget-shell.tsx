@@ -10,10 +10,13 @@ import {
 	ChatBubbleSparkleIcon,
 	BellIcon,
 	ClockIcon,
+	CircleInfoIcon,
+	ExternalLinkIcon,
 } from "@/components/icons"
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -34,6 +37,11 @@ import { interpolateDisplayText } from "@maple/query-engine"
 interface WidgetShellProps {
 	title: string
 	mode: WidgetMode
+	/**
+	 * Short explanation of the metric, shown behind an info icon next to the
+	 * title. `href` turns the icon into a link to the fuller docs page.
+	 */
+	titleHint?: { text: string; href?: string }
 	/** Headline stat rendered at the top-right of the card header. */
 	headerValue?: ReactNode
 	/** Summary stat rendered below the card content. */
@@ -45,6 +53,7 @@ interface WidgetShellProps {
 export function WidgetShell({
 	title,
 	mode,
+	titleHint,
 	headerValue,
 	footer,
 	contentClassName,
@@ -104,6 +113,45 @@ export function WidgetShell({
 					<CardTitle className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 						{displayTitle}
 					</CardTitle>
+					{titleHint && (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									titleHint.href ? (
+										// A link, not a button: the tooltip says what the metric is,
+										// the click goes to the page that says it properly. Hover
+										// tooltips are a bad place to put a link the reader has to
+										// travel to.
+										<a
+											href={titleHint.href}
+											target="_blank"
+											rel="noreferrer"
+											aria-label={`About ${displayTitle}`}
+											className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+										/>
+									) : (
+										<span
+											aria-label={`About ${displayTitle}`}
+											className="shrink-0 text-muted-foreground/60"
+										/>
+									)
+								}
+							>
+								<CircleInfoIcon size={12} />
+							</TooltipTrigger>
+							<TooltipContent className="max-w-xs text-xs leading-relaxed">
+								{titleHint.text}
+								{titleHint.href && (
+									// Styled as the link it is: the whole icon is the anchor, so the
+									// tooltip has to say where a click lands.
+									<span className="mt-2 flex items-center gap-1 font-medium text-primary">
+										<span className="underline underline-offset-2">Read the docs</span>
+										<ExternalLinkIcon size={10} />
+									</span>
+								)}
+							</TooltipContent>
+						</Tooltip>
+					)}
 					{timeRangeLabel && (
 						<span
 							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
