@@ -37,6 +37,7 @@ import { trackProduct } from "@/lib/analytics"
 import { makeChatApplyPayload } from "./chat-apply-payload"
 import type { AiTriageResult } from "@maple/domain/http"
 import { TurnFailureNotice } from "./turn-failure-notice"
+import { ChatEmptyState } from "./chat-empty-state"
 
 const DEFAULT_SUGGESTIONS = [
 	"What's the overall system health?",
@@ -73,6 +74,12 @@ interface ChatConversationProps {
 	focusMessageId?: string
 	/** Builds a shareable permalink for a message; omit where the thread isn't shareable. */
 	permalinkFor?: (messageId: string) => string
+	/**
+	 * Where "start typing and it lands in the composer" listens. `"page"` for a chat
+	 * that owns the viewport or an open chat panel; `"region"` (the default) for a
+	 * chat embedded in a page that still has its own single-key shortcuts.
+	 */
+	typeAnywhere?: "page" | "region"
 }
 
 export function ChatConversation({
@@ -89,13 +96,17 @@ export function ChatConversation({
 	fallbackDiagnosis = null,
 	focusMessageId,
 	permalinkFor,
+	typeAnywhere = "region",
 }: ChatConversationProps) {
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	const regionRef = useRef<HTMLDivElement>(null)
-	// Scoped to this conversation's own region: on a full page (an investigation)
-	// a window-wide listener swallows every global shortcut, so typing `?` for the
-	// shortcut sheet silently drops a question mark into the composer instead.
-	useTypeAnywhereFocus(textareaRef, isActive && !readOnly, regionRef)
+	// A region scope only sees keys while focus is already inside the thread, which is
+	// what an embedded chat wants: on a page that keeps its own single-key shortcuts
+	// (an investigation) a window-wide listener would swallow `?` for the shortcut
+	// sheet and drop a question mark into the composer instead. A chat that owns the
+	// page has no such shortcuts to protect and listens on the window, so a keystroke
+	// with nothing focused still reaches the composer.
+	useTypeAnywhereFocus(textareaRef, isActive && !readOnly, typeAnywhere === "page" ? undefined : regionRef)
 
 	const referrerPath = useMemo(() => readChatReferrer(), [tabId])
 	const derivedContexts = useMemo<AutoContext[]>(
@@ -279,19 +290,7 @@ export function ChatConversation({
 							propose a corrected widget JSON for you to approve.
 						</EmptyNotice>
 					) : (
-						<div className="flex w-full min-w-0 max-w-full flex-col items-center gap-3 px-4">
-							<div className="space-y-1 text-center">
-								<h3 className="font-medium text-sm">Maple AI</h3>
-								<p className="text-muted-foreground text-sm">
-									Ask me about your traces, logs, errors, and services.
-								</p>
-							</div>
-							<Suggestions className="mt-2 w-full justify-center">
-								{suggestions.map((s) => (
-									<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
-								))}
-							</Suggestions>
-						</div>
+						<ChatEmptyState suggestions={suggestions} onSelect={handleSend} />
 					)
 				}
 			/>
