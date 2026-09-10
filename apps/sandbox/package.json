@@ -4,6 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"test": "vitest run",
+		"verify:image": "bun scripts/verify-image.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

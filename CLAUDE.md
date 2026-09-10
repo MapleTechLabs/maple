@@ -218,6 +218,27 @@ the GitHub call, because an unencoded `..` is normalised away and would walk an 
 token onto a repository the org never connected; and the **clone credential never enters a command's
 arguments**, because `/proc/<pid>/cmdline` is readable by the account agent commands run as.
 
+Testing it has three layers, and the top one is the only one that catches the image:
+
+```bash
+bun run --cwd apps/api test src/services/sandbox src/mcp/tools/sandbox   # argument vectors, real git
+bun run --cwd apps/sandbox test                                          # the generated scripts, as text
+bun run --cwd apps/sandbox verify:image                                  # the scripts, inside the image
+```
+
+`verify:image` needs Docker. It builds a fixture repository in the real container, runs the actual
+`cloneScript` and `wrapCommand` output against it, and checks what happened: the commit is cloned
+with its history, the token is nowhere on disk afterwards, commands run as `maple-agent` in exactly
+three environment variables over a tree they cannot write, egress is denied, and output is cut at the
+bound while the trailer still reports the true size. `MAPLE_SANDBOX_NO_CAPS=1` drops `SYS_ADMIN` and
+asserts the other half of the contract — that a container which cannot open a network namespace
+refuses to run the command at all rather than running it with egress. Every bug this area has had
+that the unit tests could not see (a `mktemp -d` mode, a git flag this image predates, `runuser`
+adding `USER` and `LOGNAME` after `env -i`) was found by running the image.
+
+End to end needs a real deployment: `stageDeploysSandbox` is `prd`/`stg` only, so `bun dev` binds no
+`SANDBOX` and the four tools report that no sandbox is available.
+
 The container is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the script
 must export, and an Effect-native Worker's generated entry exports only its own bridge classes. It
 lives in `apps/sandbox`, on `prd`/`stg` only; see `docs/infra.md` § Single-module Workers.

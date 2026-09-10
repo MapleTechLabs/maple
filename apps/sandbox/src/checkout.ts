@@ -123,9 +123,12 @@ export const wrapCommand = (
 	const environment = Object.entries(SANDBOX_COMMAND_ENV)
 		.map(([name, value]) => `${name}=${shellQuote(value)}`)
 		.join(" ")
-	// `env -i` first: the command starts from an empty environment and receives
-	// only the names the contract's allowlist covers, whatever else the container holds.
-	const dropped = `env -i ${environment} runuser -u ${SANDBOX_RUN_AS_USER} -- ${shellCommand(request.command, request.args)}`
+	// `runuser` first, then `env -i`: the command starts from an empty environment
+	// and receives only the names the contract's allowlist covers. The other order
+	// looks equivalent and is not — `runuser` adds `USER` and `LOGNAME` after
+	// `env -i` has run, so the command would see five names while `admit` promised
+	// three, and `runuser` itself would have to be found on the command's PATH.
+	const dropped = `runuser -u ${SANDBOX_RUN_AS_USER} -- env -i ${environment} ${shellCommand(request.command, request.args)}`
 	const limit = String(Math.max(1, Math.floor(request.maxOutputBytes)))
 	// Streams land in files, are cut to the bound, and the real exit status rides
 	// the trailer — piping through `head` directly would report `head`'s status.
