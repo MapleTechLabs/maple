@@ -59,7 +59,7 @@ const zoneDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/cloudflare/$zoneName")({
 	component: ZoneDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(zoneDetailSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"

@@ -54,7 +54,7 @@ const replaysSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/replays/")({
 	component: ReplaysPage,
 	validateSearch: Schema.toStandardSchemaV1(replaysSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 	loaderDeps: ({ search }) => search,
 	// Both queries are on the critical path and neither is cached server-side, so
 	// starting them here rather than on mount is worth real time: the router runs

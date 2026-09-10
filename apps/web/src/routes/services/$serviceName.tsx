@@ -66,7 +66,7 @@ const serviceDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/services/$serviceName")({
 	component: ServiceDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(serviceDetailSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 interface ServiceChartConfig {

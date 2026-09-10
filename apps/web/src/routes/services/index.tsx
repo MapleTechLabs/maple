@@ -80,7 +80,7 @@ export function servicesRouteAtoms(search: ServicesSearchParams) {
 export const Route = createFileRoute("/services/")({
 	component: ServicesPage,
 	validateSearch: Schema.toStandardSchemaV1(servicesSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 	loaderDeps: ({ search }) => search,
 	// A plain `loader`, not the `effectRoute` wrapper: TanStack's route
 	// code-splitting extracts `component` by statically matching

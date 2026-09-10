@@ -41,7 +41,7 @@ export type NodesSearchParams = Schema.Schema.Type<typeof nodesSearchSchema>
 export const Route = createFileRoute("/infra/kubernetes/nodes/")({
 	component: NodesPage,
 	validateSearch: Schema.toStandardSchemaV1(nodesSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 /**

@@ -54,7 +54,7 @@ const cloudflareSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/cloudflare/")({
 	component: CloudflarePage,
 	validateSearch: Schema.toStandardSchemaV1(cloudflareSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function CloudflarePage() {

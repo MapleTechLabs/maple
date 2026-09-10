@@ -76,7 +76,7 @@ export type ContainersSearchParams = Schema.Schema.Type<typeof containersSearchS
 export const Route = createFileRoute("/infra/containers/")({
 	component: ContainersPage,
 	validateSearch: Schema.toStandardSchemaV1(containersSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const SCOPE_LABEL: Record<ContainerScope, string> = {

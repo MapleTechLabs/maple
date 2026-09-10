@@ -50,7 +50,7 @@ export type WorkloadsSearchParams = Schema.Schema.Type<typeof workloadsSearchSch
 export const Route = createFileRoute("/infra/kubernetes/workloads/")({
 	component: WorkloadsPage,
 	validateSearch: Schema.toStandardSchemaV1(workloadsSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const KIND_OPTIONS = [

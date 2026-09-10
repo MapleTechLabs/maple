@@ -39,7 +39,7 @@ const serviceMapSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/service-map")({
 	component: ServiceMapPage,
 	validateSearch: Schema.toStandardSchemaV1(serviceMapSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 function ServiceMapPage() {

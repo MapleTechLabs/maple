@@ -29,7 +29,7 @@ export type MetricsSearchParams = Schema.Schema.Type<typeof metricsSearchSchema>
 export const Route = createFileRoute("/metrics/")({
 	component: MetricsPage,
 	validateSearch: Schema.toStandardSchemaV1(metricsSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricsPage() {

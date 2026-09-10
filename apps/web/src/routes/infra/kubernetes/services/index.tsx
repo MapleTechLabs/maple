@@ -22,7 +22,7 @@ const searchSchema = Schema.Struct(TimeRangeSearchFields)
 export const Route = createFileRoute("/infra/kubernetes/services/")({
 	component: ServiceLensIndexPage,
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function ServiceLensIndexPage() {

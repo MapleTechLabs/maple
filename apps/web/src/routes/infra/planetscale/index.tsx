@@ -52,7 +52,7 @@ const planetscaleSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/planetscale/")({
 	component: PlanetScalePage,
 	validateSearch: Schema.toStandardSchemaV1(planetscaleSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function PlanetScalePage() {

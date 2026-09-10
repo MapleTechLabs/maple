@@ -32,7 +32,7 @@ const nodeDetailSearchSchema = Schema.Struct(TimeRangeSearchFields)
 export const Route = createFileRoute("/infra/kubernetes/nodes/$nodeName")({
 	component: NodeDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(nodeDetailSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const METRIC_OPTIONS = [

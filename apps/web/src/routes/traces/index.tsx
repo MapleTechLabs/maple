@@ -76,7 +76,7 @@ export type TracesSearchParams = Schema.Schema.Type<typeof tracesSearchSchema>
 export const Route = createFileRoute("/traces/")({
 	component: TracesPage,
 	validateSearch: Schema.toStandardSchemaV1(tracesSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 	loaderDeps: ({ search }) => search,
 	// Only the facet sidebar is warmed. The trace list is paginated and sorted
 	// from state the route does not own, so rebuilding its input here would risk

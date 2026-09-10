@@ -3,6 +3,7 @@ import type { AnyRouter, SearchMiddleware } from "@tanstack/react-router"
 import { sessionTimeRangeAtomFor, type SessionTimeRange } from "@/atoms/session-time-range-atoms"
 import { appRegistry } from "@/lib/registry"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
+import { isTimeRangeWithin, relativeToAbsolute } from "@/lib/time-utils"
 
 import type { TimeRangeSearch } from "./search"
 
@@ -23,12 +24,26 @@ function isCompleteTimeRange(
 	return isSet(search.timePreset) || (isSet(search.startTime) && isSet(search.endTime))
 }
 
+// The widest standard preset is "1mo"; 32 days covers any calendar month.
+const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
+
+function isWithin(
+	stored: { timePreset: string } | { startTime: string; endTime: string },
+	maxRangeSeconds: number,
+) {
+	const range = "timePreset" in stored ? relativeToAbsolute(stored.timePreset) : stored
+	return range !== null && isTimeRangeWithin(range, maxRangeSeconds)
+}
+
 /**
  * Search middleware for every route that spreads `TimeRangeSearchFields`: a
  * navigation that names no window gets the one the user last chose in this
  * tab (see `persistSessionTimeRange`). A navigation that does name one — the
  * picker, a chart brush, a "view logs for this trace" link — wins, and then
- * becomes the remembered window once it lands.
+ * becomes the remembered window once it lands. A remembered window wider than
+ * `maxRangeSeconds` — a year picked on Services, then a visit to Logs — is
+ * ignored so the page opens on its own default; pass the same ceiling the
+ * page hands its picker.
  *
  * Runs on `buildLocation`, so links and preloads see the same URL the
  * navigation will produce; the loader's `deps` are right the first time. The
@@ -36,15 +51,17 @@ function isCompleteTimeRange(
  * inline because the storage layer is synchronous, and falls back to `{}` if
  * that ever stops being true — the window would then silently stop sticking.
  */
-export function sessionTimeRangeSearchMiddleware<T extends TimeRangeSearch>({
-	search,
-	next,
-}: Parameters<SearchMiddleware<T>>[0]): T {
-	const result = next(search)
-	if (namesTimeRange(result)) return result
-	const stored = appRegistry.get(sessionTimeRangeAtomFor(getActiveOrgId()))
-	if (!isCompleteTimeRange(stored)) return result
-	return { ...result, ...stored }
+export function sessionTimeRangeSearchMiddleware<T extends TimeRangeSearch>(options?: {
+	maxRangeSeconds?: number
+}): SearchMiddleware<T> {
+	const maxRangeSeconds = options?.maxRangeSeconds ?? DEFAULT_MAX_RANGE_SECONDS
+	return ({ search, next }) => {
+		const result = next(search)
+		if (namesTimeRange(result)) return result
+		const stored = appRegistry.get(sessionTimeRangeAtomFor(getActiveOrgId()))
+		if (!isCompleteTimeRange(stored) || !isWithin(stored, maxRangeSeconds)) return result
+		return { ...result, ...stored }
+	}
 }
 
 /**

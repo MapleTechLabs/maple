@@ -94,7 +94,7 @@ const issueSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/errors/issues/$issueId")({
 	component: IssueDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(issueSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function IssueDetailPage() {

@@ -17,7 +17,7 @@ const searchSchema = Schema.Struct(TimeRangeSearchFields)
 
 export const Route = createFileRoute("/infra/kubernetes/")({
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 	beforeLoad: ({ search }) => {
 		throw redirect({ to: "/infra/kubernetes/pods", search, replace: true })
 	},

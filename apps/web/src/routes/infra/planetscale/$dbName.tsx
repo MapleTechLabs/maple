@@ -96,7 +96,7 @@ const planetscaleDbSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/planetscale/$dbName")({
 	component: PlanetScaleDatabasePage,
 	validateSearch: Schema.toStandardSchemaV1(planetscaleDbSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 /** Stable empty fallbacks — a fresh `[]` per render busts every downstream memo. */

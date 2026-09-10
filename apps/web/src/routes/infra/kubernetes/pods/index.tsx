@@ -83,7 +83,7 @@ export type PodsSearchParams = Schema.Schema.Type<typeof podsSearchSchema>
 export const Route = createFileRoute("/infra/kubernetes/pods/")({
 	component: PodsPage,
 	validateSearch: Schema.toStandardSchemaV1(podsSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const SCOPE_LABEL: Record<PodScope, string> = {

@@ -55,7 +55,7 @@ export type ReleasesSearchParams = Schema.Schema.Type<typeof releasesSearchSchem
 export const Route = createFileRoute("/releases/")({
 	component: ReleasesPage,
 	validateSearch: Schema.toStandardSchemaV1(releasesSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 function ReleasesPage() {

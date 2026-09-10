@@ -15,7 +15,10 @@ import {
 const next = <T>(search: T) => search
 // TanStack hands middlewares present-but-undefined keys; mirror that here.
 const pageSearch = { services: ["api"], timePreset: undefined }
-const absolute = { startTime: "2026-09-01T00:00:00Z", endTime: "2026-09-02T00:00:00Z" }
+const absolute = {
+	startTime: "2026-09-01T00:00:00Z",
+	endTime: "2026-09-02T00:00:00Z",
+}
 
 // Each test gets its own org: an `Atom.family` member lives for the process
 // once read, so clearing sessionStorage would not reset a reused key.
@@ -28,7 +31,7 @@ describe("sessionTimeRangeSearchMiddleware", () => {
 		setActiveOrgId("org_fill")
 		appRegistry.set(sessionTimeRangeAtomFor("org_fill"), { timePreset: "7d" })
 
-		expect(sessionTimeRangeSearchMiddleware({ search: pageSearch, next })).toStrictEqual({
+		expect(sessionTimeRangeSearchMiddleware()({ search: pageSearch, next })).toStrictEqual({
 			services: ["api"],
 			timePreset: "7d",
 		})
@@ -41,34 +44,36 @@ describe("sessionTimeRangeSearchMiddleware", () => {
 		setActiveOrgId("org_cold")
 		sessionStorage.setItem("maple.time-range.session.org_cold", JSON.stringify(absolute))
 
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toEqual(absolute)
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toEqual(absolute)
 	})
 
 	it("keeps a window the navigation names itself, even a partial one", () => {
 		setActiveOrgId("org_keep")
 		appRegistry.set(sessionTimeRangeAtomFor("org_keep"), { timePreset: "7d" })
 
-		expect(sessionTimeRangeSearchMiddleware({ search: absolute, next })).toStrictEqual(absolute)
+		expect(sessionTimeRangeSearchMiddleware()({ search: absolute, next })).toStrictEqual(absolute)
 		const half = { startTime: absolute.startTime }
-		expect(sessionTimeRangeSearchMiddleware({ search: half, next })).toStrictEqual(half)
+		expect(sessionTimeRangeSearchMiddleware()({ search: half, next })).toStrictEqual(half)
 	})
 
 	it("passes through when nothing is remembered, the value is malformed, or there is no org", () => {
 		setActiveOrgId("org_untouched")
-		expect(sessionTimeRangeSearchMiddleware({ search: pageSearch, next })).toStrictEqual(pageSearch)
+		expect(sessionTimeRangeSearchMiddleware()({ search: pageSearch, next })).toStrictEqual(pageSearch)
 
 		setActiveOrgId("org_garbage")
 		sessionStorage.setItem("maple.time-range.session.org_garbage", "{not json")
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({})
 
 		setActiveOrgId("org_number")
 		sessionStorage.setItem("maple.time-range.session.org_number", JSON.stringify({ timePreset: 123 }))
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({})
 
 		setActiveOrgId("org_signed_out")
-		appRegistry.set(sessionTimeRangeAtomFor("org_signed_out"), { timePreset: "7d" })
+		appRegistry.set(sessionTimeRangeAtomFor("org_signed_out"), {
+			timePreset: "7d",
+		})
 		setActiveOrgId(null)
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({})
 	})
 
 	it("scopes the remembered window to the org and keeps it across a switch", () => {
@@ -76,10 +81,10 @@ describe("sessionTimeRangeSearchMiddleware", () => {
 		appRegistry.set(sessionTimeRangeAtomFor("org_a"), { timePreset: "7d" })
 
 		setActiveOrgId("org_b")
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({})
 
 		setActiveOrgId("org_a")
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({ timePreset: "7d" })
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({ timePreset: "7d" })
 	})
 })
 
@@ -121,5 +126,45 @@ describe("subscribeSessionTimeRange", () => {
 
 		expect(subscribe).toHaveBeenCalledWith("onResolved", expect.any(Function))
 		expect(appRegistry.get(sessionTimeRangeAtomFor("org_router"))).toStrictEqual({ timePreset: "3d" })
+	})
+})
+
+describe("sessionTimeRangeSearchMiddleware ceiling", () => {
+	const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
+
+	it("ignores a remembered window wider than the page supports", () => {
+		setActiveOrgId("org_ceiling")
+		appRegistry.set(sessionTimeRangeAtomFor("org_ceiling"), {
+			timePreset: "12mo",
+		})
+
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({})
+		expect(
+			sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })({
+				search: {},
+				next,
+			}),
+		).toStrictEqual({ timePreset: "12mo" })
+
+		const wide = {
+			startTime: "2026-01-01T00:00:00Z",
+			endTime: "2026-03-01T00:00:00Z",
+		}
+		appRegistry.set(sessionTimeRangeAtomFor("org_ceiling"), wide)
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({})
+		expect(
+			sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })({
+				search: {},
+				next,
+			}),
+		).toStrictEqual(wide)
+	})
+
+	it("lets a month-wide preset through everywhere", () => {
+		setActiveOrgId("org_month")
+		appRegistry.set(sessionTimeRangeAtomFor("org_month"), {
+			timePreset: "1mo",
+		})
+		expect(sessionTimeRangeSearchMiddleware()({ search: {}, next })).toStrictEqual({ timePreset: "1mo" })
 	})
 })

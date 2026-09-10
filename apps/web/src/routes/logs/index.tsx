@@ -39,7 +39,7 @@ export type LogsSearchParams = Schema.Schema.Type<typeof logsSearchSchema>
 export const Route = createFileRoute("/logs/")({
 	component: LogsPage,
 	validateSearch: Schema.toStandardSchemaV1(logsSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function LogsPage() {

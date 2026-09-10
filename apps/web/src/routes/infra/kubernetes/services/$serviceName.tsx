@@ -47,7 +47,7 @@ const searchSchema = Schema.Struct(TimeRangeSearchFields)
 export const Route = createFileRoute("/infra/kubernetes/services/$serviceName")({
 	component: ServiceLensPage,
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 /** Matches the pod table's own page size on the browse route. */

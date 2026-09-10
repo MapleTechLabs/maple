@@ -37,7 +37,7 @@ function buildBackToMetricsHref(searchStr: string): string {
 export const Route = createFileRoute("/metrics/$metricName")({
 	component: MetricDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(metricDetailSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricDetailPage() {

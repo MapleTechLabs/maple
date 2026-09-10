@@ -73,7 +73,7 @@ const BREAKDOWN_LIMIT = 50
 export const Route = createFileRoute("/analytics/")({
 	component: WebAnalyticsPage,
 	validateSearch: Schema.toStandardSchemaV1(analyticsSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function WebAnalyticsPage() {

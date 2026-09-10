@@ -54,7 +54,7 @@ const releaseDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/releases/$commitSha")({
 	component: ReleaseDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(releaseDetailSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 interface ReleaseChartConfig {

@@ -114,7 +114,7 @@ const RuleDetailSearch = Schema.Struct({
 export const Route = createFileRoute("/alerts/$ruleId")({
 	component: RuleDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(RuleDetailSearch),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 function RuleDetailPage() {

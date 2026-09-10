@@ -33,7 +33,7 @@ const podDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/kubernetes/pods/$podName")({
 	component: PodDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(podDetailSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const METRIC_OPTIONS = [

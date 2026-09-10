@@ -42,7 +42,7 @@ const dashboardSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/")({
 	component: DashboardPage,
 	validateSearch: Schema.toStandardSchemaV1(dashboardSearchSchema),
-	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 interface OverviewChartConfig {
