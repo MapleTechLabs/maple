@@ -66,14 +66,6 @@ export interface AgentPassSubmit<S extends AnswerSchema, Tools extends Record<st
 export interface AgentPassInput<S extends AnswerSchema, Tools extends Record<string, Tool.Any>> {
 	/** Correlation id; becomes the run's thread id. */
 	readonly id: string
-	/**
-	 * Gen-ai session this pass's spans group under (`maple_ai.session.id`), so every pass of one
-	 * investigation lands in one agent session. Omitted, each pass fragments into a session of its
-	 * own under its correlation id.
-	 */
-	readonly sessionId?: string
-	/** Workflow this pass runs inside (`gen_ai.workflow.name`), e.g. `"investigation"`. */
-	readonly workflowName?: string
 	readonly agent: AgentDefinition
 	readonly tenant: TenantContext
 	readonly model: ResolvedModel
@@ -137,16 +129,6 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 	Effect.gen(function* () {
 		type A = S["Type"]
 		const toolExecutor = yield* McpToolExecutor
-		// The grouping keys the ingest gateway lifts a run into an agent session by. They sit on the
-		// pass's own span here; stamping every nested model-call span is the remaining half, and
-		// needs Effect AI's span transformer.
-		yield* Effect.annotateCurrentSpan({
-			"maple_ai.session.id": input.sessionId ?? input.id,
-			"maple_ai.turn.id": input.id,
-			...(input.workflowName === undefined
-				? undefined
-				: { "gen_ai.workflow.name": input.workflowName }),
-		})
 		const usage = input.usage ?? makeRunUsage()
 		let answer: Option.Option<A> = Option.none()
 		let toolCalls = 0

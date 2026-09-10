@@ -30,6 +30,7 @@
  */
 import { investigationLensRuns, investigations } from "@maple/db"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
+import { makeChatSessionId } from "@maple/domain/chat-session"
 import {
 	AiTriageResult,
 	InvestigationPlan,
@@ -50,7 +51,14 @@ import { Cause, Clock, type Context, Effect, Exit, Layer, Option, Schema, type S
 import type ChatSessionObject from "@/chat/ChatSession"
 import type { McpToolExecutor } from "@/mcp/dispatcher"
 import { Database } from "@/platform/DatabaseLive"
-import { type LlmClients, type LlmEnv, layerLlm, resolveLensModel, resolveTriageModel } from "@/platform/Llm"
+import {
+	type LlmCallTags,
+	type LlmClients,
+	type LlmEnv,
+	layerLlm,
+	resolveLensModel,
+	resolveTriageModel,
+} from "@/platform/Llm"
 import { msToDate } from "@/platform/time"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { trackTokenUsage } from "@/services/billing/autumn-tracker"
@@ -168,6 +176,26 @@ const liveAgentServices = (env: LlmEnv): Layer.Layer<AgentServices, never, Datab
 		Layer.orDie,
 	)
 
+/**
+ * Tags for one pass of an investigation.
+ *
+ * The session is the investigation's seeded chat session, not a fan-out-local id, so every pass,
+ * each pass's OpenRouter Broadcast twin, and any attended follow-up turn land in one agent session.
+ * The turn is the pass — `runAgentPass`'s correlation id — so the session view keeps the lanes apart.
+ */
+const investigationTags = (
+	surface: LlmCallTags["surface"],
+	orgId: string,
+	investigationId: string,
+	pass: string,
+): LlmCallTags => ({
+	surface,
+	orgId,
+	sessionId: makeChatSessionId(orgId, `inv-${investigationId}`),
+	turnId: `inv_${investigationId}_${pass}`,
+	workflowName: "investigation",
+})
+
 // Planner
 
 export interface InvokePlannerInput {
@@ -199,11 +227,10 @@ const plannerOn =
 				// The strong model. One pass decides how the whole run is spent: a bad plan
 				// wastes every lane downstream of it, which is far more expensive than the
 				// difference between the two tiers.
-				model: resolveTriageModel(env, {
-					surface: "ai-triage",
-					orgId: input.orgId,
-					sessionId: `inv_${input.investigationId}`,
-				}),
+				model: resolveTriageModel(
+					env,
+					investigationTags("ai-triage", input.orgId, input.investigationId, "plan"),
+				),
 				tenant: tenantFor(input.orgId),
 				deadlineAtMs: input.deadlineAtMs,
 			}).pipe(Effect.provideContext(agents))
@@ -307,11 +334,10 @@ const hypothesisOn =
 				scopeSummary: input.scopeSummary,
 				subject: yield* decodeSubject(input.subject),
 				snapshot: snapshotOrNull(input.snapshot),
-				model: resolveLensModel(env, {
-					surface: "investigation-lens" as const,
-					orgId: input.orgId,
-					sessionId: `inv_${input.investigationId}`,
-				}),
+				model: resolveLensModel(
+					env,
+					investigationTags("investigation-lens", input.orgId, input.investigationId, input.hypothesis.id),
+				),
 				tenant: tenantFor(input.orgId),
 				deadlineAtMs: input.deadlineAtMs,
 				rerun: input.rerun,
@@ -408,11 +434,10 @@ const validatorOn =
 				candidates: input.candidates,
 				// The validator runs on the strong model even when lanes run cheap: it
 				// does the reasoning the whole fan-out exists to enable.
-				model: resolveTriageModel(env, {
-					surface: "investigation-validator",
-					orgId: input.orgId,
-					sessionId: `inv_${input.investigationId}`,
-				}),
+				model: resolveTriageModel(
+					env,
+					investigationTags("investigation-validator", input.orgId, input.investigationId, "validator"),
+				),
 				tenant: tenantFor(input.orgId),
 				deadlineAtMs: input.deadlineAtMs,
 			}).pipe(Effect.provideContext(agents))

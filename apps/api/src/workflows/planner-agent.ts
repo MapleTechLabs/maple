@@ -8,7 +8,6 @@
  * highest-leverage model call in the flow, so it is the one that should not be
  * economised on.
  */
-import { makeChatSessionId } from "@maple/domain/chat-session"
 import type {
 	InvestigationPlan,
 	InvestigationSubject,
@@ -52,10 +51,6 @@ export const runPlannerAgent = Effect.fn("investigation.plan")(function* (input:
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_plan`,
-		// The seeded transcript's chat session id, so the workflow's passes and any
-		// attended follow-up land in one agent session.
-		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
-		workflowName: "investigation",
 		agent: plannerAgent(),
 		tenant: input.tenant,
 		model: input.model,
