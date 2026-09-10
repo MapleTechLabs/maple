@@ -36,6 +36,18 @@ Source: `packages/query-engine/src/execution/executor.ts` (`executeSql`)
 | `query.profile` | string | `executor.ts` | Execution profile (e.g. `"list"`, `"analytics"`). Set via `SqlQueryOptions.profile`. |
 | `ch.settings` | string (JSON) | `executor.ts` | JSON-encoded ClickHouse settings applied to the query |
 | `result.rowCount` | int | `executor.ts` | Number of rows returned |
+| `db.response.returned_rows` | int | `executor.ts` | OTel spelling of `result.rowCount`, success only |
+| `db.operation.name` | string | `executor.ts` | Leading SQL verb (`SELECT`, `INSERT`) from `summarizeSql` |
+| `db.collection.name` | string | `executor.ts` | First table named by the statement; the datasource for `ingest` |
+| `db.query.summary` | string | `executor.ts` | `{operation} {collection}` — identical to what the shape rollup derives when absent |
+| `db.operation.batch.size` | int | `executor.ts` | Rows in an `ingest` batch |
+| `error.type` | string | `executor.ts` | Failure only: ClickHouse exception type (`UNKNOWN_TABLE`), else its code, else the error tag |
+| `db.response.status_code` | string | `executor.ts` | Failure only: the ClickHouse error code, else the upstream HTTP status |
+
+`executeSql` is the **one** `Client` span per logical warehouse operation, retries included, as the
+OTel database conventions ask. The drivers run on `warehouseHttpClient(...)`, which disables the
+Effect `HttpClient` tracer for their round-trips — do not let an `http.client POST` span reappear
+under it.
 
 ## `warehouse.*` group
 

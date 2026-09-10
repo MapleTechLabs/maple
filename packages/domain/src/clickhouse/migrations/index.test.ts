@@ -34,8 +34,7 @@ import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_re
 import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
 import { migration_0027_audit_log } from "./0027_audit_log"
 import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
-import { migration_0029_ai_trace_index_usage_conventions } from "./0029_ai_trace_index_usage_conventions"
-import { migration_0021_product_events } from "./0021_product_events"
+import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -52,10 +51,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29,
+			28, 29, 30,
 		])
-		expect(migrations.at(-1)).toBe(migration_0029_ai_trace_index_usage_conventions)
-		expect(latestMigrationVersion).toBe(29)
+		expect(migrations.at(-1)).toBe(migration_0030_error_events_attribute_fallback)
+		expect(latestMigrationVersion).toBe(30)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -83,6 +82,31 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0026_ai_trace_index_filter_columns.requiredForIngest).toBe(false)
 		expect(migration_0027_audit_log.requiredForIngest).toBe(false)
 		expect(migration_0028_product_events_from_traces.requiredForIngest).toBe(false)
+		// 0030 only recreates the error-events MVs.
+		expect(migration_0030_error_events_attribute_fallback.requiredForIngest).toBe(false)
+	})
+
+	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
+		const statements: ReadonlyArray<string> =
+			migration_0030_error_events_attribute_fallback.statements.filter((stmt) => !isBackfill(stmt))
+		const sql = statements.join("\n")
+
+		// An MV's SELECT is frozen at creation, so both views are dropped before
+		// they are recreated; error_events_by_time_mv shares the projection
+		// byte-for-byte and must never disagree with error_events_mv on a label.
+		for (const view of ["error_events_mv", "error_events_by_time_mv"]) {
+			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = statements.findIndex((stmt) =>
+				stmt.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `),
+			)
+			expect(dropAt).toBeGreaterThanOrEqual(0)
+			expect(createAt).toBeGreaterThan(dropAt)
+		}
+
+		// Nothing is rewritten: error_events keeps no span attributes to re-derive
+		// from, and recomputing FingerprintHash would re-bucket every issue.
+		expect(sql).not.toContain("ALTER TABLE error_events")
+		expect(migration_0030_error_events_attribute_fallback.statements.some(isBackfill)).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the 4xx guard and the widened frame redaction", () => {

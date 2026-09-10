@@ -50,8 +50,11 @@ upgrading a runtime (keep `bun` in sync with `packageManager`).
 ## Warehouse queries
 
 **No Tinybird pipes/endpoints exist.** All backend queries use the ClickHouse DSL in
-`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to the
-Tinybird SDK or ClickHouse per org config. Never `fetch()` `/v0/sql` directly.
+`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to
+Tinybird's HTTP API or a ClickHouse HTTP endpoint per org config. Both drivers live in
+`WarehouseQueryService.ts` on Effect's `HttpClient` (ClickHouse via `lib/effect-clickhouse-http`)
+and fail with a structured `WarehouseDriverError` the classifier reads. Never `fetch()` `/v0/sql`
+directly.
 
 Subpath exports: `./ch` (DSL + `compile`), `./runtime` (dashboard/alert lowering, `evaluate`,
 cache keys), `./execution` (`makeWarehouseExecutor` — retry, error mapping, OrgId scoping, spans),

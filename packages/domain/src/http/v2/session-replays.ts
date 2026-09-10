@@ -4,7 +4,7 @@ import { SessionId, TraceId } from "../../primitives"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
-import { defineV2Error, V2ParameterInvalid } from "./errors"
+import { defineV2Error, V2CursorInvalid, V2ParameterInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { V2WarehouseReadErrors } from "./query-errors"
 
@@ -30,6 +30,10 @@ const sessionReplayBaseFields = {
 		description: "Session wall-clock duration in ms, or `null`.",
 	}),
 	status: Schema.String.annotate({ description: "Session status (e.g. `active`, `ended`)." }),
+	last_activity_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"Last activity seen in the session, refreshed by the SDK's heartbeat, or `null` when only the session-start row has landed. Read it alongside `status` to tell a session that is happening now from one whose tab went away without sending an end row — that leaves `status` at `active` for the rest of the session's retention.",
+	}),
 	user_id: Schema.NullOr(Schema.String).annotate({
 		description: "The identified user, or `null` if anonymous.",
 	}),
@@ -80,6 +84,7 @@ export const V2SessionReplayListItem = Schema.Struct({
 			end_time: "2026-07-15T09:18:30.000Z",
 			duration_ms: 390000,
 			status: "ended",
+			last_activity_at: "2026-07-15T09:18:30.000Z",
 			user_id: "user_2abc",
 			user_name: "Ada Lovelace",
 			user_email: "ada@acme.com",
@@ -117,7 +122,6 @@ export const V2SessionReplay = Schema.Struct({
 	host: Schema.String,
 	exit_path: Schema.String,
 	language: Schema.String,
-	last_activity_at: Schema.NullOr(Timestamp),
 	user_agent: Schema.String.annotate({ description: "The full user-agent string." }),
 	trace_ids: Schema.Array(TraceId).annotate({ description: "All trace IDs correlated to the session." }),
 	resource_attributes: Schema.String.annotate({
@@ -535,7 +539,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 		HttpApiEndpoint.post("search", "/search", {
 			payload: V2SessionReplaySearchParams,
 			success: SessionReplayList,
-			error: [...commonErrors],
+			error: [...commonErrors, V2CursorInvalid.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "searchSessionReplays",

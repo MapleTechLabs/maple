@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer } from "effect"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import {
 	V1RequestValidationError,
@@ -6,30 +6,11 @@ import {
 	V1UnexpectedError,
 	V1UnexpectedErrors,
 } from "@maple/domain/http"
+import { failureStackOf, failureTypeOf, recordRenderedFailure } from "@/routes/rendered-failure"
 import { describeSchemaIssue, summarizeSchemaError } from "@/routes/schema-error-detail"
 import { observeServerError } from "@/routes/server-error-observability"
 
-class V1RouteExecutionDefect extends Schema.TaggedError<V1RouteExecutionDefect>()(
-	"@maple/api/routes/v1/V1RouteExecutionDefect",
-	{
-		group: Schema.String,
-		operation: Schema.String,
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-class V1ResponseSchemaError extends Schema.TaggedError<V1ResponseSchemaError>()(
-	"@maple/api/routes/v1/V1ResponseSchemaError",
-	{
-		group: Schema.String,
-		operation: Schema.String,
-		component: Schema.Literals(["Body", "ResponseHeaders"]),
-		message: Schema.String,
-		details: Schema.Array(Schema.String),
-		cause: Schema.Defect(),
-	},
-) {}
+const sanitized = () => new V1UnexpectedError({ message: "An unexpected error occurred on our end." })
 
 const V1SchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 	V1SchemaErrors,
@@ -37,31 +18,16 @@ const V1SchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 		Effect.suspend((): Effect.Effect<never, V1RequestValidationError | V1UnexpectedError> => {
 			const details = describeSchemaIssue(schemaError.cause.issue)
 			if (schemaError.kind === "Body" || schemaError.kind === "ResponseHeaders") {
-				const error = new V1ResponseSchemaError({
+				return recordRenderedFailure({
 					group: group.identifier,
 					operation: endpoint.identifier,
-					component: schemaError.kind,
-					message: "V1 response failed its declared HTTP schema",
-					details: details.map(({ line }) => line),
+					errorType: `@maple/api/routes/v1/V1ResponseSchemaError/${schemaError.kind}`,
+					summary: "V1 response failed its declared HTTP schema",
+					message: details.map(({ line }) => line).join("; "),
+					status: 500,
+					detail: details.map(({ line }) => line),
 					cause: schemaError.cause,
-				})
-				return Effect.logError(error.message).pipe(
-					Effect.annotateLogs({
-						errorTag: error._tag,
-						group: error.group,
-						operation: error.operation,
-						component: error.component,
-						details: error.details,
-						cause: error.cause,
-					}),
-					Effect.andThen(
-						Effect.fail(
-							new V1UnexpectedError({
-								message: "An unexpected error occurred on our end.",
-							}),
-						),
-					),
-				)
+				}).pipe(Effect.andThen(Effect.fail(sanitized())))
 			}
 			const first = details[0]
 			return Effect.fail(
@@ -79,31 +45,18 @@ const V1UnexpectedErrorsLive = Layer.succeed(
 	V1UnexpectedErrors.of((httpEffect, { endpoint, group }) =>
 		httpEffect.pipe(
 			Effect.tapError(observeServerError(endpoint, group)),
-			Effect.catchDefect((cause) => {
-				const defectType = cause instanceof Error ? cause.name : typeof cause
-				const error = new V1RouteExecutionDefect({
+			Effect.catchDefect((cause) =>
+				recordRenderedFailure({
 					group: group.identifier,
 					operation: endpoint.identifier,
-					message: "Unexpected v1 route execution defect",
+					errorType: failureTypeOf(cause),
+					summary: "Unexpected v1 route execution defect",
+					message: cause instanceof Error ? cause.message : String(cause),
+					status: 500,
+					stack: failureStackOf(cause),
 					cause,
-				})
-				return Effect.logError(error.message).pipe(
-					Effect.annotateLogs({
-						errorTag: error._tag,
-						group: error.group,
-						operation: error.operation,
-						defectType,
-						cause: error.cause,
-					}),
-					Effect.andThen(
-						Effect.fail(
-							new V1UnexpectedError({
-								message: "An unexpected error occurred on our end.",
-							}),
-						),
-					),
-				)
-			}),
+				}).pipe(Effect.andThen(Effect.fail(sanitized()))),
+			),
 		),
 	),
 )

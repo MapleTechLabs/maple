@@ -4,7 +4,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Clock, type Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
+import { Cause, Clock, type Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
@@ -12,6 +12,7 @@ import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "../http/api
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import type { MapleDbConnection } from "../platform/bindings"
 import { layerPg } from "../platform/DatabasePgLive"
+import { recordRenderedFailure } from "../routes/rendered-failure"
 import { withPgConnectionScope } from "../platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
 
@@ -124,6 +125,35 @@ const unavailableResponse = (path: string) =>
 	)
 
 /**
+ * The last point the cause still exists: the bridge's `safeHttpEffect` renders it and logs nothing
+ * when every reason is `ErrorReporter.isIgnored`. Interrupts are client aborts and stay silent.
+ */
+const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unknown>) => {
+	if (Cause.hasInterruptsOnly(cause)) return Effect.void
+	const first = Cause.prettyErrors(cause)[0]
+	return recordRenderedFailure({
+		group: "route-graph",
+		operation: `${method} ${path}`,
+		errorType: first?.name ?? "Unknown",
+		summary: "Cause escaped the route graph",
+		message: first?.message ?? "",
+		status: 500,
+		stack: first?.stack,
+		cause,
+	})
+}
+
+/**
+ * How cold the isolate was when this 5xx arrived. Which layer rendered it is already on the span: a seam
+ * that named the failure left an `exception` event, and the tracer labels the rest generically.
+ */
+const recordIsolateAge = (isolate: { readonly ageMs: number; readonly ordinal: number }) =>
+	Effect.annotateCurrentSpan({
+		"maple.isolate.age_ms": isolate.ageMs,
+		"maple.isolate.request_ordinal": isolate.ordinal,
+	})
+
+/**
  * The request handler the bridge serves. Liveness and preflights answer before
  * the route graph exists: neither needs the domain graph, authentication, the
  * database scope or the route codecs, and a cold isolate can report health
@@ -136,8 +166,12 @@ const unavailableResponse = (path: string) =>
  * issued. The ports are provided around the whole request, the same way the
  * background events get them.
  */
-export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.Layer<MapleDbConnection>) =>
-	Effect.gen(function* () {
+export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.Layer<MapleDbConnection>) => {
+	// Isolate-scoped: the Worker's init calls `makeFetch` once. The unattributed 500s all landed
+	// within ~60ms of an isolate's first request, so the span has to carry that shape.
+	let firstRequestAt: number | undefined
+	let served = 0
+	return Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)
 		if (request.method === "GET" && path === "/health") {
@@ -157,6 +191,8 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 
 		const isMcp = request.method === "POST" && path === "/mcp"
 		const startedAt = yield* Clock.currentTimeMillis
+		firstRequestAt ??= startedAt
+		const ordinal = ++served
 
 		const built = yield* Effect.exit(app)
 		if (Exit.isFailure(built)) {
@@ -166,7 +202,13 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 			return unavailableResponse(path)
 		}
 
-		const response = yield* withPgConnectionScope(built.value)
+		const response = yield* withPgConnectionScope(built.value).pipe(
+			Effect.tapCause((cause) => recordEscapedCause(request.method, path, cause)),
+		)
+
+		if (response.status >= 500) {
+			yield* recordIsolateAge({ ageMs: startedAt - firstRequestAt, ordinal })
+		}
 
 		if (isMcp) {
 			// The transport is stateless, so there is no session to carry across
@@ -184,3 +226,4 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
 		Effect.provide(ports),
 	)
+}

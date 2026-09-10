@@ -14,7 +14,30 @@ import {
 	type WarehouseSettingsRouteError,
 	type WarehouseTokenRouteError,
 } from "@maple/domain/http"
+import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
+
+/**
+ * The OTel database conventions' failure attributes for a warehouse span.
+ * `db.response.status_code` is the code the database answered with — the
+ * ClickHouse error code where the driver saw one, otherwise the HTTP status
+ * an upstream returned. `error.type` names the failure at low cardinality:
+ * the ClickHouse exception type (`UNKNOWN_TABLE`), then the code, then the
+ * error's own tag for failures that never reached a database.
+ */
+export const warehouseFailureAttributes = (error: {
+	readonly _tag: string
+	readonly clickhouseCode?: string | undefined
+	readonly clickhouseType?: string | undefined
+	readonly upstreamStatus?: number | undefined
+}): Record<string, string> => {
+	const statusCode =
+		error.clickhouseCode ?? (error.upstreamStatus === undefined ? undefined : String(error.upstreamStatus))
+	return {
+		"error.type": error.clickhouseType ?? error.clickhouseCode ?? error._tag,
+		...(statusCode === undefined ? undefined : { "db.response.status_code": statusCode }),
+	}
+}
 
 const redactWarehouseCredentials = (message: string): string =>
 	message
@@ -58,33 +81,14 @@ export type WarehouseExecutionError = WarehouseReadExecutionError | WarehouseTok
 /** SQL execution plus the result-schema failure unique to compiled queries. */
 export type WarehouseCompiledQueryError = WarehouseReadError
 
-type ClickHouseErrorDetails = {
-	readonly message: string
-	readonly code?: string
-	readonly type?: string
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null
-
-const optionalString = (value: unknown): string | undefined =>
-	typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
 
 const unknownToMessage = (error: unknown, fallback = "ClickHouse query failed"): string => {
 	if (typeof error === "string") return error
 	if (error instanceof Error) return error.message
 	if (isRecord(error) && typeof error.message === "string") return error.message
 	return fallback
-}
-
-const getClickHouseErrorDetails = (error: unknown): ClickHouseErrorDetails => {
-	const message = unknownToMessage(error)
-	if (!isRecord(error)) return { message }
-	return {
-		message,
-		code: optionalString(error.code),
-		type: typeof error.type === "string" ? error.type : undefined,
-	}
 }
 
 /** Fields shared by every warehouse error, built once per classification. */
@@ -105,10 +109,16 @@ type ClassifiedBase = {
 export type SqlAuthorship = "maple" | "caller"
 
 type ClassificationRule = {
+	/**
+	 * HTTP status match. Consulted only when the driver reported no ClickHouse
+	 * identity: a `DB::Exception` rides on whatever status the server picked for
+	 * its code (a type mismatch is a 500 on some versions), and that status must
+	 * not outrank the code that names the actual failure.
+	 */
 	readonly status?: (status: number) => boolean
 	readonly types?: ReadonlySet<string>
 	readonly pattern?: RegExp
-	readonly extra?: (error: unknown) => boolean
+	readonly reasons?: ReadonlySet<WarehouseDriverFailureReason>
 	/** Restricts the rule to SQL with this authorship. Unset means either. */
 	readonly authoredBy?: SqlAuthorship
 	/** Construct the tagged error for this rule. `upstreamStatus` is only used by the rules that carry it. */
@@ -129,6 +139,7 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	},
 	{
 		status: (s) => s === 408 || s === 429 || (s >= 500 && s < 600),
+		reasons: new Set(["transport"]),
 		types: new Set([
 			"NETWORK_ERROR",
 			"SOCKET_TIMEOUT",
@@ -170,9 +181,9 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		make: (base) => new WarehouseConfigError(base),
 	},
 	{
+		reasons: new Set(["protocol"]),
 		pattern:
 			/Cannot decode .* as JSON|Unexpected token .* JSON|Stream has been already consumed|Failed to parse ClickHouse response/i,
-		extra: (error) => error instanceof SyntaxError,
 		make: (base) => new WarehouseClientError(base),
 	},
 	{
@@ -290,10 +301,11 @@ export const toWarehouseQueryError = (pipe: string, error: unknown) => {
  */
 export const mapWarehouseError = (
 	pipe: string,
-	error: unknown,
+	error: WarehouseDriverError,
 	authoredBy: SqlAuthorship = "caller",
 ): WarehouseClassifiedError => {
-	const { message: rawMessage, code, type } = getClickHouseErrorDetails(error)
+	const rawMessage = error.message
+	const { code, type } = error
 	const redacted = redactWarehouseCredentials(rawMessage)
 	const message = cleanErrorMessage(rawMessage)
 	const base: ClassifiedBase = {
@@ -306,19 +318,28 @@ export const mapWarehouseError = (
 		clickhouseType: type,
 	}
 
+	// The driver refused to run: an endpoint it cannot address, settings it will
+	// not send, a redirect it will not follow. Nothing about the query or the
+	// cluster's health is known, so this is configuration, never transient.
+	if (error.reason === "config") return new WarehouseConfigError(base)
+
 	const setting = detectQuotaSetting(rawMessage, code, type)
 	if (setting) {
 		return new WarehouseQuotaExceededError({ ...base, setting })
 	}
 
-	const upstreamStatus = extractUpstreamStatus(rawMessage)
+	const upstreamStatus = error.status ?? extractUpstreamStatus(rawMessage)
+	const hasIdentity = code !== undefined || type !== undefined
 	for (const rule of CLASSIFICATION_RULES) {
 		if (rule.authoredBy !== undefined && rule.authoredBy !== authoredBy) continue
 		const matches =
-			(rule.status !== undefined && upstreamStatus !== undefined && rule.status(upstreamStatus)) ||
+			(rule.reasons !== undefined && rule.reasons.has(error.reason)) ||
+			(rule.status !== undefined &&
+				!hasIdentity &&
+				upstreamStatus !== undefined &&
+				rule.status(upstreamStatus)) ||
 			(rule.types !== undefined && type !== undefined && rule.types.has(type)) ||
-			(rule.pattern !== undefined && rule.pattern.test(rawMessage)) ||
-			(rule.extra !== undefined && rule.extra(error))
+			(rule.pattern !== undefined && rule.pattern.test(rawMessage))
 		if (matches) return rule.make(base, upstreamStatus)
 	}
 	return new WarehouseQueryError(base)

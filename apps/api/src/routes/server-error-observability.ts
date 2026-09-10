@@ -1,5 +1,6 @@
 import { Effect, Schema, SchemaAST } from "effect"
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { failureStackOf, recordRenderedFailure } from "@/routes/rendered-failure"
 
 /** The `HttpApiSchema.status` annotation, the one the response encoder resolves. */
 const httpApiStatus = SchemaAST.resolveAt<number>("httpApiStatus")
@@ -39,22 +40,14 @@ export const observeServerError =
 	(error: unknown): Effect.Effect<void> => {
 		const status = declaredStatus(endpoint, error)
 		if (status === undefined || status < 500) return Effect.void
-		const tag = tagOf(error)
-		return Effect.annotateCurrentSpan({
-			"error.type": tag,
-			"http.response.status_code": status,
-		}).pipe(
-			Effect.andThen(
-				Effect.logError("Route answered with a server error").pipe(
-					Effect.annotateLogs({
-						errorTag: tag,
-						status,
-						group: group.identifier,
-						operation: endpoint.identifier,
-						message: messageOf(error),
-						cause: error,
-					}),
-				),
-			),
-		)
+		return recordRenderedFailure({
+			group: group.identifier,
+			operation: endpoint.identifier,
+			errorType: tagOf(error),
+			summary: "Route answered with a server error",
+			message: messageOf(error) ?? "",
+			status,
+			stack: failureStackOf(error),
+			cause: error,
+		})
 	}

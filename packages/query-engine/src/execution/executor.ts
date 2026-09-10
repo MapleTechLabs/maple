@@ -14,6 +14,7 @@ import {
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { compilePipeQuery, type CompiledQuery, type TenantScope } from "../ch"
 import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-clickhouse/sql"
+import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
 	settingsClause,
@@ -24,11 +25,12 @@ import {
 import {
 	mapWarehouseError,
 	toWarehouseQueryError,
+	warehouseFailureAttributes,
 	type WarehouseExecutionError,
 	type WarehouseReadExecutionError,
 } from "./errors"
 import { WarehouseResponseLimitError, type WarehouseResponseLimits } from "./response-limits"
-import { SQL_LOG_MAX, SQL_TRACE_MAX, fingerprintSql, truncateSql } from "./fingerprint"
+import { SQL_LOG_MAX, SQL_TRACE_MAX, fingerprintSql, summarizeSql, truncateSql } from "./fingerprint"
 import { BackendDialect, warehouseTargetAttributes } from "./backend"
 import { managedWarehouseCapabilities } from "./managed-capabilities"
 import { resolveCompiledQuery } from "./compiled-input"
@@ -91,9 +93,9 @@ const CAPABILITY_AWARE_PIPES: ReadonlySet<string> = new Set([
 ])
 
 interface CachedClient {
-	client: WarehouseSqlClient
-	cacheKey: string
-	expiresAt: number
+	readonly client: WarehouseSqlClient
+	readonly cacheKey: string
+	readonly expiresAt: number
 }
 
 interface CachedCapabilities {
@@ -157,40 +159,43 @@ const clientTimeoutMs = (
  * never see a stale client from a prior fake factory.
  */
 export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQueryServiceApi => {
-	const clientCache = new Map<string, CachedClient>()
+	const clientCache = Ref.makeUnsafe(HashMap.empty<string, CachedClient>())
 	const capabilitiesCache = Ref.makeUnsafe(HashMap.empty<string, CachedCapabilities>())
 
 	const getCachedOrCreateClient = (
 		cacheKey: string,
 		config: ResolvedWarehouseConfig,
 		nowMs: number,
-	): WarehouseSqlClient => {
-		const configKey = sqlClientCacheKey(config)
-		const cached = clientCache.get(cacheKey)
-		if (cached && cached.cacheKey === configKey && cached.expiresAt > nowMs) {
-			return cached.client
-		}
-		const client = deps.createClient(config)
-		clientCache.set(cacheKey, { client, cacheKey: configKey, expiresAt: nowMs + CLIENT_CACHE_TTL_MS })
-		return client
-	}
+	): Effect.Effect<WarehouseSqlClient, WarehouseDriverError> =>
+		Effect.gen(function* () {
+			const configKey = sqlClientCacheKey(config)
+			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(clientCache), cacheKey))
+			if (cached && cached.cacheKey === configKey && cached.expiresAt > nowMs) {
+				return cached.client
+			}
+			const client = yield* deps.createClient(config)
+			yield* Ref.update(clientCache, (current) =>
+				HashMap.set(current, cacheKey, {
+					client,
+					cacheKey: configKey,
+					expiresAt: nowMs + CLIENT_CACHE_TTL_MS,
+				}),
+			)
+			return client
+		})
 
 	const inspectCapabilities = (
-		client: WarehouseSqlClient,
+		getClient: Effect.Effect<WarehouseSqlClient, WarehouseDriverError>,
 		allowSettingOverrides: boolean,
 	): Effect.Effect<WarehouseCapabilities> => {
-		const probeError = (target: WarehouseCapabilityMetadataTarget, cause: unknown) =>
-			new WarehouseCapabilityProbeError({
-				target,
-				message: cause instanceof Error ? cause.message : String(cause),
-				cause,
-			})
+		const probeError = (target: WarehouseCapabilityMetadataTarget, cause: { readonly message: string }) =>
+			new WarehouseCapabilityProbeError({ target, message: cause.message, cause })
 		const queryRows = (target: WarehouseCapabilityMetadataTarget, sql: string) =>
 			trackOutboundSlot(
-				Effect.tryPromise({
-					try: () => client.sql(parseStatement(sql)),
-					catch: (cause) => probeError(target, cause),
-				}),
+				getClient.pipe(
+					Effect.flatMap((client) => client.sql(parseStatement(sql))),
+					Effect.mapError((error) => probeError(target, error)),
+				),
 			).pipe(Effect.map((result) => result.data))
 		const logProbeFailure = (error: WarehouseCapabilityProbeError) =>
 			Effect.logWarning("Warehouse capability metadata probe failed").pipe(
@@ -471,13 +476,20 @@ WHERE name = 'enable_full_text_index'`,
 		// vary with the backend and the cost profile, and hashing them forks one
 		// query into several shapes in the query-shape rollup, which keys on this.
 		yield* Effect.annotateCurrentSpan("db.query.fingerprint", fingerprintSql(statement.body))
+		// The conventions' low-cardinality identity: verb, first table, and their
+		// summary. Identical to what the shape rollup derives when the summary is
+		// absent, so emitting it forks no existing shape.
+		const { operation, collection, summary } = summarizeSql(statement.body)
+		if (operation !== "") yield* Effect.annotateCurrentSpan("db.operation.name", operation)
+		if (collection !== "") yield* Effect.annotateCurrentSpan("db.collection.name", collection)
+		if (summary !== "") yield* Effect.annotateCurrentSpan("db.query.summary", summary)
 		if (settings) yield* Effect.annotateCurrentSpan("ch.settings", JSON.stringify(settings))
 
-		const client = getCachedOrCreateClient(
+		const client = yield* getCachedOrCreateClient(
 			resolved.clientCacheKey,
 			resolved.config,
 			yield* Clock.currentTimeMillis,
-		)
+		).pipe(Effect.mapError((error) => mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple")))
 		const attemptTimeoutMs = clientTimeoutMs(options?.profile, settings?.maxExecutionTime)
 		const retryAttempts = yield* Ref.make(0)
 		// A caller-supplied budget wins: a trusted query that knows its own response
@@ -491,30 +503,31 @@ WHERE name = 'enable_full_text_index'`,
 		// `trackOutboundSlot` covers each attempt (retries re-enter it), so the
 		// slot count reflects the connection, not the retry schedule's sleeps.
 		const queryAttempt = trackOutboundSlot(
-			Effect.tryPromise({
-				try: () =>
-					client.sql(
-						statement,
-						effectiveResponseLimits === undefined
-							? undefined
-							: { responseLimits: effectiveResponseLimits },
+			client
+				.sql(
+					statement,
+					effectiveResponseLimits === undefined
+						? undefined
+						: { responseLimits: effectiveResponseLimits },
+				)
+				.pipe(
+					Effect.mapError((error) =>
+						error instanceof WarehouseResponseLimitError
+							? // Only raw SQL restates this as a validation error — there the
+								// oversized result IS the caller's query problem. For a trusted
+								// query the limit is ours, so it propagates unchanged and the
+								// caller maps it to a domain error. Either way it never becomes a
+								// WarehouseUpstreamError, so the transient retry loop skips it
+								// instead of re-running a read that already exhausted the heap.
+								execution === "raw"
+								? new RawSqlValidationError({ code: "ResourceLimit", message: error.message })
+								: error
+							: // `execution` decides authorship: raw SQL comes from the caller (the
+								// raw_sql widget, the `run_sql` MCP tool), so an analyzer complaint
+								// about it is their typo and must keep the database's own message.
+								mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple"),
 					),
-				catch: (error) =>
-					error instanceof WarehouseResponseLimitError
-						? // Only raw SQL restates this as a validation error — there the
-							// oversized result IS the caller's query problem. For a trusted
-							// query the limit is ours, so it propagates unchanged and the
-							// caller maps it to a domain error. Either way it never becomes a
-							// WarehouseUpstreamError, so the transient retry loop skips it
-							// instead of re-running a read that already exhausted the heap.
-							execution === "raw"
-							? new RawSqlValidationError({ code: "ResourceLimit", message: error.message })
-							: error
-						: // `execution` decides authorship: raw SQL comes from the caller (the
-							// raw_sql widget, the `run_sql` MCP tool), so an analyzer complaint
-							// about it is their typo and must keep the database's own message.
-							mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple"),
-			}),
+				),
 		)
 		// `db.duration_ms` measures warehouse execution only — captured here, after
 		// config resolution + settings/client-cache preamble, immediately before the
@@ -563,6 +576,7 @@ WHERE name = 'enable_full_text_index'`,
 					yield* Effect.annotateCurrentSpan("db.duration_ms", elapsedMs)
 					yield* Effect.annotateCurrentSpan("db.total_duration_ms", totalElapsedMs)
 					yield* Effect.annotateCurrentSpan("db.retry.attempts", attempts)
+					yield* Effect.annotateCurrentSpan(warehouseFailureAttributes(error))
 					yield* Effect.logError("WarehouseQueryService.executeSql failed", {
 						pipe,
 						context: options?.context,
@@ -582,6 +596,7 @@ WHERE name = 'enable_full_text_index'`,
 		)
 
 		yield* Effect.annotateCurrentSpan("result.rowCount", result.data.length)
+		yield* Effect.annotateCurrentSpan("db.response.returned_rows", result.data.length)
 		const completedAtMs = yield* Clock.currentTimeMillis
 		yield* Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - sqlStartedMs)
 		yield* Effect.annotateCurrentSpan("db.total_duration_ms", completedAtMs - startedAtMs)
@@ -1108,6 +1123,12 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("datasource", datasource)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("rowCount", rows.length)
+		yield* Effect.annotateCurrentSpan({
+			"db.operation.name": "INSERT",
+			"db.collection.name": datasource,
+			"db.query.summary": `INSERT ${datasource}`,
+			"db.operation.batch.size": rows.length,
+		})
 
 		if (rows.length === 0) return
 
@@ -1124,26 +1145,24 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("warehouse.config_source", resolved.source)
 
 		// Insert through the same client the read path uses (official
-		// @clickhouse/client-web for ClickHouse, Tinybird Events API for
+		// Effect HTTP transport for ClickHouse, Tinybird Events API for
 		// Tinybird) so the wire protocol is handled correctly — a hand-rolled
 		// `?query=INSERT … FORMAT JSONEachRow` POST had its query param dropped
 		// by managed ClickHouse, which then parsed the NDJSON body as SQL.
-		const client = getCachedOrCreateClient(
+		const client = yield* getCachedOrCreateClient(
 			resolved.clientCacheKey,
 			resolved.config,
 			yield* Clock.currentTimeMillis,
-		)
+		).pipe(Effect.mapError((error) => mapWarehouseError(label, error)))
 		const insertStartedAtMs = yield* Clock.currentTimeMillis
 
-		yield* Effect.tryPromise({
-			try: () => client.insert(datasource, rows),
+		yield* client.insert(datasource, rows).pipe(
 			// Classify like the read path so an auth failure or quota breach on
 			// insert surfaces with its real tag instead of a generic query error.
 			// Authorship stays the default "caller": inserts are not DSL-generated
 			// SQL, and a rejection here usually means the rows are wrong, not that
 			// Maple composed a bad statement.
-			catch: (error) => mapWarehouseError(label, error),
-		}).pipe(
+			Effect.mapError((error) => mapWarehouseError(label, error)),
 			Effect.tap(() =>
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((completedAtMs) =>
@@ -1157,7 +1176,10 @@ WHERE name = 'enable_full_text_index'`,
 			Effect.tapError((error) =>
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((completedAtMs) =>
-						Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - insertStartedAtMs),
+						Effect.annotateCurrentSpan({
+							"db.duration_ms": completedAtMs - insertStartedAtMs,
+							...warehouseFailureAttributes(error),
+						}),
 					),
 					Effect.andThen(
 						Effect.logError("WarehouseQueryService.ingest failed", {
