@@ -37,27 +37,31 @@ type DotVariant = ComponentType<DotMatrixCommonProps>
  * `setState`, and this glyph's whole job is to sit on screen through a streaming turn — a
  * render every 90ms on that path is the one cost the chat chrome has never paid.
  */
-const VARIANTS: ReadonlyArray<{ Component: DotVariant; dotSize: number }> = [
-	{ Component: DotmSquare1, dotSize: 2 },
-	{ Component: DotmSquare3, dotSize: 2 },
-	{ Component: DotmSquare4, dotSize: 2 },
-	{ Component: DotmSquare5, dotSize: 2 },
-	{ Component: DotmSquare6, dotSize: 2 },
-	{ Component: DotmSquare9, dotSize: 2 },
-	{ Component: DotmSquare11, dotSize: 2 },
-	{ Component: DotmSquare12, dotSize: 2 },
-	{ Component: Dotm3x3_1, dotSize: 4 },
-	{ Component: Dotm3x3_6, dotSize: 4 },
-	{ Component: Dotm3x3_7, dotSize: 4 },
-	{ Component: Dotm3x3_8, dotSize: 4 },
-	{ Component: Dotm3x3_10, dotSize: 4 },
-	{ Component: Dotm3x3_12, dotSize: 4 },
-	{ Component: Dotm3x3_13, dotSize: 4 },
-	{ Component: Dotm3x3_15, dotSize: 4 },
+export const DOT_LOADER_VARIANTS: ReadonlyArray<{
+	name: string
+	Component: DotVariant
+	dotSize: number
+}> = [
+	{ name: "Neon Drift", Component: DotmSquare1, dotSize: 2 },
+	{ name: "Core Spiral", Component: DotmSquare3, dotSize: 2 },
+	{ name: "Twin Orbit", Component: DotmSquare4, dotSize: 2 },
+	{ name: "Prism Sweep", Component: DotmSquare5, dotSize: 2 },
+	{ name: "Flux Columns", Component: DotmSquare6, dotSize: 2 },
+	{ name: "Glyph Pulse", Component: DotmSquare9, dotSize: 2 },
+	{ name: "Echo Ring", Component: DotmSquare11, dotSize: 2 },
+	{ name: "Origin Wave", Component: DotmSquare12, dotSize: 2 },
+	{ name: "Square Spiral", Component: Dotm3x3_1, dotSize: 4 },
+	{ name: "Core Echo", Component: Dotm3x3_6, dotSize: 4 },
+	{ name: "Column Flux", Component: Dotm3x3_7, dotSize: 4 },
+	{ name: "Row Sweep", Component: Dotm3x3_8, dotSize: 4 },
+	{ name: "Frame Chase", Component: Dotm3x3_10, dotSize: 4 },
+	{ name: "Drop Ripple", Component: Dotm3x3_12, dotSize: 4 },
+	{ name: "Right Surge", Component: Dotm3x3_13, dotSize: 4 },
+	{ name: "Echo Rings", Component: Dotm3x3_15, dotSize: 4 },
 ]
 
 /** Total number of distinct animations in the pool. Exported so tests can assert the variety. */
-export const DOT_LOADER_VARIANT_COUNT = VARIANTS.length
+export const DOT_LOADER_VARIANT_COUNT = DOT_LOADER_VARIANTS.length
 
 interface DotLoaderProps {
 	/**
@@ -84,7 +88,10 @@ interface DotLoaderProps {
  */
 export function DotLoader({ label, color = "currentColor", size = 18, className }: DotLoaderProps) {
 	const [{ Component, dotSize }] = useState(
-		() => VARIANTS[Math.floor(Math.random() * VARIANTS.length)] as (typeof VARIANTS)[number],
+		() =>
+			DOT_LOADER_VARIANTS[
+				Math.floor(Math.random() * DOT_LOADER_VARIANTS.length)
+			] as (typeof DOT_LOADER_VARIANTS)[number],
 	)
 
 	// The wrapper, not the matrix, carries `className`: callers stack this in a grid cell or a

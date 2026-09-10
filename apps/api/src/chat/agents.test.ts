@@ -65,10 +65,7 @@ describe("AGENTS", () => {
 describe("agentForSession", () => {
 	it("maps a session id to its mode's agent", () => {
 		assert.equal(agentForSession(makeChatSessionId("org_1", "tab")).name, "default")
-		assert.equal(
-			agentForSession(makeChatSessionId("org_1", "dashboard-builder-123")).name,
-			"dashboard-builder",
-		)
+		assert.equal(agentForSession(makeChatSessionId("org_1", "alert-123")).name, "alert")
 		assert.equal(agentForSession(makeChatSessionId("org_1", "inv-abc")).name, "investigate")
 	})
 })
@@ -86,9 +83,9 @@ describe("buildSystemPrompt", () => {
 	})
 
 	it("says nothing about delegating when the agent cannot", () => {
-		const prompt = buildSystemPrompt(AGENTS["dashboard-builder"]!)
+		const prompt = buildSystemPrompt(AGENTS.alert!)
 
-		assert.isEmpty(spawnableFor(AGENTS["dashboard-builder"]!))
+		assert.isEmpty(spawnableFor(AGENTS.alert!))
 		assert.notInclude(prompt, "## Delegating")
 	})
 

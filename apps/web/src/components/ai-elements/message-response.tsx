@@ -8,7 +8,8 @@ import { code } from "@streamdown/code"
 import { math } from "@streamdown/math"
 import { mermaid } from "@streamdown/mermaid"
 import { memo } from "react"
-import { Streamdown, type Components, type PluginConfig } from "streamdown"
+import { Streamdown, type Components, type CustomRenderer, type PluginConfig } from "streamdown"
+import { MarkdownChart } from "./markdown-chart"
 import {
 	MarkdownTable,
 	MarkdownTableBody,
@@ -29,8 +30,17 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
 	lightweight?: boolean
 }
 
-const streamdownPlugins = { cjk, code, math, mermaid } as PluginConfig
-const lightweightPlugins = { cjk } as PluginConfig
+/**
+ * A ```chart fence is a plot, not code — in either mode. The lightweight
+ * renderer drops Shiki, KaTeX and Mermaid because re-tokenizing them on every
+ * remount was most of a scroll frame; a chart is a JSON parse and a plot, and a
+ * reply that scrolls back into view showing raw JSON where its chart was would
+ * be a different reply. See `markdown-chart.tsx`.
+ */
+const chartRenderers: CustomRenderer[] = [{ component: MarkdownChart, language: "chart" }]
+
+const streamdownPlugins = { cjk, code, math, mermaid, renderers: chartRenderers } as PluginConfig
+const lightweightPlugins = { cjk, renderers: chartRenderers } as PluginConfig
 
 /**
  * Tables are ours, not Streamdown's. Its own table is a document-page table

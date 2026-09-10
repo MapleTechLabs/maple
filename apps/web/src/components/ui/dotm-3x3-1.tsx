@@ -38,7 +38,7 @@ const animationResolver: DotAnimationResolver = ({ isActive, index, reducedMotio
 export function Dotm3x3_1({
 	speed = 1.15,
 	pattern = "full",
-	dotShape = "circle",
+	dotMark = "circle",
 	animated = true,
 	hoverAnimated = false,
 	...rest
@@ -61,7 +61,7 @@ export function Dotm3x3_1({
 			dotSize={rest.dotSize ?? 6}
 			speed={speed}
 			pattern={pattern}
-			dotShape={dotShape}
+			dotMark={dotMark}
 			animated={animated}
 			phase={matrixPhase}
 			onMouseEnter={onMouseEnter}

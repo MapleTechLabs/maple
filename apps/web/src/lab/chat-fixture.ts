@@ -9,6 +9,18 @@ import type { UIMessage } from "@/components/ai-elements/types"
  * on its own line — so the lab exercises the real parser, not a hand-built segment
  * list.
  */
+/**
+ * Eight minutes of the paywall worker's error count, for the fixture's chart turn.
+ *
+ * Anchored to the real clock rather than to the fixture's fixed one, because the
+ * charts draw any bucket whose end is still ahead of `now` as an in-flight dashed
+ * tail — a fixed 2026 timestamp renders the whole series as one dashed guess.
+ */
+const ERRORS_PER_MINUTE = [4, 6, 5, 31, 88, 140, 132, 96].map((value, index, all) => ({
+	bucket: new Date(Math.floor(Date.now() / 60_000 - (all.length - index)) * 60_000).toISOString(),
+	series: { "web-paywall-worker": value },
+}))
+
 export function buildChatLabMessages(): UIMessage[] {
 	// A fixed clock walked forward a minute per turn, so the footer's timestamp is
 	// exercised without the lab re-rendering differently on every reload.
@@ -116,6 +128,47 @@ export function buildChatLabMessages(): UIMessage[] {
 						"| kafka-consumers-consumption-request | 1.24% | 6.40s | +0.9pp |",
 						"| subscriptions-api | 0.89% | 420ms | -0.1pp |",
 						"| subs-writer | 0.00% | 180ms | flat |",
+					].join("\n"),
+				},
+			],
+		},
+		// A chart turn: the streaming plot a ```chart fence becomes, over the same
+		// incident the cards above describe.
+		{
+			id: "m4b",
+			role: "assistant",
+			createdAt: at(),
+			parts: [
+				{
+					type: "text",
+					state: "done",
+					text: [
+						"The failures start at 14:03 and hold — this is not a spike that recovered.",
+						"",
+						"```chart",
+						JSON.stringify({
+							type: "area",
+							title: "web-paywall-worker errors per minute",
+							unit: "number",
+							data: ERRORS_PER_MINUTE,
+						}),
+						"```",
+						"",
+						"They are concentrated in four operations:",
+						"",
+						"```chart",
+						JSON.stringify({
+							type: "ranked",
+							title: "Failures by operation",
+							unit: "number",
+							data: [
+								{ name: "GET /api/paywall/check", value: 14208 },
+								{ name: "GET /api/paywall/bundle", value: 2611 },
+								{ name: "POST /api/paywall/refresh", value: 1102 },
+								{ name: "GET /api/paywall/trial", value: 501 },
+							],
+						}),
+						"```",
 					].join("\n"),
 				},
 			],

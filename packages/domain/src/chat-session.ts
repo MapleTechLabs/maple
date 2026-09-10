@@ -54,7 +54,6 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 
 export const ChatMode = Schema.Literals([
 	"default",
-	"dashboard-builder",
 	"alert",
 	"widget-fix",
 	"investigate",
@@ -64,7 +63,6 @@ export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 /** Mode is derived from the tab-id prefix, never sent by the client. */
 export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	if (tab.startsWith("dashboard-builder-")) return "dashboard-builder"
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"

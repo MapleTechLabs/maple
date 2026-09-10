@@ -215,14 +215,14 @@ const LABEL_VERBS = new Set([
 ])
 
 /** Consonant-doubling and silent-`e` cases the suffix rule alone gets wrong. */
-const IRREGULAR_PARTICIPLE: Record<string, string> = {
-	Get: "Getting",
-	Run: "Running",
-	Set: "Setting",
-}
+const IRREGULAR_PARTICIPLE = new Map([
+	["Get", "Getting"],
+	["Run", "Running"],
+	["Set", "Setting"],
+])
 
 const participle = (verb: string): string =>
-	IRREGULAR_PARTICIPLE[verb] ?? (verb.endsWith("e") ? `${verb.slice(0, -1)}ing` : `${verb}ing`)
+	IRREGULAR_PARTICIPLE.get(verb) ?? (verb.endsWith("e") ? `${verb.slice(0, -1)}ing` : `${verb}ing`)
 
 /**
  * What a running call is *doing*, for the transcript's live line: `Searching Traces`,

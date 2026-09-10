@@ -7,7 +7,10 @@ import { useMemo } from "react"
 import { useDotMatrixPhases, usePrefersReducedMotion, useCyclePhase } from "@/lib/dotmatrix-hooks"
 
 export type MatrixPattern = "diamond" | "full" | "outline" | "rose" | "cross" | "rings"
-export type DotShape = "circle" | "square" | "diamond" | "hearts"
+
+/** Inline style carrying the `--dmx-*` custom properties the loader CSS reads. */
+type DmxVarStyle = CSSProperties & Record<`--dmx-${string}`, string | number>
+export type DotMark = "circle" | "square" | "diamond" | "hearts"
 export type DotMatrixPhase = "idle" | "collapse" | "hoverRipple" | "loadingRipple"
 export type DotMatrixColorPreset =
 	| "solid-theme"
@@ -19,13 +22,7 @@ export type DotMatrixColorPreset =
 	| "grad-fire"
 	| "grad-prism"
 
-const DOT_MATRIX_COLOR_PRESETS: Record<
-	DotMatrixColorPreset,
-	{
-		fill: string
-		glow: string
-	}
-> = {
+const DOT_MATRIX_COLOR_PRESETS = {
 	"solid-theme": {
 		fill: "var(--color-dot-on)",
 		glow: "var(--color-dot-on)",
@@ -58,7 +55,7 @@ const DOT_MATRIX_COLOR_PRESETS: Record<
 		fill: "linear-gradient(145deg, #12c2e9 0%, #c471ed 45%, #f64f59 100%)",
 		glow: "#9e7de8",
 	},
-}
+} satisfies Record<DotMatrixColorPreset, { fill: string; glow: string }>
 
 export function resolveDmxColorTokens(
 	color: string,
@@ -98,7 +95,7 @@ export interface DotMatrixCommonProps {
 	animated?: boolean
 	hoverAnimated?: boolean
 	dotClassName?: string
-	dotShape?: DotShape
+	dotMark?: DotMark
 	opacityBase?: number
 	opacityMid?: number
 	opacityPeak?: number
@@ -169,14 +166,14 @@ export const ROSE_INDEXES = FULL_INDEXES.filter((index) => {
 	return rose > 0.6 && radius >= 1
 })
 
-const PATTERN_INDEXES: Record<MatrixPattern, number[]> = {
+const PATTERN_INDEXES = {
 	diamond: DIAMOND_INDEXES,
 	full: FULL_INDEXES,
 	outline: OUTLINE_INDEXES,
 	rose: ROSE_INDEXES,
 	cross: CROSS_INDEXES,
 	rings: RINGS_INDEXES,
-}
+} satisfies Record<MatrixPattern, number[]>
 
 export function getPatternIndexes(pattern: MatrixPattern = "diamond"): number[] {
 	return PATTERN_INDEXES[pattern]
@@ -702,7 +699,7 @@ export function DotMatrixBase({
 	ariaLabel = "Loading",
 	className,
 	pattern = "diamond",
-	dotShape = "circle",
+	dotMark = "circle",
 	muted = false,
 	bloom = false,
 	halo = 0,
@@ -732,7 +729,7 @@ export function DotMatrixBase({
 	const unit = dotSize + gap
 	const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset)
 
-	const dmxVarStyle = {
+	const dmxVarStyle: DmxVarStyle = {
 		width: matrixSpan,
 		height: matrixSpan,
 		"--dmx-speed": speedScale,
@@ -749,7 +746,7 @@ export function DotMatrixBase({
 					transformOrigin: "center center" as const,
 				}
 			: { minWidth: minSize, minHeight: minSize }),
-	} as unknown as CSSProperties
+	}
 
 	const dots = Array.from({ length: MATRIX_SIZE * MATRIX_SIZE }).map((_, index) => {
 		const { row, col } = indexToCoord(index)
@@ -813,15 +810,14 @@ export function DotMatrixBase({
 			"--dmx-radius": radiusNormalizedValue,
 			"--dmx-manhattan": manhattan,
 			...stylePatch,
-			...(!isActive
-				? {
-						opacity: 0,
-						visibility: "hidden" as const,
-						pointerEvents: "none" as const,
-						animation: "none",
-					}
-				: {}),
 		} as CSSProperties
+
+		if (!isActive) {
+			dotStyle.opacity = 0
+			dotStyle.visibility = "hidden"
+			dotStyle.pointerEvents = "none"
+			dotStyle.animation = "none"
+		}
 
 		return (
 			<span
@@ -843,7 +839,7 @@ export function DotMatrixBase({
 		<div
 			className={cx(
 				"dmx-root",
-				`dmx-dot-shape-${dotShape}`,
+				`dmx-dot-shape-${dotMark}`,
 				muted && "dmx-muted",
 				dmxBloomRootActive(bloom, halo) && "dmx-bloom",
 				dmxBloomHaloSpreadClass(halo),
@@ -889,7 +885,7 @@ export function DotMatrixBase({
 			aria-label={ariaLabel}
 			className={cx(
 				"dmx-root",
-				`dmx-dot-shape-${dotShape}`,
+				`dmx-dot-shape-${dotMark}`,
 				muted && "dmx-muted",
 				dmxBloomRootActive(bloom, halo) && "dmx-bloom",
 				dmxBloomHaloSpreadClass(halo),
@@ -944,14 +940,14 @@ export const ROSE_INDEXES_3 = FULL_INDEXES_3.filter((index) => {
 	return rose > 0.55 && radius >= 0.75
 })
 
-const PATTERN_INDEXES_3: Record<MatrixPattern, number[]> = {
+const PATTERN_INDEXES_3 = {
 	diamond: DIAMOND_INDEXES_3,
 	full: FULL_INDEXES_3,
 	outline: OUTLINE_INDEXES_3,
 	rose: ROSE_INDEXES_3,
 	cross: CROSS_INDEXES_3,
 	rings: RINGS_INDEXES_3,
-}
+} satisfies Record<MatrixPattern, number[]>
 
 export function getPattern3Indexes(pattern: MatrixPattern = "full"): number[] {
 	return PATTERN_INDEXES_3[pattern]
@@ -1002,12 +998,12 @@ export function blTrPath3NormFromIndex(index: number): number {
 	return (MAX_DIAGONAL_3 - row - (MATRIX_SIZE_3 - 1 - col)) / MAX_DIAGONAL_3
 }
 
-const DIAGONAL_PATH_3: Record<DiagonalWave3Direction, (index: number) => number> = {
+const DIAGONAL_PATH_3 = {
 	"tr-bl": trBlPath3NormFromIndex,
 	"tl-br": tlBrPath3NormFromIndex,
 	"br-tl": brTlPath3NormFromIndex,
 	"bl-tr": blTrPath3NormFromIndex,
-}
+} satisfies Record<DiagonalWave3Direction, (index: number) => number>
 
 export function diagonalWave3PathNormFromIndex(index: number, direction: DiagonalWave3Direction): number {
 	return DIAGONAL_PATH_3[direction](index)
@@ -1165,7 +1161,7 @@ export function DotMatrix3Base({
 	ariaLabel = "Loading",
 	className,
 	pattern = "full",
-	dotShape = "circle",
+	dotMark = "circle",
 	muted = false,
 	bloom = false,
 	halo = 0,
@@ -1195,7 +1191,7 @@ export function DotMatrix3Base({
 	const unit = dotSize + gap
 	const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset)
 
-	const dmxVarStyle = {
+	const dmxVarStyle: DmxVarStyle = {
 		width: matrixSpan,
 		height: matrixSpan,
 		"--dmx-speed": speedScale,
@@ -1212,7 +1208,7 @@ export function DotMatrix3Base({
 					transformOrigin: "center center" as const,
 				}
 			: { minWidth: minSize, minHeight: minSize }),
-	} as unknown as CSSProperties
+	}
 
 	const gridStyle = {
 		gap,
@@ -1282,15 +1278,14 @@ export function DotMatrix3Base({
 			"--dmx-radius": radiusNormalizedValue,
 			"--dmx-manhattan": manhattan,
 			...stylePatch,
-			...(!isActive
-				? {
-						opacity: 0,
-						visibility: "hidden" as const,
-						pointerEvents: "none" as const,
-						animation: "none",
-					}
-				: {}),
 		} as CSSProperties
+
+		if (!isActive) {
+			dotStyle.opacity = 0
+			dotStyle.visibility = "hidden"
+			dotStyle.pointerEvents = "none"
+			dotStyle.animation = "none"
+		}
 
 		return (
 			<span
@@ -1313,7 +1308,7 @@ export function DotMatrix3Base({
 			className={cx(
 				"dmx-root",
 				"dmx-matrix-3",
-				`dmx-dot-shape-${dotShape}`,
+				`dmx-dot-shape-${dotMark}`,
 				muted && "dmx-muted",
 				dmxBloomRootActive(bloom, halo) && "dmx-bloom",
 				dmxBloomHaloSpreadClass(halo),
@@ -1360,7 +1355,7 @@ export function DotMatrix3Base({
 			className={cx(
 				"dmx-root",
 				"dmx-matrix-3",
-				`dmx-dot-shape-${dotShape}`,
+				`dmx-dot-shape-${dotMark}`,
 				muted && "dmx-muted",
 				dmxBloomRootActive(bloom, halo) && "dmx-bloom",
 				dmxBloomHaloSpreadClass(halo),
@@ -1515,7 +1510,7 @@ export function createDotm3x3Component(
 ) {
 	function Dotm3x3Component({
 		pattern = "full",
-		dotShape = "circle",
+		dotMark = "circle",
 		animated = true,
 		hoverAnimated = false,
 		speed = defaultSpeed,
@@ -1537,7 +1532,7 @@ export function createDotm3x3Component(
 				{...rest}
 				speed={speed}
 				pattern={pattern}
-				dotShape={dotShape}
+				dotMark={dotMark}
 				animated={animated}
 				phase={matrixPhase}
 				onMouseEnter={onMouseEnter}
@@ -1600,7 +1595,7 @@ export function createGlyphSpin3Component(displayName: string, glyph: readonly n
 	function GlyphSpin3Component({
 		speed = defaultSpeed,
 		pattern = "full",
-		dotShape = "circle",
+		dotMark = "circle",
 		animated = true,
 		hoverAnimated = false,
 		...rest
@@ -1646,7 +1641,7 @@ export function createGlyphSpin3Component(displayName: string, glyph: readonly n
 				{...rest}
 				speed={speed}
 				pattern={pattern}
-				dotShape={dotShape}
+				dotMark={dotMark}
 				animated={animated}
 				phase={matrixPhase}
 				onMouseEnter={onMouseEnter}

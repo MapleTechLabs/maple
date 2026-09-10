@@ -32,7 +32,6 @@ import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "@/platform/Llm"
 import { DEFAULT_RULESET, READ_ONLY_RULESET } from "./permissions"
 import {
-	DASHBOARD_BUILDER_SYSTEM_PROMPT,
 	EXPLORE_SYSTEM_PROMPT,
 	INVESTIGATE_SYSTEM_PROMPT,
 	SYSTEM_PROMPT,
@@ -142,13 +141,6 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		spawns: ["explore"],
-	},
-	"dashboard-builder": {
-		name: "dashboard-builder",
-		description: "Builds and edits dashboards.",
-		mode: "primary",
-		prompt: DASHBOARD_BUILDER_SYSTEM_PROMPT,
-		permission: DEFAULT_RULESET,
 	},
 	alert: {
 		name: "alert",
