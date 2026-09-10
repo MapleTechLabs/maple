@@ -17,8 +17,7 @@ export function LoadersLab() {
 			<header className="flex flex-col gap-1">
 				<h1 className="font-semibold text-lg">Chat loaders</h1>
 				<p className="text-muted-foreground text-sm">
-					{DOT_LOADER_VARIANTS.length} dot-matrix variants. The chat picks one at random per
-					mount.
+					{DOT_LOADER_VARIANTS.length} dot-matrix variants. The chat picks one at random per mount.
 				</p>
 			</header>
 
