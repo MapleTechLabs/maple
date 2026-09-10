@@ -147,28 +147,21 @@ export type LlmClients = OpenRouterClient.OpenRouterClient | OpenAiClient.OpenAi
 type ModelServices = LanguageModel.LanguageModel | AiModel.ProviderName | AiModel.ModelName
 
 /**
- * Supplies the model to an Effect.
- *
- * A function rather than the Layer itself, because the two branches produce Layers that need
- * different clients and a `Model` requiring one is not assignable to a `Model` requiring either.
- * Closing over the concrete Layer at resolution keeps that union out of every call site.
- */
-export type ProvideModel = <A, E, R>(
-	effect: Effect.Effect<A, E, R>,
-) => Effect.Effect<A, E, Exclude<R, ModelServices> | LlmClients>
-
-/**
  * A model Maple resolved, with the facts callers need alongside it.
  *
- * Effect AI models are Layers, not values, so the context window can no longer hang off the model
- * instance the way it did when a model was a record. It travels here instead, which also means a
- * caller cannot hold a model without holding its limits.
+ * `layer` is the native model Layer, and it is meant to be bound to an agent definition with
+ * `Agent.withModel` rather than provided around a run: the engine then builds it fresh per model
+ * call and leaves its client in the run's requirements, where `layerLlm` answers it.
+ *
+ * Typed as a `Layer` rather than as an `AiModel.Model` on purpose. `Model` is invariant in its
+ * requirements, so a model needing one client is not assignable to a model needing either; `Layer`
+ * is covariant there, which is what lets both provider branches share one field.
  */
 export interface ResolvedModel {
 	readonly provider: LlmProvider
 	/** The provider's own model id, as sent on the wire. */
 	readonly name: string
-	readonly provide: ProvideModel
+	readonly layer: Layer.Layer<ModelServices, never, LlmClients>
 	readonly limits: { readonly context: number; readonly output: number }
 }
 
@@ -211,26 +204,17 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 const openRouterModel = (env: LlmEnv, name: string, effortKey: keyof LlmEnv, fallbackEffort: ReasoningEffort | undefined, tags: LlmCallTags | undefined): ResolvedModel => ({
 	provider: "openrouter",
 	name,
-	// The model Layer is composed at the caller's entry point; this only applies it, which is the
-	// whole reason `provide` is a function rather than the Layer itself.
-	provide: (effect) =>
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			effect,
-			OpenRouterLanguageModel.model(
-				name,
-				openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags),
-			),
-		),
+	layer: OpenRouterLanguageModel.model(
+		name,
+		openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags),
+	),
 	limits: limitsFor(env, name),
 })
 
 const workersAiModel = (env: LlmEnv, name: string): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
-	// See the OpenRouter branch above.
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	provide: (effect) => Effect.provide(effect, OpenAiLanguageModel.model(name)),
+	layer: OpenAiLanguageModel.model(name),
 	limits: limitsFor(env, name),
 })
 

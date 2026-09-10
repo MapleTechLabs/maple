@@ -22,6 +22,7 @@ import { Effect, Option, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
+import { submitVerdict } from "./submit-tools"
 import { buildIncidentContextMessage } from "./incident-context"
 
 /** What one lane handed the validator. `null` candidate = the lane found nothing. */
@@ -144,13 +145,7 @@ export const runValidatorAgent = Effect.fn("investigation.validator")(function* 
 		tenant: input.tenant,
 		model: input.model,
 		prompt: buildValidatorPrompt(input),
-		submitToolName: "submit_verdict",
-		submitToolDescription:
-			"Record your ranking. Call it exactly once — this call IS your answer, and prose outside " +
-			"it is discarded. Promoting nothing is a legitimate outcome: leave promotedLensId null " +
-			"and still submit a `report` as a partial, saying what was ruled out, what could not be " +
-			"checked, and the strongest remaining lead at low confidence.",
-		schema: ValidatorVerdict,
+		submit: submitVerdict,
 		deadlineAtMs: input.deadlineAtMs,
 	})
 

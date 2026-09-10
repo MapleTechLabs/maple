@@ -14,8 +14,9 @@
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
 import { Effect, Layer, Option, Schema } from "effect"
-import { Model } from "effect/unstable/ai"
-import { ScriptedModel } from "@effect-agent/testing/ScriptedModel"
+import { Model, Tool, Toolkit } from "effect/unstable/ai"
+import { MapleToolFailure } from "@/mcp/tools/llm-tools"
+import { ScriptedModel, type ScriptedStreamPart, type ScriptedTurnInput } from "@effect-agent/testing/ScriptedModel"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import { PermissionRule } from "@maple/domain/permission"
 import { OrgId, UserId } from "@maple/domain"
@@ -46,6 +47,23 @@ const AGENT: AgentDefinition = {
 }
 
 const SCHEMA = Schema.Struct({ claim: Schema.String })
+
+const submitToolkit = Toolkit.make(
+	Tool.make("submit_candidate", {
+		description: "File the candidate.",
+		parameters: SCHEMA,
+		success: Schema.String,
+		failure: MapleToolFailure,
+	}),
+)
+
+/** The tool this pass answers through, shaped like the real ones in `./submit-tools.ts`. */
+const SUBMIT = {
+	name: "submit_candidate",
+	schema: SCHEMA,
+	toolkit: submitToolkit,
+	layer: submitToolkit.toLayer({ submit_candidate: () => Effect.succeed("Recorded.") }),
+} as const
 
 const ToolExecutorStubLayer = Layer.succeed(McpToolExecutor, {
 	execute: (_tenant, name) =>
@@ -78,49 +96,48 @@ const USAGE = {
  * A scripted turn always ends in a finish part, and its reason has to agree with what it emitted:
  * a turn that declared tool calls and reported `stop` is rejected as a protocol error.
  */
-const turn = (...parts: ReadonlyArray<unknown>) => {
+const turn = (
+	...parts: ReadonlyArray<ScriptedStreamPart | ReadonlyArray<ScriptedStreamPart>>
+): ScriptedTurnInput => {
 	const flat = parts.flat()
-	const calls = flat.some((part) => (part as { type?: string }).type === "tool-call")
+	const calls = flat.some((part) => part.type === "tool-call")
 	return {
-		_tag: "Stream" as const,
+		_tag: "Stream",
 		parts: [
 			...flat,
 			{
-				type: "finish" as const,
-				reason: calls ? ("tool-calls" as const) : ("stop" as const),
+				type: "finish",
+				reason: calls ? "tool-calls" : "stop",
 				usage: USAGE,
 			},
 		],
-		termination: { _tag: "Complete" as const },
+		termination: { _tag: "Complete" },
 	}
 }
 
 /**
  * A model that answers from a script, and a `ResolvedModel` wrapping it.
  *
- * The pass resolves its model through `provide`, so a scripted one substitutes cleanly without the
- * pass knowing it is under test.
+ * The pass binds its model to the agent definition, so a scripted one substitutes cleanly without
+ * the pass knowing it is under test.
  */
-const scripted = (turns: ReadonlyArray<unknown>): ResolvedModel => ({
+const scripted = (turns: ReadonlyArray<ScriptedTurnInput>): ResolvedModel => ({
 	provider: "openrouter",
 	name: "scripted/test-model",
 	limits: { context: 128_000, output: 8_000 },
 	// `Model.make` supplies the provider and model identity services alongside the language model;
 	// the scripted layer alone provides only the model itself.
-	provide: (effect) =>
-		Effect.provide(effect, Model.make("scripted", "test-model", ScriptedModel.layer(turns as never))),
+	layer: Model.make("scripted", "test-model", ScriptedModel.layer(turns)),
 })
 
-const run = (turns: ReadonlyArray<unknown>, deadlineAtMs?: number) =>
+const run = (turns: ReadonlyArray<ScriptedTurnInput>, deadlineAtMs?: number) =>
 	runAgentPass({
 		id: "pass-1",
 		agent: AGENT,
 		tenant: TENANT,
 		model: scripted(turns),
 		prompt: "Is the pool exhausted?",
-		submitToolName: "submit_candidate",
-		submitToolDescription: "File the candidate.",
-		schema: SCHEMA,
+		submit: SUBMIT,
 		...(deadlineAtMs === undefined ? undefined : { deadlineAtMs }),
 	}).pipe(Effect.provide(Layer.merge(ToolExecutorStubLayer, IdGenerator.layer)))
 

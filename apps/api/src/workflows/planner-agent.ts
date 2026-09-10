@@ -9,15 +9,14 @@
  * economised on.
  */
 import { makeChatSessionId } from "@maple/domain/chat-session"
-import { InvestigationPlan } from "@maple/domain/http"
-import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
+import type { InvestigationPlan, InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
 import type { ResolvedModel } from "@/platform/Llm"
 import { Effect, Option } from "effect"
 import { plannerAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 import { buildIncidentContextMessage } from "./incident-context"
-import { PLANNER_SUBMIT_DESCRIPTION, PLANNER_SUBMIT_TOOL } from "./planner-prompt"
+import { submitPlan } from "./submit-tools"
 
 export interface PlannerAgentInput {
 	readonly investigationId: string
@@ -57,9 +56,7 @@ export const runPlannerAgent = Effect.fn("investigation.plan")(function* (input:
 		tenant: input.tenant,
 		model: input.model,
 		prompt: buildIncidentContextMessage(LEAD, input.subject, input.snapshot),
-		submitToolName: PLANNER_SUBMIT_TOOL,
-		submitToolDescription: PLANNER_SUBMIT_DESCRIPTION,
-		schema: InvestigationPlan,
+		submit: submitPlan,
 		deadlineAtMs: input.deadlineAtMs,
 	})
 

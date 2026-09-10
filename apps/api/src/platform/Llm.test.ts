@@ -62,7 +62,8 @@ const captureRequest = (
 		const model = resolve(env, tags)
 
 		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
-			model.provide,
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),
 			// `Fetch` is a context Reference read per request rather than a Layer requirement, so it

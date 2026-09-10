@@ -13,7 +13,7 @@
 import * as Agent from "@effect-agent/core/Agent"
 import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
 import * as Output from "@effect-agent/engine/Output"
-import { Duration, Schema } from "effect"
+import { Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 import { PermissionRule } from "@maple/domain/permission"
@@ -23,6 +23,7 @@ import { MAX_STEPS, REPEATED_TOOL_CALLS, SUBAGENT_MAX_STEPS, TOOL_CONCURRENCY, T
 import { buildHypothesisSystemPrompt, hypothesisRuleset } from "@/workflows/hypothesis-catalogue"
 import { PLANNER_MAX_STEPS, PLANNER_SYSTEM_PROMPT, PLANNER_TOOL_NAMES } from "@/workflows/planner-prompt"
 import type { PermissionRuleset } from "@maple/domain/permission"
+import type { ResolvedModel } from "@/platform/Llm"
 import { DEFAULT_RULESET, READ_ONLY_RULESET } from "./permissions"
 import {
 	DASHBOARD_BUILDER_SYSTEM_PROMPT,
@@ -240,17 +241,14 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => {
  * `contextTokenLimit` is what makes compaction the engine's job instead of `turn-runner`'s. It
  * arrives from the resolved model rather than the agent, because it is a property of the model.
  */
-export const agentPolicyFor = (
-	agent: AgentDefinition,
-	contextTokens?: number,
-	/** Overrides the shared wall clock; a headless pass runs to a deadline the workflow set. */
-	maxDuration: Duration.Input = TURN_MAX_DURATION,
-): AgentPolicy => {
+export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
 	const maxTurns = agent.steps ?? MAX_STEPS
 	return AgentPolicy.make({
 		maxTurns,
 		maxToolCalls: maxTurns * TOOL_CONCURRENCY,
-		maxDuration,
+		// The shared ceiling. A headless pass tightens it per run with `durationDeadline`, which the
+		// engine takes as the earlier of the two — a run option can never widen the definition.
+		maxDuration: TURN_MAX_DURATION,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
 		// The closing step, as policy: a turn that runs out of turns gets one more, without tools,
@@ -270,8 +268,8 @@ export const agentPolicyFor = (
 export const chatAgent = (
 	agent: AgentDefinition,
 	toolkit: Toolkit.Any,
+	model: ResolvedModel,
 	options: {
-		readonly contextTokens?: number
 		/**
 		 * Set when this run answers *through* a tool. Present means the run cannot settle in prose,
 		 * which is what an autonomous investigation needs and what a human follow-up must not have.
@@ -279,19 +277,28 @@ export const chatAgent = (
 		readonly completion?: { readonly tool: string; readonly required: boolean }
 	} = {},
 ) =>
-	Agent.make(agent.name, {
-		input: Schema.String,
-		output: Output.text(Schema.String),
-		instructions: buildSystemPrompt(agent),
-		toolkit,
-		policy: agentPolicyFor(agent, options.contextTokens),
-		...(options.completion === undefined
-			? undefined
-			: {
-					completion: {
-						tool: options.completion.tool,
-						required: options.completion.required,
-						project: ({ parameters }: { readonly parameters: unknown }) => JSON.stringify(parameters),
-					},
-				}),
-	})
+	// `withModel` rather than providing the model Layer around the run: the binding is what carries
+	// the model through delegation, so a sub-agent can run on a different one, and the engine builds
+	// it fresh per model call instead of holding one language model open for the whole turn.
+	Agent.withModel(
+		Agent.make(agent.name, {
+			input: Schema.String,
+			output: Output.text(Schema.String),
+			instructions: buildSystemPrompt(agent),
+			// The same sentence the `task` tool shows a calling model, so a delegated definition and
+			// the tool that reaches it cannot describe themselves differently.
+			description: agent.description,
+			toolkit,
+			policy: agentPolicyFor(agent, model.limits.context),
+			...(options.completion === undefined
+				? undefined
+				: {
+						completion: {
+							tool: options.completion.tool,
+							required: options.completion.required,
+							project: ({ parameters }: { readonly parameters: unknown }) => JSON.stringify(parameters),
+						},
+					}),
+		}),
+		model.layer,
+	)

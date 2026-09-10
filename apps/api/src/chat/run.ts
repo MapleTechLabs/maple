@@ -128,8 +128,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const handlers =
 		completion === undefined ? maple.layer : Layer.merge(maple.layer, completion.layer)
 
-	const agent = chatAgent(definition, toolkit, {
-		contextTokens: input.model.limits.context,
+	const agent = chatAgent(definition, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
 			: { completion: { tool: SUBMIT_DIAGNOSIS, required: completion.required } }),
@@ -159,10 +158,10 @@ export const runChatTurn = (input: ChatRunInput) => {
 		),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
 		// which is why the engine's is transient. A run is an entry point: the Durable Object
-		// invocation owns this scope and nothing outside it composes these layers.
+		// invocation owns this scope and nothing outside it composes these layers. The model's own
+		// client stays in the requirements channel, where the Durable Object's runtime answers it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layerTransient, IdGenerator.layer)),
-		input.model.provide,
 	)
 }
 

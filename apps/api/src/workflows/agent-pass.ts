@@ -6,24 +6,30 @@
  *
  * Two things a workflow needs that a chat session gets for free:
  *
- * - **A structured answer.** A run emits events, not objects, so the schema arrives the way
- *   `submit_diagnosis` already does: a required completion tool whose parameters *are* the schema.
- *   The model filling it in is the model answering.
- * - **A deadline.** Supplied as the policy's wall clock. Duration is a hard rail in the engine, so
- *   a pass that runs out of clock fails rather than getting a last word — which is why the answer
- *   is recorded by the tool handler as it arrives rather than read off a successful result. A lane
- *   that investigated for its whole budget and submitted must not be recorded like one that never
- *   looked.
+ * - **A structured answer.** A run emits events, not objects, so the schema arrives as a required
+ *   completion tool whose parameters *are* the schema — see `./submit-tools.ts`. The engine decodes
+ *   those parameters against that schema and projects them into the run's output, which is why the
+ *   agent's declared `output` is the answer's schema and the projection is the identity.
+ * - **A deadline.** Supplied as `durationDeadline`, an absolute instant the engine takes as the
+ *   earlier of it and the policy's own wall clock. Absolute rather than a remaining duration
+ *   because a Cloudflare Workflow body re-runs: a `Date.now()` computed here differs on every
+ *   replay and invalidates cached steps.
+ *
+ * Duration is a hard rail, so a pass that runs out of clock fails rather than getting a last word.
+ * The answer is therefore read off the submit call as it is declared, not off a successful result:
+ * a lane that investigated for its whole budget and submitted must not be recorded like one that
+ * never looked.
  */
-import { Cause, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Cause, DateTime, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Tool, Toolkit } from "effect/unstable/ai"
 import * as Agent from "@effect-agent/core/Agent"
+import { AgentPolicyError } from "@effect-agent/core/AgentError"
+import { ThreadId } from "@effect-agent/core/Identifiers"
+import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
-import { IdGenerator } from "@effect-agent/core/IdGenerator"
-import * as Output from "@effect-agent/engine/Output"
 import { agentPolicyFor, buildSystemPrompt, type AgentDefinition } from "@/chat/agents"
 import { buildMapleToolkit } from "@/mcp/tools/llm-tools"
-import { toInputSchema } from "@/mcp/tools/registry"
 import { evaluatePermission } from "@maple/domain/permission"
 import { accumulateUsage, makeRunUsage, type RunUsage } from "@/chat/tools"
 import type { LlmClients, ResolvedModel } from "@/platform/Llm"
@@ -32,13 +38,32 @@ import type { TenantContext } from "@/services/auth/tenant-context"
 import { summarizeCause } from "@/platform/describe-cause"
 
 /**
- * The answer's schema must decode without services: it is decoded inside a tool handler, where the
- * only context is the engine's, and a schema that needed a service there would fail at runtime
- * rather than at the call site.
+ * The answer's schema must decode *and* encode without services.
+ *
+ * Both halves run inside the engine: the completion projection decodes the submit call's
+ * parameters, and the run's terminal output is encoded back through the same schema. The only
+ * context either has is the run's, so a schema that needed a service would fail at runtime rather
+ * than at the call site.
  */
-export type AnswerSchema = Schema.Top & { readonly DecodingServices: never }
+export type AnswerSchema = Schema.Top & {
+	readonly DecodingServices: never
+	readonly EncodingServices: never
+}
 
-export interface AgentPassInput<S extends AnswerSchema> {
+/**
+ * The tool a pass answers through, with the handler layer that satisfies its toolkit.
+ *
+ * Built in `./submit-tools.ts` so name, schema, toolkit and handlers are declared together and
+ * cannot drift apart.
+ */
+export interface AgentPassSubmit<S extends AnswerSchema, Tools extends Record<string, Tool.Any>> {
+	readonly name: string
+	readonly schema: S
+	readonly toolkit: Toolkit.Toolkit<Tools>
+	readonly layer: Layer.Layer<Tool.HandlersFor<Tools>>
+}
+
+export interface AgentPassInput<S extends AnswerSchema, Tools extends Record<string, Tool.Any>> {
 	/** Correlation id; becomes the run's thread id. */
 	readonly id: string
 	/**
@@ -54,11 +79,7 @@ export interface AgentPassInput<S extends AnswerSchema> {
 	readonly model: ResolvedModel
 	/** The single user turn. A sub-agent sees nothing else — its prompt must stand alone. */
 	readonly prompt: string
-	/** Name of the tool the agent calls to answer, e.g. `submit_candidate`. */
-	readonly submitToolName: string
-	readonly submitToolDescription: string
-	/** The answer's schema. Doubles as the tool's parameters, so the model fills it in directly. */
-	readonly schema: S
+	readonly submit: AgentPassSubmit<S, Tools>
 	/**
 	 * Wall clock after which the run stops. Omit for the agent's default. Never derive this inside a
 	 * Cloudflare Workflow body — a `Date.now()` there differs on every replay and invalidates
@@ -77,9 +98,32 @@ export interface AgentPassOutput<A> {
 	readonly deadlineHit: boolean
 }
 
-/** What is left of the pass's clock, floored so an already-passed deadline still runs one turn. */
-const remaining = (deadlineAtMs: number | undefined): Duration.Input | undefined =>
-	deadlineAtMs === undefined ? undefined : Duration.millis(Math.max(1_000, deadlineAtMs - Date.now()))
+const decodeThreadId = Schema.decodeSync(ThreadId)
+
+/**
+ * The instant a pass stops, floored a second into the future.
+ *
+ * A workflow computes its deadlines up front, so a step that starts late — after a retry, after a
+ * queue — can arrive already past its own. The floor is what leaves it one turn to file something
+ * rather than failing before its first model call. The clock is read here rather than in the
+ * workflow body, where a `Date.now()` differs on every replay and invalidates cached steps.
+ */
+const stopAt = (deadlineAtMs: number): DateTime.Utc =>
+	DateTime.makeUnsafe(Math.max(deadlineAtMs, Date.now() + 1_000))
+
+/**
+ * Whether the run ended on the engine's duration rail.
+ *
+ * Read off the typed policy failure rather than by comparing the clock to the deadline. Those two
+ * answers differ exactly when it matters: a pass that failed for its own reasons a millisecond
+ * after its deadline is not a pass that ran out of time, and the validator ranks a cut-short lane
+ * differently from one that reported nothing.
+ */
+const hitDurationRail = (cause: Cause.Cause<unknown>): boolean =>
+	Option.match(Cause.findErrorOption(cause), {
+		onNone: () => false,
+		onSome: (error) => error instanceof AgentPolicyError && error.limit === "duration",
+	})
 
 /**
  * Run the agent until it answers, exhausts its steps, or passes its deadline.
@@ -87,8 +131,8 @@ const remaining = (deadlineAtMs: number | undefined): Duration.Input | undefined
  * Never fails on the agent's behalf: an agent that produces nothing returns `None`, because "this
  * lens found nothing" is a result the boards render and not an error the workflow should propagate.
  */
-export const runAgentPass = <S extends AnswerSchema>(
-	input: AgentPassInput<S>,
+export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string, Tool.Any>>(
+	input: AgentPassInput<S, Tools>,
 ): Effect.Effect<AgentPassOutput<S["Type"]>, never, LlmClients | McpToolExecutor> =>
 	Effect.gen(function* () {
 		type A = S["Type"]
@@ -108,81 +152,89 @@ export const runAgentPass = <S extends AnswerSchema>(
 		let toolCalls = 0
 		let deadlineHit = false
 
-		/** Decode one submitted answer and keep it. Returns what the model is told. */
-		const record = (params: unknown): string => {
-			const decoded = decodeAnswer(params)
-			if (Option.isNone(decoded)) return "Rejected: the answer did not match its schema."
-			answer = decoded
-			return "Recorded."
-		}
+		const decodeAnswer = Schema.decodeUnknownOption(input.submit.schema)
 
-		const decodeAnswer = Schema.decodeUnknownOption(input.schema)
-
-		// One construction, so the toolkit and its handlers cannot disagree. The submit tool is
-		// dynamic like the registry's, so its arguments arrive unknown and are decoded here.
 		const tools = buildMapleToolkit(toolExecutor, input.tenant, {
 			// Separates workflow tool calls from interactive chat ones in telemetry; both otherwise
 			// reach the dispatcher through the same builder.
 			surface: "workflow",
 			include: (name) => evaluatePermission(input.agent.permission, name) !== "deny",
 			gate: (name) => evaluatePermission(input.agent.permission, name) === "ask",
-			extra: [
-				{
-					name: input.submitToolName,
-					description: input.submitToolDescription,
-					parameters: toInputSchema(input.schema),
-					// The engine projects a completion call into the run's output rather than dispatching
-					// its handler, so this only ever runs when the model calls the tool as an ordinary
-					// one. Recording in both places keeps either path reporting the answer.
-					handler: (params) => Effect.succeed(record(params)),
-				},
-			],
 		})
 
-		const definition = Agent.make(input.agent.name, {
-			input: Schema.String,
-			output: Output.text(Schema.String),
-			instructions: buildSystemPrompt(input.agent),
-			toolkit: tools.toolkit,
-			policy: agentPolicyFor(input.agent, input.model.limits.context, remaining(input.deadlineAtMs)),
-			completion: {
-				tool: input.submitToolName,
-				required: true,
-				// Recording here rather than reading the run's output: wall clock is a hard rail, so a
-				// pass that submits and then runs out of time still has to report what it filed.
-				// Re-evaluation on recovery records the same value, so this stays idempotent.
-				project: ({ parameters }: { readonly parameters: unknown }) => record(parameters),
-			},
-		})
+		// Widened to `Toolkit.Any` deliberately. The Maple half is built from a runtime catalogue, so
+		// the merged record's exact key set means nothing to a reader and every downstream projection
+		// of it — tool parameter encoding services, the completion declaration — resolves to the same
+		// place through the erased type.
+		const toolkit: Toolkit.Any = Toolkit.merge(tools.toolkit, input.submit.toolkit)
+
+		const definition = Agent.withModel(
+			Agent.make(input.agent.name, {
+				input: Schema.String,
+				output: input.submit.schema,
+				instructions: buildSystemPrompt(input.agent),
+				description: input.agent.description,
+				toolkit,
+				policy: agentPolicyFor(input.agent, input.model.limits.context),
+				completion: {
+					tool: input.submit.name,
+					required: true,
+					// The identity, and pure — which recovery requires, because it re-evaluates this.
+					// The engine has already decoded these parameters against the submit tool's own
+					// schema, which is the agent's output schema, so the decoded value *is* the answer.
+					project: ({ parameters }: { readonly parameters: A }) => parameters,
+				},
+			}),
+			input.model.layer,
+		)
 
 		yield* AgentRuntime.stream(definition, input.prompt, {
+			threadId: decodeThreadId(input.id),
 			// The run event stream carries no token counts, so without this hook every pass reports
 			// zero and the investigation rows record no cost.
 			budget: accumulateUsage(usage),
+			...(input.deadlineAtMs === undefined
+				? undefined
+				: { durationDeadline: stopAt(input.deadlineAtMs) }),
 		}).pipe(
 			Stream.runForEach((event) =>
 				Effect.sync(() => {
-					if (event._tag === "ToolCallDeclared" && event.toolName !== input.submitToolName) {
+					if (event._tag !== "ToolCallDeclared") return
+					if (event.toolName !== input.submit.name) {
 						toolCalls += 1
+						return
 					}
+					// Taken from the declaration rather than from the run's output, so a pass that
+					// submitted and then ran out of clock still reports what it filed. A declaration the
+					// engine goes on to reject leaves the previous answer standing.
+					const decoded = decodeAnswer(event.parameters)
+					if (Option.isSome(decoded)) answer = decoded
 				}),
 			),
 			// One provide, so the pass's services share a lifetime. A pass is an entry point: the
-			// workflow step owns this scope and nothing outside it composes these layers.
+			// workflow step owns this scope and nothing outside it composes these layers. The model's
+			// own client stays in the requirements channel, where the workflow's runtime answers it.
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(tools.layer, ThreadHistory.layerTransient, IdGenerator.layer)),
-			input.model.provide,
+			Effect.provide(
+				Layer.mergeAll(
+					tools.layer,
+					input.submit.layer,
+					ThreadHistory.layerTransient,
+					IdGenerator.layer,
+				),
+			),
 			// A pass that dies mid-run still reports whatever it managed to submit. Workflow
 			// cancellation remains an interruption rather than a false successful pass.
 			Effect.catchCause((cause) => {
 				if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
-				deadlineHit = input.deadlineAtMs !== undefined && Date.now() >= input.deadlineAtMs
+				deadlineHit = hitDurationRail(cause)
 				return Effect.logWarning("Agent pass failed; returning the partial result").pipe(
 					Effect.annotateLogs({
 						agent: input.agent.name,
 						messageId: input.id,
 						submitted: Option.isSome(answer),
 						toolCallCount: toolCalls,
+						deadlineHit,
 						cause: summarizeCause(cause),
 					}),
 					Effect.tap(() => Effect.annotateCurrentSpan("maple.agent.recovered_failure", true)),

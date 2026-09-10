@@ -73,32 +73,6 @@ export interface BuildMapleToolsOptions {
 	 * agent passes pass `"workflow"` so the two are separable in traces despite sharing this builder.
 	 */
 	readonly surface?: McpToolSurface
-	/**
-	 * Tools this build owns that do not come from the registry, such as the tool an agent answers
-	 * *through*.
-	 *
-	 * Declared here rather than merged afterwards so one construction produces one toolkit and one
-	 * handler map. Merging a registry toolkit built from a runtime catalogue with a separately
-	 * declared one produces handler records that do not unify, and the join needs a cast to close.
-	 */
-	readonly extra?: ReadonlyArray<ExtraTool>
-}
-
-/**
- * A caller-owned tool, declared with the same dynamic shape the registry's tools use.
- *
- * `parameters` is JSON Schema and the handler receives `unknown`, exactly like a registry tool, so
- * every tool in one build shares a handler signature. A caller that wants its arguments typed
- * decodes them itself — which is what the registry's own tools already do.
- */
-export interface ExtraTool {
-	readonly name: string
-	readonly description: string
-	readonly parameters: Record<string, unknown>
-	// Model-authored JSON by definition: a dynamic tool's shape is known only at runtime, so the
-	// handler parses it rather than receiving it parsed.
-	// oxlint-disable-next-line anti-slop/no-unknown-parameters
-	readonly handler: (params: unknown) => Effect.Effect<string, MapleToolFailure>
 }
 
 /**
@@ -140,20 +114,8 @@ export const buildMapleToolkit = (
 			failure: MapleToolFailure,
 		})
 	})
-	const extra = options.extra ?? []
-	const toolkit = Toolkit.make(
-		...tools,
-		...extra.map((tool) =>
-			Tool.dynamic(tool.name, {
-				description: tool.description,
-				parameters: tool.parameters,
-				success: Schema.String,
-				failure: MapleToolFailure,
-			}),
-		),
-	)
+	const toolkit = Toolkit.make(...tools)
 	const handlers = Object.fromEntries(
-		extra.map((tool) => [tool.name, tool.handler] as const).concat(
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
 			return [
@@ -172,9 +134,10 @@ export const buildMapleToolkit = (
 									Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 								),
 			]
-			// Same reason as ExtraTool.handler: the model's arguments arrive unparsed.
+			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
+			// unparsed and the handler parses them.
 			// oxlint-disable-next-line anti-slop/no-unknown-parameters
-			}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>),
+		}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>,
 	)
 	// `handlers` is exposed alongside the layer because a caller that merges this toolkit with one
 	// of its own must build a single handler map: two partial layers would each be missing the
