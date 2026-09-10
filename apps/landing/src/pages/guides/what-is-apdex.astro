@@ -47,7 +47,7 @@ const faqs = [
     {
         question: "Should I alert on Apdex or on p95 latency?",
         answer:
-            "Both, for different reasons. Apdex measures how many users had a bad time, including the ones whose requests failed, so it is the better single page-me signal. Percentiles measure how bad the slow tail got, so they are the better debugging signal. Apdex counts the tail; p99 measures it.",
+            "Both, for different reasons. Apdex measures how many users had a bad time, including the ones whose requests failed, so it is the better single page-me signal. Percentiles measure how bad the slow tail got, which is what you want once you are already looking. Alert on Apdex, debug on p99.",
     },
     {
         question: "Why is my Apdex score flat at 1.0?",
@@ -104,7 +104,7 @@ const articleJsonLd = {
                         What is Apdex, and how do you use the score?
                     </h1>
                     <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        Apdex compresses a latency distribution into one number between 0 and 1: the share of requests that were fast enough to keep a user happy, counting failures as unhappy users.
+                        Apdex compresses a latency distribution into one number between 0 and 1: the share of requests that were fast enough to keep a user happy, with failed requests counted as unhappy users.
                     </p>
                     <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                         <span>By Maple</span>
@@ -178,10 +178,10 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        The standard was published by the Apdex Alliance to solve a reporting problem: a latency distribution is hard to compare across services, across weeks, and across an engineering-to-business boundary. One number between 0 and 1, defined the same way everywhere, travels further than a histogram.
+                        The standard came out of the Apdex Alliance to solve a reporting problem. A latency histogram is hard to compare between two services, or between this week and last, and it is close to useless in a conversation with someone who does not read percentiles for a living. A single number, defined the same way everywhere, survives that trip.
                     </p>
                     <p>
-                        A score of <strong>1</strong> means every request beat the target. A score of <strong>0</strong> means none of them did. The interesting property is what happens to failures: a request that returns an error is frustrated regardless of how fast it came back, so Apdex measures delivered experience rather than raw speed.
+                        A score of <strong>1</strong> means every request beat the target, and <strong>0</strong> means none of them did. What separates Apdex from a rounded-off latency chart is how it handles failures: a request that returns an error counts as frustrated no matter how fast it came back, so the score follows what was delivered rather than how quickly it was delivered.
                     </p>
 
                     <h3>Apdex answers a different question than a p95 alert</h3>
@@ -201,7 +201,7 @@ const articleJsonLd = {
 
                 <section id="formula" class="scroll-mt-24">
                     <p class="guide-eyebrow">02 · The formula</p>
-                    <h2>Three buckets, one target time, one ratio</h2>
+                    <h2>The Apdex formula: three bands, one target time</h2>
                     <p>
                         You choose <strong>T</strong>, the response time at which users stop perceiving the response as immediate. Every request in the measurement window then lands in one of three bands, and the band decides how much credit the request earns. The upper boundary is never configured separately: the tolerating band always ends at <strong>4T</strong>.
                     </p>
@@ -265,9 +265,9 @@ const articleJsonLd = {
 
                 <section id="choosing-t" class="scroll-mt-24">
                     <p class="guide-eyebrow">03 · The one input</p>
-                    <h2>Choosing T, the only number that matters</h2>
+                    <h2>How to choose T, the Apdex target time</h2>
                     <p>
-                        <strong>T</strong> is the whole rule. It sets the satisfied boundary directly and the frustrated boundary implicitly, since the tolerating band always ends at 4T. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s. Two teams reporting an Apdex of 0.95 against different targets are not reporting the same thing.
+                        <strong>T</strong> is the whole rule. It sets the satisfied boundary directly, and the frustrated boundary follows from it, because the tolerating band always ends at 4T. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s. Two teams reporting an Apdex of 0.95 against different targets are not reporting the same thing.
                     </p>
                     <p>
                         Pick T as the latency at which your users stop perceiving the response as immediate, per class of traffic:
@@ -330,7 +330,7 @@ const articleJsonLd = {
 
                 <section id="apdex-vs-percentiles" class="scroll-mt-24">
                     <p class="guide-eyebrow">05 · Comparison</p>
-                    <h2>Apdex counts the tail. Percentiles measure it.</h2>
+                    <h2>Apdex vs p95 latency: where the two disagree</h2>
                     <p>
                         A p95 alert fires on the shape of the tail; Apdex fires on its size. Most of the time they agree — if a bad deploy makes 30% of requests take 3 seconds, a p95 alert at 1s fires and so does Apdex. The cases worth knowing are the ones where they disagree.
                     </p>
@@ -353,7 +353,7 @@ const articleJsonLd = {
                         The second row is the case only Apdex catches: a fast failure is still a frustrated user, so error-driven regressions show up as an Apdex drop while the latency chart looks like an improvement. The third row is the case only percentiles catch: Apdex is a ratio, so a service where the slow 3% take 4 seconds and one where they take 40 seconds score identically.
                     </p>
                     <p>
-                        The practical arrangement is to alert on Apdex and debug on percentiles. Apdex is the better single page-me signal because it counts users; a <a href="/guides/api-latency">p99 investigation</a> is the better follow-up because it describes how bad the worst case got.
+                        In practice you want one of each. Apdex is the better thing to page on, because it counts how many people were affected, and a <a href="/guides/api-latency">p99 investigation</a> is what you open once you are awake and need to know how bad it got.
                     </p>
                 </section>
 
