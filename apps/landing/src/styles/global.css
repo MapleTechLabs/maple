@@ -1359,6 +1359,21 @@
 	@apply opacity-100 text-primary;
 }
 
+/* UI screenshots in a walkthrough. Unlike the section art below, these are
+   panels of the product at their own aspect: cropping one to 1280 × 660 would
+   cut the fields the step is pointing at. */
+.docs-content figure.shot {
+	@apply my-6;
+}
+
+.docs-content figure.shot img {
+	@apply w-full h-auto aspect-auto object-contain border border-border rounded-lg my-0 bg-bg-deep;
+}
+
+.docs-content figure.shot figcaption {
+	@apply mt-2 text-xs text-fg-muted;
+}
+
 /*
  * Release/section art in prose. Markdown images can't carry width/height, so
  * the source aspect (1280 × 660, exported @2x) plus this ratio box is what

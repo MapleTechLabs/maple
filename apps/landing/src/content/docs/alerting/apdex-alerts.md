@@ -192,13 +192,42 @@ The reverse case is real too. Apdex is a ratio, so it hides how bad the bad requ
 
 Maple computes Apdex over the entry-point spans of a service, which is to say the server and consumer spans and the trace roots, not every internal span. That is the same set of requests the service's Apdex chart draws, so a rule you build here matches what you saw on the chart that sent you looking.
 
-1. Open **Alerts → New rule**. Starting from a service page instead (**Services → your service → Create Alert**) pre-fills the scope.
-2. On the **Start with a template** screen, pick **Low Apdex score**. It fills in the whole rule: signal Apdex, target 500ms, fires below 0.8, five-minute window. Or choose the **Apdex** signal chip and set the fields yourself.
-3. Set **Apdex target (ms)** to your T. Requests under this duration count as fully satisfied, and the frustrated line follows at 4T.
-4. Set the **Condition** to `<` and the threshold to the score you want to defend, for example `0.8`.
-5. Choose an evaluation **window**. Five minutes is the default and works for most services. Anything from one minute up to 24 hours is allowed, but short windows on low-traffic services are noisy, because a handful of slow requests moves the ratio a long way.
-6. Scope the rule under **Services** and **Environments**. Leave services empty to watch everything, or add a **Group by** of `service.name` or `attr.http.route` to evaluate each group separately and get one incident per offender rather than one blended average.
-7. Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations), and save.
+### 1. Start from the Low Apdex score template
+
+Open **Alerts → New rule**. Starting from a service page instead (**Services → your service → Create Alert**) pre-fills the scope.
+
+The rule builder opens on **Start with a template**. Pick <span class="hl-t">Low Apdex score</span> and every field below is filled: signal Apdex, target 500ms, fires below 0.8, five-minute window. Nothing is locked afterwards.
+
+<figure class="shot">
+  <img src="/screenshots/docs/apdex-01-template.webp" alt="The Start with a template dialog in Maple's rule builder, with the Low Apdex score template reading “Apdex < 0.8 / 5min (target 500ms)”." loading="lazy" />
+  <figcaption>The Low Apdex score template. Every value it sets stays editable.</figcaption>
+</figure>
+
+### 2. Set the target, then the score you defend
+
+<span class="hl-t">Apdex target (ms)</span> is your T: requests under it count as <span class="hl-ok">fully satisfied</span>, and the <span class="hl-bad">frustrated</span> line follows automatically at 4T. Then set **Condition** to `<` and **Threshold** to the score worth paging for, typically `0.8`.
+
+The panel also states the measurement boundary: built-in signals read entry-point (root) spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold, which is what **Raw SQL** rules are for.
+
+<figure class="shot">
+  <img src="/screenshots/docs/apdex-02-signal.webp" alt="The Signal & threshold panel with the Apdex chip selected, Apdex target 500 ms, condition less-than, threshold 0.8 and severity Warning." loading="lazy" />
+  <figcaption>Apdex target 500&nbsp;ms, condition <code>&lt;</code>, threshold 0.8. (The decimal comma is the browser's locale, not a Maple setting.)</figcaption>
+</figure>
+
+### 3. Scope it, and group it if one rule covers many services
+
+Leave **Services** empty to watch everything, or name the ones you own. **Environments** works the same way. A **Group by** of `service.name` or `attr.http.route` evaluates each group on its own, so you get one incident per offender instead of one blended average that never quite breaches.
+
+<figure class="shot">
+  <img src="/screenshots/docs/apdex-03-scope.webp" alt="The Scope panel of the rule builder, with Services, Environments, Group by and Exclude services fields." loading="lazy" />
+  <figcaption>Scope and grouping. Empty means every service and every environment.</figcaption>
+</figure>
+
+### 4. Window, severity, destinations
+
+Five minutes is the default evaluation **window** and works for most services. Anything from one minute up to 24 hours is allowed, but short windows on low-traffic services are noisy, because a handful of slow requests moves the ratio a long way.
+
+Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations), and save.
 
 Maple evaluates alert rules every minute. Each check aggregates the window you configured, so a five-minute window is a rolling five minutes re-scored every 60 seconds.
 

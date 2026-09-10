@@ -11,6 +11,7 @@
 	"scripts": {
 		"build": "turbo build",
 		"dev": "bun run ./scripts/dev.ts",
+		"dev:signin": "bun run ./scripts/dev-signin.ts",
 		"prepare": "effect-tsgo unpatch --no-typescript --oxlint && effect-tsgo patch --no-typescript --oxlint",
 		"docker:build": "COMPOSE_PARALLEL_LIMIT=1 docker compose build",
 		"docker:up": "COMPOSE_PARALLEL_LIMIT=1 docker compose up --build",
