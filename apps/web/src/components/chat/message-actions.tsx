@@ -23,14 +23,13 @@ interface MessageActionsProps {
  */
 function timeLabel(createdAt: number): string {
 	const date = new Date(createdAt)
-	const sameYear = date.getFullYear() === new Date().getFullYear()
 	const options: Intl.DateTimeFormatOptions = {
 		month: "short",
 		day: "numeric",
 		hour: "numeric",
 		minute: "2-digit",
 	}
-	if (!sameYear) options.year = "numeric"
+	if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric"
 	return date.toLocaleString(undefined, options)
 }
 
