@@ -1,3 +1,4 @@
+import { stripContextPreamble } from "./context-preamble"
 import { parseDiagnosisMarker } from "./diagnosis-marker"
 import type { UIMessage } from "@/components/ai-elements/types"
 
@@ -97,3 +98,13 @@ export function buildTranscriptRows(messages: readonly UIMessage[]): TranscriptR
 export function toolPartsOf(row: Extract<TranscriptRow, { kind: "tool-run" }>): ToolPart[] {
 	return row.messages.flatMap((message) => message.parts.filter(isToolPart))
 }
+
+/**
+ * A user turn with nothing in it but a context preamble: the server seeded the
+ * conversation with its subject. The transcript draws it as a separator, and the
+ * turn rail skips it — there is no human message to navigate back to.
+ */
+export const isMachineTurn = (message: UIMessage): boolean =>
+	message.role === "user" &&
+	message.parts.length > 0 &&
+	message.parts.every((part) => part.type === "text" && stripContextPreamble(part.text).length === 0)
