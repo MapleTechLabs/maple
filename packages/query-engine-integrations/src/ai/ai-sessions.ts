@@ -690,7 +690,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 	order.push(["sessionId", "asc"])
 	// Usage exists only once the reporters are netted, two levels up; the
 	// session level orders on everything else.
-	const sortsOnSession = (specs: typeof order): specs is Array<[SessionSort, AiSessionSortDir]> =>
+	const sortsOnSession = (_specs: typeof order): _specs is Array<[SessionSort, AiSessionSortDir]> =>
 		sortBy !== "cost" && sortBy !== "totalTokens" && sortBy !== "llmCalls"
 	const filtersOnUsage = [
 		opts.costMin,

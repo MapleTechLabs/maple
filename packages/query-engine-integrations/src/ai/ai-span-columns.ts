@@ -180,7 +180,7 @@ export type SessionUsageMeasure =
 	| "outputTokens"
 	| "reasoningTokens"
 
-const NETTED_ELEMENT: Record<SessionUsageMeasure, number> = {
+const NETTED_ELEMENT = {
 	tokens: 3,
 	cost: 4,
 	inputTokens: 5,
@@ -188,7 +188,7 @@ const NETTED_ELEMENT: Record<SessionUsageMeasure, number> = {
 	cacheWriteTokens: 7,
 	outputTokens: 8,
 	reasoningTokens: 9,
-}
+} as const satisfies Record<SessionUsageMeasure, number>
 
 /**
  * The claims of one element of the netted tuple, summed over the session:
