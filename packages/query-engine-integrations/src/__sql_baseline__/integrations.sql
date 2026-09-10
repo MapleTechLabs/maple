@@ -1,3 +1,257 @@
+-- builder:ai-sessions:aiSessionDetailsQuery:default
+SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          sum(session_traces.spanCount) AS spanCount,
+          sum(session_traces.errorSpanCount) AS errorSpanCount,
+          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
+          toString(min(session_traces.traceStart)) AS startTime,
+          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
+          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(ServiceName) AS serviceNames,
+          min(Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
+          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
+          AND TraceId IN (SELECT
+          traceId AS traceId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+        GROUP BY traceId) AS session_traces
+        INNER JOIN (SELECT
+          traceId AS traceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
+        GROUP BY sessionId
+        ORDER BY startTime DESC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionDetailsQuery:every-counted-filter
+SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          sum(session_traces.spanCount) AS spanCount,
+          sum(session_traces.errorSpanCount) AS errorSpanCount,
+          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
+          toString(min(session_traces.traceStart)) AS startTime,
+          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
+          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(ServiceName) AS serviceNames,
+          min(Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
+          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
+          AND TraceId IN (SELECT
+          traceId AS traceId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(DeploymentEnv IN ('production')) > 0
+          AND countIf(Model IN ('gpt-5.5')) > 0
+          AND countIf(AgentName IN ('billing-agent')) > 0
+          AND countIf(ToolName IN ('send_email')) > 0
+          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+        GROUP BY traceId) AS session_traces
+        INNER JOIN (SELECT
+          traceId AS traceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(DeploymentEnv IN ('production')) > 0
+          AND countIf(Model IN ('gpt-5.5')) > 0
+          AND countIf(AgentName IN ('billing-agent')) > 0
+          AND countIf(ToolName IN ('send_email')) > 0
+          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
+        GROUP BY sessionId
+        ORDER BY startTime DESC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionDetailsQuery:filtered
+SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          sum(session_traces.spanCount) AS spanCount,
+          sum(session_traces.errorSpanCount) AS errorSpanCount,
+          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
+          toString(min(session_traces.traceStart)) AS startTime,
+          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
+          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(ServiceName) AS serviceNames,
+          min(Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
+          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
+          AND TraceId IN (SELECT
+          traceId AS traceId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(VendorId IN ('eve')) > 0
+          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+        GROUP BY traceId) AS session_traces
+        INNER JOIN (SELECT
+          traceId AS traceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(VendorId IN ('eve')) > 0
+          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
+        GROUP BY sessionId
+        ORDER BY startTime DESC
+        FORMAT JSON
+
 -- builder:ai-sessions:aiSessionFacetsQuery:default
 SELECT
           arrayJoin(names) AS name,
@@ -102,271 +356,16 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:ai-sessions:aiSessionListQuery:default
-SELECT
-          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
-          argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId,
-          argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion,
-          count() AS traceCount,
-          sum(session_traces.spanCount) AS spanCount,
-          sum(session_traces.errorSpanCount) AS errorSpanCount,
-          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS reasoningTokens,
-          toString(min(session_traces.traceStart)) AS startTime,
-          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
-          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
-        FROM (SELECT
-          TraceId AS traceId,
-          argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorId,
-          argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorVersion,
-          min(if((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), Timestamp, toDateTime('2106-01-01 00:00:00'))) AS sessionStart,
-          count() AS spanCount,
-          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(ServiceName) AS serviceNames,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])), coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])) + multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])) > 0) AS usageBuckets,
-          min(Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
-          AND TraceId IN (SELECT
-          traceId AS traceId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
-        GROUP BY traceId) AS session_traces
-        INNER JOIN (SELECT
-          traceId AS traceId,
-          rawSessionId AS rawSessionId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
-        GROUP BY sessionId
-        ORDER BY startTime DESC
-        FORMAT JSON
-
--- builder:ai-sessions:aiSessionListQuery:every-counted-filter
-SELECT
-          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
-          argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId,
-          argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion,
-          count() AS traceCount,
-          sum(session_traces.spanCount) AS spanCount,
-          sum(session_traces.errorSpanCount) AS errorSpanCount,
-          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS reasoningTokens,
-          toString(min(session_traces.traceStart)) AS startTime,
-          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
-          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
-        FROM (SELECT
-          TraceId AS traceId,
-          argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorId,
-          argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorVersion,
-          min(if((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), Timestamp, toDateTime('2106-01-01 00:00:00'))) AS sessionStart,
-          count() AS spanCount,
-          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(ServiceName) AS serviceNames,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])), coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])) + multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])) > 0) AS usageBuckets,
-          min(Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
-          AND TraceId IN (SELECT
-          traceId AS traceId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(DeploymentEnv IN ('production')) > 0
-          AND countIf(Model IN ('gpt-5.5')) > 0
-          AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0
-          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
-        GROUP BY traceId) AS session_traces
-        INNER JOIN (SELECT
-          traceId AS traceId,
-          rawSessionId AS rawSessionId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(DeploymentEnv IN ('production')) > 0
-          AND countIf(Model IN ('gpt-5.5')) > 0
-          AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0
-          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
-        GROUP BY sessionId
-        ORDER BY startTime DESC
-        FORMAT JSON
-
--- builder:ai-sessions:aiSessionListQuery:filtered
-SELECT
-          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
-          argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId,
-          argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion,
-          count() AS traceCount,
-          sum(session_traces.spanCount) AS spanCount,
-          sum(session_traces.errorSpanCount) AS errorSpanCount,
-          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS reasoningTokens,
-          toString(min(session_traces.traceStart)) AS startTime,
-          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
-          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
-        FROM (SELECT
-          TraceId AS traceId,
-          argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorId,
-          argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorVersion,
-          min(if((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), Timestamp, toDateTime('2106-01-01 00:00:00'))) AS sessionStart,
-          count() AS spanCount,
-          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(ServiceName) AS serviceNames,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])), coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])) + multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])) > 0) AS usageBuckets,
-          min(Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
-          AND TraceId IN (SELECT
-          traceId AS traceId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(VendorId IN ('eve')) > 0
-          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
-        GROUP BY traceId) AS session_traces
-        INNER JOIN (SELECT
-          traceId AS traceId,
-          rawSessionId AS rawSessionId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(VendorId IN ('eve')) > 0
-          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
-        GROUP BY sessionId
-        ORDER BY startTime DESC
-        FORMAT JSON
-
 -- builder:ai-sessions:aiSessionPageQuery:default
 SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
-          toString(max(traceAgentEnd)) AS agentEnd,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
@@ -377,13 +376,23 @@ SELECT
           sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
           arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
           arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS inputTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheReadTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheWriteTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS outputTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS reasoningTokens,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
           min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
@@ -391,7 +400,7 @@ SELECT
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -405,8 +414,13 @@ SELECT
 -- builder:ai-sessions:aiSessionPageQuery:every-filter
 SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
-          toString(max(traceAgentEnd)) AS agentEnd,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
@@ -417,13 +431,23 @@ SELECT
           sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
           arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
           arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS inputTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheReadTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheWriteTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS outputTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS reasoningTokens,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
           min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
@@ -431,7 +455,7 @@ SELECT
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -465,8 +489,13 @@ SELECT
 -- builder:ai-sessions:aiSessionPageQuery:filtered
 SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
-          toString(max(traceAgentEnd)) AS agentEnd,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
@@ -477,13 +506,23 @@ SELECT
           sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
           arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
           arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS inputTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheReadTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheWriteTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS outputTokens,
+          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS reasoningTokens,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
           min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
@@ -491,7 +530,7 @@ SELECT
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'

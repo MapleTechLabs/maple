@@ -7,8 +7,8 @@ import {
 	type CompiledQuery,
 } from "@maple-dev/effect-clickhouse"
 import {
+	aiSessionDetailsQuery,
 	aiSessionFacetsQuery,
-	aiSessionListQuery,
 	idSearchPattern,
 	aiSessionPageQuery,
 	aiSessionSpansQuery,
@@ -37,24 +37,24 @@ const traceParams = { ...params, traceId: TRACE_ID }
 /** The trace's session id, or the synthesized one — the grouping key. */
 const SESSION_KEY = "if(rawSessionId = '', concat('trace:', traceId), rawSessionId)"
 
-/** The same key on the list's joined level, where both sides are qualified. */
+/** The same key on the details read's joined level, where both sides are qualified. */
 const LIST_SESSION_KEY =
 	"if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId)"
 
-/** The extent of one page's agent spans — what `aiSessionPageQuery` reports and
- *  the only window the fan-out is ever run over. Inside the caller's, by
- *  construction: the page was ranked within it. */
+/** The extent of one page's agent spans — what `aiSessionPageQuery` reports
+ *  as the rows' bounds and the only window the fan-out is ever run over.
+ *  Inside the caller's, by construction: the page was ranked within it. */
 const FAN_OUT_START = "2026-08-18 10:00:00"
 const FAN_OUT_END = "2026-08-18 12:00:00"
 
-/** Stage 2's ENTIRE param set — the caller's window is not among them. */
+/** The details read's ENTIRE param set — the caller's window is not among them. */
 const listParams = {
 	orgId: params.orgId,
 	fanOutStart: FAN_OUT_START,
 	fanOutEnd: FAN_OUT_END,
 }
 
-/** A page of two sessions, one of each kind — the list never runs without one. */
+/** A page of two sessions, one of each kind — the details read never runs without one. */
 const listOpts = {
 	sessionIds: ["wrun_01M0CSAEW96BH2W9185XZPRPKH", `trace:${TRACE_ID}`],
 }
@@ -92,15 +92,46 @@ describe("aiSessionPageQuery", () => {
 		expect(sql).toContain("GROUP BY sessionId")
 	})
 
-	it("returns the page's agent-span bounds and nothing else", () => {
+	it("returns the page's agent-span extent, first start to last end", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
 
-		// These three columns ARE the contract with the fan-out: the ids it seeks
-		// by, and the window it seeks in.
+		// The row's own bounds until the details replace them, and the contract
+		// with the details read: the ids it seeks by, and the window it seeks in.
 		expect(sql).toContain("toString(min(traceAgentStart)) AS agentStart")
-		expect(sql).toContain("toString(max(traceAgentEnd)) AS agentEnd")
-		expect(sql).not.toContain("spanCount")
-		expect(sql).not.toContain("serviceNames")
+		expect(sql).toContain("toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd")
+		// The last agent span's START is not the extent's end: a session whose
+		// last agent span runs long would end before it finished.
+		expect(sql).not.toContain("max(traceAgentEnd)) AS agentEnd")
+	})
+
+	it("resolves the vendor from the earliest session-bearing agent span, not max()", () => {
+		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
+		const [outer, inner] = sql.split("FROM (SELECT")
+
+		// Per trace: session-bearing spans rank first, then the earliest wins —
+		// a tuple, so ties at one rank fall through to time rather than to
+		// whichever row was read first. max(VendorId) picked `vercel_ai_sdk`
+		// alphabetically over the `eve` that ran the turn.
+		const vendorOrder = "tuple(if(SessionId != '', 0, 1), Timestamp)"
+		expect(inner).toContain(`argMin(VendorId, ${vendorOrder}) AS vendorId`)
+		expect(inner).toContain(`argMin(VendorVersion, ${vendorOrder}) AS vendorVersion`)
+		expect(inner).toContain(`min(${vendorOrder}) AS vendorAt`)
+		expect(sql).not.toContain("max(VendorId)")
+		// Across traces the same rank resolves the session's vendor.
+		expect(outer).toContain("argMin(vendorId, vendorAt) AS vendorId")
+		expect(outer).toContain("argMin(vendorVersion, vendorAt) AS vendorVersion")
+	})
+
+	it("counts the session's traces, agent spans and services off the index", () => {
+		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
+		const [outer, inner] = sql.split("FROM (SELECT")
+
+		expect(inner).toContain("count() AS agentSpanCount")
+		expect(inner).toContain("groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames")
+		// One row per trace on this level, so `count()` is the trace count exactly.
+		expect(outer).toContain("count() AS traceCount")
+		expect(outer).toContain("sum(agentSpanCount) AS spanCount")
+		expect(outer).toContain("groupUniqArrayArray(serviceNames) AS serviceNames")
 	})
 
 	it("orders by the first agent span, with the session id breaking ties", () => {
@@ -154,7 +185,7 @@ describe("aiSessionPageQuery", () => {
 			}),
 			params,
 		)
-		const [where] = sql.split("GROUP BY traceId")
+		const where = sql.slice(sql.indexOf("WHERE OrgId"), sql.indexOf("GROUP BY traceId"))
 
 		// Two `countIf`s, not one: the semantics are "SOME agent span of the trace
 		// is eve" AND "SOME agent span of the trace is maple-slack-agent" — which
@@ -203,15 +234,20 @@ describe("aiSessionPageQuery", () => {
 		expect(compileUnsafe(aiSessionPageQuery(), params).sql).not.toContain("__PARAM_")
 	})
 
-	it("decodes the bounds the fan-out takes back as params", () => {
+	it("decodes the row the list renders from, quoted 64-bit aggregates included", () => {
 		const compiled = compileUnsafe(aiSessionPageQuery(), params)
 
 		expect(
 			decodeRows(compiled, [
 				{
 					sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
+					vendorId: "eve",
+					vendorVersion: "1",
 					agentStart: "2026-08-19 10:33:25.825000000",
 					agentEnd: "2026-08-19 10:33:36.242000000",
+					traceCount: "3",
+					spanCount: "9",
+					serviceNames: ["maple-slack-agent"],
 					models: ["claude-sonnet-5"],
 					agentNames: ["web-fetcher", "slack-agent"],
 					firstAgentName: "slack-agent",
@@ -221,6 +257,11 @@ describe("aiSessionPageQuery", () => {
 					toolErrors: 1,
 					turnErrors: 0,
 					totalTokens: 184_320,
+					inputTokens: 120_000,
+					cacheReadTokens: 60_000,
+					cacheWriteTokens: 0,
+					outputTokens: 4_000,
+					reasoningTokens: 320,
 					cost: 0.4125,
 					agentDurationMs: "10417",
 				},
@@ -228,8 +269,13 @@ describe("aiSessionPageQuery", () => {
 		).toEqual([
 			{
 				sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
+				vendorId: "eve",
+				vendorVersion: "1",
 				agentStart: "2026-08-19 10:33:25.825000000",
 				agentEnd: "2026-08-19 10:33:36.242000000",
+				traceCount: 3,
+				spanCount: 9,
+				serviceNames: ["maple-slack-agent"],
 				models: ["claude-sonnet-5"],
 				agentNames: ["web-fetcher", "slack-agent"],
 				firstAgentName: "slack-agent",
@@ -239,6 +285,11 @@ describe("aiSessionPageQuery", () => {
 				toolErrors: 1,
 				turnErrors: 0,
 				totalTokens: 184_320,
+				inputTokens: 120_000,
+				cacheReadTokens: 60_000,
+				cacheWriteTokens: 0,
+				outputTokens: 4_000,
+				reasoningTokens: 320,
 				cost: 0.4125,
 				agentDurationMs: 10_417,
 			},
@@ -285,7 +336,7 @@ describe("aiSessionPageQuery", () => {
 		// Model calls travel as reporters too: they are counted one level up.
 		expect(inner).not.toContain("AS llmCalls")
 		expect(inner).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
 		)
 		expect(inner).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
@@ -304,6 +355,20 @@ describe("aiSessionPageQuery", () => {
 		expect(outer).toContain("arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1,")
 		expect(outer).toContain(") AS totalTokens")
 		expect(outer).toContain(") AS cost")
+		// The five buckets the row draws, summed the same way off the tuple's
+		// tail — the detail page's split, which is the index's since 0031.
+		for (const [element, name] of [
+			[7, "inputTokens"],
+			[8, "cacheReadTokens"],
+			[9, "cacheWriteTokens"],
+			[10, "outputTokens"],
+			[11, "reasoningTokens"],
+		] as const) {
+			expect(outer).toContain(
+				`arrayMap(r -> tuple(r.5, greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), ${all}))), ${all})`,
+			)
+			expect(outer).toContain(`) AS ${name}`)
+		}
 		expect(outer).toContain("toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0),")
 		expect(outer).toContain(") AS llmCalls")
 		expect(outer).toContain(
@@ -424,9 +489,9 @@ describe("idSearchPattern", () => {
 	})
 })
 
-describe("aiSessionListQuery", () => {
-	it("aggregates one page of sessions, seeking trace_detail_spans by trace id", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+describe("aiSessionDetailsQuery", () => {
+	it("details one page of sessions, seeking trace_detail_spans by trace id", () => {
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// The fan-out reads the MV whose sort key starts (OrgId, TraceId), and the
 		// id set is pushed into that read by `IN` rather than joined — the same
@@ -441,7 +506,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("pages nowhere itself — the page it was handed is the page", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// A LIMIT here would cut the page the caller already ranked, and the
 		// missing sessions would silently vanish from a scroll that had room.
@@ -451,7 +516,7 @@ describe("aiSessionListQuery", () => {
 
 	it("restricts both index reads to the page's sessions, escaping the ids", () => {
 		const { sql } = compileUnsafe(
-			aiSessionListQuery({
+			aiSessionDetailsQuery({
 				sessionIds: ["wrun_01M0CSAEW96BH2W9185XZPRPKH", "sess'evil"],
 			}),
 			listParams,
@@ -464,7 +529,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("takes the session key from the index, not from the spans", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// The one JOIN in the file, and it is here so the aggregation files a trace
 		// under exactly the key the page ranked it by: two derivations over two
@@ -481,7 +546,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("repeats the org predicate on every level that reads a table", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// Three now, not two: the fan-out plus both reads of the index — one for
 		// the id set, one for the key. A subquery contributes nothing to the outer
@@ -490,11 +555,11 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("is org-scoped", () => {
-		expect(compileUnsafe(aiSessionListQuery(listOpts), listParams).tenantScope).toBe("single-tenant")
+		expect(compileUnsafe(aiSessionDetailsQuery(listOpts), listParams).tenantScope).toBe("single-tenant")
 	})
 
 	it("selects the page's traces on index membership, with no attribute predicate", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 		const [, detection] = sql.split("TraceId IN (SELECT")
 
 		// The vendor predicate lives in `ai_trace_index_mv`'s write filter: every
@@ -506,7 +571,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("keys a trace with no session id on the trace itself", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// One session per sessionless trace, resolved on the per-trace level: a
 		// span of a session-bearing trace carries no session id of its own either.
@@ -517,46 +582,24 @@ describe("aiSessionListQuery", () => {
 		expect(sql).not.toContain("WHERE sessionId != ''")
 	})
 
-	it("tests session-id presence with mapContains AND a non-empty value", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+	it("reads no vendor, no session id and no usage off the spans — the index answers those", () => {
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
+		const [fanOut] = sql.split("TraceId IN (SELECT")
 
-		// ClickHouse yields '' for a missing Map key, so mapContains alone would
-		// rank spans carrying an empty session id as session-bearing.
-		expect(sql).toContain(
-			"(mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != '')",
-		)
-	})
-
-	it("resolves the vendor from the earliest session-bearing span, not max()", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
-
-		// max(vendorId) picked `vercel_ai_sdk` alphabetically over the `eve` that
-		// actually ran the turn — see the builder's doc comment.
-		expect(sql).not.toContain("max(SpanAttributes['maple_ai.vendor.id'])")
-		expect(sql).toContain("argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf(")
-		expect(sql).toContain("argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf(")
-		expect(sql).toContain("argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId")
-		expect(sql).toContain(
-			"argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion",
-		)
-		// The sentinel must stay inside DateTime's range or toDateTime won't parse.
-		expect(sql).toContain("toDateTime('2106-01-01 00:00:00')")
-	})
-
-	it("ranks a sessionless trace's spans so a vendor-stamped one wins", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
-
-		// Every span of a sessionless trace ties at the sentinel under the session
-		// ordering alone, and argMin over ties is non-deterministic — it handed
-		// back whichever span was read first, blank vendor included. Rank first,
-		// then time, compared as a tuple.
-		expect(sql).toContain(
-			`tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)`,
-		)
+		// What is left for the fan-out is what only every span can answer: the
+		// count, the services, the failures of any kind, and the true extent. The
+		// one Map read left is the failure rule, which needs the vendor stamp.
+		expect(fanOut).not.toContain("maple_ai.vendor.version")
+		expect(fanOut).not.toContain("maple_ai.session.id")
+		expect(fanOut).not.toContain("gen_ai.usage")
+		expect(fanOut).not.toContain("argMin(")
+		expect(sql).not.toContain("usageBuckets")
+		expect(sql).toContain("sum(session_traces.spanCount) AS spanCount")
+		expect(sql).toContain("groupUniqArrayArray(session_traces.serviceNames) AS serviceNames")
 	})
 
 	it("counts an attribute-declared failure on an Ok span as an error", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// Frameworks record failed model and tool calls as values on `Ok` spans,
 		// and the list badge has to count what the detail page's Failures panel
@@ -567,7 +610,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("escapes an org id carrying a quote", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), {
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), {
 			...listParams,
 			orgId: "org'evil",
 		})
@@ -576,7 +619,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("omits the optional filters when none are given", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		expect(sql).not.toContain("VendorId IN")
 		expect(sql).not.toContain("ServiceName IN")
@@ -584,7 +627,7 @@ describe("aiSessionListQuery", () => {
 
 	it("puts both optional filters on the index level only", () => {
 		const { sql } = compileUnsafe(
-			aiSessionListQuery({
+			aiSessionDetailsQuery({
 				...listOpts,
 				vendorIds: ["eve"],
 				serviceNames: ["maple-slack-agent"],
@@ -602,7 +645,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("reads every level over the page's bounds — padded for the fan-out only", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 		const [fanOut, detection] = sql.split("TraceId IN (SELECT")
 
 		// `trace_detail_spans` is PARTITION BY toDate(Timestamp), so this predicate
@@ -620,7 +663,7 @@ describe("aiSessionListQuery", () => {
 	})
 
 	it("takes no window param from the caller at all", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		// `orgId`, `fanOutStart`, `fanOutEnd` and nothing else: a `startTime` param
 		// left in the query would compile against a value this call never passes,
@@ -632,69 +675,24 @@ describe("aiSessionListQuery", () => {
 
 	it("refuses an empty page rather than compiling `IN ()`", () => {
 		// Not a failure the caller recovers from: `IN ()` is not SQL, and a caller
-		// holding an empty page already knows to answer it without this read.
-		expect(() => aiSessionListQuery({ sessionIds: [] })).toThrow(QueryBuilderDefect)
-		expect(() => aiSessionListQuery({ sessionIds: [] })).toThrow(/needs the page's session ids/)
+		// holding an empty page has nothing to detail.
+		expect(() => aiSessionDetailsQuery({ sessionIds: [] })).toThrow(QueryBuilderDefect)
+		expect(() => aiSessionDetailsQuery({ sessionIds: [] })).toThrow(/needs the page's session ids/)
 	})
 
 	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiSessionListQuery(listOpts), listParams).sql).not.toContain("__PARAM_")
-	})
-
-	it("splits the usage into the detail page's five buckets, deepest reporter counted", () => {
-		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
-
-		// Per trace: the reporters with their buckets under the shared convention
-		// — the cache carved out of the prompt and the reasoning out of the
-		// completion where the figure nests them (vendor first, then provider),
-		// left whole where it does not — and the response id last.
-		expect(sql).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, ",
-		)
-		expect(sql).toContain(
-			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
-		)
-		expect(sql).toContain(
-			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
-		)
-		expect(sql).toContain(
-			"coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(",
-		)
-		expect(sql).toContain(") AS usageBuckets")
-		// Per session: one sum per bucket, children off their parent and one
-		// claim per response id — the tuple's eighth element.
-		const all = "arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)"
-		for (const [element, name] of [
-			[3, "inputTokens"],
-			[4, "cacheReadTokens"],
-			[5, "cacheWriteTokens"],
-			[6, "outputTokens"],
-			[7, "reasoningTokens"],
-		] as const) {
-			expect(sql).toContain(
-				`arrayMap(r -> tuple(r.8, greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), ${all}))), ${all})`,
-			)
-			expect(sql).toContain(`) AS ${name}`)
-		}
+		expect(compileUnsafe(aiSessionDetailsQuery(listOpts), listParams).sql).not.toContain("__PARAM_")
 	})
 
 	it("decodes quoted 64-bit aggregates and the service-name array", () => {
-		const compiled = compileUnsafe(aiSessionListQuery(listOpts), listParams)
+		const compiled = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
 		const [row] = decodeRows(compiled, [
 			{
 				sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
-				vendorId: "eve",
-				vendorVersion: "0",
-				traceCount: "1",
 				spanCount: "250",
 				errorSpanCount: "4",
 				serviceNames: ["maple-slack-agent", "maple-api"],
-				inputTokens: 120_000,
-				cacheReadTokens: 60_000,
-				cacheWriteTokens: 0,
-				outputTokens: 4_000,
-				reasoningTokens: 320,
 				startTime: "2026-08-19 10:33:25.825000000",
 				endTime: "2026-08-19 10:33:36.242000000",
 				durationMs: "10417",
@@ -703,17 +701,9 @@ describe("aiSessionListQuery", () => {
 
 		expect(row).toEqual({
 			sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
-			vendorId: "eve",
-			vendorVersion: "0",
-			traceCount: 1,
 			spanCount: 250,
 			errorSpanCount: 4,
 			serviceNames: ["maple-slack-agent", "maple-api"],
-			inputTokens: 120_000,
-			cacheReadTokens: 60_000,
-			cacheWriteTokens: 0,
-			outputTokens: 4_000,
-			reasoningTokens: 320,
 			startTime: "2026-08-19 10:33:25.825000000",
 			endTime: "2026-08-19 10:33:36.242000000",
 			durationMs: 10_417,

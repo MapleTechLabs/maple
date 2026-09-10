@@ -46,16 +46,21 @@ import {
 	DB_STATEMENT_SQL,
 	DB_SYSTEM_ATTR_SQL,
 } from "./db-query-shape-sql"
-import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "../gen-ai"
+import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERSION_ATTR } from "../gen-ai"
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
 import {
 	GENAI_AGENT_NAME_SQL,
+	GENAI_CACHE_READ_TOKENS_SQL,
+	GENAI_CACHE_WRITE_TOKENS_SQL,
 	GENAI_COST_SQL,
+	GENAI_INPUT_TOKENS_SQL,
 	GENAI_IS_ERROR_SQL,
 	GENAI_IS_LLM_CALL_SQL,
 	GENAI_IS_TOOL_CALL_SQL,
 	GENAI_MODEL_SQL,
+	GENAI_OUTPUT_TOKENS_SQL,
+	GENAI_REASONING_TOKENS_SQL,
 	GENAI_RESPONSE_ID_SQL,
 	GENAI_TOKENS_SQL,
 	GENAI_TOOL_NAME_SQL,
@@ -1018,6 +1023,9 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * and the sums count as nothing. Migration 0027 changed `Tokens` to count a
  * nested cache or reasoning bucket once, under the reporter's usage
  * convention; rows materialized between the two keep the over-count.
+ * Migration 0031 added the vendor version and the five token buckets, which
+ * is what lets the list render a row without touching `trace_detail_spans`;
+ * rows materialized before it carry `''`/0 for those too.
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
@@ -1052,7 +1060,13 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_IS_TOOL_CALL_SQL} AS IsToolCall,
           ${GENAI_TOKENS_SQL} AS Tokens,
           ${GENAI_COST_SQL} AS Cost,
-          ${GENAI_RESPONSE_ID_SQL} AS ResponseId
+          ${GENAI_RESPONSE_ID_SQL} AS ResponseId,
+          SpanAttributes['${MAPLE_AI_VENDOR_VERSION_ATTR}'] AS VendorVersion,
+          ${GENAI_INPUT_TOKENS_SQL} AS InputTokens,
+          ${GENAI_CACHE_READ_TOKENS_SQL} AS CacheReadTokens,
+          ${GENAI_CACHE_WRITE_TOKENS_SQL} AS CacheWriteTokens,
+          ${GENAI_OUTPUT_TOKENS_SQL} AS OutputTokens,
+          ${GENAI_REASONING_TOKENS_SQL} AS ReasoningTokens
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
       `,

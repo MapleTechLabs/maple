@@ -44,12 +44,16 @@ export const MAX_USAGE_REPORTERS_PER_TRACE = AI_SESSION_SPANS_MAX_SPANS
 
 /**
  * One trace's reporters — `(SpanId, ParentSpanId, tokens, cost, responseId,
- * isLlmCall)` per index row that reported usage or is a model call — for the
- * session-level sums, which need every trace's reporters in hand at once. A
- * span whose usage parses to zero throughout and is not a model call is not a
- * reporter, the same as `spanTokenBuckets` returning a total of 0: a wrapper
- * stamping empty usage must not be charged as a reporter whose children then
- * owe it their tokens.
+ * isLlmCall, input, cacheRead, cacheWrite, output, reasoning)` per index row
+ * that reported usage or is a model call — for the session-level sums, which
+ * need every trace's reporters in hand at once. A span whose usage parses to
+ * zero throughout and is not a model call is not a reporter, the same as
+ * `spanTokenBuckets` returning a total of 0: a wrapper stamping empty usage
+ * must not be charged as a reporter whose children then owe it their tokens.
+ * The five buckets (elements 7–11) are the disjoint split of `tokens` the
+ * index carries since migration 0031; a row materialized before it carries
+ * zeros there and a total in `tokens`, which is why the list falls back to
+ * the total when the buckets sum to nothing.
  *
  * Raw SQL because the cap is a parameter of the aggregate
  * (`groupArrayIf(N)(…)`), a shape the builder's function-call helper does not
@@ -62,6 +66,11 @@ export function usageReportersExpr($: {
 	readonly Cost: Expr<number>
 	readonly ResponseId: Expr<string>
 	readonly IsLlmCall: Expr<number>
+	readonly InputTokens: Expr<number>
+	readonly CacheReadTokens: Expr<number>
+	readonly CacheWriteTokens: Expr<number>
+	readonly OutputTokens: Expr<number>
+	readonly ReasoningTokens: Expr<number>
 }): Expr<unknown> {
 	const reporter = CH.compileFnCall<unknown>(
 		"tuple",
@@ -71,6 +80,11 @@ export function usageReportersExpr($: {
 		$.Cost,
 		$.ResponseId,
 		$.IsLlmCall,
+		$.InputTokens,
+		$.CacheReadTokens,
+		$.CacheWriteTokens,
+		$.OutputTokens,
+		$.ReasoningTokens,
 	)
 	const reports = $.Tokens.gt(0).or($.Cost.gt(0)).or($.IsLlmCall.eq(1))
 	return CH.untypedExpr(
@@ -92,11 +106,11 @@ const netted = (all: string, element: number, reporter = "r"): string =>
 	`greatest(0., ${reporter}.${element} - arraySum(c -> if(c.2 = ${reporter}.1, c.${element}, 0.), ${all}))`
 
 /**
- * The session's tokens (`element` 3) or cost (`element` 4): each reporter's
- * netted claim, summed — with reporters sharing a response id collapsed to the
- * largest claim among them. The same sum serves any tuple of the
- * `(SpanId, ParentSpanId, …claims, …)` shape — the list's per-bucket
- * reporters carry their response id at another position, hence `responseId`.
+ * The session's tokens (`element` 3), cost (`element` 4) or one token bucket
+ * (`element` 7–11): each reporter's netted claim, summed — with reporters
+ * sharing a response id collapsed to the largest claim among them. The same
+ * sum serves any tuple of the `(SpanId, ParentSpanId, …claims, …)` shape,
+ * hence `responseId` for a tuple that carries the id elsewhere.
  *
  * `reporters` is the column {@link usageReportersExpr} was selected as, named
  * in raw SQL because the builder has no lambda syntax. `0.` keeps the whole

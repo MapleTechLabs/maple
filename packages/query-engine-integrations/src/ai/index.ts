@@ -9,7 +9,7 @@
 
 export {
 	aiSessionFacetsQuery,
-	aiSessionListQuery,
+	aiSessionDetailsQuery,
 	aiSessionPageQuery,
 	aiSessionSpansQuery,
 	aiSessionSpansRowSchema,
@@ -26,8 +26,8 @@ export {
 	type AiSessionFacetType,
 	type AiSessionFacetsOutput,
 	type AiSessionFilterOpts,
-	type AiSessionListOpts,
-	type AiSessionListOutput,
+	type AiSessionDetailsOpts,
+	type AiSessionDetailsOutput,
 	type AiSessionPageOpts,
 	type AiSessionPageOutput,
 	type AiSessionSpansOpts,

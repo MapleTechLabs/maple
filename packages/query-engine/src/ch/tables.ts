@@ -136,6 +136,15 @@ export const AiTraceIndex = table("ai_trace_index", {
 	Tokens: T.float64,
 	Cost: T.float64,
 	ResponseId: T.string,
+	// Migration 0031 — what the list row needs beyond the page's ranking, so
+	// the row renders off this index alone: the vendor's version beside its id,
+	// and the five disjoint token buckets `Tokens` is the sum of.
+	VendorVersion: T.string,
+	InputTokens: T.float64,
+	CacheReadTokens: T.float64,
+	CacheWriteTokens: T.float64,
+	OutputTokens: T.float64,
+	ReasoningTokens: T.float64,
 })
 
 export const TraceListMv = table("trace_list_mv", {
