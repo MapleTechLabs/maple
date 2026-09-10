@@ -14,6 +14,8 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 import { useDetectedModels } from "@/hooks/use-detected-models"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { sessionRowId } from "@/lib/agent-sessions/session-window"
@@ -54,9 +56,9 @@ export interface AgentSessionRow {
 	readonly durationMs: number
 }
 
-function absoluteTs(startTime: string): string {
+function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : new Date(parsed).toLocaleString()
+	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
@@ -119,6 +121,7 @@ export function AgentSessionsList({
 	loadingMore = false,
 	isCapped = false,
 }: AgentSessionsListProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	if (sessions.length === 0) {
 		return (
 			<Empty>
@@ -195,9 +198,13 @@ export function AgentSessionsList({
 								    anchors the top-right corner of the stacked row. */}
 								<span
 									className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
-									title={absoluteTs(session.startTime)}
+									title={absoluteTs(session.startTime, effectiveTimezone)}
 								>
-									{formatRelativeTimeOrDate(session.startTime)}
+									{formatRelativeTimeOrDate(
+										session.startTime,
+										undefined,
+										effectiveTimezone,
+									)}
 								</span>
 							</div>
 							<div
@@ -286,9 +293,9 @@ export function AgentSessionsList({
 						<div className="hidden w-[4.5rem] shrink-0 items-center justify-end @2xl:flex">
 							<span
 								className="truncate text-right text-xs text-muted-foreground"
-								title={absoluteTs(session.startTime)}
+								title={absoluteTs(session.startTime, effectiveTimezone)}
 							>
-								{formatRelativeTimeOrDate(session.startTime)}
+								{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
 							</span>
 						</div>
 					</Link>

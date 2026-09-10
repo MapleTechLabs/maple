@@ -1,6 +1,6 @@
-import { format } from "date-fns"
 import { formatWarehouseDateTime, resolveRelativeRangeToWarehouse } from "@maple/query-engine"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
 
 /**
  * Floor a resolved range to the cache-key snap grid, scaled to the window
@@ -44,9 +44,17 @@ export function isTimeRangeWithin(
 	return Number.isFinite(durationSeconds) && durationSeconds >= 0 && durationSeconds <= maxRangeSeconds
 }
 
-/** Resolves shorthand with the shared local-calendar semantics. */
-export function relativeToAbsolute(shorthand: string): { startTime: string; endTime: string } | null {
-	return resolveRelativeRangeToWarehouse(shorthand)
+/**
+ * Resolves shorthand on the selected zone's calendar: "today" and the day/week/
+ * month presets start at that zone's midnight, not the browser's. Pass the zone
+ * from `useTimezonePreference` inside React so the caller re-resolves when it
+ * changes; the default is a point-in-time read for code outside a component.
+ */
+export function relativeToAbsolute(
+	shorthand: string,
+	timeZone: string = getEffectiveTimezone(),
+): { startTime: string; endTime: string } | null {
+	return resolveRelativeRangeToWarehouse(shorthand, Date.now(), timeZone)
 }
 
 export function presetLabel(shorthand: string): string {
@@ -75,7 +83,11 @@ export function presetLabel(shorthand: string): string {
 	return `Last ${amount} ${amount === 1 ? singular : plural}`
 }
 
-export function formatTimeRangeDisplay(startTime?: string, endTime?: string): string {
+export function formatTimeRangeDisplay(
+	startTime?: string,
+	endTime?: string,
+	timeZone: string = getEffectiveTimezone(),
+): string {
 	if (!startTime && !endTime) {
 		return "Last 12 hours"
 	}
@@ -103,7 +115,7 @@ export function formatTimeRangeDisplay(startTime?: string, endTime?: string): st
 		return `Last ${Math.round(days / 30)} month${Math.round(days / 30) !== 1 ? "s" : ""}`
 	}
 
-	return `${format(start, "MMM d, HH:mm")} - ${format(end, "MMM d, HH:mm")}`
+	return `${formatTimestampInTimezone(start, { timeZone, style: "range" })} - ${formatTimestampInTimezone(end, { timeZone, style: "range" })}`
 }
 
 export const PRESET_OPTIONS: TimePreset[] = [

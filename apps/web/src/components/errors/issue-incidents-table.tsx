@@ -4,7 +4,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 interface IssueIncidentsTableProps {
 	incidents: ReadonlyArray<ErrorIncidentDocument>
@@ -25,6 +26,8 @@ const STATUS_EXPLANATION = {
 } satisfies Record<ErrorIncidentDocument["status"], string>
 
 export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
+	const { effectiveTimezone } = useTimezonePreference()
+
 	if (incidents.length === 0) {
 		return (
 			<Empty>
@@ -98,17 +101,19 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 							</TableCell>
 							<TableCell
 								className="tabular-nums text-muted-foreground"
-								title={new Date(
-									normalizeTimestampInput(incident.firstTriggeredAt),
-								).toLocaleString()}
+								title={formatTimestampInTimezone(incident.firstTriggeredAt, {
+									timeZone: effectiveTimezone,
+									withYear: true,
+								})}
 							>
 								{formatRelativeTime(incident.firstTriggeredAt)}
 							</TableCell>
 							<TableCell
 								className="tabular-nums"
-								title={new Date(
-									normalizeTimestampInput(incident.lastTriggeredAt),
-								).toLocaleString()}
+								title={formatTimestampInTimezone(incident.lastTriggeredAt, {
+									timeZone: effectiveTimezone,
+									withYear: true,
+								})}
 							>
 								{formatRelativeTime(incident.lastTriggeredAt)}
 							</TableCell>

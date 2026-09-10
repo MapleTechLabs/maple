@@ -193,8 +193,18 @@ describe("labels", () => {
 
 	it("names today and yesterday", () => {
 		const now = new Date("2026-09-05T15:00:00").getTime()
-		expect(releaseDayLabel(new Date("2026-09-05T09:00:00").toISOString(), now)).toBe("Today")
-		expect(releaseDayLabel(new Date("2026-09-04T23:30:00").toISOString(), now)).toBe("Yesterday")
-		expect(releaseDayLabel("not a date", now)).toBe("not a date")
+		const local = Intl.DateTimeFormat().resolvedOptions().timeZone
+		expect(releaseDayLabel(new Date("2026-09-05T09:00:00").toISOString(), now, local)).toBe("Today")
+		expect(releaseDayLabel(new Date("2026-09-04T23:30:00").toISOString(), now, local)).toBe("Yesterday")
+		expect(releaseDayLabel("not a date", now, local)).toBe("not a date")
+	})
+
+	it("names the day on the selected zone's calendar", () => {
+		// 23:30Z on the 4th is already the 5th in Tokyo and still the 4th in UTC;
+		// "now" (12:00Z on the 5th) is the 5th in both.
+		const now = Date.parse("2026-09-05T12:00:00Z")
+		const at = "2026-09-04T23:30:00Z"
+		expect(releaseDayLabel(at, now, "Asia/Tokyo")).toBe("Today")
+		expect(releaseDayLabel(at, now, "UTC")).toBe("Yesterday")
 	})
 })

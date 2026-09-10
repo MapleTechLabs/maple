@@ -20,6 +20,7 @@ import {
 	type DiagnosisStageStatus,
 } from "@/lib/alerts/diagnosis"
 import { worstState } from "@/lib/alerts/rule-status"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
 
 const STATUS_ICON: Record<DiagnosisStageStatus, { className: string }> = {
@@ -63,6 +64,8 @@ export function RuleDiagnosisPanel({
 	const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
 	const activeGroup = selectedGroup ?? defaultGroupKey
 
+	const { effectiveTimezone } = useTimezonePreference()
+
 	const stages = useMemo(
 		() =>
 			buildDiagnosis({
@@ -73,11 +76,23 @@ export function RuleDiagnosisPanel({
 				destinations,
 				deliveryEvents,
 				now,
+				timeZone: effectiveTimezone,
 				...(groupKeys.length > 0 && activeGroup != null
 					? { selectedGroupKey: activeGroup }
 					: undefined),
 			}),
-		[rule, states, checks, openIncidents, destinations, deliveryEvents, now, groupKeys, activeGroup],
+		[
+			rule,
+			states,
+			checks,
+			openIncidents,
+			destinations,
+			deliveryEvents,
+			now,
+			effectiveTimezone,
+			groupKeys,
+			activeGroup,
+		],
 	)
 	const verdict = useMemo(() => diagnosisVerdict(stages), [stages])
 	const hasProblems = verdict.status !== "pass"

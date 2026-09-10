@@ -3,6 +3,8 @@ import { useMemo } from "react"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+
 /**
  * Fixed-bucket strip of a rule's incident history over a time range: red where
  * an incident was firing (bright while still open), green otherwise. Used at
@@ -26,6 +28,8 @@ export function IncidentTimelineStrip({
 	showAxisLabels?: boolean
 	className?: string
 }) {
+	const { effectiveTimezone } = useTimezonePreference()
+
 	const segments = useMemo(
 		() =>
 			incidents.map((incident) => ({
@@ -64,16 +68,17 @@ export function IncidentTimelineStrip({
 			</div>
 			{showAxisLabels && !compact && (
 				<div className="flex justify-between font-mono text-[11px] text-muted-foreground">
-					<span>{formatEdge(range.min)}</span>
-					<span>{formatEdge(range.max)}</span>
+					<span>{formatEdge(range.min, effectiveTimezone)}</span>
+					<span>{formatEdge(range.max, effectiveTimezone)}</span>
 				</div>
 			)}
 		</div>
 	)
 }
 
-function formatEdge(ms: number): string {
+function formatEdge(ms: number, timeZone: string): string {
 	return new Date(ms).toLocaleString(undefined, {
+		timeZone,
 		month: "short",
 		day: "numeric",
 		hour: "2-digit",

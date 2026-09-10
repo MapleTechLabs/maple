@@ -6,6 +6,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { SectionCard } from "@/components/services/section-card"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ReleaseHealthPill, releaseHealthFigure } from "./release-health"
 import { MIN_COMPARE_SPANS, shortReleaseLabel, type ReleaseServiceImpact } from "./release-model"
 
@@ -190,6 +192,7 @@ export function ReleaseVersionsRail({
 	environments,
 	timeSearch,
 }: ReleaseVersionsRailProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const sorted = impacts.toSorted((a, b) =>
 		a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0,
 	)
@@ -235,9 +238,12 @@ export function ReleaseVersionsRail({
 							</span>
 							<span
 								className="w-16 shrink-0 text-right font-mono tabular-nums text-muted-foreground/70"
-								title={new Date(version.firstSeen).toLocaleString()}
+								title={formatTimestampInTimezone(version.firstSeen, {
+									timeZone: effectiveTimezone,
+									withYear: true,
+								})}
 							>
-								{formatRelativeTimeOrDate(version.firstSeen)}
+								{formatRelativeTimeOrDate(version.firstSeen, undefined, effectiveTimezone)}
 							</span>
 						</Link>
 					)

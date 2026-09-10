@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useEffect } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	Navigate,
 	Outlet,
@@ -15,6 +16,7 @@ import { isFixturePath, isPublicPath } from "@/lib/public-routes"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { AnchoredToastProvider, ToastProvider } from "@maple/ui/components/ui/toast"
 import { AttributesProvider } from "@maple/ui/components/attributes/context"
+import { PlotTimeZoneProvider } from "@maple/ui/components/plot"
 import { BootSplash } from "@/components/boot-splash"
 import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
@@ -91,23 +93,28 @@ const AppFrame = memo(function AppFrame() {
 	// component rebuilds its query inputs under the new scope, so no memoized
 	// atom key can keep serving the previous scope's rows.
 	const globalNamespace = useGlobalNamespace()
+	// Every chart prints its clock in the selected zone; the provider is the one
+	// seam the plot layer reads it through.
+	const { effectiveTimezone } = useTimezonePreference()
 	useEffect(() => {
 		captureChatReferrer(pathname)
 	}, [pathname])
 	return (
 		<AttributesProvider highlightJson={highlightCode} renderValue={renderAttributeValue}>
-			<ToastProvider position="bottom-right">
-				<AnchoredToastProvider>
-					<Outlet key={globalNamespace ?? "__all__"} />
-					{!isPublicPath(pathname) && <IdleRoutePrefetch />}
-					{!isPublicPath(pathname) && (
-						<>
-							<GlobalShortcuts />
-							<GlobalChatSheet />
-						</>
-					)}
-				</AnchoredToastProvider>
-			</ToastProvider>
+			<PlotTimeZoneProvider timeZone={effectiveTimezone}>
+				<ToastProvider position="bottom-right">
+					<AnchoredToastProvider>
+						<Outlet key={globalNamespace ?? "__all__"} />
+						{!isPublicPath(pathname) && <IdleRoutePrefetch />}
+						{!isPublicPath(pathname) && (
+							<>
+								<GlobalShortcuts />
+								<GlobalChatSheet />
+							</>
+						)}
+					</AnchoredToastProvider>
+				</ToastProvider>
+			</PlotTimeZoneProvider>
 		</AttributesProvider>
 	)
 })

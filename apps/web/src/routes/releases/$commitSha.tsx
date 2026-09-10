@@ -11,6 +11,8 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleaseDetailResultAtom, getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -329,6 +331,7 @@ function ReleaseBody({
 	environments,
 }: ScopedProps & { serviceName: string }) {
 	const search = Route.useSearch()
+	const { effectiveTimezone } = useTimezonePreference()
 	const atom = getReleaseDetailResultAtom({
 		data: { serviceName, commitSha, startTime, endTime, environments },
 	})
@@ -429,8 +432,14 @@ function ReleaseBody({
 				<ReleaseMeta commitSha={commitSha} />
 				<span>
 					first seen{" "}
-					<span className="text-foreground" title={new Date(impact.firstSeen).toLocaleString()}>
-						{formatRelativeTimeOrDate(impact.firstSeen)}
+					<span
+						className="text-foreground"
+						title={formatTimestampInTimezone(impact.firstSeen, {
+							timeZone: effectiveTimezone,
+							withYear: true,
+						})}
+					>
+						{formatRelativeTimeOrDate(impact.firstSeen, undefined, effectiveTimezone)}
 					</span>{" "}
 					on {serviceName}
 				</span>

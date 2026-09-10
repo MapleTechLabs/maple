@@ -1,6 +1,5 @@
 import type { ChartPoint, ChartValue, DomChartDefinition } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scaleTime } from "d3-scale"
 import * as React from "react"
 
 import { useContainerSize } from "../../hooks/use-container-size"
@@ -17,6 +16,7 @@ import type { ChartLegendMode } from "../charts/_shared/chart-types"
 import { QueryBuilderLegend } from "../charts/_shared/query-builder-legend"
 import { hasOnlyIntegerValues } from "../charts/_shared/sparse-series"
 import { findFirstPartialIndex } from "./partial-buckets"
+import { usePlotTimeZone } from "./time-zone-context"
 import { PlotFrame, usePlotLegendSlot, type PlotFrameProps, type PlotLegendItem } from "./plot-frame"
 import {
 	NICE_TICK_COUNT,
@@ -26,6 +26,7 @@ import {
 	logYDomain,
 	logYScale,
 	niceLinearDomain,
+	zonedTimeScale,
 	type DomainThreshold,
 } from "./plot-scales"
 import {
@@ -71,8 +72,8 @@ export const SERIES_FALLBACK_COLOR = "#6366f1"
 export interface TimeseriesRow extends Record<string, unknown> {
 	bucket: string
 	/**
-	 * Precomputed, because `scaleTime` takes Dates and building one per accessor
-	 * call would allocate on every scale pass.
+	 * Precomputed, because the time scale takes Dates and building one per
+	 * accessor call would allocate on every scale pass.
 	 */
 	date: Date
 	partial?: boolean
@@ -187,6 +188,11 @@ export interface TimeseriesAxisContext {
 	 * edge instead of letting it overhang — see the `anchor` there.
 	 */
 	domainMs?: readonly [number, number]
+	/**
+	 * The IANA zone the labels print in and the ticks are chosen in; `undefined`
+	 * is the browser's. `useTimeseriesModel` reads it off `PlotTimeZoneProvider`.
+	 */
+	timeZone?: string
 }
 
 /** `[first, last]` epoch ms of `rows`, or `undefined` when there is no span. */
@@ -328,13 +334,15 @@ export function useTimeseriesModel({ data, unit, mapSeries }: TimeseriesModelOpt
 	const containerRef = React.useRef<HTMLDivElement>(null)
 	const { width: containerWidth, height: containerHeight } = useContainerSize(containerRef)
 
-	const axisContext = React.useMemo(
+	const timeZone = usePlotTimeZone()
+	const axisContext = React.useMemo<TimeseriesAxisContext>(
 		() => ({
 			rangeMs: inferRangeMs(scaledRows),
 			bucketSeconds,
 			domainMs: rowsDomainMs(scaledRows),
+			timeZone,
 		}),
-		[scaledRows, bucketSeconds],
+		[scaledRows, bucketSeconds, timeZone],
 	)
 
 	const focusStore = React.useMemo(() => createTooltipFocusStore(), [])
@@ -387,16 +395,17 @@ export function useTimeseriesModel({ data, unit, mapSeries }: TimeseriesModelOpt
  * A d3 TIME scale over the precomputed `row.date`. A point scale over
  * bucket strings — which is what the categorical Recharts axis was —
  * puts ticks on arbitrary buckets ("08:25 PM") instead of clock
- * boundaries. `scaleTime`, not `scaleUtc`: the labels below render in
- * local time, and only local ticks land on locally round boundaries.
+ * boundaries. The scale ticks in the same zone the labels below print
+ * in (`zonedTimeScale`): only ticks chosen on that clock land on
+ * boundaries that read as round.
  *
- * The bare FACTORY, so the domain is inferred. That is safe even though
+ * A FACTORY, so the domain is inferred. That is safe even though
  * the solid and dashed marks each cover a slice: a continuous domain is
  * min/max over the union, and the slices overlap at the bridge row.
  */
 export function timeseriesXAxis(axisContext: TimeseriesAxisContext) {
 	return {
-		scale: scaleTime,
+		scale: zonedTimeScale(axisContext.timeZone),
 		axis: {
 			line: false,
 			ticks: {
@@ -502,7 +511,7 @@ export function timeseriesBandXAxis(axisContext: TimeseriesAxisContext, rows: re
 	// then no worse than a padding guess, and `barY` has its own single-position
 	// fallback for the bandwidth.
 	if (!domain) return timeseriesXAxis(axisContext)
-	return { ...timeseriesXAxis(axisContext), scale: bucketTimeScale(domain) }
+	return { ...timeseriesXAxis(axisContext), scale: bucketTimeScale(domain, axisContext.timeZone) }
 }
 
 /**
