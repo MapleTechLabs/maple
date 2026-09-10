@@ -203,7 +203,7 @@ const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
  * the fan-out's cost is made of. A trace whose spans reach further than an
  * hour past its agent spans is clamped in the list row alone.
  */
-export const FAN_OUT_PAD_SECONDS = 3_600
+const FAN_OUT_PAD_SECONDS = 3_600
 
 /**
  * The pad on the bounds `aiSessionWindowQuery`/`aiTraceWindowQuery` report for
