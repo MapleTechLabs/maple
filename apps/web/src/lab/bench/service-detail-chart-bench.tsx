@@ -1,6 +1,7 @@
 import { Profiler, useMemo } from "react"
 
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
+import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import {
 	createReactRecorder,
@@ -61,6 +62,7 @@ const SERVICE_DETAIL_ITEMS = [
 		id: "apdex",
 		chartId: "apdex-area",
 		title: "Apdex",
+		titleHint: APDEX_HINT,
 		layout: { x: 0, y: 4, w: 6, h: 4 },
 		data: SERVICE_DETAIL_POINTS,
 		tooltip: "visible" as const,
