@@ -1,0 +1,516 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+
+const pageTitle = "What Is Apdex? The Apdex Score Formula and Thresholds Explained";
+const pageDescription =
+    "Apdex turns response times into a single satisfaction score between 0 and 1. Learn the Apdex formula, how to choose the target time T, what counts as a good Apdex score, and when it beats a p95 latency alert.";
+const published = "2026-09-10";
+const updatedLabel = "September 10, 2026";
+
+const toc = [
+    ["definition", "What Apdex means"],
+    ["formula", "The Apdex formula"],
+    ["choosing-t", "Choosing T"],
+    ["good-score", "What is a good score"],
+    ["apdex-vs-percentiles", "Apdex vs percentiles"],
+    ["limitations", "Where Apdex falls short"],
+    ["measuring", "Measuring it yourself"],
+] as const;
+
+const faqs = [
+    {
+        question: "What does Apdex stand for?",
+        answer:
+            "Apdex stands for Application Performance Index. It is an open standard, originally published by the Apdex Alliance, that condenses a set of response times into a single satisfaction score between 0 and 1 using one configured target response time called T.",
+    },
+    {
+        question: "What is the Apdex formula?",
+        answer:
+            "Apdex = (satisfied + 0.5 x tolerating) / total. A request is satisfied if it finished faster than the target time T, tolerating if it finished between T and 4T, and frustrated if it took longer than 4T or failed. Satisfied requests score one point, tolerating requests score half a point, frustrated requests score nothing.",
+    },
+    {
+        question: "What is a good Apdex score?",
+        answer:
+            "Above 0.94 is generally considered healthy and 0.8 is the usual line for alerting, but both numbers only mean something relative to the T you chose. A score measured against a 2 second target is not comparable to one measured against a 300 millisecond target, so publish T alongside the score.",
+    },
+    {
+        question: "Do failed requests count against the Apdex score?",
+        answer:
+            "Yes. A request that returns an error counts as frustrated no matter how fast it was, because a 200 millisecond 500 Internal Server Error did not satisfy anybody. This is what makes Apdex a proxy for user experience rather than a pure latency statistic, and it is why Apdex catches fast-failing dependencies that a latency alert sleeps through.",
+    },
+    {
+        question: "Should I alert on Apdex or on p95 latency?",
+        answer:
+            "Both, for different reasons. Apdex measures how many users had a bad time, including the ones whose requests failed, so it is the better single page-me signal. Percentiles measure how bad the slow tail got, so they are the better debugging signal. Apdex counts the tail; p99 measures it.",
+    },
+    {
+        question: "Why is my Apdex score flat at 1.0?",
+        answer:
+            "The target time T is larger than nearly every request the service serves, so everything lands in the satisfied bucket. Lower T until a healthy week reads somewhere between 0.9 and 1.0. Otherwise the score has no room to move and any threshold you set below it can never be reached.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "What is Apdex, and how do you use the score?",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Organization", name: "Maple" },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/what-is-apdex`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "What is Apdex?" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Performance metrics</span>
+                        <span>10 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[16ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        What is Apdex, and how do you use the score?
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        Apdex compresses a latency distribution into one number between 0 and 1: the share of requests that were fast enough to keep a user happy, counting failures as unhappy users.
+                    </p>
+                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <span>By Maple</span>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Apdex at a glance">
+                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
+                        <span>apdex / at a glance</span>
+                        <span class="text-primary">0 → 1</span>
+                    </div>
+                    <ol class="divide-y divide-border">
+                        {[
+                            ["01", "Formula", "(satisfied + ½ tolerating) / total", "one point, half a point, none"],
+                            ["02", "Input", "A single target time, T", "e.g. 500ms"],
+                            ["03", "Bands", "Satisfied < T · Tolerating < 4T", "frustrated beyond, or failed"],
+                            ["04", "Healthy", "0.94 and above", "with T chosen honestly"],
+                            ["05", "Page-me", "Below 0.80 for 5 minutes", "a fifth of traffic suffering"],
+                        ].map(([number, label, headline, detail]) => (
+                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
+                                <span class="font-mono text-[10px] text-primary">{number}</span>
+                                <div>
+                                    <div class="flex items-baseline justify-between gap-3">
+                                        <span class="text-xs font-medium text-fg">{label}</span>
+                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
+                                    </div>
+                                    <p class="mt-1 text-[11px] leading-relaxed text-fg-muted">{headline}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <nav aria-label="On this page" class="sticky top-28">
+                    <p class="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">On this page</p>
+                    <ol class="mt-4 space-y-3 border-l border-border">
+                        {toc.map(([id, label], index) => (
+                            <li>
+                                <a href={`#${id}`} class="-ml-px grid grid-cols-[1.7rem_1fr] border-l border-transparent pl-3 text-[12px] leading-snug text-fg-muted transition-colors hover:border-primary hover:text-fg">
+                                    <span class="font-mono text-[9px] text-fg-muted">{String(index + 1).padStart(2, "0")}</span>
+                                    <span>{label}</span>
+                                </a>
+                            </li>
+                        ))}
+                    </ol>
+                </nav>
+            </aside>
+
+            <article class="apdex-guide min-w-0">
+                <section id="definition" class="scroll-mt-24">
+                    <p class="guide-eyebrow">01 · Definition</p>
+                    <h2>Apdex scores how many users were served fast enough</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            <strong>Apdex (Application Performance Index)</strong> is an open standard that turns a set of response times into a single satisfaction score between <strong>0</strong> and <strong>1</strong>. You pick one target response time, <strong>T</strong>. Every request is then counted as satisfied, tolerating, or frustrated, and the score is the weighted share that ended up happy.
+                        </p>
+                    </div>
+
+                    <p>
+                        The standard was published by the Apdex Alliance to solve a reporting problem: a latency distribution is hard to compare across services, across weeks, and across an engineering-to-business boundary. One number between 0 and 1, defined the same way everywhere, travels further than a histogram.
+                    </p>
+                    <p>
+                        A score of <strong>1</strong> means every request beat the target. A score of <strong>0</strong> means none of them did. The interesting property is what happens to failures: a request that returns an error is frustrated regardless of how fast it came back, so Apdex measures delivered experience rather than raw speed.
+                    </p>
+
+                    <h3>Apdex answers a different question than a p95 alert</h3>
+                    <div class="guide-grid guide-grid--two">
+                        <div>
+                            <p class="guide-kicker">A p95 alert says</p>
+                            <h3>“The slow 5% crossed one second.”</h3>
+                            <p>That is the shape of the tail. It stays silent when requests fail quickly, and it says nothing about whether the slow 5% was 5 requests or 50,000.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">An Apdex alert says</p>
+                            <h3>“One request in five was slow or broken.”</h3>
+                            <p>That is the size of the tail, with failures counted as unhappy users. It is closer to the sentence you would use to describe the incident to someone else.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="formula" class="scroll-mt-24">
+                    <p class="guide-eyebrow">02 · The formula</p>
+                    <h2>Three buckets, one target time, one ratio</h2>
+                    <p>
+                        You choose <strong>T</strong>, the response time at which users stop perceiving the response as immediate. Every request in the measurement window then lands in one of three bands, and the band decides how much credit the request earns. The upper boundary is never configured separately: the tolerating band always ends at <strong>4T</strong>.
+                    </p>
+
+                    <div class="apdex-bands" role="img" aria-label="A latency axis split into three bands: satisfied below T scores one point, tolerating between T and 4T scores half a point, frustrated beyond 4T scores nothing.">
+                        <svg viewBox="0 0 900 108" class="h-auto w-full">
+                            <rect x="0" y="14" width="300" height="34" rx="4" style="fill: color-mix(in oklab, var(--success) 26%, transparent); stroke: color-mix(in oklab, var(--success) 55%, transparent)" />
+                            <rect x="304" y="14" width="330" height="34" rx="4" style="fill: color-mix(in oklab, var(--warning) 24%, transparent); stroke: color-mix(in oklab, var(--warning) 55%, transparent)" />
+                            <rect x="638" y="14" width="262" height="34" rx="4" style="fill: color-mix(in oklab, var(--destructive) 22%, transparent); stroke: color-mix(in oklab, var(--destructive) 55%, transparent)" />
+                            <text x="12" y="36" style="fill: var(--foreground); font-size: 13px; font-weight: 500">Satisfied</text>
+                            <text x="316" y="36" style="fill: var(--foreground); font-size: 13px; font-weight: 500">Tolerating</text>
+                            <text x="650" y="36" style="fill: var(--foreground); font-size: 13px; font-weight: 500">Frustrated</text>
+                            <text x="288" y="36" text-anchor="end" style="fill: var(--muted-foreground); font-size: 12px">1 point</text>
+                            <text x="622" y="36" text-anchor="end" style="fill: var(--muted-foreground); font-size: 12px">½ point</text>
+                            <text x="888" y="36" text-anchor="end" style="fill: var(--muted-foreground); font-size: 12px">0 points</text>
+                            <line x1="0" y1="62" x2="900" y2="62" style="stroke: var(--border)" />
+                            <line x1="302" y1="56" x2="302" y2="68" style="stroke: var(--primary); stroke-width: 2" />
+                            <line x1="636" y1="56" x2="636" y2="68" style="stroke: var(--primary); stroke-width: 2" />
+                            <text x="302" y="86" text-anchor="middle" style="fill: var(--primary); font-size: 13px; font-weight: 600">T</text>
+                            <text x="636" y="86" text-anchor="middle" style="fill: var(--primary); font-size: 13px; font-weight: 600">4T</text>
+                            <text x="0" y="86" style="fill: var(--muted-foreground); font-size: 11px">0ms</text>
+                            <text x="900" y="86" text-anchor="end" style="fill: var(--muted-foreground); font-size: 11px">slower →</text>
+                        </svg>
+                    </div>
+
+                    <div class="guide-signal-list">
+                        <div><span>Satisfied</span><p>Finished faster than <strong>T</strong>. The user got what they asked for and did not notice the wait. Worth one point.</p></div>
+                        <div><span>Tolerating</span><p>Between <strong>T</strong> and <strong>4T</strong>. Slow enough to feel, not slow enough to leave. Worth half a point.</p></div>
+                        <div><span>Frustrated</span><p>Slower than <strong>4T</strong>, or failed at any speed. Worth nothing.</p></div>
+                    </div>
+
+                    <div class="apdex-formula">
+                        <div class="apdex-formula__expr">Apdex = (satisfied + 0.5 × tolerating) / total</div>
+                        <p>Always between 0 and 1. Both band boundaries come from the single value you set for T.</p>
+                    </div>
+
+                    <h3>A worked example</h3>
+                    <p>
+                        In a five-minute window a service handles 10,000 requests against <strong>T = 500ms</strong>. 9,000 finish under 500ms, 800 finish between 500ms and 2s, 150 take longer than 2s, and 50 return an error.
+                    </p>
+
+                    <div class="apdex-example">
+                        <div class="apdex-example__bar">
+                            <div class="apdex-example__seg apdex-example__seg--ok" style="width: 90%"><span>9,000 satisfied</span></div>
+                            <div class="apdex-example__seg apdex-example__seg--warn" style="width: 8%"><span>800</span></div>
+                            <div class="apdex-example__seg apdex-example__seg--bad" style="width: 2%"></div>
+                        </div>
+                        <div class="apdex-example__legend">
+                            <span>9,000 under 500ms</span>
+                            <span>800 between 500ms and 2s</span>
+                            <span>150 over 2s</span>
+                            <span>50 errors</span>
+                        </div>
+                        <div class="apdex-example__result">(9,000 + 0.5 × 800) / 10,000 = <strong>0.94</strong></div>
+                    </div>
+
+                    <p>
+                        Note where the 200 slow-or-failed requests went. The 50 errors score zero alongside the 150 timeouts, because a 200ms <code>500 Internal Server Error</code> did not satisfy anybody. That single rule is most of the reason to track Apdex next to your latency percentiles.
+                    </p>
+                </section>
+
+                <section id="choosing-t" class="scroll-mt-24">
+                    <p class="guide-eyebrow">03 · The one input</p>
+                    <h2>Choosing T, the only number that matters</h2>
+                    <p>
+                        <strong>T</strong> is the whole rule. It sets the satisfied boundary directly and the frustrated boundary implicitly, since the tolerating band always ends at 4T. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s. Two teams reporting an Apdex of 0.95 against different targets are not reporting the same thing.
+                    </p>
+                    <p>
+                        Pick T as the latency at which your users stop perceiving the response as immediate, per class of traffic:
+                    </p>
+
+                    <div class="guide-grid guide-grid--two">
+                        <div>
+                            <p class="guide-kicker">200ms – 300ms</p>
+                            <h3>Internal or service-to-service APIs</h3>
+                            <p>They sit inside someone else's request, so their share of the end-user budget is small.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">500ms</p>
+                            <h3>User-facing API endpoints</h3>
+                            <p>A fair starting point for a JSON API behind a UI, and the default Maple ships with.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">1s – 2s</p>
+                            <h3>Full page loads and heavy reports</h3>
+                            <p>Users accept more from something that visibly does more work.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">Not applicable</p>
+                            <h3>Background and batch endpoints</h3>
+                            <p>Nobody is waiting. Alert on throughput or failure rate instead of on satisfaction.</p>
+                        </div>
+                    </div>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Two ways to pick a T that tells you nothing</p>
+                        <p>
+                            Setting T to your current p95 guarantees a score near 0.95 forever. Setting it so tight that a healthy week already reads 0.6 buries every threshold you might pick inside your normal noise.
+                        </p>
+                    </div>
+
+                    <p>
+                        The honest way to choose is empirical: set T, look at a healthy week, and check that the score reads somewhere in the 0.9 to 1.0 band. That leaves room below for a threshold to mean something. If the chart is pinned at 1.0, T is too generous; if it never gets near 0.95, T is too tight or the service is genuinely slow.
+                    </p>
+                </section>
+
+                <section id="good-score" class="scroll-mt-24">
+                    <p class="guide-eyebrow">04 · Interpretation</p>
+                    <h2>What is a good Apdex score?</h2>
+                    <p>
+                        The conventional bands below are a reasonable default, and they are the ones most tools ship with. Read them as relative to the T you chose, not as absolutes.
+                    </p>
+
+                    <div class="apdex-scale">
+                        <div><span class="apdex-scale__value apdex-scale__value--ok">1.00</span><p>Every request beat T. Usually a sign that T is too generous rather than that the service is perfect.</p></div>
+                        <div><span class="apdex-scale__value apdex-scale__value--ok">0.94 – 0.99</span><p>Healthy, with a normal slow tail.</p></div>
+                        <div><span class="apdex-scale__value apdex-scale__value--warn">0.85 – 0.94</span><p>Degraded, and users can feel it.</p></div>
+                        <div><span class="apdex-scale__value apdex-scale__value--bad">below 0.80</span><p>The common alerting line. Roughly a fifth of traffic is frustrated or worse.</p></div>
+                        <div><span class="apdex-scale__value apdex-scale__value--bad">below 0.50</span><p>Most requests are failing or timing out.</p></div>
+                    </div>
+
+                    <p>
+                        0.8 is a convention, not a law. The number that matters is where your service sits when it is healthy, and how far it has to fall before you would want to be woken up. Publish T next to any score you share; without it the number is not comparable to anyone else's.
+                    </p>
+                </section>
+
+                <section id="apdex-vs-percentiles" class="scroll-mt-24">
+                    <p class="guide-eyebrow">05 · Comparison</p>
+                    <h2>Apdex counts the tail. Percentiles measure it.</h2>
+                    <p>
+                        A p95 alert fires on the shape of the tail; Apdex fires on its size. Most of the time they agree — if a bad deploy makes 30% of requests take 3 seconds, a p95 alert at 1s fires and so does Apdex. The cases worth knowing are the ones where they disagree.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Situation</th><th>p95 latency</th><th>Apdex (T = 500ms)</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>30% of requests slow to 3s</td><td>Fires</td><td>Falls sharply</td></tr>
+                                <tr><td>A dependency fails 15% of requests in 40ms</td><td>Gets <em>faster</em>, stays quiet</td><td>0.97 → about 0.83</td></tr>
+                                <tr><td>The slowest 3% go from 4s to 40s</td><td>Moves a long way</td><td>Unchanged</td></tr>
+                                <tr><td>Traffic drops to a handful of requests</td><td>Noisy</td><td>Noisy — needs a minimum sample count</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        The second row is the case only Apdex catches: a fast failure is still a frustrated user, so error-driven regressions show up as an Apdex drop while the latency chart looks like an improvement. The third row is the case only percentiles catch: Apdex is a ratio, so a service where the slow 3% take 4 seconds and one where they take 40 seconds score identically.
+                    </p>
+                    <p>
+                        The practical arrangement is to alert on Apdex and debug on percentiles. Apdex is the better single page-me signal because it counts users; a <a href="/guides/api-latency">p99 investigation</a> is the better follow-up because it describes how bad the worst case got.
+                    </p>
+                </section>
+
+                <section id="limitations" class="scroll-mt-24">
+                    <p class="guide-eyebrow">06 · Caveats</p>
+                    <h2>Where Apdex falls short</h2>
+                    <div class="guide-checklist">
+                        {[
+                            ["It hides magnitude", "The score counts frustrated requests without weighting how frustrated they were. Pair it with a p99 signal if the worst case matters."],
+                            ["One T per measurement", "A service whose health check and report export share a target is being measured against a number that fits neither. Group by route, or measure them separately."],
+                            ["Sampling shifts it", "Under uniform sampling the ratio stays representative. A policy that preferentially keeps slow or failed traces will drag the score below reality."],
+                            ["Low traffic is noisy", "A handful of requests moves a ratio a long way. Require a minimum sample count before a score is allowed to trigger anything."],
+                            ["It measures what you instrument", "A service that swallows failures internally and returns success from its entry point looks healthy at any threshold."],
+                            ["The bands are a convention", "The 4T frustrated boundary and the 0.8 alerting line are inherited defaults, not properties of your users."],
+                        ].map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="measuring" class="scroll-mt-24">
+                    <p class="guide-eyebrow">07 · In practice</p>
+                    <h2>Measuring Apdex from your existing traces</h2>
+                    <p>
+                        Apdex needs no special instrumentation. If a service already emits <a href="/opentelemetry">OpenTelemetry</a> traces, every ingredient is present: each entry-point span carries a duration and a status, which is exactly the satisfied / tolerating / frustrated decision.
+                    </p>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h3>Pick the request population</h3><p>Score the spans that represent a request arriving — server and consumer spans, and trace roots — not every internal span. Counting internal work inflates the denominator with requests nobody made.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h3>Set T per class of traffic</h3><p>One target per service is usually too coarse. Group by route or operation so a health check and a report export are not judged against the same number.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h3>Count errors as frustrated</h3><p>Any span with an error status scores zero regardless of duration. Skip this and you have built a latency metric wearing an Apdex label.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h3>Calibrate against a healthy week</h3><p>Check that normal operation reads between 0.9 and 1.0 before you attach a threshold to it.</p></div>
+                        </li>
+                        <li>
+                            <span>05</span>
+                            <div><h3>Alert with a floor and a delay</h3><p>Require a minimum number of samples per window and two consecutive bad checks. Both exist to stop a quiet night from paging someone.</p></div>
+                        </li>
+                    </ol>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Apdex in Maple</p>
+                        <h3>A score on every service, and an alert rule behind it</h3>
+                        <p>
+                            Maple computes Apdex over the entry-point spans of each service from the OpenTelemetry data you already send, draws it on the service page, and ships a <strong>Low Apdex score</strong> alert template — target 500ms, fires below 0.8 over five minutes, every field editable. The setup walkthrough, the tuning fields that keep it from paging you at 3am, and the API body are in the alerting docs.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/alerting/apdex-alerts" class="guide-button guide-button--primary">Set up an Apdex alert</a>
+                            <a href="/docs/getting-started/introduction" class="guide-button">Instrument an application</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://www.apdex.org/" target="_blank" rel="noopener noreferrer">Apdex Alliance: the Apdex technical specification</a></li>
+                        <li><a href="https://opentelemetry.io/docs/concepts/signals/traces/" target="_blank" rel="noopener noreferrer">OpenTelemetry: Traces</a></li>
+                        <li><a href="/docs/alerting/apdex-alerts">Maple docs: Apdex alerts</a></li>
+                        <li><a href="/guides/what-is-apm">Maple guide: What is APM?</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .apdex-guide section + section { margin-top: 5.5rem; }
+    .apdex-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .apdex-guide h2 { max-width: 21ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .apdex-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .apdex-guide > section > p:not(.guide-eyebrow, .guide-kicker), .apdex-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .apdex-guide strong { font-weight: 600; color: var(--foreground); }
+    .apdex-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .apdex-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .apdex-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .apdex-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .apdex-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .apdex-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .apdex-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .apdex-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .apdex-guide .guide-grid { display: grid; gap: 1px; margin-top: 2rem; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .apdex-guide .guide-grid > div { background: var(--background); padding: 1.5rem; }
+    .apdex-guide .guide-grid h3 { margin: 0.4rem 0 0.65rem; font-size: 1rem; }
+    .apdex-guide .guide-grid p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .apdex-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .apdex-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .apdex-guide .guide-callout p:not(.guide-kicker) { max-width: 68ch; margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .apdex-guide .guide-steps { margin: 2rem 0 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .apdex-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .apdex-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .apdex-guide .guide-steps h3, .apdex-guide .guide-steps p { margin: 0; }
+    .apdex-guide .guide-steps h3 { font-size: 1rem; }
+    .apdex-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .apdex-guide .guide-signal-list { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .apdex-guide .guide-signal-list > div { display: grid; grid-template-columns: 6rem 1fr; gap: 1rem; background: var(--background); padding: 1.1rem 1.25rem; }
+    .apdex-guide .guide-signal-list span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); }
+    .apdex-guide .guide-signal-list p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .apdex-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .apdex-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .apdex-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
+    .apdex-guide .guide-checklist h3, .apdex-guide .guide-checklist p { margin: 0; }
+    .apdex-guide .guide-checklist h3 { font-size: 0.95rem; }
+    .apdex-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+    .apdex-bands { margin: 2rem 0 1.5rem; overflow-x: auto; }
+    .apdex-bands svg { min-width: 520px; }
+    .apdex-formula { margin: 2rem 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; text-align: center; }
+    .apdex-formula__expr { font-family: var(--font-mono); font-size: 15px; color: var(--foreground); }
+    .apdex-guide .apdex-formula p { max-width: none; margin: 0.6rem 0 0; font-size: 12px; color: var(--muted-foreground); }
+    .apdex-example { margin: 2rem 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.35rem; }
+    .apdex-example__bar { display: flex; height: 2.25rem; width: 100%; overflow: hidden; border-radius: 0.25rem; }
+    .apdex-example__seg { display: flex; align-items: center; justify-content: center; }
+    .apdex-example__seg span { font-size: 11px; color: var(--foreground); }
+    .apdex-example__seg--ok { background: color-mix(in oklab, var(--success) 45%, transparent); }
+    .apdex-example__seg--warn { background: color-mix(in oklab, var(--warning) 45%, transparent); }
+    .apdex-example__seg--bad { background: color-mix(in oklab, var(--destructive) 50%, transparent); }
+    .apdex-example__legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin-top: 0.6rem; font-size: 11px; color: var(--muted-foreground); }
+    .apdex-example__result { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; font-family: var(--font-mono); font-size: 14px; color: var(--foreground); }
+    .apdex-example__result strong { color: var(--primary); }
+    .apdex-scale { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .apdex-scale > div { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; background: var(--background); padding: 1rem 1.25rem; }
+    .apdex-scale__value { font-family: var(--font-mono); font-size: 13px; }
+    .apdex-scale__value--ok { color: var(--success); }
+    .apdex-scale__value--warn { color: var(--warning); }
+    .apdex-scale__value--bad { color: var(--destructive); }
+    .apdex-scale p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .apdex-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .apdex-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .apdex-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .apdex-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .apdex-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .apdex-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .apdex-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .apdex-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .apdex-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .apdex-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .apdex-guide .guide-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .apdex-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .apdex-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .apdex-guide a, .apdex-guide .guide-button { transition: none; }
+    }
+</style>
