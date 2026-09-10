@@ -114,6 +114,13 @@ export const buildDelegation = (
 		})
 		return {
 			tool: delegation.tool,
+			// KNOWN GAP: a child's tokens do not reach the parent's `RunUsage`, so billing and the
+			// diagnosis row under-report a turn that delegated. `accumulateUsage` rides on the
+			// parent's own run, and there is no seam to hand it to the child at beta.74:
+			// `SubagentRuntimeOptions` carries only `durable` and `mapChildFailure`, and
+			// `SubagentCompleted` reports turns and finish reason but no usage. The capabilities
+			// package's hierarchical budget nodes account for reservations, which is a different
+			// thing from what the child actually spent.
 			layer: Subagent.SubagentRuntime.layer(delegation, childModel.layer).pipe(
 				Layer.provide(tools.layer),
 			),
