@@ -1,14 +1,25 @@
 /**
- * effect-agent's `Sandbox` port over Maple's repository containers.
+ * effect-agent's `Sandbox` port over Cloudflare's Sandbox container.
  *
- * Every request is one command in one checkout. The contract asks an
- * implementation to enforce each requested feature or reject it, so this one is
- * explicit about its posture: isolated (a Cloudflare Container with internet
- * off), exactly one read-only repository mount, no CPU/memory limits, no
- * secrets, no artifacts. What it does enforce it enforces in the container:
- * the wall clock, the output bound, and the read-only tree.
+ * The contract asks an implementation to enforce each requested feature or
+ * reject it, so this one is explicit about its posture. It provides: an isolated
+ * container, exactly one repository mount, a wall clock, an output bound, and
+ * `NetworkDisabled` — enforced by running the command in a fresh network
+ * namespace, and refused outright when the container cannot open one, so a
+ * command that asked for no egress never runs with it. It does not provide: an
+ * allowlist (it can only switch egress on or off), CPU or memory limits,
+ * secrets, or artifacts.
+ *
+ * What the container does have, unlike the archive-based predecessor, is real
+ * git history: the checkout is a full clone at the requested commit.
  */
 import { OrgId } from "@maple/domain/http"
+import {
+	SANDBOX_COMMAND_ENV,
+	SandboxCheckout,
+	SandboxExecRequest,
+	type SandboxExecResponse,
+} from "@maple/domain/sandbox"
 import {
 	Sandbox,
 	SandboxArtifact,
@@ -26,16 +37,14 @@ import {
 	type SandboxEvent,
 	type SandboxRequest,
 } from "@effect-agent/sandbox/Sandbox"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Duration, Effect, Layer, Option, Schema, Stream } from "effect"
-import { callStub, repoSandboxKey, repoSandboxStub, type RepoSandboxStub } from "@/sandbox/namespace"
-import { SAFE_ENVIRONMENT, type SandboxExecOutput } from "@/sandbox/protocol"
+import { SandboxClient } from "@/sandbox/client"
 import { VcsSourceService, type RepositoryCheckout } from "@/services/integrations/vcs/VcsSourceService"
 import { parseRepoMountSource, REPO_MOUNT_TARGET, REPO_SANDBOX_RUNTIME } from "./repo-mount"
 
 export const IMPLEMENTATION = new SandboxImplementation({
 	isolation: "isolated",
-	identity: "maple-cloudflare-container",
+	identity: "cloudflare-sandbox",
 })
 
 const unsupported = (feature: SandboxUnsupportedRequestError["feature"], message: string) =>
@@ -47,7 +56,7 @@ interface AdmittedRequest {
 	readonly orgId: OrgId
 	readonly repository: string
 	readonly ref: string | undefined
-	/** Workspace-relative working directory. */
+	/** Checkout-relative working directory. */
 	readonly cwd: string
 }
 
@@ -67,7 +76,13 @@ export const admit = (
 		if (request.network._tag !== "NetworkDisabled")
 			return yield* unsupported(
 				"network",
-				"the repository sandbox has no network; request NetworkDisabled",
+				"this sandbox can only switch egress off entirely; it cannot enforce a destination allowlist",
+			)
+		const unknownEnv = request.environment.allow.filter((name) => !(name in SANDBOX_COMMAND_ENV))
+		if (unknownEnv.length > 0)
+			return yield* unsupported(
+				"runtime",
+				`a command sees only ${Object.keys(SANDBOX_COMMAND_ENV).join(", ")}; it cannot be given ${unknownEnv.join(", ")}`,
 			)
 		if (request.limits.cpuCores !== undefined)
 			return yield* unsupported("cpu-limit", "per-command CPU limits are not enforced")
@@ -108,13 +123,13 @@ const spawnError = (command: string, message: string, cause?: unknown) =>
 		...(cause === undefined ? undefined : { cause }),
 	})
 
-/** The container's answer as the contract's events, or its failure. */
+/** The sandbox Worker's answer as the contract's events, or its failure. */
 export const toEvents = (
 	request: SandboxRequest,
-	output: SandboxExecOutput,
+	response: SandboxExecResponse,
 ): Effect.Effect<ReadonlyArray<SandboxEvent>, SandboxError> => {
-	switch (output._tag) {
-		case "exited": {
+	switch (response._tag) {
+		case "SandboxExited": {
 			const events: SandboxEvent[] = [
 				new SandboxStarted({
 					eventVersion: 1,
@@ -122,73 +137,81 @@ export const toEvents = (
 					runtime: request.runtime,
 				}),
 			]
-			if (output.stdoutBytes > 0)
+			if (response.stdoutBytes > 0)
 				events.push(
 					new SandboxOutput({
 						eventVersion: 1,
 						implementation: IMPLEMENTATION,
 						stream: "stdout",
-						text: output.stdout,
-						bytes: output.stdoutBytes,
+						text: response.stdout,
+						bytes: response.stdoutBytes,
 					}),
 				)
-			if (output.stderrBytes > 0)
+			if (response.stderrBytes > 0)
 				events.push(
 					new SandboxOutput({
 						eventVersion: 1,
 						implementation: IMPLEMENTATION,
 						stream: "stderr",
-						text: output.stderr,
-						bytes: output.stderrBytes,
+						text: response.stderr,
+						bytes: response.stderrBytes,
 					}),
 				)
 			events.push(
 				new SandboxExited({
 					eventVersion: 1,
 					implementation: IMPLEMENTATION,
-					exitCode: output.exitCode,
+					exitCode: response.exitCode,
 					resourceUse: new SandboxResourceUse({
-						wallTime: Duration.millis(output.wallTimeMs),
-						stdoutBytes: output.stdoutBytes,
-						stderrBytes: output.stderrBytes,
+						wallTime: Duration.millis(response.wallTimeMs),
+						stdoutBytes: response.stdoutBytes,
+						stderrBytes: response.stderrBytes,
 					}),
 					artifacts: [] as ReadonlyArray<SandboxArtifact>,
 				}),
 			)
 			return Effect.succeed(events)
 		}
-		case "timed-out":
+		case "SandboxTimedOut":
 			return Effect.fail(
 				new SandboxTimeoutError({
 					implementation: IMPLEMENTATION,
 					maxWallTime: request.limits.maxWallTime,
 				}),
 			)
-		case "output-limit":
+		case "SandboxOutputExceeded":
 			return Effect.fail(
 				new SandboxOutputLimitError({
 					implementation: IMPLEMENTATION,
-					stream: output.stream,
-					limit: output.limit,
-					observed: output.observed,
+					stream: response.stream,
+					limit: response.limit,
+					observed: response.observed,
 				}),
 			)
-		case "spawn-failed":
-			return Effect.fail(spawnError(request.command, output.message))
-		case "missing-workspace":
+		case "SandboxIsolationUnavailable":
+			// Declared as unsupported rather than as a spawn failure: the container is
+			// working, it simply cannot provide the network posture that was asked for.
+			return Effect.fail(unsupported("network", response.message))
+		case "SandboxCheckoutFailed":
+			return Effect.fail(spawnError(request.command, response.message))
+		case "SandboxUnavailable":
 			return Effect.fail(
 				new SandboxExitError({
 					implementation: IMPLEMENTATION,
 					exitCode: -1,
-					message: `checkout ${output.sha} is not in the sandbox`,
+					message: response.message,
 				}),
 			)
 	}
 }
 
+/** One Cloudflare sandbox per repository per organization; the org is in the key. */
+export const sandboxKey = (orgId: OrgId, checkout: RepositoryCheckout): string =>
+	`${orgId}:${checkout.provider}:${checkout.fullName.toLowerCase()}`
+
 export interface CloudflareRepoSandboxDeps {
 	readonly resolveCheckout: VcsSourceService["Service"]["resolveCheckout"]
-	readonly stubFor: (orgId: OrgId, checkout: RepositoryCheckout) => RepoSandboxStub | undefined
+	readonly exec: SandboxClient["Service"]["exec"]
 }
 
 export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sandbox["Service"] => ({
@@ -203,56 +226,44 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 							spawnError(request.command, `${error._tag}: ${error.message}`, error),
 						),
 					)
-				const stub = deps.stubFor(admitted.orgId, checkout)
-				if (stub === undefined)
-					return yield* unsupported("runtime", "no repository sandbox is bound in this deployment")
 				yield* Effect.annotateCurrentSpan({
 					"vcs.repository.full_name": checkout.fullName,
 					"vcs.ref.head.revision": checkout.sha,
 					"maple.sandbox.command": request.command,
 				})
-				const workspace = yield* callStub(() =>
-					stub.ensureWorkspace({ sha: checkout.sha, archiveUrl: checkout.archiveUrl }),
-				).pipe(Effect.mapError((error) => spawnError(request.command, error.message, error)))
-				if (workspace._tag === "archive-unavailable")
-					return yield* spawnError(
-						request.command,
-						`the repository archive answered ${workspace.status}`,
+				const answered = yield* deps
+					.exec(
+						new SandboxExecRequest({
+							sandboxKey: sandboxKey(admitted.orgId, checkout),
+							checkout: new SandboxCheckout({
+								repository: checkout.fullName,
+								sha: checkout.sha,
+								cloneUrl: checkout.cloneUrl,
+								remoteUrl: checkout.remoteUrl,
+							}),
+							command: request.command,
+							args: request.args,
+							cwd: admitted.cwd,
+							network: "disabled",
+							timeoutMs: Duration.toMillis(request.limits.maxWallTime),
+							maxOutputBytes: request.limits.maxOutputBytes,
+						}),
 					)
-				if (workspace._tag === "restore-failed")
-					return yield* spawnError(
-						request.command,
-						`restoring the checkout failed: ${workspace.message}`,
-					)
-				const output = yield* callStub(() =>
-					stub.exec({
-						sha: checkout.sha,
-						command: request.command,
-						args: request.args,
-						cwd: admitted.cwd,
-						envAllow: request.environment.allow.filter((name) =>
-							(SAFE_ENVIRONMENT as ReadonlyArray<string>).includes(name),
-						),
-						maxOutputBytes: request.limits.maxOutputBytes,
-						maxWallTimeMs: Duration.toMillis(request.limits.maxWallTime),
-					}),
-				).pipe(Effect.mapError((error) => spawnError(request.command, error.message, error)))
-				return Stream.fromIterable(yield* toEvents(request, output))
+					.pipe(Effect.mapError((error) => spawnError(request.command, error.message, error)))
+				if (Option.isNone(answered))
+					return yield* unsupported("runtime", "no repository sandbox is bound in this deployment")
+				return Stream.fromIterable(yield* toEvents(request, answered.value))
 			}),
 		),
 })
 
-/** The port over the Worker's own `RepoSandbox` binding and the org's connected repositories. */
-export const CloudflareRepoSandboxLive: Layer.Layer<Sandbox, never, VcsSourceService | WorkerEnvironment> =
+/** The port over the sandbox service binding and the org's connected repositories. */
+export const CloudflareRepoSandboxLive: Layer.Layer<Sandbox, never, VcsSourceService | SandboxClient> =
 	Layer.effect(
 		Sandbox,
 		Effect.gen(function* () {
 			const source = yield* VcsSourceService
-			const env = yield* WorkerEnvironment
-			return makeCloudflareRepoSandbox({
-				resolveCheckout: source.resolveCheckout,
-				stubFor: (orgId, checkout) =>
-					repoSandboxStub(env, repoSandboxKey(orgId, checkout.provider, checkout.fullName)),
-			})
+			const client = yield* SandboxClient
+			return makeCloudflareRepoSandbox({ resolveCheckout: source.resolveCheckout, exec: client.exec })
 		}),
 	)

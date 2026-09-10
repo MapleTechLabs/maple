@@ -8,8 +8,8 @@
  * `maple-api`, background work under its own service names (`eventTelemetry`).
  *
  * The bundle entry is the one alchemy generates around this module: the
- * default export is the Worker, and the chat and sandbox Durable Objects and
- * the two Workflows are alchemy classes the init yields — their bindings, the
+ * default export is the Worker, and the chat Durable Object and the two
+ * Workflows are alchemy classes the init yields — their bindings, the
  * namespace, the physical workflows and the entry's class exports all derive
  * from those yields.
  */
@@ -18,6 +18,7 @@ import {
 	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
 	MapleStack,
+	SandboxWorker,
 	type MapleStage,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
@@ -29,7 +30,6 @@ import ChatSessionObject from "./chat/ChatSession"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { apiConfiguredEnv } from "./resources/env"
-import RepoSandboxObject from "./sandbox/RepoSandboxObject"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
@@ -61,6 +61,8 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, domains, workerDev, devEnv } = yield* MapleStack
+	// The agents' repository sandbox, reached only over this binding.
+	const sandbox = yield* SandboxWorker
 	// Resolved before any resource is created, so a misconfigured deploy fails
 	// with the full list of missing vars rather than part-way through applying.
 	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
@@ -91,6 +93,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage }),
+			SANDBOX: sandbox,
 			...configuredEnv,
 			...devEnv,
 		},
@@ -105,8 +108,6 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// binds it under the class name, registers it at plan time and exports
 		// the class from the generated entry.
 		yield* ChatSessionObject
-		// The agents' repository sandbox container, behind its own Durable Object.
-		yield* RepoSandboxObject
 		yield* ClickHouseSchemaApplyWorkflow
 		yield* InvestigationFanoutWorkflow
 		const clients = yield* bindApiClients

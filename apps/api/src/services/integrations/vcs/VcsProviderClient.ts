@@ -201,15 +201,15 @@ export interface VcsProviderClient {
 	>
 
 	/**
-	 * A short-lived URL for the repository's gzipped tarball at `sha`, carrying no
-	 * credential of its own — what the sandbox restores a checkout from.
+	 * A clone URL for one repository, carrying a short-lived credential scoped to
+	 * that repository alone, plus the credential-free URL the checkout's remote is
+	 * rewritten to once the clone is done.
 	 */
-	readonly fetchArchiveLink: (
+	readonly fetchCloneCredentials: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		sha: GitCommitSha,
 	) => Effect.Effect<
-		string,
+		{ readonly cloneUrl: string; readonly remoteUrl: string },
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 

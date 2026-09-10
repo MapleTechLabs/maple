@@ -47,6 +47,7 @@ import { VcsRepository } from "@/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@/services/integrations/vcs/VcsSyncQueue"
 import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
 import { GithubAppClientLive, VcsProviderRegistryLive, VcsSourceServiceLayer } from "./vcs-source-layer"
+import { SandboxClient } from "@/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@/services/sandbox/CloudflareRepoSandbox"
 import { RepoSandboxService } from "@/services/sandbox/RepoSandboxService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
@@ -242,11 +243,15 @@ const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 
 const SetupAuditServiceLive = SetupAuditService.layer.pipe(Layer.provideMerge(WarehouseQueryServiceLive))
 
-// The agents' repository sandbox tools; `WorkerEnvironment` arrives at worker scope.
+// The agents' repository sandbox tools, over the sandbox Worker's service
+// binding; `WorkerEnvironment` arrives at worker scope.
+const SandboxClientLive = SandboxClient.layer.pipe(Layer.provide(InfraLive))
 const RepoSandboxServiceLive = RepoSandboxService.layer.pipe(
 	Layer.provide(
 		CloudflareRepoSandboxLive.pipe(
-			Layer.provide(VcsSourceServiceLive.pipe(Layer.provideMerge(InfraLive))),
+			Layer.provide(
+				Layer.mergeAll(VcsSourceServiceLive.pipe(Layer.provideMerge(InfraLive)), SandboxClientLive),
+			),
 		),
 	),
 )

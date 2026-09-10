@@ -54,10 +54,13 @@ const makeLayer = (providerCalls: string[]) => {
 				providerCalls.push(`resolve:${repo.owner}/${repo.name}:${ref}`)
 				return ref === "gone" ? Option.none() : Option.some("d".repeat(40) as GitCommitSha)
 			}),
-		fetchArchiveLink: (_installation, repo, sha) =>
+		fetchCloneCredentials: (_installation, repo) =>
 			Effect.sync(() => {
-				providerCalls.push(`archive:${repo.owner}/${repo.name}:${sha}`)
-				return `https://codeload.test/${repo.owner}/${repo.name}/tar.gz/${sha}`
+				providerCalls.push(`clone:${repo.owner}/${repo.name}`)
+				return {
+					cloneUrl: `https://x-access-token:scoped@github.test/${repo.owner}/${repo.name}.git`,
+					remoteUrl: `https://github.test/${repo.owner}/${repo.name}.git`,
+				}
 			}),
 		fetchSourceFile: (_installation, repo, path, ref) =>
 			Effect.sync(() => {
@@ -113,15 +116,16 @@ describe("VcsSourceService", () => {
 			const tracked = yield* source.resolveCheckout(ORG, "octo/shop")
 			assert.strictEqual(tracked.ref, "production")
 			assert.strictEqual(tracked.sha, "d".repeat(40))
-			assert.match(tracked.archiveUrl, /tar\.gz\/d{40}$/)
+			assert.match(tracked.cloneUrl, /x-access-token:scoped@/)
+			assert.strictEqual(tracked.remoteUrl, "https://github.test/octo/shop.git")
 			const pinned = yield* source.resolveCheckout(ORG, "octo/shop", "e".repeat(40))
 			assert.strictEqual(pinned.sha, "e".repeat(40))
 			const missing = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", "gone"))
 			assert.isTrue(Exit.isFailure(missing))
 			assert.deepStrictEqual(calls, [
 				"resolve:octo/shop:production",
-				`archive:octo/shop:${"d".repeat(40)}`,
-				`archive:octo/shop:${"e".repeat(40)}`,
+				"clone:octo/shop",
+				"clone:octo/shop",
 				"resolve:octo/shop:gone",
 			])
 		}).pipe(Effect.provide(makeLayer(calls)))

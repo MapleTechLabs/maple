@@ -1,18 +1,26 @@
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import {
+	SandboxCheckoutFailed,
+	SandboxExited,
+	SandboxIsolationUnavailable,
+	SandboxOutputExceeded,
+	SandboxTimedOut,
+	SandboxUnavailable,
+	type SandboxExecRequest,
+	type SandboxExecResponse,
+} from "@maple/domain/sandbox"
+import {
 	NetworkAllowlist,
+	SandboxArtifactRule,
 	SandboxEnvironment,
 	SandboxLimits,
 	SandboxMount,
 	SandboxRequest,
 	SandboxRuntime,
 	SandboxSecretHandle,
-	SandboxArtifactRule,
 } from "@effect-agent/sandbox/Sandbox"
-import { Duration, Effect, Exit, Schema, Stream } from "effect"
-import type { RepoSandboxStub } from "@/sandbox/namespace"
-import type { EnsureWorkspaceInput, SandboxExecInput, SandboxExecOutput } from "@/sandbox/protocol"
+import { Duration, Effect, Exit, Option, Schema, Stream } from "effect"
 import type { RepositoryCheckout } from "@/services/integrations/vcs/VcsSourceService"
 import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
 import { NETWORK_DISABLED, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
@@ -23,10 +31,10 @@ const SHA = "c".repeat(40)
 const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>[0]> = {}) =>
 	new SandboxRequest({
 		runtime: REPO_SANDBOX_RUNTIME,
-		command: "rg",
-		args: ["--", "."],
+		command: "git",
+		args: ["grep", "-e", "boom"],
 		cwd: "/workspace/src",
-		environment: new SandboxEnvironment({ allow: ["PATH", "SECRET"] }),
+		environment: new SandboxEnvironment({ allow: ["PATH"] }),
 		mounts: [repoMount({ orgId: ORG, repository: "octo/shop", ref: "main" })],
 		network: NETWORK_DISABLED,
 		limits: new SandboxLimits({ maxOutputBytes: 1024, maxWallTime: Duration.seconds(5) }),
@@ -40,33 +48,34 @@ const checkout: RepositoryCheckout = {
 	fullName: "octo/shop",
 	ref: "main",
 	sha: SHA as RepositoryCheckout["sha"],
-	archiveUrl: "https://codeload.test/octo/shop/tar.gz/" + SHA,
+	cloneUrl: "https://x-access-token:scoped@github.test/octo/shop.git",
+	remoteUrl: "https://github.test/octo/shop.git",
 }
 
-const makeSandbox = (exec: (input: SandboxExecInput) => SandboxExecOutput, calls: string[] = []) => {
-	const stub: RepoSandboxStub = {
-		ensureWorkspace: async (input: EnsureWorkspaceInput) => {
-			calls.push(`ensure:${input.sha}:${input.archiveUrl}`)
-			return { _tag: "restored", bytes: 10 }
-		},
-		exec: async (input) => {
-			calls.push(
-				`exec:${input.command} ${input.args.join(" ")} @${input.cwd} env=${input.envAllow.join(",")}`,
-			)
-			return exec(input)
-		},
-	}
-	return makeCloudflareRepoSandbox({
+/** The sandbox Worker as the port sees it: one call, one answer. `bound: false` is a deployment without one. */
+const makeSandbox = (
+	answer: (request: SandboxExecRequest) => SandboxExecResponse,
+	calls: string[] = [],
+	bound = true,
+) =>
+	makeCloudflareRepoSandbox({
 		resolveCheckout: (orgId, repository, ref) => {
 			calls.push(`checkout:${orgId}:${repository}:${ref}`)
 			return Effect.succeed(checkout)
 		},
-		stubFor: (orgId, resolved) => {
-			calls.push(`stub:${orgId}:${resolved.fullName}`)
-			return stub
+		exec: (execRequest) => {
+			if (!bound) return Effect.succeed(Option.none())
+			calls.push(
+				`exec:${execRequest.sandboxKey}|${execRequest.command} ${execRequest.args.join(" ")}|@${execRequest.cwd}|net=${execRequest.network}|sha=${execRequest.checkout.sha}`,
+			)
+			return Effect.succeed(Option.some(answer(execRequest)))
 		},
 	})
-}
+
+const failureTag = (exit: Exit.Exit<unknown, { readonly _tag: string }>): string | undefined =>
+	Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail"
+		? exit.cause.reasons[0].error._tag
+		: undefined
 
 describe("admit", () => {
 	it.effect("accepts the request shape the tools build", () =>
@@ -80,6 +89,7 @@ describe("admit", () => {
 		Effect.gen(function* () {
 			const cases: Array<[string, Parameters<typeof request>[0]]> = [
 				["runtime", { runtime: new SandboxRuntime({ kind: "microvm", identity: "firecracker" }) }],
+				// It can switch egress off entirely, but it cannot police destinations.
 				["network", { network: new NetworkAllowlist({ domains: ["github.com"], ports: [443] }) }],
 				[
 					"cpu-limit",
@@ -150,19 +160,19 @@ describe("admit", () => {
 })
 
 describe("the Cloudflare repository sandbox", () => {
-	it.effect("resolves the checkout, restores it, runs the command and reports the events", () =>
+	it.effect("resolves the checkout, runs the command with no egress, and reports the events", () =>
 		Effect.gen(function* () {
 			const calls: string[] = []
 			const sandbox = makeSandbox(
-				() => ({
-					_tag: "exited",
-					exitCode: 1,
-					stdout: "src/a.ts:1:x",
-					stderr: "",
-					stdoutBytes: 12,
-					stderrBytes: 0,
-					wallTimeMs: 40,
-				}),
+				() =>
+					new SandboxExited({
+						exitCode: 1,
+						stdout: "src/a.ts:1:boom",
+						stderr: "",
+						stdoutBytes: 15,
+						stderrBytes: 0,
+						wallTimeMs: 40,
+					}),
 				calls,
 			)
 			const events = yield* Stream.runCollect(sandbox.execute(request()))
@@ -170,14 +180,10 @@ describe("the Cloudflare repository sandbox", () => {
 				events.map((event) => event._tag),
 				["SandboxStarted", "SandboxOutput", "SandboxExited"],
 			)
-			const exited = events[2]
-			assert.isTrue(exited?._tag === "SandboxExited" && exited.exitCode === 1)
 			assert.isTrue(events.every((event) => event.implementation.isolation === "isolated"))
 			assert.deepStrictEqual(calls, [
 				`checkout:${ORG}:octo/shop:main`,
-				`stub:${ORG}:octo/shop`,
-				`ensure:${SHA}:${checkout.archiveUrl}`,
-				`exec:rg -- . @src env=PATH`,
+				`exec:${ORG}:github:octo/shop|git grep -e boom|@src|net=disabled|sha=${SHA}`,
 			])
 		}),
 	)
@@ -186,45 +192,59 @@ describe("the Cloudflare repository sandbox", () => {
 		Effect.gen(function* () {
 			const timedOut = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => ({ _tag: "timed-out", wallTimeMs: 5000 })).execute(request()),
+					makeSandbox(() => new SandboxTimedOut({ wallTimeMs: 5000 })).execute(request()),
 				),
 			)
-			assert.isTrue(
-				Exit.isFailure(timedOut) &&
-					timedOut.cause.reasons[0]?._tag === "Fail" &&
-					timedOut.cause.reasons[0].error._tag === "SandboxTimeoutError",
-			)
+			assert.strictEqual(failureTag(timedOut), "SandboxTimeoutError")
+
 			const overflowed = yield* Effect.exit(
 				Stream.runCollect(
-					makeSandbox(() => ({
-						_tag: "output-limit",
-						stream: "stdout",
-						limit: 1024,
-						observed: 4096,
-					})).execute(request()),
+					makeSandbox(
+						() => new SandboxOutputExceeded({ stream: "stdout", limit: 1024, observed: 4096 }),
+					).execute(request()),
 				),
 			)
-			assert.isTrue(
-				overflowed.cause !== undefined &&
-					Exit.isFailure(overflowed) &&
-					overflowed.cause.reasons[0]?._tag === "Fail" &&
-					overflowed.cause.reasons[0].error._tag === "SandboxOutputLimitError",
+			assert.strictEqual(failureTag(overflowed), "SandboxOutputLimitError")
+
+			const brokenCheckout = yield* Effect.exit(
+				Stream.runCollect(
+					makeSandbox(() => new SandboxCheckoutFailed({ message: "git clone failed" })).execute(
+						request(),
+					),
+				),
 			)
+			assert.strictEqual(failureTag(brokenCheckout), "SandboxSpawnError")
+
+			const gone = yield* Effect.exit(
+				Stream.runCollect(
+					makeSandbox(() => new SandboxUnavailable({ message: "no instance" })).execute(request()),
+				),
+			)
+			assert.strictEqual(failureTag(gone), "SandboxExitError")
 		}),
 	)
 
-	it.effect("reports a deployment without the binding as unsupported rather than crashing", () =>
+	it.effect("refuses rather than running with egress when the container cannot isolate the network", () =>
 		Effect.gen(function* () {
-			const sandbox = makeCloudflareRepoSandbox({
-				resolveCheckout: () => Effect.succeed(checkout),
-				stubFor: () => undefined,
-			})
-			const exit = yield* Effect.exit(Stream.runCollect(sandbox.execute(request())))
-			assert.isTrue(
-				Exit.isFailure(exit) &&
-					exit.cause.reasons[0]?._tag === "Fail" &&
-					exit.cause.reasons[0].error._tag === "SandboxUnsupportedRequestError",
+			const exit = yield* Effect.exit(
+				Stream.runCollect(
+					makeSandbox(() => new SandboxIsolationUnavailable({ message: "no netns" })).execute(
+						request(),
+					),
+				),
 			)
+			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")
+		}),
+	)
+
+	it.effect("reports a deployment without a sandbox worker as unsupported rather than crashing", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				Stream.runCollect(
+					makeSandbox(() => new SandboxTimedOut({ wallTimeMs: 0 }), [], false).execute(request()),
+				),
+			)
+			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")
 		}),
 	)
 })

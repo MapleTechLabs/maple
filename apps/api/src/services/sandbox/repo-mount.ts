@@ -9,7 +9,10 @@ import type { OrgId } from "@maple/domain/http"
 import { NetworkDisabled, SandboxMount, SandboxRuntime } from "@effect-agent/sandbox/Sandbox"
 import { Option, Schema } from "effect"
 
-export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({ kind: "container", identity: "maple-repo-sandbox" })
+export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({
+	kind: "container",
+	identity: "cloudflare-sandbox",
+})
 
 /** Where the checkout appears inside the container; commands run relative to it. */
 export const REPO_MOUNT_TARGET = "/workspace"

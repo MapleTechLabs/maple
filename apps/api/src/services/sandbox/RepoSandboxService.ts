@@ -20,8 +20,13 @@ import { NETWORK_DISABLED, REPO_MOUNT_TARGET, REPO_SANDBOX_RUNTIME, repoMount } 
 export const SANDBOX_MAX_OUTPUT_BYTES = 48 * 1024
 export const SANDBOX_DEFAULT_TIMEOUT_SECONDS = 30
 export const SANDBOX_MAX_TIMEOUT_SECONDS = 120
-/** Matches `rg` refuses to read past; a bundled artifact is never the file an investigation wants. */
-const MAX_SEARCHED_FILE = "4M"
+/**
+ * Cloudflare's sandbox image ships git but not ripgrep, and the checkout is a
+ * real clone — so `git grep` and `git ls-files` are both what is available and
+ * what already understands the repository: tracked files only, no `.git`
+ * internals, and none of the build output `.gitignore` excludes.
+ */
+const GIT_COMMON = ["--no-optional-locks", "-c", "core.quotePath=false"]
 
 export interface SandboxCommandResult {
 	readonly exitCode: number
@@ -154,41 +159,40 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 			const grep: RepoSandboxServiceApi["grep"] = Effect.fn("RepoSandboxService.grep")(
 				function* (orgId, target, options) {
 					const args = [
+						...GIT_COMMON,
+						"grep",
 						"--line-number",
-						"--no-heading",
-						"--color",
-						"never",
-						"--no-messages",
-						"--max-columns",
-						"240",
-						"--max-columns-preview",
-						"--max-filesize",
-						MAX_SEARCHED_FILE,
+						"--no-color",
+						// Binary hits are noise in a source search, and their bytes still
+						// count against the output bound.
+						"-I",
 						"--max-count",
 						String(options.maxPerFile),
-						options.caseSensitive === false ? "--ignore-case" : "--case-sensitive",
+						...(options.caseSensitive === false ? ["--ignore-case"] : []),
 						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
-						...(options.glob ? ["--glob", options.glob] : []),
-						"--regexp",
+						"-e",
 						options.pattern,
-						// No positional without a path: `.` would prefix every hit with `./`.
-						...(options.path ? ["--", options.path] : []),
+						// Everything past `--` is a pathspec, so a pattern that starts with a
+						// dash can never be read as an option.
+						"--",
+						...(options.glob ? [`:(glob)${options.glob}`] : []),
+						...(options.path ? [options.path] : []),
 					]
-					return yield* run(orgId, target, "rg", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
+					return yield* run(orgId, target, "git", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
 			)
 
 			const listFiles: RepoSandboxServiceApi["listFiles"] = Effect.fn("RepoSandboxService.listFiles")(
 				function* (orgId, target, options) {
 					const args = [
-						"--files",
-						"--color",
-						"never",
-						"--no-messages",
-						...(options.glob ? ["--glob", options.glob] : []),
-						...(options.path ? ["--", options.path] : []),
+						...GIT_COMMON,
+						"ls-files",
+						"--cached",
+						"--",
+						...(options.glob ? [`:(glob)${options.glob}`] : []),
+						...(options.path ? [options.path] : []),
 					]
-					return yield* run(orgId, target, "rg", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
+					return yield* run(orgId, target, "git", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
 			)
 

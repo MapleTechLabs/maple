@@ -47,6 +47,15 @@ export class MapleStack extends Context.Service<MapleStack, MapleStackContext>()
 export class ApiWorker extends Context.Service<ApiWorker, Cloudflare.Worker>()("@maple/infra/ApiWorker") {}
 
 /**
+ * The deployed sandbox Worker, for the api's service binding to it. Provided by
+ * the root right after yielding it, for the same reason as {@link ApiWorker}: a
+ * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ */
+export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Worker>()(
+	"@maple/infra/SandboxWorker",
+) {}
+
+/**
  * Props for a resource declared at module scope whose physical name is
  * stage-derived (`resolveWorkerName(base, stage)`): `make` receives that name
  * and returns the props. Reads alchemy's own `Stage` — one of the platform

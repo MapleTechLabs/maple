@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { Env } from "@/platform/Env"
 import { GithubAppClient } from "@/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubHttp, type GithubHttpApi } from "@/services/integrations/vcs/vendor/github/GithubHttp"
@@ -34,15 +34,9 @@ const jsonResponse = (body: unknown) =>
 	new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
 describe("GithubAppClient source access", () => {
-	it.effect("reads the archive redirect by hand so the token never follows it", () => {
+	it.effect("mints a clone credential scoped to one repository and keeps it out of the remote", () => {
 		const requests: Array<{ url: string; init?: RequestInit }> = []
-		const responses = [
-			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
-			new Response(null, {
-				status: 302,
-				headers: { location: "https://codeload.github.com/octo/shop/legacy.tar.gz/abc?token=signed" },
-			}),
-		]
+		const responses = [jsonResponse({ token: "ghs_scoped", expires_at: "2099-01-01T00:00:00Z" })]
 		let nextResponse = 0
 		const http = Layer.succeed(GithubHttp, {
 			fetch: async (url, init) => {
@@ -54,10 +48,19 @@ describe("GithubAppClient source access", () => {
 
 		return Effect.gen(function* () {
 			const client = yield* GithubAppClient
-			const link = yield* client.getArchiveLink("42", "octo", "shop", "abc")
-			assert.strictEqual(link, "https://codeload.github.com/octo/shop/legacy.tar.gz/abc?token=signed")
-			assert.match(requests[1]!.url, /\/repos\/octo\/shop\/tarball\/abc$/)
-			assert.strictEqual(requests[1]!.init?.redirect, "manual")
+			const { cloneUrl, remoteUrl } = yield* client.mintCloneUrl("42", "octo", "shop")
+			assert.strictEqual(cloneUrl, "https://x-access-token:ghs_scoped@github.com/octo/shop.git")
+			assert.strictEqual(remoteUrl, "https://github.com/octo/shop.git")
+			// The App JWT mints it, and the body narrows it to read-only contents on one repo.
+			assert.match(requests[0]!.url, /\/app\/installations\/42\/access_tokens$/)
+			const body = yield* Schema.decodeUnknownEffect(
+				Schema.Struct({
+					repositories: Schema.Array(Schema.String),
+					permissions: Schema.Record(Schema.String, Schema.String),
+				}),
+			)(JSON.parse(String(requests[0]!.init?.body)))
+			assert.deepStrictEqual([...body.repositories], ["shop"])
+			assert.deepStrictEqual({ ...body.permissions }, { contents: "read", metadata: "read" })
 		}).pipe(Effect.provide(layer))
 	})
 

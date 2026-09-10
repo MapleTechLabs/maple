@@ -832,9 +832,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					),
 				)
 
-			const fetchArchiveLink: VcsProviderClient["fetchArchiveLink"] = (installation, repo, sha) =>
+			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
-					.getArchiveLink(installation.externalInstallationId, repo.owner, repo.name, sha)
+					.mintCloneUrl(installation.externalInstallationId, repo.owner, repo.name)
 					.pipe(Effect.mapError(toVcsCommitError))
 
 			return {
@@ -849,7 +849,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				searchCode,
 				fetchSourceFile,
 				resolveRef,
-				fetchArchiveLink,
+				fetchCloneCredentials,
 			} satisfies VcsProviderClient
 		}),
 	},

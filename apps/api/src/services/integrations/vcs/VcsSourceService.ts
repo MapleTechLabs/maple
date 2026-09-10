@@ -44,13 +44,16 @@ export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNo
 	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
 ) {}
 
-/** A commit the sandbox can restore: the exact SHA a ref names, and where its archive is. */
+/** A commit the sandbox can check out: the exact SHA a ref names, and how to clone it. */
 export interface RepositoryCheckout {
 	readonly provider: VcsRepo["provider"]
 	readonly fullName: string
 	readonly ref: string
 	readonly sha: GitCommitSha
-	readonly archiveUrl: string
+	/** Carries a short-lived, repository-scoped credential. Used once, by the clone. */
+	readonly cloneUrl: string
+	/** The same remote without the credential; the checkout's git config keeps this one. */
+	readonly remoteUrl: string
 }
 
 const isCommitSha = Schema.is(GitCommitSha)
@@ -320,16 +323,14 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 						message: `No ref '${ref}' exists in '${repository.fullName}'.`,
 					})
 				}
-				const archiveUrl = yield* asUpstream(
-					provider.fetchArchiveLink(installation, repoRef, resolved.value),
-				)
+				const credentials = yield* asUpstream(provider.fetchCloneCredentials(installation, repoRef))
 				yield* Effect.annotateCurrentSpan({ "vcs.ref.head.revision": resolved.value })
 				return {
 					provider: repository.provider,
 					fullName: repository.fullName,
 					ref,
 					sha: resolved.value,
-					archiveUrl,
+					...credentials,
 				}
 			})
 

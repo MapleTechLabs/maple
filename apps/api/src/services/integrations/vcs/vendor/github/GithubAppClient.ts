@@ -624,38 +624,58 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			})
 
 			/**
-			 * The pre-signed archive URL GitHub redirects a tarball request to. The
-			 * redirect is read by hand (`redirect: "manual"`) so the installation token
-			 * is never forwarded to the archive host; the signed URL the caller gets
-			 * back carries no credential and expires within minutes.
+			 * A clone URL for one repository, carrying a token minted for that
+			 * repository alone.
+			 *
+			 * Deliberately not `mintInstallationToken`: that token reaches every
+			 * repository the installation can see and is cached for an hour, and this
+			 * one travels into a container that also runs model-chosen commands. The
+			 * `repositories` + `permissions` body narrows it to read-only contents on a
+			 * single repository, and it is never cached — a clone uses it once, and the
+			 * checkout's remote is rewritten to `remoteUrl` immediately afterwards.
 			 */
-			const getArchiveLink = Effect.fn("GithubAppClient.getArchiveLink")(function* (
+			const mintCloneUrl = Effect.fn("GithubAppClient.mintCloneUrl")(function* (
 				externalInstallationId: string,
 				owner: string,
 				repo: string,
-				sha: string,
 			) {
 				const config = yield* resolveConfig
-				const token = yield* mintInstallationToken(externalInstallationId)
+				const jwt = yield* mintAppJwt(config)
 				const response = yield* rateLimitedFetch(
 					tracedFetch(
-						`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${sha}`,
+						`${config.apiBaseUrl}/app/installations/${externalInstallationId}/access_tokens`,
 						{
-							redirect: "manual",
+							method: "POST",
 							headers: {
-								authorization: `token ${token}`,
+								authorization: `Bearer ${jwt}`,
 								accept: "application/vnd.github+json",
+								"content-type": "application/json",
 								"x-github-api-version": GITHUB_API_VERSION,
 								"user-agent": USER_AGENT,
 							},
+							body: JSON.stringify({
+								repositories: [repo],
+								permissions: { contents: "read", metadata: "read" },
+							}),
 						},
-						"GitHub archive request failed",
+						"Scoped installation token request failed",
 					),
 				)
-				const location = response.headers.get("location")
-				if (response.status !== 302 || location === null)
-					return yield* failure(response, "Get archive link", "repository")
-				return location
+				if (!response.ok)
+					return yield* failure(response, "Scoped installation token request", "installation")
+				const json = yield* parseJson(response, "Scoped installation token request")
+				const decoded = yield* decodeInstallationToken(json).pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({ message: "Unexpected installation token payload", cause }),
+					),
+				)
+				const web = githubWebBaseUrl(config.apiBaseUrl)
+				const path = `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`
+				return {
+					cloneUrl: `${web.replace("://", `://x-access-token:${decoded.token}@`)}/${path}`,
+					remoteUrl: `${web}/${path}`,
+				}
 			})
 
 			// One page, newest-updated first — never a pagination walk. This feeds the
@@ -902,7 +922,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getPullRequest,
 				searchCode,
 				getSourceFile,
-				getArchiveLink,
+				mintCloneUrl,
 				getInstallation,
 				exchangeUserOAuthCode,
 				listUserInstallationIds,
