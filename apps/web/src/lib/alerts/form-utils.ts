@@ -832,9 +832,9 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined): str
 	const date = new Date(value)
 	const today = startOfDay(Date.now(), timeZone)
 	const target = startOfDay(date.getTime(), timeZone)
-	const dayMs = 86_400_000
 	if (target === today) return "Today"
-	if (target === today - dayMs) return "Yesterday"
+	// Any instant inside the previous day, so a 23- or 25-hour day still counts.
+	if (target === startOfDay(today - 1, timeZone)) return "Yesterday"
 	return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric", year: "numeric" })
 }
 

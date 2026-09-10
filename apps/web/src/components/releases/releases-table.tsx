@@ -9,6 +9,7 @@ import type { VcsCommitDetailResponse } from "@maple/domain/http"
 
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import {
@@ -274,9 +275,16 @@ function ReleasesTableRows({
 									</TableCell>
 									<TableCell
 										className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground"
-										title={new Date(group.firstSeen).toLocaleString()}
+										title={formatTimestampInTimezone(group.firstSeen, {
+											timeZone: effectiveTimezone,
+											withYear: true,
+										})}
 									>
-										{formatRelativeTimeOrDate(group.firstSeen, undefined, effectiveTimezone)}
+										{formatRelativeTimeOrDate(
+											group.firstSeen,
+											undefined,
+											effectiveTimezone,
+										)}
 									</TableCell>
 									<TableCell className="py-2 text-right align-top font-mono text-xs tabular-nums">
 										{formatNumber(group.spanCount)}
@@ -340,9 +348,16 @@ function ReleasesTableRows({
 												<TableCell className="py-1.5" />
 												<TableCell
 													className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"
-													title={new Date(service.firstSeen).toLocaleString()}
+													title={formatTimestampInTimezone(service.firstSeen, {
+														timeZone: effectiveTimezone,
+														withYear: true,
+													})}
 												>
-													{formatRelativeTimeOrDate(service.firstSeen, undefined, effectiveTimezone)}
+													{formatRelativeTimeOrDate(
+														service.firstSeen,
+														undefined,
+														effectiveTimezone,
+													)}
 												</TableCell>
 												<TableCell className="py-1.5 text-right font-mono text-xs tabular-nums">
 													{formatNumber(service.spanCount)}

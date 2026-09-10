@@ -401,6 +401,24 @@ function startOfDay(epochMs: number, timeZone: string | undefined): number {
 }
 
 /**
+ * Midnight `daysBack` calendar days before the day containing `epochMs`.
+ * Counted on the calendar, not in 24-hour steps: subtracting hours across a
+ * DST change lands a minute into the wrong day when `epochMs` is just past
+ * midnight.
+ */
+function startOfDayDaysBack(epochMs: number, daysBack: number, timeZone: string | undefined): number {
+	if (timeZone !== undefined) {
+		const parts = zonedDateParts(epochMs, timeZone)
+		return zonedPartsToEpochMs(
+			{ ...parts, day: parts.day - daysBack, hour: 0, minute: 0, second: 0 },
+			timeZone,
+		)
+	}
+	const now = new Date(epochMs)
+	return new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack).getTime()
+}
+
+/**
  * Duration in seconds for a relative shorthand, or `null` when the string isn't
  * valid shorthand.
  *
@@ -461,7 +479,7 @@ export function resolveRelativeRange(
 	// exact 365-day limit the service and alert endpoints enforce) still pass.
 	if (unit === "d" || unit === "w") {
 		const days = unit === "w" ? amount * 7 : amount
-		return { startMs: startOfDay(nowMs - (days - 1) * MS.d, timeZone), endMs: nowMs }
+		return { startMs: startOfDayDaysBack(nowMs, days - 1, timeZone), endMs: nowMs }
 	}
 
 	const unitMs = MS[unit]
@@ -545,7 +563,17 @@ export function cacheSnapSecondsForRange(rangeMs: number): number {
  * Unparseable input is returned untouched, so a malformed timestamp degrades to
  * the previous (unsnapped) behaviour instead of throwing on the cache-key path.
  */
-export function snapRangeForCache(range: { readonly startTime: string; readonly endTime: string }): {
+export function snapRangeForCache(
+	range: { readonly startTime: string; readonly endTime: string },
+	options?: {
+		/**
+		 * Keep the start where it is and floor only the end. For a calendar-aligned
+		 * window ("today", "7d") the start IS the day boundary; sliding it back with
+		 * the end pulled a few minutes of the previous day into the query.
+		 */
+		readonly anchoredStart?: boolean
+	},
+): {
 	startTime: string
 	endTime: string
 } {
@@ -557,9 +585,17 @@ export function snapRangeForCache(range: { readonly startTime: string; readonly 
 	const snappedEndMs = Math.floor(endMs / gridMs) * gridMs
 
 	return {
-		startTime: formatWarehouseDateTime(snappedEndMs - (endMs - startMs)),
+		startTime: options?.anchoredStart
+			? formatWarehouseDateTime(startMs)
+			: formatWarehouseDateTime(snappedEndMs - (endMs - startMs)),
 		endTime: formatWarehouseDateTime(snappedEndMs),
 	}
+}
+
+/** Whether a shorthand's window starts on a calendar boundary rather than a rolling offset. */
+export function isCalendarAlignedShorthand(shorthand: string): boolean {
+	const trimmed = shorthand.trim().toLowerCase()
+	return trimmed === "today" || /^\d+(d|w|mo)$/.test(trimmed)
 }
 
 /**
@@ -622,7 +658,9 @@ export function resolveTimeRangeWindow(
 		options?.timeZone,
 	)
 	if (resolved === null) return null
-	return options?.snap === false ? resolved : snapRangeForCache(resolved)
+	return options?.snap === false
+		? resolved
+		: snapRangeForCache(resolved, { anchoredStart: isCalendarAlignedShorthand(timeRange.value) })
 }
 
 // Time-series bucketing — single source of truth

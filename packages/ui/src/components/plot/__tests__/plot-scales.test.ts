@@ -280,6 +280,8 @@ describe("zonedTimeScale", () => {
 			expect(tick.getTime()).toBeGreaterThanOrEqual(start.getTime())
 			expect(tick.getTime()).toBeLessThanOrEqual(end.getTime())
 		}
+		// One tick per instant: the skipped 02:00 must not double up on 03:00.
+		expect(new Set(ticks.map((tick) => tick.getTime())).size).toBe(ticks.length)
 		// Every tick is a round hour on the New York clock.
 		const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "America/New_York", minute: "2-digit" })
 		for (const tick of ticks) expect(Number(clock.format(tick))).toBe(0)

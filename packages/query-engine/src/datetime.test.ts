@@ -19,6 +19,7 @@ import {
 	roundIntervalSeconds,
 	MAX_AUTO_DATA_POINTS,
 	snapRangeForCache,
+	isCalendarAlignedShorthand,
 	startOfDayInTimeZone,
 	timeZoneOffsetMs,
 	warehouseDateTimeToIso,
@@ -683,6 +684,26 @@ describe("calendar arithmetic in an IANA zone", () => {
 		expect(resolveRelativeRange("7d", now, "America/New_York")!.startMs).toBe(
 			Date.parse("2026-03-02T05:00:00Z"),
 		)
+	})
+
+	it("counts day presets on the calendar across a DST change", () => {
+		// 00:30 EDT on Mar 14 (04:30Z); six 24h steps back is 23:30 EST on Mar 7,
+		// which would have made "7d" eight calendar days.
+		const now = Date.parse("2026-03-14T04:30:00Z")
+		expect(resolveRelativeRange("7d", now, "America/New_York")!.startMs).toBe(
+			Date.parse("2026-03-08T05:00:00Z"),
+		)
+	})
+
+	it("keeps a calendar-aligned start when snapping for the cache", () => {
+		const now = Date.parse("2026-03-10T12:07:00Z")
+		const resolved = resolveRelativeRangeToWarehouse("7d", now, "Asia/Tokyo")!
+		const snapped = snapRangeForCache(resolved, { anchoredStart: true })
+		expect(snapped.startTime).toBe(resolved.startTime)
+		expect(snapped.endTime).not.toBe(resolved.endTime)
+		expect(isCalendarAlignedShorthand("7d")).toBe(true)
+		expect(isCalendarAlignedShorthand("today")).toBe(true)
+		expect(isCalendarAlignedShorthand("12h")).toBe(false)
 	})
 
 	it("counts months on the zone's calendar and clamps the day", () => {

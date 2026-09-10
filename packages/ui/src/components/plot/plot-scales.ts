@@ -1,4 +1,4 @@
-import { timeZoneOffsetMs } from "@maple/query-engine/datetime"
+import { timeZoneOffsetMs, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { scaleLinear as niceableScaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleLinear, scaleLog, scaleTime, scaleUtc, type ScaleTime } from "d3-scale"
 
@@ -226,12 +226,21 @@ function toWallClock(timeZone: string, date: Date): Date {
 	return new Date(ms + timeZoneOffsetMs(timeZone, ms))
 }
 
-/** The inverse of `toWallClock`: the instant a wall clock in `timeZone` names. */
+/** The inverse of `toWallClock`: the instant a wall clock in `timeZone` names (DST handled there). */
 function fromWallClock(timeZone: string, wallClock: Date): Date {
-	const wall = wallClock.getTime()
-	// Two passes settle a DST transition — see `zonedPartsToEpochMs`.
-	const first = wall - timeZoneOffsetMs(timeZone, wall)
-	return new Date(wall - timeZoneOffsetMs(timeZone, first))
+	return new Date(
+		zonedPartsToEpochMs(
+			{
+				year: wallClock.getUTCFullYear(),
+				month: wallClock.getUTCMonth() + 1,
+				day: wallClock.getUTCDate(),
+				hour: wallClock.getUTCHours(),
+				minute: wallClock.getUTCMinutes(),
+				second: wallClock.getUTCSeconds(),
+			},
+			timeZone,
+		),
+	)
 }
 
 /**
@@ -257,10 +266,24 @@ function zoned(scale: TimeScale, timeZone: string): TimeScale {
 			toWallClock(timeZone, start),
 			toWallClock(timeZone, end),
 		])
-		const raw = typeof count === "number" ? wallClock.ticks(count) : wallClock.ticks(count)
-		return raw
-			.map((tick) => fromWallClock(timeZone, tick))
-			.filter((tick) => tick.getTime() >= startMs && tick.getTime() <= endMs)
+		const raw =
+			count === undefined
+				? wallClock.ticks()
+				: typeof count === "number"
+					? wallClock.ticks(count)
+					: wallClock.ticks(count)
+		// A skipped wall-clock hour resolves onto its neighbour, so two candidates
+		// can name one instant across a spring-forward; keep each instant once.
+		const seen = new Set<number>()
+		const ticks: Date[] = []
+		for (const wall of raw) {
+			const tick = fromWallClock(timeZone, wall)
+			const at = tick.getTime()
+			if (at < startMs || at > endMs || seen.has(at)) continue
+			seen.add(at)
+			ticks.push(tick)
+		}
+		return ticks
 	}
 	scale.copy = () => zoned(copy.call(scale), timeZone)
 	return scale

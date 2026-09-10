@@ -240,7 +240,12 @@ function clockLabel(iso: string, timeZone: string | undefined): string {
 	const key = timeZone ?? ""
 	let formatter = clockFormatters.get(key)
 	if (!formatter) {
-		formatter = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false })
+		formatter = new Intl.DateTimeFormat("en-GB", {
+			timeZone,
+			hour: "2-digit",
+			minute: "2-digit",
+			hour12: false,
+		})
 		clockFormatters.set(key, formatter)
 	}
 	return formatter.format(ms).replace(/^24:/, "00:")
@@ -1010,7 +1015,7 @@ export function QueryBuilderHeatmapChart({
 							<div className="text-muted-foreground">
 								<span>{slot.x}</span>
 								<span className="px-1 text-muted-foreground/50">·</span>
-								<span>{slot.y}</span>
+								<span>{shortenYLabel(slot.y, allYIso, timeZone)}</span>
 							</div>
 							<div className="mt-1 flex items-center gap-1.5">
 								{/*
