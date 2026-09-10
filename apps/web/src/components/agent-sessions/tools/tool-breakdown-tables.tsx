@@ -9,6 +9,7 @@ import { relativeRatio } from "@/components/infra/primitives/share-bar"
 import { ModelLabel } from "@/components/agent-sessions/model-label"
 import type { DetectedModel } from "@/hooks/use-detected-models"
 import {
+	breakdownKeyLabel,
 	errorRate,
 	formatDurationNs,
 	type ToolBreakdownRow,
@@ -195,17 +196,18 @@ export function ToolsTable({
 								key={row.key}
 								type="button"
 								aria-pressed={isSelected}
+								disabled={row.key === ""}
 								onClick={() => onSelect(isSelected ? undefined : row.key)}
-								className={cn(ROW, isSelected ? ROW_SELECTED : ROW_IDLE)}
+								className={cn(ROW, isSelected ? ROW_SELECTED : ROW_IDLE, row.key === "" && "cursor-default")}
 							>
 								<span
 									className={cn(
 										"w-0 min-w-0 flex-1 truncate font-mono text-[12px]",
 										isSelected ? "text-foreground" : "text-foreground/90",
 									)}
-									title={row.key}
+									title={breakdownKeyLabel(row.key)}
 								>
-									{row.key}
+									{breakdownKeyLabel(row.key)}
 								</span>
 								<span className="hidden w-16 @min-[520px]/panel:block">
 									{spark.length > 1 ? (
@@ -343,11 +345,16 @@ export function ModelsPanel({
 								key={row.key}
 								type="button"
 								aria-pressed={isSelected}
+								disabled={row.key === ""}
 								onClick={() => onSelect(isSelected ? undefined : row.key)}
-								className={cn(ROW, isSelected ? ROW_SELECTED : ROW_IDLE)}
+								className={cn(ROW, isSelected ? ROW_SELECTED : ROW_IDLE, row.key === "" && "cursor-default")}
 							>
 								<span className="w-0 min-w-0 flex-1 text-[12px]">
-									<ModelLabel detected={detect(row.key)} size={14} />
+									{row.key === "" ? (
+										<span className="font-mono text-[12px] text-muted-foreground">{breakdownKeyLabel(row.key)}</span>
+									) : (
+										<ModelLabel detected={detect(row.key)} size={14} />
+									)}
 								</span>
 								<span className="w-16 text-right font-mono text-[11px] tabular-nums">
 									{formatNumber(row.calls)}

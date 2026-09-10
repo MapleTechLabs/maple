@@ -178,7 +178,7 @@ function DurationTile({
 							</span>
 							{/* One size for all three: which one is driving is said by the
 							    label, not by the number's weight. */}
-							<div className="mt-1 truncate font-mono text-[20px] font-semibold tabular-nums leading-none tracking-[-0.01em] text-foreground">
+							<div className="mt-1 whitespace-nowrap font-mono text-[17px] font-semibold tabular-nums leading-none tracking-[-0.02em] text-foreground">
 								{formatToolMetric(totals[candidate], "duration")}
 							</div>
 							<div className="mt-1 h-3 font-mono text-[10px] tabular-nums text-muted-foreground/80">

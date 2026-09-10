@@ -200,6 +200,12 @@ export const TOOL_SERIES_COLOR_TOKENS = ["--chart-2", "--chart-3", "--chart-4", 
  * rather than ranking them as a series, which is what keeps one legend entry.
  */
 export const OTHER_SERIES_KEY = "Other"
+
+/** `''` is a real breakdown key: a tool call whose tool name, or whose model,
+ *  the index could not resolve. It is shown, but it cannot be selected — the
+ *  selection contract has no spelling for "the unnamed one". */
+export const UNATTRIBUTED_LABEL = "Unattributed"
+export const breakdownKeyLabel = (key: string): string => (key === "" ? UNATTRIBUTED_LABEL : key)
 export const OTHER_SERIES_COLOR_TOKEN = "--muted-foreground"
 
 /**

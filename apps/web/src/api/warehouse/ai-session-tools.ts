@@ -28,6 +28,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import {
 	OTHER_SERIES_KEY,
+	breakdownKeyLabel,
 	type ToolBreakdownRow,
 	type ToolSeriesPoint,
 	type ToolSessionRow,
@@ -105,8 +106,7 @@ const measuresOf = (row: AiToolsAggregate): ToolTotals => ({
  * ranking it as a series of its own.
  */
 const seriesKeyOf = (key: string): string => {
-	if (key === "") return "Unattributed"
-	return key === AI_TOOLS_OTHER_SERIES_KEY ? OTHER_SERIES_KEY : key
+	return key === AI_TOOLS_OTHER_SERIES_KEY ? OTHER_SERIES_KEY : breakdownKeyLabel(key)
 }
 
 export function mapToolSeries(response: AiToolsSeriesResponse): ReadonlyArray<ToolSeriesPoint> {
