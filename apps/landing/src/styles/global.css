@@ -1321,13 +1321,9 @@
 }
 
 /* Concept docs (Apdex, sampling) lean on a handful of terms whose meaning is
-   the whole page. A lede paragraph and colored inline terms keep the opening
-   from reading as one gray column; the colors match the bands the diagrams
-   draw, so "tolerating" is the same amber in prose as it is on the axis. */
-.docs-content p.lede {
-	@apply text-base text-fg leading-relaxed mb-5;
-}
-
+   the whole page. Coloring those terms inline keeps the prose scannable; the
+   colors match the bands the diagrams draw, so "tolerating" is the same amber
+   in a paragraph as it is on the axis. Body text stays body text. */
 .docs-content .hl-t {
 	@apply font-mono font-medium;
 	color: var(--primary);

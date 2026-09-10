@@ -5,9 +5,9 @@ group: "Alerting"
 order: 1
 ---
 
-<p class="lede">A p95 latency alert tells you that 5% of requests were slower than some number. It does not tell you whether that was 5 requests or 50,000, and it says nothing about the requests that failed outright.</p>
+A p95 latency alert tells you that 5% of requests were slower than some number. It does not tell you whether that was 5 requests or 50,000, and it says nothing about the requests that failed outright.
 
-<p class="lede"><strong>Apdex answers a different question:</strong> of everything that hit this service in the last five minutes, what share of it was <span class="hl-ok">fast enough to keep a user happy</span>?</p>
+**Apdex answers a different question:** of everything that hit this service in the last five minutes, what share of it was <span class="hl-ok">fast enough to keep a user happy</span>?
 
 <div class="my-7 grid gap-3 sm:grid-cols-2 not-prose">
   <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 45%, transparent)">
@@ -44,7 +44,7 @@ This page covers what the score actually is, how to choose the one input that de
 
 ## What is the Apdex score?
 
-<p class="lede">Apdex (Application Performance Index) is an industry-standard measure of user satisfaction derived from response times. It compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>, where <span class="hl-ok">1</span> means every request was fast and <span class="hl-bad">0</span> means none of them were.</p>
+Apdex (Application Performance Index) is an industry-standard measure of user satisfaction derived from response times. It compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>, where <span class="hl-ok">1</span> means every request was fast and <span class="hl-bad">0</span> means none of them were.
 
 You pick one input, a target response time called <span class="hl-t">T</span>. Every request in the window then lands in one of three buckets, <span class="hl-ok">satisfied</span>, <span class="hl-warn">tolerating</span> or <span class="hl-bad">frustrated</span>, and that bucket decides how much credit that request earns:
 
