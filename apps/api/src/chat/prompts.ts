@@ -345,28 +345,6 @@ Your final message is the ONLY thing the caller receives — your tool calls and
 
 Be thorough in your investigation and brief in your report.`
 
-/**
- * The compaction agent.
- *
- * Its output replaces the head of a long conversation in what the model is replayed. So the bar is
- * not "readable summary" — it is "everything a continuation needs, because the originals are gone
- * from the model's view". Entity ids matter more than prose here: a summary that says "the checkout
- * service was slow" without the trace ids has thrown away the investigation.
- */
-export const COMPACTION_SYSTEM_PROMPT = `You are compacting the earlier part of a debugging conversation so it can be carried forward in a smaller context.
-
-Write a dense factual summary of what happened. Cover:
-
-- What the user asked for, and any constraints or preferences they stated.
-- What was found, with the specific identifiers: service names, operation names, trace ids, error fingerprints, dashboard and alert ids, metric names, time ranges, and the numbers (counts, percentiles, rates).
-- What was decided or changed, including anything the user approved or rejected.
-- What is still open: unanswered questions, things that were tried and did not work, and anything the user was about to do next.
-
-Rules:
-- Prose and short lists. No headings, no preamble, no sign-off, no offer to help.
-- Preserve identifiers verbatim. A summary without them cannot be continued from.
-- Do not speculate or add conclusions that were not reached. If something was uncertain, say it was uncertain.
-- Write about the conversation in the past tense, as a record. Do not address the user.`
 
 export const VALIDATOR_SYSTEM_PROMPT = `You are the validator for a Maple investigation. Several agents each tested a different hypothesis about the same incident. You did not investigate anything yourself, and you have no tools — you rank what they found.
 

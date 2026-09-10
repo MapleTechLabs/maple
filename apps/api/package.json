@@ -32,11 +32,8 @@
 		"@clerk/backend": "^3.16.12",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.6",
 		"@distilled.cloud/core": "1.0.0-rc.6",
-		"@effect-agent/capabilities": "0.1.0-beta.74",
 		"@effect-agent/core": "0.1.0-beta.74",
 		"@effect-agent/engine": "0.1.0-beta.74",
-		"@effect-agent/storage-cloudflare": "0.1.0-beta.74",
-		"@effect-agent/thread": "0.1.0-beta.74",
 		"@effect/ai-openai-compat": "catalog:effect",
 		"@effect/ai-openrouter": "catalog:effect",
 		"@effect/platform-bun": "catalog:effect",
@@ -58,8 +55,7 @@
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"@typeonce/effect-machine": "0.24.0",
 		"drizzle-orm": "^0.45.1",
-		"effect": "catalog:effect",
-		"effect-agent": "0.1.0-beta.74"
+		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@ai-sdk/openai-compatible": "^2.0.48",

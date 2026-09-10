@@ -10,11 +10,9 @@
  * `@effect/ai-openai-compat` pointed at the account's OpenAI-compatible base URL. Both post to
  * `/chat/completions`, which is what lets one shim serve the binding path.
  */
-import { LlmCallError } from "@maple/domain/llm"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
-import { Effect, Layer, Predicate, Redacted, Schema } from "effect"
-import type { AiError } from "effect/unstable/ai"
+import { Effect, Layer, Redacted, Schema } from "effect"
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as AiModel from "effect/unstable/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
@@ -353,44 +351,4 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 			apiUrl: `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`,
 		}).pipe(Layer.provide(http)),
 	)
-}
-
-/**
- * Reasons worth sending again unchanged. Effect AI carries this as `isRetryable` on the error
- * itself, so the judgement upstream makes is the one Maple uses.
- */
-const isRetryable = (error: AiError.AiError): boolean => error.isRetryable
-
-/**
- * Whether a failure is the context window rather than anything else.
- *
- * Effect AI has no dedicated tag for it, so this reads the provider's own wording off an
- * `InvalidRequestError`. Deliberately narrow: a false positive here shrinks a transcript that did
- * not need shrinking, which is cheap, but a false positive on a *different* invalid request would
- * loop the caller shrinking forever.
- */
-const CONTEXT_OVERFLOW_PATTERN = /context (?:length|window)|maximum context|too many tokens|prompt is too long/i
-
-const isContextOverflow = (error: AiError.AiError): boolean =>
-	error.reason._tag === "InvalidRequestError" && CONTEXT_OVERFLOW_PATTERN.test(error.message)
-
-/**
- * Map Effect AI's `AiError` onto Maple's domain error, promoting context overflow to a first-class,
- * inspectable signal — the case a triage retry must handle differently (shrink the transcript) from
- * a transport blip (retry as-is).
- */
-export const toLlmCallError = (operation: string, error: AiError.AiError): LlmCallError => {
-	// A failing provider response carries its offending payload. It is the only thing that makes
-	// provider drift diagnosable, but it is upstream text, so it goes to the log, never to the client.
-	const body = Predicate.hasProperty(error.reason, "body") ? error.reason.body : undefined
-	if (typeof body === "string" && body !== "") {
-		console.error(`[llm] ${operation}: ${error.message}; body=${body.slice(0, 500)}`)
-	}
-	return new LlmCallError({
-		operation,
-		reason: error.reason._tag,
-		message: error.message,
-		retryable: isRetryable(error),
-		contextOverflow: isContextOverflow(error),
-	})
 }
