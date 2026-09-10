@@ -19,6 +19,7 @@ const baseRow = {
 	endTime: null,
 	durationMs: null,
 	status: "ended",
+	lastActivityAt: "2026-07-15 09:18:30",
 	userId: null,
 	// `""` is the never-identified state (see SessionReplayListItem), which is
 	// what an anonymous `userId: null` row carries.

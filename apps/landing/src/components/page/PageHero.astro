@@ -11,8 +11,8 @@
  * the 0.18em eyebrow every homepage section uses; `font-bold` becomes
  * `font-semibold`.
  *
- * No amber accent word in the title. Colouring a word in the headline is a
- * homepage move; these pages spend their one amber event on the closing CTA.
+ * Feature pages pair the copy with a decorative Roman engraving. Other pages
+ * retain the dot-grid veil and their existing aside layout.
  *
  * The breadcrumb renders inside this component so it sits on the same axis as
  * everything else. It keeps its own BreadcrumbList JSON-LD.
@@ -26,6 +26,7 @@ interface Props {
 	eyebrow: string;
 	title: string;
 	lede: string;
+	illustration?: string;
 	breadcrumb: { label: string; href?: string }[];
 	/**
 	 * Use-case pages only: the literal signal that opens the story, e.g.
@@ -35,7 +36,7 @@ interface Props {
 	signal?: string;
 }
 
-const { eyebrow, title, lede, breadcrumb, signal } = Astro.props;
+const { eyebrow, title, lede, breadcrumb, signal, illustration } = Astro.props;
 
 // An optional right-hand column (the /compare logo pairing). Without it the
 // hero keeps its single-column measure; with it, the copy and the aside sit
@@ -43,8 +44,12 @@ const { eyebrow, title, lede, breadcrumb, signal } = Astro.props;
 const hasAside = Astro.slots.has("aside");
 ---
 
-<section class="relative overflow-hidden bg-bg">
-	<div class="dot-grid-veil" aria-hidden="true"></div>
+<section class:list={["relative overflow-hidden bg-bg", illustration && "page-hero--illustrated"]}>
+	{illustration ? (
+		<div class="page-hero__art" aria-hidden="true">
+			<img src={illustration} width="1536" height="1024" alt="" loading="eager" decoding="async" />
+		</div>
+	) : <div class="dot-grid-veil" aria-hidden="true"></div>}
 
 	<div class="relative">
 		<Breadcrumb items={breadcrumb} class="shell pt-24 md:pt-28" />
@@ -55,7 +60,7 @@ const hasAside = Astro.slots.has("aside");
 				hasAside && "grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-16",
 			]}
 		>
-		<div class="min-w-0">
+		<div class:list={["min-w-0", illustration && "page-hero__copy"]}>
 			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
 
 			<h1
@@ -91,3 +96,38 @@ const hasAside = Astro.slots.has("aside");
 		</div>
 	</div>
 </section>
+
+<style>
+	.page-hero__art {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		mask-image: linear-gradient(to bottom, transparent, black 18%, black 85%, transparent);
+	}
+
+	.page-hero__art img {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		width: 72%;
+		height: 100%;
+		object-fit: cover;
+		object-position: center;
+		opacity: 0.75;
+		mask-image: linear-gradient(to right, transparent, black 55%);
+	}
+
+	@media (min-width: 1024px) {
+		.page-hero__copy {
+			max-width: 58%;
+		}
+	}
+
+	@media (max-width: 1023px) {
+		.page-hero__art img {
+			width: 100%;
+			opacity: 0.2;
+			object-position: 65% center;
+		}
+	}
+</style>

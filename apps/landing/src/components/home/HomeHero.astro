@@ -13,7 +13,6 @@ import * as m from "../../paraglide/messages.js";
 import { HeroCta } from "../HeroCta";
 import PixelStar from "../icons/PixelStar.astro";
 import CustomerLogos from "../CustomerLogos.astro";
-import HeroCarousel from "./HeroCarousel.astro";
 import { DATA_POINTS_INGESTED, formatDataPoints } from "../../lib/ingest-stats";
 import { getGitHubStars, formatStars } from "../../lib/github-stars";
 
@@ -24,7 +23,14 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
 
 <section class="monument-hero" aria-labelledby="home-title">
     <div class="monument-hero__field shell">
-        <a href={localPath} class="monument-announce">
+        <a
+            href={localPath}
+            class="monument-announce"
+            data-track="cta_click"
+            data-track-location="hero_announce"
+            data-track-label={m.hero_announce_text()}
+            data-track-destination={localPath}
+        >
             <span class="monument-announce__badge">{m.hero_announce_badge()}</span>
             <span class="monument-announce__text">{m.hero_announce_text()}</span>
             <span class="monument-announce__arrow" aria-hidden="true">→</span>
@@ -38,7 +44,16 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
             <p class="monument-hero__description">{m.hero_subtitle()}</p>
             <div class="monument-actions">
                 <HeroCta client:load className={buttonVariants({ size: "xl" })} />
-                <a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class={buttonVariants({ variant: "outline", size: "xl" })}>{m.cta_github()}</a>
+                <a
+                    href="https://github.com/MapleTechLabs/maple"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-track="cta_click"
+                    data-track-location="hero_secondary"
+                    data-track-label={m.cta_github()}
+                    data-track-destination="https://github.com/MapleTechLabs/maple"
+                    class={buttonVariants({ variant: "outline", size: "xl" })}
+                >{m.cta_github()}</a>
             </div>
         </div>
     <div class="monument-proof">
@@ -51,8 +66,8 @@ const localPath = locale === "en" ? "/local" : `/${locale}/local`;
         </div>
     </div>
     </div>
-    <img class="monument-hero__art" src="/art/maple-rome-balanced.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
-</section>
-<section class="monument-product">
-    <div class="shell"><HeroCarousel /></div>
+    <picture>
+        <source media="(min-width: 1800px)" srcset="/art/maple-rome-ultrawide.webp" />
+        <img class="monument-hero__art" src="/art/maple-rome-balanced.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" />
+    </picture>
 </section>

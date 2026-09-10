@@ -1341,5 +1341,17 @@
 	"cmp_sn_faq_4_q": "Can I self-host both?",
 	"cmp_sn_faq_4_a": "Yes. SigNoz has the more polished path today: Docker Compose, Helm, Foundry and platform guides, multi-user with roles in the Community edition. Maple self-hosts from the repository with a compose file, your ClickHouse and a root password, single-org, and runs as one binary with an embedded ClickHouse for local development.",
 	"cmp_sn_faq_5_q": "Does SigNoz have session replay?",
-	"cmp_sn_faq_5_a": "No, and their community has said it isn't planned. SigNoz ingests browser traces, logs and Web Vitals over OpenTelemetry. Maple records and replays browser sessions with the trace behind each event, masked in the browser before anything leaves the page."
+	"cmp_sn_faq_5_a": "No, and their community has said it isn't planned. SigNoz ingests browser traces, logs and Web Vitals over OpenTelemetry. Maple records and replays browser sessions with the trace behind each event, masked in the browser before anything leaves the page.",
+
+	"home_objections_aria": "Common questions",
+	"home_objection_selfhost_claim": "Self-host the whole thing",
+	"home_objection_selfhost_detail": "Every line of Maple's source is on GitHub under FSL-1.1, and each release becomes Apache 2.0 after two years. Run it on your own infrastructure with no license call.",
+	"home_objection_selfhost_cta": "Read the source",
+	"home_objection_otel_claim": "No proprietary agent",
+	"home_objection_otel_detail": "Maple speaks plain OpenTelemetry. Point an OTLP exporter at it and keep the instrumentation you already wrote \u2014 there is nothing to rip out if you leave.",
+	"home_objection_otel_cta": "See instrumentation",
+	"home_objection_trial_claim": "{price}/month, {days}-day free trial",
+	"home_objection_trial_claim_no_trial": "{price}/month, everything included",
+	"home_objection_trial_detail": "A card is required to start the trial and nothing is charged until it ends. No per-seat, per-host or per-series fees at any volume.",
+	"home_objection_trial_cta": "See what it costs"
 }

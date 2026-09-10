@@ -284,6 +284,7 @@ function messageSignature(statusMessage: string): string {
 	)
 }
 
+/** `statusMessage` is the MV's resolved `_msgText`, including attribute fallback. */
 export function computeFingerprintInputs(args: {
 	readonly exceptionType: string
 	readonly exceptionStacktrace: string

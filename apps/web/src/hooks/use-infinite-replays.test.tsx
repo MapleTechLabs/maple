@@ -32,6 +32,7 @@ function page(body: string, cursor: string | null = "next"): ReplaysPage {
 				endTime: null,
 				durationMs: null,
 				status: "active",
+				lastActivityAt: null,
 				userId: null,
 				userName: "",
 				userEmail: "",

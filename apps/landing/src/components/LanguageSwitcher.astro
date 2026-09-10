@@ -17,7 +17,7 @@ const pathWithoutLocale = Astro.url.pathname
 <div class="relative" data-language-switcher>
     <button
         type="button"
-        class="flex items-center gap-1.5 text-xs text-muted hover:text-fg transition-colors px-2 py-1 rounded-md hover:bg-white/5"
+        class="flex items-center gap-1.5 text-xs text-fg-muted hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-muted"
         aria-label="Change language"
         data-switcher-trigger
     >
@@ -39,7 +39,7 @@ const pathWithoutLocale = Astro.url.pathname
                     "block px-3 py-1.5 text-xs transition-colors",
                     locale.code === currentLocale
                         ? "text-primary font-medium"
-                        : "text-muted hover:text-fg hover:bg-white/5",
+                        : "text-fg-muted hover:text-foreground hover:bg-muted",
                 ]}
             >
                 {locale.label}
