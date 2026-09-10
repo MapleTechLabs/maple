@@ -1,21 +1,5 @@
-import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { defineAgent } from "eve"
-
-/**
- * OpenRouter over its REST API.
- *
- * `appUrl`/`appName` set `HTTP-Referer`/`X-OpenRouter-Title`, which is what attributes this
- * traffic to Maple's app page on openrouter.ai. Same URL and title as `apps/api` on purpose: the
- * referer is the app's identity, so a different one here would mint a second app entry and split
- * the rankings. Surfaces are told apart by `trace.trace_name` instead — static, because this
- * process only ever is the Slack agent.
- */
-const openrouter = createOpenRouter({
-	apiKey: process.env.OPENROUTER_API_KEY ?? "",
-	appUrl: "https://maple.dev",
-	appName: "Maple",
-	extraBody: { trace: { trace_name: "slack" } },
-})
+import { agentModel, contextWindowTokens } from "#lib/agent-model.js"
 
 /**
  * Make sure no envs are missing on startup.
@@ -30,24 +14,12 @@ if (missingModelEnv.length > 0 && !isEveBuildInvocation) {
 }
 
 /**
- * Must support tool calling **while streaming** — eve's harness is tool-driven and
- * always streams.
- */
-const modelId = process.env.OPENROUTER_MODEL ?? "z-ai/glm-5.3-flash:nitro"
-const contextWindowTokens = Number(process.env.OPENROUTER_CONTEXT_WINDOW ?? 1_000_000)
-
-/**
  * Durable workflow state ("world").
  */
 const workflowWorld = process.env.EVE_WORKFLOW_WORLD
 
 export default defineAgent({
-	// `usage.include` turns on OpenRouter usage accounting: every response then
-	// carries the actual amount charged (`usage.cost`, in USD credits), which the
-	// telemetry pipeline lifts into `gen_ai.usage.cost` (see
-	// `lib/genai-cost.ts`). Without it OpenRouter omits cost and per-session
-	// spend in Maple would have to be inferred from token prices.
-	model: openrouter(modelId, { usage: { include: true } }),
+	model: agentModel,
 	modelContextWindowTokens: contextWindowTokens,
 	...(workflowWorld ? { experimental: { workflow: { world: workflowWorld } } } : undefined),
 })

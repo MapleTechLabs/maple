@@ -44,15 +44,19 @@ and folds it into the OpenRouter request body as route defaults, so every `LLM.r
 `generate` / `stream` made with the returned model carries it without each call site threading it
 through.
 
-| Field              | Maple value                                                                                                | Where it shows up                                                                                                                                         |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`             | Maple org id                                                                                               | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream.        |
-| `session_id`       | `<chat session id>` or `triage_<incidentKind>_<incidentId>`, truncated to OpenRouter's 256-character limit | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to a single provider so prompt caches actually hit |
-| `trace.trace_name` | `chat`, `ai-triage`, or `slack`                                                                            | forwarded to configured Broadcast destinations only — it does **not** appear in the OpenRouter dashboard                                                  |
+| Field              | Maple value                                                                                                                                                                 | Where it shows up                                                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`             | Maple org id                                                                                                                                                                | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream.        |
+| `session_id`       | the chat session id — `<orgId>:inv-<investigationId>` for an investigation's passes — truncated to OpenRouter's 256-character limit; the Slack agent sends eve's session id | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to a single provider so prompt caches actually hit |
+| `trace.trace_name` | `chat`, `ai-triage`, `investigation-lens`, `investigation-validator`, or `slack`                                                                                            | forwarded to configured Broadcast destinations only — it does **not** appear in the OpenRouter dashboard                                                  |
+
+The same session id goes onto Maple's own model-call spans as `maple_ai.session.id`, so a call and
+its Broadcast mirror land in one agent session.
 
 The Slack agent sends a static `trace: { trace_name: "slack" }` via the provider's `extraBody`,
-since that process is a single surface. It does not send `user` or `session_id`; wiring the Slack
-team and thread through would need a per-request hook from `eve`.
+since that process is a single surface. It re-selects its model on every step (`defineDynamic`,
+`agent/lib/agent-model.ts`) so the request can carry the eve session id as `session_id`; it does not
+send `user`.
 
 ## Configure OpenRouter Broadcast To Maple
 

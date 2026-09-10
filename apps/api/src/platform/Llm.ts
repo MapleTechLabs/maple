@@ -12,9 +12,11 @@
  */
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
+import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as AiModel from "effect/unstable/ai/Model"
+import * as Telemetry from "effect/unstable/ai/Telemetry"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { layerWorkersAi } from "./WorkersAiHttpClient"
 
@@ -32,16 +34,24 @@ const OPENROUTER_APP_TITLE = "Maple"
 /**
  * Where a model call came from and what it is running for.
  *
- * OpenRouter surfaces these three in different places: `user` shows up on the activity page and in
- * usage exports, `session_id` groups a conversation (and makes OpenRouter route the whole session
+ * OpenRouter surfaces three of these in different places: `user` shows up on the activity page and
+ * in usage exports, `session_id` groups a conversation (and makes OpenRouter route the whole session
  * to one provider, so prompt caches actually hit), and `trace` is forwarded to any configured
  * Broadcast destination.
+ *
+ * The session, turn and workflow also go on Maple's own model-call span, on either provider — see
+ * {@link withAgentSessionSpans}. One set of tags feeds both, so a call and its Broadcast twin cannot
+ * be filed under different sessions.
  */
 export interface LlmCallTags {
 	readonly surface: "chat" | "ai-triage" | "investigation-lens" | "investigation-validator"
 	readonly orgId: string
 	/** Groups one conversation or investigation. OpenRouter caps this at 256 characters. */
 	readonly sessionId?: string
+	/** One turn (a chat message, an investigation pass) inside the session. */
+	readonly turnId?: string
+	/** The workflow the call runs inside (`gen_ai.workflow.name`); attended chat has none. */
+	readonly workflowName?: string
 }
 
 /**
@@ -162,6 +172,8 @@ export interface ResolvedModel {
 	readonly name: string
 	readonly layer: Layer.Layer<ModelServices, never, LlmClients>
 	readonly limits: { readonly context: number; readonly output: number }
+	/** The tags the model was resolved with, so a caller can stamp its own span to match. */
+	readonly tags?: LlmCallTags
 }
 
 const limitsFor = (env: LlmEnv, name: string): { readonly context: number; readonly output: number } => {
@@ -195,10 +207,61 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 		? undefined
 		: {
 				user: tags.orgId,
-				...(tags.sessionId === undefined ? undefined : { session_id: tags.sessionId.slice(0, 256) }),
+				...(tags.sessionId === undefined ? undefined : { session_id: sessionIdFor(tags) }),
 				trace: { trace_name: tags.surface },
 			}),
 })
+
+/** The session as OpenRouter accepts it. The span carries the same value, so the two never diverge. */
+const sessionIdFor = (tags: LlmCallTags): string | undefined => tags.sessionId?.slice(0, 256)
+
+/**
+ * The agent-session identity as span attributes: the session, the turn and the workflow.
+ *
+ * The ingest gateway files a GenAI span under a session only when the span carries
+ * `maple_ai.session.id` (its `maple` vendor), and takes the key alone as proof of an agent span.
+ * So it goes on exactly two spans: every model-call span the model opens (see
+ * {@link withAgentSessionSpans}) and the span that roots the turn — a pass, in a workflow — which the
+ * session view partitions turns by, walking each span up to its nearest tagged ancestor. Nothing
+ * wider: an `Effect.annotateSpans` over the run would file every HTTP and database span as one.
+ * Empty without a session.
+ */
+export const agentSessionSpanAttributes = (
+	tags: LlmCallTags | undefined,
+): Readonly<Record<string, string>> => {
+	const sessionId = tags === undefined ? undefined : sessionIdFor(tags)
+	if (tags === undefined || sessionId === undefined) return {}
+	return {
+		[MAPLE_NATIVE_SESSION_ID_ATTR]: sessionId,
+		...(tags.turnId === undefined ? undefined : { [MAPLE_NATIVE_TURN_ID_ATTR]: tags.turnId }),
+		...(tags.workflowName === undefined ? undefined : { "gen_ai.workflow.name": tags.workflowName }),
+	}
+}
+
+/**
+ * Stamp the agent-session identity onto every model-call span the model opens.
+ *
+ * Effect AI's own span carries no session key, so without this every trace became a session of its
+ * own (`trace:<TraceId>`) — one per chat turn, one per investigation pass. The session list reads a
+ * trace's session off any one of its spans, so the model-call span is enough to file the tool and
+ * engine spans around it too.
+ *
+ * Effect AI applies the transformer before the span ends: for `streamText` (the only call Maple
+ * makes) as the stream finishes, including when it fails; `generateText` would skip it on failure.
+ */
+const withAgentSessionSpans = <A, R>(
+	layer: Layer.Layer<A, never, R>,
+	tags: LlmCallTags | undefined,
+): Layer.Layer<A, never, R> => {
+	const attributes = Object.entries(agentSessionSpanAttributes(tags))
+	if (attributes.length === 0) return layer
+	return Layer.provide(
+		layer,
+		Layer.succeed(Telemetry.CurrentSpanTransformer, ({ span }) => {
+			for (const [key, value] of attributes) span.attribute(key, value)
+		}),
+	)
+}
 
 const openRouterModel = (
 	env: LlmEnv,
@@ -209,31 +272,40 @@ const openRouterModel = (
 ): ResolvedModel => ({
 	provider: "openrouter",
 	name,
-	layer: OpenRouterLanguageModel.model(
-		name,
-		openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags),
+	layer: withAgentSessionSpans(
+		OpenRouterLanguageModel.model(
+			name,
+			openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags),
+		),
+		tags,
 	),
 	limits: limitsFor(env, name),
+	tags,
 })
 
-const workersAiModel = (env: LlmEnv, name: string): ResolvedModel => ({
+const workersAiModel = (env: LlmEnv, name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
-	layer: OpenAiLanguageModel.model(name),
+	layer: withAgentSessionSpans(OpenAiLanguageModel.model(name), tags),
 	limits: limitsFor(env, name),
+	tags,
 })
 
 /**
  * The model the triage/chat agents run on.
  *
- * `tags` is OpenRouter-only. Attribution headers ride on every OpenRouter call regardless; the
- * per-call tags become request-body defaults, so every call made with the returned model carries
- * them. The Workers AI branch ignores them — they are OpenRouter's fields and mean nothing to
- * Cloudflare.
+ * Attribution headers ride on every OpenRouter call regardless; the per-call tags become
+ * request-body defaults, so every call made with the returned model carries them. The Workers AI
+ * branch sends none of them — they are OpenRouter's fields and mean nothing to Cloudflare — but both
+ * branches stamp the session onto their model-call spans.
  */
 export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
 	resolveLlmProvider(env) === "workers-ai"
-		? workersAiModel(env, readString(env, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL)
+		? workersAiModel(
+				env,
+				readString(env, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL,
+				tags,
+			)
 		: openRouterModel(
 				env,
 				readString(env, "MAPLE_TRIAGE_MODEL_OPENROUTER") ?? DEFAULT_OPENROUTER_MODEL,
@@ -268,6 +340,7 @@ export const resolveLensModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel
 				readString(env, "MAPLE_LENS_MODEL_WORKERS_AI") ??
 					readString(env, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ??
 					DEFAULT_WORKERS_AI_MODEL,
+				tags,
 			)
 		: openRouterModel(
 				env,
