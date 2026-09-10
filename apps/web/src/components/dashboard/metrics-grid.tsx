@@ -14,7 +14,7 @@ interface MetricsGridItem {
 	chartId: string
 	title: string
 	/** Short explanation of the metric, shown behind an info icon in the header. */
-	titleHint?: string
+	titleHint?: { text: string; href?: string }
 	layout: { x: number; y: number; w: number; h: number }
 	data: Record<string, unknown>[]
 	legend?: ChartLegendMode

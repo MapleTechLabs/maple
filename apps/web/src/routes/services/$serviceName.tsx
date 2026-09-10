@@ -72,7 +72,7 @@ interface ServiceChartConfig {
 	id: string
 	chartId: string
 	title: string
-	titleHint?: string
+	titleHint?: { text: string; href?: string }
 	layout: { x: number; y: number; w: number; h: number }
 	legend?: ChartLegendMode
 	tooltip?: ChartTooltipMode

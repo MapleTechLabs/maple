@@ -36,8 +36,11 @@ import { interpolateDisplayText } from "@maple/query-engine"
 interface WidgetShellProps {
 	title: string
 	mode: WidgetMode
-	/** Short explanation of the metric, shown behind an info icon next to the title. */
-	titleHint?: string
+	/**
+	 * Short explanation of the metric, shown behind an info icon next to the
+	 * title. `href` turns the icon into a link to the fuller docs page.
+	 */
+	titleHint?: { text: string; href?: string }
 	/** Headline stat rendered at the top-right of the card header. */
 	headerValue?: ReactNode
 	/** Summary stat rendered below the card content. */
@@ -113,17 +116,35 @@ export function WidgetShell({
 						<Tooltip>
 							<TooltipTrigger
 								render={
-									<button
-										type="button"
-										aria-label={`About ${displayTitle}`}
-										className="shrink-0 text-muted-foreground/60 hover:text-foreground"
-									/>
+									titleHint.href ? (
+										// A link, not a button: the tooltip says what the metric is,
+										// the click goes to the page that says it properly. Hover
+										// tooltips are a bad place to put a link the reader has to
+										// travel to.
+										<a
+											href={titleHint.href}
+											target="_blank"
+											rel="noreferrer"
+											aria-label={`About ${displayTitle}`}
+											className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+										/>
+									) : (
+										<span
+											aria-label={`About ${displayTitle}`}
+											className="shrink-0 text-muted-foreground/60"
+										/>
+									)
 								}
 							>
 								<CircleInfoIcon size={12} />
 							</TooltipTrigger>
 							<TooltipContent className="max-w-xs text-xs leading-relaxed">
-								{titleHint}
+								{titleHint.text}
+								{titleHint.href && (
+									<span className="mt-1 block text-muted-foreground">
+										Click to read the docs
+									</span>
+								)}
 							</TooltipContent>
 						</Tooltip>
 					)}

@@ -1,7 +1,9 @@
 /**
- * Explanatory copy for metric cards whose name says nothing about how the
- * number is built. Kept out of the route files so the service and release
- * overviews describe the same chart the same way.
+ * Explanatory copy for metric cards whose name says nothing about what the
+ * number is. Kept out of the route files so the service and release overviews
+ * describe the same chart the same way, and so the docs link lives in one place.
  */
-export const APDEX_HINT =
-	"Apdex scores how many requests felt fast. With a 500ms target, a request under 500ms is satisfied (1 point), one under 2s is tolerating (½ point), and anything slower — or any failed request — scores 0. The score is that total divided by all requests, so 1.0 means every request was fast and 0 means none were."
+export const APDEX_HINT = {
+	text: "The share of requests that were fast enough to keep a user happy, scored from 0 to 1 against a 500ms target. Slow and failed requests pull it down.",
+	href: "https://maple.dev/docs/alerting/apdex-alerts",
+} as const
