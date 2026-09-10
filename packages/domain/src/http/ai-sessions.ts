@@ -98,8 +98,11 @@ export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("
 
 /**
  * What only the traces' other spans can say about a session — read after the
- * list has rendered, by `POST /details`. Every field replaces the list item's
- * field of the same name, which the index answered over the agent spans alone.
+ * list has rendered, by `POST /details`. Each field is the all-span figure for
+ * the list item's field of the same name, which the index answered over the
+ * agent spans alone. The list takes `spanCount`, `serviceNames` and the extent;
+ * it keeps the index's `errorSpanCount` and `durationMs`, which are what the
+ * page was sorted and filtered on.
  */
 export const AiSessionDetailsItem = Schema.Struct({
 	sessionId: Schema.String,
@@ -129,7 +132,7 @@ export const AiSessionListItem = Schema.Struct({
 	// figure over every span, once the client asks for it.
 	/** The session's spans — the agent's own until the details land. */
 	spanCount: Schema.Number,
-	/** Failed agent spans until the details land, then failed spans of any kind. */
+	/** Failed agent spans — what `hasErrors` and the errors sort read. */
 	errorSpanCount: Schema.Number,
 	/** Failed tool calls, one per failure rather than per span that echoed it. */
 	toolErrorCount: Schema.Number,
@@ -163,6 +166,7 @@ export const AiSessionListItem = Schema.Struct({
 	 *  extent — warehouse datetime literals, e.g. `2026-08-19 10:33:25.825000000`. */
 	startTime: Schema.String,
 	endTime: Schema.String,
+	/** The agent spans' extent in ms — what the duration sort and range read. */
 	durationMs: Schema.Number,
 })
 
@@ -181,26 +185,48 @@ export class ListAiSessionsResponse extends Schema.Class<ListAiSessionsResponse>
 /** The most sessions one details read covers — a page, as the list sizes it. */
 export const AI_SESSION_DETAILS_MAX_SESSIONS = 100
 
+/** The widest extent one details read accepts — the list's whole retention,
+ *  which a page ranked by cost over a sparse month can span. Past it the read
+ *  is a scan of partitions no page can have come from. */
+export const AI_SESSION_DETAILS_MAX_EXTENT_MS = 31 * 24 * 60 * 60_000
+
+/** `TinybirdDateTime` is UTC without a zone marker. */
+const tinybirdDateTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
+
 export class ListAiSessionDetailsRequest extends Schema.Class<ListAiSessionDetailsRequest>(
 	"ListAiSessionDetailsRequest",
-)({
-	/**
-	 * The extent of the page's rows — the earliest `startTime` and the latest
-	 * `endTime` among them, verbatim. Both reads behind this are bounded by it
-	 * (the fan-out padded by an hour), so a page's own bounds are the only
-	 * window that makes it a seek rather than a scan.
-	 */
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-	/** The page's session ids, as the list returned them. */
-	sessionIds: Schema.Array(Schema.String).check(
-		Schema.isMinLength(1),
-		Schema.isMaxLength(AI_SESSION_DETAILS_MAX_SESSIONS),
+)(
+	Schema.Struct({
+		/**
+		 * The extent of the page's rows — the earliest `startTime` and the latest
+		 * `endTime` among them, verbatim. Both reads behind this are bounded by it
+		 * (the fan-out padded by an hour), so a page's own bounds are the only
+		 * window that makes it a seek rather than a scan.
+		 */
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+		/** The page's session ids, as the list returned them. */
+		sessionIds: Schema.Array(Schema.String).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(AI_SESSION_DETAILS_MAX_SESSIONS),
+		),
+		// The same counted filters the page was ranked under, or the two reads
+		// resolve traces differently and a session's facts land under no row.
+		...aiSessionCountedFilters,
+	}).check(
+		// The window reaches the fan-out's partition predicate as given, so an
+		// inverted or retention-wide one is refused here rather than run.
+		Schema.makeFilter(
+			(request: { readonly startTime: string; readonly endTime: string }) => {
+				const extentMs = tinybirdDateTimeMs(request.endTime) - tinybirdDateTimeMs(request.startTime)
+				if (extentMs < 0) return "startTime must not be after endTime"
+				if (extentMs > AI_SESSION_DETAILS_MAX_EXTENT_MS) return "the window is wider than any page's extent"
+				return true
+			},
+			{ identifier: "DetailsWindowBounded" },
+		),
 	),
-	// The same counted filters the page was ranked under, or the two reads
-	// resolve traces differently and a session's facts land under no row.
-	...aiSessionCountedFilters,
-}) {}
+) {}
 
 export class ListAiSessionDetailsResponse extends Schema.Class<ListAiSessionDetailsResponse>(
 	"ListAiSessionDetailsResponse",

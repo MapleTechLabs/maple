@@ -2,15 +2,19 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { MAPLE_AI_TRACE_SESSION_PREFIX, traceSessionTraceId } from "@maple/domain/gen-ai"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The list row's bounds are the extent of the session's AGENT spans until its
+// The bounds a link carries are the session's own — see `sessionLinkWindow` —
+// so the pad covers only what a whole-second warehouse window rounds off and
+// the clock skew between the services one trace crosses.
+const WINDOW_PADDING_MS = 60_000
+
+// A list row's bounds are the extent of the session's AGENT spans until its
 // details land (see `ListAiSessionDetailsResponse`), and a trace's other spans
 // lie outside that: measured over two days of production, the first span leads
 // the first agent span by at most 0.1s and the last span trails the last agent
-// span by at most ten minutes. Fifteen minutes contains both with room for
-// rounding — a warehouse window is rendered at whole-second precision — and
-// for the clock skew between the services one trace crosses, and still keeps
-// the read inside one partition for every session but those nearest midnight.
-const WINDOW_PADDING_MS = 15 * 60_000
+// span by at most ten minutes. An hour contains both with room to spare — the
+// same pad the details fan-out reads with — and only the rows whose details
+// have not landed pay it.
+const UNDETAILED_PADDING_MS = 60 * 60_000
 
 export interface SessionWindow {
 	readonly startTime: string
@@ -42,6 +46,22 @@ export function resolveWindow(t: string | undefined, end: string | undefined): S
 	return {
 		startTime: formatWarehouseDateTime(startHint - WINDOW_PADDING_MS),
 		endTime: formatWarehouseDateTime(endMs + WINDOW_PADDING_MS),
+	}
+}
+
+/**
+ * The `t`/`end` a list row's link carries: the row's bounds, widened by an hour
+ * when they are still the agent spans' extent rather than the session's.
+ */
+export function sessionLinkWindow(row: {
+	readonly startTime: string
+	readonly endTime: string
+	readonly hasDetails?: boolean
+}): { t: string; end: string } {
+	if (row.hasDetails === true) return { t: row.startTime, end: row.endTime }
+	return {
+		t: formatWarehouseDateTime(toEpochMs(row.startTime) - UNDETAILED_PADDING_MS),
+		end: formatWarehouseDateTime(toEpochMs(row.endTime) + UNDETAILED_PADDING_MS),
 	}
 }
 

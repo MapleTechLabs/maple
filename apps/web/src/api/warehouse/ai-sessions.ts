@@ -1,5 +1,6 @@
 import { Clock, Effect, Schema } from "effect"
 import {
+	AI_SESSION_DETAILS_MAX_SESSIONS,
 	AI_SESSION_SPANS_MAX_TRACE_IDS,
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -81,7 +82,10 @@ export const listAiSessions = Effect.fn("AiSessions.listAiSessions")(function* (
 const AiSessionDetailsInput = Schema.Struct({
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
-	sessionIds: Schema.Array(Schema.String),
+	sessionIds: Schema.Array(Schema.String).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(AI_SESSION_DETAILS_MAX_SESSIONS),
+	),
 	vendorIds: Schema.optional(Schema.Array(Schema.String)),
 	serviceNames: Schema.optional(Schema.Array(Schema.String)),
 	deploymentEnvs: Schema.optional(Schema.Array(Schema.String)),
