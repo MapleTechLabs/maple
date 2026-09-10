@@ -6,8 +6,21 @@ import { getActiveOrgId } from "@/lib/services/common/auth-headers"
 
 import type { TimeRangeSearch } from "./search"
 
-function hasTimeRangeSearch(search: TimeRangeSearch): boolean {
-	return Boolean(search.timePreset || (search.startTime && search.endTime))
+// `typeof` rather than truthiness: a history pop or a hand-edited URL reaches
+// here unvalidated, and TanStack JSON-parses values, so `?timePreset=123` is a
+// number that must neither be remembered nor re-injected elsewhere.
+const isSet = (value: unknown): value is string => typeof value === "string" && value !== ""
+
+/** The search names a window, or part of one — nothing should be added to it. */
+function namesTimeRange(search: TimeRangeSearch): boolean {
+	return isSet(search.timePreset) || isSet(search.startTime) || isSet(search.endTime)
+}
+
+/** A complete window: a preset, or both absolute bounds. Only these are remembered. */
+function isCompleteTimeRange(
+	search: TimeRangeSearch,
+): search is { timePreset: string } | { startTime: string; endTime: string } {
+	return isSet(search.timePreset) || (isSet(search.startTime) && isSet(search.endTime))
 }
 
 /**
@@ -18,16 +31,19 @@ function hasTimeRangeSearch(search: TimeRangeSearch): boolean {
  * becomes the remembered window once it lands.
  *
  * Runs on `buildLocation`, so links and preloads see the same URL the
- * navigation will produce; the loader's `deps` are right the first time.
+ * navigation will produce; the loader's `deps` are right the first time. The
+ * read is a bare, synchronous `registry.get`: `Atom.kvs` in sync mode settles
+ * inline because the storage layer is synchronous, and falls back to `{}` if
+ * that ever stops being true — the window would then silently stop sticking.
  */
 export function sessionTimeRangeSearchMiddleware<T extends TimeRangeSearch>({
 	search,
 	next,
 }: Parameters<SearchMiddleware<T>>[0]): T {
 	const result = next(search)
-	if (hasTimeRangeSearch(result)) return result
+	if (namesTimeRange(result)) return result
 	const stored = appRegistry.get(sessionTimeRangeAtomFor(getActiveOrgId()))
-	if (!hasTimeRangeSearch(stored)) return result
+	if (!isCompleteTimeRange(stored)) return result
 	return { ...result, ...stored }
 }
 
@@ -38,10 +54,11 @@ export function sessionTimeRangeSearchMiddleware<T extends TimeRangeSearch>({
  */
 export function persistSessionTimeRange(search: TimeRangeSearch) {
 	const orgId = getActiveOrgId()
-	if (!orgId || !hasTimeRangeSearch(search)) return
-	const value: SessionTimeRange = search.timePreset
-		? { timePreset: search.timePreset }
-		: { startTime: search.startTime!, endTime: search.endTime! }
+	if (!orgId || !isCompleteTimeRange(search)) return
+	const value: SessionTimeRange =
+		"timePreset" in search
+			? { timePreset: search.timePreset }
+			: { startTime: search.startTime, endTime: search.endTime }
 	appRegistry.set(sessionTimeRangeAtomFor(orgId), value)
 }
 

@@ -1,88 +1,125 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { sessionTimeRangeAtomFor } from "@/atoms/session-time-range-atoms"
 import { appRegistry } from "@/lib/registry"
 import { setActiveOrgId } from "@/lib/services/common/auth-headers"
 
-import { persistSessionTimeRange, sessionTimeRangeSearchMiddleware } from "./session-time-range"
+import {
+	persistSessionTimeRange,
+	sessionTimeRangeSearchMiddleware,
+	subscribeSessionTimeRange,
+} from "./session-time-range"
 
 const next = <T>(search: T) => search
 // TanStack hands middlewares present-but-undefined keys; mirror that here.
 const pageSearch = { services: ["api"], timePreset: undefined }
+const absolute = { startTime: "2026-09-01T00:00:00Z", endTime: "2026-09-02T00:00:00Z" }
+
+// Each test gets its own org: an `Atom.family` member lives for the process
+// once read, so clearing sessionStorage would not reset a reused key.
+afterEach(() => {
+	setActiveOrgId(null)
+})
 
 describe("sessionTimeRangeSearchMiddleware", () => {
-	beforeEach(() => {
-		sessionStorage.clear()
-		setActiveOrgId("org_1")
-	})
-
-	afterEach(() => {
-		setActiveOrgId(null)
-	})
-
 	it("fills a navigation that names no window with the remembered one", () => {
-		appRegistry.set(sessionTimeRangeAtomFor("org_1"), { timePreset: "7d" })
+		setActiveOrgId("org_fill")
+		appRegistry.set(sessionTimeRangeAtomFor("org_fill"), { timePreset: "7d" })
 
-		expect(sessionTimeRangeSearchMiddleware({ search: pageSearch, next })).toEqual({
+		expect(sessionTimeRangeSearchMiddleware({ search: pageSearch, next })).toStrictEqual({
 			services: ["api"],
 			timePreset: "7d",
 		})
-		expect(sessionStorage.getItem("maple.time-range.session.org_1")).toContain('"7d"')
-	})
-
-	it("keeps a window the navigation names itself", () => {
-		appRegistry.set(sessionTimeRangeAtomFor("org_1"), { timePreset: "7d" })
-		const search = { startTime: "2026-09-01T00:00:00Z", endTime: "2026-09-02T00:00:00Z" }
-
-		expect(sessionTimeRangeSearchMiddleware({ search, next })).toEqual(search)
-	})
-
-	it("passes through when nothing is remembered or there is no org", () => {
-		setActiveOrgId("org_untouched")
-		expect(sessionTimeRangeSearchMiddleware({ search: pageSearch, next })).toEqual({
-			services: ["api"],
+		expect(JSON.parse(sessionStorage.getItem("maple.time-range.session.org_fill")!)).toEqual({
+			timePreset: "7d",
 		})
-
-		appRegistry.set(sessionTimeRangeAtomFor("org_1"), { timePreset: "7d" })
-		setActiveOrgId(null)
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toEqual({})
 	})
 
-	it("scopes the remembered window to the org", () => {
-		appRegistry.set(sessionTimeRangeAtomFor("org_1"), { timePreset: "7d" })
-		setActiveOrgId("org_2")
+	it("reads a window written by an earlier page load straight from storage", () => {
+		setActiveOrgId("org_cold")
+		sessionStorage.setItem("maple.time-range.session.org_cold", JSON.stringify(absolute))
 
-		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toEqual({})
+		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toEqual(absolute)
+	})
+
+	it("keeps a window the navigation names itself, even a partial one", () => {
+		setActiveOrgId("org_keep")
+		appRegistry.set(sessionTimeRangeAtomFor("org_keep"), { timePreset: "7d" })
+
+		expect(sessionTimeRangeSearchMiddleware({ search: absolute, next })).toStrictEqual(absolute)
+		const half = { startTime: absolute.startTime }
+		expect(sessionTimeRangeSearchMiddleware({ search: half, next })).toStrictEqual(half)
+	})
+
+	it("passes through when nothing is remembered, the value is malformed, or there is no org", () => {
+		setActiveOrgId("org_untouched")
+		expect(sessionTimeRangeSearchMiddleware({ search: pageSearch, next })).toStrictEqual(pageSearch)
+
+		setActiveOrgId("org_garbage")
+		sessionStorage.setItem("maple.time-range.session.org_garbage", "{not json")
+		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+
+		setActiveOrgId("org_number")
+		sessionStorage.setItem("maple.time-range.session.org_number", JSON.stringify({ timePreset: 123 }))
+		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+
+		setActiveOrgId("org_signed_out")
+		appRegistry.set(sessionTimeRangeAtomFor("org_signed_out"), { timePreset: "7d" })
+		setActiveOrgId(null)
+		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+	})
+
+	it("scopes the remembered window to the org and keeps it across a switch", () => {
+		setActiveOrgId("org_a")
+		appRegistry.set(sessionTimeRangeAtomFor("org_a"), { timePreset: "7d" })
+
+		setActiveOrgId("org_b")
+		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({})
+
+		setActiveOrgId("org_a")
+		expect(sessionTimeRangeSearchMiddleware({ search: {}, next })).toStrictEqual({ timePreset: "7d" })
 	})
 })
 
 describe("persistSessionTimeRange", () => {
-	afterEach(() => {
-		setActiveOrgId(null)
-	})
-
 	it("remembers a preset, then an absolute window, and ignores locations without one", () => {
 		setActiveOrgId("org_persist")
 		const atom = sessionTimeRangeAtomFor("org_persist")
 
 		persistSessionTimeRange({ timePreset: "24h" })
-		expect(appRegistry.get(atom)).toEqual({ timePreset: "24h" })
+		expect(appRegistry.get(atom)).toStrictEqual({ timePreset: "24h" })
 
-		persistSessionTimeRange({ startTime: "2026-09-01T00:00:00Z", endTime: "2026-09-02T00:00:00Z" })
-		expect(appRegistry.get(atom)).toEqual({
-			startTime: "2026-09-01T00:00:00Z",
-			endTime: "2026-09-02T00:00:00Z",
-		})
+		persistSessionTimeRange(absolute)
+		expect(appRegistry.get(atom)).toStrictEqual(absolute)
 
 		persistSessionTimeRange({})
-		expect(appRegistry.get(atom).startTime).toBe("2026-09-01T00:00:00Z")
+		persistSessionTimeRange({ startTime: absolute.startTime })
+		expect(appRegistry.get(atom)).toStrictEqual(absolute)
 	})
 
 	it("does nothing without an org", () => {
-		setActiveOrgId(null)
+		const before = sessionStorage.length
 		persistSessionTimeRange({ timePreset: "24h" })
-		expect(sessionStorage.getItem("maple.time-range.session.null")).toBeNull()
+		expect(appRegistry.get(sessionTimeRangeAtomFor(null))).toStrictEqual({})
+		expect(sessionStorage.length).toBe(before)
+	})
+})
+
+describe("subscribeSessionTimeRange", () => {
+	it("persists the resolved location's window", () => {
+		setActiveOrgId("org_router")
+		const subscribe = vi.fn(
+			(_event: string, handler: (event: { toLocation: { search: unknown } }) => void) => {
+				handler({ toLocation: { search: { timePreset: "3d" } } })
+				return () => {}
+			},
+		)
+
+		subscribeSessionTimeRange({ subscribe } as never)
+
+		expect(subscribe).toHaveBeenCalledWith("onResolved", expect.any(Function))
+		expect(appRegistry.get(sessionTimeRangeAtomFor("org_router"))).toStrictEqual({ timePreset: "3d" })
 	})
 })
