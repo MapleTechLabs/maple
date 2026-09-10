@@ -1,20 +1,14 @@
-import type { MouseEvent, PointerEvent } from "react"
+import type { CSSProperties, MouseEvent, PointerEvent, RefObject } from "react"
 import { useRef } from "react"
 
 /**
- * Linked cursor for every plot on screen, under either renderer.
+ * Linked cursor for a container of independent plots, under either renderer.
  *
  * Recharts' own `syncId` synchronizes charts through its event bus: every
  * pointer move re-renders every synced chart's tooltip store (a render storm on
  * grids of 4+ charts). This hook keeps each chart fully independent and instead
  * paints a lightweight CSS-variable-driven cursor line across the sibling
  * plots — pointer moves only touch DOM style properties, never React state.
- *
- * The cursor position is GLOBAL: the ratio and visibility live in CSS variables
- * on the document element, so charts in separate containers — a metrics grid and
- * a correlation strip on the same page — track one pointer together. Each
- * container still opts in by spreading `containerProps`; that is what makes its
- * charts a pointer SOURCE, and what an unlinked chart omits.
  *
  * Usage:
  * - Spread `containerProps` on the element that wraps all linked charts.
@@ -47,22 +41,22 @@ const OVERLAY_SELECTOR = "[data-linked-cursor-overlay]"
 const PLOT_SELECTOR = "[data-chart-plot], .recharts-cartesian-grid"
 const TOOLTIP_UPDATE_INTERVAL_MS = 1000 / 30
 
-/**
- * The chart currently under the pointer, shared across every hook instance:
- * moving from a chart in one linked container to a chart in another has to
- * un-hide the first one's overlay, and the two containers are different hooks.
- */
-const activeChartRef = { current: null as HTMLElement | null }
+interface LinkedCursorStyle extends CSSProperties {
+	"--linked-cursor-ratio": number
+	"--linked-cursor-visible": number
+}
 
-function cursorRoot(): HTMLElement {
-	return document.documentElement
+const LINKED_CURSOR_STYLE: LinkedCursorStyle = {
+	"--linked-cursor-ratio": 0,
+	"--linked-cursor-visible": 0,
 }
 
 export interface LinkedCursorContainerProps {
-	onPointerEnter: () => void
+	style: CSSProperties | undefined
+	onPointerEnter: (event: PointerEvent<HTMLElement>) => void
 	onMouseMoveCapture: (event: MouseEvent<HTMLElement>) => void
 	onPointerMove: (event: PointerEvent<HTMLElement>) => void
-	onPointerLeave: () => void
+	onPointerLeave: (event: PointerEvent<HTMLElement>) => void
 }
 
 /** Marks a chart wrapper as a linked-cursor participant. Pass `undefined` to opt out. */
@@ -70,7 +64,7 @@ export function linkedCursorChartProps(chartId: string | undefined): Record<stri
 	return chartId == null ? {} : { [LINKED_CURSOR_CHART_ATTR]: chartId }
 }
 
-function setCursorSource(nextChart: HTMLElement | null) {
+function setCursorSource(activeChartRef: RefObject<HTMLElement | null>, nextChart: HTMLElement | null) {
 	if (activeChartRef.current === nextChart) return
 
 	activeChartRef.current?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.removeAttribute("hidden")
@@ -81,19 +75,17 @@ function setCursorSource(nextChart: HTMLElement | null) {
 	nextChart?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.setAttribute("hidden", "")
 }
 
-function hideLinkedCursor() {
-	cursorRoot().style.setProperty("--linked-cursor-visible", "0")
-	setCursorSource(null)
+function hideLinkedCursor(container: HTMLElement, activeChartRef: RefObject<HTMLElement | null>) {
+	container.style.setProperty("--linked-cursor-visible", "0")
+	setCursorSource(activeChartRef, null)
 }
 
 /**
- * Snap every overlay on the page onto its chart's plot rect. Runs on container
- * pointer enter — the cursor is only visible while hovering, so that is the only
+ * Snap every overlay onto its chart's plot rect. Runs on container pointer
+ * enter — the cursor is only visible while hovering, so that is the only
  * moment alignment matters, and it keeps per-pointer-move work at zero reads.
- * It sweeps the whole document rather than the entered container because the
- * cursor is painted on every linked chart on screen, not just that container's.
  */
-function alignOverlays() {
+function alignOverlays(container: HTMLElement) {
 	const placements: Array<{
 		overlay: HTMLElement
 		left: number
@@ -101,7 +93,7 @@ function alignOverlays() {
 		width: number
 		height: number
 	}> = []
-	for (const chart of document.querySelectorAll<HTMLElement>(CHART_SELECTOR)) {
+	for (const chart of container.querySelectorAll<HTMLElement>(CHART_SELECTOR)) {
 		const overlay = chart.querySelector<HTMLElement>(OVERLAY_SELECTOR)
 		const plot = chart.querySelector<Element>(PLOT_SELECTOR)
 		const host = overlay?.offsetParent
@@ -126,11 +118,12 @@ function alignOverlays() {
 }
 
 export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCursorContainerProps } {
+	const activeChartRef = useRef<HTMLElement | null>(null)
 	const lastTooltipUpdateRef = useRef(0)
 
-	const handlePointerEnter = () => {
+	const handlePointerEnter = (event: PointerEvent<HTMLElement>) => {
 		if (!enabled) return
-		alignOverlays()
+		alignOverlays(event.currentTarget)
 	}
 
 	const handleMouseMoveCapture = (event: MouseEvent<HTMLElement>) => {
@@ -165,7 +158,7 @@ export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCurso
 		const chart = target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
 		const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
 		if (!chart || !plot || !event.currentTarget.contains(chart)) {
-			hideLinkedCursor()
+			hideLinkedCursor(event.currentTarget, activeChartRef)
 			return
 		}
 
@@ -176,25 +169,25 @@ export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCurso
 			event.clientY >= bounds.top &&
 			event.clientY <= bounds.bottom
 		if (!insidePlot || bounds.width === 0) {
-			hideLinkedCursor()
+			hideLinkedCursor(event.currentTarget, activeChartRef)
 			return
 		}
 
 		const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
-		setCursorSource(chart)
-		const root = cursorRoot().style
-		root.setProperty("--linked-cursor-ratio", String(ratio))
-		root.setProperty("--linked-cursor-visible", "1")
+		setCursorSource(activeChartRef, chart)
+		event.currentTarget.style.setProperty("--linked-cursor-ratio", String(ratio))
+		event.currentTarget.style.setProperty("--linked-cursor-visible", "1")
 	}
 
-	const handlePointerLeave = () => {
+	const handlePointerLeave = (event: PointerEvent<HTMLElement>) => {
 		if (!enabled) return
 		lastTooltipUpdateRef.current = 0
-		hideLinkedCursor()
+		hideLinkedCursor(event.currentTarget, activeChartRef)
 	}
 
 	return {
 		containerProps: {
+			style: enabled ? LINKED_CURSOR_STYLE : undefined,
 			onPointerEnter: handlePointerEnter,
 			onMouseMoveCapture: handleMouseMoveCapture,
 			onPointerMove: handlePointerMove,
@@ -216,13 +209,13 @@ export function LinkedCursorOverlay({ chartId }: { chartId: string }) {
 			className="pointer-events-none absolute"
 			style={{
 				containerType: "inline-size",
-				opacity: "var(--linked-cursor-visible, 0)",
+				opacity: "var(--linked-cursor-visible)",
 			}}
 		>
 			<div
-				className="absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"
+				className="absolute inset-y-0 left-0 w-px bg-border will-change-transform"
 				style={{
-					transform: "translateX(calc(var(--linked-cursor-ratio, 0) * (100cqw - 1px)))",
+					transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))",
 				}}
 			/>
 		</div>
