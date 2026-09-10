@@ -2,11 +2,12 @@ import { useMemo, type ReactNode } from "react"
 
 import type { AiToolsSeriesKind } from "@maple/domain/http"
 
-import { PageHero } from "@/components/infra/primitives/page-hero"
 import { useDetectedModels } from "@/hooks/use-detected-models"
 import {
 	metricSpark,
+	rankSeriesKeys,
 	scopeSummary,
+	toolSeriesColors,
 	type ToolBreakdownRow,
 	type ToolSeriesPoint,
 	type ToolSessionRow,
@@ -50,7 +51,7 @@ export interface AgentToolsViewProps {
 	windowLabel: string
 	/** The window, carried by the tab strip's link to the Sessions list. */
 	timeRange?: TimeRangeSearch
-	/** The time-range picker, or whatever the host wants beside the tabs. */
+	/** The time-range picker, or whatever the host wants beside the title. */
 	headerControls?: ReactNode
 	/** Dim the data surfaces while a refetch is in flight. */
 	waiting?: boolean
@@ -68,11 +69,13 @@ export interface AgentToolsViewProps {
  * all four reads, so the strip, the chart and the tables always describe the
  * same population.
  *
- * Reading order is the order the questions get asked: what am I looking at
- * (header, window), over which calls (toolbar), narrowed to what (scope), how
- * much of it (strip), how it moved (chart), which tool and model (breakdowns),
- * and finally which session — the one row where an aggregate becomes something
- * that actually happened.
+ * One column of full-bleed sections divided by hairlines, not a stack of
+ * cards: the page is one instrument, and every section is a different reading
+ * of the same scope. Reading order is the order the questions get asked: what
+ * am I looking at (header, window), over which calls (toolbar), narrowed to
+ * what (scope), how much of it (strip), how it moved (chart), which tool and
+ * model (breakdowns), and finally which session — the one row where an
+ * aggregate becomes something that actually happened.
  */
 export function AgentToolsView({
 	search,
@@ -112,28 +115,51 @@ export function AgentToolsView({
 		...(search.model === undefined ? [] : [{ kind: "model" as const, value: search.model }]),
 	]
 
-	// Per-tool sparks come out of the series, which only splits by tool while no
-	// tool is picked. Once one is, the chart is by model and the table's sparks
-	// go quiet rather than showing the same line on every row.
-	const sparkByTool = useMemo(() => {
+	// Per-tool sparks and swatches come out of the series, which only splits by
+	// tool while no tool is picked. Once one is, the chart is by model and the
+	// table's sparks go quiet rather than showing the same line on every row;
+	// the picked tool keeps its swatch, because it is the one line the sessions
+	// heading is about.
+	const { sparkByTool, colorByTool } = useMemo(() => {
 		const byTool = new Map<string, ToolSeriesPoint[]>()
 		for (const point of data.series) {
 			const bucket = byTool.get(point.seriesKey)
 			if (bucket) bucket.push(point)
 			else byTool.set(point.seriesKey, [point])
 		}
-		const out = new Map<string, ReadonlyArray<number>>()
-		for (const [key, points] of byTool) out.set(key, metricSpark(points, metric, percentile))
-		return out
-	}, [data.series, metric, percentile])
+		const sparkByTool = new Map<string, ReadonlyArray<number>>()
+		const colorByTool = new Map<string, string>()
+		if (!seriesIsModels) {
+			for (const [key, points] of byTool) sparkByTool.set(key, metricSpark(points, metric, percentile))
+			for (const [key, token] of toolSeriesColors(rankSeriesKeys(data.series))) {
+				colorByTool.set(key, `var(${token})`)
+			}
+		}
+		return { sparkByTool, colorByTool }
+	}, [data.series, seriesIsModels, metric, percentile])
+	const toolColor = search.tool === undefined ? undefined : colorByTool.get(search.tool)
 
 	return (
-		<div className="space-y-5">
-			<PageHero
-				title="Agent tools"
-				description="Every tool your agents called in the selected window — how often, how long, and how often it failed."
-				meta={<AgentSessionsTabs active="tools" search={timeRange} />}
-				actions={headerControls}
+		<div className="flex flex-col">
+			<header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-[22px] pb-4">
+				<div className="flex min-w-0 flex-col gap-1.5">
+					<h1 className="text-[28px] font-semibold leading-8 tracking-[-0.02em] text-foreground">
+						Tools
+					</h1>
+					<p className="font-mono text-[13px] leading-[18px] text-muted-foreground">
+						How every tool your agents call is behaving — volume, latency and failures.
+					</p>
+				</div>
+				{headerControls ? (
+					<div className="flex shrink-0 items-center gap-2 pt-1">{headerControls}</div>
+				) : null}
+			</header>
+
+			<AgentSessionsTabs
+				active="tools"
+				search={timeRange}
+				counts={{ tools: data.tools.length }}
+				className="border-b border-border px-6"
 			/>
 
 			<ToolFilterToolbar
@@ -147,7 +173,9 @@ export function AgentToolsView({
 				onEnvChange={(value) => onSearchChange({ env: value })}
 				failingOnly={search.failing === true}
 				onToggleFailingOnly={() =>
-					onSearchChange({ failing: search.failing === true ? undefined : true })
+					onSearchChange({
+						failing: search.failing === true ? undefined : true,
+					})
 				}
 				waiting={waiting}
 			/>
@@ -188,13 +216,14 @@ export function AgentToolsView({
 			{/* Tools wider than Models: it is the ranked scan, and its names are long.
 			    Models is a comparison between a handful of rows and needs the width
 			    of four numbers, not of a list. */}
-			<div className="grid items-start gap-4 @min-[1000px]/page:grid-cols-[3fr_2fr]">
+			<div className="grid border-b border-border @min-[1000px]/page:grid-cols-[minmax(0,800px)_minmax(0,1fr)]">
 				<ToolsTable
 					rows={data.tools}
 					percentile={percentile}
 					selected={search.tool}
 					onSelect={(tool) => onSearchChange({ tool })}
 					sparkFor={(tool) => sparkByTool.get(tool) ?? []}
+					colorFor={(tool) => colorByTool.get(tool)}
 					waiting={waiting}
 				/>
 				<ModelsPanel
@@ -208,7 +237,14 @@ export function AgentToolsView({
 				/>
 			</div>
 
-			<ToolSessionsPanel rows={data.sessions} tool={search.tool} detect={detect} waiting={waiting} />
+			<ToolSessionsPanel
+				rows={data.sessions}
+				tool={search.tool}
+				model={search.model}
+				color={toolColor}
+				detect={detect}
+				waiting={waiting}
+			/>
 		</div>
 	)
 }

@@ -1,6 +1,5 @@
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 
 /** One option in the service / env selects, with the sessions behind it. */
@@ -28,12 +27,16 @@ interface ToolFilterToolbarProps {
 
 /**
  * Which calls the page is about: a tool-name search, the service and
- * environment they ran in, and the one-switch triage filter.
+ * environment they ran in, and the one-chip triage filter.
  *
  * Deliberately no model select. Model is a *scope*, not a filter — it is picked
  * from the Models table, where its call volume and error rate are visible
  * beside it, and it shows up in the scope row as a removable chip. A second
  * place to set the same param would be two controls that can disagree.
+ *
+ * Every control is the same 30px pill, and a control with a value set is drawn
+ * in the primary tint so the toolbar reads as "what is narrowing this page" at
+ * a glance.
  */
 export function ToolFilterToolbar({
 	query,
@@ -49,46 +52,48 @@ export function ToolFilterToolbar({
 	waiting = false,
 }: ToolFilterToolbarProps) {
 	return (
-		<div className="flex flex-wrap items-center justify-between gap-3">
+		<div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
 			<ToolbarSearch
 				query={query}
 				onSearch={onSearch}
 				placeholder="Tool name…"
-				className="w-full sm:max-w-xs"
+				className="w-full font-mono sm:w-[260px]"
 			/>
 
 			<div
 				className={cn(
-					"flex flex-wrap items-center gap-3 transition-opacity",
+					"flex flex-wrap items-center gap-2 transition-opacity",
 					waiting && "opacity-60",
 				)}
 			>
 				<FacetSelect
-					label="Service"
-					allLabel="All services"
+					label="service"
 					value={service}
 					options={serviceOptions}
 					onChange={onServiceChange}
 				/>
-				<FacetSelect
-					label="Environment"
-					allLabel="All environments"
-					value={env}
-					options={envOptions}
-					onChange={onEnvChange}
-				/>
+				<FacetSelect label="env" value={env} options={envOptions} onChange={onEnvChange} />
 
-				{/* A switch rather than a chip, for the reason the sessions list gives:
-				    it is a filter that is on or off, and a destructive-toned chip reads
-				    as a warning about the page rather than a control over it. */}
-				<label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium">
-					<Switch
-						checked={failingOnly}
-						onCheckedChange={onToggleFailingOnly}
-						className="[--thumb-size:--spacing(3.5)] data-checked:bg-destructive"
+				<button
+					type="button"
+					aria-pressed={failingOnly}
+					onClick={onToggleFailingOnly}
+					className={cn(
+						"inline-flex h-[30px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors",
+						failingOnly
+							? "border-[var(--severity-error)]/50 bg-[var(--severity-error)]/10 text-foreground"
+							: "border-border bg-card text-muted-foreground hover:text-foreground",
+					)}
+				>
+					<span
+						aria-hidden
+						className={cn(
+							"size-[5px] rounded-full",
+							failingOnly ? "bg-[var(--severity-error)]" : "bg-[var(--severity-error)]/40",
+						)}
 					/>
 					Failing only
-				</label>
+				</button>
 			</div>
 		</div>
 	)
@@ -96,18 +101,17 @@ export function ToolFilterToolbar({
 
 function FacetSelect({
 	label,
-	allLabel,
 	value,
 	options,
 	onChange,
 }: {
+	/** The dimension, drawn small beside the value: `service All`. */
 	label: string
-	/** What the trigger and the first row read when nothing is picked. */
-	allLabel: string
 	value: string | undefined
 	options: ReadonlyArray<ToolFilterOption>
 	onChange: (value: string | undefined) => void
 }) {
+	const set = value !== undefined
 	return (
 		<Select
 			value={value ?? ALL}
@@ -116,13 +120,27 @@ function FacetSelect({
 			// and a select that opens onto one row reads as broken.
 			disabled={options.length === 0}
 		>
-			<SelectTrigger size="sm" className="h-7 min-w-28 text-xs" aria-label={label}>
+			<SelectTrigger
+				size="sm"
+				aria-label={label}
+				className={cn(
+					"h-[30px] gap-2 rounded-md px-2.5 font-mono text-xs",
+					set
+						? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
+						: "bg-card text-foreground",
+				)}
+			>
 				{/* The sentinel is a Base UI implementation detail; rendered children
 				    are what keeps it off the trigger. */}
-				<SelectValue>{value ?? allLabel}</SelectValue>
+				<SelectValue>
+					<span className={cn("text-[11px]", set ? "text-primary/70" : "text-muted-foreground")}>
+						{label}
+					</span>{" "}
+					{value ?? "All"}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent>
-				<SelectItem value={ALL}>{allLabel}</SelectItem>
+				<SelectItem value={ALL}>All</SelectItem>
 				{options.map((option) => (
 					<SelectItem key={option.name} value={option.name}>
 						{option.name}

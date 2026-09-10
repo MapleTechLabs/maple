@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router"
 
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
+import { GearIcon, LayersIcon } from "@/components/icons"
 import { pickTimeRangeSearch, type TimeRangeSearch } from "@/components/time-range-picker/search"
 
 /** The two readings of the same spans: one session at a time, or one tool across all of them. */
@@ -22,20 +24,35 @@ export type AgentSessionsTab = "sessions" | "tools"
 export function AgentSessionsTabs({
 	active,
 	search,
+	counts,
 	className,
 }: {
 	active: AgentSessionsTab
 	/** The current window, carried across. Absent from the Sessions list, which has none. */
 	search?: TimeRangeSearch
+	/** Shown beside the label where the page knows the number. */
+	counts?: { sessions?: number; tools?: number }
 	className?: string
 }) {
 	const window = search === undefined ? {} : pickTimeRangeSearch(search)
 	return (
-		<nav className={cn("flex items-center gap-1", className)} aria-label="Agent sessions views">
-			<TabLink to="/agent-sessions" search={{}} active={active === "sessions"}>
+		<nav className={cn("flex items-center", className)} aria-label="Agent sessions views">
+			<TabLink
+				to="/agent-sessions"
+				search={{}}
+				active={active === "sessions"}
+				icon={<LayersIcon size={13} aria-hidden />}
+				count={counts?.sessions}
+			>
 				Sessions
 			</TabLink>
-			<TabLink to="/agent-sessions/tools" search={window} active={active === "tools"}>
+			<TabLink
+				to="/agent-sessions/tools"
+				search={window}
+				active={active === "tools"}
+				icon={<GearIcon size={13} aria-hidden />}
+				count={counts?.tools}
+			>
 				Tools
 			</TabLink>
 		</nav>
@@ -46,11 +63,15 @@ function TabLink({
 	to,
 	search,
 	active,
+	icon,
+	count,
 	children,
 }: {
 	to: "/agent-sessions" | "/agent-sessions/tools"
 	search: Record<string, unknown>
 	active: boolean
+	icon: React.ReactNode
+	count?: number
 	children: React.ReactNode
 }) {
 	return (
@@ -59,13 +80,24 @@ function TabLink({
 			search={search}
 			aria-current={active ? "page" : undefined}
 			className={cn(
-				"rounded-sm px-2 py-0.5 text-[12px] transition-colors",
+				"flex h-9 items-center gap-[7px] border-b-2 px-3 font-mono text-[12.5px] transition-colors first:pl-0.5",
 				active
-					? "bg-muted font-medium text-foreground"
-					: "text-muted-foreground hover:text-foreground",
+					? "border-primary font-medium text-foreground [&_svg]:text-primary"
+					: "border-transparent text-muted-foreground hover:text-foreground [&_svg]:text-muted-foreground",
 			)}
 		>
+			{icon}
 			{children}
+			{count === undefined ? null : (
+				<span
+					className={cn(
+						"text-[11px] tabular-nums",
+						active ? "text-primary" : "text-muted-foreground/60",
+					)}
+				>
+					{formatNumber(count)}
+				</span>
+			)}
 		</Link>
 	)
 }

@@ -78,7 +78,7 @@ function AgentToolsPageContent() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
+						<DashboardLayout.Scroll className="p-0">
 							<AgentToolsBody
 								search={search}
 								window={{ startTime, endTime }}
@@ -155,11 +155,11 @@ function AgentToolsBody({
 
 	return Result.builder(results.totals)
 		.onInitial(() => (
-			<div className="space-y-5">
-				<Skeleton className="h-16 w-full max-w-2xl" />
+			<div className="flex flex-col gap-5">
+				<Skeleton className="mx-6 mt-6 h-14 w-full max-w-2xl" />
 				<ToolMetricStripLoading />
-				<Skeleton className="h-56 w-full" />
-				<Skeleton className="h-80 w-full" />
+				<Skeleton className="mx-6 h-56" />
+				<Skeleton className="mx-6 h-80" />
 			</div>
 		))
 		.onError((error) => (

@@ -55,10 +55,14 @@ function renderView(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
 afterEach(cleanup)
 
 describe("AgentToolsView", () => {
-	it("renders the four metric tiles with the duration tile's three percentiles", () => {
+	it("renders four metric tiles, and the duration tile's three percentiles once it is picked", () => {
 		renderView({})
 		expect(screen.getByText("Tool calls")).toBeTruthy()
 		expect(screen.getByText("Duration")).toBeTruthy()
+		expect(screen.queryByText("p50")).toBeNull()
+
+		cleanup()
+		renderView({ metric: "duration" })
 		for (const percentile of ["p50", "p90", "p95"]) {
 			expect(screen.getByText(percentile)).toBeTruthy()
 		}
@@ -71,15 +75,20 @@ describe("AgentToolsView", () => {
 
 		cleanup()
 		const second = renderView({}).onSearchChange
-		fireEvent.click(screen.getByText("Error rate"))
+		// The Tools table names its error column the same way; the tile comes first.
+		fireEvent.click(screen.getAllByText("Error rate")[0]!)
 		expect(second).toHaveBeenCalledWith({ metric: "error_rate" })
 	})
 
-	it("takes the chart with a percentile column, so a click never lands on a hidden metric", () => {
+	it("takes the chart when the duration tile is picked, then re-keys on a percentile column", () => {
 		const { onSearchChange } = renderView({})
-		fireEvent.click(screen.getByText("p95"))
-		expect(onSearchChange).toHaveBeenCalledWith({ percentile: "p95" })
+		fireEvent.click(screen.getByText("Duration"))
 		expect(onSearchChange).toHaveBeenCalledWith({ metric: "duration" })
+
+		cleanup()
+		const second = renderView({ metric: "duration" }).onSearchChange
+		fireEvent.click(screen.getByText("p95"))
+		expect(second).toHaveBeenCalledWith({ percentile: "p95" })
 	})
 
 	it("names the selected percentile in both breakdown columns", () => {
@@ -99,7 +108,10 @@ describe("AgentToolsView", () => {
 	})
 
 	it("shows both scope chips in one row and removes the one that was clicked", () => {
-		const { onSearchChange } = renderView({ tool: "bash", model: "claude-opus-5" })
+		const { onSearchChange } = renderView({
+			tool: "bash",
+			model: "claude-opus-5",
+		})
 		expect(screen.getByText("tool")).toBeTruthy()
 		expect(screen.getByText("model")).toBeTruthy()
 
@@ -134,7 +146,9 @@ describe("the breakdown tables under a scope", () => {
 		const keys = (search: ToolAnalyticsSearch) =>
 			new Set(buildToolAnalyticsFixture(search, NOW, cells).series.map((point) => point.seriesKey))
 		expect(keys({}).size).toBeGreaterThan(1)
-		expect(keys({ tool: "bash" })).toEqual(new Set(["claude-sonnet-5", "claude-opus-5", "openai/gpt-5.6"]))
+		expect(keys({ tool: "bash" })).toEqual(
+			new Set(["claude-sonnet-5", "claude-opus-5", "openai/gpt-5.6"]),
+		)
 		// Both picked is one series, and the tool is what names it — the same rule
 		// `aiToolsSeriesKind` applies server-side.
 		expect(keys({ tool: "bash", model: "claude-opus-5" })).toEqual(new Set(["bash"]))

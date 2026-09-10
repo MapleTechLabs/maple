@@ -2,8 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { BarSpark, StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
-import { SPARK_COLOR } from "@/components/infra/severity-tokens"
+import { BarSpark } from "@/components/infra/primitives/stat-rail"
 import {
 	TOOL_PERCENTILES,
 	formatToolMetric,
@@ -17,8 +16,8 @@ import {
 	type ToolTotals,
 } from "@/lib/agent-sessions/tool-analytics"
 
-/** The rail's own spark budget, mirrored for the duration tile's full-width one. */
-const SPARK_WINDOW = 28
+/** Bars per spark; the last N buckets of the window. */
+const SPARK_WINDOW = 24
 
 interface ToolMetricStripProps {
 	totals: ToolTotals
@@ -30,21 +29,31 @@ interface ToolMetricStripProps {
 	onSelectMetric: (metric: ToolMetric) => void
 	/** Picking a percentile column also takes the chart — see `DurationTile`. */
 	onSelectPercentile: (percentile: ToolPercentile) => void
-	/** Names the comparison in the duration tile's header, e.g. "7d". */
+	/** Names the comparison, e.g. "24h". */
 	windowLabel: string
 }
+
+/**
+ * The active-tile marker: a 2px lane reserved on every tile, painted only on
+ * the selected one, so the contents never shift sideways as the selection
+ * moves. The same mark the picked table rows use — it is the same gesture.
+ */
+const TILE =
+	"relative flex min-w-0 flex-1 flex-col gap-[7px] border-l border-border py-4 pl-[22px] pr-5 text-left transition-colors first:border-l-0 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors focus-visible:outline-none"
+const TILE_SELECTED = "bg-primary/10 before:bg-primary"
+const TILE_IDLE = "before:bg-transparent hover:bg-muted/25"
+
+const EYEBROW = "font-mono text-[10.5px] uppercase leading-5 tracking-[0.09em] transition-colors"
 
 /**
  * Four tiles that are also the chart's selector: whichever one is lit is what
  * the line below it plots.
  *
- * Three of them are plain `StatRailItem`s — the same readout the infrastructure
- * pages use, with the selection support that page already added. The fourth is
- * not, and could not be: a duration has three readings, and the question
- * "is the tail getting worse while the median holds?" is the one this page is
- * most often opened for. Collapsing that to a single percentile behind a
- * dropdown would hide the comparison; three tiles would spend three quarters of
- * the strip on one metric. So the tile carries all three side by side, each
+ * The fourth is wider than the others: a duration has three readings, and the
+ * question "is the tail getting worse while the median holds?" is the one this
+ * page is most often opened for. Collapsing that to a single percentile behind
+ * a dropdown would hide the comparison; three tiles would spend three quarters
+ * of the strip on one metric. So the tile carries all three side by side, each
  * clickable, each with its own delta, and one shared "vs prev" in the header
  * because a single comparison window governs all three.
  */
@@ -58,27 +67,44 @@ export function ToolMetricStrip({
 	onSelectPercentile,
 	windowLabel,
 }: ToolMetricStripProps) {
-	const tile = (key: Exclude<ToolMetric, "duration">, eyebrow: string, delay: number) => {
+	const tile = (key: Exclude<ToolMetric, "duration">, eyebrow: string) => {
+		const selected = metric === key
 		const delta = metricDelta(totals, previous, key, percentile)
+		const spark = metricSpark(series, key, percentile).slice(-SPARK_WINDOW)
 		return (
-			<StatRailItem
+			<button
 				key={key}
-				eyebrow={eyebrow}
-				value={formatToolMetric(metricValue(totals, key, percentile), key)}
-				spark={metricSpark(series, key, percentile)}
-				delta={delta === null ? undefined : <Delta delta={delta} riseIsBad={metricRiseIsBad(key)} />}
-				selected={metric === key}
-				onSelect={() => onSelectMetric(key)}
-				delay={delay}
-			/>
+				type="button"
+				aria-pressed={selected}
+				onClick={() => onSelectMetric(key)}
+				className={cn(TILE, selected ? TILE_SELECTED : TILE_IDLE)}
+			>
+				<span className={cn(EYEBROW, selected ? "text-primary" : "text-muted-foreground/80")}>
+					{eyebrow}
+				</span>
+				<span className="flex items-end justify-between gap-3">
+					<Value selected={selected}>
+						{formatToolMetric(metricValue(totals, key, percentile), key)}
+					</Value>
+					<Spark values={spark} />
+				</span>
+				<span className="flex h-3.5 items-center gap-[5px] font-mono text-[11.5px] tabular-nums">
+					{delta === null ? null : (
+						<>
+							<Delta delta={delta} riseIsBad={metricRiseIsBad(key)} />
+							<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
+						</>
+					)}
+				</span>
+			</button>
 		)
 	}
 
 	return (
-		<StatRail>
-			{tile("calls", "Tool calls", 0)}
-			{tile("sessions", "Sessions", 60)}
-			{tile("error_rate", "Error rate", 120)}
+		<div className="flex flex-wrap border-b border-border @max-[900px]/page:flex-col">
+			{tile("calls", "Tool calls")}
+			{tile("sessions", "Sessions")}
+			{tile("error_rate", "Error rate")}
 			<DurationTile
 				totals={totals}
 				previous={previous}
@@ -89,22 +115,42 @@ export function ToolMetricStrip({
 				onSelectPercentile={onSelectPercentile}
 				windowLabel={windowLabel}
 			/>
-		</StatRail>
+		</div>
+	)
+}
+
+function Value({ selected, children }: { selected: boolean; children: React.ReactNode }) {
+	return (
+		<span
+			className={cn(
+				"shrink-0 whitespace-nowrap text-[26px] font-semibold leading-7 tracking-[-0.02em] tabular-nums",
+				selected ? "text-foreground" : "text-foreground/75",
+			)}
+		>
+			{children}
+		</span>
+	)
+}
+
+/** Every spark is drawn in the primary: the tiles are one instrument, not four readouts. */
+function Spark({ values }: { values: ReadonlyArray<number> }) {
+	return values.length > 1 ? (
+		<BarSpark values={values} color="var(--primary)" className="h-7 w-24 min-w-0 shrink" />
+	) : (
+		<span className="h-7 w-24 min-w-0 shrink" />
 	)
 }
 
 /**
- * P50 | P90 | P95, at one size, with the driving percentile marked by a
- * full-strength label over a hairline rule rather than by being bigger or
- * louder. Size would say "this number matters more", and it does not — it is
- * the one the rest of the page is currently keyed to, which is a smaller claim
- * and deserves a smaller mark.
+ * Duration, folded to the driving percentile until it is asked about.
  *
- * The shell reproduces `StatRailItem`'s selectable chrome (the reserved 2px
- * lane, the `bg-muted/40` when lit) because the tile has to sit in the same rail
- * and read as one of four. It is not a `StatRailItem` because that component
- * takes one value, and pushing a three-column layout into it would have made
- * every other rail in the app pay for this page's shape.
+ * Collapsed it is one tile among four: the P90 (or whichever is driving), a
+ * spark and a delta, at the size and weight the other three use. Clicking it
+ * takes the chart AND opens the three readings — P50 | P90 | P95 side by side,
+ * each with its own delta, each a click to re-key the page — because "is the
+ * tail getting worse while the median holds?" is the question this page is
+ * most often opened for, and it is only worth the width while it is being
+ * asked. The tile widens as it opens; that is the reveal, not a shift.
  */
 function DurationTile({
 	totals,
@@ -126,76 +172,107 @@ function DurationTile({
 	windowLabel: string
 }) {
 	const spark = metricSpark(series, "duration", percentile).slice(-SPARK_WINDOW)
+	const eyebrow = (
+		<span className="flex items-baseline gap-2">
+			<span className={cn(EYEBROW, selected ? "text-primary" : "text-muted-foreground/80")}>
+				Duration
+			</span>
+			{/* Which reading the number is, while it is the only one shown. */}
+			{selected ? null : (
+				<span className="font-mono text-[10.5px] uppercase tracking-[0.04em] text-muted-foreground/60">
+					{percentile}
+				</span>
+			)}
+		</span>
+	)
+
+	if (!selected) {
+		const delta = metricDelta(totals, previous, "duration", percentile)
+		return (
+			<button
+				type="button"
+				aria-pressed={false}
+				onClick={() => onSelectMetric("duration")}
+				className={cn(TILE, TILE_IDLE)}
+			>
+				{eyebrow}
+				<span className="flex items-end justify-between gap-3">
+					<Value selected={false}>{formatToolMetric(totals[percentile], "duration")}</Value>
+					<Spark values={spark} />
+				</span>
+				<span className="flex h-3.5 items-center gap-[5px] font-mono text-[11.5px] tabular-nums">
+					{delta === null ? null : (
+						<>
+							<Delta delta={delta} riseIsBad />
+							<span className="text-muted-foreground/60">vs prev {windowLabel}</span>
+						</>
+					)}
+				</span>
+			</button>
+		)
+	}
 
 	return (
-		<div
-			className={cn(
-				"relative px-5 py-4 animate-in fade-in slide-in-from-bottom-1 duration-500",
-				"before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors",
-				selected ? "bg-muted/40 before:bg-primary" : "before:bg-transparent",
-			)}
-			style={{ animationDelay: "180ms", animationFillMode: "backwards" }}
-		>
-			<div className="flex items-baseline justify-between gap-3">
-				<span
-					className={cn(
-						"truncate text-[11px] font-medium transition-colors",
-						selected ? "text-primary" : "text-muted-foreground",
-					)}
-				>
-					Duration
-				</span>
+		<div className={cn(TILE, TILE_SELECTED, "grow-[1.85] pr-6")}>
+			<span className="flex h-5 items-center gap-2">
+				{eyebrow}
 				{/* One comparison for all three columns, stated once. */}
-				<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+				<span className="font-mono text-[10.5px] leading-3.5 tracking-[0.02em] text-muted-foreground/50">
 					vs prev {windowLabel}
 				</span>
-			</div>
+			</span>
 
-			<div className="mt-2 grid grid-cols-3 gap-1">
-				{TOOL_PERCENTILES.map((candidate) => {
-					const driving = candidate === percentile
-					const delta = metricDelta(totals, previous, "duration", candidate)
-					return (
-						<button
-							key={candidate}
-							type="button"
-							aria-pressed={selected && driving}
-							onClick={() => {
-								onSelectPercentile(candidate)
-								onSelectMetric("duration")
-							}}
-							className="group min-w-0 text-left focus-visible:outline-none"
-						>
-							<span
-								className={cn(
-									"inline-block border-b pb-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors",
-									driving
-										? "border-border text-foreground"
-										: "border-transparent text-muted-foreground/70 group-hover:text-muted-foreground",
-								)}
+			<span className="flex items-start gap-5">
+				<span className="flex min-w-0 grow">
+					{TOOL_PERCENTILES.map((candidate) => {
+						const driving = candidate === percentile
+						const delta = metricDelta(totals, previous, "duration", candidate)
+						return (
+							<button
+								key={candidate}
+								type="button"
+								aria-pressed={driving}
+								onClick={() => onSelectPercentile(candidate)}
+								className="group flex min-w-0 flex-1 flex-col items-start gap-[7px] text-left focus-visible:outline-none"
 							>
-								{candidate}
-							</span>
-							{/* One size for all three: which one is driving is said by the
-							    label, not by the number's weight. */}
-							<div className="mt-1 whitespace-nowrap font-mono text-[17px] font-semibold tabular-nums leading-none tracking-[-0.02em] text-foreground">
-								{formatToolMetric(totals[candidate], "duration")}
-							</div>
-							<div className="mt-1 h-3 font-mono text-[10px] tabular-nums text-muted-foreground/80">
-								{delta === null ? null : <Delta delta={delta} riseIsBad bare />}
-							</div>
-						</button>
-					)
-				})}
-			</div>
-
-			{/* One spark, for the percentile actually driving the page. Three would
-			    be three unreadable 5px-tall charts. */}
-			<div className="mt-2 h-7">
-				{spark.length > 1 ? (
-					<BarSpark values={spark} color={SPARK_COLOR.neutral} className="h-7 w-full" />
-				) : null}
-			</div>
+								<span
+									className={cn(
+										"flex items-baseline gap-1.5 border-b pt-1.5 pb-px transition-colors",
+										driving ? "border-border" : "border-transparent",
+									)}
+								>
+									<span
+										className={cn(
+											"font-mono text-[10.5px] uppercase leading-3.5 tracking-[0.04em] transition-colors",
+											driving
+												? "text-muted-foreground"
+												: "text-muted-foreground/60 group-hover:text-muted-foreground",
+										)}
+									>
+										{candidate}
+									</span>
+									{/* One size for all three: which one is driving is said by the
+									    label, not by the number's weight. */}
+									<span
+										className={cn(
+											"whitespace-nowrap text-[19px] font-semibold leading-5 tracking-[-0.015em] tabular-nums",
+											driving ? "text-foreground" : "text-foreground/75",
+										)}
+									>
+										{formatToolMetric(totals[candidate], "duration")}
+									</span>
+								</span>
+								<span className="flex h-3.5 items-center font-mono text-[11.5px] tabular-nums">
+									{delta === null ? null : <Delta delta={delta} riseIsBad />}
+								</span>
+							</button>
+						)
+					})}
+				</span>
+				{/* One spark, for the percentile actually driving the page. Three would
+				    be three unreadable 5px-tall charts. */}
+				<Spark values={spark} />
+			</span>
 		</div>
 	)
 }
@@ -208,7 +285,7 @@ function DurationTile({
  * never the only thing carrying the meaning. Same rule and same tokens as the
  * web analytics strip.
  */
-function Delta({ delta, riseIsBad, bare }: { delta: number; riseIsBad: boolean; bare?: boolean }) {
+function Delta({ delta, riseIsBad }: { delta: number; riseIsBad: boolean }) {
 	const rose = delta > 0
 	const flat = Math.abs(delta) < 0.001
 	const good = riseIsBad ? !rose : rose
@@ -216,7 +293,7 @@ function Delta({ delta, riseIsBad, bare }: { delta: number; riseIsBad: boolean; 
 	return (
 		<span
 			className={cn(
-				!bare && "font-mono text-[10px] tabular-nums",
+				"inline-flex items-center gap-[5px]",
 				flat
 					? "text-muted-foreground/70"
 					: good
@@ -233,17 +310,17 @@ function Delta({ delta, riseIsBad, bare }: { delta: number; riseIsBad: boolean; 
 
 export function ToolMetricStripLoading() {
 	return (
-		<StatRail>
+		<div className="flex border-b border-border">
 			{Array.from({ length: 4 }).map((_, index) => (
-				<div key={index} className="px-5 py-4">
+				<div key={index} className={TILE}>
 					<Skeleton className="h-3 w-16" />
-					<div className="mt-3 flex items-end justify-between gap-3">
+					<div className="flex items-end justify-between gap-3">
 						<Skeleton className="h-7 w-20" />
 						<Skeleton className="h-7 w-24" />
 					</div>
-					<Skeleton className="mt-3 h-3 w-28" />
+					<Skeleton className="h-3 w-28" />
 				</div>
 			))}
-		</StatRail>
+		</div>
 	)
 }

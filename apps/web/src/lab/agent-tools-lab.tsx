@@ -40,10 +40,7 @@ export function AgentToolsLab() {
 	const [search, setSearch] = useState<ToolAnalyticsSearch>({})
 	const [width, setWidth] = useState<number | null>(null)
 
-	const data = useMemo(
-		() => buildToolAnalyticsFixture(search, nowMs, cells),
-		[search, nowMs, cells],
-	)
+	const data = useMemo(() => buildToolAnalyticsFixture(search, nowMs, cells), [search, nowMs, cells])
 
 	return (
 		<div className="flex flex-col gap-4 p-6">
@@ -70,7 +67,7 @@ export function AgentToolsLab() {
 			{/* `@container/page` because the page's breakpoints are container queries
 			    against the layout's content column, which is not mounted here. */}
 			<div
-				className="@container/page min-w-0 rounded-lg border border-border p-4"
+				className="@container/page min-w-0 overflow-hidden rounded-lg border border-border"
 				style={width === null ? undefined : { width }}
 			>
 				<AgentToolsView
