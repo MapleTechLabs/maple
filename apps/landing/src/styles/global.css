@@ -1320,6 +1320,34 @@
 	@apply text-fg font-semibold;
 }
 
+/* Concept docs (Apdex, sampling) lean on a handful of terms whose meaning is
+   the whole page. A lede paragraph and colored inline terms keep the opening
+   from reading as one gray column; the colors match the bands the diagrams
+   draw, so "tolerating" is the same amber in prose as it is on the axis. */
+.docs-content p.lede {
+	@apply text-base text-fg leading-relaxed mb-5;
+}
+
+.docs-content .hl-t {
+	@apply font-mono font-medium;
+	color: var(--primary);
+}
+
+.docs-content .hl-ok {
+	@apply font-medium;
+	color: var(--success);
+}
+
+.docs-content .hl-warn {
+	@apply font-medium;
+	color: var(--warning);
+}
+
+.docs-content .hl-bad {
+	@apply font-medium;
+	color: var(--destructive);
+}
+
 /* Hover-revealed section permalinks, injected by DocsLayout. Inline after
    the heading text so nothing hangs past the column edge on phones. */
 .docs-content .heading-anchor {

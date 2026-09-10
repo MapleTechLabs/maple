@@ -5,33 +5,48 @@ group: "Alerting"
 order: 1
 ---
 
-A p95 latency alert tells you that 5% of requests were slower than some number. It does not tell you whether that was 5 requests or 50,000, and it says nothing about the requests that failed outright. Apdex answers a different question: of everything that hit this service in the last five minutes, what share of it was fast enough to keep a user happy?
+<p class="lede">A p95 latency alert tells you that 5% of requests were slower than some number. It does not tell you whether that was 5 requests or 50,000, and it says nothing about the requests that failed outright.</p>
+
+<p class="lede"><strong>Apdex answers a different question:</strong> of everything that hit this service in the last five minutes, what share of it was <span class="hl-ok">fast enough to keep a user happy</span>?</p>
+
+<div class="my-7 grid gap-3 sm:grid-cols-2 not-prose">
+  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 45%, transparent)">
+    <div class="text-[10px] uppercase tracking-wider" style="color: var(--muted-foreground)">A p95 alert says</div>
+    <div class="mt-2 text-sm text-fg">“The slow 5% crossed 1 second.”</div>
+    <div class="mt-2 text-xs text-fg-muted">Shape of the tail. Silent when requests fail fast.</div>
+  </div>
+  <div class="rounded-lg border p-4" style="border-color: color-mix(in oklab, var(--primary) 45%, var(--border)); background: color-mix(in oklab, var(--primary) 8%, transparent)">
+    <div class="text-[10px] uppercase tracking-wider" style="color: var(--primary)">An Apdex alert says</div>
+    <div class="mt-2 text-sm text-fg">“One request in five was slow or broken.”</div>
+    <div class="mt-2 text-xs text-fg-muted">Size of the tail, counting failures as unhappy users.</div>
+  </div>
+</div>
 
 This page covers what the score actually is, how to choose the one input that decides everything about it, and how to turn it into an alert rule in Maple.
 
 <div class="my-6 grid gap-3 sm:grid-cols-3 not-prose">
   <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
     <div class="text-[10px] uppercase tracking-wider text-fg-muted">The score</div>
-    <div class="mt-1.5 font-mono text-sm text-fg">(A + 0.5B) / C</div>
+    <div class="mt-1.5 font-mono text-sm" style="color: var(--primary)">(A + 0.5B) / C</div>
     <div class="mt-1 text-xs text-fg-muted">Satisfied, half-credit tolerating, over total.</div>
   </div>
   <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
     <div class="text-[10px] uppercase tracking-wider text-fg-muted">Maple's default T</div>
-    <div class="mt-1.5 font-mono text-sm text-fg">500ms</div>
+    <div class="mt-1.5 font-mono text-sm" style="color: var(--primary)">500ms</div>
     <div class="mt-1 text-xs text-fg-muted">Frustrated follows automatically at 4T, so 2s.</div>
   </div>
   <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
     <div class="text-[10px] uppercase tracking-wider text-fg-muted">Usual alert line</div>
-    <div class="mt-1.5 font-mono text-sm text-fg">&lt; 0.80 for 5 min</div>
+    <div class="mt-1.5 font-mono text-sm" style="color: var(--destructive)">&lt; 0.80 for 5 min</div>
     <div class="mt-1 text-xs text-fg-muted">The <strong>Low Apdex score</strong> template in Maple.</div>
   </div>
 </div>
 
 ## What is the Apdex score?
 
-Apdex (Application Performance Index) is an industry-standard measure of user satisfaction derived from response times. It compresses a latency distribution into a single number between 0 and 1, where 1 means every request was fast and 0 means none of them were.
+<p class="lede">Apdex (Application Performance Index) is an industry-standard measure of user satisfaction derived from response times. It compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>, where <span class="hl-ok">1</span> means every request was fast and <span class="hl-bad">0</span> means none of them were.</p>
 
-You pick one input, a target response time called **T**. Every request in the window then lands in one of three buckets, and the bucket decides how much credit that request earns:
+You pick one input, a target response time called <span class="hl-t">T</span>. Every request in the window then lands in one of three buckets, <span class="hl-ok">satisfied</span>, <span class="hl-warn">tolerating</span> or <span class="hl-bad">frustrated</span>, and that bucket decides how much credit that request earns:
 
 <div class="my-6 not-prose">
   <svg viewBox="0 0 900 108" class="w-full h-auto" role="img" aria-label="A latency axis split into three bands: satisfied below T, tolerating between T and 4T, frustrated beyond 4T.">
@@ -103,7 +118,7 @@ Note where the 200 slow-or-failed requests went. Failures score zero no matter h
 
 ## Choosing T, the only number that matters
 
-T is the whole rule. It sets the satisfied boundary directly and the frustrated boundary implicitly, since the tolerating band always ends at 4T. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s.
+<span class="hl-t">T</span> is the whole rule. It sets the <span class="hl-ok">satisfied</span> boundary directly and the <span class="hl-bad">frustrated</span> boundary implicitly, since the <span class="hl-warn">tolerating</span> band always ends at <span class="hl-t">4T</span>. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s.
 
 Pick T as the latency at which your users stop perceiving the response as immediate, per class of traffic:
 
