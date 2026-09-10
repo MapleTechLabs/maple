@@ -10,7 +10,12 @@
  * the validator ran.
  */
 import { makeChatSessionId } from "@maple/domain/chat-session"
-import type { AiTriageResult, InvestigationSubject, InvestigationSubjectSnapshot, LensCandidate } from "@maple/domain/http"
+import type {
+	AiTriageResult,
+	InvestigationSubject,
+	InvestigationSubjectSnapshot,
+	LensCandidate,
+} from "@maple/domain/http"
 import type { ResolvedModel } from "@/platform/Llm"
 import { Effect, Option } from "effect"
 import { hypothesisAgent } from "@/chat/agents"

@@ -9,7 +9,11 @@
  * economised on.
  */
 import { makeChatSessionId } from "@maple/domain/chat-session"
-import type { InvestigationPlan, InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
+import type {
+	InvestigationPlan,
+	InvestigationSubject,
+	InvestigationSubjectSnapshot,
+} from "@maple/domain/http"
 import type { ResolvedModel } from "@/platform/Llm"
 import { Effect, Option } from "effect"
 import { plannerAgent } from "@/chat/agents"

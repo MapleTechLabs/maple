@@ -1,8 +1,8 @@
 /**
  * Running one chat turn, inside the `ChatSession` Durable Object.
  *
- * This module is the heavy half of the DO: the Effect runtime, the app service graph and
- * `@opencode-ai/ai`. `ChatSession.ts` reaches it through a dynamic import for the same reason
+ * This module is the heavy half of the DO: the Effect runtime, the app service graph and the agent
+ * engine. `ChatSession.ts` reaches it through a dynamic import for the same reason
  * `worker.ts` dynamic-imports its route graph — the static graph builds hundreds of Schema ASTs at
  * module scope, which would blow Cloudflare's ~1s startup-CPU budget (error 10021) on a class that
  * is exported from the worker entry.

@@ -8,13 +8,7 @@
 import { ChatMode, makeChatSessionId } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
 import { assert, describe, it } from "vitest"
-import {
-	AGENTS,
-	agentForSession,
-	buildSystemPrompt,
-	delegationToolName,
-	spawnableFor,
-} from "./agents"
+import { AGENTS, agentForSession, buildSystemPrompt, delegationToolName, spawnableFor } from "./agents"
 import { mapleToolCatalog } from "@/mcp/tools/registry"
 
 const subagents = Object.values(AGENTS).filter((agent) => agent.mode === "subagent")

@@ -155,9 +155,7 @@ describe("a delegating turn", () => {
 		assert.equal(declared?.name, delegationToolName("explore"), "the delegation was never called")
 
 		// The child's run is reported on its own card, keyed by the delegation call.
-		const childStart = events.find(
-			(event) => event.type === "turn-start" && event.task !== undefined,
-		)
+		const childStart = events.find((event) => event.type === "turn-start" && event.task !== undefined)
 		assert.equal(childStart?.task?.agent, "explore")
 		assert.equal(childStart?.task?.id, declared?.callId)
 

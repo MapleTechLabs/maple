@@ -62,7 +62,6 @@ const captureRequest = (
 		const model = resolve(env, tags)
 
 		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),

@@ -16,7 +16,6 @@ import { Effect, Layer, Redacted, Schema } from "effect"
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as AiModel from "effect/unstable/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { layerResponseIdentity } from "./ResponseIdentityHttpClient"
 import { layerWorkersAi } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
@@ -201,7 +200,13 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 			}),
 })
 
-const openRouterModel = (env: LlmEnv, name: string, effortKey: keyof LlmEnv, fallbackEffort: ReasoningEffort | undefined, tags: LlmCallTags | undefined): ResolvedModel => ({
+const openRouterModel = (
+	env: LlmEnv,
+	name: string,
+	effortKey: keyof LlmEnv,
+	fallbackEffort: ReasoningEffort | undefined,
+	tags: LlmCallTags | undefined,
+): ResolvedModel => ({
 	provider: "openrouter",
 	name,
 	layer: OpenRouterLanguageModel.model(
@@ -309,13 +314,9 @@ const spliceUsageAccounting = (
  */
 export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 	const accountId = readString(env, "CLOUDFLARE_ACCOUNT_ID") ?? BINDING_PLACEHOLDER
-	// Response identity wraps the binding shim, which wraps `fetch` — so a model call that goes out
-	// over `fetch` stamps its span with the served response's id and model, and one the shim answers
-	// from the `AI` binding never reaches `fetch` and is not stamped.
-	const http = layerResponseIdentity.pipe(
-		Layer.provide(layerWorkersAi(env)),
-		Layer.provide(FetchHttpClient.layer),
-	)
+	// The binding shim wraps `fetch`: a Workers AI call the shim answers from the `AI` binding never
+	// reaches it, and everything else goes out over the network as usual.
+	const http = layerWorkersAi(env).pipe(Layer.provide(FetchHttpClient.layer))
 	return Layer.mergeAll(
 		OpenRouterClient.layer({
 			apiKey: Redacted.make(readString(env, "OPENROUTER_API_KEY") ?? ""),

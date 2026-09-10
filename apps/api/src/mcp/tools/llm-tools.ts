@@ -88,6 +88,34 @@ export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 
 const fail = (message: string) => Effect.fail(new MapleToolFailure({ message }))
 
+/**
+ * How many times one build may dispatch the identical call before refusing it.
+ *
+ * The doom-loop guard, and the one ceiling here that is not about volume. Every other bound says
+ * how much a productive run may consume; this one says how long an unproductive one may look
+ * productive. A model that reissues a call with byte-identical arguments is not reading the result
+ * it already has, and left alone it will spend every turn it owns doing that.
+ *
+ * It refuses rather than denying authorization, because the two end differently: a refusal is a
+ * declared tool failure the model can read and route around, and a third consecutive one trips the
+ * policy's own `repeatedFailureLimit`, which stops the run. A host authorization denial ends the
+ * run outright, and a user watching a chat turn would see an error instead of an answer.
+ */
+const IDENTICAL_CALL_LIMIT = 3
+
+/**
+ * How many times this exact call has been dispatched, counting the one being asked about.
+ *
+ * Keyed on the encoded arguments, so a repeat with one field changed is a different call and does
+ * not count. The arguments came off the wire as JSON, so re-encoding them cannot fail.
+ */
+const repeats = (dispatched: Map<string, number>, name: string, params: unknown): number => {
+	const key = `${name}:${JSON.stringify(params)}`
+	const seen = (dispatched.get(key) ?? 0) + 1
+	dispatched.set(key, seen)
+	return seen
+}
+
 /** The registry entries this build exposes, after the caller's `include` filter. */
 const exposed = (options: BuildMapleToolsOptions) =>
 	mapleToolCatalog.filter((definition) => options.include?.(definition.name) ?? true)
@@ -115,24 +143,35 @@ export const buildMapleToolkit = (
 		})
 	})
 	const toolkit = Toolkit.make(...tools)
+	// Per build, which is per run: two turns of one conversation are two builds, so a model may ask
+	// the same question again in a later turn. Repeating it inside one turn is the loop.
+	const dispatched = new Map<string, number>()
 	const handlers = Object.fromEntries(
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
+			const dispatch = (params: unknown) =>
+				executor.execute(tenant, definition.name, params, options.surface ?? "chat").pipe(
+					Effect.flatMap((result) =>
+						result.isError
+							? fail(toolResultText(result))
+							: Effect.succeed(toolResultText(result)),
+					),
+					// A tool that fails outright (unknown tool, tenant error) must not kill the run —
+					// hand the model the message and let it route around.
+					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
+				)
 			return [
 				definition.name,
-				(params: unknown) =>
-					gated
-						? fail(`${definition.name} requires user approval and was not executed.`)
-						: executor
-								.execute(tenant, definition.name, params, options.surface ?? "chat")
-								.pipe(
-									Effect.flatMap((result) =>
-										result.isError ? fail(toolResultText(result)) : Effect.succeed(toolResultText(result)),
-									),
-									// A tool that fails outright (unknown tool, tenant error) must not kill the
-									// run — hand the model the message and let it route around.
-									Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
-								),
+				(params: unknown) => {
+					if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
+					if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
+						return fail(
+							`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
+								"exact arguments in this turn. Read the result you already have, or call it differently.",
+						)
+					}
+					return dispatch(params)
+				},
 			]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.

@@ -2,7 +2,7 @@
  * `HttpClient` shim that routes Cloudflare Workers AI traffic through the Worker's `AI` binding
  * instead of the public REST endpoint.
  *
- * `@opencode-ai/ai`'s `CloudflareWorkersAI` provider posts an OpenAI-compatible chat body to
+ * `@effect/ai-openai-compat` posts an OpenAI-compatible chat body to
  * `https://api.cloudflare.com/client/v4/accounts/{id}/ai/v1/chat/completions` with an API token.
  * That is a *different billing and rate-limit path* from `env.AI.run(...)`, which is keyless and
  * draws on the account's included neuron allocation — the path Maple's chat and triage run on.

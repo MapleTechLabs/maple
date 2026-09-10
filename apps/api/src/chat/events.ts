@@ -59,11 +59,14 @@ const childTask = (
 const childEvent = (
 	event: { readonly toolCallId: string; readonly targetAgentId: string },
 	context: AdapterContext,
-	body: { readonly type: "turn-start" } | { readonly type: "text-delta"; readonly text: string } | {
-		readonly type: "turn-end"
-		readonly reason: "stop" | "error" | "aborted" | "max-steps"
-		readonly error?: string
-	},
+	body:
+		| { readonly type: "turn-start" }
+		| { readonly type: "text-delta"; readonly text: string }
+		| {
+				readonly type: "turn-end"
+				readonly reason: "stop" | "error" | "aborted" | "max-steps"
+				readonly error?: string
+		  },
 ): ReadonlyArray<ChatTurnEvent> => [
 	{ ...body, messageId: event.toolCallId, task: childTask(event, context) } as ChatTurnEvent,
 ]
@@ -95,9 +98,7 @@ export const toChatEvents = (
 		case "RunStarted":
 			return [tagged(context, { type: "turn-start", messageId: context.messageId })]
 		case "TextDelta":
-			return [
-				tagged(context, { type: "text-delta", messageId: context.messageId, text: event.text }),
-			]
+			return [tagged(context, { type: "text-delta", messageId: context.messageId, text: event.text })]
 		case "ToolCallDeclared":
 			return [
 				tagged(context, {

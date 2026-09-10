@@ -84,8 +84,7 @@ const MAX_REPLAYED_MESSAGES = 40
 const MAX_REPLAYED_CHARS = 60_000
 
 /** How the summary is introduced to the model. */
-const COMPACTION_PREAMBLE =
-	"Summary of the earlier part of this conversation, which has been condensed:\n\n"
+const COMPACTION_PREAMBLE = "Summary of the earlier part of this conversation, which has been condensed:\n\n"
 
 export interface ChatRunInput {
 	readonly sessionId: string
@@ -184,6 +183,5 @@ export const runChatTurn = (input: ChatRunInput) => {
 		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layerTransient, IdGenerator.layer)),
 	)
 }
-
 
 const decodeThreadId = Schema.decodeSync(ThreadId)

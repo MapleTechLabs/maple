@@ -19,7 +19,13 @@ import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session
 import { PermissionRule } from "@maple/domain/permission"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
-import { MAX_STEPS, REPEATED_TOOL_CALLS, SUBAGENT_MAX_STEPS, TOOL_CONCURRENCY, TURN_MAX_DURATION } from "./budgets"
+import {
+	MAX_STEPS,
+	REPEATED_TOOL_CALLS,
+	SUBAGENT_MAX_STEPS,
+	TOOL_CONCURRENCY,
+	TURN_MAX_DURATION,
+} from "./budgets"
 import { buildHypothesisSystemPrompt, hypothesisRuleset } from "@/workflows/hypothesis-catalogue"
 import { PLANNER_MAX_STEPS, PLANNER_SYSTEM_PROMPT, PLANNER_TOOL_NAMES } from "@/workflows/planner-prompt"
 import type { PermissionRuleset } from "@maple/domain/permission"
@@ -241,7 +247,6 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => {
 	return spawnable.length === 0 ? agent.prompt : `${agent.prompt}\n\n${taskGuidance(spawnable)}`
 }
 
-
 /**
  * A Maple agent record as a finite policy.
  *
@@ -308,7 +313,8 @@ export const chatAgent = (
 						completion: {
 							tool: options.completion.tool,
 							required: options.completion.required,
-							project: ({ parameters }: { readonly parameters: unknown }) => JSON.stringify(parameters),
+							project: ({ parameters }: { readonly parameters: unknown }) =>
+								JSON.stringify(parameters),
 						},
 					}),
 		}),

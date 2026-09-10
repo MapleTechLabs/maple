@@ -77,9 +77,7 @@ export const buildDelegation = (
 	 * it serves is this one value, not a second code path.
 	 */
 	childModel: ResolvedModel = model,
-):
-	| { readonly toolkit: Toolkit.Any; readonly layer: DelegationLayer }
-	| undefined => {
+): { readonly toolkit: Toolkit.Any; readonly layer: DelegationLayer } | undefined => {
 	const spawnable = spawnableFor(agent)
 	if (spawnable.length === 0) return undefined
 
@@ -133,9 +131,6 @@ export const buildDelegation = (
 		toolkit: Toolkit.merge(...built.map((entry) => Toolkit.make(entry.tool))),
 		// One reservation ledger for the whole turn, provided here rather than by the caller: it is
 		// what stops two delegation tools in one run each thinking they own the parent's budget.
-		layer: merged.pipe(
-			Layer.provide(SubagentReservationsMemoryLive),
-			Layer.provide(IdGenerator.layer),
-		),
+		layer: merged.pipe(Layer.provide(SubagentReservationsMemoryLive), Layer.provide(IdGenerator.layer)),
 	}
 }

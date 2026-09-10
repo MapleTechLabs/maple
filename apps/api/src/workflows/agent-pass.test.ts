@@ -16,7 +16,11 @@ import { assert } from "vitest"
 import { Effect, Layer, Option, Schema } from "effect"
 import { Model, Tool, Toolkit } from "effect/unstable/ai"
 import { MapleToolFailure } from "@/mcp/tools/llm-tools"
-import { ScriptedModel, type ScriptedStreamPart, type ScriptedTurnInput } from "@effect-agent/testing/ScriptedModel"
+import {
+	ScriptedModel,
+	type ScriptedStreamPart,
+	type ScriptedTurnInput,
+} from "@effect-agent/testing/ScriptedModel"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import { PermissionRule } from "@maple/domain/permission"
 import { OrgId, UserId } from "@maple/domain"
