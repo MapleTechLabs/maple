@@ -109,6 +109,25 @@ describe("useSessionSpans", () => {
 		expect(result.current.spans.map((span) => span.spanId)).toEqual(["agent-1", "llm-1", "http-1", "http-2"])
 	})
 
+	it("reads a turn of more traces than one request names by its bounds alone", async () => {
+		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
+		fetchPage.mockResolvedValueOnce({ data: [], nextCursor: undefined })
+		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
+		const wide = {
+			...buildSessionTurns(firstPageSpans)[0]!,
+			traceIds: Array.from({ length: 101 }, (_, i) => i.toString(16).padStart(32, "0")),
+		}
+
+		act(() => result.current.appSpans.load(wide))
+		await waitFor(() => expect(result.current.appSpans.of(wide)?.complete).toBe(true))
+
+		const call = fetchPage.mock.calls[0]![0]
+		expect(call).toMatchObject({ sessionId: "s1", scope: "app", limit: 2000 })
+		expect(call).not.toHaveProperty("traceIds")
+		expect(call.startTime).toBe("2026-08-19 09:59:00")
+		expect(call.endTime).toBe("2026-08-19 10:01:30")
+	})
+
 	it("keeps a turn loadable when a page of its app spans failed", async () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
 		fetchPage.mockRejectedValueOnce(new Error("boom"))

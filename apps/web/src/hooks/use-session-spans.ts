@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import type { AiSessionSpan, AiSessionSpanCursor } from "@maple/domain/http"
+import { AI_SESSION_SPANS_MAX_TRACE_IDS, type AiSessionSpan, type AiSessionSpanCursor } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 
 import {
@@ -199,7 +199,10 @@ export function useSessionSpans(
 					sessionId,
 					startTime: formatWarehouseDateTime(turn.startMs - APP_SPANS_PADDING_MS),
 					endTime: formatWarehouseDateTime(turn.endMs + APP_SPANS_PADDING_MS),
-					traceIds: turn.traceIds,
+					// A turn of more traces than one read names — every model call
+					// its own trace, say — is read the way the session is, by its
+					// bounds: the same spans, one session resolution more.
+					...(turn.traceIds.length <= AI_SESSION_SPANS_MAX_TRACE_IDS && { traceIds: turn.traceIds }),
 					scope: "app",
 					limit: PAGE_SIZE,
 					...(state.cursor !== undefined && { after: state.cursor }),
