@@ -100,7 +100,22 @@ export interface SessionModelUsage {
 	readonly cost: number | undefined
 }
 
-/** One tool, and how many times the session called it. */
+/** One call of a tool: when it ran, what it cost, and how to open it. */
+export interface SessionToolCall {
+	readonly spanId: string
+	readonly startMs: number
+	readonly durationMs: number
+	readonly failed: boolean
+	/** The instrumentation's own word for what went wrong, on a failed call. */
+	readonly errorLabel: string | undefined
+	/** The failure's message — the status message, or the recorded result for a
+	 *  framework that reports a failed call as a value on an `Ok` span. */
+	readonly errorDetail: string | undefined
+	/** The `Turn n` the call ran in, or nothing for a call outside every turn. */
+	readonly turnIndex: number | undefined
+}
+
+/** One tool, and every call the session made to it. */
 export interface SessionToolUsage {
 	readonly name: string
 	readonly calls: number
@@ -108,6 +123,12 @@ export interface SessionToolUsage {
 	readonly failed: number
 	/** `gen_ai.tool.description`, from the first span that stamped one. */
 	readonly description: string | undefined
+	/** What the tool's own calls cost, summed — overlapping calls are counted
+	 *  once each, so this is agent time rather than wall clock. */
+	readonly totalMs: number
+	readonly slowestMs: number
+	/** Every call, in start order. */
+	readonly events: readonly SessionToolCall[]
 }
 
 /** How a failure is named on the page — the bucket it counts in, and the label
@@ -175,7 +196,7 @@ export interface SessionSummary {
 	/** The same failures those counts tally, grouped by what they say went wrong
 	 *  and ordered busiest first. */
 	readonly failureGroups: readonly SessionFailureGroup[]
-	/** Tools by call count, busiest first. */
+	/** Tools by how often they were called, busiest first. */
 	readonly tools: readonly SessionToolUsage[]
 	readonly spanCount: number
 	readonly traceCount: number
@@ -236,7 +257,7 @@ export function buildSessionSummary({
 		},
 		failures: countFailures(ordered),
 		failureGroups: groupFailures(failureEvents(ordered)),
-		tools: toolUsage(ordered),
+		tools: toolUsage(ordered, turns),
 		spanCount: ordered.length,
 		traceCount: new Set(ordered.map((span) => span.traceId)).size,
 	}
@@ -720,27 +741,123 @@ function modelUsage(
  * framework that skips the attribute still gets a histogram rather than
  * disappearing from a column whose total says 63.
  */
-function toolUsage(spans: readonly AiSessionSpan[]): readonly SessionToolUsage[] {
-	const calls = new Map<string, { count: number; failed: number; description: string | undefined }>()
+function toolUsage(
+	spans: readonly AiSessionSpan[],
+	turns: readonly SessionTurn[],
+): readonly SessionToolUsage[] {
+	const turnIndexBySpan = new Map<string, number>()
+	for (const turn of turns) {
+		for (const span of turn.spans) turnIndexBySpan.set(span.spanId, turn.index)
+	}
+
+	const byName = new Map<string, { description: string | undefined; events: SessionToolCall[] }>()
 	for (const span of spans) {
 		if (classifyAiSpan(span) !== "tool") continue
 		const name = span.genAi.toolName ?? span.spanName
-		const entry = calls.get(name) ?? { count: 0, failed: 0, description: undefined }
-		entry.count += 1
-		if (spanFailed(span)) entry.failed += 1
+		const entry = byName.get(name) ?? { description: undefined, events: [] }
 		// The first stamped description speaks for the tool: emitters send the
 		// same definition on every call, so later ones only repeat it.
 		entry.description ??= span.genAi.toolDescription
-		calls.set(name, entry)
+		const failed = spanFailed(span)
+		entry.events.push({
+			spanId: span.spanId,
+			startMs: spanStartMs(span),
+			durationMs: spanEndMs(span) - spanStartMs(span),
+			failed,
+			errorLabel: failed ? (span.genAi.errorType ?? "error") : undefined,
+			errorDetail: failed ? toolCallErrorDetail(span) : undefined,
+			turnIndex: turnIndexBySpan.get(span.spanId),
+		})
+		byName.set(name, entry)
 	}
-	return [...calls]
-		.map(([name, entry]) => ({
-			name,
-			calls: entry.count,
-			failed: entry.failed,
-			description: entry.description,
-		}))
-		.sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name))
+
+	return (
+		[...byName]
+			.map(([name, entry]) => ({
+				name,
+				calls: entry.events.length,
+				failed: entry.events.filter((event) => event.failed).length,
+				description: entry.description,
+				totalMs: entry.events.reduce((total, event) => total + event.durationMs, 0),
+				slowestMs: Math.max(...entry.events.map((event) => event.durationMs)),
+				events: entry.events,
+			}))
+			// Reach leads, time breaks the tie: what the agent kept going back to is
+			// the first thing a reader scans the ledger for.
+			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || a.name.localeCompare(b.name))
+	)
+}
+
+/**
+ * A failed call's message: the span's status message, and where the framework
+ * recorded the failure as a value on an `Ok` span, the recorded result itself.
+ */
+function toolCallErrorDetail(span: AiSessionSpan): string | undefined {
+	const message = span.statusMessage.trim()
+	if (message !== "" && message !== span.genAi.errorType) return clipDetail(message)
+	const result = span.genAi.toolCallResult
+	if (result === undefined) return undefined
+	const prose = firstProse(result)
+	// Clipped like the status-message path above it: a framework that records a
+	// whole stack trace as the tool's result would otherwise hand the ledger an
+	// unbounded line.
+	return prose === undefined ? undefined : clipDetail(prose)
+}
+
+export function clipDetail(text: string): string {
+	return text.length > 140 ? `${text.slice(0, 139)}…` : text
+}
+
+/**
+ * Keys an error payload's human message hides under, tried before anything
+ * else so a structured result yields its message rather than its first field.
+ * `result` and `prefix` are Maple's own `toolCallJson` wrappers — a bare error
+ * string is recorded as `{result}`, an over-budget one as `{truncated, prefix}`.
+ */
+const PROSE_KEYS = [
+	"error",
+	"message",
+	"error_message",
+	"errorMessage",
+	"reason",
+	"detail",
+	"result",
+	"prefix",
+	"text",
+]
+
+/**
+ * The first human-readable line inside a captured payload. Maple's own tool
+ * errors are plain strings; other vendors wrap the message in an object or an
+ * MCP-style content array, so this walks tolerantly and gives up rather than
+ * serialising structure into the row.
+ */
+export function firstProse(value: unknown, depth = 0): string | undefined {
+	if (depth > 4) return undefined
+	if (typeof value === "string") {
+		const line = value
+			.split("\n")
+			.map((raw) => raw.trim())
+			.find((raw) => raw.length > 0)
+		return line
+	}
+	if (Array.isArray(value)) {
+		for (const entry of value) {
+			const prose = firstProse(entry, depth + 1)
+			if (prose !== undefined) return prose
+		}
+		return undefined
+	}
+	if (typeof value !== "object" || value === null) return undefined
+	const record = value as Record<string, unknown>
+	for (const key of PROSE_KEYS) {
+		if (key in record) {
+			const prose = firstProse(record[key], depth + 1)
+			if (prose !== undefined) return prose
+		}
+	}
+	// `content` last and on its own: MCP results nest their text parts there.
+	return "content" in record ? firstProse(record.content, depth + 1) : undefined
 }
 
 /* -------------------------------------------------------------------------- */
