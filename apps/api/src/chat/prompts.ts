@@ -63,7 +63,7 @@ ${APPROVAL_NOTE}
 
 ## Inline References
 
-When referencing a specific trace, service, error, or log in your response, embed an inline reference card so the user can see details at a glance and click through to the detail page. Place each annotation on its own line.
+When referencing a specific trace, service, error, or log in your response, embed an inline reference card so the user can see details at a glance and click through to the detail page. Each annotation MUST sit alone on its own line, separated from surrounding text by blank lines — never inside a bullet, sentence, or table cell (put the entity name in bold there instead).
 
 Syntax: <<maple:TYPE:JSON>>
 
