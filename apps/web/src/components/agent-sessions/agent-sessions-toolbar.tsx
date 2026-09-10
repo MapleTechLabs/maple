@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { ToolbarSearch, ToolbarStat } from "@maple/ui/components/toolbar"
 import { StopwatchIcon } from "@maple/ui/components/icons"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -59,6 +60,8 @@ interface AgentSessionsToolbarProps {
 	sessionCount: number
 	/** Dim the controls while the list is refetching. */
 	waiting?: boolean
+	/** Trailing controls after the sort — the route's Reload button. */
+	actions?: ReactNode
 }
 
 /**
@@ -74,6 +77,7 @@ export function AgentSessionsToolbar({
 	onSortChange,
 	sessionCount,
 	waiting = false,
+	actions,
 }: AgentSessionsToolbarProps) {
 	const sortOption =
 		AGENT_SESSIONS_SORT_OPTIONS.find((option) => option.key === sortKey) ?? DEFAULT_SORT_OPTION
@@ -131,6 +135,8 @@ export function AgentSessionsToolbar({
 						))}
 					</SelectContent>
 				</Select>
+
+				{actions}
 			</div>
 		</div>
 	)
