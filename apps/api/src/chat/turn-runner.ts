@@ -254,6 +254,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 		// The session recorded the user's message before the run started, so the transcript's tail is
 		// this run's input rather than part of its history.
+		// Read once: it is a SQL scan plus a decode, and it is a read-only snapshot.
+		const compaction = input.session.compaction()
 		const spoken = history.filter((message) => message.text.trim() !== "")
 		const latest = spoken.at(-1)
 		const text = latest?.role === "user" ? latest.text : ""
@@ -268,9 +270,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			submitDiagnosis: investigations.submitDiagnosis,
 			text,
 			history: prior,
-			...(input.session.compaction() === undefined
-				? undefined
-				: { compaction: input.session.compaction()! }),
+			...(compaction === undefined ? undefined : { compaction }),
 			usage,
 			// An abort clears the claim; the run notices at the next event rather than streaming into
 			// a conversation that has moved on.

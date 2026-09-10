@@ -8,7 +8,6 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
-import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import { ThreadId } from "@effect-agent/core/Identifiers"
@@ -19,7 +18,14 @@ import type { ResolvedModel } from "@/platform/Llm"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { agentForSession, chatAgent } from "./agents"
 import { toChatEvents, type ChatTurnEvent } from "./events"
-import { buildChatToolkit, buildDiagnosisCompletion, SUBMIT_DIAGNOSIS, type RunUsage, type SubmitDiagnosis } from "./tools"
+import {
+	accumulateUsage,
+	buildChatToolkit,
+	buildDiagnosisCompletion,
+	SUBMIT_DIAGNOSIS,
+	type RunUsage,
+	type SubmitDiagnosis,
+} from "./tools"
 
 /**
  * The transcript the model starts from.
@@ -162,21 +168,3 @@ export const runChatTurn = (input: ChatRunInput) => {
 
 
 const decodeThreadId = Schema.decodeSync(ThreadId)
-
-/**
- * A budget hook that only watches.
- *
- * `guard` passes every pull through untouched and `consume` never rejects, because the ceilings
- * this run answers to are its `AgentPolicy`. What this exists for is the side effect: the run event
- * stream reports no token usage at all, and both the metering finalizer and `submit_diagnosis` need
- * a running total.
- */
-const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
-	guard: (effect) => effect,
-	consume: (delta: RunUsageDelta) =>
-		Effect.sync(() => {
-			usage.input += delta.inputTokens
-			usage.output += delta.outputTokens
-			usage.cacheRead += delta.usage.inputTokens.cacheRead ?? 0
-		}),
-})

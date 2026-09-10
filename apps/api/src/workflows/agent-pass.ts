@@ -25,7 +25,7 @@ import { agentPolicyFor, buildSystemPrompt, type AgentDefinition } from "@/chat/
 import { buildMapleToolkit } from "@/mcp/tools/llm-tools"
 import { toInputSchema } from "@/mcp/tools/registry"
 import { evaluatePermission } from "@maple/domain/permission"
-import { makeRunUsage, type RunUsage } from "@/chat/tools"
+import { accumulateUsage, makeRunUsage, type RunUsage } from "@/chat/tools"
 import type { LlmClients, ResolvedModel } from "@/platform/Llm"
 import { McpToolExecutor } from "@/mcp/dispatcher"
 import type { TenantContext } from "@/services/auth/tenant-context"
@@ -155,7 +155,11 @@ export const runAgentPass = <S extends AnswerSchema>(
 			},
 		})
 
-		yield* AgentRuntime.stream(definition, input.prompt, {}).pipe(
+		yield* AgentRuntime.stream(definition, input.prompt, {
+			// The run event stream carries no token counts, so without this hook every pass reports
+			// zero and the investigation rows record no cost.
+			budget: accumulateUsage(usage),
+		}).pipe(
 			Stream.runForEach((event) =>
 				Effect.sync(() => {
 					if (event._tag === "ToolCallDeclared" && event.toolName !== input.submitToolName) {

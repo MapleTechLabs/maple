@@ -15,6 +15,7 @@ import {
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
 import { InvestigationId, UserId } from "@maple/domain/primitives"
+import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi, McpToolSurface } from "@/mcp/dispatcher"
@@ -57,6 +58,24 @@ export interface RunUsage {
 }
 
 export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0 })
+
+/**
+ * A budget hook that only watches.
+ *
+ * `guard` passes every pull through untouched and `consume` never rejects, because the ceilings a
+ * run answers to are its `AgentPolicy`. What this exists for is the side effect: the run event
+ * stream reports no token usage at all, so without it every reader of {@link RunUsage} — the
+ * metering finalizer, `submit_diagnosis`, and every workflow pass's reported cost — sees zeros.
+ */
+export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
+	guard: (effect) => effect,
+	consume: (delta: RunUsageDelta) =>
+		Effect.sync(() => {
+			usage.input += delta.inputTokens
+			usage.output += delta.outputTokens
+			usage.cacheRead += delta.usage.inputTokens.cacheRead ?? 0
+		}),
+})
 
 export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	description:

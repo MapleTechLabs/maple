@@ -265,6 +265,12 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
  * The reasoning budget is that argument in its other form, and it is the part that is **not**
  * opt-in: `low` by default, because a narrow framing does not need a long think and the fan-out
  * multiplies whatever it does need by five.
+ *
+ * Note the coupling this keeps: `MAPLE_TRIAGE_MODEL_CONTEXT`/`_OUTPUT` are read by `limitsFor`, so
+ * a lens on a *different* model inherits the triage overrides. Deliberate — an override is set to
+ * describe a deployment, not a single model — and now less consequential than it was, because the
+ * limit feeds `contextTokenLimit`, which compacts rather than failing the request. Still the thing
+ * to fix first if the two stages ever diverge that far.
  */
 export const resolveLensModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
 	resolveLlmProvider(env) === "workers-ai"
