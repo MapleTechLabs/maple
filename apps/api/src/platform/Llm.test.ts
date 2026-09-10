@@ -10,7 +10,7 @@
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { Effect } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { LanguageModel } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"
@@ -283,4 +283,114 @@ describe("resolveTriageModel — context limits", () => {
 			expect(model.limits.context).toBe(1_050_000)
 		}
 	})
+})
+
+/**
+ * The usage block of a streamed completion, as an upstream that keeps reasoning tokens *outside*
+ * `completion_tokens` reports it. Numbers are from a real failing chat turn.
+ */
+const disjointReasoningUsage = {
+	prompt_tokens: 21_435,
+	completion_tokens: 293,
+	total_tokens: 21_728,
+	prompt_tokens_details: { cached_tokens: 16_128, cache_write_tokens: 0 },
+	completion_tokens_details: { reasoning_tokens: 321 },
+}
+
+const sseBody = (usage: Record<string, unknown>): string =>
+	[
+		`data: ${JSON.stringify({
+			id: "gen-1",
+			object: "chat.completion.chunk",
+			created: 1_789_056_870,
+			model: "z-ai/glm-5.3-flash",
+			choices: [{ index: 0, delta: { role: "assistant", content: "hi" } }],
+		})}`,
+		"",
+		`data: ${JSON.stringify({
+			id: "gen-1",
+			object: "chat.completion.chunk",
+			created: 1_789_056_870,
+			model: "z-ai/glm-5.3-flash",
+			choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+			usage,
+		})}`,
+		"",
+		"data: [DONE]",
+		"",
+	].join("\n")
+
+/** Stream one completion off a fake transport and return the run's `finish` part. */
+const streamFinishPart = (usage: Record<string, unknown>) =>
+	Effect.gen(function* () {
+		const fakeFetch: typeof globalThis.fetch = async () =>
+			new Response(sseBody(usage), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			})
+
+		const model = resolveTriageModel(openRouterEnv)
+		const parts = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+			Stream.runCollect,
+			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
+			// they go in as a single merged layer rather than two lifecycles stacked on each other.
+			Effect.provide(Layer.provide(model.layer, layerLlm(openRouterEnv))),
+			Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+		)
+
+		const finish = parts.find((part) => part.type === "finish")
+		if (finish === undefined) return yield* Effect.die("the stream carried no finish part")
+		return finish
+	})
+
+/**
+ * Guards the `@effect/ai-openrouter` patch in `patches/`.
+ *
+ * The package derives the output text component as `completion_tokens - reasoning_tokens`, which
+ * assumes reasoning tokens are counted inside the completion total. Some OpenRouter upstreams
+ * report them side by side, so the derived component goes negative and the agent engine — which
+ * decodes every usage field as a natural number — throws away a response the model already
+ * produced. The patch folds the two together when they are disjoint; this is what proves it is
+ * still applied, since a `bun install` that dropped it would leave the numbers below negative.
+ */
+describe("streamed usage — reasoning tokens reported outside the completion total", () => {
+	it.live("folds them back into the completion total", () =>
+		Effect.gen(function* () {
+			// Unpatched, this is what fails the turn: text would be 293 - 321.
+			const finish = yield* streamFinishPart(disjointReasoningUsage)
+
+			expect(finish.usage.outputTokens.text).toBe(293)
+			expect(finish.usage.outputTokens.reasoning).toBe(321)
+			expect(finish.usage.outputTokens.total).toBe(614)
+			// The input side is already coherent and must come through unchanged.
+			expect(finish.usage.inputTokens.total).toBe(21_435)
+			expect(finish.usage.inputTokens.cacheRead).toBe(16_128)
+		}),
+	)
+
+	it.live("does the same for cached tokens reported outside the prompt total", () =>
+		Effect.gen(function* () {
+			const finish = yield* streamFinishPart({
+				...disjointReasoningUsage,
+				prompt_tokens: 5_000,
+				prompt_tokens_details: { cached_tokens: 16_128, cache_write_tokens: 0 },
+			})
+
+			expect(finish.usage.inputTokens.total).toBe(21_128)
+			expect(finish.usage.inputTokens.uncached).toBe(5_000)
+		}),
+	)
+
+	it.live("leaves a provider that already nests reasoning inside the completion untouched", () =>
+		Effect.gen(function* () {
+			const finish = yield* streamFinishPart({
+				...disjointReasoningUsage,
+				completion_tokens: 614,
+				completion_tokens_details: { reasoning_tokens: 321 },
+			})
+
+			expect(finish.usage.outputTokens.total).toBe(614)
+			expect(finish.usage.outputTokens.text).toBe(293)
+		}),
+	)
 })
