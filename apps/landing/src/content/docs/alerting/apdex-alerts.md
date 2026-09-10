@@ -1,6 +1,6 @@
 ---
 title: "Apdex alerts"
-description: "What the Apdex score measures, how to pick the target latency T that defines it, and how to set up an Apdex alert in Maple so you get paged when the share of fast requests drops."
+description: "How to set up an Apdex alert in Maple: pick the target latency T, choose the score worth paging for, scope and tune the rule, and create the same rule over the API."
 group: "Alerting"
 order: 1
 ---
@@ -22,101 +22,20 @@ A p95 latency alert tells you that 5% of requests were slower than some number. 
   </div>
 </div>
 
-This page covers what the score actually is, how to choose the one input that decides everything about it, and how to turn it into an alert rule in Maple.
+## The score in one line
 
-<div class="my-6 grid gap-3 sm:grid-cols-3 not-prose">
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">The score</div>
-    <div class="mt-1.5 font-mono text-sm" style="color: var(--primary)">(A + 0.5B) / C</div>
-    <div class="mt-1 text-xs text-fg-muted">Satisfied, half-credit tolerating, over total.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Maple's default T</div>
-    <div class="mt-1.5 font-mono text-sm" style="color: var(--primary)">500ms</div>
-    <div class="mt-1 text-xs text-fg-muted">Frustrated follows automatically at 4T, so 2s.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Usual alert line</div>
-    <div class="mt-1.5 font-mono text-sm" style="color: var(--destructive)">&lt; 0.80 for 5 min</div>
-    <div class="mt-1 text-xs text-fg-muted">The <strong>Low Apdex score</strong> template in Maple.</div>
-  </div>
-</div>
-
-## What is the Apdex score?
-
-Apdex (Application Performance Index) is an industry-standard measure of user satisfaction derived from response times. It compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>, where <span class="hl-ok">1</span> means every request was fast and <span class="hl-bad">0</span> means none of them were.
-
-You pick one input, a target response time called <span class="hl-t">T</span>. Every request in the window then lands in one of three buckets, <span class="hl-ok">satisfied</span>, <span class="hl-warn">tolerating</span> or <span class="hl-bad">frustrated</span>, and that bucket decides how much credit that request earns:
-
-<div class="my-6 not-prose">
-  <svg viewBox="0 0 900 108" class="w-full h-auto" role="img" aria-label="A latency axis split into three bands: satisfied below T, tolerating between T and 4T, frustrated beyond 4T.">
-    <rect x="0" y="14" width="300" height="34" rx="4" style="fill: color-mix(in oklab, var(--success) 26%, transparent); stroke: color-mix(in oklab, var(--success) 55%, transparent)" />
-    <rect x="304" y="14" width="330" height="34" rx="4" style="fill: color-mix(in oklab, var(--warning) 24%, transparent); stroke: color-mix(in oklab, var(--warning) 55%, transparent)" />
-    <rect x="638" y="14" width="262" height="34" rx="4" style="fill: color-mix(in oklab, var(--destructive) 22%, transparent); stroke: color-mix(in oklab, var(--destructive) 55%, transparent)" />
-    <text x="12" y="36" style="fill: var(--foreground); font-size: 13px; font-weight: 500">Satisfied</text>
-    <text x="316" y="36" style="fill: var(--foreground); font-size: 13px; font-weight: 500">Tolerating</text>
-    <text x="650" y="36" style="fill: var(--foreground); font-size: 13px; font-weight: 500">Frustrated</text>
-    <text x="288" y="36" text-anchor="end" style="fill: var(--muted-foreground); font-size: 12px">1 point</text>
-    <text x="622" y="36" text-anchor="end" style="fill: var(--muted-foreground); font-size: 12px">½ point</text>
-    <text x="888" y="36" text-anchor="end" style="fill: var(--muted-foreground); font-size: 12px">0 points</text>
-    <line x1="0" y1="62" x2="900" y2="62" style="stroke: var(--border)" />
-    <line x1="302" y1="56" x2="302" y2="68" style="stroke: var(--primary); stroke-width: 2" />
-    <line x1="636" y1="56" x2="636" y2="68" style="stroke: var(--primary); stroke-width: 2" />
-    <text x="302" y="86" text-anchor="middle" style="fill: var(--primary); font-size: 13px; font-weight: 600">T</text>
-    <text x="636" y="86" text-anchor="middle" style="fill: var(--primary); font-size: 13px; font-weight: 600">4T</text>
-    <text x="0" y="86" style="fill: var(--muted-foreground); font-size: 11px">0ms</text>
-    <text x="900" y="86" text-anchor="end" style="fill: var(--muted-foreground); font-size: 11px">slower →</text>
-  </svg>
-</div>
-
-<div class="grid gap-3 sm:grid-cols-3 my-6 not-prose">
-  <div class="rounded-lg border border-border p-4" style="border-left: 3px solid var(--success); background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Satisfied · 1 point</div>
-    <div class="mt-1.5 text-sm text-fg">Finished faster than <strong>T</strong>. The user got what they asked for and did not notice the wait.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="border-left: 3px solid var(--warning); background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Tolerating · ½ point</div>
-    <div class="mt-1.5 text-sm text-fg">Between <strong>T</strong> and <strong>4T</strong>. Slow enough to feel, not slow enough to leave.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="border-left: 3px solid var(--destructive); background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-[10px] uppercase tracking-wider text-fg-muted">Frustrated · 0 points</div>
-    <div class="mt-1.5 text-sm text-fg">Slower than <strong>4T</strong>, or failed at any speed.</div>
-  </div>
-</div>
-
-The score is the weighted count over the total count:
+Apdex compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>: the share of requests that were fast enough to keep a user happy. You set one target time, <span class="hl-t">T</span>. Requests under <span class="hl-t">T</span> are <span class="hl-ok">satisfied</span> and score a point, requests under <span class="hl-t">4T</span> are <span class="hl-warn">tolerating</span> and score half, and everything slower — plus everything that failed, at any speed — is <span class="hl-bad">frustrated</span> and scores nothing.
 
 <div class="my-6 rounded-lg border border-border p-5 text-center not-prose" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
   <div class="font-mono text-[15px] text-fg">Apdex = (satisfied + 0.5 × tolerating) / total</div>
   <div class="mt-2 text-xs text-fg-muted">Always between 0 and 1. Both boundaries come from the single value you set for T.</div>
 </div>
 
-A worked example. In a five-minute window a service handles 10,000 requests against T = 500ms. 9,000 finish under 500ms, 800 finish between 500ms and 2s, 150 take longer than 2s, and 50 return an error.
+Counting failures as frustrated is what makes this worth alerting on. A dependency that starts failing 15% of requests in 40ms makes your p95 *faster*, so a latency alert stays quiet while Apdex falls from 0.97 to about 0.83.
 
-<div class="my-6 rounded-lg border border-border p-5 not-prose" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-  <div class="flex h-9 w-full overflow-hidden rounded">
-    <div class="flex items-center justify-center" style="width: 90%; background: color-mix(in oklab, var(--success) 45%, transparent)">
-      <span class="text-[11px] text-fg">9,000 satisfied</span>
-    </div>
-    <div class="flex items-center justify-center" style="width: 8%; background: color-mix(in oklab, var(--warning) 45%, transparent)">
-      <span class="text-[11px] text-fg">800</span>
-    </div>
-    <div style="width: 2%; background: color-mix(in oklab, var(--destructive) 50%, transparent)"></div>
-  </div>
-  <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-fg-muted">
-    <span>9,000 under 500ms</span>
-    <span>800 between 500ms and 2s</span>
-    <span>150 over 2s</span>
-    <span>50 errors</span>
-  </div>
-  <div class="mt-4 border-t border-border pt-4 font-mono text-sm text-fg">
-    (9,000 + 0.5 × 800) / 10,000 = <span style="color: var(--primary)">0.94</span>
-  </div>
-</div>
+[**What is Apdex?**](/guides/what-is-apdex) walks through the formula, a worked example, and where Apdex and latency percentiles disagree. The rest of this page is the Maple-specific part: picking T for a rule, and building it.
 
-Note where the 200 slow-or-failed requests went. Failures score zero no matter how quickly they came back, because a 200ms `500 Internal Server Error` did not satisfy anybody. This is what makes Apdex a rough proxy for user experience rather than a pure latency statistic.
-
-## Choosing T, the only number that matters
+## Choosing T for the rule
 
 <span class="hl-t">T</span> is the whole rule. It sets the <span class="hl-ok">satisfied</span> boundary directly and the <span class="hl-bad">frustrated</span> boundary implicitly, since the <span class="hl-warn">tolerating</span> band always ends at <span class="hl-t">4T</span>. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s.
 
@@ -151,15 +70,11 @@ Pick T as the latency at which your users stop perceiving the response as immedi
 
 The honest way to choose is to open the service's Apdex chart in Maple, set T, and check that a healthy week reads somewhere in the 0.9 to 1.0 band. That leaves the 0.8 line meaningful.
 
-## How to read a score
+## Choosing the threshold you defend
 
 <div class="my-6 space-y-2 not-prose">
   <div class="flex items-center gap-3 rounded-lg border border-border px-4 py-3" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <span class="w-[92px] shrink-0 font-mono text-sm" style="color: var(--success)">1.00</span>
-    <span class="text-sm text-fg-muted">Every request beat T.</span>
-  </div>
-  <div class="flex items-center gap-3 rounded-lg border border-border px-4 py-3" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <span class="w-[92px] shrink-0 font-mono text-sm" style="color: var(--success)">0.94 – 0.99</span>
+    <span class="w-[92px] shrink-0 font-mono text-sm" style="color: var(--success)">0.94 – 1.00</span>
     <span class="text-sm text-fg-muted">Healthy, with a normal slow tail.</span>
   </div>
   <div class="flex items-center gap-3 rounded-lg border border-border px-4 py-3" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
@@ -177,16 +92,6 @@ The honest way to choose is to open the service's Apdex chart in Maple, set T, a
 </div>
 
 0.8 is a convention, not a law. The number that matters is where your service sits when it is healthy, and how far it has to fall before you would want to be woken up.
-
-## Why Apdex catches regressions a latency alert misses
-
-A p95 alert fires on the shape of the tail. Apdex fires on the size of the tail, which is a different signal.
-
-If a bad deploy makes 30% of requests take 3 seconds, a p95 alert at 1s fires and so does Apdex.
-
-> **The case only Apdex catches.** A dependency starts failing 15% of requests in 40ms. The p95 gets *faster*, the latency alert stays quiet, and Apdex falls from 0.97 to about 0.83, because a fast failure is still a frustrated user.
-
-The reverse case is real too. Apdex is a ratio, so it hides how bad the bad requests are. A service where the slow 3% take 4 seconds and one where they take 40 seconds score the same. Run an Apdex alert next to a p99 alert if you care about the worst case, not just the count.
 
 ## Setting up an Apdex alert in Maple
 
@@ -289,23 +194,4 @@ The connection stays useful after the rule exists. Ask which of your Apdex rules
 - **One T per rule.** A service whose `/healthz` and `/reports/export` share a rule is being measured against a target that fits neither. Group by `attr.http.route`, or write separate rules.
 - **The score hides magnitude.** It counts frustrated requests without weighting how frustrated they were. Pair it with a p99 rule.
 
-## FAQ
-
-<div class="my-6 space-y-3 not-prose">
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-sm font-semibold text-fg">What is a good Apdex score?</div>
-    <div class="mt-1.5 text-sm text-fg-muted">Above 0.94 is generally considered healthy, and 0.8 is the usual line for alerting. Both depend entirely on the T you chose, so a score is only comparable against another score measured with the same target.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-sm font-semibold text-fg">Apdex or p95 latency: which should I alert on?</div>
-    <div class="mt-1.5 text-sm text-fg-muted">Both, for different reasons. Apdex tells you how many users had a bad time, including the ones whose requests failed. P95 and p99 tell you how bad the tail got. Apdex is the better single page-me signal; percentiles are the better debugging signal.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-sm font-semibold text-fg">Do failed requests count against the score?</div>
-    <div class="mt-1.5 text-sm text-fg-muted">Yes. Any span with an error status counts as frustrated regardless of its duration, so a fast-failing dependency shows up as an Apdex drop even when latency looks fine.</div>
-  </div>
-  <div class="rounded-lg border border-border p-4" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
-    <div class="text-sm font-semibold text-fg">Why is my Apdex flat at 1.0?</div>
-    <div class="mt-1.5 text-sm text-fg-muted">Your T is larger than nearly every request you serve. Lower it until a healthy week reads between 0.9 and 1.0, otherwise the alert has no room to detect anything.</div>
-  </div>
-</div>
+More on the score itself — the formula, a worked example, what counts as a good score, and how it compares to p95 and p99 — is in the [What is Apdex?](/guides/what-is-apdex) guide.
