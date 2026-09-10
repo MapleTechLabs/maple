@@ -124,6 +124,7 @@
 		}
 	},
 	"patchedDependencies": {
+		"@effect/ai-openrouter@4.0.0-rc.112": "patches/@effect%2Fai-openrouter@4.0.0-rc.112.patch",
 		"@effect/vitest@4.0.0-rc.112": "patches/@effect%2Fvitest@4.0.0-rc.112.patch",
 		"effect@4.0.0-rc.112": "patches/effect@4.0.0-rc.112.patch"
 	}
