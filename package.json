@@ -31,6 +31,8 @@
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
 		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
 		"alchemy:deploy:stg": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage stg",
+		"alchemy:sync:prd": "bun run alchemy:build-deps && alchemy sync --yes --stage prd",
+		"alchemy:sync:prd:check": "bun run alchemy:build-deps && alchemy sync --yes --dry-run --stage prd",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy": "alchemy destroy --yes",
 		"alchemy:destroy:stg": "alchemy destroy --yes --stage stg",

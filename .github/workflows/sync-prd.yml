@@ -1,0 +1,75 @@
+name: Sync PRD (Cloudflare via Alchemy)
+
+# Drift repair, by hand only. `alchemy sync` reads every resource back from its
+# provider and compares it to what state says was deployed: a resource that
+# diverged is reconciled, one that is GONE is recreated from the persisted
+# instance id, so deterministic physical names come back unchanged.
+#
+# It exists because a deploy cannot fix this class of failure on its own. When
+# state records a resource as created and the cloud never got it, every plan
+# reports `noop` forever — which is how production ran from 2026-09-08 with an
+# api Worker bound to `maple-api-investigationfanoutworkflow-eced6125`, a
+# Workflow that did not exist, and every investigation fan-out start failing.
+#
+# The job is deploy-prd's, step for step, so the environment is identical by
+# construction rather than by transcription: same composite, same Infisical
+# environment, same AWS role, same concurrency group (a sync never runs beside
+# a deploy).
+on:
+    workflow_dispatch:
+        inputs:
+            dry-run:
+                description: Report drift without repairing it
+                type: boolean
+                default: true
+
+concurrency:
+    group: deploy-prd
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    id-token: write # Infisical OIDC machine-identity auth
+
+jobs:
+    # The stack program reads the compiled binary at plan time, and sync plans
+    # the whole stack before it reads anything back.
+    ingest-binary:
+        uses: ./.github/workflows/build-ingest-binary.yml
+
+    sync-prd:
+        needs: ingest-binary
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        environment: production
+        env:
+            INFISICAL_ENV_SLUG: prod
+            COMMIT_SHA: ${{ github.sha }}
+            VITE_COMMIT_SHA: ${{ github.sha }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - name: Deploy setup
+              id: setup
+              uses: ./.github/actions/deploy-setup
+              with:
+                  infisical-env-slug: ${{ env.INFISICAL_ENV_SLUG }}
+                  infisical-identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  infisical-project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+            # `AWS_ACCOUNT_ID` for the same reason deploy-prd passes it: without
+            # it alchemy's env-credential path issues an STS call against its own
+            # half-built environment and deadlocks silently (#378).
+            - name: Report drift
+              if: ${{ inputs.dry-run }}
+              run: bun run alchemy:sync:prd:check
+              env:
+                  AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
+
+            - name: Repair drift
+              if: ${{ !inputs.dry-run }}
+              run: bun run alchemy:sync:prd
+              env:
+                  AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
