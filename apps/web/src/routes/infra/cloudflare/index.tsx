@@ -43,6 +43,7 @@ import type { CloudflareIngestPhase } from "@/components/infra/cloudflare/ingest
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
@@ -53,6 +54,7 @@ const cloudflareSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/cloudflare/")({
 	component: CloudflarePage,
 	validateSearch: Schema.toStandardSchemaV1(cloudflareSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 function CloudflarePage() {

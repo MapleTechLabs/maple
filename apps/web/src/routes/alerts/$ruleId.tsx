@@ -12,6 +12,7 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { LONG_RANGE_PRESET_OPTIONS, presetLabel, formatTimeRangeDisplay } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
@@ -113,6 +114,7 @@ const RuleDetailSearch = Schema.Struct({
 export const Route = createFileRoute("/alerts/$ruleId")({
 	component: RuleDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(RuleDetailSearch),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 function RuleDetailPage() {

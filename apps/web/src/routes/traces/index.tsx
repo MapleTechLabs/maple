@@ -15,6 +15,7 @@ import { useAtomValue } from "@/lib/effect-atom"
 import { applyWhereClause } from "@/lib/traces/advanced-filter-sync"
 import { getTracesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { AutocompleteValuesProvider } from "@/hooks/use-autocomplete-values"
@@ -75,6 +76,7 @@ export type TracesSearchParams = Schema.Schema.Type<typeof tracesSearchSchema>
 export const Route = createFileRoute("/traces/")({
 	component: TracesPage,
 	validateSearch: Schema.toStandardSchemaV1(tracesSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 	loaderDeps: ({ search }) => search,
 	// Only the facet sidebar is warmed. The trace list is paginated and sorted
 	// from state the route does not own, so rebuilding its input here would risk

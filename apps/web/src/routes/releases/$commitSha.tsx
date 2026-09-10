@@ -22,6 +22,7 @@ import {
 	applyTimeRangeSearch,
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
@@ -53,6 +54,7 @@ const releaseDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/releases/$commitSha")({
 	component: ReleaseDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(releaseDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 interface ReleaseChartConfig {

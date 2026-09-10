@@ -47,6 +47,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
@@ -58,6 +59,7 @@ const zoneDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/cloudflare/$zoneName")({
 	component: ZoneDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(zoneDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"

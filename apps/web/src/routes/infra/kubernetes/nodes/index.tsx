@@ -21,6 +21,7 @@ import {
 	applyTimeRangeSearch,
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 
 const DEFAULT_PRESET = "12h"
 
@@ -40,6 +41,7 @@ export type NodesSearchParams = Schema.Schema.Type<typeof nodesSearchSchema>
 export const Route = createFileRoute("/infra/kubernetes/nodes/")({
 	component: NodesPage,
 	validateSearch: Schema.toStandardSchemaV1(nodesSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 /**

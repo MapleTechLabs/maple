@@ -24,6 +24,7 @@ import {
 	applyTimeRangeSearch,
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import {
 	listPodsResultAtom,
 	workloadDetailSummaryResultAtom,
@@ -47,6 +48,7 @@ const paramsSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/kubernetes/workloads/$kind/$workloadName")({
 	component: WorkloadDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(workloadDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 	params: {
 		parse: (raw) => Schema.decodeUnknownSync(paramsSchema)(raw),
 		stringify: (p) => ({ kind: p.kind, workloadName: p.workloadName }),

@@ -3,6 +3,7 @@ import { createEffectRouter } from "@effect-router/core"
 import { NotFoundError, RouteError, recordRouteErrorInfo } from "./components/route-error"
 import { appRegistry, sharedAtomRuntime } from "./lib/registry"
 import { runtime } from "./lib/services/common/runtime"
+import { subscribeSessionTimeRange } from "./components/time-range-picker/session-time-range"
 import { routeTree } from "./routeTree.gen"
 
 export interface RouterAuthContext {
@@ -29,6 +30,8 @@ export const router = createEffectRouter({
 		auth: undefined!,
 	},
 })
+
+subscribeSessionTimeRange(router)
 
 declare module "@tanstack/react-router" {
 	interface Register {

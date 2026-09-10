@@ -29,6 +29,7 @@ import {
 	applyTimeRangeSearch,
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 
 const PAGE_SIZE = 50
 const DEFAULT_PRESET = "12h"
@@ -82,6 +83,7 @@ export type PodsSearchParams = Schema.Schema.Type<typeof podsSearchSchema>
 export const Route = createFileRoute("/infra/kubernetes/pods/")({
 	component: PodsPage,
 	validateSearch: Schema.toStandardSchemaV1(podsSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 const SCOPE_LABEL: Record<PodScope, string> = {

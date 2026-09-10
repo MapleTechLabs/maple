@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { TimeRangeSearchFields } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 
 /**
  * The section root. The sidebar's single Kubernetes row points here, and the
@@ -16,6 +17,7 @@ const searchSchema = Schema.Struct(TimeRangeSearchFields)
 
 export const Route = createFileRoute("/infra/kubernetes/")({
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 	beforeLoad: ({ search }) => {
 		throw redirect({ to: "/infra/kubernetes/pods", search, replace: true })
 	},

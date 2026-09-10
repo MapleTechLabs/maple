@@ -39,6 +39,7 @@ import { LinkedInvestigationPanel } from "@/components/errors/linked-investigati
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -93,6 +94,7 @@ const issueSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/errors/issues/$issueId")({
 	component: IssueDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(issueSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware] },
 })
 
 function IssueDetailPage() {
