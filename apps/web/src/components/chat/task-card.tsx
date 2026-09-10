@@ -35,7 +35,7 @@ const OUTCOME: Record<Exclude<TaskStatus, "running">, string> = {
 	completed: "answered",
 	error: "failed",
 	aborted: "stopped",
-}
+} satisfies Record<Exclude<TaskStatus, "running">, string>
 
 const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
 

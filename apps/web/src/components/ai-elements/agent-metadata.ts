@@ -20,7 +20,7 @@ const AGENTS: Record<string, AgentPresentation> = {
 	explore: { label: "Explore", activity: "Exploring", icon: MagnifierIcon },
 	"investigation-planner": { label: "Planner", activity: "Planning", icon: CompassIcon },
 	"investigation-validator": { label: "Validator", activity: "Validating", icon: ShieldIcon },
-}
+} satisfies Record<string, AgentPresentation>
 
 /** `hypothesis-<id>` lanes are written per run, so they are matched by prefix, not by entry. */
 const HYPOTHESIS_PREFIX = "hypothesis-"
