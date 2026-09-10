@@ -172,6 +172,8 @@ export interface ResolvedModel {
 	readonly name: string
 	readonly layer: Layer.Layer<ModelServices, never, LlmClients>
 	readonly limits: { readonly context: number; readonly output: number }
+	/** The tags the model was resolved with, so a caller can stamp its own span to match. */
+	readonly tags?: LlmCallTags
 }
 
 const limitsFor = (env: LlmEnv, name: string): { readonly context: number; readonly output: number } => {
@@ -205,38 +207,58 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 		? undefined
 		: {
 				user: tags.orgId,
-				...(tags.sessionId === undefined ? undefined : { session_id: tags.sessionId.slice(0, 256) }),
+				...(tags.sessionId === undefined ? undefined : { session_id: sessionIdFor(tags) }),
 				trace: { trace_name: tags.surface },
 			}),
 })
 
+/** The session as OpenRouter accepts it. The span carries the same value, so the two never diverge. */
+const sessionIdFor = (tags: LlmCallTags): string | undefined => tags.sessionId?.slice(0, 256)
+
+/**
+ * The agent-session identity as span attributes: the session, the turn and the workflow.
+ *
+ * The ingest gateway files a GenAI span under a session only when the span carries
+ * `maple_ai.session.id` (its `maple` vendor), and takes the key alone as proof of an agent span.
+ * So it goes on exactly two spans: every model-call span the model opens (see
+ * {@link withAgentSessionSpans}) and the span that roots the turn — a pass, in a workflow — which the
+ * session view partitions turns by, walking each span up to its nearest tagged ancestor. Nothing
+ * wider: an `Effect.annotateSpans` over the run would file every HTTP and database span as one.
+ * Empty without a session.
+ */
+export const agentSessionSpanAttributes = (
+	tags: LlmCallTags | undefined,
+): Readonly<Record<string, string>> => {
+	const sessionId = tags === undefined ? undefined : sessionIdFor(tags)
+	if (tags === undefined || sessionId === undefined) return {}
+	return {
+		[MAPLE_NATIVE_SESSION_ID_ATTR]: sessionId,
+		...(tags.turnId === undefined ? undefined : { [MAPLE_NATIVE_TURN_ID_ATTR]: tags.turnId }),
+		...(tags.workflowName === undefined ? undefined : { "gen_ai.workflow.name": tags.workflowName }),
+	}
+}
+
 /**
  * Stamp the agent-session identity onto every model-call span the model opens.
  *
- * The ingest gateway files a GenAI span under a session only when the span carries
- * `maple_ai.session.id` (its `maple` vendor). Effect AI's own span carries no session key, so
- * without this every trace became a session of its own (`trace:<TraceId>`) — one per chat turn, one
- * per investigation pass. The session list reads a trace's session off any one of its spans, so the
- * model-call span is enough to file the tool and engine spans around it too.
+ * Effect AI's own span carries no session key, so without this every trace became a session of its
+ * own (`trace:<TraceId>`) — one per chat turn, one per investigation pass. The session list reads a
+ * trace's session off any one of its spans, so the model-call span is enough to file the tool and
+ * engine spans around it too.
  *
- * The model-call span and nothing wider: the gateway takes the key alone as proof of an agent span,
- * so an `Effect.annotateSpans` over the run would file every HTTP and database span as one.
- *
- * Effect AI applies the transformer as the call's stream finishes, before the span ends, including
- * when the call fails.
+ * Effect AI applies the transformer before the span ends: for `streamText` (the only call Maple
+ * makes) as the stream finishes, including when it fails; `generateText` would skip it on failure.
  */
 const withAgentSessionSpans = <A, R>(
 	layer: Layer.Layer<A, never, R>,
 	tags: LlmCallTags | undefined,
 ): Layer.Layer<A, never, R> => {
-	if (tags?.sessionId === undefined) return layer
-	const { sessionId, turnId, workflowName } = tags
+	const attributes = Object.entries(agentSessionSpanAttributes(tags))
+	if (attributes.length === 0) return layer
 	return Layer.provide(
 		layer,
 		Layer.succeed(Telemetry.CurrentSpanTransformer, ({ span }) => {
-			span.attribute(MAPLE_NATIVE_SESSION_ID_ATTR, sessionId)
-			if (turnId !== undefined) span.attribute(MAPLE_NATIVE_TURN_ID_ATTR, turnId)
-			if (workflowName !== undefined) span.attribute("gen_ai.workflow.name", workflowName)
+			for (const [key, value] of attributes) span.attribute(key, value)
 		}),
 	)
 }
@@ -258,6 +280,7 @@ const openRouterModel = (
 		tags,
 	),
 	limits: limitsFor(env, name),
+	tags,
 })
 
 const workersAiModel = (env: LlmEnv, name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
@@ -265,6 +288,7 @@ const workersAiModel = (env: LlmEnv, name: string, tags: LlmCallTags | undefined
 	name,
 	layer: withAgentSessionSpans(OpenAiLanguageModel.model(name), tags),
 	limits: limitsFor(env, name),
+	tags,
 })
 
 /**

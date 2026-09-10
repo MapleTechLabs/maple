@@ -13,11 +13,11 @@
  * the tee has to come back.
  */
 import { assert, describe, it } from "@effect/vitest"
+import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { Effect, Layer, Stream } from "effect"
 import type { Exit, Tracer } from "effect"
 import { LanguageModel } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
-import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { layerLlm, resolveTriageModel } from "./Llm"
 
 /** Two frames, the first naming the response and the model that served it. */

@@ -20,14 +20,24 @@ const capturedBody = async (model: LanguageModel): Promise<Record<string, unknow
 	await generateText({ model, prompt: "hi", maxRetries: 0 }).catch(() => undefined)
 	const body = stub.calls[0]?.body
 	if (typeof body !== "string") throw new Error("no request reached the transport")
+	// SAFETY: the stub captured the JSON object the provider serialised; the assertions below read
+	// its keys one at a time, so a non-object would fail them rather than pass silently.
 	return JSON.parse(body) as Record<string, unknown>
 }
 
 describe("agentModel", () => {
 	test("a step's request carries the eve session it runs in", async () => {
-		const ctx = { session: { id: "wrun_01TEST" }, channel: {}, messages: [] } as unknown as Parameters<StepStarted>[1]
+		const ctx: Parameters<StepStarted>[1] = {
+			session: { id: "wrun_01TEST", auth: { current: null, initiator: null } },
+			channel: {},
+			messages: [],
+		}
 		const selection = await agentModel.events["step.started"]!({}, ctx)
-		if (selection === null || typeof selection !== "object" || !("modelContextWindowTokens" in selection)) {
+		if (
+			selection === null ||
+			typeof selection !== "object" ||
+			!("modelContextWindowTokens" in selection)
+		) {
 			throw new Error("step.started did not return a model selection")
 		}
 		expect(selection.modelContextWindowTokens).toBeGreaterThan(0)

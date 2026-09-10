@@ -32,7 +32,7 @@ import { agentPolicyFor, buildSystemPrompt, type AgentDefinition } from "@/chat/
 import { buildMapleToolkit } from "@/mcp/tools/llm-tools"
 import { evaluatePermission } from "@maple/domain/permission"
 import { accumulateUsage, makeRunUsage, type RunUsage } from "@/chat/tools"
-import type { LlmClients, ResolvedModel } from "@/platform/Llm"
+import { type LlmClients, type ResolvedModel, agentSessionSpanAttributes } from "@/platform/Llm"
 import { McpToolExecutor } from "@/mcp/dispatcher"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { summarizeCause } from "@/platform/describe-cause"
@@ -129,6 +129,10 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 	Effect.gen(function* () {
 		type A = S["Type"]
 		const toolExecutor = yield* McpToolExecutor
+		// The pass's own span roots the turn: the session view files a lane's untagged tool, HTTP and
+		// database spans by their nearest tagged ancestor, and concurrent lanes would otherwise be
+		// partitioned by start time alone. The model-call spans carry the same keys via the model.
+		yield* Effect.annotateCurrentSpan(agentSessionSpanAttributes(input.model.tags))
 		const usage = input.usage ?? makeRunUsage()
 		let answer: Option.Option<A> = Option.none()
 		let toolCalls = 0

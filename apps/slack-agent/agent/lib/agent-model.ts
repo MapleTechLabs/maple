@@ -22,7 +22,16 @@ const openrouter = createOpenRouter({
  * always streams.
  */
 const modelId = process.env.OPENROUTER_MODEL ?? "z-ai/glm-5.3-flash:nitro"
-export const contextWindowTokens = Number(process.env.OPENROUTER_CONTEXT_WINDOW ?? 1_000_000)
+/**
+ * Validated, because eve rejects a selection whose context window is not a positive integer and
+ * then falls back to the session-less model for every step — a misconfigured value would silently
+ * turn session tagging off rather than fail.
+ */
+const configuredContextWindow = Number(process.env.OPENROUTER_CONTEXT_WINDOW)
+export const contextWindowTokens =
+	Number.isInteger(configuredContextWindow) && configuredContextWindow > 0
+		? configuredContextWindow
+		: 1_000_000
 
 /**
  * `usage.include` turns on OpenRouter usage accounting: every response then carries the actual
