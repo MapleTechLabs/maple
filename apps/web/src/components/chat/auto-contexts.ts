@@ -17,35 +17,53 @@ export interface PageContextPayload {
 	contexts: AutoContext[]
 }
 
-export function autoContextLabel(ctx: AutoContext): string {
+/**
+ * A chip renders the kind and the subject separately — the kind is what the user
+ * already knows (they are on that page), the subject is the part worth reading —
+ * so the label is derived from these two parts rather than the other way round.
+ */
+export interface AutoContextDisplay {
+	kind: string
+	subject?: string
+}
+
+export function autoContextDisplay(ctx: AutoContext): AutoContextDisplay {
 	switch (ctx.kind) {
 		case "service":
-			return `Service: ${ctx.serviceName}`
+			return { kind: "Service", subject: ctx.serviceName }
 		case "trace":
-			return `Trace: ${ctx.traceId.slice(0, 8)}…`
+			return { kind: "Trace", subject: `${ctx.traceId.slice(0, 8)}…` }
 		case "dashboard":
 			return ctx.widgetId
-				? `Dashboard widget: ${ctx.dashboardId.slice(0, 8)}…/${ctx.widgetId.slice(0, 6)}…`
-				: `Dashboard: ${ctx.dashboardId.slice(0, 8)}…`
+				? {
+						kind: "Dashboard widget",
+						subject: `${ctx.dashboardId.slice(0, 8)}…/${ctx.widgetId.slice(0, 6)}…`,
+					}
+				: { kind: "Dashboard", subject: `${ctx.dashboardId.slice(0, 8)}…` }
 		case "error_type":
-			return `Error type: ${ctx.errorType}`
+			return { kind: "Error type", subject: ctx.errorType }
 		case "error_issue":
-			return `Error issue: ${ctx.issueId.slice(0, 8)}…`
+			return { kind: "Error issue", subject: `${ctx.issueId.slice(0, 8)}…` }
 		case "alert_rule":
-			return `Alert rule: ${ctx.ruleId.slice(0, 8)}…`
+			return { kind: "Alert rule", subject: `${ctx.ruleId.slice(0, 8)}…` }
 		case "host":
-			return `Host: ${ctx.hostName}`
+			return { kind: "Host", subject: ctx.hostName }
 		case "container":
-			return `Container: ${ctx.containerName}`
+			return { kind: "Container", subject: ctx.containerName }
 		case "logs_explorer":
-			return "Logs explorer"
+			return { kind: "Logs explorer" }
 		case "metrics_explorer":
-			return "Metrics explorer"
+			return { kind: "Metrics explorer" }
 		case "traces_explorer":
-			return "Traces explorer"
+			return { kind: "Traces explorer" }
 		case "service_map":
-			return "Service map"
+			return { kind: "Service map" }
 	}
+}
+
+export function autoContextLabel(ctx: AutoContext): string {
+	const { kind, subject } = autoContextDisplay(ctx)
+	return subject ? `${kind}: ${subject}` : kind
 }
 
 const decode = (s: string) => {

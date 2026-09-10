@@ -145,6 +145,10 @@
 			}
 		}
 	],
+	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
+	// so house rules that would be rewrites are not applied to it. The dot-matrix loader runtime
+	// comes from the `@dotmatrix` shadcn registry (see `registries` in `apps/web/components.json`);
+	// re-add a variant with `shadcn add`, don't hand-edit these.
 	"ignorePatterns": [
 		".agents/**",
 		".codex/**",
@@ -154,7 +158,9 @@
 		".impeccable/**",
 		".superset/**",
 		"apps/web/src/routeTree.gen.ts",
-		"lib/thinking-orbs/**",
+		"apps/web/src/components/ui/dotm-*.tsx",
+		"apps/web/src/lib/dotmatrix-core.tsx",
+		"apps/web/src/lib/dotmatrix-hooks.ts",
 		"scripts/oxlint-plugins/anti-slop/**"
 	]
 }

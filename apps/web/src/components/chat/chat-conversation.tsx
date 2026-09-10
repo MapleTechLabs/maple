@@ -31,7 +31,7 @@ import {
 	PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input"
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
-import { ThinkingOrbIcon } from "@/components/ai-elements/thinking-orb-icon"
+import { DotLoader } from "@/components/ai-elements/dot-loader"
 import { Button } from "@maple/ui/components/ui/button"
 import { trackProduct } from "@/lib/analytics"
 import { makeChatApplyPayload } from "./chat-apply-payload"
@@ -305,9 +305,6 @@ export function ChatConversation({
 							))}
 						</Suggestions>
 					)}
-					{!isWidgetFixMode && !isInvestigationMode && (
-						<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
-					)}
 					{failedSends.length > 0 && (
 						<FailedSendNotice
 							failed={failedSends[failedSends.length - 1]!}
@@ -318,6 +315,9 @@ export function ChatConversation({
 						<TurnFailureNotice error={error} onContinue={() => handleSend("Continue.")} />
 					) : null}
 					<PromptInput onSubmit={({ text }) => handleSend(text)}>
+						{!isWidgetFixMode && !isInvestigationMode && (
+							<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
+						)}
 						<PromptInputTextarea
 							ref={textareaRef}
 							placeholder={
@@ -407,7 +407,7 @@ function EmptyNotice({
 	return (
 		<div className="flex flex-col items-center justify-center gap-2 text-center">
 			<p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
-				{busy ? <ThinkingOrbIcon state="breathing" /> : null}
+				{busy ? <DotLoader /> : null}
 				<span className={busy ? "shimmer" : undefined}>{title}</span>
 			</p>
 			<p className="max-w-sm text-sm text-muted-foreground">{children}</p>

@@ -317,6 +317,74 @@ describe("useMapleChat stream reader", () => {
 	})
 })
 
+describe("useMapleChat cold load", () => {
+	/** One materialized assistant turn, as `GET /history` returns it. */
+	const history = (toolCalls: ReadonlyArray<Record<string, unknown>>) => ({
+		messages: [
+			{
+				id: "m1",
+				role: "assistant",
+				text: "Checking the paywall worker.Two services are failing.",
+				toolCalls,
+				createdAt: 1,
+				startSeq: 1,
+			},
+		],
+		cursor: 4,
+		running: false,
+	})
+
+	it("re-interleaves prose and tool calls from their text offsets", async () => {
+		tracedFetch.mockResolvedValueOnce(
+			jsonResponse(
+				history([
+					{ id: "c1", name: "list_services", input: {}, output: "{}", textOffset: 28 },
+				]),
+			),
+		)
+
+		render(<Harness />)
+		await waitFor(() => expect(screen.getByTestId("ready").textContent).toBe("true"))
+
+		// The call was made mid-turn, so it renders mid-turn — not swept under all of the prose.
+		expect(screen.getByTestId("text").textContent).toBe(
+			"Checking the paywall worker.|[output-available]|Two services are failing.",
+		)
+	})
+
+	it("keeps an offset-less call after the prose, the way it has always rendered", async () => {
+		tracedFetch.mockResolvedValueOnce(
+			jsonResponse(history([{ id: "c1", name: "list_services", input: {}, output: "{}" }])),
+		)
+
+		render(<Harness />)
+		await waitFor(() => expect(screen.getByTestId("ready").textContent).toBe("true"))
+
+		expect(screen.getByTestId("text").textContent).toBe(
+			"Checking the paywall worker.Two services are failing.|[output-available]",
+		)
+	})
+
+	it("clamps an offset that outran the text a retry retracted", async () => {
+		tracedFetch.mockResolvedValueOnce(
+			jsonResponse(
+				history([
+					{ id: "c1", name: "list_services", input: {}, output: "{}", textOffset: 9_000 },
+					{ id: "c2", name: "find_errors", input: {}, output: "{}", textOffset: 4 },
+				]),
+			),
+		)
+
+		render(<Harness />)
+		await waitFor(() => expect(screen.getByTestId("ready").textContent).toBe("true"))
+
+		// Neither call may reorder the prose or drop a character of it.
+		expect(screen.getByTestId("text").textContent).toBe(
+			"Checking the paywall worker.Two services are failing.|[output-available]|[output-available]",
+		)
+	})
+})
+
 describe("useMapleChat sub-agent transcripts", () => {
 	const ref = { id: "t1", agent: "explore", parentMessageId: "m1" }
 

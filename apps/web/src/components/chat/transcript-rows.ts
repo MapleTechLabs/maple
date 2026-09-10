@@ -30,7 +30,7 @@ export function deriveToolStatus(state: string): "running" | "completed" | "erro
 /**
  * A tool part that renders as its own card — a diagnosis report or an approval
  * prompt — rather than as a line in a tool group. These are content, not plumbing,
- * so they never disappear into a `Used N tools` header.
+ * so they never disappear into a tool group header.
  */
 function rendersOwnCard(part: ToolPart): boolean {
 	// A proposal has no output to inspect — the tool never ran — so the state IS the signal.
@@ -59,7 +59,7 @@ export type TranscriptRow =
  * Messages → transcript rows, merging each maximal run of **two or more** adjacent
  * tool-only assistant turns into one row. An agent loop emits one message per
  * round-trip, so without this a twelve-call run reads as six identical
- * `Used 2 tools` cards stacked down the page.
+ * `2 tools` groups stacked down the page.
  *
  * A run of one stays an ordinary message row — the single-call case is unchanged.
  * Anything that isn't a tool-only turn (a user turn, prose, a diagnosis or approval

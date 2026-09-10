@@ -8,7 +8,15 @@ import { code } from "@streamdown/code"
 import { math } from "@streamdown/math"
 import { mermaid } from "@streamdown/mermaid"
 import { memo } from "react"
-import { Streamdown, type PluginConfig } from "streamdown"
+import { Streamdown, type Components, type PluginConfig } from "streamdown"
+import {
+	MarkdownTable,
+	MarkdownTableBody,
+	MarkdownTableCell,
+	MarkdownTableHead,
+	MarkdownTableHeader,
+	MarkdownTableRow,
+} from "./markdown-table"
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
 	/**
@@ -25,35 +33,21 @@ const streamdownPlugins = { cjk, code, math, mermaid } as PluginConfig
 const lightweightPlugins = { cjk } as PluginConfig
 
 /**
- * Streamdown wraps every table in a padded, bordered card that itself contains a
- * bordered scroll box, and pads each cell to `px-4 py-2` at `text-sm`. That is a
- * document-page table dropped into a chat column: two nested borders around a
- * four-row comparison, and a third of the reply's height spent on padding.
- *
- * Flattened to the outer border only, with the transcript's own density. The
- * table's copy/download/fullscreen toolbar goes with it (see `controls` below) —
- * the assistant turn already has a copy action, and the row cost more height than
- * the data it sat above.
+ * Tables are ours, not Streamdown's. Its own table is a document-page table
+ * dropped into a chat column — two nested borders around a four-row comparison,
+ * `px-4 py-2` cells at `text-sm`, and a copy/download toolbar above data the
+ * turn's own copy action already covers. Overriding the components rather than
+ * their classes gets the product's `Table` primitive, and gives the cells
+ * somewhere to recognize a trace id or a duration. See `markdown-table.tsx`.
  */
-const COMPACT_TABLES = [
-	"[&_[data-streamdown=table-wrapper]]:my-2",
-	"[&_[data-streamdown=table-wrapper]]:gap-0",
-	"[&_[data-streamdown=table-wrapper]]:rounded-lg",
-	"[&_[data-streamdown=table-wrapper]]:border-border",
-	"[&_[data-streamdown=table-wrapper]]:bg-transparent",
-	"[&_[data-streamdown=table-wrapper]]:p-0",
-	"[&_[data-streamdown=table-wrapper]>div]:rounded-none",
-	"[&_[data-streamdown=table-wrapper]>div]:border-0",
-	"[&_[data-streamdown=table-wrapper]>div]:bg-transparent",
-	"[&_[data-streamdown=table-header]]:bg-muted/60",
-	"[&_[data-streamdown=table-header-cell]]:px-2.5",
-	"[&_[data-streamdown=table-header-cell]]:py-1.5",
-	"[&_[data-streamdown=table-header-cell]]:text-xs",
-	"[&_[data-streamdown=table-cell]]:px-2.5",
-	"[&_[data-streamdown=table-cell]]:py-1",
-	"[&_[data-streamdown=table-cell]]:text-xs",
-	"[&_[data-streamdown=table-cell]]:tabular-nums",
-].join(" ")
+const COMPONENTS = {
+	table: MarkdownTable,
+	tbody: MarkdownTableBody,
+	td: MarkdownTableCell,
+	th: MarkdownTableHead,
+	thead: MarkdownTableHeader,
+	tr: MarkdownTableRow,
+} satisfies Components
 
 /** Code and mermaid keep their toolbars; only the table's is dropped. */
 const CONTROLS = { table: false } as const
@@ -67,11 +61,8 @@ const CONTROLS = { table: false } as const
 export const MessageResponse = memo(
 	({ className, lightweight = false, ...props }: MessageResponseProps) => (
 		<Streamdown
-			className={cn(
-				"size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-				COMPACT_TABLES,
-				className,
-			)}
+			className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}
+			components={COMPONENTS}
 			controls={CONTROLS}
 			plugins={lightweight ? lightweightPlugins : streamdownPlugins}
 			{...props}

@@ -25,12 +25,19 @@ vi.stubGlobal("ResizeObserver", NoopObserver)
 vi.stubGlobal("IntersectionObserver", NoopObserver)
 
 /**
- * The status orb paints to a canvas, and jsdom's `getContext` is a stub that logs
- * "Not implemented" to stderr on every call. The component already treats a null
- * context as "don't animate", so returning null is the honest answer here — this
- * only silences the noise, it doesn't change what's asserted.
+ * jsdom ships no `matchMedia`, and the dot-matrix loaders ask it whether motion is welcome.
+ * Answering "no preference" is the branch that actually animates, which is the one under test.
  */
-HTMLCanvasElement.prototype.getContext = () => null
+vi.stubGlobal("matchMedia", (query: string) => ({
+	matches: false,
+	media: query,
+	onchange: null,
+	addEventListener: () => {},
+	removeEventListener: () => {},
+	addListener: () => {},
+	removeListener: () => {},
+	dispatchEvent: () => false,
+}))
 
 const message = (id: string, role: "user" | "assistant", text: string): UIMessage =>
 	({ id, role, parts: [{ type: "text", text }] }) as UIMessage
@@ -126,7 +133,7 @@ describe("ChatTranscript", () => {
 		expect(items().map((el) => (el as HTMLElement).dataset.messageId)).toEqual(["m1", "__status"])
 	})
 
-	describe("the status orb tracks what the agent is doing", () => {
+	describe("exactly one loader marks what the agent is doing", () => {
 		/** An assistant turn stopped mid-call on `toolName`. */
 		// SAFETY: this fixture constructs the in-progress tool variant consumed by ChatTranscript.
 		const runningTool = (id: string, toolName: string): UIMessage =>
@@ -143,31 +150,30 @@ describe("ChatTranscript", () => {
 				],
 			}) as unknown as UIMessage
 
-		/** Every animating orb on screen, by accessible name. There should never be more than one. */
-		const orbs = () =>
-			[...document.querySelectorAll("canvas")].map((c) => c.getAttribute("aria-label") ?? "")
+		/**
+		 * Every dot-matrix loader on screen. Which animation each one draws is random by design,
+		 * so what is asserted is placement and count — there should never be more than one.
+		 */
+		const loaders = () => document.querySelectorAll(".dmx-root")
 
 		const marker = () => document.querySelector('[data-slot="marker"]')
 
-		it.each([
-			["search_traces", "Searching…"],
-			["run_sql", "Solving…"],
-			["service_map", "Connecting…"],
-			// Unmapped tools fall back rather than needing registration in `toolOrbStates`.
-			["create_dashboard", "Working…"],
-		])("gives a running %s its own orb, and no second one", (toolName, expected) => {
-			render(
-				<ChatTranscript
-					{...baseProps}
-					isLoading
-					messages={[message("m1", "user", "hi"), runningTool("m2", toolName)]}
-				/>,
-			)
+		it.each([["search_traces"], ["run_sql"], ["service_map"], ["create_dashboard"]])(
+			"gives a running %s one loader, and no second one",
+			(toolName) => {
+				render(
+					<ChatTranscript
+						{...baseProps}
+						isLoading
+						messages={[message("m1", "user", "hi"), runningTool("m2", toolName)]}
+					/>,
+				)
 
-			// The tool row is the turn's live edge. A status marker here would repeat it verbatim.
-			expect(orbs()).toEqual([expected])
-			expect(marker()).toBeNull()
-		})
+				// The tool row is the turn's live edge. A status marker here would repeat it verbatim.
+				expect(loaders()).toHaveLength(1)
+				expect(marker()).toBeNull()
+			},
+		)
 
 		it("shows the thinking row only when no tool is in flight", () => {
 			render(
@@ -179,10 +185,10 @@ describe("ChatTranscript", () => {
 			)
 
 			expect(marker()?.textContent).toBe("Thinking…")
-			expect(orbs()).toEqual(["Thinking…"])
+			expect(loaders()).toHaveLength(1)
 		})
 
-		it("puts one orb in the group header, tracking the call actually in flight", () => {
+		it("puts one loader in the group header, next to the call actually in flight", () => {
 			// SAFETY: this fixture deliberately mixes settled and in-flight tool parts for the grouping test.
 			const burst = {
 				id: "m2",
@@ -199,17 +205,17 @@ describe("ChatTranscript", () => {
 			)
 
 			// Collapsed group: the header is the only live thing, and it reads as the running call.
-			expect(orbs()).toEqual(["Solving…"])
+			expect(loaders()).toHaveLength(1)
 			expect(marker()).toBeNull()
-			expect(screen.getByText("Run Sql")).toBeTruthy()
+			expect(screen.getByText("Running SQL")).toBeTruthy()
 			expect(screen.getByText("2/3")).toBeTruthy()
 		})
 
-		it("keeps a single orb when an expanded group has several calls in flight", () => {
+		it("keeps a single loader when an expanded group has several calls in flight", () => {
 			const parts = Array.from({ length: 12 }, (_, i) => ({
 				type: "tool-search_traces",
 				toolCallId: `c${i}`,
-				// Two still running: without the live/grouped split these would each add a canvas.
+				// Two still running: without the live/grouped split these would each add a loader.
 				state: i < 10 ? "output-available" : "input-available",
 				input: {},
 				output: i < 10 ? "{}" : undefined,
@@ -221,7 +227,7 @@ describe("ChatTranscript", () => {
 			)
 			fireEvent.click(screen.getAllByRole("button")[0]!)
 
-			expect(orbs()).toEqual(["Searching…"])
+			expect(loaders()).toHaveLength(1)
 		})
 
 		it("yields to streaming prose — the text is the progress signal at that point", () => {
@@ -298,7 +304,7 @@ describe("ChatTranscript", () => {
 	})
 
 	// An agent loop emits one message per round-trip; six of them used to read as six
-	// identical `Used 2 tools` cards stacked down the page.
+	// identical `2 tools` groups stacked down the page.
 	it("collapses a run of tool-only turns into a single tool group", () => {
 		// SAFETY: this fixture constructs the repeated tool-only message variant consumed by ChatTranscript.
 		const burst = (id: string): UIMessage =>
@@ -322,7 +328,7 @@ describe("ChatTranscript", () => {
 			/>,
 		)
 
-		expect(screen.getByText("Used 6 tools")).toBeTruthy()
+		expect(screen.getByText("6 tools")).toBeTruthy()
 		expect(items()).toHaveLength(1)
 		// Nothing to copy, so no invisible hover-action row reserving height either.
 		expect(document.querySelectorAll('[data-slot="message-footer"]')).toHaveLength(0)
@@ -415,11 +421,11 @@ describe("ChatTranscript sub-agent cards", () => {
 		expect(screen.getByText("p99 is 4.2s in checkout-api.")).toBeTruthy()
 	})
 
-	it("never folds a sub-agent into a Used N tools header", () => {
+	it("never folds a sub-agent into a tool group header", () => {
 		// A sub-agent run is content, not plumbing.
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		expect(screen.queryByText(/Used \d+ tools/)).toBeNull()
+		expect(screen.queryByText(/^\d+ tools$/)).toBeNull()
 		expect(items().map((el) => (el as HTMLElement).dataset.messageId)).toEqual(["m1"])
 	})
 })

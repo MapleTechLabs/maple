@@ -1,79 +1,88 @@
 import { useState, type ReactNode } from "react"
-import { ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
-import { ThinkingOrbIcon } from "./thinking-orb-icon"
-import { toolOrbState } from "./tool-metadata"
+import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import { cn } from "@maple/ui/lib/utils"
+import { RunningClock } from "./tool"
+import { DotLoader } from "./dot-loader"
+import { toolActivity } from "./tool-metadata"
 
 interface ToolGroupProps {
 	count: number
 	runningCount: number
 	errorCount: number
-	/** Label of the tool currently running, shown in the live header. */
-	currentLabel?: string
-	/** Raw name of that same call, so the header's orb matches what's actually in flight. */
+	/** Raw name of the call in flight, so the header says what is actually happening. */
 	currentToolName?: string
 	/** How many calls in the group have finished, for the `done/total` counter. */
 	completedCount: number
 	children: ReactNode
 }
 
+/**
+ * A run of tool calls behind one line.
+ *
+ * Collapsed by default, even mid-burst: the header carries live progress, so a thirty-call
+ * investigation costs the reader a single line instead of a screen of chrome. Expanding drops
+ * the rows into a hairline rail rather than a bordered panel — the group is an aside to the
+ * turn's prose, and a filled card reads as the main event.
+ */
 export function ToolGroup({
 	count,
 	runningCount,
 	errorCount,
-	currentLabel,
 	currentToolName,
 	completedCount,
 	children,
 }: ToolGroupProps) {
-	// Collapsed by default — even mid-burst. The header carries live progress so a
-	// 30-call run stays a single line instead of a wall of cards.
 	const [open, setOpen] = useState(false)
 	const running = runningCount > 0
 
 	return (
-		<div className="overflow-hidden rounded-lg border border-border bg-muted text-sm">
+		<div className="text-xs">
 			<button
 				type="button"
-				className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+				className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
 				onClick={() => setOpen((v) => !v)}
 			>
-				{/* The orb tracks the call actually in flight, so the header reads as one live line:
-				    a scanning globe for `search_traces`, a scrambling cube for `run_sql`. Settled
-				    glyphs match its 20px so the header doesn't jump when the last call lands. */}
+				{/* The loader only says "in flight"; the header text beside it names the call, so
+				    the glyph is decorative and stays out of the accessibility tree. */}
+				<span className="flex size-5 shrink-0 items-center justify-center">
+					{running ? (
+						<DotLoader />
+					) : errorCount > 0 ? (
+						<CircleXmarkIcon className="size-3.5 text-destructive" />
+					) : (
+						<CircleCheckIcon className="size-3.5 text-severity-info" />
+					)}
+				</span>
 				{running ? (
-					<ThinkingOrbIcon state={toolOrbState(currentToolName ?? "")} />
-				) : errorCount > 0 ? (
-					<CircleXmarkIcon className="size-5 shrink-0 text-destructive" />
-				) : (
-					<CircleCheckIcon className="size-5 shrink-0 text-severity-info" />
-				)}
-				{running ? (
-					// No "Running…" prefix and no generic code glyph: the orb already says running, and
-					// the tool's own name says more than either. Just what's happening, and how far in.
+					// No "Running…" prefix and no generic code glyph: the loader already says running,
+					// and the tool's own name says more than either. Just what's happening, and how
+					// far in.
 					<span className="min-w-0 flex-1 truncate font-medium text-foreground">
-						{currentLabel ?? "Working"}
-						<span className="ml-1.5 font-normal text-muted-foreground/60 tabular-nums">
+						<span className="shimmer">{toolActivity(currentToolName ?? "")}</span>
+						<span className="ml-1.5 font-normal tabular-nums text-muted-foreground/60">
 							{completedCount}/{count}
 						</span>
 					</span>
 				) : (
-					<span className="min-w-0 flex-1 truncate font-medium text-foreground">
-						Used {count} tools
+					<span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
+						{count} tool{count === 1 ? "" : "s"}
 						{errorCount > 0 ? (
-							<span className="ml-1 font-normal text-destructive tabular-nums">
+							<span className="ml-1 font-normal tabular-nums text-destructive">
 								· {errorCount} failed
 							</span>
 						) : null}
 					</span>
 				)}
-				{open ? (
-					<ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
-				) : (
-					<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
-				)}
+				{running ? <RunningClock /> : null}
+				<ChevronDownIcon
+					className={cn(
+						"size-3 shrink-0 text-muted-foreground/60 transition-transform",
+						open ? "rotate-0" : "-rotate-90",
+					)}
+				/>
 			</button>
 			{open && (
-				<div className="max-h-[55vh] divide-y divide-border/30 overflow-y-auto border-t border-border/50">
+				<div className="ms-[0.9375rem] max-h-[55vh] overflow-y-auto border-s border-border/60 py-0.5 ps-1.5">
 					{children}
 				</div>
 			)}

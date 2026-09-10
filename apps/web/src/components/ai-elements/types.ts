@@ -57,7 +57,7 @@ export type UIMessagePart =
 	 *
 	 * A part of its own rather than a `dynamic-tool` with a payload, because it renders as a
 	 * collapsible transcript rather than a tool row, and because `transcript-rows` must not fold it
-	 * into a "Used N tools" group — a sub-agent is content, not plumbing.
+	 * into a tool group — a sub-agent is content, not plumbing.
 	 *
 	 * `messages` is `UIMessage[]` and not recursive by accident: sub-agents cannot spawn sub-agents,
 	 * so a nested message never carries another `task` part.

@@ -106,14 +106,10 @@ function toolCallToPart(call: ChatToolCall): UIMessagePart {
 			messages: call.task.messages.map((message) => ({
 				id: message.id,
 				role: message.role,
-				parts: [
-					...(message.text
-						? [{ type: "text" as const, text: message.text, state: "done" as const }]
-						: []),
-					...message.toolCalls.map((sub) =>
-						toolCallToPart({ ...sub, proposed: undefined, task: undefined } as ChatToolCall),
-					),
-				],
+				parts: interleaveParts(
+					message.text,
+					message.toolCalls.map((sub) => ({ ...sub, task: undefined }) as ChatToolCall),
+				),
 			})),
 		}
 	}
@@ -150,17 +146,42 @@ function toolCallToPart(call: ChatToolCall): UIMessagePart {
 }
 
 /**
- * A materialized `ChatMessage` → `UIMessage`. Text and tool calls arrive as two
- * separate fields on the wire (`ChatMessage` doesn't record how they were
- * interleaved live), so a cold-loaded turn always renders as prose followed by
- * the tool calls it made — the same shape a merged tool-only run collapses to
- * anyway once it's read back (see `chat-transcript.tsx`'s `buildTranscriptRows`).
+ * Prose and tool calls, back in the order they happened.
+ *
+ * A `ChatMessage` stores the turn as two flat fields — one concatenated string and a list of
+ * calls — so the only record of the interleaving is each call's `textOffset`: how much prose
+ * had streamed when the model asked for it. Splitting the text at those offsets reproduces
+ * the live reading order, which is what makes a reloaded turn look like the one the reader
+ * watched instead of an essay with every tool call swept to the bottom.
+ *
+ * Offsets are clamped and forced non-decreasing: a retried step retracts prose the calls of
+ * earlier steps were already measured against, so an offset can outrun the text that survived.
+ * A call recorded before this field existed has no offset and lands after all the prose, which
+ * is exactly how those conversations have always rendered.
  */
-function historyMessageToUIMessage(message: ChatSessionMessage): UIMessage {
+function interleaveParts(text: string, calls: readonly ChatToolCall[]): UIMessagePart[] {
 	const parts: UIMessagePart[] = []
-	if (message.text) parts.push({ type: "text", text: message.text, state: "done" })
-	for (const call of message.toolCalls) parts.push(toolCallToPart(call))
-	return { id: message.id, role: message.role, parts, createdAt: message.createdAt }
+	let cursor = 0
+	for (const call of calls) {
+		const offset = Math.min(Math.max(call.textOffset ?? text.length, cursor), text.length)
+		const chunk = text.slice(cursor, offset)
+		if (chunk) parts.push({ type: "text", text: chunk, state: "done" })
+		cursor = offset
+		parts.push(toolCallToPart(call))
+	}
+	const tail = text.slice(cursor)
+	if (tail) parts.push({ type: "text", text: tail, state: "done" })
+	return parts
+}
+
+/** A materialized `ChatMessage` → `UIMessage`, re-interleaved by `interleaveParts`. */
+function historyMessageToUIMessage(message: ChatSessionMessage): UIMessage {
+	return {
+		id: message.id,
+		role: message.role,
+		parts: interleaveParts(message.text, message.toolCalls),
+		createdAt: message.createdAt,
+	}
 }
 
 function ensureAssistantMessage(messages: UIMessage[], messageId: string): UIMessage[] {

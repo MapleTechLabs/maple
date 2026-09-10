@@ -17,9 +17,10 @@ import {
 import { Message, MessageContent, MessageFooter } from "@maple/ui/components/ui/message"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { PulseIcon } from "@/components/icons"
+import { KnownServicesProvider } from "@/components/ai-elements/known-services"
 import { RichText } from "@/components/ai-elements/rich-text"
 import { StatusMarker } from "@/components/ai-elements/status-marker"
-import { Tool, ToolRow, toolLabel } from "@/components/ai-elements/tool"
+import { Tool, ToolRow } from "@/components/ai-elements/tool"
 import { ToolGroup } from "@/components/ai-elements/tool-group"
 import { ApprovalCard } from "./approval-card"
 import { TaskCard } from "./task-card"
@@ -82,10 +83,10 @@ export function findDiagnosisMessageId(messages: readonly UIMessage[]): string |
 }
 
 /**
- * A buffer of tool calls → one card: a bare row when there's a single call, a
- * collapsed `Used N tools` group when there are several. Shared by the two callers
- * that produce tool cards — the within-message flush below and the merged tool-run
- * row — so a burst looks the same however it arrived.
+ * A buffer of tool calls → one node: a bare line for a single call, a collapsed group
+ * header for several. Shared by the two callers that produce tool nodes — the
+ * within-message flush below and the merged tool-run row — so a burst looks the same
+ * however it arrived.
  */
 function renderToolNodes(buf: readonly ToolPart[], keyHint: string): ReactNode {
 	if (buf.length === 0) return null
@@ -100,8 +101,10 @@ function renderToolNodes(buf: readonly ToolPart[], keyHint: string): ReactNode {
 				input={t.input}
 				output={t.output}
 				errorText={t.errorText}
-				// Nothing follows a standalone call, so this row is the turn's live edge.
-				live
+				// A standalone call that is still running is, by construction, the turn's live edge:
+				// anything issued alongside it would have made this a group. Once it settles it goes
+				// back to looking like every other row, icon included.
+				live={deriveToolStatus(t.state) === "running"}
 			/>
 		)
 	}
@@ -115,7 +118,6 @@ function renderToolNodes(buf: readonly ToolPart[], keyHint: string): ReactNode {
 			runningCount={runningCount}
 			errorCount={errorCount}
 			completedCount={buf.length - runningCount}
-			currentLabel={lastRunning ? toolLabel(toolNameFor(lastRunning)) : undefined}
 			currentToolName={lastRunning ? toolNameFor(lastRunning) : undefined}
 		>
 			{buf.map((t) => (
@@ -395,67 +397,72 @@ export function ChatTranscript({
 	const lastMessageId = messages[messages.length - 1]?.id
 
 	return (
-		<MessageScrollerProvider autoScroll defaultScrollPosition="end">
-			<MessageScroller className="min-h-0 flex-1">
-				<MessageScrollerViewport>
-					<MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4 px-4 py-6">
-						{readOnly ? (
-							<MessageScrollerItem messageId="__read-only" className={TRANSCRIPT_ITEM}>
-								<Marker variant="separator">
-									<MarkerContent>{READ_ONLY_LABEL[readOnly]}</MarkerContent>
-								</Marker>
-							</MessageScrollerItem>
-						) : null}
-						{fallbackDiagnosis ? (
-							<MessageScrollerItem messageId="__fallback-diagnosis" className={TRANSCRIPT_ITEM}>
-								<DiagnosisReportCard report={fallbackDiagnosis} />
-							</MessageScrollerItem>
-						) : null}
-						{rows.map((row) => {
-							if (row.kind === "tool-run") {
-								const last = row.messages[row.messages.length - 1]!
+		<KnownServicesProvider>
+			<MessageScrollerProvider autoScroll defaultScrollPosition="end">
+				<MessageScroller className="min-h-0 flex-1">
+					<MessageScrollerViewport>
+						<MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4 px-4 py-6">
+							{readOnly ? (
+								<MessageScrollerItem messageId="__read-only" className={TRANSCRIPT_ITEM}>
+									<Marker variant="separator">
+										<MarkerContent>{READ_ONLY_LABEL[readOnly]}</MarkerContent>
+									</Marker>
+								</MessageScrollerItem>
+							) : null}
+							{fallbackDiagnosis ? (
+								<MessageScrollerItem
+									messageId="__fallback-diagnosis"
+									className={TRANSCRIPT_ITEM}
+								>
+									<DiagnosisReportCard report={fallbackDiagnosis} />
+								</MessageScrollerItem>
+							) : null}
+							{rows.map((row) => {
+								if (row.kind === "tool-run") {
+									const last = row.messages[row.messages.length - 1]!
+									return (
+										<TranscriptToolRunRow
+											key={row.id}
+											row={row}
+											showThinking={showsThinkingRow(
+												last,
+												isLoading,
+												last.id === lastMessageId,
+											)}
+										/>
+									)
+								}
+								const message = row.message
 								return (
-									<TranscriptToolRunRow
-										key={row.id}
-										row={row}
+									<TranscriptMessageRow
+										key={message.id}
+										message={message}
 										showThinking={showsThinkingRow(
-											last,
+											message,
 											isLoading,
-											last.id === lastMessageId,
+											message.id === lastMessageId,
 										)}
+										resolvedApprovals={resolvedApprovals}
+										onApprove={onApprove}
+										onDeny={onDeny}
+										permalink={permalinkFor?.(message.id)}
 									/>
 								)
-							}
-							const message = row.message
-							return (
-								<TranscriptMessageRow
-									key={message.id}
-									message={message}
-									showThinking={showsThinkingRow(
-										message,
-										isLoading,
-										message.id === lastMessageId,
-									)}
-									resolvedApprovals={resolvedApprovals}
-									onApprove={onApprove}
-									onDeny={onDeny}
-									permalink={permalinkFor?.(message.id)}
-								/>
-							)
-						})}
-						{awaitingFirstToken ? (
-							<MessageScrollerItem messageId="__status" className={TRANSCRIPT_ITEM}>
-								<StatusMarker />
-							</MessageScrollerItem>
-						) : null}
-					</MessageScrollerContent>
-				</MessageScrollerViewport>
-				<TurnMinimap rows={rows} />
-				<MessageScrollerButton />
-				{focusMessageId ? <FocusMessageOnMount messageId={focusMessageId} /> : null}
-				{diagnosisMessageId ? <JumpToDiagnosis messageId={diagnosisMessageId} /> : null}
-			</MessageScroller>
-		</MessageScrollerProvider>
+							})}
+							{awaitingFirstToken ? (
+								<MessageScrollerItem messageId="__status" className={TRANSCRIPT_ITEM}>
+									<StatusMarker />
+								</MessageScrollerItem>
+							) : null}
+						</MessageScrollerContent>
+					</MessageScrollerViewport>
+					<TurnMinimap rows={rows} />
+					<MessageScrollerButton />
+					{focusMessageId ? <FocusMessageOnMount messageId={focusMessageId} /> : null}
+					{diagnosisMessageId ? <JumpToDiagnosis messageId={diagnosisMessageId} /> : null}
+				</MessageScroller>
+			</MessageScrollerProvider>
+		</KnownServicesProvider>
 	)
 }
 

@@ -91,6 +91,7 @@ export class ChatSubToolCall extends Schema.Class<ChatSubToolCall>("@maple/ChatS
 	input: Schema.Unknown,
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
 export class ChatSubMessage extends Schema.Class<ChatSubMessage>("@maple/ChatSubMessage")({
@@ -123,6 +124,16 @@ export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCal
 	proposed: Schema.optionalKey(Schema.Boolean),
 	/** Present on a `task` call: the sub-agent run it started, and that run's own transcript. */
 	task: Schema.optionalKey(ChatTaskState),
+	/**
+	 * How much of the message's `text` had been streamed when the model asked for this call —
+	 * the one thing that survives flattening prose and calls into two fields.
+	 *
+	 * Without it a reloaded turn has no way back to the order the reader watched: every call
+	 * lands under all of the prose, so an eight-step investigation reads as one essay followed
+	 * by one undifferentiated pile of tools. Optional because conversations recorded before it
+	 * existed have nothing to say; those still render prose-then-calls.
+	 */
+	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
 export class ChatMessage extends Schema.Class<ChatMessage>("@maple/ChatMessage")({

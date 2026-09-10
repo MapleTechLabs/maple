@@ -60,6 +60,31 @@ export function buildChatLabMessages(): UIMessage[] {
 			],
 		},
 		{
+			id: "m3b",
+			role: "assistant",
+			createdAt: at(),
+			parts: [
+				{
+					type: "text",
+					state: "done",
+					text: "The paywall worker looks worst — pulling its slowest traces before I say anything about the other two.",
+				},
+				{
+					type: "dynamic-tool",
+					toolCallId: "c3b",
+					toolName: "inspect_trace",
+					state: "output-available",
+					input: { traceId: "9f2c7ae41b6d5c08f31a" },
+					output: { text: "37 spans" },
+				},
+				{
+					type: "text",
+					state: "done",
+					text: "That trace spends 6.1s of its 8.4s inside the entitlement lookup.",
+				},
+			],
+		},
+		{
 			id: "m4",
 			role: "assistant",
 			createdAt: at(),
@@ -167,6 +192,38 @@ export function buildChatLabMessages(): UIMessage[] {
 					state: "output-error",
 					input: { sql: "SELECT count() FROM spans WHERE ServiceName = 'web-paywall-worker'" },
 					errorText: "Raw SQL is not enabled for this organization.",
+				},
+			],
+		},
+		// A burst mid-flight: the group header is the turn's live line, so this is where the
+		// running label, the done/total counter and the elapsed clock are eyeballed.
+		{
+			id: "m10",
+			role: "assistant",
+			createdAt: at(),
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "c6",
+					toolName: "list_error_issues",
+					state: "output-available",
+					input: { service: "web-paywall-worker" },
+					output: { text: "6 issues" },
+				},
+				{
+					type: "dynamic-tool",
+					toolCallId: "c7",
+					toolName: "error_detail",
+					state: "output-available",
+					input: { issueId: "iss_41ba" },
+					output: { text: "18422 events" },
+				},
+				{
+					type: "dynamic-tool",
+					toolCallId: "c8",
+					toolName: "search_traces",
+					state: "input-available",
+					input: { service: "subscriptions-api", query: "entitlements" },
 				},
 			],
 		},
