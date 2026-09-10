@@ -573,15 +573,30 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		assert.strictEqual(fanOutStart, chTimestamp(BASE_MS))
 		assert.strictEqual(fanOutEnd, chTimestamp(BASE_MS + 60_124))
 		assert.ok(fanOutEnd.endsWith(".124000000"))
-		// `orgId` and the page's two bounds — the details read takes no window
-		// param from the caller, so there is nothing else to pass.
-		const compiled = compileUnsafe(
-			Integrations.aiSessionDetailsQuery({
-				sessionIds: page.map((row) => row.sessionId),
-			}),
-			{ orgId: ORG_ID, fanOutStart, fanOutEnd },
-		)
-		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		// `orgId`, the page's two bounds and one slice of their padded extent —
+		// the details read takes no window param from the caller, so there is
+		// nothing else to pass. Run as the route runs it: once per slice, then
+		// folded; and once more over the whole padded extent as one read, which
+		// the folded rows must equal — a slice boundary that dropped or
+		// double-counted a span would show here and nowhere else.
+		const details = Integrations.aiSessionDetailsQuery({
+			sessionIds: page.map((row) => row.sessionId),
+		})
+		const readDetails = async (slice: Integrations.AiSessionDetailsSlice) => {
+			const compiled = compileUnsafe(details, { orgId: ORG_ID, fanOutStart, fanOutEnd, ...slice })
+			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		}
+		const slices = Integrations.aiSessionDetailsSlices(fanOutStart, fanOutEnd)
+		const rows = Integrations.mergeAiSessionDetails(await Promise.all(slices.map(readDetails)))
+		const whole = await readDetails({
+			spansStart: slices[0]!.spansStart,
+			spansEnd: slices[slices.length - 1]!.spansEnd,
+		})
+		const sorted = (list: ReadonlyArray<Integrations.AiSessionDetailsOutput>) =>
+			[...list]
+				.sort((a, b) => a.sessionId.localeCompare(b.sessionId))
+				.map((row) => ({ ...row, serviceNames: [...row.serviceNames].sort() }))
+		assert.deepStrictEqual(sorted(rows), sorted(whole))
 
 		// Merged by session id, as the client does — the same two sessions, now
 		// with the facts the index cannot answer.

@@ -16,8 +16,8 @@ SELECT
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
+          AND Timestamp >= '2026-01-02 09:30:00'
+          AND Timestamp <= '2026-01-02 13:30:00'
           AND TraceId IN (SELECT
           traceId AS traceId
         FROM (SELECT
@@ -96,8 +96,8 @@ SELECT
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
+          AND Timestamp >= '2026-01-02 09:30:00'
+          AND Timestamp <= '2026-01-02 13:30:00'
           AND TraceId IN (SELECT
           traceId AS traceId
         FROM (SELECT
@@ -186,8 +186,8 @@ SELECT
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
+          AND Timestamp >= '2026-01-02 09:30:00'
+          AND Timestamp <= '2026-01-02 13:30:00'
           AND TraceId IN (SELECT
           traceId AS traceId
         FROM (SELECT
@@ -358,6 +358,49 @@ FORMAT JSON
 
 -- builder:ai-sessions:aiSessionPageQuery:default
 SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
           argMin(vendorId, vendorAt) AS vendorId,
           argMin(vendorVersion, vendorAt) AS vendorVersion,
@@ -369,19 +412,14 @@ SELECT
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))))))) AS llmCalls,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS reasoningTokens,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
@@ -408,11 +446,55 @@ SELECT
         GROUP BY traceId) AS index_traces
         GROUP BY sessionId
         ORDER BY agentStart DESC, sessionId ASC
-        LIMIT 50
+        LIMIT 50) AS ranked_sessions) AS netted_sessions
+        ORDER BY agentStart DESC, sessionId ASC
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionPageQuery:every-filter
 SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
           argMin(vendorId, vendorAt) AS vendorId,
           argMin(vendorVersion, vendorAt) AS vendorVersion,
@@ -424,19 +506,14 @@ SELECT
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))))))) AS llmCalls,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS reasoningTokens,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
@@ -473,14 +550,14 @@ SELECT
           AND NOT (sessionId LIKE 'trace:%')
           AND agentDurationMs >= 1000
           AND agentDurationMs <= 600000
-          AND cost >= 0.01
+          AND toolCalls >= 1
+          AND toolCalls <= 50) AS ranked_sessions) AS netted_sessions
+        WHERE cost >= 0.01
           AND cost <= 5
           AND totalTokens >= 100
           AND totalTokens <= 1000000
           AND llmCalls >= 1
           AND llmCalls <= 50
-          AND toolCalls >= 1
-          AND toolCalls <= 50
         ORDER BY cost ASC, agentStart DESC, sessionId ASC
         LIMIT 25
         OFFSET 25
@@ -488,6 +565,49 @@ SELECT
 
 -- builder:ai-sessions:aiSessionPageQuery:filtered
 SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
           argMin(vendorId, vendorAt) AS vendorId,
           argMin(vendorVersion, vendorAt) AS vendorVersion,
@@ -499,19 +619,14 @@ SELECT
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))))))) AS llmCalls,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.8 - arraySum(c -> if(c.2 = r.1, c.8, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.9 - arraySum(c -> if(c.2 = r.1, c.9, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.10 - arraySum(c -> if(c.2 = r.1, c.10, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.11 - arraySum(c -> if(c.2 = r.1, c.11, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS reasoningTokens,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
@@ -541,7 +656,8 @@ SELECT
         GROUP BY sessionId
         ORDER BY agentStart DESC, sessionId ASC
         LIMIT 25
-        OFFSET 25
+        OFFSET 25) AS ranked_sessions) AS netted_sessions
+        ORDER BY agentStart DESC, sessionId ASC
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionSpansQuery:ai-scope-after-cursor

@@ -44,6 +44,14 @@ const countedFilters = (payload: {
 })
 
 /**
+ * How many of a page's details slices run at once. A page at production
+ * density is one to three slices, all of them in flight; a page over a sparse
+ * month is up to a slice a day, which this holds to a few warehouse queries
+ * at a time rather than thirty.
+ */
+const DETAILS_SLICE_CONCURRENCY = 6
+
+/**
  * Dashboard-only AI agent session reads.
  *
  * Serves the Agent Sessions page (behind the `agent_tracing` org rollout flag).
@@ -200,25 +208,39 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 				.handle("details", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* Effect.annotateCurrentSpan({
-							orgId: tenant.orgId,
-							"maple.ai.page_size": payload.sessionIds.length,
-						})
 						// The fan-out over `trace_detail_spans`, bounded by the page's own
 						// extent rather than the list's window — the client hands back the
 						// bounds the page rows carried. Seconds on a cold partition, which
-						// is why it is its own request rather than part of `list`.
-						const rows = yield* warehouse.compiledQuery(
-							tenant,
-							CH.compile(
-								Integrations.aiSessionDetailsQuery({
-									...countedFilters(payload),
-									sessionIds: payload.sessionIds,
-								}),
-								{ orgId: tenant.orgId, fanOutStart: payload.startTime, fanOutEnd: payload.endTime },
+						// is why it is its own request rather than part of `list`, and one
+						// read per partition the padded extent touches, side by side, so
+						// a cold day costs the page that day alone and the profile's
+						// ceiling bounds a day rather than the page.
+						const slices = Integrations.aiSessionDetailsSlices(payload.startTime, payload.endTime)
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.page_size": payload.sessionIds.length,
+							"maple.ai.details_slices": slices.length,
+						})
+						const query = Integrations.aiSessionDetailsQuery({
+							...countedFilters(payload),
+							sessionIds: payload.sessionIds,
+						})
+						const sliced = yield* Effect.all(
+							slices.map((slice) =>
+								warehouse.compiledQuery(
+									tenant,
+									CH.compile(query, {
+										orgId: tenant.orgId,
+										fanOutStart: payload.startTime,
+										fanOutEnd: payload.endTime,
+										...slice,
+									}),
+									{ profile: "list", context: "aiSessionsDetails" },
+								),
 							),
-							{ profile: "list", context: "aiSessionsDetails" },
+							{ concurrency: DETAILS_SLICE_CONCURRENCY },
 						)
+						const rows = Integrations.mergeAiSessionDetails(sliced)
 						// A page session the fan-out did not return is simply absent: the
 						// two MVs are written one after the other from the same insert, so
 						// the newest session can be ranked a moment before it has span rows.
