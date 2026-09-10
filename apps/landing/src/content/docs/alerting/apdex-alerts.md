@@ -227,6 +227,13 @@ Leave **Services** empty to watch everything, or name the ones you own. **Enviro
 
 Five minutes is the default evaluation **window** and works for most services. Anything from one minute up to 24 hours is allowed, but short windows on low-traffic services are noisy, because a handful of slow requests moves the ratio a long way.
 
+**Evaluation timing** collapses to a summary line (`5min · 2× · renotify 30min`) until you open it. The three fields under it are what keep an Apdex rule from paging you at 3am; [Tuning the rule so it pages you less](#tuning-the-rule-so-it-pages-you-less) below says what each one does.
+
+<figure class="shot">
+  <img src="/screenshots/docs/apdex-04-timing.webp" alt="The severity toggle set to Warning, and the expanded evaluation timing row: window 5 minutes, 2 breaches to fire, 2 healthy checks to resolve, minimum 50 samples, renotify every 30 minutes." loading="lazy" />
+  <figcaption>Severity and evaluation timing. The defaults shown are the ones the template sets.</figcaption>
+</figure>
+
 Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations), and save.
 
 Maple evaluates alert rules every minute. Each check aggregates the window you configured, so a five-minute window is a rolling five minutes re-scored every 60 seconds.
