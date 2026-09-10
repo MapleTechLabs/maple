@@ -35,7 +35,7 @@ import {
 	resolveMapleDomains,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
-import { optionalPlain, plainWithDefault } from "@maple/infra/env"
+import { optionalPlain, plainWithDefault, secretIsSet } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import Alerting from "./apps/alerting/src/worker.ts"
@@ -217,7 +217,20 @@ export default Alchemy.Stack(
 		// Object, and the api binds it as `SANDBOX`. Yielded first so the binding
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
-		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
+		//
+		// The token is checked here rather than required inside the Worker's own
+		// props. Both refuse to deploy a sandbox that would answer 401 to every
+		// call, but a `requiredSecret` in the props fails the whole `alchemy deploy`
+		// at config load, before any resource is touched — so a token nobody had
+		// provisioned yet stopped every Worker in the stage from updating. Deciding
+		// it here keeps the blast radius at the feature: no token, no sandbox, and
+		// the api logs that it is unavailable.
+		const sandboxTokenSet = yield* secretIsSet("SANDBOX_INTERNAL_SERVICE_TOKEN")
+		if (stageDeploysSandbox(stage) && !sandboxTokenSet)
+			yield* Effect.logWarning(
+				"skipping the repository sandbox: SANDBOX_INTERNAL_SERVICE_TOKEN is not set for this stage",
+			)
+		const sandbox = stageDeploysSandbox(stage) && sandboxTokenSet ? yield* MapleSandbox : undefined
 		const api = yield* sandbox === undefined
 			? MapleApi
 			: Effect.provideService(MapleApi, SandboxWorker, sandbox)

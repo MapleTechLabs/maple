@@ -12,6 +12,8 @@ import {
 	ingestKeyCryptoEnv,
 	optionalPlain,
 	optionalSecret,
+	requireSecretEntry,
+	secretIsSet,
 	planetScaleOAuthEnv,
 	plainWithDefault,
 	PRD_LOCKSTEP_REVISION_SERVICES,
@@ -121,6 +123,28 @@ describe("primitives", () => {
 		expect(run(derived("MAPLE_ENVIRONMENT", "pr-42"), { MAPLE_ENVIRONMENT: "production" })).toEqual({
 			MAPLE_ENVIRONMENT: "pr-42",
 		})
+	})
+})
+
+describe("secretIsSet", () => {
+	// Gates whether a resource is declared at all, so it must agree with
+	// `requiredSecret` on what counts as present: a blank value is not.
+	it("is false when the key is missing or blank, true only for a real value", () => {
+		expect(run(secretIsSet("SANDBOX_INTERNAL_SERVICE_TOKEN"), {})).toBe(false)
+		expect(
+			run(secretIsSet("SANDBOX_INTERNAL_SERVICE_TOKEN"), { SANDBOX_INTERNAL_SERVICE_TOKEN: "" }),
+		).toBe(false)
+		expect(
+			run(secretIsSet("SANDBOX_INTERNAL_SERVICE_TOKEN"), { SANDBOX_INTERNAL_SERVICE_TOKEN: "   " }),
+		).toBe(false)
+		expect(
+			run(secretIsSet("SANDBOX_INTERNAL_SERVICE_TOKEN"), { SANDBOX_INTERNAL_SERVICE_TOKEN: "tok" }),
+		).toBe(true)
+	})
+
+	it("never fails, so a missing secret cannot abort the deploy before any resource is touched", () => {
+		expect(runExit(secretIsSet("SANDBOX_INTERNAL_SERVICE_TOKEN"), {})._tag).toBe("Success")
+		expect(runExit(requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN"), {})._tag).toBe("Failure")
 	})
 })
 
