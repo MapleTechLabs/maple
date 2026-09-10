@@ -12,6 +12,11 @@ import {
 	sortOptionFor,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import { NotFoundError } from "@/components/route-error"
+import {
+	PageRefreshProvider,
+	usePageRefreshContext,
+} from "@/components/time-range-picker/page-refresh-context"
+import { ReloadControls } from "@/components/time-range-picker/reload-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
@@ -86,12 +91,14 @@ function AgentSessionsPage() {
 
 function AgentSessionsPageContent() {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Agent Sessions" }]} />
-			<DashboardLayout.Body>
-				<AgentSessionsBody />
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<PageRefreshProvider>
+			<DashboardLayout.Root>
+				<DashboardLayout.Breadcrumbs items={[{ label: "Agent Sessions" }]} />
+				<DashboardLayout.Body>
+					<AgentSessionsBody />
+				</DashboardLayout.Body>
+			</DashboardLayout.Root>
+		</PageRefreshProvider>
 	)
 }
 
@@ -103,14 +110,19 @@ function AgentSessionsBody() {
 	// back: the hook keys its accumulated pages on these inputs, and a fresh
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
+	const { refreshVersion } = usePageRefreshContext()
 	// The window rolls forward with every navigation — a filter or sort change
 	// re-resolves "the last week" against now, snapped to the cache grid so a
-	// change within the grid interval keeps its key. There is no picker and no
-	// reload button to advance it otherwise; a tab left open sees new sessions
-	// the next time it touches a control.
+	// change within the grid interval keeps its key — and with every Reload.
+	// Once Reload has been pressed the window stops snapping, as in
+	// `useEffectiveTimeRange`: a snapped end would keep the newest sessions out
+	// however many times it is clicked.
 	const { startTime, endTime } = useMemo(
-		() => resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW),
-		[searchKey],
+		() =>
+			resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, {
+				snap: refreshVersion === 0,
+			}),
+		[searchKey, refreshVersion],
 	)
 	const filterInputs = useMemo(
 		() => agentSessionsFilterInputs(search, { startTime, endTime }),
@@ -159,6 +171,7 @@ function AgentSessionsBody() {
 				})
 			}
 			waiting={firstPageResult.waiting}
+			actions={<ReloadControls />}
 		/>
 	)
 
