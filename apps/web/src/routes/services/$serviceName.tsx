@@ -21,6 +21,7 @@ import type { ServiceDetailTimeSeriesPoint } from "@/api/warehouse/services"
 import { useCommitMarkers } from "@/components/vcs/commit-markers/use-commit-markers"
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { Button } from "@maple/ui/components/ui/button"
@@ -66,6 +67,7 @@ const serviceDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/services/$serviceName")({
 	component: ServiceDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(serviceDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 interface ServiceChartConfig {
