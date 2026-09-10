@@ -415,7 +415,7 @@ export class ChatSession {
 	/**
 	 * Drive one turn to completion, appending events as they are produced.
 	 *
-	 * Everything heavy — the Effect runtime, the service graph, `@opencode-ai/ai` — is behind this
+	 * Everything heavy — the Effect runtime, the service graph, the agent engine — is behind this
 	 * dynamic import so none of it is evaluated at module scope. Failures are recorded as a
 	 * terminal event rather than thrown: the log is what the client reads, so a turn that dies
 	 * silently is indistinguishable from one that hung.

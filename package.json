@@ -88,6 +88,8 @@
 			"@tanstack/charts-scales": "0.16.0"
 		},
 		"effect": {
+			"@effect/ai-openai-compat": "4.0.0-rc.112",
+			"@effect/ai-openrouter": "4.0.0-rc.112",
 			"@effect/atom-react": "4.0.0-rc.112",
 			"@effect/language-service": "^0.87.2",
 			"@effect/platform-bun": "4.0.0-rc.112",
