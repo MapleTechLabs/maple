@@ -13,10 +13,10 @@
 // only reachable from ErrorsService/telemetry. Remaining modules live on the
 // exemption list and shrink batch by batch.
 
-import type { CompiledQuery } from "@maple-dev/clickhouse-builder"
+import type { CompiledQuery } from "@maple-dev/effect-clickhouse"
 import * as CH from "../ch"
 import { Effect } from "effect"
-import type { QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 
 /**
  * Run a compile that is now Effect-returning, throwing on failure.

@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Tracer } from "effect"
 import {
 	MAX_RAW_SQL_RESULT_BYTES,
 	OrgClickHouseSettingsEncryptionError,
@@ -16,11 +16,20 @@ import {
 	WarehouseScopeError,
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
+import { FetchHttpClient } from "effect/unstable/http"
+import { TestClock } from "effect/testing"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
-import { parseStatement, type ClickHouseStatement } from "@maple-dev/clickhouse-builder/sql"
+import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
-import { makeWarehouseExecutor, type ResolvedWarehouseConfig } from "@maple/query-engine/execution"
-import { __testables, WarehouseQueryService, WarehouseRedirectRefusedError } from "./WarehouseQueryService"
+import {
+	makeWarehouseExecutor,
+	WarehouseDriverError,
+	warehouseDriverFailure,
+	WarehouseResponseLimitError,
+	type ResolvedWarehouseConfig,
+} from "@maple/query-engine/execution"
+import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
+import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
 import {
 	OrgClickHouseSettingsService,
 	type OrgClickHouseSettingsServiceApi,
@@ -116,16 +125,22 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	it.effect("substitutes a scoped JWT for the Tinybird SDK token", () => {
 		let captured: ResolvedWarehouseConfig | undefined
 		let responseLimits: { readonly maxRows: number; readonly maxBytes: number } | undefined
-		__testables.setClientFactory((config) => {
-			captured = config
-			return {
-				sql: async (_sql, options) => {
-					responseLimits = options?.responseLimits
-					return { data: [] }
-				},
-				insert: async () => {},
-			}
-		})
+		__testables.setClientFactory((config) =>
+			Effect.sync(() => {
+				captured = config
+				return {
+					sql: (_sql, options) =>
+						Effect.try({
+							try: () => {
+								responseLimits = options?.responseLimits
+								return { data: [] }
+							},
+							catch: warehouseDriverFailure,
+						}),
+					insert: () => Effect.void,
+				}
+			}),
+		)
 		const layer = buildLayer(createTestDb(trackedDbs))
 
 		return Effect.gen(function* () {
@@ -142,10 +157,12 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("defaults an env-level ClickHouse gateway to Tinybird and substitutes a scoped JWT", () => {
 		let captured: ResolvedWarehouseConfig | undefined
-		__testables.setClientFactory((config) => {
-			captured = config
-			return { sql: async () => ({ data: [] }), insert: async () => {} }
-		})
+		__testables.setClientFactory((config) =>
+			Effect.sync(() => {
+				captured = config
+				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
+			}),
+		)
 		const layer = buildLayer(createTestDb(trackedDbs), {
 			CLICKHOUSE_URL: "https://gateway.tinybird.example",
 			CLICKHOUSE_PASSWORD: "gateway-admin-token",
@@ -164,10 +181,12 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("preserves env-level vanilla ClickHouse credentials for raw SQL", () => {
 		let captured: ResolvedWarehouseConfig | undefined
-		__testables.setClientFactory((config) => {
-			captured = config
-			return { sql: async () => ({ data: [] }), insert: async () => {} }
-		})
+		__testables.setClientFactory((config) =>
+			Effect.sync(() => {
+				captured = config
+				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
+			}),
+		)
 		const layer = buildLayer(createTestDb(trackedDbs), {
 			CLICKHOUSE_URL: "https://clickhouse.example",
 			CLICKHOUSE_PROVIDER: "clickhouse",
@@ -186,10 +205,12 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("fails closed for env-level vanilla ClickHouse outside self-hosted mode", () => {
 		let constructed = false
-		__testables.setClientFactory(() => {
-			constructed = true
-			return { sql: async () => ({ data: [] }), insert: async () => {} }
-		})
+		__testables.setClientFactory(() =>
+			Effect.sync(() => {
+				constructed = true
+				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
+			}),
+		)
 		const layer = buildLayer(createTestDb(trackedDbs), {
 			CLICKHOUSE_URL: "https://clickhouse.example",
 			CLICKHOUSE_PROVIDER: "clickhouse",
@@ -212,10 +233,12 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("preserves per-org ClickHouse override credentials for raw SQL", () => {
 		let captured: ResolvedWarehouseConfig | undefined
-		__testables.setClientFactory((config) => {
-			captured = config
-			return { sql: async () => ({ data: [] }), insert: async () => {} }
-		})
+		__testables.setClientFactory((config) =>
+			Effect.sync(() => {
+				captured = config
+				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
+			}),
+		)
 		// BYO credentials are already tenant-isolated and must not require the
 		// managed Tinybird JWT signing configuration.
 		const configLive = makeConfig({}, false)
@@ -296,9 +319,9 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	})
 
 	it.effect("preserves missing Tinybird signing configuration as its own tag", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [] }),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [] }),
+			insert: () => Effect.void,
 		}))
 		const layer = buildLayer(createTestDb(trackedDbs), {}, false)
 
@@ -315,10 +338,12 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 
 	it.effect("rejects env-level URL userinfo before constructing a client", () => {
 		let constructed = false
-		__testables.setClientFactory(() => {
-			constructed = true
-			return { sql: async () => ({ data: [] }), insert: async () => {} }
-		})
+		__testables.setClientFactory(() =>
+			Effect.sync(() => {
+				constructed = true
+				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
+			}),
+		)
 		const layer = buildLayer(createTestDb(trackedDbs), {
 			CLICKHOUSE_URL: "https://user:secret@clickhouse.example",
 			CLICKHOUSE_PROVIDER: "clickhouse",
@@ -334,26 +359,33 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	})
 })
 
-describe("bounded Tinybird response fetch", () => {
-	it("accepts an exact-boundary response and aborts one byte over", async () => {
-		const exact = await __testables.boundedResponseFetch(
-			MAX_RAW_SQL_RESULT_BYTES,
-			(async () => new Response(new Uint8Array(MAX_RAW_SQL_RESULT_BYTES))) as typeof fetch,
-		)("https://api.tinybird.example/v0/sql")
-		assert.strictEqual((await exact.arrayBuffer()).byteLength, MAX_RAW_SQL_RESULT_BYTES)
+describe("bounded Tinybird response body", () => {
+	const tbConfig = { kind: "tinybird" as const, host: "https://api.tinybird.example", token: "tok" }
+	const limits = { maxRows: 1000, maxBytes: MAX_RAW_SQL_RESULT_BYTES }
+	const bodyOf = (bytes: number) => {
+		// A valid result set padded to exactly `bytes` with trailing whitespace.
+		const prefix = '{"data":[]}'
+		return prefix + " ".repeat(bytes - prefix.length)
+	}
 
-		let thrown: unknown
-		try {
-			await __testables.boundedResponseFetch(
-				MAX_RAW_SQL_RESULT_BYTES,
-				(async () => new Response(new Uint8Array(MAX_RAW_SQL_RESULT_BYTES + 1))) as typeof fetch,
-			)("https://api.tinybird.example/v0/sql")
-		} catch (error) {
-			thrown = error
-		}
-		assert.instanceOf(thrown, Error)
-		assert.match((thrown as Error).message, /5000000 encoded bytes/)
-	})
+	it.effect("accepts an exact-boundary response and refuses one byte over", () =>
+		Effect.gen(function* () {
+			const exact = makeTinybirdTestClient(tbConfig, async () => new Response(bodyOf(MAX_RAW_SQL_RESULT_BYTES)))
+			const result = yield* exact.sql(parseStatement("SELECT 1 FORMAT JSON"), { responseLimits: limits })
+			assert.deepStrictEqual(result.data, [])
+
+			const over = makeTinybirdTestClient(
+				tbConfig,
+				async () => new Response(bodyOf(MAX_RAW_SQL_RESULT_BYTES + 1)),
+			)
+			const error = yield* Effect.flip(
+				over.sql(parseStatement("SELECT 1 FORMAT JSON"), { responseLimits: limits }),
+			)
+			assert.instanceOf(error, WarehouseResponseLimitError)
+			assert.strictEqual((error as WarehouseResponseLimitError).kind, "bytes")
+			assert.match(error.message, /5000000 encoded bytes/)
+		}),
+	)
 })
 
 describe("WarehouseQueryService.compiledQuery retry on transient upstream failures", () => {
@@ -361,13 +393,17 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 	// delays, so the default TestClock would stall the retries.
 	it.live("recovers after two 503s on the third attempt", () => {
 		let attempts = 0
-		__testables.setClientFactory(() => ({
-			sql: async () => {
-				attempts++
-				if (attempts < 3) throw transient503()
-				return { data: [{ ok: 1 }] }
-			},
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () =>
+				Effect.try({
+					try: () => {
+						attempts++
+						if (attempts < 3) throw transient503()
+						return { data: [{ ok: 1 }] }
+					},
+					catch: warehouseDriverFailure,
+				}),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -385,12 +421,16 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 
 	it.effect("does not retry non-transient errors (auth)", () => {
 		let attempts = 0
-		__testables.setClientFactory(() => ({
-			sql: async () => {
-				attempts++
-				throw new Error("HTTP status 401 authentication failed")
-			},
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () =>
+				Effect.try({
+					try: () => {
+						attempts++
+						throw new Error("HTTP status 401 authentication failed")
+					},
+					catch: warehouseDriverFailure,
+				}),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -411,12 +451,16 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 	// Runs under it.live: exhausts the real backoff schedule before giving up.
 	it.live("gives up after the configured retry budget when all attempts fail", () => {
 		let attempts = 0
-		__testables.setClientFactory(() => ({
-			sql: async () => {
-				attempts++
-				throw transient503()
-			},
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () =>
+				Effect.try({
+					try: () => {
+						attempts++
+						throw transient503()
+					},
+					catch: warehouseDriverFailure,
+				}),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -444,9 +488,9 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 	it.effect("executes compiled SQL and decodes rows with the compiled row schema", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [{ serviceName: "api", count: "42" }] }),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [{ serviceName: "api", count: "42" }] }),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -469,9 +513,9 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	})
 
 	it.effect("maps row decode failures to WarehouseResultDecodeError", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [{ count: "not-a-number" }] }),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -496,9 +540,9 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	})
 
 	it.effect("still enforces OrgId scoping for compiled SQL", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [{ count: 1 }] }),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [{ count: 1 }] }),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -535,14 +579,15 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 	it.effect("returns Some with the decoded first row", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({
-				data: [
-					{ serviceName: "api", count: "42" },
-					{ serviceName: "worker", count: "9" },
-				],
-			}),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () =>
+				Effect.succeed({
+					data: [
+						{ serviceName: "api", count: "42" },
+						{ serviceName: "worker", count: "9" },
+					],
+				}),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -568,9 +613,9 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	})
 
 	it.effect("returns None when the compiled SQL returns no rows", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [] }),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [] }),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -593,9 +638,9 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	})
 
 	it.effect("maps first-row decode failures to WarehouseResultDecodeError", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [{ count: "not-a-number" }] }),
-			insert: async () => {},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
+			insert: () => Effect.void,
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -623,11 +668,15 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 	it.effect("forwards datasource + rows to the client's insert", () => {
 		const calls: Array<{ datasource: string; rows: ReadonlyArray<unknown> }> = []
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [] }),
-			insert: async (datasource, rows) => {
-				calls.push({ datasource, rows })
-			},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [] }),
+			insert: (datasource, rows) =>
+				Effect.try({
+					try: () => {
+						calls.push({ datasource, rows })
+					},
+					catch: WarehouseDriverError.fromUnknown,
+				}),
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -645,11 +694,15 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 	it.effect("short-circuits without calling insert when there are no rows", () => {
 		let inserts = 0
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [] }),
-			insert: async () => {
-				inserts++
-			},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [] }),
+			insert: () =>
+				Effect.try({
+					try: () => {
+						inserts++
+					},
+					catch: WarehouseDriverError.fromUnknown,
+				}),
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -665,11 +718,15 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 	// rows, not Maple's SQL, are what usually earned the rejection), so a
 	// syntax-shaped complaint takes the caller-authored invalid-SQL tag.
 	it.effect("maps a failed insert through the classifier", () => {
-		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [] }),
-			insert: async () => {
-				throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
-			},
+		__testables.setClientFactory(() => Effect.succeed({
+			sql: () => Effect.succeed({ data: [] }),
+			insert: () =>
+				Effect.try({
+					try: () => {
+						throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
+					},
+					catch: WarehouseDriverError.fromUnknown,
+				}),
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -709,8 +766,8 @@ describe("createClickHouseSqlClient.insert is disabled (ClickHouse is read-only)
 
 		let thrown: unknown
 		try {
-			const client = __testables.createClickHouseSqlClient(chConfig)
-			await client.insert("traces", [{ trace_id: "a" }])
+			const client = makeClickHouseTestClient(chConfig)
+			await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }]))
 		} catch (error) {
 			thrown = error
 		} finally {
@@ -723,7 +780,7 @@ describe("createClickHouseSqlClient.insert is disabled (ClickHouse is read-only)
 	})
 })
 
-describe("createTinybirdSdkSqlClient.insert wire framing (the production insert path)", () => {
+describe("createTinybirdSqlClient.insert wire framing (the production insert path)", () => {
 	// Inserts in the cloud only need to work on Tinybird. This pins that path so a
 	// future change can't silently break ingest into the managed pipeline.
 	const tbConfig = {
@@ -741,19 +798,19 @@ describe("createTinybirdSdkSqlClient.insert wire framing (the production insert 
 			body: string
 		}> = []
 		const requestFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-			const headers = (init?.headers ?? {}) as Record<string, string>
+			const headers = new Headers(init?.headers)
 			captured.push({
 				url: String(input),
 				method: init?.method,
-				contentType: headers["Content-Type"],
-				auth: headers.Authorization,
-				body: typeof init?.body === "string" ? init.body : String(init?.body ?? ""),
+				contentType: headers.get("content-type") ?? undefined,
+				auth: headers.get("authorization") ?? undefined,
+				body: requestBodyText(init?.body),
 			})
 			return new Response("", { status: 202 })
 		}) as typeof fetch
 
-		const client = __testables.createTinybirdSdkSqlClient(tbConfig, requestFetch)
-		await client.insert("traces", [{ trace_id: "a" }, { trace_id: "b" }])
+		const client = makeTinybirdTestClient(tbConfig, requestFetch)
+		await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }, { trace_id: "b" }]))
 
 		assert.strictEqual(captured.length, 1)
 		const req = captured[0]!
@@ -773,14 +830,14 @@ describe("createTinybirdSdkSqlClient.insert wire framing (the production insert 
 			return new Response("", { status: 202 })
 		}) as typeof fetch
 
-		const client = __testables.createTinybirdSdkSqlClient(tbConfig, requestFetch)
-		await client.insert("traces", [])
+		const client = makeTinybirdTestClient(tbConfig, requestFetch)
+		await Effect.runPromise(client.insert("traces", []))
 
 		assert.strictEqual(calls, 0)
 	})
 })
 
-describe("createTinybirdSdkSqlClient.sql wire format", () => {
+describe("createTinybirdSqlClient.sql wire format", () => {
 	// The FORMAT decision moved to the executor, which settles the statement's
 	// terminal clauses from the backend's dialect before any driver sees it. This
 	// driver's whole job is to render what it was handed — the double-FORMAT
@@ -798,8 +855,7 @@ describe("createTinybirdSdkSqlClient.sql wire format", () => {
 			const url = new URL(String(input))
 			if (url.pathname.endsWith("/v0/sql")) {
 				const fromParam = url.searchParams.get("q")
-				const body = typeof init?.body === "string" ? init.body : ""
-				sent.push(fromParam ?? body)
+				sent.push(fromParam ?? requestBodyText(init?.body))
 			}
 			return new Response(JSON.stringify({ meta: [], data: [], rows: 0 }), {
 				status: 200,
@@ -807,8 +863,8 @@ describe("createTinybirdSdkSqlClient.sql wire format", () => {
 			})
 		}) as typeof fetch
 
-		const client = __testables.createTinybirdSdkSqlClient(tbConfig, requestFetch)
-		await client.sql(statement, undefined)
+		const client = makeTinybirdTestClient(tbConfig, requestFetch)
+		await Effect.runPromise(client.sql(statement, undefined))
 
 		assert.strictEqual(sent.length, 1)
 		return sent[0]!
@@ -859,14 +915,22 @@ describe("ingest routes writes to the managed pipeline, not a per-org read overr
 		const used: Array<{ op: "sql" | "insert"; kind: string }> = []
 		const purposes: Array<string> = []
 		const executor = makeWarehouseExecutor({
-			createClient: (config) => ({
-				sql: async () => {
-					used.push({ op: "sql", kind: config.kind })
-					return { data: [] }
-				},
-				insert: async () => {
-					used.push({ op: "insert", kind: config.kind })
-				},
+			createClient: (config) => Effect.succeed({
+				sql: () =>
+					Effect.try({
+						try: () => {
+							used.push({ op: "sql", kind: config.kind })
+							return { data: [] }
+						},
+						catch: warehouseDriverFailure,
+					}),
+				insert: () =>
+					Effect.try({
+						try: () => {
+							used.push({ op: "insert", kind: config.kind })
+						},
+						catch: WarehouseDriverError.fromUnknown,
+					}),
 			}),
 			resolveRoute: (_tenant, purpose) => {
 				purposes.push(purpose)
@@ -900,14 +964,22 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 	// resolver (which prefers ClickHouse) is what kept demo-seed onboarding broken.
 	it.effect("reads resolve to managed ClickHouse, but ingest resolves to Tinybird", () => {
 		const used: Array<{ op: "sql" | "insert"; kind: string }> = []
-		__testables.setClientFactory((config) => ({
-			sql: async () => {
-				used.push({ op: "sql", kind: config.kind })
-				return { data: [] }
-			},
-			insert: async () => {
-				used.push({ op: "insert", kind: config.kind })
-			},
+		__testables.setClientFactory((config) => Effect.succeed({
+			sql: () =>
+				Effect.try({
+					try: () => {
+						used.push({ op: "sql", kind: config.kind })
+						return { data: [] }
+					},
+					catch: warehouseDriverFailure,
+				}),
+			insert: () =>
+				Effect.try({
+					try: () => {
+						used.push({ op: "insert", kind: config.kind })
+					},
+					catch: WarehouseDriverError.fromUnknown,
+				}),
 		}))
 
 		const layer = buildLayer(createTestDb(trackedDbs), {
@@ -947,26 +1019,76 @@ describe("WarehouseUpstreamError surfaces transient classification", () => {
 	})
 })
 
-describe("isEmptyJsonBodyError (empty Tinybird body ⇒ zero rows)", () => {
-	// The Tinybird SDK's sql() parses the response body as JSON; a successful (2xx) query that
-	// matches zero rows can return an empty body, throwing `SyntaxError: "Unexpected end of JSON
-	// input"`. That must be treated as zero rows so alert rules (and every compiledQuery caller) hit the
-	// no-data path instead of surfacing a spurious WarehouseClientError.
-	it("treats an empty-body SyntaxError as zero rows", () => {
-		assert.isTrue(__testables.isEmptyJsonBodyError(new SyntaxError("Unexpected end of JSON input")))
-	})
+describe("Tinybird response decoding", () => {
+	const tbConfig = { kind: "tinybird" as const, host: "https://api.tinybird.co", token: "tok" }
+	const statement = parseStatement("SELECT 1 FORMAT JSON")
 
-	it("does NOT swallow an HTML-error-page SyntaxError", () => {
-		// "Unexpected token < in JSON" means Tinybird returned an HTML error page — a real failure
-		// that must keep propagating as a WarehouseClientError, not be silently treated as zero rows.
-		assert.isFalse(__testables.isEmptyJsonBodyError(new SyntaxError("Unexpected token < in JSON")))
-	})
+	// A successful (2xx) query that matches zero rows can come back with an empty
+	// body. That is zero rows, so alert rules (and every compiledQuery caller) hit
+	// the no-data path instead of surfacing a spurious WarehouseClientError.
+	it.effect("treats an empty 2xx body as zero rows", () =>
+		Effect.gen(function* () {
+			const client = makeTinybirdTestClient(tbConfig, async () => new Response("", { status: 200 }))
+			assert.deepStrictEqual((yield* client.sql(statement)).data, [])
+		}),
+	)
 
-	it("ignores non-SyntaxError failures", () => {
-		assert.isFalse(__testables.isEmptyJsonBodyError(new Error("Unexpected end of JSON input")))
-		assert.isFalse(__testables.isEmptyJsonBodyError("Unexpected end of JSON input"))
-		assert.isFalse(__testables.isEmptyJsonBodyError(null))
-	})
+	it.effect("reports an HTML error page as a protocol failure, not zero rows", () =>
+		Effect.gen(function* () {
+			const client = makeTinybirdTestClient(
+				tbConfig,
+				async () => new Response("<html>upstream</html>", { status: 200 }),
+			)
+			const error = yield* Effect.flip(client.sql(statement))
+			assert.instanceOf(error, WarehouseDriverError)
+			assert.strictEqual((error as WarehouseDriverError).reason, "protocol")
+		}),
+	)
+
+	it.effect("lifts the JSON error field and the HTTP status off a rejected query", () =>
+		Effect.gen(function* () {
+			const client = makeTinybirdTestClient(
+				tbConfig,
+				async () =>
+					new Response(JSON.stringify({ error: "invalid authentication token" }), { status: 403 }),
+			)
+			const error = yield* Effect.flip(client.sql(statement))
+			assert.instanceOf(error, WarehouseDriverError)
+			const driver = error as WarehouseDriverError
+			assert.strictEqual(driver.reason, "server")
+			assert.strictEqual(driver.status, 403)
+			assert.strictEqual(driver.message, "invalid authentication token")
+		}),
+	)
+
+	it.effect("keeps a non-JSON error body with its status", () =>
+		Effect.gen(function* () {
+			const client = makeTinybirdTestClient(
+				tbConfig,
+				async () => new Response("<html>502 Bad Gateway</html>", { status: 502 }),
+			)
+			const error = yield* Effect.flip(client.sql(statement))
+			assert.instanceOf(error, WarehouseDriverError)
+			const driver = error as WarehouseDriverError
+			assert.strictEqual(driver.status, 502)
+			assert.match(driver.message, /^Request failed with status 502: /)
+		}),
+	)
+
+	it.effect("keeps the first 16 KiB of an oversized error body instead of dropping it", () =>
+		Effect.gen(function* () {
+			const client = makeTinybirdTestClient(
+				tbConfig,
+				async () => new Response(`access denied ${"x".repeat(32 * 1024)}`, { status: 403 }),
+			)
+			const error = yield* Effect.flip(client.sql(statement))
+			assert.instanceOf(error, WarehouseDriverError)
+			const driver = error as WarehouseDriverError
+			assert.strictEqual(driver.status, 403)
+			assert.match(driver.message, /^Request failed with status 403: access denied/)
+			assert.strictEqual(String(driver.cause).length, 16 * 1024)
+		}),
+	)
 })
 
 describe("BYO ClickHouse redirect refusal", () => {
@@ -988,27 +1110,284 @@ describe("BYO ClickHouse redirect refusal", () => {
 			return new Response("", { status: 307, headers: { location: "http://169.254.169.254/" } })
 		}
 
-		const client = __testables.createClickHouseSqlClient(chConfig, requestFetch)
+		const client = makeClickHouseTestClient(chConfig, requestFetch)
 		let thrown: unknown
 		try {
-			await client.sql(parseStatement("SELECT 1"), undefined)
+			await Effect.runPromise(client.sql(parseStatement("SELECT 1"), undefined))
 		} catch (error) {
 			thrown = error
 		}
 
-		assert.instanceOf(thrown, WarehouseRedirectRefusedError)
-		assert.match((thrown as Error).message, /redirect responses are not allowed \(307\)/)
-		// The Location is kept as context, so a refusal is diagnosable without
-		// being confusable with an ordinary 4xx from the cluster.
-		assert.strictEqual((thrown as WarehouseRedirectRefusedError).location, "http://169.254.169.254/")
+		assert.instanceOf(thrown, WarehouseDriverError)
+		const driver = thrown as WarehouseDriverError
+		// A refused redirect is configuration, never an ordinary 4xx from the cluster.
+		assert.strictEqual(driver.reason, "config")
+		assert.strictEqual(driver.status, 307)
+		assert.match(driver.message, /redirect responses are not allowed \(307\)/)
+		// The Location is kept as context, so a refusal is diagnosable.
+		assert.instanceOf(driver.cause, ClickHouseHttp.ClickHouseRedirectError)
+		assert.strictEqual((driver.cause as ClickHouseHttp.ClickHouseRedirectError).location, "http://169.254.169.254/")
 		// Exactly one request, and it opted out of automatic redirect following.
 		assert.strictEqual(seen.length, 1)
 		assert.strictEqual(seen[0]?.redirect, "manual")
 	})
 
-	it("passes an ordinary 2xx response through untouched", async () => {
-		const requestFetch: typeof fetch = async () => new Response('{"n":1}\n', { status: 200 })
-		const response = await __testables.redirectRefusingFetch(requestFetch)("https://ch.example.com")
-		assert.strictEqual(response.status, 200)
-	})
+	it.effect("decodes an ordinary 2xx response through the native client", () =>
+		Effect.gen(function* () {
+			const requestFetch: typeof fetch = async () => new Response('{"n":1}\n', { status: 200 })
+			const result = yield* makeClickHouseTestClient(chConfig, requestFetch).sql(
+				parseStatement("SELECT 1"),
+			)
+			assert.deepStrictEqual(result.data, [{ n: 1 }])
+		}),
+	)
 })
+
+describe("warehouse driver Effect boundaries", () => {
+	const chConfig = {
+		kind: "clickhouse" as const,
+		url: "https://ch.example.com",
+		username: "u",
+		password: "p",
+		database: "default",
+	}
+	const tbConfig = { kind: "tinybird" as const, host: "https://api.tinybird.co", token: "token" }
+	const cases = [
+		{
+			name: "ClickHouse",
+			make: (request: typeof fetch) => makeClickHouseTestClient(chConfig, request),
+		},
+		{
+			name: "Tinybird",
+			make: (request: typeof fetch) => makeTinybirdTestClient(tbConfig, request),
+		},
+	]
+
+	for (const { name, make } of cases) {
+		it.effect(`${name} defers requests and cancels each concurrent execution independently`, () =>
+			Effect.gen(function* () {
+				const started = yield* Deferred.make<void>()
+				const signals: AbortSignal[] = []
+				const request: typeof fetch = (_input, init) =>
+					new Promise((_resolve, reject) => {
+						const signal = init?.signal
+						if (!signal) throw new Error("Expected cancellation signal")
+						signals.push(signal)
+						signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+						if (signals.length === 2) Deferred.doneUnsafe(started, Effect.void)
+					})
+				const query = make(request).sql(parseStatement("SELECT 1 FORMAT JSON"))
+				assert.strictEqual(signals.length, 0)
+				const first = yield* Effect.forkChild(query)
+				const second = yield* Effect.forkChild(query)
+				yield* Deferred.await(started)
+				yield* Fiber.interrupt(first)
+				assert.isTrue(signals[0]!.aborted)
+				assert.isFalse(signals[1]!.aborted)
+				yield* Fiber.interrupt(second)
+				assert.isTrue(signals[1]!.aborted)
+				assert.strictEqual(signals.length, 2)
+			}),
+		)
+
+		for (const bounded of [false, true]) {
+			it.effect(
+				`${name} cancels while reading a ${bounded ? "bounded" : "buffered"} response body`,
+				() =>
+					Effect.gen(function* () {
+						const reading = yield* Deferred.make<AbortSignal>()
+						let aborted = false
+						const request: typeof fetch = async (_input, init) => {
+							const signal = init?.signal
+							if (!signal) throw new Error("Expected cancellation signal")
+							return new Response(
+								new ReadableStream({
+									start(controller) {
+										signal.addEventListener(
+											"abort",
+											() => {
+												aborted = true
+												controller.error(signal.reason)
+											},
+											{ once: true },
+										)
+									},
+									pull() {
+										Deferred.doneUnsafe(reading, Effect.succeed(signal))
+									},
+								}),
+							)
+						}
+						const fiber = yield* Effect.forkChild(
+							make(request).sql(
+								parseStatement("SELECT 1 FORMAT JSON"),
+								bounded ? { responseLimits: { maxBytes: 1024, maxRows: 10 } } : undefined,
+							),
+						)
+						const signal = yield* Deferred.await(reading)
+						yield* Fiber.interrupt(fiber)
+						assert.isTrue(signal.aborted)
+						assert.isTrue(aborted)
+					}),
+			)
+		}
+
+		for (const kind of ["rows", "bytes"] as const) {
+			it.effect(`${name} preserves the ${kind} limit error`, () =>
+				Effect.gen(function* () {
+					const request: typeof fetch = async () =>
+						new Response(
+							name === "ClickHouse"
+								? '{"value":1}\n{"value":2}\n'
+								: '{"data":[{"value":1},{"value":2}]}',
+						)
+					const error = yield* Effect.flip(
+						make(request).sql(parseStatement("SELECT 1 FORMAT JSON"), {
+							responseLimits: {
+								maxBytes: kind === "bytes" ? 1 : 1024,
+								maxRows: kind === "rows" ? 1 : 10,
+							},
+						}),
+					)
+					assert.instanceOf(error, WarehouseResponseLimitError)
+					assert.strictEqual((error as WarehouseResponseLimitError).kind, kind)
+				}),
+			)
+		}
+	}
+
+	it.effect("ClickHouse reports a single oversized row as a row limit, not the total", () =>
+		Effect.gen(function* () {
+			// No response limits: the native client's 16 MiB per-row default applies.
+			const request: typeof fetch = async () => new Response(`{"value":"${"x".repeat(16 * 1024 * 1024)}"}\n`)
+			const error = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, request).sql(parseStatement("SELECT 1 FORMAT JSON")),
+			)
+			assert.instanceOf(error, WarehouseResponseLimitError)
+			assert.strictEqual((error as WarehouseResponseLimitError).kind, "bytes")
+			assert.match(error.message, /^A single result row exceeded 16777216 encoded bytes$/)
+		}),
+	)
+
+	it.effect("Tinybird inserts are lazy and abort on interruption", () =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<AbortSignal>()
+			let calls = 0
+			const request: typeof fetch = (_input, init) =>
+				new Promise((_resolve, reject) => {
+					const signal = init?.signal
+					if (!signal) throw new Error("Expected cancellation signal")
+					calls++
+					signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+					Deferred.doneUnsafe(started, Effect.succeed(signal))
+				})
+			const insert = makeTinybirdTestClient(tbConfig, request).insert("traces", [{ id: 1 }])
+			assert.strictEqual(calls, 0)
+			const fiber = yield* Effect.forkChild(insert)
+			const signal = yield* Deferred.await(started)
+			yield* Fiber.interrupt(fiber)
+			assert.isTrue(signal.aborted)
+			assert.strictEqual(calls, 1)
+		}),
+	)
+})
+
+it.effect("the executor's query budget aborts the adapter request without retrying", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<AbortSignal>()
+		let attempts = 0
+		const request: typeof fetch = (_input, init) =>
+			new Promise((_resolve, reject) => {
+				const signal = init?.signal
+				if (!signal) throw new Error("Expected cancellation signal")
+				attempts++
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+				Deferred.doneUnsafe(started, Effect.succeed(signal))
+			})
+		const config = { kind: "tinybird" as const, host: "https://api.tinybird.co", token: "token" }
+		const executor = makeWarehouseExecutor({
+			createClient: () => __testables.createTinybirdSqlClient(config).pipe(Effect.provide(httpWith(request))),
+			resolveRoute: () =>
+				Effect.succeed({ source: "managed" as const, config, clientCacheKey: "test" }),
+		})
+		const fiber = yield* Effect.forkChild(
+			Effect.exit(
+				executor.compiledQuery(
+					makeTenant(),
+					scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+					{ profile: "discovery" },
+				),
+			),
+		)
+		const signal = yield* Deferred.await(started)
+		yield* TestClock.adjust("11 seconds")
+		const exit = yield* Fiber.join(fiber)
+		assert.isTrue(Exit.isFailure(exit))
+		assert.isTrue(signal.aborted)
+		assert.strictEqual(attempts, 1)
+	}),
+)
+
+describe("warehouse spans follow the database conventions", () => {
+	const recordingTracer = () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return { spans, tracer }
+	}
+	const okFetch: typeof fetch = async () => new Response('{"data":[]}')
+
+	it.effect("emits one database span per query and no http.client span beneath it", () => {
+		const layer = buildLayer(createTestDb(trackedDbs))
+		return Effect.gen(function* () {
+			const { spans, tracer } = recordingTracer()
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(makeTenant(), scopedSql("SELECT 1 WHERE OrgId = 'org_test'"), {
+					context: "spanShape",
+				}),
+			).pipe(Effect.withTracer(tracer))
+			const names = spans.map((span) => span.name)
+			assert.include(names, "WarehouseQueryService.executeSql")
+			assert.isFalse(names.some((name) => name.startsWith("http.client")))
+		}).pipe(Effect.provide(layer), Effect.provideService(FetchHttpClient.Fetch, okFetch))
+	})
+
+	// Proves the assertion above can see an HTTP span at all: the same fetch on
+	// a bare Effect HttpClient does produce one.
+	it.effect("a driver on the bare fetch client would emit an http.client span", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = recordingTracer()
+			const client = makeTinybirdTestClient(
+				{ kind: "tinybird", host: "https://api.tinybird.co", token: "token" },
+				okFetch,
+			)
+			yield* client.sql(parseStatement("SELECT 1 FORMAT JSON")).pipe(Effect.withTracer(tracer))
+			assert.isTrue(spans.some((span) => span.name === "http.client POST"))
+		}),
+	)
+})
+
+/** An HttpClient whose transport is the given fetch stand-in. */
+const httpWith = (request: typeof fetch) =>
+	FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)))
+
+// Driver construction reads its HttpClient from context and touches no network,
+// so building a test client synchronously is exact.
+const makeClickHouseTestClient = (
+	config: Parameters<typeof __testables.createClickHouseSqlClient>[0],
+	requestFetch: typeof fetch = fetch,
+) => Effect.runSync(__testables.createClickHouseSqlClient(config).pipe(Effect.provide(httpWith(requestFetch))))
+
+const makeTinybirdTestClient = (
+	config: Parameters<typeof __testables.createTinybirdSqlClient>[0],
+	requestFetch: typeof fetch = fetch,
+) => Effect.runSync(__testables.createTinybirdSqlClient(config).pipe(Effect.provide(httpWith(requestFetch))))
+
+/** The Effect HttpClient hands fetch a `Uint8Array` body; decode it for assertions. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""

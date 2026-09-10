@@ -1,4 +1,4 @@
-import { parseStatement, renderStatement, withSettings } from "@maple-dev/clickhouse-builder/sql"
+import { parseStatement, renderStatement, withSettings } from "@maple-dev/effect-clickhouse/sql"
 
 /**
  * ClickHouse query settings forwarded via inline `SETTINGS` clause.

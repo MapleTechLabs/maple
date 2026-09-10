@@ -95,6 +95,7 @@ export const GET: APIRoute = ({ site }) => {
 		"",
 		`- [Guides index](${url("/guides")})`,
 		`- [What is APM, and why is it important?](${url("/guides/what-is-apm")})`,
+		`- [What is Apdex, and how do you use the score?](${url("/guides/what-is-apdex")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,

@@ -3,8 +3,8 @@
 // Derived from packages/domain/src/tinybird/datasources.ts
 // These define the ClickHouse table schemas used by the query DSL.
 
-import { type ColumnDefs, type Table, table as chTable } from "@maple-dev/clickhouse-builder"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import { type ColumnDefs, type Table, table as chTable } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
 import { OrgId, SpanId, TraceId } from "@maple/domain"
 
 /**

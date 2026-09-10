@@ -39,7 +39,7 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 			{/* The page's own header, over the fixture — the one place to eyeball it. */}
 			<div className="flex shrink-0 items-start gap-4 border-border border-b px-4 py-3">
 				<div className="min-w-0 flex-1">
-					<SessionHeader sessionId="lab-session-0f3c9a1e2b7d" summary={summary} turns={turns} />
+					<SessionHeader sessionId="lab-session-0f3c9a1e2b7d" summary={summary} />
 					{selectedSpanId !== undefined && (
 						<p className="mt-1 text-muted-foreground text-xs">selected {selectedSpanId}</p>
 					)}

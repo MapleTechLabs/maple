@@ -111,24 +111,15 @@ export function SessionViews({
 	// reader lands at the top of six hundred of them. Component state rather
 	// than the URL: it is where the reader was just sent, not a place to link to.
 	const [revealedSpanId, setRevealedSpanId] = useState<string | undefined>(undefined)
-	// The same door, one level up: a cell of the Overview's session shape is a
-	// whole turn, so what the reader is sent to is the turn's header row rather
-	// than any one span inside it.
-	const [revealedTurnId, setRevealedTurnId] = useState<string | undefined>(undefined)
-
 	// Opening the panel on any span — or picking another view by hand — is the
 	// reader moving on, and the mark comes off the row they were sent to.
-	const clearRevealed = () => {
-		setRevealedSpanId(undefined)
-		setRevealedTurnId(undefined)
-	}
+	const clearRevealed = () => setRevealedSpanId(undefined)
 	// Stable, like the two toggles below: the transcript's rows are memoized
 	// on their props, and a callback minted per render would re-render every
 	// mounted block on every scroll.
 	const selectSpan = useCallback(
 		(spanId: string | undefined) => {
 			setRevealedSpanId(undefined)
-			setRevealedTurnId(undefined)
 			onSelectSpan(spanId)
 		},
 		[onSelectSpan],
@@ -147,26 +138,6 @@ export function SessionViews({
 	const openInTraceView = () => {
 		clearRevealed()
 		setRevealedSpanId(selectedSpanId)
-		onSelectSpan(undefined)
-		onViewChange("trace")
-	}
-
-	/** A session-shape cell: cross to Traces and land on that turn, expanded —
-	 *  a turn folded shut would put the reader on a header with nothing under it. */
-	const openTurnInTraceView = (turnId: string) => {
-		clearRevealed()
-		// The Overview never showed the filter box, so a query left behind by an
-		// earlier visit to Traces is invisible from where this click was made —
-		// and one that matches nothing in this turn would drop the very row the
-		// reader was sent to. Crossing from a view with no filter clears it.
-		setQuery("")
-		setRevealedTurnId(turnId)
-		setCollapsedTurns((previous) => {
-			if (!previous.has(turnId)) return previous
-			const next = new Set(previous)
-			next.delete(turnId)
-			return next
-		})
 		onSelectSpan(undefined)
 		onViewChange("trace")
 	}
@@ -318,7 +289,6 @@ export function SessionViews({
 						onSpanTabChange={setSpanTab}
 						toolResults={toolResults}
 						onOpenTraceView={openInTraceView}
-						onOpenTurnInTraceView={openTurnInTraceView}
 					/>
 				)}
 			</TabsContent>
@@ -335,7 +305,6 @@ export function SessionViews({
 						appSpans={paging?.appSpans}
 						selectedSpanId={selectedSpanId}
 						revealedSpanId={revealedSpanId}
-						revealedTurnId={revealedTurnId}
 						onSelectSpan={selectSpan}
 						spanTab={spanTab}
 						onSpanTabChange={setSpanTab}

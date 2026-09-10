@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 import { buildSessionTurns } from "./session-turns"
-import { buildSessionSummary, countTurnTokens, findIdleGaps, type OccupancyKind } from "./session-summary"
+import { buildSessionSummary, countTurnTokens, findIdleGaps, type AgentTimeKind } from "./session-summary"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -11,9 +11,9 @@ const summarize = (spans: Parameters<typeof buildSessionTurns>[0]) =>
 	buildSessionSummary({ spans, turns: buildSessionTurns(spans) })
 
 const segment = (
-	occupancy: readonly { readonly kind: OccupancyKind; readonly ms: number }[],
-	kind: OccupancyKind,
-) => occupancy.find((entry) => entry.kind === kind)?.ms
+	segments: readonly { readonly kind: AgentTimeKind; readonly ms: number }[],
+	kind: AgentTimeKind,
+) => segments.find((entry) => entry.kind === kind)?.ms
 
 describe("findIdleGaps", () => {
 	it("finds the stretches where nothing was running", () => {
@@ -59,10 +59,10 @@ describe("buildSessionSummary — time", () => {
 		expect(summary.activeMs).toBe(20 * SECOND)
 	})
 
-	it("measures occupancy, so parallel tools cannot exceed the wall clock", () => {
+	it("sums agent time, so parallel tools exceed the wall clock and say how wide", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
-			// Four tools, ten seconds each, all at once: 40s of duration inside a
+			// Four tools, ten seconds each, all at once: 40s of agent time inside a
 			// 10s session.
 			toolSpan({ spanId: "t1", parentSpanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 			toolSpan({ spanId: "t2", parentSpanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
@@ -70,19 +70,32 @@ describe("buildSessionSummary — time", () => {
 			toolSpan({ spanId: "t4", parentSpanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 		])
 
-		expect(segment(summary.occupancy, "tool")).toBe(10 * SECOND)
-		expect(summary.occupancy.reduce((total, entry) => total + entry.ms, 0)).toBe(summary.wallClockMs)
+		expect(segment(summary.agentTime.segments, "tool")).toBe(40 * SECOND)
+		expect(summary.agentTime.totalMs).toBe(40 * SECOND)
+		expect(summary.agentTime.peakParallel).toBe(4)
+		expect(summary.wallClockMs).toBe(10 * SECOND)
 	})
 
-	it("charges overlapping inference and tool time once, to inference", () => {
+	it("charges overlapping inference and tool time to both, in full", () => {
 		const summary = summarize([
 			llmSpan({ spanId: "llm", startMs: 0, durationMs: 10 * SECOND }),
 			// A tool that ran while the model was still streaming.
 			toolSpan({ spanId: "tool", startMs: 5 * SECOND, durationMs: 10 * SECOND }),
 		])
 
-		expect(segment(summary.occupancy, "inference")).toBe(10 * SECOND)
-		expect(segment(summary.occupancy, "tool")).toBe(5 * SECOND)
+		expect(segment(summary.agentTime.segments, "inference")).toBe(10 * SECOND)
+		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
+		expect(summary.agentTime.peakParallel).toBe(2)
+	})
+
+	it("counts a span that starts as another ends as no overlap at all", () => {
+		const summary = summarize([
+			toolSpan({ spanId: "a", startMs: 0, durationMs: 5 * SECOND }),
+			toolSpan({ spanId: "b", startMs: 5 * SECOND, durationMs: 5 * SECOND }),
+		])
+
+		expect(summary.agentTime.peakParallel).toBe(1)
+		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
 	})
 
 	it("splits a streaming call into time to first token and the rest", () => {
@@ -90,73 +103,28 @@ describe("buildSessionSummary — time", () => {
 			llmSpan({ spanId: "llm", startMs: 0, durationMs: 10 * SECOND, ttftSeconds: 4 }),
 		])
 
-		expect(segment(summary.occupancy, "ttft")).toBe(4 * SECOND)
-		expect(segment(summary.occupancy, "inference")).toBe(6 * SECOND)
+		expect(segment(summary.agentTime.segments, "ttft")).toBe(4 * SECOND)
+		expect(segment(summary.agentTime.segments, "inference")).toBe(6 * SECOND)
 	})
 
 	it("omits the time-to-first-token segment when no vendor reported one", () => {
 		const summary = summarize([llmSpan({ spanId: "llm", startMs: 0, durationMs: 10 * SECOND })])
 
-		expect(segment(summary.occupancy, "ttft")).toBeUndefined()
+		expect(segment(summary.agentTime.segments, "ttft")).toBeUndefined()
 	})
 
-	it("orders the timeline by the wall clock, not by class", () => {
+	it("orders the bands by class, and counts an agent span as neither", () => {
 		const summary = summarize([
-			// Work, then a mid-session stall, then more work: the stall must sit
-			// between the two inference stretches, not get pinned to the front.
-			llmSpan({ spanId: "a", startMs: 0, durationMs: 10 * SECOND, ttftSeconds: 4 }),
-			llmSpan({ spanId: "b", startMs: 70 * SECOND, durationMs: 10 * SECOND }),
-		])
-
-		expect(summary.occupancyTimeline.map((interval) => interval.kind)).toEqual([
-			"ttft",
-			"inference",
-			"idle",
-			"inference",
-		])
-		expect(summary.occupancyTimeline[2]).toMatchObject({
-			startMs: summary.startMs + 10 * SECOND,
-			endMs: summary.startMs + 70 * SECOND,
-		})
-	})
-
-	it("tiles the wall clock exactly, filling holes as unaccounted", () => {
-		const summary = summarize([
+			// The agent span covers both children, so charging it too would count
+			// the same work twice; the bands read tool-then-inference by class
+			// however the work fell on the clock.
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 12 * SECOND }),
-			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 2 * SECOND, durationMs: 3 * SECOND }),
-			toolSpan({ spanId: "tool", parentSpanId: "agent", startMs: 6 * SECOND, durationMs: 4 * SECOND }),
+			toolSpan({ spanId: "tool", parentSpanId: "agent", startMs: SECOND, durationMs: 4 * SECOND }),
+			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 6 * SECOND, durationMs: 3 * SECOND }),
 		])
 
-		expect(
-			summary.occupancyTimeline.map((interval) => [
-				interval.kind,
-				interval.startMs - summary.startMs,
-				interval.endMs - summary.startMs,
-			]),
-		).toEqual([
-			["unaccounted", 0, 2 * SECOND],
-			["inference", 2 * SECOND, 5 * SECOND],
-			["unaccounted", 5 * SECOND, 6 * SECOND],
-			["tool", 6 * SECOND, 10 * SECOND],
-			["unaccounted", 10 * SECOND, 12 * SECOND],
-		])
-		// The legend sums the same intervals, so bar and legend cannot disagree.
-		const timelineTotal = summary.occupancyTimeline.reduce(
-			(total, interval) => total + (interval.endMs - interval.startMs),
-			0,
-		)
-		expect(timelineTotal).toBe(summary.wallClockMs)
-		expect(summary.occupancy.reduce((total, entry) => total + entry.ms, 0)).toBe(summary.wallClockMs)
-	})
-
-	it("leaves the time no gen_ai span accounts for as the framework's own", () => {
-		const summary = summarize([
-			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
-			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 2 * SECOND, durationMs: 3 * SECOND }),
-		])
-
-		expect(segment(summary.occupancy, "inference")).toBe(3 * SECOND)
-		expect(segment(summary.occupancy, "unaccounted")).toBe(7 * SECOND)
+		expect(summary.agentTime.segments.map((entry) => entry.kind)).toEqual(["inference", "tool"])
+		expect(summary.agentTime.totalMs).toBe(7 * SECOND)
 	})
 })
 
@@ -1024,28 +992,61 @@ describe("per-model cost, tools and failure groups", () => {
 		expect(summary.cost).toBeCloseTo(0.3)
 	})
 
-	it("counts tools by name, busiest first", () => {
+	// Busiest first, with what each cost alongside it: how often the agent
+	// reached for a tool is the ledger's own order.
+	it("orders tools by how often they were called, and totals what they cost", () => {
 		const summary = summarize([
-			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 30 * SECOND }),
 			toolSpan({ spanId: "t1", parentSpanId: "a1", startMs: 0, durationMs: 100 }),
 			toolSpan({ spanId: "t2", parentSpanId: "a1", startMs: 200, durationMs: 100 }),
 			toolSpan({
 				spanId: "t3",
 				parentSpanId: "a1",
 				startMs: 400,
-				durationMs: 100,
+				durationMs: 5 * SECOND,
 				toolName: "run_tests",
 			}),
 		])
 
-		expect(summary.tools).toEqual([
-			{ name: "read_file", calls: 2, failed: 0 },
-			{ name: "run_tests", calls: 1, failed: 0 },
+		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs])).toEqual([
+			["read_file", 2, 200, 100],
+			["run_tests", 1, 5 * SECOND, 5 * SECOND],
 		])
 	})
 
-	// The rail draws the failed share inside the tool's bar, so the count has to
-	// be per tool — a session-wide error count cannot say which tool broke.
+	// The rail drew one bar per tool, so a failure only ever showed as a share of
+	// it. The ledger opens the call itself, which means carrying the call.
+	it("carries every call of a tool: when it ran, how long, and the span behind it", () => {
+		const summary = summarize([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({ spanId: "t1", parentSpanId: "a1", startMs: 1000, durationMs: 100 }),
+			toolSpan({ spanId: "t2", parentSpanId: "a1", startMs: 2000, durationMs: 300 }),
+		])
+
+		expect(
+			summary.tools[0]?.events.map((event) => ({ ...event, startMs: event.startMs - summary.startMs })),
+		).toEqual([
+			{
+				spanId: "t1",
+				startMs: 1000,
+				durationMs: 100,
+				failed: false,
+				errorLabel: undefined,
+				errorDetail: undefined,
+				turnIndex: 1,
+			},
+			{
+				spanId: "t2",
+				startMs: 2000,
+				durationMs: 300,
+				failed: false,
+				errorLabel: undefined,
+				errorDetail: undefined,
+				turnIndex: 1,
+			},
+		])
+	})
+
 	it("counts the failed calls of each tool alongside its total", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
@@ -1068,13 +1069,80 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools).toEqual([
-			{ name: "read_file", calls: 2, failed: 1 },
-			{ name: "run_tests", calls: 1, failed: 1 },
+		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.failed])).toEqual([
+			["read_file", 2, 1],
+			["run_tests", 1, 1],
 		])
 	})
 
-	// The Overview's rail discloses the description, so it rides the usage row.
+	// A failed call is only actionable if it says what went wrong in the row the
+	// reader expanded, rather than sending them to the span to find out.
+	it("names a failed call's error, and its message wherever the framework put it", () => {
+		const summary = summarize([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({
+				spanId: "t1",
+				parentSpanId: "a1",
+				startMs: 0,
+				durationMs: 100,
+				statusCode: "Error",
+				statusMessage: "shard 3 is locked by a running merge",
+				genAi: { errorType: "SHARD_LOCKED" },
+			}),
+			// Maple's own agent reports a failed call as a value on an Ok span: the
+			// recorded result IS the error.
+			toolSpan({
+				spanId: "t2",
+				parentSpanId: "a1",
+				startMs: 200,
+				durationMs: 100,
+				toolName: "run_tests",
+				genAi: { errorType: "tool_error", toolCallResult: { error: "exit 1" } },
+			}),
+		])
+
+		expect(
+			summary.tools.flatMap((tool) =>
+				tool.events.map((event) => [event.errorLabel, event.errorDetail]),
+			),
+		).toEqual([
+			["SHARD_LOCKED", "shard 3 is locked by a running merge"],
+			["tool_error", "exit 1"],
+		])
+	})
+
+	// A framework that records a stack trace as the tool's result would hand the
+	// ledger row an unbounded line; the status-message path has always clipped.
+	it("clips a failed call's message however the framework recorded it", () => {
+		const long = "x".repeat(400)
+		const summary = summarize([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({
+				spanId: "t1",
+				parentSpanId: "a1",
+				startMs: 0,
+				durationMs: 100,
+				genAi: { errorType: "tool_error", toolCallResult: { error: long } },
+			}),
+			toolSpan({
+				spanId: "t2",
+				parentSpanId: "a1",
+				startMs: 200,
+				durationMs: 100,
+				toolName: "run_tests",
+				statusCode: "Error",
+				statusMessage: long,
+			}),
+		])
+
+		for (const tool of summary.tools) {
+			expect(tool.events[0]?.errorDetail?.length).toBe(140)
+			expect(tool.events[0]?.errorDetail?.endsWith("…")).toBe(true)
+		}
+	})
+
+	// The Overview discloses the description under the tool, so it rides the
+	// usage row rather than being re-read off a span.
 	it("keeps the first stamped tool description for the tool's usage row", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
@@ -1088,9 +1156,7 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools).toEqual([
-			{ name: "read_file", calls: 2, failed: 0, description: "Read a file from the repository." },
-		])
+		expect(summary.tools.map((tool) => tool.description)).toEqual(["Read a file from the repository."])
 	})
 
 	// The counts and the breakdown are two readings of one list, so a failure

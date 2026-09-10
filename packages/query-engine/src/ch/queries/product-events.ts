@@ -10,7 +10,7 @@
 // The page-view queries themselves live in `web-analytics.ts` and read the
 // same table (`useProductEvents`); this module owns everything funnel-shaped.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
 import {
 	param,
 	from,
@@ -19,13 +19,13 @@ import {
 	unionAll,
 	inSubquery,
 	compileFnCall,
-} from "@maple-dev/clickhouse-builder"
-import type { CHQuery, ColumnAccessor, ColumnDefs, JoinedColumnAccessor } from "@maple-dev/clickhouse-builder"
+} from "@maple-dev/effect-clickhouse"
+import type { CHQuery, ColumnAccessor, ColumnDefs, JoinedColumnAccessor } from "@maple-dev/effect-clickhouse"
 import { Schema } from "effect"
 import { ProductEvents, IdentityLinks, SessionReplays } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 export type { ProductEventsFilters } from "./web-analytics"
 

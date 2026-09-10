@@ -35,6 +35,13 @@ const coreGuides = [
         description: "Compare the leading open-source options by architecture, signals, license, operating cost, and best fit.",
         read: "14 min",
     },
+    {
+        href: "/guides/what-is-apdex",
+        label: "Metric",
+        title: "What is Apdex?",
+        description: "Read the score that turns response times into one satisfaction number, choose the target T behind it, and know when it beats a p95 alert.",
+        read: "10 min",
+    },
 ];
 
 const investigationGuides = [
@@ -183,7 +190,7 @@ const itemListJsonLd = {
                     </p>
                 </div>
 
-                <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
+                <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2 xl:grid-cols-4">
                     {coreGuides.map((guide, index) => (
                         <a
                             href={guide.href}

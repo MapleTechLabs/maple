@@ -11,6 +11,7 @@
 	"scripts": {
 		"build": "turbo build",
 		"dev": "bun run ./scripts/dev.ts",
+		"dev:signin": "bun run ./scripts/dev-signin.ts",
 		"prepare": "effect-tsgo unpatch --no-typescript --oxlint && effect-tsgo patch --no-typescript --oxlint",
 		"docker:build": "COMPOSE_PARALLEL_LIMIT=1 docker compose build",
 		"docker:up": "COMPOSE_PARALLEL_LIMIT=1 docker compose up --build",
@@ -27,7 +28,7 @@
 		"lint:slack-agent": "oxlint -c .oxlintrc.json --quiet apps/slack-agent",
 		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts apps packages lib examples",
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
-		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser --filter=@maple-dev/clickhouse-builder",
+		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
 		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
 		"alchemy:deploy:stg": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage stg",
@@ -87,10 +88,9 @@
 			"@tanstack/charts": "0.16.0",
 			"@tanstack/charts-scales": "0.16.0"
 		},
-		"clickhouse": {
-			"@clickhouse/client-web": "^1.21.0"
-		},
 		"effect": {
+			"@effect/ai-openai-compat": "4.0.0-rc.112",
+			"@effect/ai-openrouter": "4.0.0-rc.112",
 			"@effect/atom-react": "4.0.0-rc.112",
 			"@effect/language-service": "^0.87.2",
 			"@effect/platform-bun": "4.0.0-rc.112",

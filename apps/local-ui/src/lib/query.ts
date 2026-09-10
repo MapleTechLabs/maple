@@ -4,13 +4,13 @@
 // works whether it's served same-origin by the binary (`--offline` / dev proxy)
 // or remotely from `local.maple.dev`. Hooks import `executeLocalQuery` from here
 // instead of the shared package so they never have to thread the base URL.
-import { executeLocalQuery as run } from "@maple/query-engine/local"
+import { runLocalQuery, type LocalQueryRow } from "@maple/query-engine/local"
 import type { CompiledQuery, CompiledQueryInput } from "@maple/query-engine/ch"
 import { Effect, type Option } from "effect"
 import { localApiBase } from "./constants"
 
-function executeLocalQuery<T = Record<string, unknown>>(sql: string, signal?: AbortSignal): Promise<T[]> {
-	return run<T>(sql, localApiBase(), signal)
+function executeLocalQuery(sql: string, signal?: AbortSignal): Promise<ReadonlyArray<LocalQueryRow>> {
+	return runLocalQuery(sql, localApiBase(), signal)
 }
 
 /**

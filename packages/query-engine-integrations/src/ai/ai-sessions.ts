@@ -105,9 +105,9 @@
 // inherits `org` scope from it.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import { compile } from "@maple-dev/clickhouse-builder/sql"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
 	compileFnCall,
 	from,
@@ -119,7 +119,7 @@ import {
 	type CHUnionQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/clickhouse-builder"
+} from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans, Traces } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
@@ -265,6 +265,22 @@ const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Exp
 	CH.rawExpr(
 		`sum(arrayCount(f -> f.3 ${kind === "tool" ? "=" : "!="} 1 AND NOT arrayExists(c -> c.2 = f.1, ${failedSpans}), ${failedSpans}))`,
 		T.float64,
+	)
+
+/**
+ * `mapFilter((k, v) -> <predicate>, map)` — the entries whose KEY passes.
+ *
+ * The predicate is built from the lambda's key parameter, so it can use every
+ * condition the DSL has (`in_`, `like`, `or`, …); values are not inspected.
+ * Lives here until `@maple-dev/effect-clickhouse` ships a `mapFilter`.
+ */
+const mapFilterKeys = (
+	mapExpr: CH.Expr<Record<string, string>>,
+	predicate: (key: CH.Expr<string>) => CH.Condition,
+): CH.Expr<Record<string, string>> =>
+	CH.rawExpr(
+		`mapFilter((k, v) -> ${compile(predicate(CH.rawExpr("k", T.string)).toFragment())}, ${compile(mapExpr.toFragment())})`,
+		T.map(T.string, T.string),
 	)
 
 /**
@@ -1071,7 +1087,7 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
 	// touches (`db.query.text` alone was half of one session's bytes), and
 	// `ResourceAttributes` — which the mapper deliberately ignores, see
 	// `mapAiSpan` — was another 60% on top. Neither is read any more.
-	spanAttributes: CH.mapFilterKeys($.SpanAttributes, (key) =>
+	spanAttributes: mapFilterKeys($.SpanAttributes, (key) =>
 		key.in_(...aiSpanAttributeKeys).or(key.like(`${AI_PROMPT_VARIABLE_PREFIX}%`)),
 	),
 })

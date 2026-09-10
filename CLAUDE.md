@@ -11,7 +11,7 @@ Three roots, and the split is a rule, not a habit:
 - **`packages/*`** — shared code that **knows Maple**: its schema, tables, API, or product.
   `domain`, `query-engine`, `ui`, `db`, `auth`, `effect-sdk`, `browser`, …
 - **`lib/*`** — libraries with **zero Maple knowledge**, extractable to their own repo tomorrow.
-  `clickhouse-builder`, `effect-db`, `effect-router`, `cache`, `safe-fetch`,
+  `effect-db`, `effect-router`, `cache`, `safe-fetch`,
   `otel-helpers`, `unitflow`.
 
 The test for `lib/` is "could this ship as a standalone OSS library?" — not "is it published?"
@@ -19,13 +19,20 @@ and not "did we write it?". Publishability is a `package.json` fact, not a direc
 `packages/effect-sdk` and `packages/browser` are both published. **New packages go in
 `packages/` unless they pass the lib test.**
 
+`@maple-dev/effect-clickhouse` lives in the public
+[effect-clickhouse repository](https://github.com/MapleTechLabs/effect-clickhouse).
+Maple consumes its built release package; library changes and tests belong there.
+
 Anything in `lib/` that starts importing `@maple/domain` has stopped qualifying — move it to
 `packages/` rather than weakening the rule.
 
 ## Local dev
 
-Sign in at `https://web.localhost` with the Clerk test account `david+clerk_test@gmail.com` /
-`Maple-Dev-Kx92qZ!` when you need an authenticated browser session.
+Need an authenticated browser session? `bun run dev:signin` prints a one-shot Clerk ticket link
+(`/sign-in?__clerk_ticket=…`, 10 minutes, dev instance only) that lands signed in as
+`david+clerk_test@gmail.com` — no password typing, and nothing in the app bypasses auth. Pass another
+email as the first argument for a different dev user. The password `Maple-Dev-Kx92qZ!` still works if
+you want the form.
 
 ```bash
 bun dev                        # everything, ONE `alchemy dev` stack → https://[<worktree>.]<app>.localhost
@@ -46,8 +53,11 @@ upgrading a runtime (keep `bun` in sync with `packageManager`).
 ## Warehouse queries
 
 **No Tinybird pipes/endpoints exist.** All backend queries use the ClickHouse DSL in
-`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to the
-Tinybird SDK or ClickHouse per org config. Never `fetch()` `/v0/sql` directly.
+`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to
+Tinybird's HTTP API or a ClickHouse HTTP endpoint per org config. Both drivers live in
+`WarehouseQueryService.ts` on Effect's `HttpClient` (ClickHouse via `lib/effect-clickhouse-http`)
+and fail with a structured `WarehouseDriverError` the classifier reads. Never `fetch()` `/v0/sql`
+directly.
 
 Subpath exports: `./ch` (DSL + `compile`), `./runtime` (dashboard/alert lowering, `evaluate`,
 cache keys), `./execution` (`makeWarehouseExecutor` — retry, error mapping, OrgId scoping, spans),
@@ -149,7 +159,7 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   JS plugin in `scripts/oxlint-plugins/maple.mjs`) and the repo is at zero — keep it there. Generic
   constraints (`<T extends Record<string, any>>`) are exempt: `unknown` does not work in that
   position. `typescript/no-explicit-any` is `warn` (75 left, all outside `lib/`). Both rules are off
-  under `lib/**`, whose builder DSLs (`clickhouse-builder`, `unitflow`) use
+  under `lib/**`, whose builder DSLs (`unitflow`) use
   `any` as a type-level placeholder in variance positions. `Record<string, unknown>` is _not_ banned —
   it forces narrowing at every read, which is the point.
 - **Effect:** source is vendored at `.context/effect/` (subtree of Effect-TS/effect-smol).

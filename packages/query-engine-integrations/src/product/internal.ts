@@ -6,9 +6,9 @@
 // their scope explicit.
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from } from "@maple-dev/effect-clickhouse"
 import { Traces } from "@maple/query-engine/ch/tables"
 
 // db.statement samples

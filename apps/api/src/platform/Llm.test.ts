@@ -7,22 +7,21 @@
  * and the attribution headers exist together is the outgoing HTTP request — so the test swaps
  * `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
  *
- * The fake responds 400, which `@opencode-ai/ai` classifies as non-retryable. That keeps the run to a
- * single request with no backoff; the resulting failure is expected and ignored.
+ * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
+ * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { LLM, type LanguageModel } from "@opencode-ai/ai"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
+import { LanguageModel } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import {
-	contextLimitOf,
 	layerLlm,
-	outputLimitOf,
 	resolveLensModel,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmEnv,
+	type ResolvedModel,
 } from "./Llm"
 
 interface CapturedRequest {
@@ -40,7 +39,7 @@ interface CapturedRequest {
 const captureRequest = (
 	env: LlmEnv,
 	tags?: LlmCallTags,
-	resolve: (env: LlmEnv, tags?: LlmCallTags) => LanguageModel = resolveTriageModel,
+	resolve: (env: LlmEnv, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -60,17 +59,15 @@ const captureRequest = (
 			return new Response(JSON.stringify({ error: "captured" }), { status: 400 })
 		}
 
-		const request = LLM.request({
-			model: resolve(env, tags),
-			system: "You are concise.",
-			prompt: "hi",
-		})
+		const model = resolve(env, tags)
 
-		yield* LLM.generate(request).pipe(
+		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
+			Effect.provide(model.layer),
 			Effect.ignore,
-			Effect.provide(
-				layerLlm(env).pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fakeFetch))),
-			),
+			Effect.provide(layerLlm(env)),
+			// `Fetch` is a context Reference read per request rather than a Layer requirement, so it
+			// has to reach the fiber running the call, not the layer that built the client.
+			Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 		)
 
 		if (captured === undefined) return yield* Effect.die("no request reached the transport")
@@ -227,8 +224,8 @@ describe("reasoning effort", () => {
 
 describe("resolveTriageModel — context limits", () => {
 	it("attaches the configured model's window, which upstream leaves unstated", () => {
-		// `@opencode-ai/ai` declares `ModelLimits` but no provider populates it, so before this every
-		// model reported `undefined` and nothing could tell when a transcript was near the wall.
+		// Providers do not report their context window, so without this table nothing could tell
+		// when a transcript was near the wall.
 		//
 		// The model is NAMED rather than left to the default: this asserts that a model in the table
 		// gets that table's window, which is a fact about the mechanism. Reading it off whatever
@@ -239,8 +236,8 @@ describe("resolveTriageModel — context limits", () => {
 			MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
 		})
 
-		expect(contextLimitOf(model)).toBe(1_050_000)
-		expect(outputLimitOf(model)).toBe(128_000)
+		expect(model.limits.context).toBe(1_050_000)
+		expect(model.limits.output).toBe(128_000)
 	})
 
 	it("attaches the default model's window without it having to be named", () => {
@@ -249,7 +246,7 @@ describe("resolveTriageModel — context limits", () => {
 		// takes DEFAULT_MODEL_LIMITS and compacts earlier than it needs to.
 		const model = resolveTriageModel(openRouterEnv)
 
-		expect(contextLimitOf(model)).not.toBe(DEFAULT_MODEL_LIMITS_CONTEXT)
+		expect(model.limits.context).not.toBe(DEFAULT_MODEL_LIMITS_CONTEXT)
 	})
 
 	it("falls back to a conservative window for a model it does not know", () => {
@@ -259,7 +256,7 @@ describe("resolveTriageModel — context limits", () => {
 			MAPLE_TRIAGE_MODEL_OPENROUTER: "some/model-shipped-after-this-table",
 		})
 
-		expect(contextLimitOf(model)).toBe(128_000)
+		expect(model.limits.context).toBe(128_000)
 	})
 
 	it("lets the environment override the table", () => {
@@ -269,8 +266,8 @@ describe("resolveTriageModel — context limits", () => {
 			MAPLE_TRIAGE_MODEL_OUTPUT: "4000",
 		})
 
-		expect(contextLimitOf(model)).toBe(64_000)
-		expect(outputLimitOf(model)).toBe(4_000)
+		expect(model.limits.context).toBe(64_000)
+		expect(model.limits.output).toBe(4_000)
 	})
 
 	it("ignores an unparseable or nonsensical override rather than trusting it", () => {
@@ -283,7 +280,7 @@ describe("resolveTriageModel — context limits", () => {
 				MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
 				MAPLE_TRIAGE_MODEL_CONTEXT: bad,
 			})
-			expect(contextLimitOf(model)).toBe(1_050_000)
+			expect(model.limits.context).toBe(1_050_000)
 		}
 	})
 })
