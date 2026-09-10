@@ -387,12 +387,17 @@ describe("POST /internal/ai-sessions/spans", () => {
 describe("POST /internal/ai-sessions/list", () => {
 	const LIST_BODY = { ...WINDOW, limit: 3 }
 
-	/** A stage-one row: a session id, the extent of its agent spans, and the
-	 *  measures the index answered — which the response carries through. */
+	/** A page row in the wire shape the index read decodes: everything the
+	 *  list row shows, measured over the session's agent spans. */
 	const pageRow = (sessionId: string, agentStart: string, agentEnd: string) => ({
 		sessionId,
+		vendorId: "eve",
+		vendorVersion: "1",
 		agentStart,
 		agentEnd,
+		traceCount: "2",
+		spanCount: "7",
+		serviceNames: ["agent-runner"],
 		models: ["claude-sonnet-5"],
 		// Deliberately not `agentNames[0]`: the query resolves the heading name in
 		// span order, the set is unordered, and the route must carry the former.
@@ -400,181 +405,198 @@ describe("POST /internal/ai-sessions/list", () => {
 		firstAgentName: "slack-agent",
 		llmCalls: "4",
 		toolCalls: "2",
-		errorAgentSpans: "0",
-		toolErrors: 0,
+		errorAgentSpans: "1",
+		toolErrors: 1,
 		turnErrors: 0,
 		totalTokens: 18_400,
-		cost: 0.12,
-		agentDurationMs: "600000",
-	})
-
-	/** A stage-two row, in the wire shape the aggregation's SELECT decodes. */
-	const listRow = (sessionId: string, startTime: string) => ({
-		sessionId,
-		vendorId: "eve",
-		vendorVersion: "1",
-		traceCount: "1",
-		spanCount: "12",
-		errorSpanCount: "0",
-		serviceNames: ["agent-runner"],
 		inputTokens: 12_000,
 		cacheReadTokens: 4_000,
 		cacheWriteTokens: 0,
 		outputTokens: 2_000,
 		reasoningTokens: 400,
-		startTime,
-		endTime: "2026-08-19 10:45:00.000000000",
-		durationMs: "1000",
+		cost: 0.12,
+		agentDurationMs: "600000",
 	})
 
-	// Deliberately not in start order: the page ranks on the first AGENT span and
-	// the aggregation orders by the first span of any kind, so the handler must
-	// not be able to reconstruct one from the other.
 	const PAGE = [
 		pageRow("wrun_beta", "2026-08-19 10:20:00.000000000", "2026-08-19 10:30:00.000000000"),
 		pageRow("wrun_alpha", "2026-08-19 10:05:00.000000000", "2026-08-19 10:40:00.000000000"),
 		pageRow(`trace:${TRACE_ID}`, "2026-08-19 09:50:00.000000000", "2026-08-19 10:00:00.000000000"),
 	]
 
-	it("bounds the aggregation by the page's own agent spans, not the caller's window", async () => {
+	it("answers from one index read over the caller's window, never touching trace_detail_spans", async () => {
+		const contexts: Array<string | undefined> = []
 		let pageSql: string | undefined
-		let listSql: string | undefined
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled, options) => {
-				if (options?.context === "aiSessionsPage") {
-					pageSql = compiledQueryOf(compiled).sql
-					return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
-				}
-				listSql = compiledQueryOf(compiled).sql
-				return compiledQueryOf(compiled)
-					.decodeRows(PAGE.map((row) => listRow(row.sessionId, row.agentStart)))
-					.pipe(Effect.orDie)
+				contexts.push(options?.context)
+				pageSql = compiledQueryOf(compiled).sql
+				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
 			},
 		})
 
 		try {
 			const response = await harness.post("/internal/ai-sessions/list", LIST_BODY)
 			expect(response.status).toBe(200)
-			// Stage one is the only read that sees the caller's window.
+			// The fan-out over `trace_detail_spans` is seconds on a cold partition,
+			// which is why it is the client's second request (`/details`) and not
+			// part of this one.
+			expect(contexts).toEqual(["aiSessionsPage"])
 			expect(pageSql).toContain("FROM ai_trace_index")
 			expect(pageSql).not.toContain("trace_detail_spans")
 			expect(pageSql).toContain(`Timestamp <= '${WINDOW.endTime}'`)
 			expect(pageSql).toContain("LIMIT 3")
-			// Stage two reads the fan-out table over the page's extent — the min
-			// agentStart and the max agentEnd of the rows stage one returned, padded.
-			// The caller's window would be 30 days of partitions on the page the UI
-			// actually offers.
-			expect(listSql).toContain("FROM trace_detail_spans")
-			expect(listSql).toContain("Timestamp >= '2026-08-19 09:50:00.000000000' - INTERVAL 3600 SECOND")
-			expect(listSql).toContain("Timestamp <= '2026-08-19 10:40:00.000000000' + INTERVAL 3600 SECOND")
-			// The caller's range reaches NO level of stage two — not the fan-out and
-			// not either of its two `ai_trace_index` reads. The handler hands it
-			// `orgId` and the page's two bounds, and nothing else.
-			expect(listSql).not.toContain(WINDOW.startTime)
-			expect(listSql).not.toContain(WINDOW.endTime)
-			// Three levels take that lower bound — the fan-out padded, and each of
-			// the two `ai_trace_index` reads exactly.
-			expect(listSql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(4)
-			expect(listSql).not.toContain("__PARAM_")
+			expect(pageSql).not.toContain("__PARAM_")
 		} finally {
 			await harness.dispose()
 		}
 	})
 
-	it("seeks stage two by exactly the session ids stage one ranked", async () => {
-		let listSql: string | undefined
+	it("carries the index's row through in the page's order, its agent-span extent as the bounds", async () => {
 		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled, options) => {
-				if (options?.context === "aiSessionsPage") {
-					return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
-				}
-				listSql = compiledQueryOf(compiled).sql
-				return compiledQueryOf(compiled)
-					.decodeRows(PAGE.map((row) => listRow(row.sessionId, row.agentStart)))
-					.pipe(Effect.orDie)
-			},
-		})
-
-		try {
-			await harness.post("/internal/ai-sessions/list", LIST_BODY)
-			for (const row of PAGE) {
-				expect(listSql).toContain(`'${row.sessionId}'`)
-			}
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("answers in the page's order, dropping a session the aggregation lost", async () => {
-		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled, options) =>
-				options?.context === "aiSessionsPage"
-					? compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
-					: compiledQueryOf(compiled)
-							// Reversed, and one short: the aggregation's own ORDER BY is
-							// meaningless to the client, and a trace whose spans fell outside
-							// the padded window returns nothing at all.
-							.decodeRows([
-								listRow(`trace:${TRACE_ID}`, "2026-08-19 09:49:00.000000000"),
-								listRow("wrun_beta", "2026-08-19 10:19:00.000000000"),
-							])
-							.pipe(Effect.orDie),
+			compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie),
 		})
 
 		try {
 			const response = await harness.post("/internal/ai-sessions/list", LIST_BODY)
 			expect(response.status).toBe(200)
-			// The page's order is the order that was paged; re-sorting here would
-			// let a row jump between pages on a scroll. A session with no row is
-			// dropped rather than shown with blank counts.
 			const data = response.body.data as ReadonlyArray<Record<string, unknown>>
-			expect(data.map((r) => r.sessionId)).toEqual(["wrun_beta", `trace:${TRACE_ID}`])
-			// The page's measures ride along on the aggregation's row.
+			// The page's order is the order that was paged; re-sorting here would
+			// let a row jump between pages on a scroll.
+			expect(data.map((r) => r.sessionId)).toEqual(["wrun_beta", "wrun_alpha", `trace:${TRACE_ID}`])
 			expect(data[0]).toMatchObject({
-				spanCount: 12,
+				vendorId: "eve",
+				vendorVersion: "1",
+				traceCount: 2,
+				// Agent spans and their services until the details replace them.
+				spanCount: 7,
+				serviceNames: ["agent-runner"],
+				// The failed agent spans, under the row's all-span name; the split
+				// beside it is the page's.
+				errorSpanCount: 1,
+				toolErrorCount: 1,
+				turnErrorCount: 0,
 				models: ["claude-sonnet-5"],
 				agentNames: ["web-fetcher", "slack-agent"],
 				firstAgentName: "slack-agent",
 				llmCalls: 4,
 				toolCalls: 2,
 				totalTokens: 18_400,
+				inputTokens: 12_000,
+				cacheReadTokens: 4_000,
+				cacheWriteTokens: 0,
+				outputTokens: 2_000,
+				reasoningTokens: 400,
 				cost: 0.12,
+				startTime: "2026-08-19 10:20:00.000000000",
+				endTime: "2026-08-19 10:30:00.000000000",
+				durationMs: 600_000,
 			})
 			expect(data[0]).not.toHaveProperty("errorAgentSpans")
-			// Three ranked, two returned. `ranked` is what the client pages on: on
-			// `data.length` this short page reads as the end of the list, and the
-			// next offset would be one too low and re-show a session. The gap is
-			// real — the two MVs are written one after the other from the same
-			// insert, so the newest session can be ranked before its spans land.
-			expect(response.body.ranked).toBe(PAGE.length)
+			expect(data[0]).not.toHaveProperty("agentStart")
+			// Every ranked session is a row now, and `ranked` stays the paging
+			// contract the client sums its next offset from.
 			expect(response.body.ranked).toBe(3)
 		} finally {
 			await harness.dispose()
 		}
 	})
 
-	it("answers an empty page without touching trace_detail_spans", async () => {
-		const contexts: Array<string | undefined> = []
+	it("answers an empty page with no rows and no ranked count", async () => {
 		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled, options) => {
-				contexts.push(options?.context)
-				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
-			},
+			compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 		})
 
 		try {
 			const response = await harness.post("/internal/ai-sessions/list", LIST_BODY)
 			expect(response.status).toBe(200)
-			// `ranked` is omitted entirely, not sent as 0: the handler short-circuits
-			// with `new ListAiSessionsResponse({ data: [] })`, and the field is an
-			// `optionalKey`. The client's `?? data.length` fallback reads it as 0
-			// either way, which is what ends the scroll.
+			// `ranked` is omitted entirely, not sent as 0: the field is an
+			// `optionalKey`, and the client's `?? data.length` fallback reads it as
+			// 0 either way, which is what ends the scroll.
 			expect(response.body).toEqual({ data: [] })
 			expect("ranked" in response.body).toBe(false)
-			// One read, not two. With no ids to seek by, the fan-out's `IN ()` is a
-			// builder defect, and the shape it would have compiled to reads the whole
-			// padded window for nothing.
-			expect(contexts).toEqual(["aiSessionsPage"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/details", () => {
+	/** The page's extent as the client hands it back: its rows' earliest start
+	 *  and latest end, verbatim. */
+	const DETAILS_BODY = {
+		startTime: "2026-08-19 09:50:00.000000000",
+		endTime: "2026-08-19 10:40:00.000000000",
+		sessionIds: ["wrun_beta", "wrun_alpha", `trace:${TRACE_ID}`],
+		vendorIds: ["eve"],
+	}
+
+	/** A details row, in the wire shape the fan-out's SELECT decodes. */
+	const detailsRow = (sessionId: string) => ({
+		sessionId,
+		spanCount: "12",
+		errorSpanCount: "2",
+		serviceNames: ["agent-runner", "web-service"],
+		startTime: "2026-08-19 10:19:59.950000000",
+		endTime: "2026-08-19 10:45:00.000000000",
+		durationMs: "1500050",
+	})
+
+	it("fans out over the page's own extent, padded, and its ids under the page's filters", async () => {
+		let detailsSql: string | undefined
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				expect(options?.context).toBe("aiSessionsDetails")
+				detailsSql = compiledQueryOf(compiled).sql
+				return compiledQueryOf(compiled)
+					.decodeRows(DETAILS_BODY.sessionIds.map(detailsRow))
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/details", DETAILS_BODY)
+			expect(response.status).toBe(200)
+			// The fan-out reads `trace_detail_spans` over the page's extent, padded —
+			// the caller's window would be a week of partitions on the page the UI
+			// offers — and both `ai_trace_index` reads take the same bounds exactly.
+			expect(detailsSql).toContain("FROM trace_detail_spans")
+			expect(detailsSql).toContain("Timestamp >= '2026-08-19 09:50:00.000000000' - INTERVAL 3600 SECOND")
+			expect(detailsSql).toContain("Timestamp <= '2026-08-19 10:40:00.000000000' + INTERVAL 3600 SECOND")
+			expect(detailsSql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(4)
+			// Exactly the page's ids, and the page's counted filters, so a trace
+			// resolves to the session it was ranked into.
+			for (const sessionId of DETAILS_BODY.sessionIds) expect(detailsSql).toContain(`'${sessionId}'`)
+			expect(detailsSql).toContain("countIf(VendorId IN ('eve')) > 0")
+			expect(detailsSql).not.toContain("__PARAM_")
+			// The rows as the fan-out returned them; the client merges by id.
+			expect(response.body).toEqual({
+				data: DETAILS_BODY.sessionIds.map((sessionId) => ({
+					sessionId,
+					spanCount: 12,
+					errorSpanCount: 2,
+					serviceNames: ["agent-runner", "web-service"],
+					startTime: "2026-08-19 10:19:59.950000000",
+					endTime: "2026-08-19 10:45:00.000000000",
+					durationMs: 1_500_050,
+				})),
+			})
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("rejects an empty page rather than compiling `IN ()`", async () => {
+		const harness = makeHarness({
+			compiledQuery: () => Effect.die("unreachable"),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/details", {
+				...DETAILS_BODY,
+				sessionIds: [],
+			})
+			expect(response.status).toBe(400)
 		} finally {
 			await harness.dispose()
 		}

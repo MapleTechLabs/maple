@@ -183,13 +183,20 @@ describe("span classification SQL", () => {
 			Cost: CH.dynamicColumn<number>("Cost", T.float64),
 			ResponseId: CH.dynamicColumn<string>("ResponseId", T.string),
 			IsLlmCall: CH.dynamicColumn<number>("IsLlmCall", T.uint8),
+			InputTokens: CH.dynamicColumn<number>("InputTokens", T.float64),
+			CacheReadTokens: CH.dynamicColumn<number>("CacheReadTokens", T.float64),
+			CacheWriteTokens: CH.dynamicColumn<number>("CacheWriteTokens", T.float64),
+			OutputTokens: CH.dynamicColumn<number>("OutputTokens", T.float64),
+			ReasoningTokens: CH.dynamicColumn<number>("ReasoningTokens", T.float64),
 		})
+		// The five buckets ride along as elements 7–11; a span reports by its
+		// total or cost, which the buckets sum to, so they add no predicate.
 		expect(sql(reporters)).toBe(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1))",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1))",
 		)
 	})
 
-	it.each([3, 4] as const)(
+	it.each([3, 4, 7, 11] as const)(
 		"sums usage at the session level: children off their parent, one claim per response id (element %i)",
 		(element) => {
 			const all = "arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)"

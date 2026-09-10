@@ -8,16 +8,18 @@ import {
 } from "@/lib/agent-sessions/session-window"
 
 describe("resolveWindow", () => {
-	it("pads a minute either side of the hints the list row carried", () => {
+	it("pads fifteen minutes either side of the hints the list row carried", () => {
 		const window = resolveWindow("2026-08-19 12:00:00.000000000", "2026-08-19 12:30:00.000000000")
 
-		expect(window).toEqual({ startTime: "2026-08-19 11:59:00", endTime: "2026-08-19 12:31:00" })
+		// The row's bounds may be its agent spans' extent alone, and a trace's
+		// other spans trail the last agent span by up to ten minutes.
+		expect(window).toEqual({ startTime: "2026-08-19 11:45:00", endTime: "2026-08-19 12:45:00" })
 	})
 
 	it("still narrows the read when only the start hint is present", () => {
 		const window = resolveWindow("2026-08-19 12:00:00.000000000", undefined)
 
-		expect(window).toEqual({ startTime: "2026-08-19 11:59:00", endTime: "2026-08-19 12:01:00" })
+		expect(window).toEqual({ startTime: "2026-08-19 11:45:00", endTime: "2026-08-19 12:15:00" })
 	})
 
 	// An unusable `end` must not cost the reader a perfectly good `t`: dropping
@@ -25,7 +27,7 @@ describe("resolveWindow", () => {
 	it("keeps a valid start hint when the end hint is unparseable", () => {
 		const window = resolveWindow("2026-08-19 12:00:00.000000000", "not-a-timestamp")
 
-		expect(window).toEqual({ startTime: "2026-08-19 11:59:00", endTime: "2026-08-19 12:01:00" })
+		expect(window).toEqual({ startTime: "2026-08-19 11:45:00", endTime: "2026-08-19 12:15:00" })
 	})
 
 	// No window at all, rather than a fabricated look-back: the endpoint resolves

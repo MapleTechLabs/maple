@@ -35,6 +35,7 @@ import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_in
 import { migration_0027_audit_log } from "./0027_audit_log"
 import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
+import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -51,10 +52,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30,
+			28, 29, 30, 31,
 		])
-		expect(migrations.at(-1)).toBe(migration_0030_error_events_attribute_fallback)
-		expect(latestMigrationVersion).toBe(30)
+		expect(migrations.at(-1)).toBe(migration_0031_ai_trace_index_list_columns)
+		expect(latestMigrationVersion).toBe(31)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -84,6 +85,8 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0028_product_events_from_traces.requiredForIngest).toBe(false)
 		// 0030 only recreates the error-events MVs.
 		expect(migration_0030_error_events_attribute_fallback.requiredForIngest).toBe(false)
+		// 0031 widens the same MV-populated ai_trace_index again.
+		expect(migration_0031_ai_trace_index_list_columns.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -759,6 +762,60 @@ describe("migration 0029 — ai_trace_index usage conventions", () => {
 			expect(create).toContain(` AS ${column}`)
 		}
 		expect(create).toMatch(/\bSpanId,\s+ParentSpanId,\s+Duration,/)
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0031 — ai_trace_index list columns", () => {
+	const migration = migrations.find((entry) => entry.version === 31)!
+
+	it("adds the vendor version and the five token buckets, then recreates the view", () => {
+		const statements = migration.statements as ReadonlyArray<string>
+		const alters = statements.slice(0, 6)
+		const [drop, create, ...rest] = statements.slice(6)
+		expect(rest).toEqual([])
+		expect(alters).toEqual([
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS VendorVersion LowCardinality(String)",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS InputTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS CacheReadTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS CacheWriteTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS OutputTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ReasoningTokens Float64",
+		])
+		// An MV's SELECT is frozen at creation, so the 0029 view is dropped
+		// before the widened one is created.
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		)
+		expect(create).toContain("SpanAttributes['maple_ai.vendor.version'] AS VendorVersion")
+		// The buckets are the disjoint split, so the nesting conventions carve
+		// the cache out of the prompt and the reasoning out of the completion.
+		expect(create).toContain(
+			"greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
+		expect(create).toContain(
+			"greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
+		)
+		// Every column the target holds is still projected: the view maps to the
+		// table by NAME.
+		for (const column of [
+			"Tokens",
+			"Cost",
+			"ResponseId",
+			"VendorVersion",
+			"InputTokens",
+			"CacheReadTokens",
+			"CacheWriteTokens",
+			"OutputTokens",
+			"ReasoningTokens",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
 	})
 
 	it("does not backfill and does not gate ingest", () => {

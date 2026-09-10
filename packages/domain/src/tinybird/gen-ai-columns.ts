@@ -358,8 +358,8 @@ export function genAiTokensExpr(attrs: MapColumnLike): Expr<number> {
  * The five buckets as disjoint figures under the reporter's convention —
  * `input` the uncached prompt, `output` the visible completion, each clamped
  * at zero like the detail page clamps them — whose sum is `genAiTokensExpr`.
- * For a read off the raw table that needs the split, which the index does not
- * carry.
+ * The index carries them as their own columns since migration 0031; a
+ * raw-table read of the same split compiles the same expressions.
  */
 export function genAiUsageBucketsExpr(
 	attrs: MapColumnLike,
@@ -403,3 +403,10 @@ export const GENAI_IS_TOOL_CALL_SQL = sql(flag(genAiIsToolCallCond(rawSpan)))
 export const GENAI_IS_ERROR_SQL = sql(flag(genAiIsErrorCond(rawSpan)))
 export const GENAI_TOKENS_SQL = sql(genAiTokensExpr(rawSpan.SpanAttributes))
 export const GENAI_COST_SQL = sql(genAiCostExpr(rawSpan.SpanAttributes))
+
+const usageBuckets = genAiUsageBucketsExpr(rawSpan.SpanAttributes)
+export const GENAI_INPUT_TOKENS_SQL = sql(usageBuckets.input)
+export const GENAI_CACHE_READ_TOKENS_SQL = sql(usageBuckets.cacheRead)
+export const GENAI_CACHE_WRITE_TOKENS_SQL = sql(usageBuckets.cacheWrite)
+export const GENAI_OUTPUT_TOKENS_SQL = sql(usageBuckets.output)
+export const GENAI_REASONING_TOKENS_SQL = sql(usageBuckets.reasoning)

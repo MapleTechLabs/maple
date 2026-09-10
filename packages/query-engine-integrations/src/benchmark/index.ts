@@ -100,23 +100,23 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 	},
 	{
 		module: "ai-sessions",
-		name: "aiSessionListQuery",
+		name: "aiSessionDetailsQuery",
 		label: "default",
 		// The ClickHouse e2e sweep runs its quoted/unquoted 64-bit decode assertion
 		// for every fixture whose compiled query carries a row schema — which the
 		// builder derives from the SELECT, so nothing is declared here.
 		compile: () =>
-			compileUnsafe(CH.aiSessionListQuery({ sessionIds: AI_PAGE_SESSION_IDS }), aiPageBounds),
+			compileUnsafe(CH.aiSessionDetailsQuery({ sessionIds: AI_PAGE_SESSION_IDS }), aiPageBounds),
 	},
 	{
 		// The same page under the list's filters — the aggregation runs with the
 		// filters the page ranked under, never without them.
 		module: "ai-sessions",
-		name: "aiSessionListQuery",
+		name: "aiSessionDetailsQuery",
 		label: "filtered",
 		compile: () =>
 			compileUnsafe(
-				CH.aiSessionListQuery({
+				CH.aiSessionDetailsQuery({
 					sessionIds: AI_PAGE_SESSION_IDS,
 					vendorIds: ["eve"],
 					serviceNames: ["maple-slack-agent"],
@@ -165,11 +165,11 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		// The same page under every counted filter — the aggregation runs with
 		// the filters the page ranked under, never without them.
 		module: "ai-sessions",
-		name: "aiSessionListQuery",
+		name: "aiSessionDetailsQuery",
 		label: "every-counted-filter",
 		compile: () =>
 			compileUnsafe(
-				CH.aiSessionListQuery({
+				CH.aiSessionDetailsQuery({
 					sessionIds: AI_PAGE_SESSION_IDS,
 					deploymentEnvs: ["production"],
 					models: ["gpt-5.5"],

@@ -2,13 +2,15 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { MAPLE_AI_TRACE_SESSION_PREFIX, traceSessionTraceId } from "@maple/domain/gen-ai"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// Slack, not compensation: the list now reports each session's own bounds
-// rather than clamping them to the list page's time range, so the hints already
-// contain the session. What is left to absorb is rounding — a warehouse window
-// is rendered at whole-second precision, which floors an exact `end` below the
-// final span's sub-second timestamp — and the clock skew between the services
-// one trace crosses.
-const WINDOW_PADDING_MS = 60_000
+// The list row's bounds are the extent of the session's AGENT spans until its
+// details land (see `ListAiSessionDetailsResponse`), and a trace's other spans
+// lie outside that: measured over two days of production, the first span leads
+// the first agent span by at most 0.1s and the last span trails the last agent
+// span by at most ten minutes. Fifteen minutes contains both with room for
+// rounding — a warehouse window is rendered at whole-second precision — and
+// for the clock skew between the services one trace crosses, and still keeps
+// the read inside one partition for every session but those nearest midnight.
+const WINDOW_PADDING_MS = 15 * 60_000
 
 export interface SessionWindow {
 	readonly startTime: string

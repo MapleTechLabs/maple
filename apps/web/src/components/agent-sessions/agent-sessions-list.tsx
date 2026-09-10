@@ -164,9 +164,10 @@ export function AgentSessionsList({
 						key={session.sessionId}
 						to="/agent-sessions/$sessionId"
 						params={{ sessionId: session.sessionId }}
-						// The session's own bounds, not the list's window: the list query
-						// aggregates each qualifying trace in full, so the detail page can
-						// read straight from these.
+						// The session's own bounds, not the list's window — its agent spans'
+						// extent until the row's details land, the true one after — padded
+						// on the way in by `resolveWindow`, so the detail page reads straight
+						// from these.
 						search={{ t: session.startTime, end: session.endTime }}
 						className="relative flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @2xl:gap-4"
 					>

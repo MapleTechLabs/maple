@@ -7,6 +7,7 @@ import {
 	AiSessionSpanScope,
 	GetAiSessionSpansRequest,
 	GetAiSessionSummaryRequest,
+	ListAiSessionDetailsRequest,
 	ListAiSessionsFacetsRequest,
 	ListAiSessionsRequest,
 } from "@maple/domain/http"
@@ -69,6 +70,44 @@ export const listAiSessions = Effect.fn("AiSessions.listAiSessions")(function* (
 					startTime: input.startTime ?? fallback.startTime,
 					endTime: input.endTime ?? fallback.endTime,
 				}),
+			})
+		}),
+	)
+	return { data: result.data }
+})
+
+// List details (the facts of a page's other spans, read after the page renders)
+
+const AiSessionDetailsInput = Schema.Struct({
+	startTime: WarehouseDateTimeString,
+	endTime: WarehouseDateTimeString,
+	sessionIds: Schema.Array(Schema.String),
+	vendorIds: Schema.optional(Schema.Array(Schema.String)),
+	serviceNames: Schema.optional(Schema.Array(Schema.String)),
+	deploymentEnvs: Schema.optional(Schema.Array(Schema.String)),
+	models: Schema.optional(Schema.Array(Schema.String)),
+	agentNames: Schema.optional(Schema.Array(Schema.String)),
+	toolNames: Schema.optional(Schema.Array(Schema.String)),
+	search: Schema.optional(Schema.String),
+})
+export type AiSessionDetailsInput = Schema.Schema.Type<typeof AiSessionDetailsInput>
+
+/**
+ * One page's details — see `ListAiSessionDetailsRequest`. Not an atom: it is
+ * fetched once per page the list has already rendered and merged into the
+ * rows, so nothing re-renders from a skeleton on its account.
+ */
+export const getAiSessionDetails = Effect.fn("AiSessions.aiSessionDetails")(function* ({
+	data,
+}: {
+	data: AiSessionDetailsInput
+}) {
+	const input = yield* decodeInput(AiSessionDetailsInput, data, "aiSessionDetails")
+	const result = yield* runWarehouseQuery("aiSessionDetails", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.details({
+				payload: new ListAiSessionDetailsRequest(input),
 			})
 		}),
 	)

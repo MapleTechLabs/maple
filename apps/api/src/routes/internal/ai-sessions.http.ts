@@ -6,6 +6,7 @@ import {
 	CurrentTenant,
 	GetAiSessionSpansResponse,
 	GetAiSessionSummaryResponse,
+	ListAiSessionDetailsResponse,
 	ListAiSessionsFacetsResponse,
 	ListAiSessionsResponse,
 	MapleInternalApi,
@@ -19,6 +20,28 @@ import { Effect } from "effect"
 import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+
+/**
+ * The counted filters, as both the page and its details take them: they go
+ * to both reads so a trace resolves to the same session in each.
+ */
+const countedFilters = (payload: {
+	readonly vendorIds?: ReadonlyArray<string>
+	readonly serviceNames?: ReadonlyArray<string>
+	readonly deploymentEnvs?: ReadonlyArray<string>
+	readonly models?: ReadonlyArray<string>
+	readonly agentNames?: ReadonlyArray<string>
+	readonly toolNames?: ReadonlyArray<string>
+	readonly search?: string
+}) => ({
+	vendorIds: payload.vendorIds,
+	serviceNames: payload.serviceNames,
+	deploymentEnvs: payload.deploymentEnvs,
+	models: payload.models,
+	agentNames: payload.agentNames,
+	toolNames: payload.toolNames,
+	search: payload.search,
+})
 
 /**
  * Dashboard-only AI agent session reads.
@@ -105,33 +128,17 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						// The counted filters go to BOTH stages, so they resolve a trace
-						// identically; the session-level ones and the sort rank the page
-						// and are the page's alone.
-						const filters = {
-							vendorIds: payload.vendorIds,
-							serviceNames: payload.serviceNames,
-							deploymentEnvs: payload.deploymentEnvs,
-							models: payload.models,
-							agentNames: payload.agentNames,
-							toolNames: payload.toolNames,
-							search: payload.search,
-						}
-						const window = {
-							orgId: tenant.orgId,
-							startTime: payload.startTime,
-							endTime: payload.endTime,
-						}
-						// Two reads, not one: the page is ranked on `ai_trace_index` over the
-						// caller's whole window, and only then is that page aggregated over
-						// `trace_detail_spans` — inside the hours its own agent spans cover,
-						// never the caller's window. See `aiSessionListQuery` for what the
-						// single-read shape cost.
+						// One read, off `ai_trace_index` alone: the page is ranked over the
+						// caller's whole window and every fact the row shows is measured
+						// there, over the session's agent spans. The facts only the traces'
+						// other spans can answer come from `details`, which the client
+						// asks for once this has rendered — see `aiSessionPageQuery` for
+						// what the fan-out cost on the critical path.
 						const page = yield* warehouse.compiledQuery(
 							tenant,
 							CH.compile(
 								Integrations.aiSessionPageQuery({
-									...filters,
+									...countedFilters(payload),
 									limit: payload.limit,
 									offset: payload.offset,
 									hasErrors: payload.hasErrors,
@@ -149,71 +156,75 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									sortBy: payload.sortBy,
 									sortDir: payload.sortDir,
 								}),
-								window,
+								{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
 							),
 							{ profile: "list", context: "aiSessionsPage" },
 						)
 						if (page.length === 0) {
 							return new ListAiSessionsResponse({ data: [] })
 						}
-						// Fixed-width warehouse literals, so they sort as the instants do.
-						const fanOutStart = page
-							.map((row) => row.agentStart)
-							.reduce((a, b) => (a < b ? a : b))
-						const fanOutEnd = page.map((row) => row.agentEnd).reduce((a, b) => (a < b ? b : a))
-						// The row schema already coerces the UInt64 aggregates and decodes
-						// exactly the response's fields, so rows pass through unmapped.
+						yield* Effect.annotateCurrentSpan({ "maple.ai.page_size": page.length })
+						// The page's order is the order shown. The row's bounds are the
+						// agent spans' extent, which the details replace with the true one.
+						return new ListAiSessionsResponse({
+							data: page.map((row) => ({
+								sessionId: row.sessionId,
+								vendorId: row.vendorId,
+								vendorVersion: row.vendorVersion,
+								traceCount: row.traceCount,
+								spanCount: row.spanCount,
+								errorSpanCount: row.errorAgentSpans,
+								toolErrorCount: row.toolErrors,
+								turnErrorCount: row.turnErrors,
+								serviceNames: row.serviceNames,
+								models: row.models,
+								agentNames: row.agentNames,
+								firstAgentName: row.firstAgentName,
+								llmCalls: row.llmCalls,
+								toolCalls: row.toolCalls,
+								totalTokens: row.totalTokens,
+								inputTokens: row.inputTokens,
+								cacheReadTokens: row.cacheReadTokens,
+								cacheWriteTokens: row.cacheWriteTokens,
+								outputTokens: row.outputTokens,
+								reasoningTokens: row.reasoningTokens,
+								cost: row.cost,
+								startTime: row.agentStart,
+								endTime: row.agentEnd,
+								durationMs: row.agentDurationMs,
+							})),
+							ranked: page.length,
+						})
+					}),
+				)
+				.handle("details", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.page_size": payload.sessionIds.length,
+						})
+						// The fan-out over `trace_detail_spans`, bounded by the page's own
+						// extent rather than the list's window — the client hands back the
+						// bounds the page rows carried. Seconds on a cold partition, which
+						// is why it is its own request rather than part of `list`.
 						const rows = yield* warehouse.compiledQuery(
 							tenant,
 							CH.compile(
-								Integrations.aiSessionListQuery({
-									...filters,
-									sessionIds: page.map((row) => row.sessionId),
+								Integrations.aiSessionDetailsQuery({
+									...countedFilters(payload),
+									sessionIds: payload.sessionIds,
 								}),
-								{ orgId: tenant.orgId, fanOutStart, fanOutEnd },
+								{ orgId: tenant.orgId, fanOutStart: payload.startTime, fanOutEnd: payload.endTime },
 							),
-							{ profile: "list", context: "listAiSessions" },
+							{ profile: "list", context: "aiSessionsDetails" },
 						)
-						// The page's order is the order that was paged, so it is the order
-						// shown: the aggregation sorts by the true first span, which leads
-						// the first agent span the page ranked on by under a second.
-						//
-						// A session the aggregation did not return is dropped rather than
-						// shown blank, and `ranked` tells the client the page was still a
-						// full one. It happens: `ai_trace_index` and `trace_detail_spans`
-						// are two materialized views written one after the other from the
-						// same `traces` insert, so the newest session — ranked first — can
-						// have index rows a moment before it has span rows, and at the far
-						// end of retention the two tables' TTL merges run on their own
-						// clocks. The two counts on the span are how often.
-						yield* Effect.annotateCurrentSpan({
-							"maple.ai.page_size": page.length,
-							"maple.ai.aggregated": rows.length,
-						})
-						// One row per session: the fan-out's facts (spans, services, the
-						// true extent, the all-span error count) joined with the page's
-						// measures (models, agents, calls, usage), which only the index
-						// can answer and the page already computed to rank on.
-						const byId = new Map(rows.map((row) => [row.sessionId, row]))
-						return new ListAiSessionsResponse({
-							data: page.flatMap((ranked) => {
-								const row = byId.get(ranked.sessionId)
-								if (row === undefined) return []
-								return {
-									...row,
-									models: ranked.models,
-									agentNames: ranked.agentNames,
-									firstAgentName: ranked.firstAgentName,
-									llmCalls: ranked.llmCalls,
-									toolCalls: ranked.toolCalls,
-									toolErrorCount: ranked.toolErrors,
-									turnErrorCount: ranked.turnErrors,
-									totalTokens: ranked.totalTokens,
-									cost: ranked.cost,
-								}
-							}),
-							ranked: page.length,
-						})
+						// A page session the fan-out did not return is simply absent: the
+						// two MVs are written one after the other from the same insert, so
+						// the newest session can be ranked a moment before it has span rows.
+						// The count on the span is how often.
+						yield* Effect.annotateCurrentSpan({ "maple.ai.detailed": rows.length })
+						return new ListAiSessionDetailsResponse({ data: rows })
 					}),
 				)
 				.handle("facets", ({ payload }) =>
