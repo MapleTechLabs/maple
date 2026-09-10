@@ -423,3 +423,62 @@ describe("ChatTranscript sub-agent cards", () => {
 		expect(items().map((el) => (el as HTMLElement).dataset.messageId)).toEqual(["m1"])
 	})
 })
+
+describe("ChatTranscript turn rail", () => {
+	const rail = () => document.querySelector('[data-slot="turn-minimap"]')
+	const markers = () =>
+		Array.from(document.querySelectorAll('[data-slot="turn-minimap"] span[aria-hidden]'))
+
+	/** jsdom has no layout, and the rail maps pointer position onto its own box. */
+	const withLayout = (height: number) => {
+		const original = HTMLElement.prototype.getBoundingClientRect
+		HTMLElement.prototype.getBoundingClientRect = function rect(this: HTMLElement) {
+			return {
+				top: 0,
+				left: 0,
+				right: 1440,
+				bottom: height,
+				width: 1440,
+				height,
+				x: 0,
+				y: 0,
+			} as DOMRect
+		}
+		return () => {
+			HTMLElement.prototype.getBoundingClientRect = original
+		}
+	}
+
+	const thread = [
+		message("u1", "user", "why is checkout slow"),
+		message("a1", "assistant", "the db pool is exhausted"),
+		message("u2", "user", "how do I fix it"),
+		message("a2", "assistant", "raise the pool size"),
+	]
+
+	it("stays away until the thread has more than one turn", () => {
+		render(<ChatTranscript {...baseProps} messages={[message("u1", "user", "hi")]} />)
+
+		expect(rail()).toBeNull()
+	})
+
+	it("draws one marker per human turn", () => {
+		render(<ChatTranscript {...baseProps} messages={thread} />)
+
+		expect(markers()).toHaveLength(2)
+	})
+
+	it("previews the turn under the pointer, question and reply", () => {
+		const restore = withLayout(200)
+		try {
+			render(<ChatTranscript {...baseProps} messages={thread} />)
+			fireEvent.mouseMove(screen.getByLabelText("Jump to a turn"), { clientY: 0 })
+
+			// Both texts are on screen twice: once in the transcript, once in the preview.
+			expect(screen.getAllByText("why is checkout slow")).toHaveLength(2)
+			expect(screen.getAllByText("the db pool is exhausted")).toHaveLength(2)
+		} finally {
+			restore()
+		}
+	})
+})
