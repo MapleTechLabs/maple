@@ -506,6 +506,24 @@ describe("SessionOverview", () => {
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
 
+	// The session's own first instant is a real start time for a call; the
+	// session formatter spells a zero as an em dash, which reads as unknown.
+	it("says a call that began with the session began at 0s, not at nothing", () => {
+		const atStart = sessionOf([
+			agentSpan({ spanId: "s-agent", startMs: 0, durationMs: 20 * SECOND }),
+			toolSpan({
+				spanId: "s-tool",
+				parentSpanId: "s-agent",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				toolName: "read_file",
+			}),
+		])
+		render(<Overview turns={atStart.turns} summary={atStart.summary} />)
+
+		expect(screen.getByRole("button", { name: "read_file — turn 1, 0s in, 2.0s" })).toBeTruthy()
+	})
+
 	// The description and the failure used to live in two different places — the
 	// rail disclosed one, the findings list carried the other. Expanding the tool
 	// is where a reader asks about the tool.

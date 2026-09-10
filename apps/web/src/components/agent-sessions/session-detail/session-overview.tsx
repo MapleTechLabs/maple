@@ -819,7 +819,11 @@ function FailedCallRow({
 }
 
 function callWhen(event: SessionToolCall, sessionStartMs: number): string {
-	const at = `${formatSessionDuration(event.startMs - sessionStartMs)} in, ${formatToolDuration(event.durationMs)}`
+	// A call can start on the session's own first instant, and the session
+	// formatter spells a zero as an em dash — which reads as "no offset known"
+	// rather than "at the start".
+	const offsetMs = event.startMs - sessionStartMs
+	const at = `${offsetMs <= 0 ? "0s" : formatSessionDuration(offsetMs)} in, ${formatToolDuration(event.durationMs)}`
 	return event.turnIndex === undefined ? at : `turn ${event.turnIndex}, ${at}`
 }
 

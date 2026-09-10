@@ -796,7 +796,12 @@ function toolCallErrorDetail(span: AiSessionSpan): string | undefined {
 	const message = span.statusMessage.trim()
 	if (message !== "" && message !== span.genAi.errorType) return clipDetail(message)
 	const result = span.genAi.toolCallResult
-	return result === undefined ? undefined : firstProse(result)
+	if (result === undefined) return undefined
+	const prose = firstProse(result)
+	// Clipped like the status-message path above it: a framework that records a
+	// whole stack trace as the tool's result would otherwise hand the ledger an
+	// unbounded line.
+	return prose === undefined ? undefined : clipDetail(prose)
 }
 
 export function clipDetail(text: string): string {

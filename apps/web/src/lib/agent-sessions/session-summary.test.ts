@@ -1111,6 +1111,36 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 	})
 
+	// A framework that records a stack trace as the tool's result would hand the
+	// ledger row an unbounded line; the status-message path has always clipped.
+	it("clips a failed call's message however the framework recorded it", () => {
+		const long = "x".repeat(400)
+		const summary = summarize([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({
+				spanId: "t1",
+				parentSpanId: "a1",
+				startMs: 0,
+				durationMs: 100,
+				genAi: { errorType: "tool_error", toolCallResult: { error: long } },
+			}),
+			toolSpan({
+				spanId: "t2",
+				parentSpanId: "a1",
+				startMs: 200,
+				durationMs: 100,
+				toolName: "run_tests",
+				statusCode: "Error",
+				statusMessage: long,
+			}),
+		])
+
+		for (const tool of summary.tools) {
+			expect(tool.events[0]?.errorDetail?.length).toBe(140)
+			expect(tool.events[0]?.errorDetail?.endsWith("…")).toBe(true)
+		}
+	})
+
 	// The Overview discloses the description under the tool, so it rides the
 	// usage row rather than being re-read off a span.
 	it("keeps the first stamped tool description for the tool's usage row", () => {
