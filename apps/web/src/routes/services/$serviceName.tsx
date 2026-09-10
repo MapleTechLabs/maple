@@ -9,6 +9,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
+import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import {
@@ -71,6 +72,7 @@ interface ServiceChartConfig {
 	id: string
 	chartId: string
 	title: string
+	titleHint?: string
 	layout: { x: number; y: number; w: number; h: number }
 	legend?: ChartLegendMode
 	tooltip?: ChartTooltipMode
@@ -98,6 +100,7 @@ const SERVICE_CHARTS: ServiceChartConfig[] = [
 		id: "apdex",
 		chartId: "apdex-area",
 		title: "Apdex",
+		titleHint: APDEX_HINT,
 		layout: { x: 0, y: 4, w: 6, h: 4 },
 		tooltip: "visible",
 	},
@@ -433,6 +436,7 @@ function OverviewTab({
 				id: chart.id,
 				chartId: chart.chartId,
 				title: chart.title,
+				titleHint: chart.titleHint,
 				layout: chart.layout,
 				data: detailPoints,
 				legend: chart.legend,

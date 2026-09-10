@@ -10,10 +10,12 @@ import {
 	ChatBubbleSparkleIcon,
 	BellIcon,
 	ClockIcon,
+	CircleInfoIcon,
 } from "@/components/icons"
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -34,6 +36,8 @@ import { interpolateDisplayText } from "@maple/query-engine"
 interface WidgetShellProps {
 	title: string
 	mode: WidgetMode
+	/** Short explanation of the metric, shown behind an info icon next to the title. */
+	titleHint?: string
 	/** Headline stat rendered at the top-right of the card header. */
 	headerValue?: ReactNode
 	/** Summary stat rendered below the card content. */
@@ -45,6 +49,7 @@ interface WidgetShellProps {
 export function WidgetShell({
 	title,
 	mode,
+	titleHint,
 	headerValue,
 	footer,
 	contentClassName,
@@ -104,6 +109,24 @@ export function WidgetShell({
 					<CardTitle className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 						{displayTitle}
 					</CardTitle>
+					{titleHint && (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<button
+										type="button"
+										aria-label={`About ${displayTitle}`}
+										className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+									/>
+								}
+							>
+								<CircleInfoIcon size={12} />
+							</TooltipTrigger>
+							<TooltipContent className="max-w-xs text-xs leading-relaxed">
+								{titleHint}
+							</TooltipContent>
+						</Tooltip>
+					)}
 					{timeRangeLabel && (
 						<span
 							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
