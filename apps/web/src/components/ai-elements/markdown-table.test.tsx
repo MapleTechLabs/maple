@@ -49,3 +49,30 @@ it("tones a duration by magnitude and an error flag by its column", async () => 
 	expect(screen.getByText("no").className).toContain("text-muted-foreground")
 	expect(screen.getByText("yes").className).toContain("text-severity-error")
 })
+
+it("leaves a link the model wrote itself exactly as authored", async () => {
+	const table = [
+		"| Trace ID | Service |",
+		"| --- | --- |",
+		"| [b02eadc6551920cb1bae8554b498a7c2](https://example.test/t) | dashboard |",
+	].join("\n")
+	const router = createRouter({
+		routeTree: createRootRoute({
+			component: () => (
+				<ProvideKnownServices services={new Set(["dashboard"])}>
+					<MessageResponse>{table}</MessageResponse>
+				</ProvideKnownServices>
+			),
+		}),
+		history: createMemoryHistory({ initialEntries: ["/"] }),
+	})
+	await router.load()
+	render(<RouterProvider router={router} />)
+	const rendered = await screen.findByRole("table")
+	// Streamdown renders an outbound link as its own confirm control, so the
+	// assertion is that the authored element survived, not that an anchor exists.
+	expect(rendered.querySelector('[data-streamdown="link"]')?.textContent).toBe(
+		"b02eadc6551920cb1bae8554b498a7c2",
+	)
+	expect(screen.queryByRole("link", { name: "b02eadc6551920cb1bae8554b498a7c2" })).toBeNull()
+})

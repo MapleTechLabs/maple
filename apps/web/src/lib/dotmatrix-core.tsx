@@ -465,9 +465,10 @@ export function diagonalSnakeNormFromIndex(index: number): number {
 
 function buildRowWaveSnakeOrderToIndexMap(): number[] {
 	const order = new Array<number>(CELLS)
+	// Each column exactly once: a repeated column would overwrite its own earlier
+	// pass and leave that stretch of order values unused by any cell.
 	const route: Array<{ col: number; dir: "up" | "down" }> = [
 		{ col: 0, dir: "up" },
-		{ col: 2, dir: "down" },
 		{ col: 1, dir: "up" },
 		{ col: 3, dir: "down" },
 		{ col: 2, dir: "up" },
@@ -493,14 +494,13 @@ function buildRowWaveSnakeOrderToIndexMap(): number[] {
 }
 
 const ROW_WAVE_SNAKE_ORDER: readonly number[] = buildRowWaveSnakeOrderToIndexMap()
-const ROW_WAVE_SNAKE_MAX_ORDER = Math.max(...ROW_WAVE_SNAKE_ORDER)
 
 export function rowWaveOrderValue(index: number): number {
 	return ROW_WAVE_SNAKE_ORDER[index]!
 }
 
 export function rowWaveNormFromIndex(index: number): number {
-	return ROW_WAVE_SNAKE_MAX_ORDER > 0 ? rowWaveOrderValue(index) / ROW_WAVE_SNAKE_MAX_ORDER : 0
+	return rowWaveOrderValue(index) / (CELLS - 1)
 }
 
 export function colWaveNormFromIndex(index: number): number {
