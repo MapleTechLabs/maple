@@ -101,6 +101,8 @@ describe("persistSessionTimeRange", () => {
 
 		persistSessionTimeRange({})
 		persistSessionTimeRange({ startTime: absolute.startTime })
+		persistSessionTimeRange({ startTime: "not a time", endTime: "nor this" })
+		persistSessionTimeRange({ startTime: absolute.endTime, endTime: absolute.startTime })
 		expect(appRegistry.get(atom)).toStrictEqual(absolute)
 	})
 

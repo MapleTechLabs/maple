@@ -72,6 +72,9 @@ export function sessionTimeRangeSearchMiddleware<T extends TimeRangeSearch>(opti
 export function persistSessionTimeRange(search: TimeRangeSearch) {
 	const orgId = getActiveOrgId()
 	if (!orgId || !isCompleteTimeRange(search)) return
+	// A hand-edited pair — a bad timestamp, an end before its start — must not
+	// replace a good window with one the middleware will only reject.
+	if (!isWithin(search, Number.POSITIVE_INFINITY)) return
 	const value: SessionTimeRange =
 		"timePreset" in search
 			? { timePreset: search.timePreset }
