@@ -702,8 +702,24 @@ describe("calendar arithmetic in an IANA zone", () => {
 		expect(snapped.startTime).toBe(resolved.startTime)
 		expect(snapped.endTime).not.toBe(resolved.endTime)
 		expect(isCalendarAlignedShorthand("7d")).toBe(true)
+		expect(isCalendarAlignedShorthand("2w")).toBe(true)
 		expect(isCalendarAlignedShorthand("today")).toBe(true)
 		expect(isCalendarAlignedShorthand("12h")).toBe(false)
+		// A month start keeps the time of day, so it must slide with the snapped end.
+		expect(isCalendarAlignedShorthand("1mo")).toBe(false)
+	})
+
+	it("disambiguates a day start that rolled into the previous month", () => {
+		// "2w" on 2026-11-07 starts on 2026-10-25, the day Berlin falls back; its
+		// midnight is 22:00Z (CEST), not 23:00Z.
+		const now = Date.parse("2026-11-07T10:00:00Z")
+		expect(resolveRelativeRange("2w", now, "Europe/Berlin")!.startMs).toBe(
+			Date.parse("2026-10-24T22:00:00Z"),
+		)
+		// Same across a year boundary.
+		expect(resolveRelativeRange("7d", Date.parse("2027-01-03T10:00:00Z"), "UTC")!.startMs).toBe(
+			Date.parse("2026-12-28T00:00:00Z"),
+		)
 	})
 
 	it("counts months on the zone's calendar and clamps the day", () => {

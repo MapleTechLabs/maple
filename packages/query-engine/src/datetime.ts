@@ -315,15 +315,19 @@ export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): nu
 		offsets.add(timeZoneOffsetMs(timeZone, probe))
 	}
 	const candidates = [...offsets].map((offset) => asUtc - offset).sort((a, b) => a - b)
+	// Compare against the components AFTER `Date.UTC` rolled them over: a caller
+	// may pass `day: -6` to mean "six days before the 1st", and the wall clock
+	// read back from a candidate is always normalized.
+	const target = new Date(asUtc)
 	const readsBack = (instant: number): boolean => {
 		const wall = zonedDateParts(instant, timeZone)
 		return (
-			wall.year === parts.year &&
-			wall.month === parts.month &&
-			wall.day === parts.day &&
-			wall.hour === parts.hour &&
-			wall.minute === parts.minute &&
-			wall.second === parts.second
+			wall.year === target.getUTCFullYear() &&
+			wall.month === target.getUTCMonth() + 1 &&
+			wall.day === target.getUTCDate() &&
+			wall.hour === target.getUTCHours() &&
+			wall.minute === target.getUTCMinutes() &&
+			wall.second === target.getUTCSeconds()
 		)
 	}
 	return candidates.find(readsBack) ?? candidates.at(-1) ?? asUtc
@@ -592,10 +596,14 @@ export function snapRangeForCache(
 	}
 }
 
-/** Whether a shorthand's window starts on a calendar boundary rather than a rolling offset. */
+/**
+ * Whether a shorthand's window starts at a day boundary. Month presets do not
+ * qualify: `addCalendarMonths` keeps the time of day, so their start moves with
+ * the clock and must be snapped with the end like any rolling window.
+ */
 export function isCalendarAlignedShorthand(shorthand: string): boolean {
 	const trimmed = shorthand.trim().toLowerCase()
-	return trimmed === "today" || /^\d+(d|w|mo)$/.test(trimmed)
+	return trimmed === "today" || /^\d+[dw]$/.test(trimmed)
 }
 
 /**
