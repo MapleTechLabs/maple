@@ -20,7 +20,7 @@ import { PresetList } from "./preset-list"
 import { QuickSelectGrid } from "./quick-select-grid"
 import { RecentlyUsed } from "./recently-used"
 import { ShorthandInput } from "./shorthand-input"
-import { TimezoneDisplay } from "./timezone-display"
+import { TimezoneSelect } from "./timezone-select"
 import type { TimeRangePickerProps, TimeRangeTab } from "./types"
 
 export function TimeRangePicker({
@@ -189,7 +189,7 @@ export function TimeRangePicker({
 								)}
 							</div>
 						</div>
-						<TimezoneDisplay />
+						<TimezoneSelect />
 					</div>
 				)}
 			</PopoverContent>

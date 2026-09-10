@@ -108,6 +108,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/time-range",
+		title: "Time range picker",
+		description:
+			"The header time range picker over local state, with the timezone selector and a strip of timestamps that re-render in the chosen zone.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/query-builder",
 		title: "Query builder",
 		description: "MVP query builder against real warehouse data for the signed-in org.",
