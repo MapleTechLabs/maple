@@ -178,4 +178,68 @@ describe("the sandbox tools", () => {
 			}
 		}),
 	)
+
+	it.effect("validates the trimmed value, because that is the one the service receives", () =>
+		Effect.gen(function* () {
+			const never = () => Effect.die("the tool should have refused before calling the service")
+			// Untrimmed, `" ../etc"` splits into `[" ..", "etc"]`, so a check that runs
+			// before the trim sees no traversal segment while git sees one.
+			for (const [tool, params] of [
+				["sandbox_grep", { repository: "octo/shop", pattern: "x", path: " ../etc" }],
+				["sandbox_grep", { repository: "octo/shop", pattern: "x", path: " /etc" }],
+				["sandbox_list_files", { repository: "octo/shop", path: " ../etc" }],
+				["sandbox_read_file", { repository: "octo/shop", path: " ../etc" }],
+				["sandbox_exec", { repository: "octo/shop", command: "wc", cwd: " ../etc" }],
+			] satisfies Array<[string, SandboxToolParams]>) {
+				const result = yield* call(tool, params, {
+					grep: never,
+					listFiles: never,
+					readFile: never,
+					exec: never,
+				})
+				assert.include(textOf(result), "repository-relative")
+			}
+		}),
+	)
+
+	it.effect("refuses a ref outside git's grammar on every tool, grep included", () =>
+		Effect.gen(function* () {
+			const never = () => Effect.die("the tool should have refused before calling the service")
+			// A `..` in a ref is normalised away in the provider URL and would walk an
+			// installation-wide credential onto a repository the org never connected.
+			for (const [tool, params] of [
+				["sandbox_grep", { repository: "octo/shop", pattern: "x", ref: "main/../../other/x" }],
+				["sandbox_list_files", { repository: "octo/shop", ref: "main/../../other/x" }],
+				["sandbox_read_file", { repository: "octo/shop", path: "a.ts", ref: "main/../../other/x" }],
+				["sandbox_exec", { repository: "octo/shop", command: "wc", ref: "main/../../other/x" }],
+			] satisfies Array<[string, SandboxToolParams]>) {
+				const result = yield* call(tool, params, {
+					grep: never,
+					listFiles: never,
+					readFile: never,
+					exec: never,
+				})
+				assert.include(textOf(result), "branch, tag, or commit SHA")
+			}
+		}),
+	)
+
+	it.effect("keeps blank lines in a file read, so the numbering matches the reported range", () =>
+		Effect.gen(function* () {
+			const result = yield* call(
+				"sandbox_read_file",
+				{ repository: "octo/shop", path: "src/a.ts", start_line: 1, end_line: 4 },
+				{
+					readFile: () =>
+						Effect.succeed(
+							ok("1: const a = 1\n2: \n3: \n4: const b = 2\n__MAPLE_TOTAL_LINES__ 4\n"),
+						),
+				},
+			)
+			const rendered = textOf(result)
+			assert.include(rendered, "2: ")
+			assert.include(rendered, "3: ")
+			assert.include(rendered, "4: const b = 2")
+		}),
+	)
 })

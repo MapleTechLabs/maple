@@ -9,7 +9,7 @@
  * container-backed in the script metadata, and provisions the application.
  */
 import { CLOUDFLARE_WORKER_PLACEMENT, MapleStack, resolveWorkerName } from "@maple/infra/cloudflare"
-import { optionalSecret } from "@maple/infra/env"
+import { requireSecretEntry } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import type { Sandbox } from "./src/worker.ts"
@@ -50,7 +50,10 @@ const props = Effect.gen(function* () {
 			}),
 			// Deliberately not the shared `INTERNAL_SERVICE_TOKEN`: that one lets its
 			// holder act as any organization, and this Worker runs model-chosen commands.
-			...(yield* optionalSecret("SANDBOX_INTERNAL_SERVICE_TOKEN")),
+			// Required, not optional: this Worker is only created on the stages that
+			// deploy it, and without the token it answers 401 to every api call, which
+			// is a failure worth having at deploy time rather than at the first tool use.
+			...(yield* requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")),
 		},
 	}
 })

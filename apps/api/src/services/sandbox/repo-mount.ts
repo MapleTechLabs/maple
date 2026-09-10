@@ -6,11 +6,22 @@
  * pointed at another organization's repository.
  */
 import type { OrgId } from "@maple/domain/http"
-import { NetworkDisabled, SandboxMount, SandboxRuntime } from "@effect-agent/sandbox/Sandbox"
+import {
+	NetworkDisabled,
+	SandboxImplementation,
+	SandboxMount,
+	SandboxRuntime,
+} from "@effect-agent/sandbox/Sandbox"
 import { Option, Schema } from "effect"
 
 export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({
 	kind: "container",
+	identity: "cloudflare-sandbox",
+})
+
+/** Who a refusal comes from, shared by the service and the container implementation. */
+export const REPO_SANDBOX_IMPLEMENTATION = new SandboxImplementation({
+	isolation: "isolated",
 	identity: "cloudflare-sandbox",
 })
 

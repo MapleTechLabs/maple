@@ -25,7 +25,6 @@ import {
 	SandboxArtifact,
 	SANDBOX_DIAGNOSTIC_MAX_LENGTH,
 	SandboxExited,
-	SandboxImplementation,
 	SandboxOutput,
 	SandboxResourceUse,
 	SandboxSpawnError,
@@ -39,12 +38,14 @@ import {
 import { Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { SandboxClient } from "@/sandbox/client"
 import { VcsSourceService, type RepositoryCheckout } from "@/services/integrations/vcs/VcsSourceService"
-import { parseRepoMountSource, REPO_MOUNT_TARGET, REPO_SANDBOX_RUNTIME } from "./repo-mount"
+import {
+	parseRepoMountSource,
+	REPO_MOUNT_TARGET,
+	REPO_SANDBOX_IMPLEMENTATION,
+	REPO_SANDBOX_RUNTIME,
+} from "./repo-mount"
 
-export const IMPLEMENTATION = new SandboxImplementation({
-	isolation: "isolated",
-	identity: "cloudflare-sandbox",
-})
+export const IMPLEMENTATION = REPO_SANDBOX_IMPLEMENTATION
 
 const unsupported = (feature: SandboxUnsupportedRequestError["feature"], message: string) =>
 	new SandboxUnsupportedRequestError({ implementation: IMPLEMENTATION, feature, message })
@@ -84,13 +85,15 @@ export const admit = (
 				"network",
 				"this sandbox can only switch egress off entirely; it cannot enforce a destination allowlist",
 			)
-		const unknownEnv = request.environment.allow.filter(
-			(name) => !Object.hasOwn(SANDBOX_COMMAND_ENV, name),
-		)
-		if (unknownEnv.length > 0)
+		// The container pins one fixed environment, so the allowlist is honoured only
+		// when it names exactly that set. A narrower request would still see all three,
+		// and a request this cannot enforce is one the contract says to refuse.
+		const supportedEnv = Object.keys(SANDBOX_COMMAND_ENV)
+		const requestedEnv = new Set(request.environment.allow)
+		if (requestedEnv.size !== supportedEnv.length || supportedEnv.some((name) => !requestedEnv.has(name)))
 			return yield* unsupported(
 				"runtime",
-				`a command sees only ${Object.keys(SANDBOX_COMMAND_ENV).join(", ")}; it cannot be given ${unknownEnv.join(", ")}`,
+				`a command sees exactly ${supportedEnv.join(", ")}; this sandbox cannot narrow or widen that set`,
 			)
 		if (request.limits.cpuCores !== undefined)
 			return yield* unsupported("cpu-limit", "per-command CPU limits are not enforced")

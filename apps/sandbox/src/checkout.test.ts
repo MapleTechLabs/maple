@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import {
-	SANDBOX_CREDENTIAL_PATH,
 	SANDBOX_TRAILER,
 	SandboxExecRequest,
+	sandboxCredentialPath,
 	shellCommand,
 	shellQuote,
 } from "@maple/domain/sandbox"
@@ -21,6 +21,7 @@ import {
 
 const SHA = "a".repeat(40)
 const TOKEN = "ghs_secret_token"
+const CREDENTIAL = sandboxCredentialPath(SHA)
 
 const checkout = {
 	repository: "octo/shop",
@@ -82,7 +83,7 @@ const fakeSandbox = (options: FakeOptions, seen: string[] = []): SandboxLike => 
 		getProcessLogs: async () => options.logs ?? { stdout: "", stderr: "" },
 		writeFile: async (path) => {
 			seen.push(`write:${path}`)
-			return undefined
+			return { success: true }
 		},
 	}
 }
@@ -160,12 +161,16 @@ describe("cloneScript", () => {
 
 	it("keeps the credential out of the command line and removes it afterwards", () => {
 		const script = cloneScript(checkout)
+		// `set -e` leaves the script the moment a clone fails, so only the trap
+		// guarantees the token is gone on every path out.
+		assert.include(script, `trap 'rm -f ${CREDENTIAL}' EXIT`)
 		// The token reaches the container through the file API; a command's arguments
 		// are readable by the account the agent's own commands run as.
 		assert.notInclude(script, TOKEN)
-		assert.include(script, SANDBOX_CREDENTIAL_PATH)
-		assert.include(script, `rm -f ${SANDBOX_CREDENTIAL_PATH}`)
-		assert.isTrue(script.indexOf("clone") < script.indexOf(`rm -f ${SANDBOX_CREDENTIAL_PATH}`))
+		assert.include(script, CREDENTIAL)
+		// The trap arms the removal before the clone; the explicit line runs it as
+		// soon as the clone is done rather than waiting for the script to end.
+		assert.isTrue(script.indexOf("clone") < script.lastIndexOf(`rm -f ${CREDENTIAL}`))
 		assert.include(script, "chmod -R a+rX,go-w")
 	})
 
@@ -196,13 +201,10 @@ describe("ensureCheckout", () => {
 			)
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
-			assert.include(seen, `write:${SANDBOX_CREDENTIAL_PATH}`)
+			assert.include(seen, `write:${CREDENTIAL}`)
 			assert.include(seen, `start:${cloneProcessId(SHA)}`)
 			// Staged before the clone, never after.
-			assert.isTrue(
-				seen.indexOf(`write:${SANDBOX_CREDENTIAL_PATH}`) <
-					seen.indexOf(`start:${cloneProcessId(SHA)}`),
-			)
+			assert.isTrue(seen.indexOf(`write:${CREDENTIAL}`) < seen.indexOf(`start:${cloneProcessId(SHA)}`))
 		}),
 	)
 

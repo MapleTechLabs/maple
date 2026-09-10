@@ -10,11 +10,18 @@ import {
 	SandboxEnvironment,
 	SandboxLimits,
 	SandboxRequest,
+	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
 } from "@effect-agent/sandbox/Sandbox"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
-import { NETWORK_DISABLED, REPO_MOUNT_TARGET, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
+import {
+	NETWORK_DISABLED,
+	REPO_MOUNT_TARGET,
+	REPO_SANDBOX_IMPLEMENTATION,
+	REPO_SANDBOX_RUNTIME,
+	repoMount,
+} from "./repo-mount"
 
 /** Under the tool-output cap (50 KiB), so a full answer is never truncated a second time downstream. */
 export const SANDBOX_MAX_OUTPUT_BYTES = 48 * 1024
@@ -41,6 +48,31 @@ export const gitPathspec = (path: string | undefined, glob: string | undefined):
 	if (glob === undefined) return dir === undefined ? [] : [dir]
 	return [`:(glob)${dir === undefined ? glob : `${dir}/${glob}`}`]
 }
+
+/**
+ * A repository-relative path, checked again here rather than only at the tools.
+ *
+ * The tools are the only callers today, but this is the boundary that turns a
+ * path into a git pathspec and an `awk` argument, so it is the one that has to
+ * hold when a second caller arrives.
+ */
+const rejectUnsafePath = (label: string, value: string | undefined) =>
+	value !== undefined &&
+	(value.startsWith("/") ||
+		value.split("/").includes("..") ||
+		// oxlint-disable-next-line no-control-regex
+		/[\u0000-\u001f]/.test(value))
+		? Effect.fail(
+				new SandboxUnsupportedRequestError({
+					implementation: REPO_SANDBOX_IMPLEMENTATION,
+					feature: "mounts",
+					message: `${label} must be a repository-relative path inside the checkout`,
+				}),
+			)
+		: Effect.void
+
+/** Git's index mode for a regular file; anything else is a symlink or a submodule. */
+const REGULAR_FILE_MODES = new Set(["100644", "100755"])
 
 export interface SandboxCommandResult {
 	readonly exitCode: number
@@ -184,6 +216,7 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 
 			const grep: RepoSandboxServiceApi["grep"] = Effect.fn("RepoSandboxService.grep")(
 				function* (orgId, target, options) {
+					yield* rejectUnsafePath("path", options.path)
 					const args = [
 						...GIT_COMMON,
 						"grep",
@@ -210,6 +243,7 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 
 			const listFiles: RepoSandboxServiceApi["listFiles"] = Effect.fn("RepoSandboxService.listFiles")(
 				function* (orgId, target, options) {
+					yield* rejectUnsafePath("path", options.path)
 					const args = [
 						...GIT_COMMON,
 						"ls-files",
@@ -223,7 +257,8 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 
 			const readFile: RepoSandboxServiceApi["readFile"] = Effect.fn("RepoSandboxService.readFile")(
 				function* (orgId, target, options) {
-					// `git ls-files --error-unmatch` first: `awk` would follow a symlink out
+					yield* rejectUnsafePath("path", options.path)
+					// `git ls-files` first: `awk` would follow a symlink out
 					// of the checkout, and only tracked files are readable through this tool.
 					// One pass then numbers the requested lines and reports the total, so a
 					// truncated read can say how far it is from the end.
@@ -241,17 +276,30 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						orgId,
 						target,
 						"git",
-						[...GIT_COMMON, "ls-files", "--error-unmatch", "--", options.path],
+						[...GIT_COMMON, "ls-files", "--stage", "--error-unmatch", "--", options.path],
 						undefined,
 						SANDBOX_DEFAULT_TIMEOUT_SECONDS,
 					)
 					if (tracked.exitCode !== 0) return tracked
+					// `--error-unmatch` proves the path is tracked, not that it is a file.
+					// A committed symlink is tracked too, and `awk` would follow it out of
+					// the checkout, so the index mode is what decides.
+					const mode = tracked.stdout.trimStart().split(/\s/, 1)[0] ?? ""
+					if (!REGULAR_FILE_MODES.has(mode))
+						return {
+							exitCode: 1,
+							stdout: "",
+							stderr: `'${options.path}' is not a regular file in the repository`,
+							wallTimeMs: tracked.wallTimeMs,
+							truncated: false,
+						}
 					return yield* run(orgId, target, "awk", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
 			)
 
 			const exec: RepoSandboxServiceApi["exec"] = Effect.fn("RepoSandboxService.exec")(
 				function* (orgId, target, options) {
+					yield* rejectUnsafePath("cwd", options.cwd)
 					const timeout = Math.min(
 						SANDBOX_MAX_TIMEOUT_SECONDS,
 						Math.max(1, options.timeoutSeconds ?? SANDBOX_DEFAULT_TIMEOUT_SECONDS),

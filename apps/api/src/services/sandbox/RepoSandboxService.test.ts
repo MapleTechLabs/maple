@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
 import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@effect-agent/sandbox/Sandbox"
@@ -9,6 +9,11 @@ import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_git_test")
+
+/** A file outside the checkout that no tool may ever return. */
+const SENTINEL = `${mkdtempSync(`${tmpdir()}/maple-outside-`)}/secret.txt`
+const SENTINEL_BODY = "the-sentinel-must-not-be-read\n"
+writeFileSync(SENTINEL, SENTINEL_BODY)
 
 /**
  * A repository the tests run the real argument vectors against.
@@ -26,8 +31,12 @@ const makeRepo = () => {
 	mkdirSync(`${dir}/src/deep`, { recursive: true })
 	writeFileSync(`${dir}/src/checkout.ts`, "export const checkout = 1\nthrow new Error('card declined')\n")
 	writeFileSync(`${dir}/src/deep/nested.ts`, "// card declined lives here too\n")
+	writeFileSync(`${dir}/src/spaced.ts`, "const before = 1\n\n\nconst after = 2\n")
 	writeFileSync(`${dir}/other.txt`, "card declined outside src\n")
 	writeFileSync(`${dir}/README.md`, "# shop\n")
+	// A committed symlink out of the checkout: tracked, so `--error-unmatch` alone
+	// would let `awk` follow it.
+	symlinkSync(SENTINEL, `${dir}/escape.txt`)
 	git("add", "-A")
 	git("commit", "--quiet", "-m", "first")
 	return dir
@@ -167,6 +176,21 @@ describe("the git commands the tools build, against a real repository", () => {
 		}).pipe(Effect.provide(overRepo())),
 	)
 
+	it.effect("keeps blank lines, so the reported range still matches the numbering", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/spaced.ts", startLine: 1, endLine: 5 },
+			)
+			assert.strictEqual(result.exitCode, 0, result.stderr)
+			assert.include(result.stdout, "2: ")
+			assert.include(result.stdout, "3: ")
+			assert.include(result.stdout, "4: const after = 2")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
 	it.effect("refuses a path git does not track, so a symlink cannot leave the checkout", () =>
 		Effect.gen(function* () {
 			const service = yield* RepoSandboxService
@@ -176,6 +200,35 @@ describe("the git commands the tools build, against a real repository", () => {
 				{ path: "untracked-link", startLine: 1, endLine: 10 },
 			)
 			assert.notStrictEqual(result.exitCode, 0)
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("refuses a TRACKED symlink out of the checkout, which git happily reports", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "escape.txt", startLine: 1, endLine: 10 },
+			)
+			assert.notStrictEqual(result.exitCode, 0)
+			assert.notInclude(result.stdout, SENTINEL_BODY.trim())
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("refuses an absolute or traversing path at the service, not only at the tools", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			for (const path of ["/etc", "../outside", "src/../../outside"]) {
+				const failure = yield* service
+					.listFiles(ORG, { repository: "octo/shop" }, { path })
+					.pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "SandboxUnsupportedRequestError")
+			}
+			const cwdFailure = yield* service
+				.exec(ORG, { repository: "octo/shop" }, { command: "true", args: [], cwd: "/etc" })
+				.pipe(Effect.flip)
+			assert.strictEqual(cwdFailure._tag, "SandboxUnsupportedRequestError")
 		}).pipe(Effect.provide(overRepo())),
 	)
 })

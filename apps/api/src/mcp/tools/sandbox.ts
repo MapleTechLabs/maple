@@ -118,7 +118,14 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}) {
 			if (!pattern.trim() || pattern.length > 512)
 				return validationError("pattern must be 1-512 characters")
-			if (path && unsafePath(path)) return validationError("path must be repository-relative")
+			// Validate what is actually sent, not what arrived: the trimmed value is
+			// the one that reaches git, and `" ../etc"` passes a check the untrimmed
+			// string would survive.
+			const searchPath = path?.trim() || undefined
+			if (searchPath !== undefined && unsafePath(searchPath))
+				return validationError("path must be repository-relative")
+			if (ref && unsafeRef(ref.trim()))
+				return validationError("ref must be a branch, tag, or commit SHA")
 			const tenant = yield* CurrentMcpTenant
 			const sandbox = yield* RepoSandboxService
 			const result = yield* sandbox
@@ -127,7 +134,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					{ repository: repository.trim(), ref: ref?.trim() || undefined },
 					{
 						pattern,
-						path: path?.trim() || undefined,
+						path: searchPath,
 						glob: glob?.trim() || undefined,
 						caseSensitive: case_sensitive ?? true,
 						contextLines: Math.min(5, Math.max(0, Math.floor(context_lines ?? 0))),
@@ -162,7 +169,9 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			ref: optionalStringParam("Branch, tag, or commit SHA (default: tracked branch)"),
 		}),
 		Effect.fn("McpTool.sandboxListFiles")(function* ({ repository, path, glob, ref }) {
-			if (path && unsafePath(path)) return validationError("path must be repository-relative")
+			const listPath = path?.trim() || undefined
+			if (listPath !== undefined && unsafePath(listPath))
+				return validationError("path must be repository-relative")
 			if (ref && unsafeRef(ref.trim()))
 				return validationError("ref must be a branch, tag, or commit SHA")
 			const tenant = yield* CurrentMcpTenant
@@ -171,14 +180,14 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				.listFiles(
 					tenant.orgId,
 					{ repository: repository.trim(), ref: ref?.trim() || undefined },
-					{ path: path?.trim() || undefined, glob: glob?.trim() || undefined },
+					{ path: listPath, glob: glob?.trim() || undefined },
 				)
 				.pipe(Effect.mapError(toToolError("sandbox_list_files")))
 			if (result.exitCode !== 0)
 				return validationError(`listing failed: ${result.stderr.trim().slice(0, 500)}`)
 			const { lines, truncated } = capLines(result.stdout, MAX_LIST_ENTRIES)
 			return text([
-				`## Sandbox files${path ? `: ${path}` : ""}`,
+				`## Sandbox files${listPath ? `: ${listPath}` : ""}`,
 				header(repository, ref, result),
 				"",
 				...(lines.length === 0 ? ["No files."] : [...lines].sort().map((line) => `- ${line}`)),
@@ -228,9 +237,11 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const markerIndex = body.findIndex((line) => line.startsWith(TOTAL_MARKER))
 			const total =
 				markerIndex === -1 ? undefined : Number(body[markerIndex]!.slice(TOTAL_MARKER.length).trim())
-			const rendered = (markerIndex === -1 ? body : body.slice(0, markerIndex)).filter(
-				(line) => line.length > 0,
-			)
+			// No blank-line filter: the header reports the line range, so dropping
+			// empty lines would leave the rendered source not matching those numbers.
+			// awk's trailing newline is the one empty element worth removing.
+			const numbered = markerIndex === -1 ? body : body.slice(0, markerIndex)
+			const rendered = numbered.at(-1) === "" ? numbered.slice(0, numbered.length - 1) : numbered
 			const rangeEnd = total === undefined ? end : Math.min(end, total)
 			return text([
 				`## ${repository}/${path.trim()}`,
@@ -271,7 +282,9 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const argv = args ?? []
 			if (argv.length > MAX_ARGS || argv.some((arg) => arg.length > 4096))
 				return validationError(`at most ${MAX_ARGS} arguments of 4096 characters`)
-			if (cwd && unsafePath(cwd)) return validationError("cwd must be repository-relative")
+			const workDir = cwd?.trim() || undefined
+			if (workDir !== undefined && unsafePath(workDir))
+				return validationError("cwd must be repository-relative")
 			if (ref && unsafeRef(ref.trim()))
 				return validationError("ref must be a branch, tag, or commit SHA")
 			if (argv.some((arg) => /[\u0000]/.test(arg)))
@@ -285,7 +298,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					{
 						command: program,
 						args: argv,
-						cwd: cwd?.trim() || undefined,
+						cwd: workDir,
 						timeoutSeconds:
 							timeout_seconds === undefined ? undefined : Math.floor(timeout_seconds),
 					},

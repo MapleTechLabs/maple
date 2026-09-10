@@ -88,7 +88,10 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 						}),
 				})
 				if (!response.ok) {
-					const detail = yield* Effect.promise(() => response.text()).pipe(
+					// `Effect.promise` turns a rejection into a defect, which
+					// `orElseSucceed` does not recover; a body that fails to read should
+					// only cost the detail, not the whole call.
+					const detail = yield* Effect.tryPromise(() => response.text()).pipe(
 						Effect.orElseSucceed(() => ""),
 					)
 					return yield* new SandboxClientError({

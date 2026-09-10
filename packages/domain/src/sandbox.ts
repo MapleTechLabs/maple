@@ -31,14 +31,18 @@ export const SANDBOX_COMMAND_ENV = {
 } as const satisfies Readonly<Record<string, string>>
 
 /**
- * Where the clone's credential is staged inside the container.
+ * Where one clone's credential is staged inside the container.
  *
  * It is written through the container's file API rather than named in a command,
  * because every process's arguments are readable by the unprivileged account
  * (`/proc/<pid>/cmdline`) while agent commands and a background clone overlap by
  * design. `/root` is not readable by that account.
+ *
+ * Per commit, not one shared file: two commits of the same repository clone
+ * concurrently, and a shared path would let the first one to finish delete the
+ * credential the second is still cloning with.
  */
-export const SANDBOX_CREDENTIAL_PATH = "/root/.maple-clone-credential"
+export const sandboxCredentialPath = (sha: string): string => `/root/.maple-clone-credential-${sha}`
 
 /**
  * Trailer the wrapper prints after the command's own output, carrying the real

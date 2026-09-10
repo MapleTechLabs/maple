@@ -34,7 +34,7 @@ const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>
 		command: "git",
 		args: ["grep", "-e", "boom"],
 		cwd: "/workspace/src",
-		environment: new SandboxEnvironment({ allow: ["PATH"] }),
+		environment: new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG"] }),
 		mounts: [repoMount({ orgId: ORG, repository: "octo/shop", ref: "main" })],
 		network: NETWORK_DISABLED,
 		limits: new SandboxLimits({ maxOutputBytes: 1024, maxWallTime: Duration.seconds(5) }),
@@ -89,6 +89,13 @@ describe("admit", () => {
 		Effect.gen(function* () {
 			const cases: Array<[string, Parameters<typeof request>[0]]> = [
 				["runtime", { runtime: new SandboxRuntime({ kind: "microvm", identity: "firecracker" }) }],
+				// The container pins one environment, so a narrower allowlist is refused
+				// rather than quietly answered with all three names.
+				["runtime", { environment: new SandboxEnvironment({ allow: ["PATH"] }) }],
+				[
+					"runtime",
+					{ environment: new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG", "TERM"] }) },
+				],
 				// It can switch egress off entirely, but it cannot police destinations.
 				["network", { network: new NetworkAllowlist({ domains: ["github.com"], ports: [443] }) }],
 				[

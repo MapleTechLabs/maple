@@ -14,7 +14,6 @@
 import {
 	SANDBOX_COMMAND_ENV,
 	SANDBOX_MAX_CHECKOUTS,
-	SANDBOX_CREDENTIAL_PATH,
 	SANDBOX_RUN_AS_USER,
 	SANDBOX_TRAILER,
 	SANDBOX_WORKSPACE_ROOT,
@@ -27,6 +26,7 @@ import {
 	SandboxRunTimedOut,
 	boundMessage,
 	redactSecret,
+	sandboxCredentialPath,
 	shellCommand,
 	shellQuote,
 	type SandboxExecResponse,
@@ -38,6 +38,11 @@ export interface SandboxExecResult {
 	readonly stdout: string
 	readonly stderr: string
 	readonly duration: number
+}
+
+/** What the container reports after a write. Only the outcome matters here. */
+export interface SandboxWriteResult {
+	readonly success: boolean
 }
 
 export interface SandboxProcess {
@@ -63,7 +68,7 @@ export interface SandboxLike {
 	 * body. Anything handed to a command instead would sit in `/proc/<pid>/cmdline`,
 	 * which the unprivileged account can read.
 	 */
-	readonly writeFile: (path: string, content: string) => Promise<unknown>
+	readonly writeFile: (path: string, content: string) => Promise<SandboxWriteResult>
 }
 
 export class SandboxCallError extends Schema.TaggedError<SandboxCallError>()(
@@ -180,23 +185,28 @@ export const parseTrailer = (
 /** The clone, as a single shell program run in the background. */
 export const cloneScript = (checkout: SandboxCheckout): string => {
 	const dir = checkoutDir(checkout.sha)
+	const credential = sandboxCredentialPath(checkout.sha)
 	// The token is read out of a root-only file by a credential helper rather than
 	// carried in the URL: this process's arguments are readable by the account the
 	// agent's own commands run as, and the two overlap by design.
-	const helper = `!f() { echo username=x-access-token; echo "password=$(cat ${SANDBOX_CREDENTIAL_PATH})"; }; f`
+	const helper = `!f() { echo username=x-access-token; echo "password=$(cat ${credential})"; }; f`
 	return [
 		"set -e",
+		// `set -e` exits the moment a clone fails, so removal cannot be a later
+		// line in the script: the trap is what guarantees the token leaves disk
+		// on every path out.
+		`trap 'rm -f ${credential}' EXIT`,
 		`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ${SANDBOX_RUN_AS_USER}`,
 		// Commands run as an account that does not own the tree, which git refuses to read without this.
 		`git config --system --replace-all safe.directory '*'`,
-		`chmod 600 ${SANDBOX_CREDENTIAL_PATH}`,
+		`chmod 600 ${credential}`,
 		`mkdir -p ${shellQuote(SANDBOX_WORKSPACE_ROOT)}`,
 		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-XXXXXX`)})`,
 		`git -c ${shellQuote(`credential.helper=${helper}`)} clone --quiet --no-checkout ${shellQuote(checkout.remoteUrl)} "$t"`,
 		`git -C "$t" checkout --quiet --detach ${shellQuote(checkout.sha)}`,
 		// Nothing may leave the credential behind, in git's config or on disk.
 		`git -C "$t" config --unset-all credential.helper 2>/dev/null || true`,
-		`rm -f ${SANDBOX_CREDENTIAL_PATH}`,
+		`rm -f ${credential}`,
 		// Readable and traversable by the agent account, writable by nobody but root.
 		// `mktemp -d` creates the directory mode 700, so read and execute have to be
 		// added back — removing write alone would leave a tree nothing else can enter.
@@ -235,7 +245,10 @@ export const ensureCheckout = (
 			// handed to a command would sit in `/proc/<pid>/cmdline`, which the account
 			// the agent's own commands run as can read — and the clone overlaps them by
 			// design.
-			yield* promise(() => sandbox.writeFile(SANDBOX_CREDENTIAL_PATH, checkout.token), "writeFile")
+			yield* promise(
+				() => sandbox.writeFile(sandboxCredentialPath(checkout.sha), checkout.token),
+				"writeFile",
+			)
 			yield* promise(
 				() => sandbox.startProcess(cloneScript(checkout), { processId: id }),
 				"startProcess",
