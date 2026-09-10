@@ -34,6 +34,33 @@ const jsonResponse = (body: unknown) =>
 	new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
 describe("GithubAppClient source access", () => {
+	it.effect("reads the archive redirect by hand so the token never follows it", () => {
+		const requests: Array<{ url: string; init?: RequestInit }> = []
+		const responses = [
+			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
+			new Response(null, {
+				status: 302,
+				headers: { location: "https://codeload.github.com/octo/shop/legacy.tar.gz/abc?token=signed" },
+			}),
+		]
+		let nextResponse = 0
+		const http = Layer.succeed(GithubHttp, {
+			fetch: async (url, init) => {
+				requests.push({ url, ...(init ? { init } : undefined) })
+				return responses[nextResponse++]!
+			},
+		} satisfies GithubHttpApi)
+		const layer = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const link = yield* client.getArchiveLink("42", "octo", "shop", "abc")
+			assert.strictEqual(link, "https://codeload.github.com/octo/shop/legacy.tar.gz/abc?token=signed")
+			assert.match(requests[1]!.url, /\/repos\/octo\/shop\/tarball\/abc$/)
+			assert.strictEqual(requests[1]!.init?.redirect, "manual")
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("searches code and reads a file with the installation token", () => {
 		const requests: Array<{ url: string; init?: RequestInit }> = []
 		const responses = [

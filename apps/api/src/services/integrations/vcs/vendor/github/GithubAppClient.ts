@@ -623,6 +623,41 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			/**
+			 * The pre-signed archive URL GitHub redirects a tarball request to. The
+			 * redirect is read by hand (`redirect: "manual"`) so the installation token
+			 * is never forwarded to the archive host; the signed URL the caller gets
+			 * back carries no credential and expires within minutes.
+			 */
+			const getArchiveLink = Effect.fn("GithubAppClient.getArchiveLink")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				sha: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* rateLimitedFetch(
+					tracedFetch(
+						`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${sha}`,
+						{
+							redirect: "manual",
+							headers: {
+								authorization: `token ${token}`,
+								accept: "application/vnd.github+json",
+								"x-github-api-version": GITHUB_API_VERSION,
+								"user-agent": USER_AGENT,
+							},
+						},
+						"GitHub archive request failed",
+					),
+				)
+				const location = response.headers.get("location")
+				if (response.status !== 302 || location === null)
+					return yield* failure(response, "Get archive link", "repository")
+				return location
+			})
+
 			// One page, newest-updated first — never a pagination walk. This feeds the
 			// attach-a-PR picker, where the PR that fixes a live issue is recent by
 			// construction, and a walk would spend an installation's rate budget on
@@ -867,6 +902,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getPullRequest,
 				searchCode,
 				getSourceFile,
+				getArchiveLink,
 				getInstallation,
 				exchangeUserOAuthCode,
 				listUserInstallationIds,

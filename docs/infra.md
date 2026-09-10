@@ -197,6 +197,29 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
   `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
   hand-written entry.
+- **Containers** (`api`): the agents' repository sandbox is a Cloudflare Container in alchemy's
+  Effect-native form. `RepoSandbox` (`src/sandbox/RepoSandbox.ts`) is the class only — the typed
+  RPC surface (`listWorkspaces`, `removeWorkspace`, `exec`) the Durable Object imports;
+  `RepoSandbox.runtime.ts` is `RepoSandbox.make(props, impl)`: the inline Dockerfile
+  (`oven/bun:1` + ripgrep, tar, util-linux, an unprivileged `sandbox` user), the per-stage
+  `instanceType`/`maxInstances`, and the program (`src/sandbox/runtime/exec.ts`, written over
+  `ChildProcessSpawner` + `FileSystem` so vitest runs it on a developer machine). Only the root
+  stack imports the runtime module and provides its layer (`Effect.provide(RepoSandboxLive)` beside
+  `MapleStackLive`), which keeps the container program out of the api bundle. `RepoSandboxObject`
+  (`src/sandbox/RepoSandboxObject.ts`, binding `RepoSandbox`, one object per
+  `<org>:<provider>:<owner/name>`) provides `Cloudflare.Containers.layer(RepoSandbox,
+  { enableInternet: false })` on its init — the container has **no network**, which is what lets
+  the Worker-side `Sandbox` implementation (`src/services/sandbox/CloudflareRepoSandbox.ts`,
+  effect-agent's port) honestly enforce `NetworkDisabled`. Checkouts arrive as GitHub tarballs at
+  an exact SHA: the Worker resolves the ref and a pre-signed archive URL with the installation
+  token (`VcsSourceService.resolveCheckout`), the object fetches it and streams it into the
+  container over `getTcpPort(3000)` (`PUT /workspaces/<sha>`; RPC arguments are JSON, so the
+  upload is the one HTTP route), and the container extracts it read-only and runs every command
+  as `sandbox` through `runuser`. Three checkouts per repository are kept; an idle container
+  sleeps after ten minutes and its disk goes with it, so presence is always asked of the
+  container, never remembered. Under `bun dev` the image is built and run by Docker through
+  workerd's container engine. `alchemy plan` shows the trio `[api/RepoSandbox]`, `[RepoSandbox]`
+  and `[RepoSandbox/RepoSandbox]`.
 - **Assets** (`landing`, `local-ui`): the handler reads `Cloudflare.Workers.Request` and
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.

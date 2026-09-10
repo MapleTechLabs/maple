@@ -58,6 +58,10 @@ export const INVESTIGATION_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
 	"list_source_repositories",
 	"search_source_code",
 	"read_source_file",
+	"sandbox_grep",
+	"sandbox_list_files",
+	"sandbox_read_file",
+	"sandbox_exec",
 ])
 
 /**
@@ -190,6 +194,8 @@ export const SEED_HYPOTHESES: ReadonlyArray<SeedHypothesis> = [
 			"list_source_repositories",
 			"search_source_code",
 			"read_source_file",
+			"sandbox_grep",
+			"sandbox_read_file",
 		],
 	},
 	{

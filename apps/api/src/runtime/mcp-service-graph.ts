@@ -4,6 +4,8 @@ import { McpToolExecutor } from "@/mcp/dispatcher"
 import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { AuditLogLive, OrgClickHouseSettingsLive, WarehouseLive } from "./warehouse-layer"
 import { VcsSourceServiceLayer } from "./vcs-source-layer"
+import { CloudflareRepoSandboxLive } from "@/services/sandbox/CloudflareRepoSandbox"
+import { RepoSandboxService } from "@/services/sandbox/RepoSandboxService"
 import { EmailService } from "@/platform/EmailService"
 import { Env } from "@/platform/Env"
 import { AlertRuntime, AlertsService } from "@/services/alerts/AlertsService"
@@ -100,6 +102,12 @@ const ErrorIssueReadModelsServiceLive = ErrorIssueReadModelsService.layer.pipe(
 
 const VcsSourceServiceLive = VcsSourceServiceLayer.pipe(Layer.provide(InfraLive))
 
+// The agents' repository sandbox: effect-agent's `Sandbox` port over the Worker's
+// own `RepoSandbox` container binding, read off `WorkerEnvironment` at build.
+const RepoSandboxServiceLive = RepoSandboxService.layer.pipe(
+	Layer.provide(CloudflareRepoSandboxLive.pipe(Layer.provide(VcsSourceServiceLive))),
+)
+
 // Lets `propose_fix` and `link_pull_request` attach a PR with its real title
 // and state, and open a verification window for one that already merged.
 const PullRequestLookupServiceLive = PullRequestLookupLive.pipe(Layer.provide(VcsSourceServiceLive))
@@ -153,6 +161,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	IssueFixVerificationServiceLive,
 	QueryEngineServiceLive,
 	RecommendationIssueServiceLive,
+	RepoSandboxServiceLive,
 	SetupAuditServiceLive,
 	VcsSourceServiceLive,
 	WarehouseQueryServiceLive,

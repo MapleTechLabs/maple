@@ -191,6 +191,21 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
       "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
     ```
 
+## Repository sandbox (agent code access)
+
+When an org has connected GitHub, every agent surface (chat, investigation lanes, public MCP)
+gets `sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
+(`apps/api/src/mcp/tools/sandbox.ts`). They run inside a Cloudflare Container with **no
+network**, over a **read-only** tarball checkout at an exact SHA, as an unprivileged user — no
+`.git`, so history stays on the GitHub-API tools. The port is effect-agent's `Sandbox` contract
+(`@effect-agent/sandbox/Sandbox`): one `SandboxRequest` per command, a repository named as the
+single read-only mount `maple-vcs://<orgId>/<owner>/<name>@<ref>`, and an implementation that
+rejects any feature it cannot enforce (`admit` in
+`apps/api/src/services/sandbox/CloudflareRepoSandbox.ts`). The container, its Durable Object and
+the stack wiring are described in `docs/infra.md` § Single-module Workers → Containers. The
+runtime module (`RepoSandbox.runtime.ts`) is imported by `alchemy.run.ts` only — never by a
+Worker.
+
 ## Self-observability (trace loop prevention)
 
 The API traces itself through the ingest gateway, so dashboard traffic generates traces. Keep

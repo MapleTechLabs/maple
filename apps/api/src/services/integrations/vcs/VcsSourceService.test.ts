@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/http"
+import { type GitCommitSha, OrgId } from "@maple/domain/http"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
@@ -49,6 +49,16 @@ const makeLayer = (providerCalls: string[]) => {
 					},
 				]
 			}),
+		resolveRef: (_installation, repo, ref) =>
+			Effect.sync(() => {
+				providerCalls.push(`resolve:${repo.owner}/${repo.name}:${ref}`)
+				return ref === "gone" ? Option.none() : Option.some("d".repeat(40) as GitCommitSha)
+			}),
+		fetchArchiveLink: (_installation, repo, sha) =>
+			Effect.sync(() => {
+				providerCalls.push(`archive:${repo.owner}/${repo.name}:${sha}`)
+				return `https://codeload.test/${repo.owner}/${repo.name}/tar.gz/${sha}`
+			}),
 		fetchSourceFile: (_installation, repo, path, ref) =>
 			Effect.sync(() => {
 				providerCalls.push(`read:${repo.owner}/${repo.name}:${path}:${ref}`)
@@ -92,6 +102,27 @@ describe("VcsSourceService", () => {
 			assert.deepStrictEqual(calls, [
 				"search:octo/shop:checkout",
 				"read:octo/shop:src/checkout.ts:production",
+			])
+		}).pipe(Effect.provide(makeLayer(calls)))
+	})
+
+	it.effect("resolves a checkout at the tracked branch, at a named ref, and straight from a SHA", () => {
+		const calls: string[] = []
+		return Effect.gen(function* () {
+			const source = yield* VcsSourceService
+			const tracked = yield* source.resolveCheckout(ORG, "octo/shop")
+			assert.strictEqual(tracked.ref, "production")
+			assert.strictEqual(tracked.sha, "d".repeat(40))
+			assert.match(tracked.archiveUrl, /tar\.gz\/d{40}$/)
+			const pinned = yield* source.resolveCheckout(ORG, "octo/shop", "e".repeat(40))
+			assert.strictEqual(pinned.sha, "e".repeat(40))
+			const missing = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", "gone"))
+			assert.isTrue(Exit.isFailure(missing))
+			assert.deepStrictEqual(calls, [
+				"resolve:octo/shop:production",
+				`archive:octo/shop:${"d".repeat(40)}`,
+				`archive:octo/shop:${"e".repeat(40)}`,
+				"resolve:octo/shop:gone",
 			])
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})

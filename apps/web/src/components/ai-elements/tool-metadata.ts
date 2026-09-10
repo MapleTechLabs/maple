@@ -204,6 +204,8 @@ const toolOrbStates: Record<string, OrbState> = {
 	find_errors: "searching",
 	search_sessions: "searching",
 	search_source_code: "searching",
+	sandbox_grep: "searching",
+	sandbox_list_files: "searching",
 	explore_attributes: "searching",
 	// `solving` — bands scramble in quarter turns, then click back. Query crunching.
 	run_sql: "solving",

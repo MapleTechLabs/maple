@@ -190,6 +190,29 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/** The commit a ref (branch, tag or SHA) names right now. `Option.none` is an unknown ref. */
+	readonly resolveRef: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		ref: string,
+	) => Effect.Effect<
+		Option.Option<GitCommitSha>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/**
+	 * A short-lived URL for the repository's gzipped tarball at `sha`, carrying no
+	 * credential of its own — what the sandbox restores a checkout from.
+	 */
+	readonly fetchArchiveLink: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		sha: GitCommitSha,
+	) => Effect.Effect<
+		string,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
 	/** Fetch a UTF-8 source file. `Option.none` is an expected missing path/ref. */
 	readonly fetchSourceFile: (
 		installation: VcsInstallation,
