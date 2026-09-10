@@ -53,7 +53,10 @@ function cellText(children: ReactNode): string | null {
 		}
 		return text
 	}
-	if (isValidElement<{ children?: ReactNode }>(children)) {
+	if (isValidElement<{ children?: ReactNode; href?: string; src?: string }>(children)) {
+		// An element with its own destination is content the model authored — a link,
+		// an image. Reading its label would let a recognized value replace it.
+		if (children.props.href !== undefined || children.props.src !== undefined) return null
 		return cellText(children.props.children)
 	}
 	return null
