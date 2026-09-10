@@ -28,6 +28,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AgentSessionsIndexRouteImport } from './routes/agent-sessions/index'
 import { Route as AgentSessionsSessionIdRouteImport } from './routes/agent-sessions/$sessionId'
+import { Route as AgentSessionsToolsRouteImport } from './routes/agent-sessions/tools'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
 import { Route as AlertsRuleIdRouteImport } from './routes/alerts/$ruleId'
 import { Route as AlertsCreateRouteImport } from './routes/alerts/create'
@@ -46,6 +47,7 @@ import { Route as InvestigationsIdRouteImport } from './routes/investigations/$i
 import { Route as LabIndexRouteImport } from './routes/lab/index'
 import { Route as LabAgentSessionRouteImport } from './routes/lab/agent-session'
 import { Route as LabAgentSessionsRouteImport } from './routes/lab/agent-sessions'
+import { Route as LabAgentToolsRouteImport } from './routes/lab/agent-tools'
 import { Route as LabChartsRouteImport } from './routes/lab/charts'
 import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
@@ -192,6 +194,11 @@ const AgentSessionsSessionIdRoute = AgentSessionsSessionIdRouteImport.update({
   path: '/agent-sessions/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentSessionsToolsRoute = AgentSessionsToolsRouteImport.update({
+  id: '/agent-sessions/tools',
+  path: '/agent-sessions/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AlertsIndexRoute = AlertsIndexRouteImport.update({
   id: '/alerts/',
   path: '/alerts/',
@@ -280,6 +287,11 @@ const LabAgentSessionRoute = LabAgentSessionRouteImport.update({
 const LabAgentSessionsRoute = LabAgentSessionsRouteImport.update({
   id: '/agent-sessions',
   path: '/agent-sessions',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabAgentToolsRoute = LabAgentToolsRouteImport.update({
+  id: '/agent-tools',
+  path: '/agent-tools',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabChartsRoute = LabChartsRouteImport.update({
@@ -564,6 +576,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
+  '/agent-sessions/tools': typeof AgentSessionsToolsRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
@@ -574,6 +587,7 @@ export interface FileRoutesByFullPath {
   '/investigations/$id': typeof InvestigationsIdRoute
   '/lab/agent-session': typeof LabAgentSessionRoute
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
+  '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -652,6 +666,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
+  '/agent-sessions/tools': typeof AgentSessionsToolsRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
@@ -662,6 +677,7 @@ export interface FileRoutesByTo {
   '/investigations/$id': typeof InvestigationsIdRoute
   '/lab/agent-session': typeof LabAgentSessionRoute
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
+  '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -742,6 +758,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
+  '/agent-sessions/tools': typeof AgentSessionsToolsRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
@@ -752,6 +769,7 @@ export interface FileRoutesById {
   '/investigations/$id': typeof InvestigationsIdRoute
   '/lab/agent-session': typeof LabAgentSessionRoute
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
+  '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -833,6 +851,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/agent-sessions/$sessionId'
+    | '/agent-sessions/tools'
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
@@ -843,6 +862,7 @@ export interface FileRouteTypes {
     | '/investigations/$id'
     | '/lab/agent-session'
     | '/lab/agent-sessions'
+    | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/errors'
     | '/lab/flow'
@@ -921,6 +941,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/agent-sessions/$sessionId'
+    | '/agent-sessions/tools'
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
@@ -931,6 +952,7 @@ export interface FileRouteTypes {
     | '/investigations/$id'
     | '/lab/agent-session'
     | '/lab/agent-sessions'
+    | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/errors'
     | '/lab/flow'
@@ -1010,6 +1032,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/agent-sessions/$sessionId'
+    | '/agent-sessions/tools'
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
@@ -1020,6 +1043,7 @@ export interface FileRouteTypes {
     | '/investigations/$id'
     | '/lab/agent-session'
     | '/lab/agent-sessions'
+    | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/errors'
     | '/lab/flow'
@@ -1100,6 +1124,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   AgentSessionsSessionIdRoute: typeof AgentSessionsSessionIdRoute
+  AgentSessionsToolsRoute: typeof AgentSessionsToolsRoute
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
   AnomaliesIncidentIdRoute: typeof AnomaliesIncidentIdRoute
@@ -1286,6 +1311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgentSessionsSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agent-sessions/tools': {
+      id: '/agent-sessions/tools'
+      path: '/agent-sessions/tools'
+      fullPath: '/agent-sessions/tools'
+      preLoaderRoute: typeof AgentSessionsToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alerts/': {
       id: '/alerts/'
       path: '/alerts'
@@ -1410,6 +1442,13 @@ declare module '@tanstack/react-router' {
       path: '/agent-sessions'
       fullPath: '/lab/agent-sessions'
       preLoaderRoute: typeof LabAgentSessionsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/agent-tools': {
+      id: '/lab/agent-tools'
+      path: '/agent-tools'
+      fullPath: '/lab/agent-tools'
+      preLoaderRoute: typeof LabAgentToolsRouteImport
       parentRoute: typeof LabRouteRoute
     }
     '/lab/charts': {
@@ -1768,6 +1807,7 @@ declare module '@tanstack/react-router' {
 interface LabRouteRouteChildren {
   LabAgentSessionRoute: typeof LabAgentSessionRoute
   LabAgentSessionsRoute: typeof LabAgentSessionsRoute
+  LabAgentToolsRoute: typeof LabAgentToolsRoute
   LabChartsRoute: typeof LabChartsRoute
   LabErrorsRoute: typeof LabErrorsRoute
   LabFlowRoute: typeof LabFlowRoute
@@ -1791,6 +1831,7 @@ interface LabRouteRouteChildren {
 const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabAgentSessionRoute: LabAgentSessionRoute,
   LabAgentSessionsRoute: LabAgentSessionsRoute,
+  LabAgentToolsRoute: LabAgentToolsRoute,
   LabChartsRoute: LabChartsRoute,
   LabErrorsRoute: LabErrorsRoute,
   LabFlowRoute: LabFlowRoute,
@@ -1834,6 +1875,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   AgentSessionsSessionIdRoute: AgentSessionsSessionIdRoute,
+  AgentSessionsToolsRoute: AgentSessionsToolsRoute,
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,
   AnomaliesIncidentIdRoute: AnomaliesIncidentIdRoute,

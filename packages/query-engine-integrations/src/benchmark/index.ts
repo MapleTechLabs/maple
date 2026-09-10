@@ -64,6 +64,20 @@ const traceWindow = {
  *  because the page was ranked inside it. */
 const AI_PAGE_SESSION_IDS = ["wrun_sql_catalog", `${MAPLE_AI_TRACE_SESSION_PREFIX}${AI_TRACE_ID}`]
 
+/** The tools page's selection, as its four reads take it. Tool AND model, so
+ *  the baseline pins the shape where both filters land — the tool on the index
+ *  scan, the model on the join expression above it. The needle carries a `_`
+ *  so the baseline also pins the LIKE-wildcard escaping. */
+const AI_TOOLS_SELECTION = {
+	tool: "search_traces",
+	model: "claude-sonnet-5",
+	search: "search_",
+	failingOnly: true,
+}
+
+/** The tiles' second window: equal length, ending where the caller's begins. */
+const aiToolsCompare = { ...bucketed, prevStartTime: "2025-12-30 06:45:00", prevEndTime: START_TIME }
+
 /** Stage two's whole param set — it never sees the caller's window. */
 const aiPageBounds = {
 	orgId: ORG_ID,
@@ -185,6 +199,58 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiSessionFacetsQuery",
 		label: "default",
 		compile: () => compileUnionUnsafe(CH.aiSessionFacetsQuery(), window),
+	},
+	{
+		// Agent Sessions › Tools. The chart's series key is derived from the
+		// selection, so the unfiltered shape (per-tool series, with the long tail
+		// folded into `other`) and the tool-selected one (per-model series) are
+		// two different SQL shapes off one builder.
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiToolsSeriesQuery(), bucketed),
+	},
+	{
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "tool-selected",
+		compile: () => compileUnsafe(CH.aiToolsSeriesQuery({ tool: AI_TOOLS_SELECTION.tool }), bucketed),
+	},
+	{
+		// The toolbar's two predicates, which scope the chart as well as the
+		// tables — including the top-N subquery, so the legend ranks the searched
+		// population and not the whole window.
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "searched",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolsSeriesQuery({ search: AI_TOOLS_SELECTION.search, failingOnly: true }),
+				bucketed,
+			),
+	},
+	{
+		// Two windows in one read, because quantiles do not merge — the previous
+		// branch is bounded by its own pair of params.
+		module: "ai-tools",
+		name: "aiToolsTotalsQuery",
+		label: "default",
+		compile: () => compileUnionUnsafe(CH.aiToolsTotalsQuery(AI_TOOLS_SELECTION), aiToolsCompare),
+	},
+	{
+		// Each panel drops its OWN half of the selection, which is the only thing
+		// the two branches disagree about — pinned here so a refactor that scopes
+		// both branches the same way shows up as a baseline diff.
+		module: "ai-tools",
+		name: "aiToolsBreakdownsQuery",
+		label: "default",
+		compile: () => compileUnionUnsafe(CH.aiToolsBreakdownsQuery(AI_TOOLS_SELECTION), window),
+	},
+	{
+		module: "ai-tools",
+		name: "aiToolsSessionsQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiToolsSessionsQuery(AI_TOOLS_SELECTION), window),
 	},
 	{
 		module: "ai-sessions",

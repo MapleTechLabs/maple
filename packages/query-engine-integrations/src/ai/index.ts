@@ -38,6 +38,25 @@ export {
 } from "./ai-sessions"
 
 export {
+	aiToolsBreakdownsQuery,
+	aiToolsSeriesKind,
+	aiToolsSeriesQuery,
+	aiToolsSessionsQuery,
+	aiToolsTotalsQuery,
+	AI_TOOLS_BREAKDOWN_LIMIT,
+	AI_TOOLS_SERIES_MAX_KEYS,
+	AI_TOOLS_SESSIONS_LIMIT,
+	type AiToolsBreakdownKind,
+	type AiToolsBreakdownsOutput,
+	type AiToolsFilterOpts,
+	type AiToolsPeriod,
+	type AiToolsSeriesKind,
+	type AiToolsSessionsOpts,
+	type AiToolsTotalsOutput,
+	type AiToolsWindow,
+} from "./ai-tools"
+
+export {
 	aiFieldSourceKeys,
 	aiSpanAttributeKeys,
 	genAiIntegration,

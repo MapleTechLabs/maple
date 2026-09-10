@@ -1,6 +1,10 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	AiSessionTooLargeError,
+	AiToolsBreakdownsResponse,
+	AiToolsSeriesResponse,
+	AiToolsSessionsResponse,
+	AiToolsTotalsResponse,
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
 	CurrentTenant,
@@ -14,6 +18,8 @@ import {
 	type AiSessionTokenReporting,
 	type AiSessionTokenTotals,
 	type AiSessionTurnSummary,
+	type AiToolsAggregate,
+	type AiToolsBreakdownItem,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 import { Effect } from "effect"
@@ -378,8 +384,187 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						return summary
 					}),
 				)
+				.handle("toolsSeries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const selection = toolsSelection(payload)
+						// The chart's series key is derived from the selection, so the
+						// response can say what it is without waiting for rows.
+						const seriesKind = Integrations.aiToolsSeriesKind(selection)
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.tools.series_kind": seriesKind,
+						})
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(Integrations.aiToolsSeriesQuery(selection), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+								bucketSeconds: payload.bucketSeconds,
+							}),
+							{ context: "aiToolsSeries" },
+						)
+						return new AiToolsSeriesResponse({ data: rows, seriesKind })
+					}),
+				)
+				.handle("toolsTotals", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						// The comparison window is the caller's, shifted back by its own
+						// length: `previous` ends where `current` begins, so the two
+						// never overlap and the delta is over equal spans.
+						const previous = previousWindow(payload.startTime, payload.endTime)
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+								...previous,
+							}),
+							{ context: "aiToolsTotals" },
+						)
+						// An aggregate over no rows still yields one row per branch, so a
+						// missing period is a shape failure rather than an empty window.
+						return new AiToolsTotalsResponse({
+							current: aggregateOf(rows, "current"),
+							previous: aggregateOf(rows, "previous"),
+						})
+					}),
+				)
+				.handle("toolsBreakdowns", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compileUnion(Integrations.aiToolsBreakdownsQuery(toolsSelection(payload)), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+							}),
+							{ context: "aiToolsBreakdowns" },
+						)
+						// One UNION ALL result carrying both panels, split by `kind` —
+						// the same shape the facets read returns.
+						const panel = (kind: Integrations.AiToolsBreakdownKind) =>
+							rows.filter((row) => row.kind === kind).map(breakdownItem)
+						return new AiToolsBreakdownsResponse({
+							tools: panel("tool"),
+							models: panel("model"),
+						})
+					}),
+				)
+				.handle("toolsSessions", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(
+								Integrations.aiToolsSessionsQuery({
+									...toolsSelection(payload),
+									limit: payload.limit,
+								}),
+								{
+									orgId: tenant.orgId,
+									startTime: payload.startTime,
+									endTime: payload.endTime,
+								},
+							),
+							{ profile: "list", context: "aiToolsSessions" },
+						)
+						return new AiToolsSessionsResponse({ data: rows })
+					}),
+				)
 		}),
 )
+
+/**
+ * The tools page's selection, as every one of its four reads takes it.
+ *
+ * The page's `metric` and `percentile` are not here and are not in the request
+ * either: every read returns calls, sessions, errors and all three percentiles,
+ * so which one is drawn is a choice the client makes without a round trip.
+ */
+const toolsSelection = (payload: {
+	readonly tool?: string
+	readonly model?: string
+	readonly service?: string
+	readonly env?: string
+	readonly search?: string
+	readonly failingOnly?: boolean
+}) => ({
+	tool: payload.tool,
+	model: payload.model,
+	service: payload.service,
+	env: payload.env,
+	// The toolbar's two predicates. They go to all four reads, not just the
+	// tables they visibly narrow: a search the tiles ignored would count calls
+	// the chart below it was not drawing.
+	search: payload.search,
+	failingOnly: payload.failingOnly,
+})
+
+/** `TinybirdDateTime` is UTC without a zone marker. */
+const warehouseDateTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
+
+/** Back to warehouse shape, seconds precision — what the params take. */
+const warehouseDateTime = (ms: number): string => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+
+/**
+ * The window of equal length ending where the caller's begins — the tiles'
+ * comparison. Computed here rather than asked for, so the delta cannot be
+ * quietly taken against a window of a different size.
+ */
+const previousWindow = (startTime: string, endTime: string) => {
+	const start = warehouseDateTimeMs(startTime)
+	const span = warehouseDateTimeMs(endTime) - start
+	return {
+		prevStartTime: warehouseDateTime(start - span),
+		prevEndTime: warehouseDateTime(start),
+	}
+}
+
+const NO_TOOLS_AGGREGATE: AiToolsAggregate = {
+	calls: 0,
+	sessions: 0,
+	errors: 0,
+	p50: 0,
+	p90: 0,
+	p95: 0,
+}
+
+/** One period's row of the totals union. Absent only if the branch returned
+ *  nothing at all, which an aggregate over an empty window does not do. */
+const aggregateOf = (
+	rows: ReadonlyArray<Integrations.AiToolsTotalsOutput>,
+	period: Integrations.AiToolsPeriod,
+): AiToolsAggregate => {
+	const row = rows.find((candidate) => candidate.period === period)
+	if (row === undefined) return NO_TOOLS_AGGREGATE
+	return {
+		calls: row.calls,
+		sessions: row.sessions,
+		errors: row.errors,
+		p50: row.p50,
+		p90: row.p90,
+		p95: row.p95,
+	}
+}
+
+const breakdownItem = (row: Integrations.AiToolsBreakdownsOutput): AiToolsBreakdownItem => ({
+	key: row.key,
+	calls: row.calls,
+	sessions: row.sessions,
+	errors: row.errors,
+	p50: row.p50,
+	p90: row.p90,
+	p95: row.p95,
+	lastSeen: row.lastSeen,
+})
 
 const NO_TOKENS: AiSessionTokenTotals = { input: 0, output: 0, cacheRead: 0 }
 

@@ -50,6 +50,12 @@ const agentSessionSearchSchema = Schema.Struct({
 	// from. In the URL rather than component state so a pasted link reopens the
 	// exact span someone was looking at.
 	span: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	// A tool name to open pre-filtered to, set by the links out of
+	// `/agent-sessions/tools`. It seeds the views' existing span filter rather
+	// than adding a second one — a reader who arrived asking about `run_tests`
+	// should not have to type it again into a six-hundred-row waterfall, and the
+	// filter is theirs to clear from the toolbar like any other.
+	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
 })
 
 const SESSION_TOO_LARGE_TAG = "@maple/http/ai-sessions/AiSessionTooLargeError"
@@ -297,6 +303,7 @@ function SessionDetailBody({
 							totals={partial ? totals : undefined}
 							selectedSpanId={search.span}
 							onSelectSpan={selectSpan}
+							initialQuery={search.tool}
 						/>
 					</div>
 				</DashboardLayout.Scroll>
