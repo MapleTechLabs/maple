@@ -1,7 +1,7 @@
 /**
  * Every ceiling a run answers to, in one place.
  *
- * Collected deliberately. These numbers only make sense against each other — the turn cap
+ * Collected deliberately. These numbers only make sense against each other — the call ceiling
  * multiplies against tool concurrency and against the sub-agent fan-out, and the product has to
  * stay under `ChatSession`'s `TURN_STALE_MS` watchdog or the Durable Object will declare a
  * *still-running* turn abandoned and write a terminal event underneath it.
@@ -11,23 +11,22 @@
  */
 
 /**
- * Hard cap on *tool-calling* assistant turns per submission.
+ * Hard cap on tool calls per submission, sub-agents included.
  *
- * A turn that hits it gets one further, tool-less step so the model can answer from what it found,
- * rather than stopping dead on a wall of tool rows with no words.
+ * A guardrail against a loop that lost the plot, not a budget the model should pace itself
+ * against — which is why it sits far above what any answer needs. A run that hits it gets one
+ * further, tool-less step so the model can answer from what it found, rather than stopping dead on
+ * a wall of tool rows with no words.
+ *
+ * It replaced a step budget of ten assistant turns, six for sub-agents. That was low enough that
+ * ordinary work reached it: sub-agents returned truncated partials, and the model spent the user's
+ * reply explaining its own plumbing. `TURN_MAX_DURATION` is what usually stops a runaway turn
+ * first, and is the bound worth tuning.
  */
-export const MAX_STEPS = 10
+export const MAX_TOOL_CALLS = 100
 
 /** Fan-out cap for tool calls issued in the same assistant turn. */
 export const TOOL_CONCURRENCY = 4
-
-/**
- * Assistant turns a sub-agent gets.
- *
- * Two-thirds of the parent's budget: enough to search and summarize, not enough to wander. A
- * sub-agent that runs out simply reports what it found, which is a fine answer.
- */
-export const SUBAGENT_MAX_STEPS = 6
 
 /**
  * Consecutive tool-call *failures* that mean the model is stuck rather than working.

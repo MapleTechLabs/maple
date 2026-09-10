@@ -17,7 +17,7 @@ import {
 	PlusIcon,
 	TrashIcon,
 } from "@/components/icons"
-import { DotmSquare4 } from "@/components/ui/dotm-square-4"
+import { DotLoader } from "@/components/ai-elements/dot-loader"
 
 interface ChatSidebarProps {
 	tabs: ChatTab[]
@@ -241,13 +241,7 @@ function ChatSidebarRow({
 				)}
 			>
 				{isLoading ? (
-					<DotmSquare4
-						size={14}
-						dotSize={2}
-						color="var(--primary)"
-						className="shrink-0"
-						ariaLabel="Working"
-					/>
+					<DotLoader label="Working" color="var(--primary)" size={14} />
 				) : Icon ? (
 					<Icon size={14} className="shrink-0 opacity-70" />
 				) : null}

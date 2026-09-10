@@ -18,10 +18,12 @@ export type InlineTraceData = Schema.Schema.Type<typeof InlineTraceData>
 
 export const InlineServiceData = Schema.Struct({
 	name: Schema.String,
-	/** Requests per second. */
-	throughput: Schema.optionalKey(Schema.Number),
+	/** Requests per minute — the unit every service-metric tool reports. */
+	throughputRpm: Schema.optionalKey(Schema.Number),
 	/** Percent, not a fraction: 45.45 means 45.45%. */
 	errorRate: Schema.optionalKey(Schema.Number),
+	/** Whichever percentile the tool returned; the card labels the one it was given. */
+	p95Ms: Schema.optionalKey(Schema.Number),
 	p99Ms: Schema.optionalKey(Schema.Number),
 })
 export type InlineServiceData = Schema.Schema.Type<typeof InlineServiceData>

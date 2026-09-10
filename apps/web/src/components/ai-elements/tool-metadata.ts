@@ -27,7 +27,6 @@ import {
 	TagIcon,
 	TrashIcon,
 } from "@/components/icons"
-import type { OrbState } from "@maple/thinking-orbs"
 import type { IconComponent } from "@/components/icons"
 
 /**
@@ -57,18 +56,6 @@ export function toolLabel(toolName: string): string {
 /** Icon for a (possibly namespaced) tool name, defaulting to a generic code glyph. */
 export function toolIcon(toolName: string): IconComponent {
 	return toolIcons[normalizeToolName(toolName)] ?? CodeIcon
-}
-
-/**
- * Orb animation for a (possibly namespaced) tool name.
- *
- * The mapping is deliberately coarse — four buckets over ~50 tools. The point is that a glance
- * at the orb tells you what *kind* of work is in flight (sweeping data vs. crunching a query vs.
- * walking the topology), not that every tool gets its own animation. Anything unmapped falls
- * back to `working`, which is also the right read for the write/mutate tools.
- */
-export function toolOrbState(toolName: string): OrbState {
-	return toolOrbStates[normalizeToolName(toolName)] ?? "working"
 }
 
 const toolLabels: Record<string, string> = {
@@ -131,6 +118,7 @@ const toolLabels: Record<string, string> = {
 	get_session_traces: "Session Traces",
 	get_session_transcript: "Session Transcript",
 	// misc
+	run_sql: "Run SQL",
 	register_agent: "Register Agent",
 	get_event: "Get Event",
 } satisfies Record<string, string>
@@ -183,6 +171,7 @@ const toolIcons: Record<string, IconComponent> = {
 	list_alert_checks: CircleCheckIcon,
 	get_incident_timeline: HistoryIcon,
 	update_error_notification_policy: BellIcon,
+	run_sql: DatabaseIcon,
 	search_sessions: HistoryIcon,
 	get_session_traces: HistoryIcon,
 	get_session_transcript: ChatBubbleSparkleIcon,
@@ -191,31 +180,58 @@ const toolIcons: Record<string, IconComponent> = {
 } satisfies Record<string, IconComponent>
 
 /**
- * Only the three non-default buckets are listed; everything else resolves to `working` via
- * `toolOrbState`. Keeping the fallback implicit means a new Maple tool doesn't have to be
- * registered here to look right — it just doesn't get a specialised animation.
+ * Verbs that survive being turned into a present participle. Maple's tool labels are mostly
+ * verb-first (`Search Traces`, `Update Dashboard`), but a good third of them name a thing
+ * instead (`System Health`, `Incident Timeline`) — and "Systeming Health" is worse than no
+ * live label at all, so those take a generic verb rather than a mangled one.
  */
-const toolOrbStates: Record<string, OrbState> = {
-	// `searching` — a scan meridian sweeps a dotted globe. Anything that trawls a corpus.
-	search_traces: "searching",
-	find_slow_traces: "searching",
-	search_logs: "searching",
-	mine_log_patterns: "searching",
-	find_errors: "searching",
-	search_sessions: "searching",
-	search_source_code: "searching",
-	sandbox_grep: "searching",
-	sandbox_list_files: "searching",
-	explore_attributes: "searching",
-	// `solving` — bands scramble in quarter turns, then click back. Query crunching.
-	run_sql: "solving",
-	query_data: "solving",
-	compare_periods: "solving",
-	inspect_chart_data: "solving",
-	// `connecting` — a constellation wires itself, packets running the edges. Topology walks.
-	service_map: "connecting",
-	list_services: "connecting",
-	get_service_top_operations: "connecting",
-	diagnose_service: "connecting",
-	audit_setup: "connecting",
-} satisfies Record<string, OrbState>
+const LABEL_VERBS = new Set([
+	"Add",
+	"Claim",
+	"Comment",
+	"Compare",
+	"Create",
+	"Delete",
+	"Describe",
+	"Diagnose",
+	"Explore",
+	"Find",
+	"Get",
+	"Inspect",
+	"List",
+	"Mine",
+	"Propose",
+	"Query",
+	"Register",
+	"Release",
+	"Remove",
+	"Reorder",
+	"Replace",
+	"Run",
+	"Search",
+	"Set",
+	"Transition",
+	"Update",
+])
+
+/** Consonant-doubling and silent-`e` cases the suffix rule alone gets wrong. */
+const IRREGULAR_PARTICIPLE = new Map([
+	["Get", "Getting"],
+	["Run", "Running"],
+	["Set", "Setting"],
+])
+
+const participle = (verb: string): string =>
+	IRREGULAR_PARTICIPLE.get(verb) ?? (verb.endsWith("e") ? `${verb.slice(0, -1)}ing` : `${verb}ing`)
+
+/**
+ * What a running call is *doing*, for the transcript's live line: `Searching Traces`,
+ * `Updating Dashboard`, `Checking System Health`. The settled row keeps the plain label —
+ * the participle is only right while the call is in flight.
+ */
+export function toolActivity(toolName: string): string {
+	const label = toolLabel(toolName)
+	const [first = "", ...rest] = label.split(" ")
+	if (!LABEL_VERBS.has(first)) return `Checking ${label}`
+	return [participle(first), ...rest].join(" ")
+}

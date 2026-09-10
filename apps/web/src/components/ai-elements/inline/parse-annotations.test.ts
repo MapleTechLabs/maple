@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { parseAnnotations } from "./parse-annotations"
 
-const service = (name: string) => `{"name":"${name}","throughput":11,"errorRate":45.45,"p99Ms":14425}`
+const service = (name: string) => `{"name":"${name}","throughputRpm":660,"errorRate":45.45,"p99Ms":14425}`
 
 describe("parseAnnotations", () => {
 	it("parses the documented form on its own line", () => {
@@ -15,7 +15,7 @@ describe("parseAnnotations", () => {
 		expect(segments).toEqual([
 			{
 				type: "service",
-				data: { name: "openrouter", throughput: 11, errorRate: 45.45, p99Ms: 14425 },
+				data: { name: "openrouter", throughputRpm: 660, errorRate: 45.45, p99Ms: 14425 },
 			},
 		])
 	})

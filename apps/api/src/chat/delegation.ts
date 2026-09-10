@@ -15,7 +15,10 @@
  *     at depth ceiling one, so a sub-agent cannot spawn a sub-agent. The old numeric counter is
  *     gone with the loop that counted.
  *   - **Budget.** The child spends against a reservation carved from the parent's policy, and
- *     `budgetExhausted` comes back with the answer so a truncated partial reads as one.
+ *     `budgetExhausted` comes back with the answer so a truncated partial reads as one. It is the
+ *     task card's badge, not something the model reports: the delegation guidance in `./agents.ts`
+ *     tells it not to narrate the plumbing, and `MAX_TOOL_CALLS` is high enough that a child
+ *     rarely reaches it at all.
  *
  * Failures are contained rather than raised (`failureMode: "return"`): a sub-agent that dies is a
  * tool result the parent model can route around, exactly like every other Maple tool. A raised one

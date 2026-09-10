@@ -10,8 +10,8 @@ import {
 	InputGroupTextarea,
 } from "@maple/ui/components/ui/input-group"
 import { cn } from "@maple/ui/lib/utils"
-import { CornerDownLeftIcon, SquareIcon, XmarkIcon } from "@/components/icons"
-import { ThinkingOrbIcon } from "./thinking-orb-icon"
+import { ArrowUpIcon, SquareIcon, XmarkIcon } from "@/components/icons"
+import { DotLoader } from "./dot-loader"
 import { useCallback, useState } from "react"
 
 /**
@@ -100,8 +100,12 @@ export const PromptInputTextarea = ({
 
 export type PromptInputFooterProps = Omit<ComponentProps<typeof InputGroupAddon>, "align">
 
+/**
+ * The composer's bottom row. The submit button sits at the trailing edge, where every chat
+ * app puts it; anything that belongs on the left takes `mr-auto`.
+ */
 export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProps) => (
-	<InputGroupAddon align="block-end" className={cn("justify-between gap-1", className)} {...props} />
+	<InputGroupAddon align="block-end" className={cn("justify-end gap-1", className)} {...props} />
 )
 
 /**
@@ -138,17 +142,16 @@ export const PromptInputSubmit = ({
 	const isGenerating = status === "submitted" || status === "streaming"
 	const canStop = isGenerating && onStop !== undefined
 
-	let Icon = <CornerDownLeftIcon className="size-4" />
+	let Icon = <ArrowUpIcon className="size-4" />
 	if (canStop) {
-		// The orb is the resting state and the stop square is revealed on hover/focus, so the
+		// The loader is the resting state and the stop square is revealed on hover/focus, so the
 		// button reads as "a turn is running" at a glance without giving up the affordance that
 		// makes it worth having. Both layers are always mounted and cross-faded with CSS — no
 		// state, no remount, and nothing that re-enters React while the turn streams.
 		Icon = (
 			<span className="grid place-items-center">
-				<ThinkingOrbIcon
-					state="working"
-					surface="primary"
+				<DotLoader
+					color="var(--primary-foreground)"
 					className={cn(
 						STOP_LAYER,
 						"group-hover/submit:scale-[0.92] group-hover/submit:opacity-0",
@@ -166,8 +169,8 @@ export const PromptInputSubmit = ({
 			</span>
 		)
 	} else if (isGenerating) {
-		// Nothing to cancel — the orb just reports that the turn is in flight.
-		Icon = <ThinkingOrbIcon state="working" surface="primary" />
+		// Nothing to cancel — the loader just reports that the turn is in flight.
+		Icon = <DotLoader color="var(--primary-foreground)" />
 	} else if (status === "error") {
 		Icon = <XmarkIcon className="size-4" />
 	}

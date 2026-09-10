@@ -45,6 +45,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/loaders",
+		title: "Chat loaders",
+		description:
+			"Every dot-matrix loader in the chat's pool, inline at both sizes it is used at, against real text.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:

@@ -53,21 +53,31 @@ export type UIMessagePart =
 			errorText: string
 	  }
 	/**
-	 * A sub-agent run: its own transcript, nested under the `task` call that started it.
+	 * A sub-agent run: the question it was given, the answer it came back with, and whatever of its
+	 * own transcript reached the parent.
 	 *
-	 * A part of its own rather than a `dynamic-tool` with a payload, because it renders as a
-	 * collapsible transcript rather than a tool row, and because `transcript-rows` must not fold it
-	 * into a "Used N tools" group — a sub-agent is content, not plumbing.
+	 * A part of its own rather than a `dynamic-tool` with a payload, because it renders as a card
+	 * rather than a tool row, and because `transcript-rows` must not fold it into a tool group — a
+	 * sub-agent is content, not plumbing.
 	 *
-	 * `messages` is `UIMessage[]` and not recursive by accident: sub-agents cannot spawn sub-agents,
-	 * so a nested message never carries another `task` part.
+	 * `messages` is usually empty and that is not a bug: the engine relays a delegation's lifecycle,
+	 * not a live replay of it searching, so the run's substance is `prompt` and `answer`. It is
+	 * `UIMessage[]` and not recursive by accident — sub-agents cannot spawn sub-agents, so a nested
+	 * message never carries another `task` part.
 	 */
 	| {
 			type: "task"
 			toolCallId: string
 			agent: string
-			description: string
+			/** The self-contained question the parent model wrote for it. */
+			prompt: string
 			status: "running" | "completed" | "error" | "aborted"
+			/** The written answer, once the delegation settled. */
+			answer?: string
+			/** Why the run failed, when it did. */
+			errorText?: string
+			/** The sub-agent answered from what it had rather than from a finished search. */
+			budgetExhausted?: boolean
 			messages: UIMessage[]
 	  }
 

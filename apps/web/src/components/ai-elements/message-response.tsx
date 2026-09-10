@@ -8,7 +8,16 @@ import { code } from "@streamdown/code"
 import { math } from "@streamdown/math"
 import { mermaid } from "@streamdown/mermaid"
 import { memo } from "react"
-import { Streamdown, type PluginConfig } from "streamdown"
+import { Streamdown, type Components, type CustomRenderer, type PluginConfig } from "streamdown"
+import { MarkdownChart } from "./markdown-chart"
+import {
+	MarkdownTable,
+	MarkdownTableBody,
+	MarkdownTableCell,
+	MarkdownTableHead,
+	MarkdownTableHeader,
+	MarkdownTableRow,
+} from "./markdown-table"
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
 	/**
@@ -21,39 +30,34 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
 	lightweight?: boolean
 }
 
-const streamdownPlugins = { cjk, code, math, mermaid } as PluginConfig
-const lightweightPlugins = { cjk } as PluginConfig
+/**
+ * A ```chart fence is a plot, not code — in either mode. The lightweight
+ * renderer drops Shiki, KaTeX and Mermaid because re-tokenizing them on every
+ * remount was most of a scroll frame; a chart is a JSON parse and a plot, and a
+ * reply that scrolls back into view showing raw JSON where its chart was would
+ * be a different reply. See `markdown-chart.tsx`.
+ */
+const chartRenderers: CustomRenderer[] = [{ component: MarkdownChart, language: "chart" }]
+
+const streamdownPlugins = { cjk, code, math, mermaid, renderers: chartRenderers } as PluginConfig
+const lightweightPlugins = { cjk, renderers: chartRenderers } as PluginConfig
 
 /**
- * Streamdown wraps every table in a padded, bordered card that itself contains a
- * bordered scroll box, and pads each cell to `px-4 py-2` at `text-sm`. That is a
- * document-page table dropped into a chat column: two nested borders around a
- * four-row comparison, and a third of the reply's height spent on padding.
- *
- * Flattened to the outer border only, with the transcript's own density. The
- * table's copy/download/fullscreen toolbar goes with it (see `controls` below) —
- * the assistant turn already has a copy action, and the row cost more height than
- * the data it sat above.
+ * Tables are ours, not Streamdown's. Its own table is a document-page table
+ * dropped into a chat column — two nested borders around a four-row comparison,
+ * `px-4 py-2` cells at `text-sm`, and a copy/download toolbar above data the
+ * turn's own copy action already covers. Overriding the components rather than
+ * their classes gets the product's `Table` primitive, and gives the cells
+ * somewhere to recognize a trace id or a duration. See `markdown-table.tsx`.
  */
-const COMPACT_TABLES = [
-	"[&_[data-streamdown=table-wrapper]]:my-2",
-	"[&_[data-streamdown=table-wrapper]]:gap-0",
-	"[&_[data-streamdown=table-wrapper]]:rounded-lg",
-	"[&_[data-streamdown=table-wrapper]]:border-border",
-	"[&_[data-streamdown=table-wrapper]]:bg-transparent",
-	"[&_[data-streamdown=table-wrapper]]:p-0",
-	"[&_[data-streamdown=table-wrapper]>div]:rounded-none",
-	"[&_[data-streamdown=table-wrapper]>div]:border-0",
-	"[&_[data-streamdown=table-wrapper]>div]:bg-transparent",
-	"[&_[data-streamdown=table-header]]:bg-muted/60",
-	"[&_[data-streamdown=table-header-cell]]:px-2.5",
-	"[&_[data-streamdown=table-header-cell]]:py-1.5",
-	"[&_[data-streamdown=table-header-cell]]:text-xs",
-	"[&_[data-streamdown=table-cell]]:px-2.5",
-	"[&_[data-streamdown=table-cell]]:py-1",
-	"[&_[data-streamdown=table-cell]]:text-xs",
-	"[&_[data-streamdown=table-cell]]:tabular-nums",
-].join(" ")
+const COMPONENTS = {
+	table: MarkdownTable,
+	tbody: MarkdownTableBody,
+	td: MarkdownTableCell,
+	th: MarkdownTableHead,
+	thead: MarkdownTableHeader,
+	tr: MarkdownTableRow,
+} satisfies Components
 
 /** Code and mermaid keep their toolbars; only the table's is dropped. */
 const CONTROLS = { table: false } as const
@@ -69,9 +73,15 @@ export const MessageResponse = memo(
 		<Streamdown
 			className={cn(
 				"size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-				COMPACT_TABLES,
+				// Streamdown sizes headings for a document page. In a 420px panel an `##`
+				// lands two thirds the width of the column, so every level renders at body
+				// scale and separates by weight and spacing instead.
+				"[&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_h4]:text-sm",
+				"[&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h4]:font-semibold",
+				"[&_h1]:mt-4 [&_h2]:mt-4 [&_h3]:mt-4 [&_h4]:mt-4 [&_h1]:mb-1 [&_h2]:mb-1 [&_h3]:mb-1 [&_h4]:mb-1",
 				className,
 			)}
+			components={COMPONENTS}
 			controls={CONTROLS}
 			plugins={lightweight ? lightweightPlugins : streamdownPlugins}
 			{...props}
