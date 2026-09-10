@@ -98,11 +98,21 @@ export function normalizeUnit(unit: string | undefined): string {
  *
  * An empty `data` array is a null too: a plot of nothing is a labelled blank
  * box, and the prose around it already says whatever the model meant by it.
+ *
+ * A timeseries row survives only if its bucket is a time and it names at least
+ * one series — the schema cannot say either. A bucket `Date` rejects plots as
+ * an `Invalid Date` tick, and a row with no series contributes nothing but a
+ * gap, so both are dropped here rather than downstream.
  */
 export function parseChartSpec(source: string): ChartSpec | null {
 	const decoded = decode(source)
 	if (Option.isNone(decoded)) return null
-	return decoded.value.data.length === 0 ? null : decoded.value
+	const spec = decoded.value
+	if (spec.type === "ranked") return spec.data.length === 0 ? null : spec
+	const data = spec.data.filter(
+		(point) => !Number.isNaN(Date.parse(point.bucket)) && Object.keys(point.series).length > 0,
+	)
+	return data.length === 0 ? null : { ...spec, data }
 }
 
 /** `{ bucket, series: { … } }` flattened to the `{ bucket, ...series }` rows every chart takes. */

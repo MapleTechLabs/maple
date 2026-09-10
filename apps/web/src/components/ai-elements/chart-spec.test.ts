@@ -36,6 +36,14 @@ it.each([
 	["ranked points in a line chart", JSON.stringify({ type: "line", data: [{ name: "a", value: 1 }] })],
 	["a non-numeric value", JSON.stringify({ type: "ranked", data: [{ name: "a", value: "many" }] })],
 	["no rows at all", JSON.stringify({ type: "area", data: [] })],
+	[
+		"buckets that are not times",
+		JSON.stringify({ type: "line", data: [{ bucket: "sometime", series: { api: 1 } }] }),
+	],
+	[
+		"rows that name no series",
+		JSON.stringify({ type: "line", data: [{ bucket: "2026-09-11T10:00:00Z", series: {} }] }),
+	],
 	["prose", "the p95 climbed to 388ms"],
 ])("refuses %s", (_label, source) => {
 	expect(parseChartSpec(source)).toBeNull()
@@ -47,4 +55,19 @@ it("keeps a chart whose unit is a shorthand, and falls back to plain numbers for
 	expect(normalizeUnit("duration_ms")).toBe("duration_ms")
 	expect(normalizeUnit("furlongs")).toBe("number")
 	expect(normalizeUnit(undefined)).toBe("number")
+})
+
+it("drops the timeseries rows a chart cannot plot and keeps the rest", () => {
+	const spec = parseChartSpec(
+		JSON.stringify({
+			type: "line",
+			data: [
+				{ bucket: "2026-09-11T10:00:00Z", series: { "checkout-api": 142 } },
+				{ bucket: "not a time", series: { "checkout-api": 388 } },
+				{ bucket: "2026-09-11T10:02:00Z", series: {} },
+			],
+		}),
+	)
+	if (spec?.type === "ranked" || spec == null) throw new Error("expected a timeseries spec")
+	expect(timeseriesRows(spec.data)).toEqual([{ bucket: "2026-09-11T10:00:00Z", "checkout-api": 142 }])
 })
