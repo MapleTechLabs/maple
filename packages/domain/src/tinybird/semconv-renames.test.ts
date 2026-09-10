@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { compile } from "@maple-dev/clickhouse-builder/sql"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
 	DEPLOYMENT_ENV_SQL,
 	MESSAGING_DESTINATION_SQL,

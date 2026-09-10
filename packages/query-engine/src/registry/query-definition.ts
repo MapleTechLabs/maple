@@ -1,6 +1,6 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import type { Effect } from "effect"
-import type { CompiledQuery, QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { CompiledQuery, QueryBuilderError } from "@maple-dev/effect-clickhouse"
 import type { WarehouseCapabilities } from "../capabilities"
 import type { QueryProfileName, WarehouseQuerySettings } from "../profiles/query-profile"
 import {

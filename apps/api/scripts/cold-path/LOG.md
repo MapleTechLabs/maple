@@ -3,8 +3,8 @@
 Harness: `OUT=apps/api/.coldpath-out SEO=0 bun apps/api/scripts/cold-path/build-bundle2.mjs`
 then `node --expose-gc --experimental-loader ./apps/api/scripts/cold-path/cf-loader.mjs ./apps/api/scripts/cold-path/cold-path-scorecard.mjs apps/api/.coldpath-out`.
 The bundle dir must sit inside `apps/api/` so the externals (`@maple-dev/effect-sdk/cloudflare`,
-`@maple-dev/clickhouse-builder`) resolve via `apps/api/node_modules`; build their dists first
-(`bunx turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/clickhouse-builder`).
+`@maple-dev/effect-clickhouse`) resolve via `apps/api/node_modules`; build their dists first
+(`bunx turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/effect-clickhouse`).
 Numbers are desktop V8 (node 26) on this machine — treat them as relative, not absolute;
 `evalMs` jitters ±10%.
 
@@ -38,7 +38,7 @@ distilled Cloudflare SDK) is now behind a dynamic import.
 **Not pursued per brief:** scrape-cron extraction, org-settings caching (tried/reverted
 twice previously), Hyperdrive/pool/timeout changes, `strictExecutionOrder` (stays false).
 
-**Harness caveat:** `@maple-dev/effect-sdk/cloudflare` (and clickhouse-builder) stay
+**Harness caveat:** `@maple-dev/effect-sdk/cloudflare` (and effect-clickhouse) stay
 external in this build and load unbundled from `apps/api/node_modules`, double-evaluating
 `effect` — this inflates startupGraph eval by ~100ms vs production, identically across
 iterations. Build their dists before scoring or startup eval reads as a resolution error.

@@ -6,10 +6,10 @@
 // splice the services list already reads. Nothing scans the raw traces table.
 
 import { Schema } from "effect"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param, from, type CHQuery, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param, from, type CHQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import { ErrorEventsByTime, ServiceOverviewSpans } from "../tables"
 import { CHNumber } from "../schema"
 import { serviceOverviewWhereConditions } from "./query-helpers"

@@ -19,9 +19,9 @@
 // pins every key list to that layer's own alias tables, so a key added on one
 // side cannot drift silently.
 
-import type { Condition, Expr } from "@maple-dev/clickhouse-builder/expr"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { compile } from "@maple-dev/clickhouse-builder/sql"
+import type { Condition, Expr } from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
 	GENAI_DEFAULT_USAGE_CONVENTION,
 	GENAI_PROVIDER_USAGE_CONVENTIONS,

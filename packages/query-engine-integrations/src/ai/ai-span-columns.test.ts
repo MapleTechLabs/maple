@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import { compile } from "@maple-dev/clickhouse-builder/sql"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { compile } from "@maple-dev/effect-clickhouse/sql"
 import {
 	GENAI_AGENT_NAME_KEYS,
 	GENAI_COST_KEYS,

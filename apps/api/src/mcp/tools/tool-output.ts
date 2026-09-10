@@ -3,14 +3,14 @@
  *
  * ## Why here and not in the loop
  *
- * `chat/loop/context.ts` used to be the only bound: it walked the transcript mid-turn and rewrote
+ * Transcript rewriting used to be the only bound: it walked the transcript mid-turn and rewrote
  * old tool results in place. That works on token count and fails on everything else.
  *
- * The default chat route is OpenRouter (`z-ai/glm-5.3-flash:nitro`), whose route id is `"openrouter-chat"`
- * — not in `@opencode-ai/ai`'s `RESPECTS_INLINE_HINTS` (`anthropic-messages`, `bedrock-converse`), so
- * `applyCachePolicy` returns early and Maple emits no cache breakpoints at all. Caching on that path
- * is *implicit prefix* caching: the provider matches the longest identical prefix it has seen, and
- * there is no breakpoint to place. Prefix stability is the only lever there is.
+ * The default chat route is OpenRouter (`z-ai/glm-5.3-flash:nitro`), which takes no cache
+ * breakpoints — those are an Anthropic-protocol feature, and Maple posts an OpenAI-compatible chat
+ * body. Caching on that path is *implicit prefix* caching: the provider matches the longest
+ * identical prefix it has seen, and there is no breakpoint to place. Prefix stability is the only
+ * lever there is.
  *
  * A retroactive rewrite is the one thing that lever cannot survive. It edits results from early
  * steps, so the divergence lands near the front of the turn and everything after it stops matching —
@@ -18,7 +18,7 @@
  * the most.
  *
  * So the transcript is append-only instead: a result is bounded when it is created, and the text the
- * model saw on step 3 is byte-identical on step 9. `chat/loop/context.ts` keeps a fallback for the
+ * model saw on step 3 is byte-identical on step 9. The engine's compaction keeps a fallback for the
  * case where even bounded results overflow, but it now drops whole steps rather than rewriting them,
  * and it should almost never run.
  *

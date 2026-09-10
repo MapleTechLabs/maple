@@ -4,15 +4,14 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
+import { traceSessionTraceId } from "@maple/domain/gen-ai"
+
 import { CopyableValue } from "@/components/attributes"
-import { UserIcon } from "@/components/icons"
+import { CopyIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
-import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
-import { useDetectedModels } from "@/hooks/use-detected-models"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
-import { ModelLabel } from "../model-label"
 
 /**
  * The page's heading: what ran, when, on what — the facts a reader needs to
@@ -21,25 +20,16 @@ import { ModelLabel } from "../model-label"
  * The heading is the agent's name (or, unnamed, the framework's), never the
  * session id or the opening prompt: the id says nothing to a human, and the
  * first line of a prompt is usually a boilerplate instruction that reads as a
- * title the session doesn't deserve. Both stay on the page, each in its own
- * place — the prompt as a quoted line under the heading, the id as the last
- * fact, in full, one click from the clipboard.
+ * title the session doesn't deserve. The prompt is the transcript's own first
+ * line and is not repeated here; the id stays as the last fact, in full, one
+ * click from the clipboard.
  */
-export function SessionHeader({
-	sessionId,
-	summary,
-	turns,
-}: {
-	sessionId: string
-	summary: SessionSummary
-	turns: readonly SessionTurn[]
-}) {
+export function SessionHeader({ sessionId, summary }: { sessionId: string; summary: SessionSummary }) {
 	const identity = sessionIdentity(summary)
-	// The same model set the rail resolves, so both share one batch.
-	const detect = useDetectedModels(summary.models.map((model) => model.model))
 	const VendorIcon = vendorIcon(summary.vendorIds[0] ?? "")
-	const turnWord = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
-	const firstModel = summary.models[0]
+	// A `trace:<id>` session is one Maple synthesized from a single trace: the
+	// id a reader wants in their clipboard is the trace id, not the prefix.
+	const traceId = traceSessionTraceId(sessionId)
 
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
@@ -49,45 +39,25 @@ export function SessionHeader({
 				{summary.failed && <Badge variant="error">Failed</Badge>}
 			</div>
 
-			{summary.title !== undefined && (
-				// Quoted and marked with the user glyph so it reads as what it is —
-				// the first thing the user said — and not as a name for the session.
-				<p className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-sm">
-					<UserIcon size={13} className="shrink-0" aria-hidden />
-					<span className="sr-only">Opening prompt:</span>
-					<span className="min-w-0 truncate" title={summary.title}>
-						“{summary.title}”
-					</span>
-				</p>
-			)}
-
 			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
 				{identity.framework !== undefined && <Fact label="Framework">{identity.framework}</Fact>}
 				<Fact label="Started" title={new Date(summary.startMs).toLocaleString()}>
 					{formatRelativeTimeOrDate(summary.startMs)}
 				</Fact>
 				<Fact label="Duration">{formatSessionDuration(summary.wallClockMs)}</Fact>
-				<Fact label={turns.length === 1 ? capitalize(turnWord) : `${capitalize(turnWord)}s`}>
-					{turns.length}
-				</Fact>
-				{firstModel !== undefined && (
-					<Fact label="Model" title={summary.models.map((model) => model.model).join(", ")}>
-						<ModelLabel
-							detected={detect(firstModel.model)}
-							moreCount={summary.models.length - 1}
-							size={12}
-							title={summary.models.map((model) => model.model).join(", ")}
-						/>
-					</Fact>
-				)}
 				{summary.serviceNames.length > 0 && (
 					<Fact label="Service" title={summary.serviceNames.join(", ")} mono>
 						{firstPlusRest(summary.serviceNames)}
 					</Fact>
 				)}
-				<Fact label="Session ID">
-					<CopyableValue value={sessionId} label="Session ID" className="font-mono">
-						{sessionId}
+				<Fact label={traceId === undefined ? "Session ID" : "Trace ID"}>
+					<CopyableValue
+						value={traceId ?? sessionId}
+						label={traceId === undefined ? "Session ID" : "Trace ID"}
+						className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
+					>
+						<span className="min-w-0 truncate">{traceId ?? sessionId}</span>
+						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
 					</CopyableValue>
 				</Fact>
 			</dl>
@@ -142,8 +112,4 @@ function firstPlusRest(names: readonly string[]): string {
 	const [first, ...rest] = names
 	if (first === undefined) return ""
 	return rest.length > 0 ? `${first} +${rest.length}` : first
-}
-
-function capitalize(word: string): string {
-	return word[0]!.toUpperCase() + word.slice(1)
 }

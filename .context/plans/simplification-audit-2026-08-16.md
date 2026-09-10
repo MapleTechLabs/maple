@@ -167,7 +167,7 @@ R-LIB05-01  → R-LIB05-02
 ### Extractable libraries
 
 - `LIB-01` — `lib/cache/**`. Status: recommend.
-- `LIB-02` — `lib/clickhouse-builder/**`. Status: recommend.
+- `LIB-02` — `lib/effect-clickhouse/**`. Status: recommend.
 - `LIB-03` — `lib/effect-cloudflare/**`. Status: recommend.
 - `LIB-04` — `lib/effect-db/**`. Status: recommend.
 - `LIB-05` — `lib/effect-router/**`. Status: recommend.
@@ -417,7 +417,7 @@ Notation: `C/I/E` = confidence/impact/effort. Every validation item is proposed;
 
 - `R-LIB01-01` — Validated discriminated cache reads. Evidence: `edge-cache.ts:61-67,227-243,413-451`; raw APIs cast external JSON to arbitrary `A`. Use hit-with-value versus value-less miss/timeout/skipped; detailed raw read returns unknown, typed read requires schema and treats decode failure as miss. Validate malformed active-org/quarantine entries. C/I/E: high/medium-high/medium.
 
-- `R-LIB02-01` — Tenant confinement proof per row source. Evidence: [expression marker](lib/clickhouse-builder/src/ch/expr.ts:50), `compile.ts:259-339,382-389`; executor trusts the verdict. A predicate on one source overrides an unscoped join. Track source-specific pins and tenant equality edges; AND combines, OR conservatively intersects; prove every source connected to the same identity. Validate adversarial joins/unions/CTEs. C/I/E: high/very-high/medium-high.
+- `R-LIB02-01` — Tenant confinement proof per row source. Evidence: [expression marker](lib/effect-clickhouse/src/ch/expr.ts:50), `compile.ts:259-339,382-389`; executor trusts the verdict. A predicate on one source overrides an unscoped join. Track source-specific pins and tenant equality edges; AND combines, OR conservatively intersects; prove every source connected to the same identity. Validate adversarial joins/unions/CTEs. C/I/E: high/very-high/medium-high.
 
 - `R-LIB02-02` — Preserve arithmetic structure to rendering. Evidence: `expr.ts:108-126`, docs’ precedence warning, live Apdex workarounds in `top-operations.ts` and `query-helpers.ts`. Add small binary/grouped fragment nodes and precedence-aware rendering, not a general AST. Audit every mixed arithmetic chain and review fingerprint changes. C/I/E: high/high/medium.
 

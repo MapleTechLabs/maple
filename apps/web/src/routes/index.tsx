@@ -17,7 +17,6 @@ import { ServiceUsageCards } from "@/components/dashboard/service-usage-cards"
 import { ServiceHealthOverview, ServiceHealthList } from "@/components/dashboard/service-health-section"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { SetupChecklist } from "@/components/dashboard/setup-checklist"
-import { FirstActionHint } from "@/components/dashboard/first-action-hint"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import {
 	getCustomChartTimeSeriesResultAtom,
@@ -473,7 +472,6 @@ function DashboardContent({
 					<DashboardLayout.Scroll>
 						{isClerkAuthEnabled && (
 							<>
-								<FirstActionHint />
 								<SetupChecklist />
 							</>
 						)}

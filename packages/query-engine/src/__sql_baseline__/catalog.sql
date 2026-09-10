@@ -3313,7 +3313,7 @@ SELECT
         LIMIT 40
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:default  [9324b0b8]
+-- builder:session-replays:sessionReplaysFacetsQuery:default  [71b59c28]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -3412,6 +3412,24 @@ SELECT
           AND DurationMs > 0
 UNION ALL
 SELECT
+          'total' AS name,
+          uniq(SessionId) AS count,
+          'total' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          'live' AS name,
+          uniqIf(SessionId, (Status = 'active' AND coalesce(LastActivityAt, StartTime) >= toDateTime('2026-01-03 14:15:00') - INTERVAL 300 SECOND)) AS count,
+          'live' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
           'error' AS name,
           uniq(SessionId) AS count,
           'error' AS facetType
@@ -3422,7 +3440,7 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [c57d1482]
+-- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [39ba1eb6]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -3536,6 +3554,28 @@ SELECT
           AND DurationMs > 0
 UNION ALL
 SELECT
+          'total' AS name,
+          uniq(SessionId) AS count,
+          'total' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND GroupName = 'Acme Inc'
+          AND (UserName ILIKE '%ada%' OR UserEmail ILIKE '%ada%')
+UNION ALL
+SELECT
+          'live' AS name,
+          uniqIf(SessionId, (Status = 'active' AND coalesce(LastActivityAt, StartTime) >= toDateTime('2026-01-03 14:15:00') - INTERVAL 300 SECOND)) AS count,
+          'live' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND GroupName = 'Acme Inc'
+          AND (UserName ILIKE '%ada%' OR UserEmail ILIKE '%ada%')
+UNION ALL
+SELECT
           'error' AS name,
           uniq(SessionId) AS count,
           'error' AS facetType
@@ -3548,13 +3588,14 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysListQuery:default  [291656ac]
+-- builder:session-replays:sessionReplaysListQuery:default  [3639783b]
 SELECT
           SessionId AS sessionId,
           argMax(StartTime, Version) AS startTime,
           argMax(EndTime, Version) AS endTime,
           argMax(DurationMs, Version) AS durationMs,
           argMax(Status, Version) AS status,
+          argMax(LastActivityAt, Version) AS lastActivityAt,
           argMax(UserId, Version) AS userId,
           argMax(UserName, Version) AS userName,
           argMax(UserEmail, Version) AS userEmail,
@@ -3584,13 +3625,14 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysListQuery:filtered  [42983806]
+-- builder:session-replays:sessionReplaysListQuery:filtered  [6f408bce]
 SELECT
           s.sessionId AS sessionId,
           s.startTime AS startTime,
           s.endTime AS endTime,
           s.durationMs AS durationMs,
           s.status AS status,
+          s.lastActivityAt AS lastActivityAt,
           s.userId AS userId,
           s.userName AS userName,
           s.userEmail AS userEmail,
@@ -3616,6 +3658,7 @@ SELECT
           argMax(EndTime, Version) AS endTime,
           argMax(DurationMs, Version) AS durationMs,
           argMax(Status, Version) AS status,
+          argMax(LastActivityAt, Version) AS lastActivityAt,
           argMax(UserId, Version) AS userId,
           argMax(UserName, Version) AS userName,
           argMax(UserEmail, Version) AS userEmail,

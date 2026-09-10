@@ -121,7 +121,7 @@ If you write "unknown" in \`suspectedCause\`, you MUST populate \`ruledOut\` wit
 
 The same applies when you DO name a cause: \`ruledOut\` is what makes the named cause believable. A responder reading your report should be able to see what else you considered.
 
-Never report a bare label as a cause. "Unknown Error" is a grouping label for spans with no exception and no status message — it is the *name* of the thing you were asked to explain, not an explanation of it.
+Never report a bare label as a cause. "Unknown Error" is a grouping label for spans with no exception event, no exception.*/error.* attributes and no status message — it is the *name* of the thing you were asked to explain, not an explanation of it.
 
 ## After diagnosing
 Stay in the conversation. Answer follow-up questions using the same tools, referencing the evidence you already gathered. When the user asks you to act — create an alert, transition an issue, propose a fix — call the matching mutating tool; it is approval-gated (see below).
@@ -345,28 +345,6 @@ Your final message is the ONLY thing the caller receives — your tool calls and
 
 Be thorough in your investigation and brief in your report.`
 
-/**
- * The compaction agent.
- *
- * Its output replaces the head of a long conversation in what the model is replayed. So the bar is
- * not "readable summary" — it is "everything a continuation needs, because the originals are gone
- * from the model's view". Entity ids matter more than prose here: a summary that says "the checkout
- * service was slow" without the trace ids has thrown away the investigation.
- */
-export const COMPACTION_SYSTEM_PROMPT = `You are compacting the earlier part of a debugging conversation so it can be carried forward in a smaller context.
-
-Write a dense factual summary of what happened. Cover:
-
-- What the user asked for, and any constraints or preferences they stated.
-- What was found, with the specific identifiers: service names, operation names, trace ids, error fingerprints, dashboard and alert ids, metric names, time ranges, and the numbers (counts, percentiles, rates).
-- What was decided or changed, including anything the user approved or rejected.
-- What is still open: unanswered questions, things that were tried and did not work, and anything the user was about to do next.
-
-Rules:
-- Prose and short lists. No headings, no preamble, no sign-off, no offer to help.
-- Preserve identifiers verbatim. A summary without them cannot be continued from.
-- Do not speculate or add conclusions that were not reached. If something was uncertain, say it was uncertain.
-- Write about the conversation in the past tense, as a record. Do not address the user.`
 
 export const VALIDATOR_SYSTEM_PROMPT = `You are the validator for a Maple investigation. Several agents each tested a different hypothesis about the same incident. You did not investigate anything yourself, and you have no tools — you rank what they found.
 

@@ -32,6 +32,17 @@ const RETRIEVAL_OPS = new Set(["embeddings", "retrieval"])
 const TOOL_OPS = new Set(["execute_tool"])
 const AGENT_OPS = new Set(["invoke_agent", "create_agent", "invoke_workflow", "plan", "agent_step"])
 
+/** Every operation name the four sets above recognise. A span name conventionally
+ *  leads with one ("execute_tool read_file", "chat gpt-5"), so a view that wants
+ *  to set the operation apart from its subject needs to know which words are
+ *  operations — including for the reporters that skip `gen_ai.operation.name`. */
+export const GEN_AI_OPERATIONS: ReadonlySet<string> = new Set([
+	...INFERENCE_OPS,
+	...RETRIEVAL_OPS,
+	...TOOL_OPS,
+	...AGENT_OPS,
+])
+
 export function spanStartMs(span: AiSessionSpan): number {
 	return toEpochMs(span.timestamp)
 }

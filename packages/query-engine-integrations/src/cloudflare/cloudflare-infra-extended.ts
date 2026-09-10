@@ -11,8 +11,8 @@
 // numeric output through CHNumber so BYO-ClickHouse string-encoded aggregates
 // decode identically to Tinybird numbers.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {

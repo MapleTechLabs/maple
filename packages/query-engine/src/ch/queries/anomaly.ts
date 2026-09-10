@@ -11,11 +11,11 @@
 // observation) and ≤21 sealed same-hour-of-day samples (the baseline) in ONE
 // query; the caller splits rows on `hour === currentHourStart`.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery } from "@maple-dev/effect-clickhouse"
 import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly } from "../tables"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 /** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
 export function matchedHoursOfDay(currentHourOfDay: number): readonly number[] {

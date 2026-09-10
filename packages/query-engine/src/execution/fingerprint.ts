@@ -1,4 +1,4 @@
-import { splitTerminalClauses } from "@maple-dev/clickhouse-builder/sql"
+import { splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
 
 /**
  * Cap traced SQL at 16 KB. OTel's default attribute size limit is 32 KB, and

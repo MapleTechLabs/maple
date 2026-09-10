@@ -14,8 +14,7 @@ permissions:
     contents: read
 
 jobs:
-    # Which jobs are worth running for this diff. Every filter carries the `base`
-    # anchor, so a lockfile/turbo/tsconfig/workflow change re-enables everything.
+    # Which jobs are worth running for this diff. Most filters carry the `base` anchor.
     #
     # Push events filter too. paths-filter compares `github.event.before..github.sha`
     # there, which spans the whole push — correct for squash-merges, for direct
@@ -36,9 +35,9 @@ jobs:
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
             slack: ${{ steps.filter.outputs.slack == 'true' }}
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+            - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
               id: filter
               with:
                   filters: |
@@ -69,7 +68,7 @@ jobs:
                       # The workspace-dependency closure of apps/cli + apps/local-ui
                       # (plus what alchemy:build-deps builds): cli → effect-sdk,
                       # domain, query-engine; local-ui → infra, query-engine, ui;
-                      # domain/query-engine → clickhouse-builder; effect-sdk /
+                      # domain/query-engine → effect-clickhouse; effect-sdk /
                       # @maple-dev/browser → browser-session. The old blanket
                       # `lib/**` + `packages/**` ran this job and all seven archive
                       # legs for changes to packages the bundle never links (db,
@@ -80,7 +79,6 @@ jobs:
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
                         - 'packages/effect-sdk/**'
-                        - 'lib/clickhouse-builder/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
                         - 'packages/infra/**'
@@ -114,7 +112,7 @@ jobs:
                         - 'packages/query-engine/**'
                       clickhouse:
                         - *base
-                        - 'lib/clickhouse-builder/**'
+                        - 'lib/effect-clickhouse-http/**'
                         - 'apps/api/src/services/warehouse/**'
                         - 'packages/db/**'
                         - 'scripts/*clickhouse*'
@@ -213,7 +211,7 @@ jobs:
                     - shard: build-other
                       install-filters: >-
                           @maple-dev/alchemy @maple-dev/browser
-                          @maple-dev/clickhouse-builder @maple-dev/effect-sdk
+                          @maple-dev/effect-sdk
                           @maple/landing @maple/local-ui
                     - shard: typecheck-api
                       install-filters: "@maple/api"
@@ -221,8 +219,9 @@ jobs:
                       install-filters: "@maple/web"
                     - shard: typecheck-rest
                       install-filters: >-
-                          @maple/alerting @maple/cli @maple/electric-sync @maple/landing
-                          @maple/local-ui @maple/scraper ./lib/* ./examples/*
+                          @maple/alerting @maple/cli @maple/clickhouse-builder-docs
+                          @maple/electric-sync @maple/landing @maple/local-ui
+                          @maple/scraper ./lib/* ./examples/*
                     - shard: typecheck-packages
                       install-filters: "./packages/*"
                     - shard: test-api-1
@@ -242,7 +241,7 @@ jobs:
                           @maple/alerting @maple/cli @maple/electric-sync @maple/landing
                           @maple/local-ui @maple/scraper ./lib/*
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
@@ -271,15 +270,12 @@ jobs:
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
 
-            # The schema generators import packages/domain, which resolves
-            # @maple-dev/clickhouse-builder through its built dist; the Alchemy
-            # entrypoints typecheck below reaches the single-module Workers, whose
-            # `@maple-dev/effect-sdk` and `@maple-dev/alchemy` imports type from
-            # built dist. One build for all three.
+            # Alchemy entrypoints reach Workers whose SDK and Alchemy imports
+            # need declarations built from the workspace sources.
             - name: Build the libraries the quality checks import
               if: ${{ matrix.shard == 'quality' }}
               run: >-
-                  bun turbo build --filter=@maple-dev/clickhouse-builder
+                  bun turbo build
                   --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
 
             - name: Validate generated ClickHouse and local-store schemas
@@ -299,14 +295,14 @@ jobs:
               if: ${{ matrix.shard == 'quality' }}
               run: bun run check:tokens
 
-            # Type-aware lint resolves the four workspace packages whose exports point
+            # Type-aware lint resolves the three workspace packages whose exports point
             # at dist/. Build them before linting so Effect requirement/error channels
             # cannot silently degrade to `any` through missing declarations.
             - name: Build workspace libraries for type-aware Effect lint
               if: ${{ matrix.shard == 'effect-lint' }}
               run: >-
                   bun turbo build --filter=@maple-dev/effect-sdk
-                  --filter=@maple-dev/clickhouse-builder --filter=@maple-dev/alchemy
+                  --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser --concurrency=2
 
             - name: Lint TypeScript and Effect code
@@ -321,7 +317,7 @@ jobs:
               if: ${{ matrix.shard == 'build-other' }}
               run: >-
                   bun turbo build --filter=@maple-dev/alchemy
-                  --filter=@maple-dev/browser --filter=@maple-dev/clickhouse-builder
+                  --filter=@maple-dev/browser
                   --filter=@maple-dev/effect-sdk --filter=@maple/landing
                   --filter=@maple/local-ui --concurrency=2
 
@@ -412,7 +408,7 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
@@ -477,7 +473,7 @@ jobs:
                     --health-timeout 5s
                     --health-retries 20
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
@@ -490,15 +486,6 @@ jobs:
                   key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
-
-            # `@maple-dev/clickhouse-builder` resolves only through `dist/`, and the
-            # suite reaches it transitively: DatabaseLive imports
-            # `@maple/query-engine/execution`, which imports `ch/index.ts`. Without
-            # this the run dies at import with "Failed to resolve entry for package"
-            # before a single test starts. Same step, same reason, as the typescript
-            # and clickhouse jobs.
-            - name: Build ClickHouse query DSL
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
 
             # No migrations: the suite creates the one scratch table it needs and
             # drops it. Keeping it schema-independent means a migration change can
@@ -532,11 +519,19 @@ jobs:
                     --health-timeout 5s
                     --health-retries 20
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
             - uses: ./.github/actions/bun-install
+
+            - name: Native ClickHouse HTTP protocol and live wire-format tests
+              env:
+                  CLICKHOUSE_HTTP_LIVE: "1"
+                  CLICKHOUSE_HTTP_URL: http://127.0.0.1:8123
+                  CLICKHOUSE_HTTP_USER: maple
+                  CLICKHOUSE_HTTP_PASSWORD: maple
+              run: bun run --cwd lib/effect-clickhouse-http test
 
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -545,9 +540,6 @@ jobs:
                   key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
                   restore-keys: |
                       turbo-v2-${{ runner.os }}-${{ github.job }}-
-
-            - name: Build ClickHouse query DSL
-              run: bun turbo build --filter=@maple-dev/clickhouse-builder
 
             - name: Replay migrations and verify search indexes
               env:
@@ -592,7 +584,7 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
@@ -727,7 +719,7 @@ jobs:
                       keep_root: "1"
                       duckdb: true
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
@@ -809,7 +801,7 @@ jobs:
                       project: webkit-smoke
                       specs: perf/cross-browser.perf.spec.ts
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 

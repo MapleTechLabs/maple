@@ -302,7 +302,6 @@ function Waterfall(props: {
 	onToggleTurn?: (turnId: string) => void
 	selectedSpanId?: string
 	revealedSpanId?: string
-	revealedTurnId?: string
 	onSelectSpan?: (spanId: string | undefined) => void
 	spanTab?: SpanDetailTab
 }) {
@@ -317,7 +316,6 @@ function Waterfall(props: {
 			onToggleTurn={props.onToggleTurn ?? noop}
 			selectedSpanId={props.selectedSpanId}
 			revealedSpanId={props.revealedSpanId}
-			revealedTurnId={props.revealedTurnId}
 			onSelectSpan={props.onSelectSpan ?? noop}
 			spanTab={props.spanTab}
 			onSpanTabChange={noop}
@@ -383,7 +381,6 @@ describe("SessionOverview", () => {
 		initialSpanId?: string
 		onSelectSpan?: (spanId: string | undefined) => void
 		onOpenTraceView?: () => void
-		onOpenTurnInTraceView?: (turnId: string) => void
 	}) {
 		const [selectedSpanId, setSelectedSpanId] = useState<string | undefined>(props.initialSpanId)
 		return (
@@ -398,17 +395,28 @@ describe("SessionOverview", () => {
 				spanTab={undefined}
 				onSpanTabChange={noop}
 				onOpenTraceView={props.onOpenTraceView ?? noop}
-				onOpenTurnInTraceView={props.onOpenTurnInTraceView ?? noop}
 			/>
 		)
 	}
 
-	it("splits the wall clock into where the time actually went", () => {
+	// Agent time, not the clock: 23s of tools and 18s of model calls inside a
+	// 5m 12s session, with two of those tools running at the same time.
+	it("splits agent time by class of work, and says how wide the fan-out got", () => {
 		render(<Overview />)
 
-		// 5m 12s wall clock, 4m 20s of it idle.
+		expect(screen.getByText("Tool execution")).toBeTruthy()
+		expect(screen.getByText("Agent time").nextElementSibling?.textContent).toBe("41s")
+		expect(screen.getByText("Wall clock").nextElementSibling?.textContent).toBe("5m 12s")
+		expect(screen.getByText("agents in parallel").previousElementSibling?.textContent).toBe("2×")
+	})
+
+	// Idle is not agent time, but nothing at all was running then — disjoint
+	// from every band, so it belongs in the same bar rather than a footnote.
+	it("keeps the idle the session spent waiting on a human in the breakdown", () => {
+		render(<Overview />)
+
 		expect(screen.getByText("Idle")).toBeTruthy()
-		expect(screen.getByText(/4m 20s · 83%/)).toBeTruthy()
+		expect(screen.getByText(/^4m 20s · 86%$/)).toBeTruthy()
 	})
 
 	// The five-second answer: the verdict names what killed the final turn and
@@ -429,12 +437,15 @@ describe("SessionOverview", () => {
 	})
 
 	// A mid-session failure the session recovered from is not a failed session —
-	// but it is exactly what the findings list exists to surface.
-	it("completes-with-findings when something failed mid-session, and opens it", () => {
+	// but it is exactly what the findings list exists to surface. There is no
+	// verdict line above it: the findings ARE the verdict, and a headline
+	// counting them said it twice.
+	it("leads with the findings when something failed mid-session, and opens one", () => {
 		const onSelectSpan = vi.fn()
 		render(<Overview onSelectSpan={onSelectSpan} />)
 
-		expect(screen.getByText(/Completed, with 1 finding/)).toBeTruthy()
+		expect(screen.queryByText(/^Completed/)).toBeNull()
+		expect(screen.getByText("Findings")).toBeTruthy()
 		fireEvent.click(screen.getByText("error · run_tests"))
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
@@ -485,30 +496,66 @@ describe("SessionOverview", () => {
 		expect(screen.getByText("No findings.")).toBeTruthy()
 	})
 
-	// The shape strip replaces the turn digest: one cell per turn, colored by
-	// what the findings attribute to it. A cell is a whole turn, so it crosses to
-	// Traces and lands on that turn — opening its root span in the overlay
-	// answered a question nobody asked of a strip of turns.
-	it("draws one cell per turn and sends a click to that turn in Traces", () => {
+	// The ledger's row is a summary; the calls behind it are the point. A mark is
+	// one call, and it opens that span rather than describing it.
+	it("puts every call on the session's clock and opens the span behind a mark", () => {
 		const onSelectSpan = vi.fn()
-		const onOpenTurnInTraceView = vi.fn()
-		render(<Overview onSelectSpan={onSelectSpan} onOpenTurnInTraceView={onOpenTurnInTraceView} />)
+		render(<Overview onSelectSpan={onSelectSpan} />)
 
-		fireEvent.click(screen.getByRole("button", { name: "2" }))
-		expect(onOpenTurnInTraceView).toHaveBeenCalledWith(turns[1]!.id)
-		expect(onSelectSpan).not.toHaveBeenCalled()
+		fireEvent.click(screen.getByRole("button", { name: /^run_tests — turn 1, 14s in, 20.0s/ }))
+		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
 
-	// A tool called ten times and failing every time reads nothing like one that
-	// never failed; the rail used to draw both as the same bar.
-	it("separates a tool's failed calls from its successful ones", () => {
-		render(<Overview />)
+	// The session's own first instant is a real start time for a call; the
+	// session formatter spells a zero as an em dash, which reads as unknown.
+	it("says a call that began with the session began at 0s, not at nothing", () => {
+		const atStart = sessionOf([
+			agentSpan({ spanId: "s-agent", startMs: 0, durationMs: 20 * SECOND }),
+			toolSpan({
+				spanId: "s-tool",
+				parentSpanId: "s-agent",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				toolName: "read_file",
+			}),
+		])
+		render(<Overview turns={atStart.turns} summary={atStart.summary} />)
 
-		// run_tests: one call, and it errored.
-		expect(screen.getByTitle("1 failed")).toBeTruthy()
-		expect(screen.getByTitle("0 ok · 1 errored")).toBeTruthy()
-		// read_file and grep_repo ran clean, and say so by having nothing to say.
-		expect(screen.getAllByTitle("1 ok · 0 errored").length).toBe(2)
+		expect(screen.getByRole("button", { name: "read_file — turn 1, 0s in, 2.0s" })).toBeTruthy()
+	})
+
+	// The description and the failure used to live in two different places — the
+	// rail disclosed one, the findings list carried the other. Expanding the tool
+	// is where a reader asks about the tool.
+	it("discloses a tool's definition and its failed calls when the row is expanded", () => {
+		const onSelectSpan = vi.fn()
+		const described = sessionOf([
+			agentSpan({ spanId: "d-agent", startMs: 0, durationMs: 30 * SECOND }),
+			toolSpan({
+				spanId: "d-tool",
+				parentSpanId: "d-agent",
+				startMs: SECOND,
+				durationMs: 4 * SECOND,
+				toolName: "reindex_shard",
+				statusCode: "Error",
+				statusMessage: "shard 3 is locked by a running merge",
+				genAi: { errorType: "SHARD_LOCKED", toolDescription: "Rebuild a shard's index." },
+			}),
+		])
+		render(<Overview turns={described.turns} summary={described.summary} onSelectSpan={onSelectSpan} />)
+
+		expect(screen.queryByText("Rebuild a shard's index.")).toBeNull()
+
+		fireEvent.click(screen.getByRole("button", { name: "reindex_shard" }))
+
+		expect(screen.getByText("Rebuild a shard's index.")).toBeTruthy()
+		// The findings list names the same failure; the disclosure is where a
+		// reader asking about this tool finds it.
+		expect(screen.getAllByText("SHARD_LOCKED").length).toBeGreaterThan(0)
+		expect(screen.getAllByText("shard 3 is locked by a running merge").length).toBe(2)
+
+		fireEvent.click(screen.getByRole("button", { name: /Open span/ }))
+		expect(onSelectSpan).toHaveBeenCalledWith("d-tool")
 	})
 
 	it("says no cost was reported rather than pricing tokens itself", () => {
@@ -566,16 +613,6 @@ describe("SessionOverview", () => {
 })
 
 describe("SessionWaterfall", () => {
-	// The Overview's session shape sends the reader here by turn, not by span:
-	// the header is what they were sent to, so it wears the mark.
-	it("marks the turn header the reader was sent to", () => {
-		render(<Waterfall revealedTurnId={turns[1]!.id} />)
-
-		const marked = document.querySelectorAll("[data-revealed]")
-		expect(marked.length).toBe(1)
-		expect(marked[0]!.textContent).toContain("Turn 2")
-	})
-
 	it("groups spans under their turn and marks the idle between them", () => {
 		render(<Waterfall />)
 
@@ -850,17 +887,21 @@ describe("SessionWaterfall", () => {
 		expect(onToggleTurn).toHaveBeenCalledWith(turns[0]!.id)
 	})
 
-	it("names the model in MODEL even when the span name already says it", () => {
+	// The span name conventionally repeats the model ("chat gpt-5"), and MODEL is
+	// already the column for it: a row that says it twice is a row where neither
+	// copy is the one being read.
+	it("leaves the model to MODEL when the span name already says it", () => {
 		render(<Waterfall turns={targetTurns} summary={targetSummary} />)
 
-		const named = screen.getByText("chat gpt-5").closest("button")!
-		expect(within(named).getByText("gpt-5")).toBeTruthy()
+		expect(screen.queryByText("chat gpt-5")).toBeNull()
+		expect(screen.getAllByText("chat")).toHaveLength(2)
+		expect(screen.getAllByText("gpt-5")).toHaveLength(1)
 	})
 
 	it("shortens a gateway model id in MODEL, with the full id in the title", () => {
 		render(<Waterfall turns={targetTurns} summary={targetSummary} />)
 
-		const modelCell = within(screen.getByText("chat").closest("button")!).getByText("gpt-4o-mini")
+		const modelCell = screen.getByText("gpt-4o-mini").closest("[title]")!
 		expect(modelCell.getAttribute("title")).toBe("openrouter/openai/gpt-4o-mini")
 	})
 
@@ -880,12 +921,14 @@ describe("SessionWaterfall", () => {
 		expect(within(toolRow).getAllByText("read_file")).toHaveLength(1)
 	})
 
-	it("splits a call's tokens into the same halves the header totals", () => {
+	it("breaks a call's tokens into the same buckets the header totals", () => {
 		render(<Waterfall />)
 
-		// 40,000 in and 600 out, cache buckets included in the prompt half exactly
-		// as the session total counts them.
-		expect(screen.getByText("40.0K → 600")).toBeTruthy()
+		// 40,000 input and 600 output: one bar segment each, and their sum is the
+		// figure beside the bar — the same total the session header reaches. The
+		// title's newlines come back normalised, so the query reads them as spaces.
+		const cell = screen.getAllByTitle("40.6K tokens Input: 40,000 Output: 600")[0]!
+		expect(within(cell).getByText("40.6K")).toBeTruthy()
 	})
 
 	// Regression: assignment is by start time, so a span reporting for the whole
@@ -1134,27 +1177,6 @@ describe("SessionViews", () => {
 		expect(screen.queryByText(/of idle removed/)).toBeNull()
 	})
 
-	// The Overview has no filter box, so a query left behind in Traces is
-	// invisible from where a session-shape cell is clicked — and one matching
-	// nothing in that turn would drop the very row the reader was sent to.
-	it("clears a stale span filter when a session-shape cell crosses to Traces", () => {
-		render(<Views />)
-
-		fireEvent.change(screen.getByPlaceholderText("Filter spans"), {
-			target: { value: "no span says this" },
-		})
-		expect(screen.getByText("No spans match this filter.")).toBeTruthy()
-
-		fireEvent.click(screen.getByRole("tab", { name: /Overview/ }))
-		fireEvent.click(screen.getByRole("button", { name: "2" }))
-
-		// Back in Traces, on the turn that was clicked, with the filter gone.
-		expect(screen.getByPlaceholderText("Filter spans").getAttribute("value")).toBe("")
-		const marked = document.querySelectorAll("[data-revealed]")
-		expect(marked.length).toBe(1)
-		expect(marked[0]!.textContent).toContain("Turn 2")
-	})
-
 	// The state lives in SessionViews rather than the views precisely so a look
 	// at Flow doesn't cost the reader the place they found in a long session.
 	it("survives a Trace → Flow → Trace round trip with the turn still collapsed", () => {
@@ -1232,12 +1254,12 @@ describe("SessionViews", () => {
 	// height — which is what sent "Open in Traces view" nowhere near its row.
 	it("takes the view being left out of the page, not just out of sight", () => {
 		render(<Views view="overview" />)
-		expect(screen.getByText(/Completed, with/)).toBeTruthy()
+		expect(screen.getByText("Where the time went")).toBeTruthy()
 
 		fireEvent.click(screen.getByRole("tab", { name: /Traces/ }))
 
 		expect(screen.getByText("Model / target")).toBeTruthy()
-		expect(screen.queryByText(/Completed, with/)).toBeNull()
+		expect(screen.queryByText("Where the time went")).toBeNull()
 	})
 
 	// The tab choice lives beside the other cross-view state in SessionViews:
@@ -1259,34 +1281,40 @@ describe("SessionViews", () => {
 
 describe("SessionHeader", () => {
 	it("names the session after its agent, with the framework as a fact beside it", () => {
-		const { turns: vendorTurns, summary: vendorSummary } = sessionOf([
+		const { summary: vendorSummary } = sessionOf([
 			agentSpan({ spanId: "v-agent", startMs: 0, durationMs: SECOND, vendorId: "langchain" }),
 		])
-		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} turns={vendorTurns} />)
+		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} />)
 		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("billing-agent")
 		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
 	})
 
-	it("demotes the opening prompt to a quoted line rather than making it the title", () => {
-		render(<SessionHeader sessionId="sess-1" summary={summary} turns={turns} />)
-		expect(screen.getByText("“fix the webhook retry backoff”")).toBeTruthy()
-		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("webhook")
+	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
+		render(<SessionHeader sessionId="sess-1" summary={summary} />)
+		expect(screen.queryByText(/webhook/)).toBeNull()
 	})
 
 	it("shows the full session id as a copyable fact, never as the heading", () => {
-		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} turns={turns} />)
+		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} />)
 		const copy = screen.getByRole("button", { name: "Copy Session ID" })
-		expect(copy.textContent).toBe("0f3c9a1e-long-session-id")
+		expect(copy.textContent).toContain("0f3c9a1e-long-session-id")
 		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("0f3c9a1e")
 	})
 
-	it("counts turns and names the model beside the duration", () => {
-		render(<SessionHeader sessionId="sess-1" summary={summary} turns={turns} />)
-		expect(screen.getByText("Turns").nextElementSibling?.textContent).toBe("2")
-		expect(screen.getByText("Model").nextElementSibling?.textContent).toBe("claude-sonnet-4-5")
+	it("shows the duration, and neither the model nor a turn count", () => {
+		render(<SessionHeader sessionId="sess-1" summary={summary} />)
 		expect(screen.getByText("Duration").nextElementSibling?.textContent).toBe(
 			formatSessionDuration(summary.wallClockMs),
 		)
+		expect(screen.queryByText("Turns")).toBeNull()
+		expect(screen.queryByText("Model")).toBeNull()
+	})
+
+	it("copies the trace id, under its own label, for a trace-synthesized session", () => {
+		render(<SessionHeader sessionId="trace:0f3c9a1e2b7d4c5e6f708192a3b4c5d6" summary={summary} />)
+		const copy = screen.getByRole("button", { name: "Copy Trace ID" })
+		expect(copy.textContent).toContain("0f3c9a1e2b7d4c5e6f708192a3b4c5d6")
+		expect(copy.textContent).not.toContain("trace:")
 	})
 
 	it("falls back to the framework, then to a generic name, when no agent is named", () => {

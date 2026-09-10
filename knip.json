@@ -65,6 +65,12 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
+		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
+		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
+		"apps/clickhouse-builder-docs": {
+			"entry": ["press.config.tsx", "src/app.css"],
+			"ignoreDependencies": ["@base-ui/react"]
+		},
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},

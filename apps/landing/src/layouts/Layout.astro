@@ -1,8 +1,11 @@
 ---
 import { getRelativeLocaleUrl } from "astro:i18n";
 import "../styles/global.css";
+import MediaLightbox from "../components/MediaLightbox.astro";
 
 interface Props {
+    bodyClass?: string;
+    themeColor?: string;
     title?: string;
     description?: string;
     image?: string;
@@ -23,6 +26,8 @@ interface Props {
 }
 
 const {
+    bodyClass,
+    themeColor = "#171410",
     title = "Open Source Observability for Traces, Logs & Metrics — Maple",
     description = "Open-source observability platform for traces, logs, and metrics. Built on OpenTelemetry.",
     image = "/og-image.png",
@@ -63,7 +68,7 @@ const absoluteImage = image.startsWith("http")
         <link rel="manifest" href="/manifest.json" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="description" content={description} />
-        <meta name="theme-color" content="#171410" />
+        <meta name="theme-color" content={themeColor} />
         <meta name="robots" content="index,follow" />
         <link rel="canonical" href={canonicalUrl} />
         {locales.map((locale) => (
@@ -108,8 +113,57 @@ const absoluteImage = image.startsWith("http")
         </script>
         <title>{title}</title>
     </head>
-    <body class="min-h-screen antialiased">
+    <body class:list={["min-h-screen antialiased", bodyClass]}>
         <slot />
+        <MediaLightbox />
+        <!-- Stale-chunk recovery.
+
+             A visitor holding cached HTML from an earlier deploy asks for island
+             chunks the new build no longer has. The island then never hydrates:
+             on desktop the product mega-menu stops opening, and on mobile the
+             hamburger is the only route into the nav, so the nav is gone. The
+             SSR'd anchors (Log in, the CTA, the logo) keep working — Astro
+             renders islands to HTML first — but anything behind a handler does
+             not.
+
+             `astro-island` already retries the import once, after a second, with
+             a cache-busting param, so it recovers from a merely cold chunk on its
+             own. What it cannot fix is a document that points at files the deploy
+             deleted: the retry 404s too, and it gives up. That second failure is
+             what `astro:hydration-error` reports — a cancelable, bubbling event
+             the runtime dispatches immediately before its console.error, which is
+             exactly the line we see in production replays.
+
+             So this only ever runs after Astro's own retry has failed, and the
+             one thing left that can help is refetching the HTML. One reload per
+             session, cleared once a page hydrates cleanly, so a genuinely missing
+             chunk degrades to today's behaviour instead of a refresh loop. -->
+        <script is:inline>
+            (function () {
+                var KEY = 'chunk-reloaded';
+                function recover() {
+                    if (sessionStorage.getItem(KEY)) return;
+                    sessionStorage.setItem(KEY, '1');
+                    window.location.reload();
+                }
+                document.addEventListener('astro:hydration-error', recover);
+                // Vite's preload signal covers chunks that fail before an island
+                // is even involved (a page's own `<script>` import).
+                window.addEventListener('vite:preloadError', function (event) {
+                    event.preventDefault();
+                    recover();
+                });
+                // A load that hydrated cleanly earns the next deploy its own retry.
+                window.addEventListener('load', function () {
+                    setTimeout(function () {
+                        if (!sessionStorage.getItem(KEY)) return;
+                        if (!document.querySelector('astro-island[ssr][client="load"]')) {
+                            sessionStorage.removeItem(KEY);
+                        }
+                    }, 5000);
+                });
+            })();
+        </script>
         <script is:inline>
             (function() {
                 if (/^\/(ja|ko)(\/|$)/.test(window.location.pathname)) return;

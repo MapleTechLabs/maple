@@ -346,259 +346,17 @@ export function PricingCards() {
 		)
 	}
 
-	const enterprisePlanFeatures = getPlanFeatures("enterprise")
-
-	// Enterprise renders as a peer card in the grid, so the layout is always
-	// balanced: one paid plan + Enterprise = a clean two-up; a second paid plan
-	// would make it a three-up. Never a lone, full-width card.
-	const totalCards = visiblePlans.length + 1
-
 	return (
 		<div className="space-y-6">
 			{checkoutReturn === "timed_out" && <CheckoutTimedOutNotice />}
-			{/* Plans + Enterprise share one grid so columns stay balanced */}
-			<div
-				className={cn(
-					"grid grid-cols-1 gap-4",
-					totalCards === 2 && "sm:grid-cols-2",
-					totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
-				)}
-			>
-				{visiblePlans.map((plan) => {
-					const scenario = getScenario(plan)
-					const isActive = scenario === "active"
-					const isUpgrade = !isActive && scenario === "upgrade"
-					const { price, interval } = getPlanPrice(plan)
-					const features = getFeatureRows(plan)
-					const planFeatures = getPlanFeatures(getPlanSlug(plan))
-					const btn = getButtonConfig(plan)
-					const trialAvailable = plan.customerEligibility?.trialAvailable
-
-					return (
-						<Card
-							key={plan.id}
-							className={cn(
-								"flex flex-col transition-colors",
-								isActive && "bg-muted/40",
-								isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
-							)}
-						>
-							<CardHeader>
-								<div className="flex items-center justify-between gap-2">
-									<CardTitle
-										className={cn(
-											"text-[10px] font-medium uppercase tracking-[0.14em]",
-											isUpgrade ? "text-primary" : "text-muted-foreground",
-										)}
-									>
-										{plan.name}
-									</CardTitle>
-									{isActive && isTrialing && daysRemaining != null ? (
-										<Badge variant="secondary" className="text-[10px] font-medium">
-											Trial · {daysRemaining}d left
-										</Badge>
-									) : isActive ? (
-										<Badge variant="secondary" className="text-[10px] font-medium">
-											Current
-										</Badge>
-									) : isUpgrade ? (
-										<Badge
-											variant="secondary"
-											className="text-[10px] font-medium text-primary"
-										>
-											Recommended
-										</Badge>
-									) : null}
-								</div>
-								<div className="mt-3 flex items-baseline gap-1">
-									<span className="text-3xl font-semibold tracking-tight tabular-nums">
-										{price}
-									</span>
-									{interval && (
-										<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
-											{interval}
-										</span>
-									)}
-								</div>
-								<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
-									{plan.description ?? getPlanDescription(getPlanSlug(plan))}
-								</CardDescription>
-							</CardHeader>
-
-							<CardContent className="flex flex-col gap-5 flex-1">
-								{features.length > 0 && (
-									<div>
-										<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-											Data included
-										</div>
-										<div className="space-y-2.5">
-											{features.map((feature) => {
-												const Icon = FEATURE_ICONS[feature.featureId]
-												return (
-													<div
-														key={feature.featureId}
-														className="flex items-center justify-between text-sm"
-													>
-														<div className="text-muted-foreground flex items-center gap-2.5">
-															{Icon && <Icon className="size-4 opacity-70" />}
-															<span className="font-medium">
-																{feature.label}
-															</span>
-														</div>
-														<div className="text-right">
-															<span className="font-semibold tabular-nums text-foreground">
-																{feature.value}
-															</span>
-															{feature.detail && (
-																<p className="text-muted-foreground/70 text-[10px] mt-0.5 font-medium">
-																	{feature.detail}
-																</p>
-															)}
-														</div>
-													</div>
-												)
-											})}
-										</div>
-									</div>
-								)}
-
-								<Separator className="bg-border/60" />
-
-								<div>
-									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-										Platform features
-									</div>
-									<div className="space-y-2.5">
-										{planFeatures.map((feature) => {
-											const Icon =
-												PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
-											return (
-												<div
-													key={feature.label}
-													className="flex items-start gap-2.5 text-sm"
-												>
-													<Icon className="text-primary size-4 shrink-0 mt-0.5" />
-													<span className="text-muted-foreground leading-snug">
-														{feature.label}
-													</span>
-													{feature.value && (
-														<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-															{feature.value}
-														</span>
-													)}
-												</div>
-											)
-										})}
-									</div>
-								</div>
-							</CardContent>
-
-							<CardFooter className="mt-auto flex-col gap-2 items-stretch">
-								<Button
-									variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
-									disabled={btn.disabled || loadingPlanId === plan.id}
-									className="w-full font-medium"
-									onClick={() => handleCheckout(plan.id)}
-								>
-									{loadingPlanId === plan.id ? (
-										<Spinner className="size-4" />
-									) : trialAvailable && !btn.disabled ? (
-										`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-									) : isActive && isTrialing ? (
-										"Trialing"
-									) : (
-										btn.label
-									)}
-								</Button>
-								{trialAvailable && !btn.disabled && (
-									<p className="text-[11px] text-muted-foreground text-center tabular-nums">
-										$0 due today · Card required · Cancel anytime
-									</p>
-								)}
-							</CardFooter>
-						</Card>
-					)
-				})}
-				{/* Enterprise as a peer card, so the grid stays balanced */}
-				<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
-					<CardHeader>
-						<div className="flex items-center justify-between gap-2">
-							<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-								Enterprise
-							</CardTitle>
-						</div>
-						<div className="mt-3 flex items-baseline gap-1">
-							<span className="text-3xl font-semibold tracking-tight tabular-nums">Custom</span>
-						</div>
-						<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
-							For high-volume teams with custom retention, compliance, and dedicated support.
-						</CardDescription>
-					</CardHeader>
-
-					<CardContent className="flex flex-col gap-5 flex-1">
-						<div>
-							<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-								Data included
-							</div>
-							<div className="space-y-2.5">
-								{ENTERPRISE_DATA_FEATURES.map((feature) => {
-									const Icon = FEATURE_ICONS[feature.featureId]
-									return (
-										<div
-											key={feature.featureId}
-											className="flex items-center justify-between text-sm"
-										>
-											<div className="text-muted-foreground flex items-center gap-2.5">
-												{Icon && <Icon className="size-4 opacity-70" />}
-												<span className="font-medium">{feature.label}</span>
-											</div>
-											<span className="font-semibold tabular-nums text-foreground">
-												{feature.value}
-											</span>
-										</div>
-									)
-								})}
-							</div>
-						</div>
-
-						<Separator className="bg-border/60" />
-
-						<div>
-							<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-								Platform features
-							</div>
-							<div className="space-y-2.5">
-								{enterprisePlanFeatures.map((feature) => {
-									const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
-									return (
-										<div key={feature.label} className="flex items-start gap-2.5 text-sm">
-											<Icon className="text-primary size-4 shrink-0 mt-0.5" />
-											<span className="text-muted-foreground leading-snug">
-												{feature.label}
-											</span>
-											{feature.value && (
-												<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-													{feature.value}
-												</span>
-											)}
-										</div>
-									)
-								})}
-							</div>
-						</div>
-					</CardContent>
-
-					<CardFooter className="mt-auto flex-col gap-2 items-stretch">
-						<Button
-							variant="outline"
-							className="w-full font-medium"
-							onClick={handleEnterpriseContact}
-						>
-							Talk to founder
-						</Button>
-					</CardFooter>
-				</Card>
-			</div>
+			<PlanCards
+				plans={visiblePlans}
+				onCheckout={handleCheckout}
+				onEnterpriseContact={handleEnterpriseContact}
+				isTrialing={isTrialing}
+				daysRemaining={daysRemaining}
+				loadingPlanId={loadingPlanId}
+			/>
 
 			<Dialog
 				open={confirmDialog !== null}
@@ -657,6 +415,262 @@ export function PricingCards() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+		</div>
+	)
+}
+
+export function PlanCards({
+	plans,
+	onCheckout,
+	onEnterpriseContact,
+	isTrialing = false,
+	daysRemaining,
+	loadingPlanId = null,
+}: {
+	plans: readonly Plan[]
+	onCheckout: (planId: string) => void
+	onEnterpriseContact: () => void
+	isTrialing?: boolean
+	daysRemaining?: number | null
+	loadingPlanId?: string | null
+}) {
+	const enterprisePlanFeatures = getPlanFeatures("enterprise")
+	const totalCards = plans.length + 1
+	return (
+		<div
+			className={cn(
+				"grid grid-cols-1 gap-4",
+				totalCards === 2 && "sm:grid-cols-2",
+				totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
+			)}
+		>
+			{plans.map((plan) => {
+				const scenario = getScenario(plan)
+				const isActive = scenario === "active"
+				const isUpgrade = !isActive && scenario === "upgrade"
+				const { price, interval } = getPlanPrice(plan)
+				const features = getFeatureRows(plan)
+				const planFeatures = getPlanFeatures(getPlanSlug(plan))
+				const btn = getButtonConfig(plan)
+				const trialAvailable = plan.customerEligibility?.trialAvailable
+
+				return (
+					<Card
+						key={plan.id}
+						className={cn(
+							"flex flex-col transition-colors",
+							isActive && "bg-muted/40",
+							isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
+						)}
+					>
+						<CardHeader>
+							<div className="flex items-center justify-between gap-2">
+								<CardTitle
+									className={cn(
+										"text-[10px] font-medium uppercase tracking-[0.14em]",
+										isUpgrade ? "text-primary" : "text-muted-foreground",
+									)}
+								>
+									{plan.name}
+								</CardTitle>
+								{isActive && isTrialing && daysRemaining != null ? (
+									<Badge variant="secondary" className="text-[10px] font-medium">
+										Trial · {daysRemaining}d left
+									</Badge>
+								) : isActive ? (
+									<Badge variant="secondary" className="text-[10px] font-medium">
+										Current
+									</Badge>
+								) : isUpgrade ? (
+									<Badge
+										variant="secondary"
+										className="text-[10px] font-medium text-primary"
+									>
+										Recommended
+									</Badge>
+								) : null}
+							</div>
+							<div className="mt-3 flex items-baseline gap-1">
+								<span className="text-3xl font-semibold tracking-tight tabular-nums">
+									{price}
+								</span>
+								{interval && (
+									<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
+										{interval}
+									</span>
+								)}
+							</div>
+							<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+								{plan.description ?? getPlanDescription(getPlanSlug(plan))}
+							</CardDescription>
+						</CardHeader>
+
+						<CardContent className="flex flex-col gap-5 flex-1">
+							{features.length > 0 && (
+								<div>
+									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+										Data included
+									</div>
+									<div className="space-y-2.5">
+										{features.map((feature) => {
+											const Icon = FEATURE_ICONS[feature.featureId]
+											return (
+												<div
+													key={feature.featureId}
+													className="flex items-center justify-between text-sm"
+												>
+													<div className="text-muted-foreground flex items-center gap-2.5">
+														{Icon && <Icon className="size-4 opacity-70" />}
+														<span className="font-medium">{feature.label}</span>
+													</div>
+													<div className="text-right">
+														<span className="font-semibold tabular-nums text-foreground">
+															{feature.value}
+														</span>
+														{feature.detail && (
+															<p className="text-muted-foreground/70 text-[10px] mt-0.5 font-medium">
+																{feature.detail}
+															</p>
+														)}
+													</div>
+												</div>
+											)
+										})}
+									</div>
+								</div>
+							)}
+
+							<Separator className="bg-border/60" />
+
+							<div>
+								<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+									Platform features
+								</div>
+								<div className="space-y-2.5">
+									{planFeatures.map((feature) => {
+										const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
+										return (
+											<div
+												key={feature.label}
+												className="flex items-start gap-2.5 text-sm"
+											>
+												<Icon className="text-primary size-4 shrink-0 mt-0.5" />
+												<span className="text-muted-foreground leading-snug">
+													{feature.label}
+												</span>
+												{feature.value && (
+													<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+														{feature.value}
+													</span>
+												)}
+											</div>
+										)
+									})}
+								</div>
+							</div>
+						</CardContent>
+
+						<CardFooter className="mt-auto flex-col gap-2 items-stretch">
+							<Button
+								variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
+								disabled={btn.disabled || loadingPlanId === plan.id}
+								className="w-full font-medium"
+								onClick={() => onCheckout(plan.id)}
+							>
+								{loadingPlanId === plan.id ? (
+									<Spinner className="size-4" />
+								) : trialAvailable && !btn.disabled ? (
+									`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+								) : isActive && isTrialing ? (
+									"Trialing"
+								) : (
+									btn.label
+								)}
+							</Button>
+							{trialAvailable && !btn.disabled && (
+								<p className="text-[11px] text-muted-foreground text-center tabular-nums">
+									$0 due today · Card required · Cancel anytime
+								</p>
+							)}
+						</CardFooter>
+					</Card>
+				)
+			})}
+			{/* Enterprise as a peer card, so the grid stays balanced */}
+			<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
+				<CardHeader>
+					<div className="flex items-center justify-between gap-2">
+						<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+							Enterprise
+						</CardTitle>
+					</div>
+					<div className="mt-3 flex items-baseline gap-1">
+						<span className="text-3xl font-semibold tracking-tight tabular-nums">Custom</span>
+					</div>
+					<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+						For high-volume teams with custom retention, compliance, and dedicated support.
+					</CardDescription>
+				</CardHeader>
+
+				<CardContent className="flex flex-col gap-5 flex-1">
+					<div>
+						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+							Data included
+						</div>
+						<div className="space-y-2.5">
+							{ENTERPRISE_DATA_FEATURES.map((feature) => {
+								const Icon = FEATURE_ICONS[feature.featureId]
+								return (
+									<div
+										key={feature.featureId}
+										className="flex items-center justify-between text-sm"
+									>
+										<div className="text-muted-foreground flex items-center gap-2.5">
+											{Icon && <Icon className="size-4 opacity-70" />}
+											<span className="font-medium">{feature.label}</span>
+										</div>
+										<span className="font-semibold tabular-nums text-foreground">
+											{feature.value}
+										</span>
+									</div>
+								)
+							})}
+						</div>
+					</div>
+
+					<Separator className="bg-border/60" />
+
+					<div>
+						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+							Platform features
+						</div>
+						<div className="space-y-2.5">
+							{enterprisePlanFeatures.map((feature) => {
+								const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
+								return (
+									<div key={feature.label} className="flex items-start gap-2.5 text-sm">
+										<Icon className="text-primary size-4 shrink-0 mt-0.5" />
+										<span className="text-muted-foreground leading-snug">
+											{feature.label}
+										</span>
+										{feature.value && (
+											<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+												{feature.value}
+											</span>
+										)}
+									</div>
+								)
+							})}
+						</div>
+					</div>
+				</CardContent>
+
+				<CardFooter className="mt-auto flex-col gap-2 items-stretch">
+					<Button variant="outline" className="w-full font-medium" onClick={onEnterpriseContact}>
+						Talk to founder
+					</Button>
+				</CardFooter>
+			</Card>
 		</div>
 	)
 }

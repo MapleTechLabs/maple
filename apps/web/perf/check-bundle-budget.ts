@@ -55,7 +55,17 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // work: `@/components/icons` re-exports them, so the barrel's own chunk keeps
 // a static edge to them however they are reached. Dropping the marks from the
 // model lanes is what buys the 27 KB back, not a lazy import.
-const maxGzipBytes = 682 * 1024
+// 684 KB from #800-#802 (2026-09-08): the Agent Sessions detail work — the
+// leaner header, the model marks on the filters and the agent-time breakdown —
+// lands in the route registry and the startup index chunk, not in a new
+// dependency. main measures 683.8 with all three in, so this is the honest
+// number rather than a target the pages would have to be cut back to.
+// 685 KB from #806 (2026-09-08): the onboarding rebuild costs ~0.6 KB of
+// startup — the setup checklist's hints for eight surfaces instead of four,
+// the role/intent id literals and legacy-save maps in the quick-start atom the
+// root gate reads, and one lab registry entry. The cards' own copy is split
+// off so the route chunk carries it. main was at 683.4 KB.
+const maxGzipBytes = 685 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
