@@ -1,4 +1,5 @@
 import {
+	GitCommitSha,
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
@@ -37,6 +38,25 @@ type VcsRepositoryScopedError =
 	| VcsSourceRepositoryNotFoundError
 
 type VcsSourceError = VcsRepositoryScopedError | VcsSourceFileNotFoundError
+
+export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
+	"@maple/api/vcs/VcsSourceRefNotFoundError",
+	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
+) {}
+
+/** A commit the sandbox can check out: the exact SHA a ref names, and how to clone it. */
+export interface RepositoryCheckout {
+	readonly provider: VcsRepo["provider"]
+	readonly fullName: string
+	readonly ref: string
+	readonly sha: GitCommitSha
+	/** The remote to clone. Carries no credential of its own. */
+	readonly remoteUrl: string
+	/** Short-lived and scoped to this repository; staged into the sandbox, never put in a URL. */
+	readonly token: string
+}
+
+const isCommitSha = Schema.is(GitCommitSha)
 
 export interface ConnectedSourceRepository {
 	readonly provider: VcsRepo["provider"]
@@ -80,6 +100,12 @@ export interface VcsSourceServiceApi {
 		path: string,
 		ref?: string,
 	) => Effect.Effect<VcsSourceFile & { readonly ref: string }, VcsSourceError>
+	/** Resolve `ref` (default: the tracked branch) to a commit and a pre-signed archive URL for it. */
+	readonly resolveCheckout: (
+		orgId: OrgId,
+		repository: string,
+		ref?: string,
+	) => Effect.Effect<RepositoryCheckout, VcsRepositoryScopedError | VcsSourceRefNotFoundError>
 }
 
 const asPersistence = <A, E extends { readonly message: string }>(effect: Effect.Effect<A, E>) =>
@@ -270,12 +296,51 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				},
 			)
 
+			const resolveCheckout: VcsSourceServiceApi["resolveCheckout"] = Effect.fn(
+				"VcsSourceService.resolveCheckout",
+			)(function* (orgId, repositoryName, requestedRef) {
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const ref = requestedRef ?? repository.trackedBranch ?? repository.defaultBranch
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repository.fullName,
+					"vcs.ref.head.name": ref,
+				})
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				const repoRef = {
+					externalRepoId: repository.externalRepoId,
+					owner: repository.owner,
+					name: repository.name,
+				}
+				// A full SHA needs no lookup; anything else is asked of the provider.
+				const resolved = isCommitSha(ref)
+					? Option.some(ref)
+					: yield* asUpstream(provider.resolveRef(installation, repoRef, ref))
+				if (Option.isNone(resolved)) {
+					return yield* new VcsSourceRefNotFoundError({
+						repository: repository.fullName,
+						ref,
+						message: `No ref '${ref}' exists in '${repository.fullName}'.`,
+					})
+				}
+				const credentials = yield* asUpstream(provider.fetchCloneCredentials(installation, repoRef))
+				yield* Effect.annotateCurrentSpan({ "vcs.ref.head.revision": resolved.value })
+				return {
+					provider: repository.provider,
+					fullName: repository.fullName,
+					ref,
+					sha: resolved.value,
+					...credentials,
+				}
+			})
+
 			return {
 				listRepositories,
 				listPullRequests,
 				fetchPullRequest,
 				searchCode,
 				readFile,
+				resolveCheckout,
 			} satisfies VcsSourceServiceApi
 		}),
 	},

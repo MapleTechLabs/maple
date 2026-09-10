@@ -18,13 +18,14 @@ import {
 	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
 	MapleStack,
+	SandboxWorker,
 	type MapleStage,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import ChatSessionObject from "./chat/ChatSession"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
@@ -60,6 +61,10 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, domains, workerDev, devEnv } = yield* MapleStack
+	// The agents' repository sandbox, reached only over this binding. Absent on
+	// the stages that do not deploy it, where `SandboxClient` reports the tools
+	// as unavailable rather than failing.
+	const sandbox = yield* Effect.serviceOption(SandboxWorker)
 	// Resolved before any resource is created, so a misconfigured deploy fails
 	// with the full list of missing vars rather than part-way through applying.
 	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
@@ -90,6 +95,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage }),
+			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
 			...configuredEnv,
 			...devEnv,
 		},

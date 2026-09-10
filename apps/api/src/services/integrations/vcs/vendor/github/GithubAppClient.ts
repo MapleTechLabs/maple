@@ -601,6 +601,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					: { commits, complete: false as const, reason: "page-budget" as const }
 			})
 
+			// `sha` is any committish the caller names, not only a 40-hex sha — ref
+			// resolution shares this call. It is encoded because an unencoded `..`
+			// segment is normalised away by URL parsing, which would walk this
+			// installation-wide token onto a repository the org never connected.
 			const getCommit = Effect.fn("GithubAppClient.getCommit")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -612,7 +616,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const response = yield* authedGet(
 					config,
 					token,
-					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
 				if (!response.ok) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
@@ -621,6 +625,60 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
 					),
 				)
+			})
+
+			/**
+			 * A clone credential for one repository: the plain remote, plus a token
+			 * minted for that repository alone.
+			 *
+			 * Deliberately not `mintInstallationToken`: that token reaches every
+			 * repository the installation can see and is cached for an hour, and this
+			 * one travels into a container that also runs model-chosen commands. The
+			 * `repositories` + `permissions` body narrows it to read-only contents on a
+			 * single repository, and it is never cached. It is returned apart from the
+			 * URL so nothing downstream is tempted to put it in a command's arguments.
+			 */
+			const mintCloneCredentials = Effect.fn("GithubAppClient.mintCloneCredentials")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+			) {
+				const config = yield* resolveConfig
+				const jwt = yield* mintAppJwt(config)
+				const response = yield* rateLimitedFetch(
+					tracedFetch(
+						`${config.apiBaseUrl}/app/installations/${externalInstallationId}/access_tokens`,
+						{
+							method: "POST",
+							headers: {
+								authorization: `Bearer ${jwt}`,
+								accept: "application/vnd.github+json",
+								"content-type": "application/json",
+								"x-github-api-version": GITHUB_API_VERSION,
+								"user-agent": USER_AGENT,
+							},
+							body: JSON.stringify({
+								repositories: [repo],
+								permissions: { contents: "read", metadata: "read" },
+							}),
+						},
+						"Scoped installation token request failed",
+					),
+				)
+				if (!response.ok)
+					return yield* failure(response, "Scoped installation token request", "installation")
+				const json = yield* parseJson(response, "Scoped installation token request")
+				const decoded = yield* decodeInstallationToken(json).pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({ message: "Unexpected installation token payload", cause }),
+					),
+				)
+				const web = githubWebBaseUrl(config.apiBaseUrl)
+				return {
+					remoteUrl: `${web}/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`,
+					token: decoded.token,
+				}
 			})
 
 			// One page, newest-updated first — never a pagination walk. This feeds the
@@ -867,6 +925,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getPullRequest,
 				searchCode,
 				getSourceFile,
+				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,
 				listUserInstallationIds,

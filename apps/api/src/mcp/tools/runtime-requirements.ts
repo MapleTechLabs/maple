@@ -12,6 +12,7 @@ import type { IssueFixVerificationService } from "@/services/errors/IssueFixVeri
 import type { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
 import type { VcsSourceService } from "@/services/integrations/vcs/VcsSourceService"
 import type { SetupAuditService } from "@/services/org/SetupAuditService"
+import type { RepoSandboxService } from "@/services/sandbox/RepoSandboxService"
 import type { QueryEngineService } from "@/services/warehouse/QueryEngineService"
 import type { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 import type { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -35,6 +36,7 @@ export type McpToolRuntimeRequirements =
 	| IssueFixVerificationService
 	| QueryEngineService
 	| RecommendationIssueService
+	| RepoSandboxService
 	| SetupAuditService
 	| VcsSourceService
 	| WarehouseQueryService

@@ -47,6 +47,9 @@ import { VcsRepository } from "@/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@/services/integrations/vcs/VcsSyncQueue"
 import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
 import { GithubAppClientLive, VcsProviderRegistryLive, VcsSourceServiceLayer } from "./vcs-source-layer"
+import { SandboxClient } from "@/sandbox/client"
+import { CloudflareRepoSandboxLive } from "@/services/sandbox/CloudflareRepoSandbox"
+import { RepoSandboxService } from "@/services/sandbox/RepoSandboxService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuditLogService } from "@/services/audit/AuditLogService"
 import { DemoService } from "@/services/org/DemoService"
@@ -240,6 +243,19 @@ const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 
 const SetupAuditServiceLive = SetupAuditService.layer.pipe(Layer.provideMerge(WarehouseQueryServiceLive))
 
+// The agents' repository sandbox tools, over the sandbox Worker's service
+// binding; `WorkerEnvironment` arrives at worker scope.
+const SandboxClientLive = SandboxClient.layer.pipe(Layer.provide(InfraLive))
+const RepoSandboxServiceLive = RepoSandboxService.layer.pipe(
+	Layer.provide(
+		CloudflareRepoSandboxLive.pipe(
+			Layer.provide(
+				Layer.mergeAll(VcsSourceServiceLive.pipe(Layer.provideMerge(InfraLive)), SandboxClientLive),
+			),
+		),
+	),
+)
+
 // WorkerEnvironment is intentionally NOT wired here (unlike the alerting worker):
 // AnomalyDetectionService reads it via Effect.serviceOption, so it degrades
 // gracefully when absent and is provided at worker scope where needed.
@@ -311,6 +327,7 @@ const MainServicesLive = Layer.mergeAll(
 	ErrorsServiceLive,
 	IssueFixVerificationServiceLive,
 	RecommendationIssueServiceLive,
+	RepoSandboxServiceLive,
 	SetupAuditServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,

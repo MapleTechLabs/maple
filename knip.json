@@ -43,6 +43,12 @@
 		"apps/electric-sync": {
 			"entry": ["src/worker.ts"]
 		},
+		// The sandbox Worker's entry is its own plain module (that is the point: a
+		// generated entry would drop the container-backed class export), and the
+		// alchemy declaration beside it is what the root stack yields.
+		"apps/sandbox": {
+			"entry": ["src/worker.ts", "alchemy.run.ts"]
+		},
 		"apps/local-ui": {
 			"entry": ["src/worker.ts"]
 		},
