@@ -124,6 +124,7 @@ import { AiTraceIndex, TraceDetailSpans, Traces } from "@maple/query-engine/ch/t
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { AI_SESSION_SPANS_MAX_SPANS, type AiSessionSortDir, type AiSessionSortKey } from "@maple/domain/http"
 import {
+	AI_PROMPT_VARIABLE_PREFIX,
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
@@ -134,6 +135,7 @@ import {
 	genAiUsageBucketsExpr,
 	type MapColumnLike,
 } from "@maple/domain/tinybird/gen-ai-columns"
+import { aiSpanAttributeKeys } from "./ai-integrations"
 import {
 	MAX_USAGE_REPORTERS_PER_TRACE,
 	sessionLlmCalls,
@@ -251,6 +253,22 @@ const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Exp
 	CH.rawExpr(
 		`sum(arrayCount(f -> f.3 ${kind === "tool" ? "=" : "!="} 1 AND NOT arrayExists(c -> c.2 = f.1, ${failedSpans}), ${failedSpans}))`,
 		T.float64,
+	)
+
+/**
+ * `mapFilter((k, v) -> <predicate>, map)` — the entries whose KEY passes.
+ *
+ * The predicate is built from the lambda's key parameter, so it can use every
+ * condition the DSL has (`in_`, `like`, `or`, …); values are not inspected.
+ * Lives here until `@maple-dev/effect-clickhouse` ships a `mapFilter`.
+ */
+const mapFilterKeys = (
+	mapExpr: CH.Expr<Record<string, string>>,
+	predicate: (key: CH.Expr<string>) => CH.Condition,
+): CH.Expr<Record<string, string>> =>
+	CH.rawExpr(
+		`mapFilter((k, v) -> ${compile(predicate(CH.rawExpr("k", T.string)).toFragment())}, ${compile(mapExpr.toFragment())})`,
+		T.map(T.string, T.string),
 	)
 
 /**
@@ -1008,7 +1026,6 @@ export interface AiSessionSpansOutput {
 	readonly statusMessage: string
 	readonly timestamp: string
 	readonly spanAttributes: Record<string, string>
-	readonly resourceAttributes: Record<string, string>
 }
 
 export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutput> = Schema.Struct({
@@ -1026,7 +1043,6 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	// so this is a plain Record. Not `Schema.fromJsonString(…)` — that is for the
 	// observability path, which reads maps already serialized to a string.
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
-	resourceAttributes: Schema.Record(Schema.String, Schema.String),
 })
 
 /** Shared by both span reads, so a session keyed by id and one keyed by trace
@@ -1042,8 +1058,14 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
 	statusCode: $.StatusCode,
 	statusMessage: $.StatusMessage,
 	timestamp: CH.toString_($.Timestamp),
-	spanAttributes: $.SpanAttributes,
-	resourceAttributes: $.ResourceAttributes,
+	// The map cut down to what `mapAiSpan` reads. Measured on production's
+	// largest sessions, the whole map is dominated by keys the mapper never
+	// touches (`db.query.text` alone was half of one session's bytes), and
+	// `ResourceAttributes` — which the mapper deliberately ignores, see
+	// `mapAiSpan` — was another 60% on top. Neither is read any more.
+	spanAttributes: mapFilterKeys($.SpanAttributes, (key) =>
+		key.in_(...aiSpanAttributeKeys).or(key.like(`${AI_PROMPT_VARIABLE_PREFIX}%`)),
+	),
 })
 
 /**
@@ -1052,11 +1074,10 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
  * `sessionId` is a compile param rather than an opts field, so one compiled SQL
  * string serves every session.
  *
- * Both attribute Maps come back whole: the integration layer that normalizes
- * these into gen_ai form needs keys this query cannot know in advance. Projecting
- * only the keys it wants is a later optimisation, and a real one — one production
- * trace already carries 250 spans with up to ~17KB of attributes each, so callers
- * should expect megabyte-scale payloads at the default limit.
+ * The attribute map is projected down to the keys the integration layer reads
+ * (`aiSpanAttributeKeys`); everything else on the span stays in the warehouse.
+ * Even so, a content-heavy vendor puts whole prompts in `gen_ai.input.messages`,
+ * so callers should still expect megabyte-scale payloads at the default limit.
  *
  * No scope columns: `trace_detail_spans` does not carry `ScopeName`/`ScopeVersion`,
  * and the read path does not need them. The ingest gateway already did the
