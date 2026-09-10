@@ -61,7 +61,16 @@ const CONTROLS = { table: false } as const
 export const MessageResponse = memo(
 	({ className, lightweight = false, ...props }: MessageResponseProps) => (
 		<Streamdown
-			className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}
+			className={cn(
+				"size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+				// Streamdown sizes headings for a document page. In a 420px panel an `##`
+				// lands two thirds the width of the column, so every level renders at body
+				// scale and separates by weight and spacing instead.
+				"[&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_h4]:text-sm",
+				"[&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h4]:font-semibold",
+				"[&_h1]:mt-4 [&_h2]:mt-4 [&_h3]:mt-4 [&_h4]:mt-4 [&_h1]:mb-1 [&_h2]:mb-1 [&_h3]:mb-1 [&_h4]:mb-1",
+				className,
+			)}
 			components={COMPONENTS}
 			controls={CONTROLS}
 			plugins={lightweight ? lightweightPlugins : streamdownPlugins}

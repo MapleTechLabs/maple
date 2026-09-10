@@ -95,9 +95,9 @@ export function buildChatLabMessages(): UIMessage[] {
 					text: [
 						"**Three services are in trouble.** The paywall worker is failing outright; the other two are degraded.",
 						"",
-						'<<maple:service:{"name":"web-paywall-worker","throughput":1240,"errorRate":39.5,"p99Ms":8400}>>',
-						'<<maple:service:{"name":"kafka-consumers-consumption-request","throughput":48200,"errorRate":1.24,"p99Ms":6400}>>',
-						'<<maple:service:{"name":"subscriptions-api","throughput":2900000,"errorRate":0.89,"p99Ms":420}>>',
+						'<<maple:service:{"name":"web-paywall-worker","throughputRpm":9000,"errorRate":39.5,"p99Ms":8400}>>',
+						'<<maple:service:{"name":"kafka-consumers-consumption-request","throughputRpm":48200,"errorRate":1.24,"p99Ms":6400}>>',
+						'<<maple:service:{"name":"subscriptions-api","throughputRpm":2900000,"errorRate":0.89,"p99Ms":420}>>',
 						"",
 						"Nearly all of the paywall failures share one fingerprint:",
 						"",

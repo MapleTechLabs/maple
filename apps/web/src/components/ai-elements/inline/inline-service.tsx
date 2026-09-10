@@ -32,14 +32,14 @@ export function InlineService({ data }: { data: InlineServiceData }) {
 				</span>
 				{/* The card is its own container: in a 420px side panel the service name matters
 				    more than its throughput, so the least diagnostic lane goes first. */}
-				{data.throughput != null && (
+				{data.throughputRpm != null && (
 					<InlineMetric
 						width="min-w-20"
-						unit="req/s"
+						unit="rpm"
 						tone="text-muted-foreground"
 						className="hidden @[26rem]/inline:inline"
 					>
-						{formatNumber(data.throughput)}
+						{formatNumber(data.throughputRpm)}
 					</InlineMetric>
 				)}
 				{data.errorRate != null && (
@@ -47,11 +47,17 @@ export function InlineService({ data }: { data: InlineServiceData }) {
 						{formatErrorRate(data.errorRate / 100)}
 					</InlineMetric>
 				)}
-				{data.p99Ms != null && (
+				{/* p99 wins when both arrive, but the label always names the value shown —
+				    a p95 published under a p99 header is a wrong number, not a rounding. */}
+				{data.p99Ms != null ? (
 					<InlineMetric width="min-w-16" unit="p99">
 						<LatencyValue ms={data.p99Ms} scale="p99" />
 					</InlineMetric>
-				)}
+				) : data.p95Ms != null ? (
+					<InlineMetric width="min-w-16" unit="p95">
+						<LatencyValue ms={data.p95Ms} scale="p95" />
+					</InlineMetric>
+				) : null}
 				<InlineCardChevron />
 			</div>
 		</Link>

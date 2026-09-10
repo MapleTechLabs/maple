@@ -10,7 +10,7 @@ import {
 	InputGroupTextarea,
 } from "@maple/ui/components/ui/input-group"
 import { cn } from "@maple/ui/lib/utils"
-import { CornerDownLeftIcon, SquareIcon, XmarkIcon } from "@/components/icons"
+import { ArrowUpIcon, SquareIcon, XmarkIcon } from "@/components/icons"
 import { DotLoader } from "./dot-loader"
 import { useCallback, useState } from "react"
 
@@ -100,8 +100,12 @@ export const PromptInputTextarea = ({
 
 export type PromptInputFooterProps = Omit<ComponentProps<typeof InputGroupAddon>, "align">
 
+/**
+ * The composer's bottom row. The submit button sits at the trailing edge, where every chat
+ * app puts it; anything that belongs on the left takes `mr-auto`.
+ */
 export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProps) => (
-	<InputGroupAddon align="block-end" className={cn("justify-between gap-1", className)} {...props} />
+	<InputGroupAddon align="block-end" className={cn("justify-end gap-1", className)} {...props} />
 )
 
 /**
@@ -138,7 +142,7 @@ export const PromptInputSubmit = ({
 	const isGenerating = status === "submitted" || status === "streaming"
 	const canStop = isGenerating && onStop !== undefined
 
-	let Icon = <CornerDownLeftIcon className="size-4" />
+	let Icon = <ArrowUpIcon className="size-4" />
 	if (canStop) {
 		// The loader is the resting state and the stop square is revealed on hover/focus, so the
 		// button reads as "a turn is running" at a glance without giving up the affordance that
