@@ -7,6 +7,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { AgentOverviewView } from "@/components/agent-sessions/overview/agent-overview-view"
 import { OverviewMetricStripLoading } from "@/components/agent-sessions/overview/overview-metric-strip"
+import { OverviewTrendsLoading } from "@/components/agent-sessions/overview/overview-trends"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { NotFoundError } from "@/components/route-error"
@@ -176,47 +177,59 @@ function AgentOverviewBody({
 			.onSuccess((value) => value.data)
 			.orElse(() => [])
 
-	return Result.builder(results.summary)
-		.onInitial(() => (
-			<div className="flex flex-col gap-5">
-				<Skeleton className="mx-6 mt-6 h-14 w-full max-w-2xl" />
-				<OverviewMetricStripLoading />
-				<Skeleton className="mx-6 h-96" />
-				<Skeleton className="mx-6 h-56" />
-			</div>
-		))
-		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load the agent overview" />
-		))
-		.onSuccess((summary, result) => (
-			<AgentOverviewView
-				search={search}
-				onSearchChange={onSearchChange}
-				data={buildAgentOverviewData({
-					current: summary.current,
-					previous: summary.previous,
-					series: summary.series,
-					previousSeries: summary.previousSeries,
-					modelMix,
-					breakdowns,
-					// The width the buckets were actually cut at, echoed back rather
-					// than re-derived for the axis.
-					bucketSeconds: summary.bucketSeconds,
-					windowMs,
-					windowLabel: preset,
-					compare: compareEnabled(search),
-				})}
-				facets={facets}
-				topSessions={{
-					cost: sessionsOf(results.topSessions.cost),
-					duration: sessionsOf(results.topSessions.duration),
-					errored: sessionsOf(results.topSessions.errored),
-				}}
-				windowLabel={preset}
-				timeRange={timeRange}
-				headerControls={headerControls}
-				waiting={result.waiting}
-			/>
-		))
-		.render()
+	return (
+		Result.builder(results.summary)
+			// Shaped like what lands, so nothing reflows when it does: the strip keeps
+			// its seven tiles and the grid its nine cells.
+			.onInitial(() => (
+				<div className="flex flex-col">
+					<div className="flex flex-col gap-2 px-6 pt-[22px] pb-4">
+						<Skeleton className="h-8 w-40" />
+						<Skeleton className="h-4 w-full max-w-lg" />
+					</div>
+					<OverviewMetricStripLoading />
+					<OverviewTrendsLoading />
+					<div className="flex flex-col gap-2 px-6 py-4">
+						<Skeleton className="h-5 w-32" />
+						{Array.from({ length: 5 }).map((_, index) => (
+							<Skeleton key={index} className="h-[38px] w-full" />
+						))}
+					</div>
+				</div>
+			))
+			.onError((error) => (
+				<QueryErrorState error={error} titleOverride="Failed to load the agent overview" />
+			))
+			.onSuccess((summary, result) => (
+				<AgentOverviewView
+					search={search}
+					onSearchChange={onSearchChange}
+					data={buildAgentOverviewData({
+						current: summary.current,
+						previous: summary.previous,
+						series: summary.series,
+						previousSeries: summary.previousSeries,
+						modelMix,
+						breakdowns,
+						// The width the buckets were actually cut at, echoed back rather
+						// than re-derived for the axis.
+						bucketSeconds: summary.bucketSeconds,
+						windowMs,
+						windowLabel: preset,
+						compare: compareEnabled(search),
+					})}
+					facets={facets}
+					topSessions={{
+						cost: sessionsOf(results.topSessions.cost),
+						duration: sessionsOf(results.topSessions.duration),
+						errored: sessionsOf(results.topSessions.errored),
+					}}
+					windowLabel={preset}
+					timeRange={timeRange}
+					headerControls={headerControls}
+					waiting={result.waiting}
+				/>
+			))
+			.render()
+	)
 }

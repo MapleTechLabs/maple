@@ -1,12 +1,6 @@
 import { useMemo, type ReactNode } from "react"
 
-import {
-	Empty,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyMedia,
-	EmptyTitle,
-} from "@maple/ui/components/ui/empty"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import { SquareSparkleIcon } from "@/components/icons"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
@@ -100,7 +94,8 @@ export function AgentOverviewView({
 						Overview
 					</h1>
 					<p className="font-mono text-[13px] leading-[18px] text-muted-foreground">
-						What your agents cost, how much they ran, and how often they failed.
+						Volume, cost, tokens, reliability and latency for every agent session — all on one
+						clock.
 					</p>
 				</div>
 				{headerControls ? (
@@ -108,11 +103,7 @@ export function AgentOverviewView({
 				) : null}
 			</header>
 
-			<AgentSessionsTabs
-				active="overview"
-				search={timeRange}
-				className="border-b border-border px-6"
-			/>
+			<AgentSessionsTabs active="overview" search={timeRange} className="border-b border-border px-6" />
 
 			<OverviewFilterToolbar
 				search={search}
@@ -170,6 +161,7 @@ export function AgentOverviewView({
 
 					<OverviewBreakdowns
 						breakdowns={data.breakdowns}
+						modelMix={data.modelMix}
 						search={search}
 						onSelectRow={selectDimension}
 						waiting={waiting}

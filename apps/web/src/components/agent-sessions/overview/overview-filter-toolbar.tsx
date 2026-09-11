@@ -1,12 +1,7 @@
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@maple/ui/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
 
+import { CheckIcon } from "@/components/icons"
 import {
 	OVERVIEW_DIMENSIONS,
 	compareEnabled,
@@ -22,6 +17,11 @@ import { formatOverviewCount } from "@/lib/agent-sessions/overview-analytics"
 /** Base UI selects need a real value for "no filter"; this never reaches the URL. */
 const ALL = "__all__"
 
+/** Every control on the row is the same pill, so a lit one reads as a narrowing. */
+const PILL = "inline-flex h-[30px] items-center rounded-md border px-2.5 font-mono text-xs"
+const PILL_SET = "border-primary/40 bg-primary/10 text-primary"
+const PILL_IDLE = "border-border bg-card text-muted-foreground hover:text-foreground"
+
 export interface OverviewFilterToolbarProps {
 	search: AgentOverviewSearch
 	facets: OverviewFacets
@@ -36,7 +36,9 @@ export interface OverviewFilterToolbarProps {
  *
  * Six dimensions, one value each: this page is read by narrowing to one thing
  * at a time, and every control is the same 30px pill so a control drawn in the
- * primary tint reads as "this is narrowing the page" at a glance.
+ * primary tint reads as "this is narrowing the page" at a glance. The two
+ * switches sit apart from the dimensions because they are not dimensions — one
+ * is a predicate on sessions, the other changes what the page compares against.
  */
 export function OverviewFilterToolbar({
 	search,
@@ -50,55 +52,56 @@ export function OverviewFilterToolbar({
 	return (
 		<div
 			className={cn(
-				"flex flex-wrap items-center gap-2 border-b border-border px-6 py-3 transition-opacity",
+				"flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-6 py-3 transition-opacity",
 				waiting && "opacity-60",
 			)}
 		>
-			{OVERVIEW_DIMENSIONS.map((dimension) => (
-				<FacetSelect
-					key={dimension}
-					label={dimension}
-					value={selectedDimensionValue(search, dimension)}
-					options={facets[dimension]}
-					onChange={(value) => onSearchChange(overviewFilterPatch(dimension, value))}
-				/>
-			))}
+			<div className="flex flex-wrap items-center gap-2">
+				{OVERVIEW_DIMENSIONS.map((dimension) => (
+					<FacetSelect
+						key={dimension}
+						label={dimension}
+						value={selectedDimensionValue(search, dimension)}
+						options={facets[dimension]}
+						onChange={(value) => onSearchChange(overviewFilterPatch(dimension, value))}
+					/>
+				))}
+			</div>
 
-			<button
-				type="button"
-				aria-pressed={failing}
-				onClick={() => onSearchChange({ hasErrors: failing ? undefined : true })}
-				className={cn(
-					"inline-flex h-[30px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors",
-					failing
-						? "border-[var(--severity-error)]/50 bg-[var(--severity-error)]/10 text-foreground"
-						: "border-border bg-card text-muted-foreground hover:text-foreground",
-				)}
-			>
-				<span
-					aria-hidden
+			<div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
+				<button
+					type="button"
+					aria-pressed={failing}
+					onClick={() => onSearchChange({ hasErrors: failing ? undefined : true })}
 					className={cn(
-						"size-[5px] rounded-full",
-						failing ? "bg-[var(--severity-error)]" : "bg-[var(--severity-error)]/40",
+						PILL,
+						"gap-1.5 transition-colors",
+						failing
+							? "border-[var(--severity-error)]/50 bg-[var(--severity-error)]/10 text-foreground"
+							: PILL_IDLE,
 					)}
-				/>
-				Failing only
-			</button>
+				>
+					<span
+						aria-hidden
+						className={cn(
+							"size-[5px] rounded-full",
+							failing ? "bg-[var(--severity-error)]" : "bg-[var(--severity-error)]/40",
+						)}
+					/>
+					Failing only
+				</button>
 
-			<button
-				type="button"
-				aria-pressed={compare}
-				// On is the default, so only the off state reaches the URL.
-				onClick={() => onSearchChange({ compare: compare ? false : undefined })}
-				className={cn(
-					"inline-flex h-[30px] items-center rounded-md border px-2.5 font-mono text-xs transition-colors",
-					compare
-						? "border-primary/40 bg-primary/10 text-primary"
-						: "border-border bg-card text-muted-foreground hover:text-foreground",
-				)}
-			>
-				compare prev {windowLabel}
-			</button>
+				<button
+					type="button"
+					aria-pressed={compare}
+					// On is the default, so only the off state reaches the URL.
+					onClick={() => onSearchChange({ compare: compare ? false : undefined })}
+					className={cn(PILL, "gap-1.5 transition-colors", compare ? PILL_SET : PILL_IDLE)}
+				>
+					{compare ? <CheckIcon size={12} aria-hidden /> : null}
+					compare prev {windowLabel}
+				</button>
+			</div>
 		</div>
 	)
 }
@@ -128,9 +131,7 @@ function FacetSelect({
 				aria-label={label}
 				className={cn(
 					"h-[30px] gap-2 rounded-md px-2.5 font-mono text-xs",
-					set
-						? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
-						: "bg-card text-foreground",
+					set ? cn(PILL_SET, "[&_svg]:text-primary") : "bg-card text-foreground",
 				)}
 			>
 				<SelectValue>

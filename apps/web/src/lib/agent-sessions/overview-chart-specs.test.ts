@@ -1,0 +1,108 @@
+import { describe, expect, it } from "vitest"
+
+import {
+	EMPTY_OVERVIEW_MEASURES,
+	buildModelMix,
+	buildOverviewSeries,
+	shiftOverviewSeries,
+	type OverviewMeasurePoint,
+	type OverviewMeasures,
+	type OverviewModelMix,
+} from "./overview-analytics"
+import { buildOverviewPlotSpec, type OverviewPlotInput } from "./overview-chart-specs"
+
+const HOUR = 3_600_000
+const START = Date.UTC(2026, 8, 10, 0, 0, 0)
+
+const point = (index: number, overrides: Partial<OverviewMeasures>): OverviewMeasurePoint => ({
+	...EMPTY_OVERVIEW_MEASURES,
+	...overrides,
+	bucket: START + index * HOUR,
+})
+
+const EMPTY_MIX: OverviewModelMix = { models: [], points: [] }
+
+const input = (overrides: Partial<OverviewPlotInput>): OverviewPlotInput => ({
+	series: [],
+	previousSeries: [],
+	modelMix: EMPTY_MIX,
+	...overrides,
+})
+
+const series = buildOverviewSeries([
+	point(0, { sessions: 10, cost: 5, tokens: 300, inputTokens: 200, cacheReadTokens: 100 }),
+	point(1, { sessions: 20, cost: 30, tokens: 900, inputTokens: 600, outputTokens: 300 }),
+])
+
+describe("buildOverviewPlotSpec", () => {
+	it("draws the previous period only when there is one to draw", () => {
+		const without = buildOverviewPlotSpec("sessions", input({ series }))
+		expect(without.marks.map((mark) => mark.kind)).toEqual(["line"])
+
+		const withGhost = buildOverviewPlotSpec(
+			"sessions",
+			input({ series, previousSeries: shiftOverviewSeries(series, -2 * HOUR) }),
+		)
+		expect(withGhost.marks.map((mark) => mark.kind)).toEqual(["line", "ghost"])
+		expect(withGhost.legend.at(-1)?.label).toBe("prev")
+	})
+
+	it("tops the axis on a round number above the data, and at 1 for an empty window", () => {
+		expect(buildOverviewPlotSpec("sessions", input({ series })).yMax).toBe(20)
+		expect(buildOverviewPlotSpec("toolCallsPerSession", input({ series })).yMax).toBe(1)
+		expect(buildOverviewPlotSpec("sessions", input({})).yMax).toBe(1)
+	})
+
+	it("pins the share charts to a full axis so a mix is read against 100%", () => {
+		expect(buildOverviewPlotSpec("cacheHitRatio", input({ series })).yMax).toBe(1)
+		expect(buildOverviewPlotSpec("modelMix", input({})).yMax).toBe(1)
+	})
+
+	it("stacks the token bands, each layer sitting on the one below", () => {
+		const spec = buildOverviewPlotSpec("tokensPerSession", input({ series }))
+		expect(spec.marks.map((mark) => mark.key)).toEqual([
+			"input",
+			"cacheRead",
+			"cacheWrite",
+			"output",
+			"reasoning",
+		])
+		// 200 input + 100 cache read over 10 sessions: 20 then 30.
+		expect(spec.rows[0]?.input).toBe(20)
+		expect(spec.rows[0]?.cacheRead_base).toBe(20)
+		expect(spec.rows[0]?.cacheRead).toBe(30)
+		expect(spec.yMax).toBe(50)
+	})
+
+	it("falls back to one band when no bucket reported a breakdown", () => {
+		const flat = buildOverviewSeries([point(0, { sessions: 4, tokens: 400 })])
+		const spec = buildOverviewPlotSpec("tokensPerSession", input({ series: flat }))
+		expect(spec.marks.map((mark) => mark.key)).toEqual(["total"])
+		expect(spec.rows[0]?.total).toBe(100)
+	})
+
+	it("names the leading models in the legend and counts the rest", () => {
+		const mix = buildModelMix(
+			["a", "b", "c", "d"].map((model, index) => ({
+				bucket: START,
+				model,
+				llmCallSpans: 10 - index,
+			})),
+		)
+		const spec = buildOverviewPlotSpec("modelMix", input({ modelMix: mix }))
+		expect(spec.marks).toHaveLength(4)
+		expect(spec.legend).toHaveLength(3)
+		expect(spec.legendMore).toBe(1)
+		expect(spec.legend[0]?.label).toBe("a 29%")
+	})
+
+	it("spreads the duration band from p50 up to p95", () => {
+		const durations = buildOverviewSeries([
+			point(0, { sessions: 1, sessionDurationP50Ms: 1_000, sessionDurationP95Ms: 4_000 }),
+		])
+		const spec = buildOverviewPlotSpec("sessionDuration", input({ series: durations }))
+		expect(spec.marks.map((mark) => mark.kind)).toEqual(["spread", "line"])
+		expect(spec.rows[0]?.p95_base).toBe(1_000)
+		expect(spec.rows[0]?.p95).toBe(4_000)
+	})
+})

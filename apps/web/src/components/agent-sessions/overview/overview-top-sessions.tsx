@@ -5,12 +5,10 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
+import { ExternalLinkIcon } from "@/components/icons"
 import type { AgentSessionsSearchState } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
-import {
-	formatOverviewCount,
-	formatOverviewDuration,
-} from "@/lib/agent-sessions/overview-analytics"
+import { formatOverviewCount, formatOverviewDuration } from "@/lib/agent-sessions/overview-analytics"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { sessionLinkWindow } from "@/lib/agent-sessions/session-window"
 import {
@@ -24,17 +22,18 @@ const TAB_LABEL = {
 	errored: "errored",
 } satisfies Record<OverviewTopSessionTab, string>
 
+/** A lane: its header label, and the width and shedding rule its cells share. */
 const COLUMNS = [
-	"Agent",
-	"Model",
-	"Service",
-	"Cost",
-	"Tokens",
-	"LLM",
-	"Tools",
-	"Errors",
-	"Duration",
-	"Started",
+	{ label: "Agent", className: "w-[130px] @max-[760px]/table:hidden" },
+	{ label: "Model", className: "w-[150px] @max-[900px]/table:hidden" },
+	{ label: "Service", className: "w-[110px] @max-[1040px]/table:hidden" },
+	{ label: "Cost", className: "w-[78px] text-right" },
+	{ label: "Tokens", className: "w-[78px] text-right" },
+	{ label: "LLM", className: "w-[56px] text-right @max-[620px]/table:hidden" },
+	{ label: "Tools", className: "w-[56px] text-right @max-[620px]/table:hidden" },
+	{ label: "Errors", className: "w-[64px] text-right" },
+	{ label: "Duration", className: "w-[82px] text-right" },
+	{ label: "Started", className: "w-[96px] text-right @max-[680px]/table:hidden" },
 ] as const
 
 export interface OverviewTopSessionsProps {
@@ -64,104 +63,155 @@ export function OverviewTopSessions({
 	const rows = sessions[active]
 
 	return (
-		<section className={cn("px-6 py-4", waiting && "opacity-60")}>
-			<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-2">
-				<h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">
-					Top sessions
-				</h2>
-				<span className="font-mono text-[11.5px] text-muted-foreground">
-					the concrete examples behind the trends above
-				</span>
-			</div>
+		<section className={cn("transition-opacity", waiting && "opacity-60")}>
+			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-6 pt-4 pb-3">
+				<div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+					<h2 className="text-[15px] leading-5 font-semibold tracking-[-0.01em] text-foreground">
+						Top sessions
+					</h2>
+					<span className="font-mono text-[11.5px] text-muted-foreground">
+						the concrete examples behind the trends above
+					</span>
+				</div>
 
-			<div className="flex flex-wrap items-center gap-1 pb-2">
-				{OVERVIEW_TOP_SESSION_TABS.map((tab) => (
-					<button
-						key={tab}
-						type="button"
-						aria-pressed={tab === active}
-						onClick={() => setActive(tab)}
-						className={cn(
-							"inline-flex h-[26px] items-center gap-1.5 rounded border px-2 font-mono text-[11.5px] transition-colors",
-							tab === active
-								? "border-primary/40 bg-primary/10 text-primary"
-								: "border-transparent text-muted-foreground hover:text-foreground",
-						)}
+				<div className="flex shrink-0 flex-wrap items-center gap-1">
+					{OVERVIEW_TOP_SESSION_TABS.map((tab) => (
+						<button
+							key={tab}
+							type="button"
+							aria-pressed={tab === active}
+							onClick={() => setActive(tab)}
+							className={cn(
+								"inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11.5px] transition-colors",
+								tab === active
+									? "border-primary/40 bg-primary/10 text-primary"
+									: "border-border text-muted-foreground hover:text-foreground",
+							)}
+						>
+							{TAB_LABEL[tab]}
+							{tab === "errored" ? (
+								<span className="tabular-nums opacity-70">
+									{formatOverviewCount(erroredCount)}
+								</span>
+							) : null}
+						</button>
+					))}
+					<Link
+						to="/agent-sessions"
+						search={sessionsSearch}
+						className="inline-flex h-[26px] items-center gap-1.5 rounded-md border border-border px-2.5 font-mono text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
 					>
-						{TAB_LABEL[tab]}
-						{tab === "errored" ? (
-							<span className="text-[10.5px] tabular-nums opacity-70">
-								{formatOverviewCount(erroredCount)}
-							</span>
-						) : null}
-					</button>
-				))}
-				<Link
-					to="/agent-sessions"
-					search={sessionsSearch}
-					className="ml-auto font-mono text-[11.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-				>
-					Open in Sessions ↗
-				</Link>
+						Open in Sessions
+						<ExternalLinkIcon size={10} aria-hidden />
+					</Link>
+				</div>
 			</div>
 
 			{rows.length === 0 ? (
-				<p className="py-6 font-mono text-[11.5px] text-muted-foreground/70">
+				<p className="px-6 pb-6 font-mono text-[11.5px] text-muted-foreground/70">
 					No sessions match this scope.
 				</p>
 			) : (
-				<table className="w-full table-auto border-collapse font-mono text-[12px]">
-					<thead>
-						<tr className="border-b border-border text-left">
-							<th className="py-1.5 pr-3 font-normal text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground/80">
-								Session
-							</th>
-							{COLUMNS.map((column) => (
-								<th
-									key={column}
-									className="py-1.5 pl-3 text-right font-normal text-[10.5px] uppercase tracking-[0.09em] text-muted-foreground/80"
-								>
-									{column}
-								</th>
-							))}
-						</tr>
-					</thead>
-					<tbody>
-						{rows.map((row) => (
-							<tr key={row.sessionId} className="border-b border-border/60">
-								<td className="max-w-[240px] truncate py-1.5 pr-3">
-									<Link
-										to="/agent-sessions/$sessionId"
-										params={{ sessionId: row.sessionId }}
-										// The session's own bounds, so the detail page reads
-										// straight from them instead of scanning the board's window.
-										search={sessionLinkWindow(row)}
-										className="text-foreground underline-offset-2 hover:underline"
-									>
-										{row.sessionId}
-									</Link>
-								</td>
-								<Cell>{row.firstAgentName || "—"}</Cell>
-								<Cell>{row.models[0] ?? "—"}</Cell>
-								<Cell>{row.serviceNames[0] ?? "—"}</Cell>
-								<Cell>{formatCost(row.cost)}</Cell>
-								<Cell>{formatNumber(row.totalTokens)}</Cell>
-								<Cell>{formatOverviewCount(row.llmCalls)}</Cell>
-								<Cell>{formatOverviewCount(row.toolCalls)}</Cell>
-								<Cell>{formatOverviewCount(row.errorSpanCount)}</Cell>
-								<Cell>{formatOverviewDuration(row.durationMs)}</Cell>
-								<Cell>{formatRelativeShort(row.startTime)}</Cell>
-							</tr>
+				<div className="@container/table px-6 pb-4">
+					<div className="flex h-[28px] items-center border-b border-border">
+						<span className={cn(HEAD, "min-w-0 flex-1")}>Session</span>
+						{COLUMNS.map((column) => (
+							<span key={column.label} className={cn(HEAD, "shrink-0", column.className)}>
+								{column.label}
+							</span>
 						))}
-					</tbody>
-				</table>
+						<span className="w-[40px] shrink-0" />
+					</div>
+
+					{rows.map((row) => (
+						<div
+							key={row.sessionId}
+							className="flex h-[38px] items-center border-b border-border/40"
+						>
+							<Link
+								to="/agent-sessions/$sessionId"
+								params={{ sessionId: row.sessionId }}
+								// The session's own bounds, so the detail page reads
+								// straight from them instead of scanning the board's window.
+								search={sessionLinkWindow(row)}
+								className="min-w-0 flex-1 truncate pr-3 font-mono text-[12.5px] text-primary underline-offset-2 hover:underline"
+							>
+								{row.sessionId}
+							</Link>
+							<Cell className={COLUMNS[0].className} tone="text-foreground">
+								{row.firstAgentName || "—"}
+							</Cell>
+							<Cell className={COLUMNS[1].className}>{row.models[0] ?? "—"}</Cell>
+							<Cell className={COLUMNS[2].className} tone="text-muted-foreground/70">
+								{row.serviceNames[0] ?? "—"}
+							</Cell>
+							<Cell className={COLUMNS[3].className} tone="text-foreground">
+								{formatCost(row.cost)}
+							</Cell>
+							<Cell className={COLUMNS[4].className}>{formatNumber(row.totalTokens)}</Cell>
+							<Cell className={COLUMNS[5].className}>{formatOverviewCount(row.llmCalls)}</Cell>
+							<Cell className={COLUMNS[6].className}>{formatOverviewCount(row.toolCalls)}</Cell>
+							<Cell
+								className={COLUMNS[7].className}
+								tone={
+									row.errorSpanCount > 0
+										? "text-[var(--severity-error)]"
+										: "text-muted-foreground/50"
+								}
+							>
+								{formatOverviewCount(row.errorSpanCount)}
+							</Cell>
+							<Cell className={COLUMNS[8].className} tone="text-foreground">
+								{formatOverviewDuration(row.durationMs)}
+							</Cell>
+							<Cell className={COLUMNS[9].className} tone="text-muted-foreground/70">
+								{formatRelativeShort(row.startTime)}
+							</Cell>
+							<span className="flex w-[40px] shrink-0 justify-end">
+								<ExternalLinkIcon
+									size={12}
+									className="text-muted-foreground/40"
+									aria-hidden
+								/>
+							</span>
+						</div>
+					))}
+
+					<p className="flex h-[34px] items-center gap-2 font-mono text-[11px]">
+						<span className="text-muted-foreground">
+							{active === "errored"
+								? `${rows.length} of ${formatOverviewCount(erroredCount)} errored sessions`
+								: `${rows.length} sessions`}
+						</span>
+						<span aria-hidden className="text-muted-foreground/40">
+							·
+						</span>
+						<span className="min-w-0 truncate text-muted-foreground/60">
+							opening a session lands on its Trace view
+						</span>
+					</p>
+				</div>
 			)}
 		</section>
 	)
 }
 
-const Cell = ({ children }: { children: React.ReactNode }) => (
-	<td className="max-w-[160px] truncate py-1.5 pl-3 text-right tabular-nums text-muted-foreground">
-		{children}
-	</td>
-)
+const HEAD = "font-mono text-[10.5px] leading-[14px] tracking-[0.06em] text-muted-foreground/60 uppercase"
+
+function Cell({
+	className,
+	tone = "text-muted-foreground",
+	children,
+}: {
+	className: string
+	tone?: string
+	children: React.ReactNode
+}) {
+	return (
+		<span
+			className={cn("shrink-0 truncate font-mono text-[12px] leading-4 tabular-nums", className, tone)}
+		>
+			{children}
+		</span>
+	)
+}

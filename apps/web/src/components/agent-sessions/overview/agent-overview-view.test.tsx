@@ -9,21 +9,20 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { buildOverviewFixture } from "@/lab/agent-overview-fixture"
 import { buildAgentOverviewData } from "@/lib/agent-sessions/overview-analytics"
-import {
-	compareEnabled,
-	type AgentOverviewSearch,
-} from "@/lib/agent-sessions/overview-search"
+import { compareEnabled, type AgentOverviewSearch } from "@/lib/agent-sessions/overview-search"
 
 import { AgentOverviewView } from "./agent-overview-view"
 
+// TEST-SEAM: the plots themselves are a canvas/ResizeObserver story jsdom cannot
+// tell. What the cell puts around them — title, headline, unit, delta, legend —
+// is real, and the legend is where the previous-period ghost shows up.
+vi.mock("./overview-small-multiple", () => ({
+	OVERVIEW_PLOT_HEIGHT: 104,
+	OverviewSmallMultiple: ({ chartId }: { chartId: string }) => <div data-plot={chartId} />,
+}))
+
 vi.mock("@tanstack/react-router", () => ({
-	Link: ({
-		children,
-		to,
-		params,
-		search,
-		...props
-	}: React.PropsWithChildren<Record<string, unknown>>) => (
+	Link: ({ children, to, params, search, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
 		<a
 			data-to={typeof to === "string" ? to : undefined}
 			data-params={params === undefined ? undefined : JSON.stringify(params)}
@@ -37,7 +36,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 const NOW = Date.UTC(2026, 8, 10, 12, 0, 0)
 
-function renderView(search: AgentOverviewSearch = {}, scenario: "healthy7d" | "regression24h" = "regression24h") {
+function renderView(
+	search: AgentOverviewSearch = {},
+	scenario: "healthy7d" | "regression24h" = "regression24h",
+) {
 	const fixture = buildOverviewFixture(scenario, NOW)
 	const data = buildAgentOverviewData({ ...fixture.input, compare: compareEnabled(search) })
 	const onSearchChange = vi.fn()
@@ -55,8 +57,7 @@ function renderView(search: AgentOverviewSearch = {}, scenario: "healthy7d" | "r
 }
 
 /** The section a heading owns — the page repeats labels across sections. */
-const sectionOf = (heading: string) =>
-	screen.getByRole("heading", { name: heading }).closest("section")!
+const sectionOf = (heading: string) => screen.getByRole("heading", { name: heading }).closest("section")!
 
 afterEach(cleanup)
 
@@ -67,14 +68,15 @@ describe("AgentOverviewView", () => {
 			expect(screen.getAllByText(tile.label).length).toBeGreaterThan(0)
 		}
 		expect(document.querySelectorAll("[data-chart]")).toHaveLength(9)
+		expect(document.querySelectorAll("[data-plot]")).toHaveLength(9)
 	})
 
 	it("draws the previous-period ghost only while the comparison is on", () => {
 		renderView({})
-		expect(screen.getAllByText(/ghost/).length).toBeGreaterThan(0)
+		expect(screen.getAllByText("prev").length).toBeGreaterThan(0)
 		cleanup()
 		renderView({ compare: false })
-		expect(screen.queryByText(/ghost/)).toBeNull()
+		expect(screen.queryByText("prev")).toBeNull()
 	})
 
 	it("turns the comparison off through the URL rather than through local state", () => {
@@ -119,9 +121,7 @@ describe("AgentOverviewView", () => {
 
 	it("switches the breakdown table without touching the URL", () => {
 		const { onSearchChange } = renderView({})
-		fireEvent.click(
-			within(sectionOf("Breakdowns")).getByRole("button", { name: /^tool/ }),
-		)
+		fireEvent.click(within(sectionOf("Breakdowns")).getByRole("button", { name: /^tool/ }))
 		expect(screen.getByText("Share of calls")).toBeTruthy()
 		expect(onSearchChange).not.toHaveBeenCalled()
 	})
@@ -141,7 +141,7 @@ describe("AgentOverviewView", () => {
 		const link = screen.getByText(first.sessionId).closest("a")
 		expect(link?.getAttribute("data-to")).toBe("/agent-sessions/$sessionId")
 		expect(link?.getAttribute("data-params")).toBe(JSON.stringify({ sessionId: first.sessionId }))
-		expect(link?.getAttribute("data-search")).toContain("\"t\"")
+		expect(link?.getAttribute("data-search")).toContain('"t"')
 	})
 
 	it("carries the board's filters into the Sessions list", () => {
