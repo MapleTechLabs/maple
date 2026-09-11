@@ -6,6 +6,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -29,6 +30,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -40,6 +42,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -88,6 +91,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -111,6 +115,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -122,6 +127,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -133,11 +139,11 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
           AND ai_trace_index.IsLlmCall = 1
         GROUP BY sessionId, key) AS session_rows) AS netted_previous
         WHERE key IN (SELECT
@@ -170,6 +176,7 @@ SELECT
           0 AS sessions,
           0 AS erroredSessions,
           0 AS llmCalls,
+          0 AS llmCallSpans,
           0 AS erroredLlmCalls,
           0 AS toolCalls,
           0 AS erroredToolCalls,
@@ -208,6 +215,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -231,6 +239,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -242,6 +251,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -320,6 +330,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -343,6 +354,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -354,6 +366,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -365,11 +378,11 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
           AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
         FROM ai_trace_index
@@ -379,11 +392,11 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
         GROUP BY sessionId
         HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY sessionId, key) AS session_rows) AS netted_previous
@@ -432,6 +445,7 @@ SELECT
           0 AS sessions,
           0 AS erroredSessions,
           0 AS llmCalls,
+          0 AS llmCallSpans,
           0 AS erroredLlmCalls,
           0 AS toolCalls,
           0 AS erroredToolCalls,
@@ -485,6 +499,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -508,6 +523,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -519,6 +535,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -567,6 +584,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -590,6 +608,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -601,6 +620,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -612,11 +632,11 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
           AND ai_trace_index.IsToolCall = 1
         GROUP BY sessionId, key) AS session_rows) AS netted_previous
         WHERE key IN (SELECT
@@ -649,6 +669,7 @@ SELECT
           0 AS sessions,
           0 AS erroredSessions,
           0 AS llmCalls,
+          0 AS llmCallSpans,
           0 AS erroredLlmCalls,
           0 AS toolCalls,
           0 AS erroredToolCalls,
@@ -687,6 +708,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -710,6 +732,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -721,6 +744,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -746,6 +770,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -769,6 +794,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -780,6 +806,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -791,11 +818,11 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
         GROUP BY sessionId) AS session_rows) AS netted_previous
         GROUP BY bucket
 )
@@ -808,6 +835,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -831,6 +859,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -842,6 +871,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -865,6 +895,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -888,6 +919,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -899,6 +931,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -910,11 +943,11 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
         GROUP BY sessionId) AS session_rows) AS netted_previous
 FORMAT JSON
 
@@ -924,6 +957,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -947,6 +981,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -958,6 +993,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -1009,6 +1045,7 @@ SELECT
           count() AS sessions,
           countIf(errorSpans > 0) AS erroredSessions,
           sum(toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted))))))) AS llmCalls,
+          sum(llmCallSpans) AS llmCallSpans,
           sum(erroredLlmCalls) AS erroredLlmCalls,
           sum(toolCalls) AS toolCalls,
           sum(erroredToolCalls) AS erroredToolCalls,
@@ -1032,6 +1069,7 @@ SELECT
           toolCalls AS toolCalls,
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
+          llmCallSpans AS llmCallSpans,
           llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -1043,6 +1081,7 @@ SELECT
           sum(ai_trace_index.IsToolCall) AS toolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
+          sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
           groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -1054,7 +1093,7 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId
         HAVING countIf(VendorId IN ('eve')) > 0
           AND countIf(ServiceName IN ('maple-slack-agent')) > 0
@@ -1064,7 +1103,7 @@ SELECT
           AND countIf(ToolName IN ('send_email')) > 0) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
           AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
         FROM ai_trace_index
@@ -1074,7 +1113,7 @@ SELECT
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Timestamp < '2026-01-01 10:30:00'
         GROUP BY TraceId
         HAVING countIf(VendorId IN ('eve')) > 0
           AND countIf(ServiceName IN ('maple-slack-agent')) > 0
@@ -1084,7 +1123,7 @@ SELECT
           AND countIf(ToolName IN ('send_email')) > 0) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
         GROUP BY sessionId
         HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY sessionId) AS session_rows) AS netted_previous

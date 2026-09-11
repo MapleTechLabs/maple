@@ -47,9 +47,19 @@
 // read over every agent span, and a span that names no value keys under `''`,
 // which the page renders as unattributed rather than hiding.
 //
+// MODEL CALLS are counted over two populations, because volume and failures
+// cannot share one. `llmCalls` is the netted volume: a wrapper's roll-up, a
+// gateway's mirror and a provider retry of one call are one call. Failures
+// cannot be netted at all — the index carries no error flag into the reporters
+// — so `erroredLlmCalls` is a raw `sumIf` over the model-call SPANS, and
+// `llmCallSpans` counts exactly those spans so the two divide. Read against
+// `llmCalls`, a mirrored call that failed on both observations is two failures
+// of one call and the rate passes 100%.
+//
 // Durations stay in NANOSECONDS, like every other AI read — `Duration` is what
 // the index stores and the client formats.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
@@ -87,8 +97,9 @@ export interface AiOverviewFilterOpts {
 
 export interface AiOverviewBreakdownOpts extends AiOverviewFilterOpts {
 	readonly dimension: AiOverviewDimension
-	/** Keys returned per period. Defaults to — and is capped at —
-	 *  {@link AI_OVERVIEW_BREAKDOWN_MAX}. */
+	/** Keys returned per period. Defaults to {@link AI_OVERVIEW_BREAKDOWN_MAX},
+	 *  which is also where the request contract caps it — a larger `limit` is a
+	 *  400 and never reaches here, so there is nothing to clamp twice. */
 	readonly limit?: number
 }
 
@@ -99,7 +110,7 @@ export interface AiOverviewBreakdownOpts extends AiOverviewFilterOpts {
  * because a `LowCardinality(String)` on one branch against a `String` on
  * another is a `NO_COMMON_TYPE`.
  */
-export type AiOverviewWindow = "current" | "previous"
+type AiOverviewWindow = "current" | "previous"
 
 /** Which window a row measures. `keys` is the breakdown's third branch: how
  *  many distinct keys the current window has, before the top-N cut. */
@@ -109,6 +120,24 @@ const startParam = (window: AiOverviewWindow) =>
 	param.dateTimeString(window === "current" ? "startTime" : "prevStartTime")
 const endParam = (window: AiOverviewWindow) =>
 	param.dateTimeString(window === "current" ? "endTime" : "prevEndTime")
+
+/**
+ * The window's bounds on a row's timestamp, on every level that reads the
+ * index.
+ *
+ * The caller's window is CLOSED at both ends, the way every other Maple read
+ * takes one. The comparison window is `[start − length, start)`: it ends where
+ * the caller's begins, so its upper bound is EXCLUSIVE and a row sitting
+ * exactly on the boundary belongs to the current window alone rather than to
+ * both.
+ */
+const withinWindow = (
+	timestamp: CH.Expr<DateTime.Utc>,
+	window: AiOverviewWindow,
+): ReadonlyArray<CH.Condition> => [
+	timestamp.gte(startParam(window)),
+	window === "current" ? timestamp.lte(endParam(window)) : timestamp.lt(endParam(window)),
+]
 
 /**
  * One row per agent trace of the window that passes the selection: its id and
@@ -126,11 +155,7 @@ const traceKeys = (opts: AiOverviewFilterOpts, window: AiOverviewWindow) => {
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
 		.select(($) => ({ TraceId: $.TraceId, rawSessionId: CH.max_($.SessionId) }))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(startParam(window)),
-			$.Timestamp.lte(endParam(window)),
-		])
+		.where(($) => [$.OrgId.eq(param.string("orgId")), ...withinWindow($.Timestamp, window)])
 		.groupBy("TraceId")
 		.having(($) => [
 			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
@@ -155,11 +180,7 @@ const erroredSessionKeys = (opts: AiOverviewFilterOpts, window: AiOverviewWindow
 	from(AiTraceIndex)
 		.innerJoinQuery(traceKeys(opts, window), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
 		.select(($) => ({ sessionId: sessionKey($.trace.rawSessionId, $.TraceId) }))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(startParam(window)),
-			$.Timestamp.lte(endParam(window)),
-		])
+		.where(($) => [$.OrgId.eq(param.string("orgId")), ...withinWindow($.Timestamp, window)])
 		.groupBy("sessionId")
 		.having(($) => [CH.sum($.IsError).gt(0)])
 
@@ -273,6 +294,11 @@ const sessionRows = (
 			// error flag into the reporters — so a framework that echoes a
 			// failure onto the span wrapping the call reports it twice.
 			erroredLlmCalls: CH.sumIf($.IsError, $.IsLlmCall.eq(1)),
+			// Its denominator: the SAME spans, counted. The netted `llmCalls`
+			// below measures a different population — one mirrored call is one
+			// call there and two failures above — so an error rate taken against
+			// it can exceed 100%.
+			llmCallSpans: CH.sum($.IsLlmCall),
 			llmDurations: llmDurationsExpr($),
 			// Usage AND model calls travel as reporters: both are counted above,
 			// where every span of the session is in hand — see `ai-span-columns`.
@@ -284,8 +310,7 @@ const sessionRows = (
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(startParam(window)),
-			$.Timestamp.lte(endParam(window)),
+			...withinWindow($.Timestamp, window),
 			population === undefined ? undefined : population($),
 			CH.whenTrue(opts.hasErrors, () =>
 				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, window)),
@@ -306,6 +331,7 @@ const nettedRows = (opts: AiOverviewFilterOpts, window: AiOverviewWindow, dimens
 		toolCalls: $.toolCalls,
 		erroredToolCalls: $.erroredToolCalls,
 		erroredLlmCalls: $.erroredLlmCalls,
+		llmCallSpans: $.llmCallSpans,
 		llmDurations: $.llmDurations,
 		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
 	}))
@@ -317,6 +343,7 @@ interface SessionColumns {
 	readonly toolCalls: CH.Expr<number>
 	readonly erroredToolCalls: CH.Expr<number>
 	readonly erroredLlmCalls: CH.Expr<number>
+	readonly llmCallSpans: CH.Expr<number>
 }
 
 /**
@@ -337,6 +364,7 @@ const measures = ($: SessionColumns) => ({
 	sessions: CH.count(),
 	erroredSessions: CH.countIf($.errorSpans.gt(0)),
 	llmCalls: CH.sum(sessionLlmCalls("netted")),
+	llmCallSpans: CH.sum($.llmCallSpans),
 	erroredLlmCalls: CH.sum($.erroredLlmCalls),
 	toolCalls: CH.sum($.toolCalls),
 	erroredToolCalls: CH.sum($.erroredToolCalls),
@@ -361,6 +389,7 @@ const noMeasures = () => ({
 	sessions: CH.lit(0),
 	erroredSessions: CH.lit(0),
 	llmCalls: CH.lit(0),
+	llmCallSpans: CH.lit(0),
 	erroredLlmCalls: CH.lit(0),
 	toolCalls: CH.lit(0),
 	erroredToolCalls: CH.lit(0),
@@ -382,6 +411,7 @@ export interface AiOverviewMeasuresOutput {
 	readonly sessions: number
 	readonly erroredSessions: number
 	readonly llmCalls: number
+	readonly llmCallSpans: number
 	readonly erroredLlmCalls: number
 	readonly toolCalls: number
 	readonly erroredToolCalls: number
@@ -424,7 +454,8 @@ export interface AiOverviewBreakdownOutput extends AiOverviewTotalsOutput {
  * available from a read that grouped the window. The previous branch is bounded
  * by its own pair of params (`prevStartTime`/`prevEndTime`), which the caller
  * computes — the query has no opinion about what "previous" means beyond
- * reading a second window.
+ * reading a second window, half-open at its upper bound so a session on the
+ * boundary is measured once (see {@link withinWindow}).
  */
 export function aiOverviewTotalsQuery(opts: AiOverviewFilterOpts = {}): CHUnionQuery<AiOverviewTotalsOutput> {
 	const branch = (window: AiOverviewWindow) =>
@@ -479,8 +510,7 @@ const topKeys = (opts: AiOverviewBreakdownOpts) => {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(startParam("current")),
-			$.Timestamp.lte(endParam("current")),
+			...withinWindow($.Timestamp, "current"),
 			population === undefined ? undefined : population($),
 			CH.whenTrue(opts.hasErrors, () =>
 				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, "current")),
@@ -488,7 +518,7 @@ const topKeys = (opts: AiOverviewBreakdownOpts) => {
 		])
 		.groupBy("rankKey")
 		.orderBy(["rankSessions", "desc"], ["rankKey", "asc"])
-		.limit(Math.min(opts.limit ?? AI_OVERVIEW_BREAKDOWN_MAX, AI_OVERVIEW_BREAKDOWN_MAX))
+		.limit(opts.limit ?? AI_OVERVIEW_BREAKDOWN_MAX)
 	return fromQuery(ranked, "top_keys").select(($) => ({ topKey: $.rankKey }))
 }
 
@@ -529,8 +559,7 @@ export function aiOverviewBreakdownQuery(
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(startParam("current")),
-			$.Timestamp.lte(endParam("current")),
+			...withinWindow($.Timestamp, "current"),
 			population === undefined ? undefined : population($),
 			CH.whenTrue(opts.hasErrors, () =>
 				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, "current")),

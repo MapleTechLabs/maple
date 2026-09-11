@@ -590,11 +590,20 @@ const aiOverviewMeasures = {
 	sessions: Schema.Number,
 	/** Sessions with at least one failed agent span. */
 	erroredSessions: Schema.Number,
-	/** Model calls, netted — the list row's `llmCalls`. */
+	/** Model calls, netted — the list row's `llmCalls`. The VOLUME: a wrapper's
+	 *  roll-up, a gateway's mirror and a provider retry of one call are one
+	 *  call. */
 	llmCalls: Schema.Number,
+	/** Model-call SPANS, counted raw — the denominator of the LLM error rate,
+	 *  which is `erroredLlmCalls / llmCallSpans` and never `/ llmCalls`. The two
+	 *  populations differ by every mirror and wrapper the netting collapses, so
+	 *  a mirrored call that failed twice reads as a rate above 100% against the
+	 *  netted volume. */
+	llmCallSpans: Schema.Number,
 	/** Model-call spans that failed. Not netted: the index carries no error
 	 *  flag into the netting, so a framework that echoes a failure onto the
-	 *  span wrapping the call reports it twice. */
+	 *  span wrapping the call reports it twice — the same span population as
+	 *  `llmCallSpans`, which is why those two divide. */
 	erroredLlmCalls: Schema.Number,
 	toolCalls: Schema.Number,
 	erroredToolCalls: Schema.Number,
@@ -687,6 +696,30 @@ export type AiOverviewDimension = Schema.Schema.Type<typeof AiOverviewDimension>
  *  catalogue: `totalKeys` is what lets it say "+ N more" off the same read. */
 export const AI_OVERVIEW_BREAKDOWN_MAX = 12
 
+/**
+ * One key of a breakdown, measured over both windows.
+ *
+ * A row carries the whole measure set, but which of them MEAN anything depends
+ * on the dimension, because `model` and `tool` restrict the population to the
+ * spans that can carry the key — model calls and tool calls respectively:
+ *
+ * - `model`: `toolCalls` and `erroredToolCalls` are structurally 0 (a model
+ *   call is not a tool call), and the usage, call and model-latency measures
+ *   are the row's subject.
+ * - `tool`: `llmCalls`, `llmCallSpans`, `erroredLlmCalls` and
+ *   `llmDurationP*Ns` are structurally 0 (a tool call is not a model call),
+ *   and `cost`, `tokens` and `pricedLlmCalls` are 0 for every tool span that
+ *   reports no usage, which is all of them in practice. `toolCalls` and
+ *   `erroredToolCalls` are the row's subject.
+ * - `agent`, `service`, `environment`, `vendor`: every agent span carries the
+ *   key, so every measure is meaningful.
+ *
+ * `sessions`, `erroredSessions` and `sessionDurationP*Ns` are always over THIS
+ * key's spans: a session appears under every key it used, its failures are the
+ * ones its spans under this key carried, and its extent runs from the first of
+ * those spans to the last rather than across the whole session. A client
+ * renders the columns the dimension supports rather than a column of zeros.
+ */
 export const AiOverviewBreakdownRow = Schema.Struct({
 	/**
 	 * The dimension's value. `''` is a real key, not a gap — a span that

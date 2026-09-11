@@ -55,10 +55,11 @@ const EARLIER_MS = BASE_MS - 2 * HOUR_MS
 
 const SESSION_ID = `${ORG_ID}:overview-1`
 /** The ordinary shape: a turn span that rolls up its two model calls, and a
- *  tool call that failed. */
+ *  tool call that failed. Its GPT call failed too. */
 const TRACE_TURN = "aioverve2e00000000000000000000001"
 /** The gateway's own trace of the first model call — same session, same
- *  response id, a price the app's SDK did not have. */
+ *  response id, a price the app's SDK did not have, and the SAME failure: one
+ *  call, netted, but two failed model-call spans. */
 const TRACE_MIRROR = "aioverve2e00000000000000000000002"
 /** No session id anywhere, so the trace IS the session. Its model call failed. */
 const TRACE_SESSIONLESS = "aioverve2e00000000000000000000003"
@@ -116,6 +117,8 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			...usage(120, 60, 0.03),
 		}),
 	},
+	// The call the gateway mirrors below, and it FAILED — so the same failure is
+	// on the wire twice while the netting collapses the two spans into one call.
 	{
 		traceId: TRACE_TURN,
 		spanId: "overview-chat-gpt",
@@ -123,7 +126,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		name: "chat gpt-5",
 		ms: BASE_MS + 1,
 		durationNs: 4_000_000,
-		status: "Ok",
+		status: "Error",
 		attrs: agentSpan({
 			"gen_ai.operation.name": "chat",
 			"gen_ai.response.model": GPT,
@@ -160,14 +163,15 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		}),
 	},
 	// The gateway's mirror: its own trace of the GPT call, under the same
-	// session id and the same response id, priced higher.
+	// session id and the same response id, priced higher — and carrying the
+	// call's failure a second time.
 	{
 		traceId: TRACE_MIRROR,
 		spanId: "overview-chat-mirror",
 		name: "chat gpt-5",
 		ms: BASE_MS + 3,
 		durationNs: 5_000_000,
-		status: "Ok",
+		status: "Error",
 		attrs: agentSpan({
 			[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 			"gen_ai.operation.name": "chat",
@@ -387,9 +391,23 @@ describe.skipIf(!clickhouseE2eEnabled)("agent overview reads", () => {
 		// list's own `hasErrors` matches.
 		assert.strictEqual(current?.erroredSessions, list.filter((row) => row.errorAgentSpans > 0).length)
 		assert.strictEqual(current?.erroredSessions, 2)
-		// One failed tool call, out of one; one failed model call, out of four.
+		// One failed tool call, out of one. The list counts the DEEPEST failure
+		// (a failed tool whose child also failed is the child's echo) while this
+		// counts the failed tool spans; the two agree here because no failed span
+		// sits under the failed tool.
 		assert.strictEqual(current?.erroredToolCalls, 1)
-		assert.strictEqual(current?.erroredLlmCalls, 1)
+		assert.strictEqual(current?.erroredToolCalls, sumOf(list, (row) => row.toolErrors))
+
+		// The GPT call failed and the gateway mirrored that failure into its own
+		// trace, so three of the five model-call SPANS failed — while those five
+		// spans net to four calls. The rate is the failures over the population
+		// they were counted in, which cannot pass 100%; over `llmCalls` the
+		// mirrored call would be counted twice against itself.
+		assert.strictEqual(current?.erroredLlmCalls, 3)
+		assert.strictEqual(current?.llmCallSpans, 5)
+		assert.strictEqual(current?.llmCalls, 4)
+		assert.closeTo(current!.erroredLlmCalls / current!.llmCallSpans, 3 / 5, 1e-9)
+		assert.isAtMost(current!.erroredLlmCalls / current!.llmCallSpans, 1)
 
 		// And the filter selects exactly those sessions.
 		const failing = await totals({ hasErrors: true })
@@ -489,6 +507,13 @@ describe.skipIf(!clickhouseE2eEnabled)("agent overview reads", () => {
 		assert.closeTo(byKey.get(GPT)!.cost, 0.05, 1e-9)
 		assert.strictEqual(byKey.get(CLAUDE)?.tokens, 30 + 300)
 		assert.closeTo(byKey.get(CLAUDE)!.cost, 0.11, 1e-9)
+		// And the mirror is where the two model-call populations part: under GPT,
+		// two failed spans over two spans, which net to one call. A rate taken
+		// against the netted call would read 200%.
+		assert.strictEqual(byKey.get(GPT)?.erroredLlmCalls, 2)
+		assert.strictEqual(byKey.get(GPT)?.llmCallSpans, 2)
+		assert.strictEqual(byKey.get(GPT)?.llmCalls, 1)
+
 		// The pre-0031 row names no model and is the unattributed key, not a gap.
 		assert.strictEqual(byKey.get("")?.tokens, 500)
 		assert.strictEqual(

@@ -1106,6 +1106,9 @@ const OVERVIEW_MEASURES = {
 	sessions: "4",
 	erroredSessions: "1",
 	llmCalls: 9,
+	// The failures' own population: the model-call SPANS, mirrors included, so
+	// the rate the client takes cannot pass 100%.
+	llmCallSpans: "11",
 	erroredLlmCalls: "2",
 	toolCalls: "6",
 	erroredToolCalls: "1",
@@ -1188,7 +1191,11 @@ describe("POST /internal/ai-sessions/overview/summary", () => {
 			// window of a different size.
 			const sql = sqlByContext.get("aiOverviewTotals") ?? ""
 			expect(sql).toContain("Timestamp >= '2026-08-19 07:00:00'")
-			expect(sql).toContain("Timestamp <= '2026-08-19 09:00:00'")
+			// `[07:00, 09:00)`: the comparison ends where the caller's window
+			// begins, so 09:00:00 itself is measured in one window and not in two.
+			expect(sql).toContain("Timestamp < '2026-08-19 09:00:00'")
+			expect(sql).not.toContain("Timestamp <= '2026-08-19 09:00:00'")
+			expect(sql).toContain(`Timestamp >= '${WINDOW.startTime}'`)
 			expect(sql).toContain(`Timestamp <= '${WINDOW.endTime}'`)
 		} finally {
 			await harness.dispose()

@@ -97,6 +97,20 @@ describe("overview population", () => {
 		expect(unfiltered).not.toContain("countIf(VendorId")
 	})
 
+	it("bounds the comparison window half-open, so the boundary is measured once", () => {
+		const sql = totalsSql()
+
+		// `[prevStartTime, startTime)`: the previous window ends where the
+		// caller's begins, and every level of the current branch still takes the
+		// closed window every other Maple read takes.
+		expect(sql).toContain(`Timestamp >= '${params.prevStartTime}'`)
+		expect(sql).toContain(`Timestamp < '${params.prevEndTime}'`)
+		expect(sql).toContain(`Timestamp <= '${params.endTime}'`)
+		// `prevEndTime` IS `startTime`, so a row on it would otherwise land in
+		// both windows.
+		expect(sql).not.toContain(`Timestamp <= '${params.prevEndTime}'`)
+	})
+
 	it("selects the sessions that failed with the list's session-level rule", () => {
 		const sql = totalsSql({ hasErrors: true })
 
@@ -123,6 +137,20 @@ describe("the measures every grouping reports", () => {
 		// The totals are their own un-bucketed read, because quantiles do not
 		// merge — a p95 folded from the series is not a p95.
 		expect(totalsSql()).not.toContain("toStartOfInterval")
+	})
+
+	it("gives the model-call failures a denominator of their own population", () => {
+		const sql = totalsSql()
+
+		// The numerator is a span `sumIf` — a failure cannot be netted, the index
+		// carries no error flag into the reporters — so the denominator counts
+		// the same spans. Against the netted `llmCalls`, a mirrored call that
+		// failed on both observations is a rate above 100%.
+		expect(sql).toContain(
+			"sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls",
+		)
+		expect(sql).toContain("sum(ai_trace_index.IsLlmCall) AS llmCallSpans")
+		expect(sql).toContain("sum(llmCallSpans) AS llmCallSpans")
 	})
 
 	it("guards every quantile against the empty group", () => {
@@ -194,11 +222,11 @@ describe("the breakdown's dimensions", () => {
 		expect(sql).toContain("'keys' AS period")
 	})
 
-	it("never ranks more keys than the table can show", () => {
+	it("ranks the keys the caller asked for, and the table's own cap by default", () => {
 		expect(breakdownSql({ dimension: "tool", limit: 3 })).toContain("LIMIT 3")
-		expect(breakdownSql({ dimension: "tool", limit: 500 })).toContain(
-			`LIMIT ${AI_OVERVIEW_BREAKDOWN_MAX}`,
-		)
+		// The cap is the request contract's — a `limit` past it is a 400 and
+		// never reaches the builder, so nothing re-clamps it here.
+		expect(breakdownSql({ dimension: "tool" })).toContain(`LIMIT ${AI_OVERVIEW_BREAKDOWN_MAX}`)
 	})
 
 	it("groups by the key and by nothing else, so a session counts once per key", () => {

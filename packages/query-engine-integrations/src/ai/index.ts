@@ -51,7 +51,6 @@ export {
 	type AiOverviewPeriod,
 	type AiOverviewSeriesOutput,
 	type AiOverviewTotalsOutput,
-	type AiOverviewWindow,
 } from "./ai-overview"
 
 export {

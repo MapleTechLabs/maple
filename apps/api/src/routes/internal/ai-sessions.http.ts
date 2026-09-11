@@ -540,6 +540,10 @@ const warehouseDateTime = (ms: number): string => new Date(ms).toISOString().rep
  * The window of equal length ending where the caller's begins — the tiles'
  * comparison. Computed here rather than asked for, so the delta cannot be
  * quietly taken against a window of a different size.
+ *
+ * `prevEndTime` IS the caller's `startTime`: the read bounds the previous
+ * branch half-open (`[prevStartTime, prevEndTime)`), so the boundary second
+ * belongs to the current window alone and no session is measured in both.
  */
 const previousWindow = (startTime: string, endTime: string) => {
 	const start = warehouseDateTimeMs(startTime)
@@ -554,6 +558,7 @@ const NO_OVERVIEW_MEASURES: AiOverviewMeasures = {
 	sessions: 0,
 	erroredSessions: 0,
 	llmCalls: 0,
+	llmCallSpans: 0,
 	erroredLlmCalls: 0,
 	toolCalls: 0,
 	erroredToolCalls: 0,
@@ -580,6 +585,7 @@ const overviewMeasures = (
 		sessions: row.sessions,
 		erroredSessions: row.erroredSessions,
 		llmCalls: row.llmCalls,
+		llmCallSpans: row.llmCallSpans,
 		erroredLlmCalls: row.erroredLlmCalls,
 		toolCalls: row.toolCalls,
 		erroredToolCalls: row.erroredToolCalls,
