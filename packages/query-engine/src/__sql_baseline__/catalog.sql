@@ -3745,6 +3745,61 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- builder:signal-presence:signalPresenceQuery:default  [1e5ac049]
+SELECT
+          'traces' AS signal,
+          sum(TraceCount) AS count,
+          toString(min(Hour)) AS firstSeen,
+          toString(max(Hour)) AS lastSeen
+        FROM service_usage
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND TraceCount > 0
+UNION ALL
+SELECT
+          'logs' AS signal,
+          sum(LogCount) AS count,
+          toString(min(Hour)) AS firstSeen,
+          toString(max(Hour)) AS lastSeen
+        FROM service_usage
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND LogCount > 0
+UNION ALL
+SELECT
+          'metrics' AS signal,
+          sum(SumMetricCount) + sum(GaugeMetricCount) + sum(HistogramMetricCount) + sum(ExpHistogramMetricCount) AS count,
+          toString(min(Hour)) AS firstSeen,
+          toString(max(Hour)) AS lastSeen
+        FROM service_usage
+        WHERE OrgId = 'org_sql_catalog'
+          AND Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND SumMetricCount + GaugeMetricCount + HistogramMetricCount + ExpHistogramMetricCount > 0
+UNION ALL
+SELECT
+          'sessions' AS signal,
+          count() AS count,
+          toString(min(StartTime)) AS firstSeen,
+          toString(max(StartTime)) AS lastSeen
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          'product_events' AS signal,
+          count() AS count,
+          toString(min(Timestamp)) AS firstSeen,
+          toString(max(Timestamp)) AS lastSeen
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+FORMAT JSON
+
 -- builder:traces:traceServicesByTraceIdsQuery:page-enrichment  [4e5e4b4b]
 SELECT
           TraceId AS traceId,

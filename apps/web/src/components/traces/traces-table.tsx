@@ -4,6 +4,7 @@ import * as React from "react"
 import { Result } from "@/lib/effect-atom"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { traceFilterChips } from "@/lib/traces/trace-filter-chips"
 import {
 	columnSizingFeature,
@@ -424,27 +425,19 @@ function TracesTableView({
 		return (
 			<div className="flex-1 min-h-0 flex flex-col gap-4">
 				<div className="rounded-md border">
-					<table className="w-full caption-bottom text-sm">
-						<thead className="[&_tr]:border-b">
-							<tr className="border-b transition-colors hover:bg-muted/50">
-								<th className={HEADER_CELL_CLASS} colSpan={TRACE_COLUMNS.length}>
-									<span className="sr-only">Trace columns</span>
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr>
-								<td colSpan={TRACE_COLUMNS.length} className="px-4 py-8 text-center">
-									No traces found
-									<ExcludedEmptyHint
-										excluded={excludedValues}
-										onClear={clearExclusions}
-										className="mx-auto max-w-lg"
-									/>
-								</td>
-							</tr>
-						</tbody>
-					</table>
+					<SignalEmptyState
+						signal="traces"
+						filtered={excludedValues.length > 0}
+						// No `onClearFilters`: the hint below carries its own clear action, and it
+						// names the excluded values, which a generic button cannot.
+						detail={
+							<ExcludedEmptyHint
+								excluded={excludedValues}
+								onClear={clearExclusions}
+								className="mx-auto max-w-lg"
+							/>
+						}
+					/>
 				</div>
 			</div>
 		)

@@ -62,6 +62,7 @@ import { OrganizationService } from "@/services/org/OrganizationService"
 import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@/services/push/MobileDevicesService"
 import { SetupAuditService } from "@/services/org/SetupAuditService"
+import { SignalPresenceService } from "@/services/org/SignalPresenceService"
 import { ProductEventsService } from "@/services/product-events/ProductEventsService"
 import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
@@ -243,6 +244,10 @@ const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 
 const SetupAuditServiceLive = SetupAuditService.layer.pipe(Layer.provideMerge(WarehouseQueryServiceLive))
 
+const SignalPresenceServiceLive = SignalPresenceService.layer.pipe(
+	Layer.provideMerge(WarehouseQueryServiceLive),
+)
+
 // The agents' repository sandbox tools, over the sandbox Worker's service
 // binding; `WorkerEnvironment` arrives at worker scope.
 const SandboxClientLive = SandboxClient.layer.pipe(Layer.provide(InfraLive))
@@ -329,6 +334,7 @@ const MainServicesLive = Layer.mergeAll(
 	RecommendationIssueServiceLive,
 	RepoSandboxServiceLive,
 	SetupAuditServiceLive,
+	SignalPresenceServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,
 	VcsServicesLive,

@@ -21,6 +21,7 @@ import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
 import { SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
 import { SetupAuditService } from "@/services/org/SetupAuditService"
+import { SignalPresenceService } from "@/services/org/SignalPresenceService"
 import { ApiV2RateLimiter } from "@/services/auth/ApiV2RateLimiter"
 import {
 	WarehouseQueryService,
@@ -48,6 +49,7 @@ import { OrgMembersService } from "@/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
+import { HttpV2TelemetrySignalsLive } from "./telemetry-signals.http"
 import { HttpV2SharePublicLive } from "./share.http"
 import { DashboardWidgetDataService } from "@/services/dashboards/DashboardWidgetDataService"
 import {
@@ -98,6 +100,7 @@ export const AllV2GroupLayersLive = Layer.mergeAll(
 	HttpV2ScrapeTargetsLive,
 	HttpV2InstrumentationRecommendationsLive,
 	HttpV2InstrumentationAuditLive,
+	HttpV2TelemetrySignalsLive,
 	HttpV2InvestigationsLive,
 	HttpV2AnomaliesLive,
 	HttpV2OrganizationLive,
@@ -251,6 +254,11 @@ export const SetupAuditServiceStubLayer = Layer.succeed(SetupAuditService, {
 	run: die,
 })
 
+/** Inert SignalPresenceService, paired with the audit stub for the same reason. */
+export const SignalPresenceServiceStubLayer = Layer.succeed(SignalPresenceService, {
+	read: die,
+})
+
 /** Inert config-resource services for harnesses that never touch those groups. */
 export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 	Layer.succeed(IngestAttributeMappingService, {
@@ -271,6 +279,7 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 		reopen: die,
 	}),
 	SetupAuditServiceStubLayer,
+	SignalPresenceServiceStubLayer,
 	Layer.succeed(ScrapeTargetsService, {
 		list: die,
 		get: die,

@@ -2,6 +2,7 @@ import * as React from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { logFilterChips } from "@/lib/logs/log-filter-chips"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
@@ -556,44 +557,58 @@ export function LogsTableView({
 		return (
 			<div className="flex-1 min-h-0 flex flex-col gap-4">
 				{!onLogClick && !embedded && <LogsTableToolbar />}
-				<div className="flex h-48 flex-col items-center justify-center gap-2 rounded-md border px-6 text-center">
-					{searchText || traceId ? (
-						<>
-							<span className="text-sm text-muted-foreground">
-								{traceId ? (
-									<>
-										No logs on trace{" "}
-										<span className="font-mono text-foreground">{traceId}</span> in this
-										time range
-									</>
-								) : (
-									<>
-										No log message contains{" "}
-										<span className="font-mono text-foreground">“{searchText}”</span>
-									</>
-								)}
-							</span>
-							{onClearSearch && (
-								<button
-									type="button"
-									onClick={onClearSearch}
-									className="cursor-pointer text-xs text-primary underline-offset-2 hover:underline"
-								>
-									Clear search
-								</button>
+				{/* A search term or a trace scope explains the emptiness better than anything
+				    presence can add — the user asked a narrow question and it had no answer. */}
+				{searchText || traceId ? (
+					<div className="flex h-48 flex-col items-center justify-center gap-2 rounded-md border px-6 text-center">
+						<span className="text-sm text-muted-foreground">
+							{traceId ? (
+								<>
+									No logs on trace{" "}
+									<span className="font-mono text-foreground">{traceId}</span> in this time
+									range
+								</>
+							) : (
+								<>
+									No log message contains{" "}
+									<span className="font-mono text-foreground">“{searchText}”</span>
+								</>
 							)}
-						</>
-					) : (
-						<span className="text-sm text-muted-foreground">No logs found</span>
-					)}
-					{clearExclusions && (
-						<ExcludedEmptyHint
-							excluded={excludedValues}
-							onClear={clearExclusions}
-							className="max-w-lg"
+						</span>
+						{onClearSearch && (
+							<button
+								type="button"
+								onClick={onClearSearch}
+								className="cursor-pointer text-xs text-primary underline-offset-2 hover:underline"
+							>
+								Clear search
+							</button>
+						)}
+						{clearExclusions && (
+							<ExcludedEmptyHint
+								excluded={excludedValues}
+								onClear={clearExclusions}
+								className="max-w-lg"
+							/>
+						)}
+					</div>
+				) : (
+					<div className="rounded-md border">
+						<SignalEmptyState
+							signal="logs"
+							filtered={excludedValues.length > 0}
+							detail={
+								clearExclusions && (
+									<ExcludedEmptyHint
+										excluded={excludedValues}
+										onClear={clearExclusions}
+										className="max-w-lg"
+									/>
+								)
+							}
 						/>
-					)}
-				</div>
+					</div>
+				)}
 			</div>
 		)
 	}

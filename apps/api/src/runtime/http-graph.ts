@@ -53,6 +53,7 @@ import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
 import { AuditLogServiceLive } from "@/runtime/service-graph"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
+import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
 import {
 	HttpV2EnvironmentsLive,
@@ -142,6 +143,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2ScrapeTargetsLive,
 			HttpV2InstrumentationRecommendationsLive,
 			HttpV2InstrumentationAuditLive,
+			HttpV2TelemetrySignalsLive,
 			HttpV2SharePublicLive,
 			HttpV2InvestigationsLive,
 			HttpV2AnomaliesLive,

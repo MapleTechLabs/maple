@@ -26,6 +26,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { formatErrorRate } from "@maple/ui/lib/format"
 import {
 	CommitShaHoverCard,
@@ -376,7 +377,10 @@ const DeployCell = React.memo(function DeployCell({ commits }: { commits: Commit
 	}
 	const stateLine = info.errorsSince ? (
 		<span className="truncate text-[10px] text-severity-error">
-			{info.firstSeen !== "" ? `${formatRelativeTimeOrDate(info.firstSeen, undefined, effectiveTimezone)} · ` : ""}errors ↑ since
+			{info.firstSeen !== ""
+				? `${formatRelativeTimeOrDate(info.firstSeen, undefined, effectiveTimezone)} · `
+				: ""}
+			errors ↑ since
 		</span>
 	) : info.rollout !== undefined ? (
 		<Tooltip>
@@ -802,8 +806,8 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 								<TableBody>
 									{services.length === 0 ? (
 										<TableRow>
-											<TableCell colSpan={7} className="h-24 text-center">
-												No services found
+											<TableCell colSpan={7} className="p-0">
+												<SignalEmptyState signal="traces" noun="services" />
 											</TableCell>
 										</TableRow>
 									) : (
@@ -865,9 +869,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 				    match the desktop table; metrics collapse to a tight mono line. */}
 						<div className="overflow-hidden rounded-md border md:hidden">
 							{services.length === 0 ? (
-								<div className="p-6 text-center text-sm text-muted-foreground">
-									No services found
-								</div>
+								<SignalEmptyState signal="traces" noun="services" />
 							) : (
 								groups.map(([namespace, envGroups]) => (
 									<div key={namespace}>

@@ -134,6 +134,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/ingest_keys",
 			"GET /v2/instrumentation/audit",
 			"GET /v2/instrumentation/recommendations",
+		"GET /v2/instrumentation/signals",
 			"GET /v2/integrations/planetscale",
 			"GET /v2/integrations/planetscale/databases",
 			"GET /v2/integrations/planetscale/organizations",
