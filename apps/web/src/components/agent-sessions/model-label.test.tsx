@@ -53,4 +53,9 @@ describe("ModelLabel", () => {
 		const { container } = render(<ModelLabel detected={resolved} title="gpt-4o, claude-opus-5" />)
 		expect(container.querySelector("[title]")?.getAttribute("title")).toBe("gpt-4o, claude-opus-5")
 	})
+
+	it("leaves the title off for a caller that names the model in its own tooltip", () => {
+		const { container } = render(<ModelLabel detected={resolved} title={null} />)
+		expect(container.querySelector("[title]")).toBeNull()
+	})
 })
