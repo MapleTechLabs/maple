@@ -1278,9 +1278,13 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 			})
 			expect(response.status).toBe(200)
 			expect(seen[0]).toContain("'run_tests'")
-			// The span read is pruned by the trace ids the index answered — without
-			// that subquery it is a whole-window scan of every span in the org.
-			expect(seen[0]).toContain("trace_detail_spans.TraceId IN")
+			// The span read is pruned by the (trace, span) pairs the index answered —
+			// without that subquery it is a whole-window scan of every span in the org.
+			// The key is the tuple, not `TraceId` alone: `ai-tools.test.ts` pins the same
+			// shape on the builder, and this assertion drifted when it became one.
+			expect(seen[0]).toContain(
+				"(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT",
+			)
 			expect(
 				(response.body.data as ReadonlyArray<{ errorType: string }>)[0]?.errorType,
 			).toBe("TimeoutError")
