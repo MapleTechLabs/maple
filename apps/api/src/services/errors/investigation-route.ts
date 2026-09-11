@@ -4,7 +4,7 @@
  * a continuing conversation.
  */
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import { widthFor } from "@/workflows/plan-normalize"
+import { widthFor } from "@maple/domain/ai-plan-normalize"
 
 export type InvestigationRoute =
 	/** One chat-session turn, and then a conversation. Free-form questions only. */

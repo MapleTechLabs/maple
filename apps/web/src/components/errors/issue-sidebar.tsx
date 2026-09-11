@@ -63,11 +63,11 @@ const GHOST_TRIGGER = cn(
 
 /**
  * Who set the severity, short enough for the rail's 88px label column — a
- * longer form like "set by AI triage" truncates there.
+ * longer form like "set by Maple" truncates there.
  */
 const SEVERITY_SOURCE_HINT: Record<IssueSeveritySource, string> = {
 	detector: "by detector",
-	ai: "by AI triage",
+	ai: "by Maple",
 	manual: "set by hand",
 } satisfies Record<IssueSeveritySource, string>
 

@@ -95,7 +95,7 @@ When you save, Maple verifies the token and checks that the bot can actually rea
 usual mistake — a valid token pointed at a group the bot was never added to — is caught immediately
 rather than at the first real alert.
 
-Alerts arrive as a formatted message with **Open in Maple** and **Ask Maple AI** buttons underneath,
+Alerts arrive as a formatted message with **Open in Maple** and **Ask Maple** buttons underneath,
 and the alert chart as the message preview when one is available.
 
 ## Webhook

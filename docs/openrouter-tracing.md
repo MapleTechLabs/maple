@@ -15,7 +15,7 @@ References verified on August 4, 2026:
 
 | Path                                  | Client                                     | Surfaces                                                         |
 | ------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| `apps/api/src/platform/Llm.ts`        | `@opencode-ai/ai` (`OpenRouter.configure`) | chat turns and investigation planner/hypothesis/validator agents |
+| `apps/ai/src/platform/Llm.ts`        | `@effect/ai-openrouter` | chat turns and investigation planner/hypothesis/validator agents |
 | `apps/slack-agent/agent/agent.ts`     | `@openrouter/ai-sdk-provider`              | the Slack agent                                                  |
 | `apps/api/src/mcp/__evals__/model.ts` | `@ai-sdk/openai-compatible`                | MCP evals in CI — **not** attributed or tagged                   |
 
@@ -32,7 +32,7 @@ second app entry and split the rankings.
 
 | Header                           | Value               | Set at                                                                                              |
 | -------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
-| `HTTP-Referer`                   | `https://maple.dev` | `apps/api/src/platform/Llm.ts` (`OPENROUTER_APP_URL`), `apps/slack-agent/agent/agent.ts` (`appUrl`) |
+| `HTTP-Referer`                   | `https://maple.dev` | `apps/ai/src/platform/Llm.ts` (`OPENROUTER_APP_URL`), `apps/slack-agent/agent/agent.ts` (`appUrl`) |
 | `X-Title` / `X-OpenRouter-Title` | `Maple`             | same, `OPENROUTER_APP_TITLE` / `appName`                                                            |
 
 Per-app analytics then live at https://openrouter.ai/apps.
@@ -113,7 +113,7 @@ content while still sending timing, model, token usage, cost, and metadata.
 The attribution and tagging contract is covered by:
 
 ```bash
-bun run --cwd apps/api vitest run src/platform/Llm.test.ts
+bun run --cwd apps/ai test src/platform/Llm.test.ts
 ```
 
 Those tests swap `FetchHttpClient.Fetch` for a capture and assert, on the outgoing request, that

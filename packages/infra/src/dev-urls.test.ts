@@ -60,6 +60,6 @@ describe("selectedDevApps", () => {
 
 	it("selects the listed apps and drops names it does not know", () => {
 		process.env.MAPLE_DEV_APPS = "api, web,nope"
-		expect([...selectedDevApps()]).toEqual(["api", "web"])
+		expect([...selectedDevApps()]).toEqual(["api", "web", "ai"])
 	})
 })

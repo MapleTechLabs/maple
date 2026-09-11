@@ -199,7 +199,7 @@ function PaletteContent({
 		const actions: PaletteEntry[] = [
 			{
 				id: "action:ask-maple-ai",
-				title: "Ask Maple AI",
+				title: "Ask Maple",
 				group: "Actions",
 				keywords: "chat ai assistant maple ask question",
 				icon: ChatBubbleSparkleIcon,

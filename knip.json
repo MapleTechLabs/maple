@@ -37,6 +37,9 @@
 		},
 		// Single-module Workers: the root alchemy.run.ts imports src/worker.ts, and
 		// alchemy bundles it, so it is the app's one entry.
+		"apps/ai": {
+			"entry": ["src/worker.ts", "test/rpc-*.ts"]
+		},
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
 		},

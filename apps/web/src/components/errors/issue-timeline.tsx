@@ -24,7 +24,7 @@ const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 	regression: "Regression",
 	snooze: "Snoozed",
 	unsnooze: "Unsnoozed",
-	ai_triage: "AI triage",
+	ai_triage: "Investigation",
 	anomaly_linked: "Anomaly",
 	severity_change: "Severity",
 	pr_linked: "PR linked",
@@ -156,7 +156,7 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 			const note = payloadString(p.note)
 			const suffix =
 				source === "ai"
-					? ` by AI triage${confidence ? ` (${confidence} confidence)` : ""}`
+					? ` by Maple${confidence ? ` (${confidence} confidence)` : ""}`
 					: source === "detector"
 						? " from detector"
 						: ""

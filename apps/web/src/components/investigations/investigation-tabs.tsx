@@ -29,15 +29,15 @@ export function InvestigationTabs({
 	const hypothesesCount = investigation.lens_runs.length
 
 	const tabs: ReadonlyArray<{ value: InvestigationTab; label: string; count?: number }> = [
-		{ value: "overview", label: "Overview" },
+		{ value: "overview", label: "Report" },
 		...(evidenceCount > 0
 			? [{ value: "evidence" as const, label: "Evidence", count: evidenceCount }]
 			: []),
 		...(showHypotheses
 			? [{ value: "hypotheses" as const, label: "Hypotheses", count: hypothesesCount }]
 			: []),
-		{ value: "chat", label: "Chat" },
-		{ value: "transcript", label: "Transcript" },
+		{ value: "chat", label: "Follow-up" },
+		{ value: "transcript", label: "Execution log" },
 	]
 
 	return (

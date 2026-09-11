@@ -111,7 +111,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: successMessage, type: "success" })
 		} else {
-			toastManager.add({ title: "Failed to update AI triage settings.", type: "error" })
+			toastManager.add({ title: "Failed to update automatic investigation settings.", type: "error" })
 		}
 	}
 
@@ -119,7 +119,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 		<Card>
 			<CardHeader>
 				<CardTitle className="flex items-center gap-2">
-					AI auto-triage
+					Automatic investigations
 					{settings?.enabled ? (
 						<Badge variant="outline" className="bg-success/10 text-success">
 							Enabled
@@ -127,9 +127,9 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 					) : null}
 				</CardTitle>
 				<CardDescription>
-					When a new error or anomaly incident opens, an AI agent automatically investigates it with
-					read-only tools and attaches a triage summary. Runs use Maple's managed AI — no setup
-					required.
+					When a new error or anomaly incident opens, Maple automatically investigates it with
+					read-only tools and attaches an investigation report. Runs use Maple's managed AI — no
+					setup required.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
@@ -137,7 +137,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 					.onInitial(() => <Skeleton className="h-24 w-full" />)
 					.onError(() => (
 						<div className="flex items-center justify-between gap-4 py-2 text-sm text-muted-foreground">
-							<span>Failed to load AI triage settings.</span>
+							<span>Failed to load automatic investigation settings.</span>
 							<Button size="sm" variant="outline" onClick={() => refreshSettings()}>
 								Retry
 							</Button>
@@ -159,7 +159,9 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 									onCheckedChange={(checked) =>
 										save(
 											new AiTriageSettingsUpdateRequest({ enabled: checked }),
-											checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
+											checked
+												? "Automatic investigations enabled"
+												: "Automatic investigations disabled",
 										)
 									}
 								/>
@@ -173,7 +175,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 								max={500}
 								disabled={isSaving}
 								spent={current.usage.runs}
-								help="How many incidents auto-triage may investigate in a UTC day."
+								help="How many incidents Maple may automatically investigate in a UTC day."
 								onCommit={(parsed) =>
 									save(
 										new AiTriageSettingsUpdateRequest({ maxRunsPerDay: parsed }),
@@ -190,7 +192,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 								max={2000}
 								disabled={isSaving}
 								spent={current.usage.passes}
-								help="The spend ceiling. A planned investigation spends four to seven passes — planner, hypotheses, validator — so this is usually what stops triage first, whichever ceiling is reached first. Three tenths of it is reserved for high and critical incidents."
+								help="Each investigation can use several model passes. Automatic investigations pause when either daily limit is reached. Thirty percent of the pass budget is reserved for high and critical incidents."
 								onCommit={(parsed) =>
 									save(
 										new AiTriageSettingsUpdateRequest({ maxPassesPerDay: parsed }),

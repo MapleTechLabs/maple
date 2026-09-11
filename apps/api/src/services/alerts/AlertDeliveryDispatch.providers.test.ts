@@ -136,7 +136,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			assert.strictEqual(body.payload.severity, "critical")
 			assert.deepStrictEqual(body.links, [
 				{ href: LINK, text: "Open in Maple" },
-				{ href: CHAT, text: "Ask Maple AI" },
+				{ href: CHAT, text: "Ask Maple" },
 			])
 			// custom_details carries RAW numbers, not the formatted strings the chat
 			// providers render — a PagerDuty payload is machine-facing.

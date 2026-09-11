@@ -180,11 +180,13 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   it had diverged exactly where it mattered — it has `AWS/StageConfig.ts` where the real
   package has `AWS/Environment.ts` + `AWS/AuthProvider.ts` — and a code review cited its line
   numbers as fact for a bug in the live code.
-- **LLM core:** `@opencode-ai/ai` — opencode's Effect-native LLM core, on npm and pinned exactly
-  (`0.0.0-beta-18050`; the `dev`/`beta` channels carry no semver, so a bump is a read of the diff).
-  Only `apps/api` depends on it, and every piece of Maple behaviour — layer wiring, the Workers AI
-  binding shim, model/provider selection, error mapping — lives at the seam in
-  `apps/api/src/platform/Llm.ts`, never in a wrapper around the package.
+- **AI ownership:** `apps/ai` is the private execution Worker: assistant/investigation prompts,
+  agent engine, delegation, budgets and provider clients live there. `apps/api` owns authentication,
+  tool execution, durable chat history, workflow orchestration, issue state and billing. Calls use
+  `MAPLE_AI` and the `@maple/domain/ai-service` contract with tenant-scoped callbacks; neither app
+  imports the other's source. Model wiring belongs in `apps/ai/src/platform/Llm.ts`. Shared product
+  policy stays in `packages/domain`, not a new generic AI library. See
+  [`docs/ai-architecture.md`](docs/ai-architecture.md).
 - **Span status codes:** Title case — `"Ok"`, `"Error"`, `"Unset"`.
 - **UI:** shadcn/Base UI + Tailwind 4 (`npx shadcn@latest add <component>`), Recharts, Nucleo icons.
   Find an icon in the local Nucleo DB, then port it into `apps/web/src/components/icons/` by copying

@@ -22,7 +22,7 @@ export class LlmCallError extends Schema.TaggedError<LlmCallError>()("@maple/llm
 	message: Schema.String,
 	/**
 	 * A transient condition; retrying the same request may succeed. Classified from the reason tag
-	 * in `apps/api/src/platform/Llm.ts` — upstream carried this as a flag and no longer does.
+	 * in `apps/ai/src/platform/Llm.ts` — upstream carried this as a flag and no longer does.
 	 */
 	retryable: Schema.Boolean,
 	/** The request exceeded the model's context window. Retry only after shrinking the input. */

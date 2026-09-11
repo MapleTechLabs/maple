@@ -181,7 +181,7 @@ export type ChatTaskRef = Schema.Schema.Type<typeof ChatTaskRef>
 /**
  * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`.
  *
- * Here rather than in `apps/api/src/chat/agents.ts`, where it started, because the *client* has to
+ * Shared with `apps/api/src/ai/runtime/agent.ts`, because the *client* has to
  * recognise a delegation from the tool name alone. A streamed `tool-call` carries the tool's name
  * and nothing else that says "this opens a sub-agent" — the `task` ref only ever rides on the
  * child's own events — so the web client matched the name against a literal `"task"` and never

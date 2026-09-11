@@ -1,3 +1,5 @@
+import MapleAi from "./apps/ai/src/worker"
+import { AiWorker } from "@maple/infra/cloudflare"
 // The Maple stack: one module per app, composed here — every Worker is its own
 // `src/worker.ts` (an alchemy Worker class, `yield* Alerting`); the two ECS
 // services (ingest, electric) are `create*` factories.
@@ -218,9 +220,11 @@ export default Alchemy.Stack(
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
 		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
-		const api = yield* sandbox === undefined
-			? MapleApi
-			: Effect.provideService(MapleApi, SandboxWorker, sandbox)
+		const ai = yield* MapleAi
+		yield* serveWorker("ai", ai)
+		const api = yield* (
+			sandbox === undefined ? MapleApi : Effect.provideService(MapleApi, SandboxWorker, sandbox)
+		).pipe(Effect.provideService(AiWorker, ai))
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the

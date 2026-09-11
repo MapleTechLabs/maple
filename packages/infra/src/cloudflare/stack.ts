@@ -78,3 +78,6 @@ export const stageProps = <Props extends object>(
 
 /** {@link stageProps} for the common case: a resource whose only stage-derived prop is `name`. */
 export const stageNamed = (base: string) => stageProps(base, (name) => ({ name }))
+
+/** Private AI execution worker, supplied by the deployment graph. */
+export class AiWorker extends Context.Service<AiWorker, Cloudflare.Worker>()("@maple/infra/AiWorker") {}

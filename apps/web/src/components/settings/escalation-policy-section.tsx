@@ -144,8 +144,8 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 					<div>
 						<p className="text-sm font-medium">Severity escalation</p>
 						<p className="text-muted-foreground text-xs">
-							Route issues to destinations when AI triage or a teammate sets their severity.
-							Fires once per issue and severity level, upward only.
+							Route issues to destinations when an investigation or a teammate sets their
+							severity. Fires once per issue and severity level, upward only.
 						</p>
 					</div>
 					<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />

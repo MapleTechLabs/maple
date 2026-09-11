@@ -4,7 +4,7 @@ import type { IconComponent } from "@/components/icons"
 /**
  * How a sub-agent presents itself: a name, what it is doing while it runs, and a glyph.
  *
- * The registry it mirrors lives server-side (`apps/api/src/chat/agents.ts`) and is not on the
+ * The role definitions live server-side (`apps/api/src/ai/`) and are not on the
  * wire — a delegation announces the agent's id and nothing else. So this is a display map with a
  * humanized fallback, the same shape `tool-metadata.ts` uses for tools: an agent added on the
  * server renders sensibly here before anyone touches this file.

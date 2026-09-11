@@ -352,7 +352,7 @@ Flue-based `apps/chat-flue` worker) **without sharing code** — each capability
 eve's native idiom:
 
 - **Prompts:** `agent/instructions.md` is the Slack-adapted port of the web chat's `SYSTEM_PROMPT`
-  (`apps/api/src/chat/prompts.ts`)
+  (`apps/api/src/ai/assistant/prompts.ts`)
   (tool prefix `maple__<tool>` instead of `mcp__maple__<tool>`; inline `<<maple:...>>` cards
   replaced with Slack markdown + deep links built from `MAPLE_APP_BASE_URL`).
 - **Modes → skills:** the web chat's dashboard-builder and investigate modes are progressive-

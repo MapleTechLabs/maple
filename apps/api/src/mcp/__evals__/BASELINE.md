@@ -40,7 +40,7 @@ them can only demonstrate _absence of regression_ — it cannot demonstrate impr
 change claiming to make tool selection better must ship a case that fails before it and passes
 after. Treat the table above as a guardrail, not a scoreboard.
 
-Unrelated: `src/workflows/__evals__/diagnosis.eval.ts` (investigation diagnosis, a separate
+Unrelated: `src/ai/investigations/__evals__/diagnosis.eval.ts` (investigation diagnosis, a separate
 suite) had 7 failures on this commit, including a real crash in
 `diagnosis-scorers.ts:108` — `entry.trim is not a function` when a ruled-out entry is not a
 string. Not caused by and not blocking MCP work.

@@ -18,7 +18,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { AlertIncidentDocument, ErrorIssueId } from "@maple/domain/http"
 
 const SearchSchema = Schema.Struct({
-	/** Base64url alert context carried by the "Ask Maple AI" notification link. */
+	/** Base64url alert context carried by the "Ask Maple" notification link. */
 	alert: Schema.optional(Schema.String),
 })
 

@@ -9,15 +9,7 @@ import { recordExpectedMcpFailure } from "./expected-failures"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@/services/audit/audit-access"
 
-/**
- * Built on first use, not at module scope.
- *
- * `apps/api/src/chat/tools.ts` imports this module and is itself reachable from the tool registry's
- * own import graph (registry -> a tool -> issue-hub/ai-triage-enqueue -> chat/session -> chat/tools
- * -> here). Computing the descriptors eagerly meant that whichever module the bundler happened to
- * evaluate first could observe the tool catalog as `undefined`. Deferring removes the
- * ordering dependency entirely rather than papering over one edge of the cycle.
- */
+/** Build once on first use, after the product tool registry has initialized. */
 let toolDescriptors: ReadonlyArray<InternalMcpToolDescriptor> | undefined
 
 const listToolDescriptors = (): ReadonlyArray<InternalMcpToolDescriptor> =>
@@ -136,7 +128,7 @@ export type McpToolSurface =
 	| "mcp"
 	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
 	| "chat"
-	/** Agent workflow passes (`workflows/agent-pass.ts`). */
+	/** Agent workflow passes (`ai/runtime/agent-pass.ts`). */
 	| "workflow"
 	/** Worker-to-worker internal RPC (`internal-rpc.ts`). */
 	| "rpc"

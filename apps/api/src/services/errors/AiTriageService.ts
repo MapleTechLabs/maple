@@ -13,7 +13,7 @@ import { aiTriageSettings, type AiTriageSettingsRow } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@/platform/DatabaseLive"
-import { widthFor } from "@/workflows/plan-normalize"
+import { widthFor } from "@maple/domain/ai-plan-normalize"
 import { makeDbExecute, makePersistenceErrorMapper } from "@/platform/db-execute"
 import {
 	DEFAULT_MAX_PASSES_PER_DAY,
