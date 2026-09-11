@@ -4,6 +4,7 @@ import { formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/form
 import { cn } from "@maple/ui/lib/utils"
 
 import { ChevronRightIcon } from "@/components/icons"
+import { QueryErrorState } from "@/components/common/query-error-state"
 import {
 	deltaToneClass,
 	formatOverviewCount,
@@ -29,6 +30,9 @@ export interface OverviewBreakdownsProps {
 	search: AgentOverviewSearch
 	/** Toggles that dimension's filter for the whole page. */
 	onSelectRow: (dimension: OverviewDimension, key: string) => void
+	/** The read behind a dimension, where it failed — drawn in place of that
+	 *  table so a failed read is not read as an empty window. */
+	errors?: Partial<Record<OverviewDimension, unknown>>
 	waiting?: boolean
 }
 
@@ -78,6 +82,7 @@ export function OverviewBreakdowns({
 	modelMix,
 	search,
 	onSelectRow,
+	errors,
 	waiting = false,
 }: OverviewBreakdownsProps) {
 	const [active, setActive] = useState<OverviewDimension>("model")
@@ -85,6 +90,7 @@ export function OverviewBreakdowns({
 	const isTool = active === "tool"
 	const columns: ReadonlyArray<Column> = isTool ? TOOL_COLUMNS : USAGE_COLUMNS
 	const selected = selectedDimensionValue(search, active)
+	const error = errors?.[active]
 	const rows = breakdown?.rows ?? []
 	const worstRate = rows.reduce((max, row) => Math.max(max, row.errorRate), 0)
 
@@ -121,7 +127,11 @@ export function OverviewBreakdowns({
 				))}
 			</div>
 
-			{rows.length === 0 ? (
+			{error !== undefined ? (
+				<div className="px-6 pb-4">
+					<QueryErrorState error={error} titleOverride={`Failed to load the ${active} breakdown`} />
+				</div>
+			) : rows.length === 0 ? (
 				<p className="px-6 pb-6 font-mono text-[11.5px] text-muted-foreground/70">
 					No {active} activity in this range.
 				</p>

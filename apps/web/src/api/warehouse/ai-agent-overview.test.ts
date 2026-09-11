@@ -1,13 +1,17 @@
+import { Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { AiOverviewMeasures } from "@maple/domain/http"
+import { AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH, AiOverviewMeasures } from "@maple/domain/http"
 
 import {
+	AiOverviewBucketedInput,
 	mapOverviewBreakdown,
 	mapOverviewMeasures,
 	mapOverviewModelMix,
 	mapOverviewSeries,
+	selectionFields,
 } from "./ai-agent-overview"
+import { WarehouseDecodeError, decodeInput } from "./effect-utils"
 
 const wire = (overrides: Partial<AiOverviewMeasures> = {}): AiOverviewMeasures => ({
 	sessions: 10,
@@ -72,5 +76,87 @@ describe("mapOverviewModelMix", () => {
 		expect(rows[0].model).toBe("claude-opus-5")
 		expect(rows[0].llmCallSpans).toBe(42)
 		expect(rows[1].model).toBe("other")
+	})
+})
+
+/**
+ * The local input schemas exist to mirror the domain request's bounds: a
+ * violation has to land as a `WarehouseDecodeError` the page renders, because
+ * the alternative is `new AiOverview*Request` throwing inside the read and
+ * taking the page with it. A bound the mirror omits is exactly that defect.
+ */
+describe("the domain's bounds, mirrored", () => {
+	const WINDOW = { startTime: "2026-09-10 00:00:00", endTime: "2026-09-10 03:00:00" }
+	const bucketed = (overrides: Record<string, unknown> = {}) => ({
+		...WINDOW,
+		bucketSeconds: 300,
+		...overrides,
+	})
+
+	const decode = (data: unknown) =>
+		Effect.runSyncExit(decodeInput(AiOverviewBucketedInput, data, "aiOverviewSummary"))
+
+	const failure = (data: unknown) =>
+		Effect.runSync(Effect.flip(decodeInput(AiOverviewBucketedInput, data, "aiOverviewSummary")))
+
+	it("takes the board's own selection", () => {
+		expect(Exit.isSuccess(decode(bucketed({ model: "claude-opus-5", hasErrors: true })))).toBe(true)
+	})
+
+	it("fails typed for a filter value past the contract's per-value cap", () => {
+		const error = failure(bucketed({ model: "m".repeat(AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH + 1) }))
+		expect(error).toBeInstanceOf(WarehouseDecodeError)
+		expect(error.operation).toBe("aiOverviewSummary")
+		// One character under it is a value the contract accepts.
+		expect(
+			Exit.isSuccess(decode(bucketed({ model: "m".repeat(AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH) }))),
+		).toBe(true)
+	})
+
+	it("fails typed for a datetime the pattern admits and the calendar does not", () => {
+		expect(failure(bucketed({ startTime: "2026-13-45 99:99:99" }))).toBeInstanceOf(WarehouseDecodeError)
+	})
+
+	it("fails typed for an inverted window", () => {
+		expect(
+			failure({ startTime: WINDOW.endTime, endTime: WINDOW.startTime, bucketSeconds: 300 }),
+		).toBeInstanceOf(WarehouseDecodeError)
+	})
+})
+
+describe("selectionFields", () => {
+	const WINDOW = { startTime: "2026-09-10 00:00:00", endTime: "2026-09-10 03:00:00" }
+
+	it("widens each single value into the array-valued key the contract takes", () => {
+		expect(
+			selectionFields({
+				...WINDOW,
+				framework: "eve",
+				service: "api",
+				environment: "prd",
+				model: "claude-opus-5",
+				agent: "captain",
+				tool: "run_tests",
+				hasErrors: true,
+			}),
+		).toEqual({
+			vendorIds: ["eve"],
+			serviceNames: ["api"],
+			deploymentEnvs: ["prd"],
+			models: ["claude-opus-5"],
+			agentNames: ["captain"],
+			toolNames: ["run_tests"],
+			hasErrors: true,
+		})
+	})
+
+	it("omits the key a dimension has no value for, rather than sending an empty array", () => {
+		// An explicit `undefined` is not an absent key on the wire, and an empty
+		// `IN ()` list selects nothing rather than everything.
+		expect(selectionFields(WINDOW)).toEqual({})
+		expect(selectionFields({ ...WINDOW, model: "claude-opus-5" })).toEqual({
+			models: ["claude-opus-5"],
+		})
+		expect(selectionFields({ ...WINDOW, hasErrors: false })).toEqual({ hasErrors: false })
 	})
 })

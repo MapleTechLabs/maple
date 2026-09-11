@@ -28,6 +28,9 @@ export interface OverviewFilterToolbarProps {
 	onSearchChange: (patch: Partial<AgentOverviewSearch>) => void
 	/** Names the comparison the toggle turns on, e.g. `7d`. */
 	windowLabel: string
+	/** The facets read failed, so the selects have no options to offer. Said in
+	 *  a line rather than a panel: nothing else on the page depends on it. */
+	facetsUnavailable?: boolean
 	waiting?: boolean
 }
 
@@ -45,6 +48,7 @@ export function OverviewFilterToolbar({
 	facets,
 	onSearchChange,
 	windowLabel,
+	facetsUnavailable = false,
 	waiting = false,
 }: OverviewFilterToolbarProps) {
 	const failing = failingOnly(search)
@@ -66,6 +70,11 @@ export function OverviewFilterToolbar({
 						onChange={(value) => onSearchChange(overviewFilterPatch(dimension, value))}
 					/>
 				))}
+				{facetsUnavailable ? (
+					<span className="font-mono text-[11px] text-muted-foreground/70">
+						Filter options unavailable
+					</span>
+				) : null}
 			</div>
 
 			<div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
@@ -125,8 +134,10 @@ function FacetSelect({
 			// `ALL` row means: no filter.
 			onValueChange={(next) => onChange(next === ALL ? undefined : (next ?? undefined))}
 			// A dimension the window reported nothing for cannot be chosen from,
-			// and a select that opens onto one row reads as broken.
-			disabled={options.length === 0}
+			// and a select that opens onto one row reads as broken — unless it is
+			// the one holding the filter, which has to stay clearable however the
+			// options read went.
+			disabled={options.length === 0 && !set}
 		>
 			<SelectTrigger
 				size="sm"

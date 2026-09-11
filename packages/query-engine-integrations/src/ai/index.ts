@@ -50,6 +50,7 @@ export {
 	type AiOverviewBreakdownOutput,
 	type AiOverviewFilterOpts,
 	type AiOverviewMeasuresOutput,
+	type AiOverviewModelMixOutput,
 	type AiOverviewPeriod,
 	type AiOverviewSeriesOutput,
 	type AiOverviewTotalsOutput,

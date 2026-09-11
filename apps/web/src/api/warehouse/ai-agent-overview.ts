@@ -15,11 +15,13 @@
 import { Effect, Schema } from "effect"
 import {
 	AI_OVERVIEW_BREAKDOWN_MAX,
+	AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH,
 	AiOverviewBreakdownRequest,
 	AiOverviewDimension,
 	AiOverviewModelMixRequest,
 	AiOverviewSummaryRequest,
 	BucketSeconds,
+	isAiOverviewWindow,
 	type AiOverviewBreakdownRow,
 	type AiOverviewMeasures,
 	type AiOverviewModelMixPoint,
@@ -38,41 +40,60 @@ import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-cli
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
 /**
+ * Every bound here MIRRORS the domain request's, and all three inputs carry
+ * every one of them: `decodeInput` turns a violation into a
+ * `WarehouseDecodeError` the page can render, where the domain constructor
+ * throws — a defect that would take the page down rather than fail one read.
+ * A bound that is mirrored loosely is the same defect with extra steps, which
+ * is why the value cap and the window rule are the domain's own.
+ */
+const overviewWindowValid = Schema.makeFilter(
+	(input: { readonly startTime: string; readonly endTime: string }) =>
+		isAiOverviewWindow(input.startTime, input.endTime),
+	{ identifier: "OverviewWindowValid" },
+)
+
+/** One value per dimension here; the request widens it into the array the
+ *  contract takes, where it is capped at exactly this length. */
+const OverviewFilterValue = Schema.optional(
+	Schema.String.check(Schema.isMaxLength(AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH)),
+)
+
+/**
  * The page's selection, as all three reads take it.
  *
  * Sent identically to every one of them so the numbers can never disagree about
  * what they are counting: a summary narrower than the breakdown would make the
  * tiles and the table tell different stories about one window.
  */
-const AiOverviewSelection = Schema.Struct({
+const aiOverviewSelectionFields = {
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
 	/** The SDK or gateway — `vendorIds` on the wire. */
-	framework: Schema.optional(Schema.String),
-	model: Schema.optional(Schema.String),
-	agent: Schema.optional(Schema.String),
-	service: Schema.optional(Schema.String),
-	environment: Schema.optional(Schema.String),
-	tool: Schema.optional(Schema.String),
+	framework: OverviewFilterValue,
+	model: OverviewFilterValue,
+	agent: OverviewFilterValue,
+	service: OverviewFilterValue,
+	environment: OverviewFilterValue,
+	tool: OverviewFilterValue,
 	hasErrors: Schema.optional(Schema.Boolean),
-})
+}
+
+// The window rule is re-applied per input rather than inherited: spreading a
+// struct's `fields` carries the fields and not its checks.
+export const AiOverviewSelection = Schema.Struct(aiOverviewSelectionFields).check(overviewWindowValid)
 export type AiOverviewSelection = Schema.Schema.Type<typeof AiOverviewSelection>
 
-const AiOverviewBucketedInput = Schema.Struct({
-	...AiOverviewSelection.fields,
-	/** The domain's own bound, for the reason the breakdown input gives below. */
+export const AiOverviewBucketedInput = Schema.Struct({
+	...aiOverviewSelectionFields,
+	/** The domain's own bound: a fraction reaches `toStartOfInterval` as an
+	 *  `INTERVAL n SECOND` literal, which the builder refuses. */
 	bucketSeconds: BucketSeconds,
-})
+}).check(overviewWindowValid)
 export type AiOverviewBucketedInput = Schema.Schema.Type<typeof AiOverviewBucketedInput>
 
-/**
- * The bounds here MIRROR the domain request's: `decodeInput` turns a violation
- * into a `WarehouseDecodeError` the page can render, where the domain
- * constructor throws — a defect that would crash the page rather than fail one
- * read.
- */
-const AiOverviewBreakdownInput = Schema.Struct({
-	...AiOverviewSelection.fields,
+export const AiOverviewBreakdownInput = Schema.Struct({
+	...aiOverviewSelectionFields,
 	dimension: AiOverviewDimension,
 	limit: Schema.optional(
 		Schema.Number.check(
@@ -80,11 +101,12 @@ const AiOverviewBreakdownInput = Schema.Struct({
 			Schema.isBetween({ minimum: 1, maximum: AI_OVERVIEW_BREAKDOWN_MAX }),
 		),
 	),
-})
+}).check(overviewWindowValid)
 export type AiOverviewBreakdownInput = Schema.Schema.Type<typeof AiOverviewBreakdownInput>
 
-/** The selection minus the window, spread into a request payload. */
-const selectionFields = (input: AiOverviewSelection) => ({
+/** The selection minus the window, widened into a request payload: the page
+ *  filters by one value per dimension and the contract takes arrays. */
+export const selectionFields = (input: AiOverviewSelection) => ({
 	...(input.framework !== undefined && { vendorIds: [input.framework] }),
 	...(input.service !== undefined && { serviceNames: [input.service] }),
 	...(input.environment !== undefined && { deploymentEnvs: [input.environment] }),
@@ -153,12 +175,13 @@ export function mapOverviewModelMix(
  * -----------------------------------------------------------------------------------------------*/
 
 /** The window and the one before it, whole and bucketed — the tiles and the grid. */
-export const getAiOverviewSummary = Effect.fn("AiAgentOverview.summary")(function* ({
+export const getAiOverviewSummary = Effect.fn("AiSessions.aiOverviewSummary")(function* ({
 	data,
 }: {
 	data: AiOverviewBucketedInput
 }) {
 	const input = yield* decodeInput(AiOverviewBucketedInput, data, "aiOverviewSummary")
+	yield* Effect.annotateCurrentSpan("maple.ai.overview.bucket_seconds", input.bucketSeconds)
 	const result = yield* runWarehouseQuery("aiOverviewSummary", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient
@@ -184,12 +207,14 @@ export const getAiOverviewSummary = Effect.fn("AiAgentOverview.summary")(functio
 })
 
 /** One dimension's busiest keys, each over both windows. */
-export const getAiOverviewBreakdown = Effect.fn("AiAgentOverview.breakdown")(function* ({
+export const getAiOverviewBreakdown = Effect.fn("AiSessions.aiOverviewBreakdown")(function* ({
 	data,
 }: {
 	data: AiOverviewBreakdownInput
 }) {
 	const input = yield* decodeInput(AiOverviewBreakdownInput, data, "aiOverviewBreakdown")
+	// Six of these run per board, one per dimension, so the span says which.
+	yield* Effect.annotateCurrentSpan("maple.ai.overview.dimension", input.dimension)
 	const result = yield* runWarehouseQuery("aiOverviewBreakdown", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient
@@ -212,12 +237,13 @@ export const getAiOverviewBreakdown = Effect.fn("AiAgentOverview.breakdown")(fun
 })
 
 /** Model-call spans per bucket per model — the 100% stack. Current window only. */
-export const getAiOverviewModelMix = Effect.fn("AiAgentOverview.modelMix")(function* ({
+export const getAiOverviewModelMix = Effect.fn("AiSessions.aiOverviewModelMix")(function* ({
 	data,
 }: {
 	data: AiOverviewBucketedInput
 }) {
 	const input = yield* decodeInput(AiOverviewBucketedInput, data, "aiOverviewModelMix")
+	yield* Effect.annotateCurrentSpan("maple.ai.overview.bucket_seconds", input.bucketSeconds)
 	const result = yield* runWarehouseQuery("aiOverviewModelMix", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient

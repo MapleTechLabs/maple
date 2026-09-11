@@ -3,6 +3,7 @@ import { useMemo, type ReactNode } from "react"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
+import { QueryErrorState } from "@/components/common/query-error-state"
 import { makeBucketAxis } from "@/components/infra/chart-utils"
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -30,6 +31,9 @@ export interface OverviewTrendsProps {
 	/** The previous period, already shifted onto this axis. Empty with compare off. */
 	previousSeries: ReadonlyArray<OverviewSeriesPoint>
 	modelMix: OverviewModelMix
+	/** The mix read's failure, where it failed. Its own cell and not the whole
+	 *  grid: the other eight plots come from the summary and still hold. */
+	modelMixError?: unknown
 	/** The bucket width and range, e.g. `6h buckets · previous 7 days`. */
 	note: string
 	/** The "What changed" rail, placed beside the grid. */
@@ -52,6 +56,7 @@ export function OverviewTrends({
 	series,
 	previousSeries,
 	modelMix,
+	modelMixError,
 	note,
 	rail,
 	waiting = false,
@@ -124,6 +129,7 @@ export function OverviewTrends({
 							spec={specs[chart.id]}
 							axis={axis}
 							gutter={gutter}
+							error={chart.id === "modelMix" ? modelMixError : undefined}
 						/>
 					))}
 				</div>
@@ -182,11 +188,14 @@ function ChartCell({
 	spec,
 	axis,
 	gutter,
+	error,
 }: {
 	chart: OverviewChartSummary
 	spec: OverviewPlotSpec
 	axis: ReturnType<typeof makeBucketAxis>
 	gutter: number
+	/** This chart's own read failed — the plot is replaced, the cell is not. */
+	error?: unknown
 }) {
 	return (
 		<figure className="flex min-w-0 flex-col px-4 pt-3.5 pb-3" data-chart={chart.id}>
@@ -207,24 +216,38 @@ function ChartCell({
 				</span>
 			</figcaption>
 
-			<div className="flex items-center gap-x-2 gap-y-1 overflow-hidden pt-[9px]">
-				{spec.legend.map((item) => (
-					<LegendItem key={item.label} item={item} />
-				))}
-				{spec.legendMore === 0 ? null : (
-					<span className="shrink-0 font-mono text-[10.5px] leading-3 text-muted-foreground/70">
-						+{spec.legendMore}
-					</span>
-				)}
-			</div>
+			{error === undefined ? (
+				<div className="flex items-center gap-x-2 gap-y-1 overflow-hidden pt-[9px]">
+					{spec.legend.map((item) => (
+						<LegendItem key={item.label} item={item} />
+					))}
+					{spec.legendMore === 0 ? null : (
+						<span className="shrink-0 font-mono text-[10.5px] leading-3 text-muted-foreground/70">
+							+{spec.legendMore}
+						</span>
+					)}
+				</div>
+			) : null}
 			<div className="pt-2">
-				<OverviewSmallMultiple
-					chartId={chart.id}
-					title={chart.title}
-					spec={spec}
-					axis={axis}
-					gutter={gutter}
-				/>
+				{error === undefined ? (
+					<OverviewSmallMultiple
+						chartId={chart.id}
+						title={chart.title}
+						spec={spec}
+						axis={axis}
+						gutter={gutter}
+					/>
+				) : (
+					// At least the plot's own height, so a failed read does not
+					// collapse the cell out from under the grid's alignment.
+					<div style={{ minHeight: OVERVIEW_PLOT_HEIGHT }}>
+						<QueryErrorState
+							error={error}
+							titleOverride={chart.title}
+							className="gap-2 px-3 py-3"
+						/>
+					</div>
+				)}
 			</div>
 		</figure>
 	)

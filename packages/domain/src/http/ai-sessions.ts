@@ -547,10 +547,16 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
 
 /** Values one dimension filter accepts. A selection is built from the
  *  sessions page's facets, which return at most 50 values per dimension. */
-const AI_OVERVIEW_FILTER_VALUES_MAX = 50
+export const AI_OVERVIEW_FILTER_VALUES_MAX = 50
+
+/** Characters one filter value may be. It reaches the read inside an `IN` list
+ *  and no facet value is anywhere near this long. Exported because a client
+ *  mirroring these bounds has to cap the value it widens into the array, or its
+ *  own request constructor throws where the contract would have refused. */
+export const AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH = 200
 
 const OverviewFilterValues = Schema.optionalKey(
-	Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(
+	Schema.Array(Schema.String.check(Schema.isMaxLength(AI_OVERVIEW_FILTER_VALUE_MAX_LENGTH))).check(
 		Schema.isMaxLength(AI_OVERVIEW_FILTER_VALUES_MAX),
 	),
 )
@@ -578,6 +584,13 @@ const aiOverviewSelection = {
 }
 
 /**
+ * Something the warehouse counted: whole, never negative, and never `NaN` —
+ * which a bare `Schema.Number` admits and every reading built on it (a rate, a
+ * share, a delta) then carries all the way to the tile.
+ */
+const OverviewCount = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+
+/**
  * The measures every overview read reports, so a tile, a point on the chart
  * and a breakdown row are the same numbers under different groupings.
  *
@@ -587,44 +600,45 @@ const aiOverviewSelection = {
  * NANOSECONDS, like every other AI read.
  */
 const aiOverviewMeasures = {
-	sessions: Schema.Number,
+	sessions: OverviewCount,
 	/** Sessions with at least one failed agent span. */
-	erroredSessions: Schema.Number,
+	erroredSessions: OverviewCount,
 	/** Model calls, netted — the list row's `llmCalls`. The VOLUME: a wrapper's
 	 *  roll-up, a gateway's mirror and a provider retry of one call are one
 	 *  call. */
-	llmCalls: Schema.Number,
+	llmCalls: OverviewCount,
 	/** Model-call SPANS, counted raw — the denominator of the LLM error rate,
 	 *  which is `erroredLlmCalls / llmCallSpans` and never `/ llmCalls`. The two
 	 *  populations differ by every mirror and wrapper the netting collapses, so
 	 *  a mirrored call that failed twice reads as a rate above 100% against the
 	 *  netted volume. */
-	llmCallSpans: Schema.Number,
+	llmCallSpans: OverviewCount,
 	/** Model-call spans that failed. Not netted: the index carries no error
 	 *  flag into the netting, so a framework that echoes a failure onto the
 	 *  span wrapping the call reports it twice — the same span population as
 	 *  `llmCallSpans`, which is why those two divide. */
-	erroredLlmCalls: Schema.Number,
-	toolCalls: Schema.Number,
-	erroredToolCalls: Schema.Number,
+	erroredLlmCalls: OverviewCount,
+	toolCalls: OverviewCount,
+	erroredToolCalls: OverviewCount,
 	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
-	cost: Schema.Number,
+	cost: Schema.Finite,
 	/** Netted model calls that carried a price — the coverage behind `cost`,
 	 *  which is 0 for "nobody priced it" and not for "free". */
-	pricedLlmCalls: Schema.Number,
+	pricedLlmCalls: OverviewCount,
 	/** Every token, netted. The five buckets below are its disjoint split —
 	 *  except on rows materialized before the bucket columns existed, which
 	 *  carry a total and five zeros; a client whose buckets sum to nothing
 	 *  against a non-zero total shows the total. */
-	tokens: Schema.Number,
-	inputTokens: Schema.Number,
-	cacheReadTokens: Schema.Number,
-	cacheWriteTokens: Schema.Number,
-	outputTokens: Schema.Number,
-	reasoningTokens: Schema.Number,
-	/** Quantiles of the session's extent, first agent span to last. */
-	sessionDurationP50Ns: Schema.Number,
-	sessionDurationP95Ns: Schema.Number,
+	tokens: OverviewCount,
+	inputTokens: OverviewCount,
+	cacheReadTokens: OverviewCount,
+	cacheWriteTokens: OverviewCount,
+	outputTokens: OverviewCount,
+	reasoningTokens: OverviewCount,
+	/** Quantiles of the session's extent, first agent span to last. Not whole:
+	 *  a quantile interpolates. */
+	sessionDurationP50Ns: Schema.Finite,
+	sessionDurationP95Ns: Schema.Finite,
 }
 
 export const AiOverviewMeasures = Schema.Struct(aiOverviewMeasures)
@@ -649,18 +663,35 @@ const aiOverviewBucketedSelection = {
 }
 
 /**
- * Both bounds have to be datetimes the calendar admits, not just the pattern.
+ * Whether a pair of bounds is a window an overview read can run, or why not.
  *
- * `TinybirdDateTime` takes `2026-13-45 99:99:99`, which parses to NaN — and
- * every overview read derives its comparison window from these two, where a
- * NaN is a `new Date(NaN).toISOString()` and a 500. Refused here instead.
+ * Three rules, and the first is the reason this exists at all:
+ *
+ * - Both bounds have to be datetimes the CALENDAR admits, not just the pattern.
+ *   `TinybirdDateTime` takes `2026-13-45 99:99:99`, which parses to NaN — and
+ *   every overview read derives its comparison window from these two, where a
+ *   NaN is a `new Date(NaN).toISOString()` and a 500.
+ * - An inverted window reaches the partition predicate as given and answers
+ *   empty, which reads as "nothing ran" rather than as the bad request it is.
+ * - Past `ai_trace_index`'s retention the read is a scan of partitions the
+ *   index cannot hold rows for — and the comparison window doubles it.
+ *
+ * Exported because a client mirroring these bounds has to run the same rule: a
+ * window this refuses makes the request constructor throw, where a mirror that
+ * checks first turns it into a failure the page can render.
  */
+export const isAiOverviewWindow = (startTime: string, endTime: string): true | string => {
+	const extentMs = tinybirdDateTimeMs(endTime) - tinybirdDateTimeMs(startTime)
+	if (Number.isNaN(extentMs)) return "startTime and endTime must be valid datetimes"
+	if (extentMs < 0) return "startTime must not be after endTime"
+	// The same retention bound the details read takes, for the same reason.
+	if (extentMs > AI_SESSION_DETAILS_MAX_EXTENT_MS) return "the window is wider than the index keeps"
+	return true
+}
+
 const aiOverviewWindowValid = Schema.makeFilter(
 	(request: { readonly startTime: string; readonly endTime: string }) =>
-		Number.isNaN(tinybirdDateTimeMs(request.startTime)) ||
-		Number.isNaN(tinybirdDateTimeMs(request.endTime))
-			? "startTime and endTime must be valid datetimes"
-			: true,
+		isAiOverviewWindow(request.startTime, request.endTime),
 	{ identifier: "OverviewWindowValid" },
 )
 
@@ -673,7 +704,7 @@ export class AiOverviewSummaryResponse extends Schema.Class<AiOverviewSummaryRes
 )({
 	/** Echoed back, so a client rendering an axis reads the width the buckets
 	 *  were actually cut at rather than re-deriving it. */
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	/** The whole selected window. */
 	current: AiOverviewMeasures,
 	/**
@@ -781,7 +812,7 @@ export class AiOverviewBreakdownResponse extends Schema.Class<AiOverviewBreakdow
 	rows: Schema.Array(AiOverviewBreakdownRow),
 	/** Distinct keys in the current window, so the table can say how many it
 	 *  is not showing. */
-	totalKeys: Schema.Number,
+	totalKeys: OverviewCount,
 }) {}
 
 /** One bucket's share of one model. */
@@ -796,7 +827,7 @@ export const AiOverviewModelMixPoint = Schema.Struct({
 	 */
 	model: Schema.String,
 	/** Model-call SPANS, counted raw. See {@link AiOverviewModelMixResponse}. */
-	llmCallSpans: Schema.Number,
+	llmCallSpans: OverviewCount,
 })
 export type AiOverviewModelMixPoint = Schema.Schema.Type<typeof AiOverviewModelMixPoint>
 
@@ -809,7 +840,7 @@ export class AiOverviewModelMixResponse extends Schema.Class<AiOverviewModelMixR
 )({
 	/** Echoed back, so a client rendering an axis reads the width the buckets
 	 *  were actually cut at rather than re-deriving it. */
-	bucketSeconds: Schema.Number,
+	bucketSeconds: BucketSeconds,
 	/**
 	 * One row per (bucket, model) the window saw, oldest bucket first and the
 	 * busiest model of a bucket first.

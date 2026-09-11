@@ -8,15 +8,20 @@ import { useState } from "react"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { WarehouseQueryError } from "@/api/warehouse/effect-utils"
 import { buildOverviewFixture, type OverviewFixture } from "@/lab/agent-overview-fixture"
 import {
 	buildAgentOverviewData,
 	type AgentOverviewData,
 } from "@/lib/agent-sessions/overview-analytics"
-import { compareEnabled, type AgentOverviewSearch } from "@/lib/agent-sessions/overview-search"
+import {
+	EMPTY_OVERVIEW_FACETS,
+	compareEnabled,
+	type AgentOverviewSearch,
+} from "@/lib/agent-sessions/overview-search"
 import type { OverviewTopSessionTab } from "@/lib/agent-sessions/use-agent-overview"
 
-import { AgentOverviewView } from "./agent-overview-view"
+import { AgentOverviewView, type AgentOverviewErrors } from "./agent-overview-view"
 
 // TEST-SEAM: the plots themselves are a canvas/ResizeObserver story jsdom cannot
 // tell. What the cell puts around them — title, headline, unit, delta, legend —
@@ -48,12 +53,16 @@ function Board({
 	data,
 	fixture,
 	windowLabel,
+	errors,
+	onRetry,
 }: {
 	search: AgentOverviewSearch
 	onSearchChange: (patch: Partial<AgentOverviewSearch>) => void
-	data: AgentOverviewData
+	data?: AgentOverviewData
 	fixture: OverviewFixture
 	windowLabel: string
+	errors?: AgentOverviewErrors
+	onRetry?: () => void
 }) {
 	const [tab, setTab] = useState<OverviewTopSessionTab>("cost")
 	return (
@@ -61,6 +70,8 @@ function Board({
 			search={search}
 			onSearchChange={onSearchChange}
 			data={data}
+			errors={errors}
+			onRetry={onRetry}
 			facets={fixture.facets}
 			topSessions={fixture.topSessions[tab]}
 			topSessionTab={tab}
@@ -73,6 +84,7 @@ function Board({
 function renderView(
 	search: AgentOverviewSearch = {},
 	scenario: "healthy7d" | "regression24h" = "regression24h",
+	errors?: AgentOverviewErrors,
 ) {
 	const fixture = buildOverviewFixture(scenario, NOW)
 	const data = buildAgentOverviewData({ ...fixture.input, compare: compareEnabled(search) })
@@ -84,10 +96,16 @@ function renderView(
 			data={data}
 			fixture={fixture}
 			windowLabel={fixture.windowLabel}
+			errors={errors}
 		/>,
 	)
 	return { onSearchChange, data, fixture }
 }
+
+/** A read that failed, carrying the retryable body the panel reads its copy
+ *  and its action from. */
+const readFailure = () =>
+	new WarehouseQueryError({ operation: "aiOverviewSummary", message: "the warehouse said no" })
 
 /** The section a heading owns — the page repeats labels across sections. */
 const sectionOf = (heading: string) => screen.getByRole("heading", { name: heading }).closest("section")!
@@ -238,5 +256,89 @@ describe("AgentOverviewView", () => {
 		const nav = screen.getByRole("navigation", { name: "Agent sessions views" })
 		expect(within(nav).getByText("Overview")).toBeTruthy()
 		expect(within(nav).getByText("Sessions")).toBeTruthy()
+	})
+})
+
+/**
+ * A read that FAILED is not an empty window, and the page has to say which.
+ * Only the summary's failure takes the body — everything in it is made of that
+ * one read — and it keeps the chrome, which is the only way to change the
+ * window or the scope without leaving the page.
+ */
+describe("AgentOverviewView failures", () => {
+	it("keeps the header, the tabs and the toolbar when the summary read failed", () => {
+		const onRetry = vi.fn()
+		const fixture = buildOverviewFixture("healthy7d", NOW)
+		render(
+			<Board
+				search={{}}
+				onSearchChange={vi.fn()}
+				fixture={fixture}
+				windowLabel="7d"
+				errors={{ summary: readFailure() }}
+				onRetry={onRetry}
+			/>,
+		)
+
+		expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy()
+		expect(screen.getByRole("navigation", { name: "Agent sessions views" })).toBeTruthy()
+		expect(screen.getByRole("combobox", { name: "model" })).toBeTruthy()
+		expect(screen.getByText("Failed to load the agent overview")).toBeTruthy()
+		// Nothing made of the summary is drawn beside it.
+		expect(screen.queryByText("Top sessions")).toBeNull()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
+	it("draws a failed breakdown in its own table rather than as an empty dimension", () => {
+		renderView({}, "regression24h", { breakdowns: { model: readFailure() } })
+		const breakdowns = sectionOf("Breakdowns")
+		expect(within(breakdowns).getByText("Failed to load the model breakdown")).toBeTruthy()
+		expect(within(breakdowns).queryByText("No model activity in this range.")).toBeNull()
+		// The other five dimensions are unaffected, and their tabs still switch.
+		fireEvent.click(within(breakdowns).getByRole("button", { name: /^tool/ }))
+		expect(within(breakdowns).queryByText("Failed to load the model breakdown")).toBeNull()
+		expect(screen.getByText("Share of calls")).toBeTruthy()
+	})
+
+	it("draws a failed top-sessions read rather than saying no sessions match", () => {
+		renderView({}, "regression24h", { topSessions: readFailure() })
+		const sessions = sectionOf("Top sessions")
+		expect(within(sessions).getByText("Failed to load the top sessions")).toBeTruthy()
+		expect(within(sessions).queryByText("No sessions match this scope.")).toBeNull()
+	})
+
+	it("replaces the model mix plot alone when its read failed", () => {
+		renderView({}, "regression24h", { modelMix: readFailure() })
+		const cell = document.querySelector('[data-chart="modelMix"]')!
+		expect(within(cell as HTMLElement).getByRole("alert")).toBeTruthy()
+		// The other eight come from the summary and still plot.
+		expect(document.querySelectorAll("[data-plot]")).toHaveLength(8)
+	})
+
+	it("says the filter options are missing and leaves a set filter clearable", () => {
+		// A facets failure leaves every select with nothing to offer, which is
+		// what the note explains.
+		const fixture = buildOverviewFixture("healthy7d", NOW)
+		const data = buildAgentOverviewData({ ...fixture.input, compare: true })
+		render(
+			<Board
+				search={{ model: "claude-opus-5" }}
+				onSearchChange={vi.fn()}
+				data={data}
+				fixture={{ ...fixture, facets: EMPTY_OVERVIEW_FACETS }}
+				windowLabel="7d"
+				errors={{ facets: true }}
+			/>,
+		)
+
+		expect(screen.getByText("Filter options unavailable")).toBeTruthy()
+		// A select with no options cannot be chosen from; the one holding the
+		// filter has to stay usable, or the filter cannot be removed here.
+		const model = screen.getByRole("combobox", { name: "model" }) as HTMLButtonElement
+		const agent = screen.getByRole("combobox", { name: "agent" }) as HTMLButtonElement
+		expect(model.disabled).toBe(false)
+		expect(agent.disabled).toBe(true)
 	})
 })

@@ -8,6 +8,7 @@ import {
 	CurrentTenant,
 	V1SchemaErrors,
 	V1UnexpectedErrors,
+	WarehouseQueryError,
 } from "@maple/domain/http"
 
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
@@ -1263,6 +1264,74 @@ describe("POST /internal/ai-sessions/overview/summary", () => {
 		}
 	})
 
+	// Every filter is a payload field the handler has to hand to the builder by
+	// name, exactly as the list route's own case asserts it: a field the schema
+	// accepts and the handler forgets is a 200 that quietly ignores the toolbar
+	// and leaves the tiles describing a different population than the table.
+	it("hands the board's selection to both of the summary's reads", async () => {
+		const { harness, sqlByContext } = summaryHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", {
+				...SUMMARY_BODY,
+				vendorIds: ["eve"],
+				models: ["claude-sonnet-5"],
+				hasErrors: true,
+			})
+			expect(response.status).toBe(200)
+			for (const sql of sqlByContext.values()) {
+				expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
+				expect(sql).toContain("countIf(Model IN ('claude-sonnet-5')) > 0")
+				// The failed-session test is a session-level one, applied over the
+				// trace rollup — the same rule the list matches `hasErrors` by.
+				expect(sql).toContain("HAVING sum(errorSpans) > 0")
+			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers a failed warehouse read with the route's warehouse envelope", async () => {
+		const harness = makeHarness({
+			compiledQuery: () =>
+				Effect.fail(
+					new WarehouseQueryError({
+						message: "Code: 241. DB::Exception: Memory limit exceeded",
+						pipeName: "aiOverviewTotals",
+					}),
+				),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", SUMMARY_BODY)
+			// The group declares `warehouseReadHttpErrors`, so a driver failure
+			// leaves the route as its own tagged error at its own status — not as
+			// an unexpected-error 500, and not as an empty 200.
+			expect(response.status).toBe(502)
+			expect(response.body._tag).toBe("@maple/http/errors/WarehouseQueryError")
+			expect(response.body.pipeName).toBe("aiOverviewTotals")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses an inverted window with a 400 rather than reading one backwards", async () => {
+		const harness = makeHarness({ compiledQuery: () => Effect.die("the read must never run") })
+
+		try {
+			// It reaches the partition predicate as given and answers empty, which
+			// reads as "nothing ran" rather than as the bad request it is.
+			const response = await harness.post("/internal/ai-sessions/overview/summary", {
+				...SUMMARY_BODY,
+				startTime: WINDOW.endTime,
+				endTime: WINDOW.startTime,
+			})
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("refuses a datetime the calendar does not have with a 400 rather than a 500", async () => {
 		const harness = makeHarness({ compiledQuery: () => Effect.die("the read must never run") })
 
@@ -1351,6 +1420,30 @@ describe("POST /internal/ai-sessions/overview/breakdown", () => {
 			// A key the previous window never saw reads as zeros, not as a missing
 			// row — the client shows it as new rather than as a -100%.
 			expect(rows[0]).toMatchObject({ previous: { sessions: 0, cost: 0 } })
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reads a non-model dimension over the spans that can carry its key", async () => {
+		const { harness, readSql } = breakdownHarness([
+			overviewRow({ period: "current", key: "run_tests", keyCount: 0, sessions: "4" }),
+			overviewRow({ period: "keys", key: "", keyCount: 2, sessions: "0" }),
+		])
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/breakdown", {
+				...WINDOW,
+				dimension: "tool",
+			})
+			expect(response.status).toBe(200)
+			// The dimension picks the column AND the population: a tool key can
+			// only come from a tool call, as a model key can only come from a
+			// model call.
+			expect(readSql()).toContain("toString(ai_trace_index.ToolName) AS key")
+			expect(readSql()).toContain("AND ai_trace_index.IsToolCall = 1")
+			expect(readSql()).not.toContain("AND ai_trace_index.IsLlmCall = 1")
+			expect(response.body).toMatchObject({ dimension: "tool", totalKeys: 2 })
 		} finally {
 			await harness.dispose()
 		}

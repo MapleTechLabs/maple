@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import {
+	OVERVIEW_DIMENSIONS,
 	activeOverviewFilters,
 	clearOverviewFilters,
 	compareEnabled,
 	failingOnly,
 	overviewApiDimension,
+	overviewFilterPatch,
 	overviewWindowLabel,
 	sessionsLinkSearch,
 	toggleOverviewFilter,
@@ -78,6 +80,26 @@ describe("toggleOverviewFilter", () => {
 
 	it("clears rather than selects the unattributed key, which has no spelling", () => {
 		expect(toggleOverviewFilter({ agent: "a" }, "agent", "")).toEqual({ agent: undefined })
+	})
+})
+
+describe("overviewFilterPatch", () => {
+	// Written out rather than built from a computed key, so every dimension has
+	// to be covered by hand — a missing arm is a control that silently does
+	// nothing.
+	it("sets exactly its own dimension, for all six", () => {
+		expect(overviewFilterPatch("model", "claude-opus-5")).toEqual({ model: "claude-opus-5" })
+		expect(overviewFilterPatch("agent", "captain")).toEqual({ agent: "captain" })
+		expect(overviewFilterPatch("service", "api")).toEqual({ service: "api" })
+		expect(overviewFilterPatch("framework", "eve")).toEqual({ framework: "eve" })
+		expect(overviewFilterPatch("environment", "prd")).toEqual({ environment: "prd" })
+		expect(overviewFilterPatch("tool", "run_tests")).toEqual({ tool: "run_tests" })
+	})
+
+	it("clears its own dimension and no other", () => {
+		for (const dimension of OVERVIEW_DIMENSIONS) {
+			expect(overviewFilterPatch(dimension, undefined)).toEqual({ [dimension]: undefined })
+		}
 	})
 })
 

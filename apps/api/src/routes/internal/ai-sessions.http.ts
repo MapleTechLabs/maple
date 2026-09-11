@@ -447,12 +447,13 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							series
 								.filter((row) => row.period === period)
 								.map((row) => ({ bucket: row.bucket, ...overviewMeasures(row) }))
+						yield* Effect.annotateCurrentSpan({ "maple.ai.overview.rows": series.length })
 						return new AiOverviewSummaryResponse({
 							bucketSeconds: payload.bucketSeconds,
-							// An aggregate over no rows still yields one row per branch, so
-							// a missing period is a shape failure rather than an empty
-							// window — the zeros are what a client renders as "no
-							// comparison".
+							// No row for a period means nothing ran in it: the branch
+							// grouped the window and found no sessions to group. The zeros
+							// stand in for it, which is what a client renders as "no
+							// comparison" rather than as a -100%.
 							current: overviewMeasures(totals.find((row) => row.period === "current")),
 							previous: overviewMeasures(totals.find((row) => row.period === "previous")),
 							series: points("current"),
@@ -499,10 +500,15 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							// "new" rather than as a missing row.
 							previous: overviewMeasures(previous.get(row.key)),
 						}))
+						const totalKeys = rows.find((row) => row.period === "keys")?.keyCount ?? 0
+						yield* Effect.annotateCurrentSpan({
+							"maple.ai.overview.rows": breakdown.length,
+							"maple.ai.overview.total_keys": totalKeys,
+						})
 						return new AiOverviewBreakdownResponse({
 							dimension: payload.dimension,
 							rows: breakdown,
-							totalKeys: rows.find((row) => row.period === "keys")?.keyCount ?? 0,
+							totalKeys,
 						})
 					}),
 				)
@@ -525,6 +531,14 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							}),
 							{ context: "aiOverviewModelMix" },
 						)
+						// The read folds its own tail, so the row cap is a guard the page
+						// cannot reach; a hit means the fold stopped bounding the response
+						// and the newest buckets are the ones missing.
+						yield* Effect.annotateCurrentSpan({
+							"maple.ai.overview.rows": rows.length,
+							"maple.ai.overview.model_mix_capped":
+								rows.length >= Integrations.AI_OVERVIEW_MODEL_MIX_MAX_ROWS,
+						})
 						return new AiOverviewModelMixResponse({
 							bucketSeconds: payload.bucketSeconds,
 							rows: rows.map((row) => ({

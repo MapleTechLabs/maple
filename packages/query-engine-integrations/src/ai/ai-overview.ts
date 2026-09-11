@@ -65,7 +65,16 @@
 // the index stores and the client formats.
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import {
+	from,
+	fromQuery,
+	inSubquery,
+	param,
+	unionAll,
+	type CHQuery,
+	type CHUnionQuery,
+	type ColumnDefs,
+} from "@maple-dev/effect-clickhouse"
 import { AI_OVERVIEW_BREAKDOWN_MAX, type AiOverviewDimension } from "@maple/domain/http"
 import { AiTraceIndex } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
@@ -116,6 +125,18 @@ type AiOverviewWindow = "current" | "previous"
 /** Which window a row measures. `keys` is the breakdown's third branch: how
  *  many distinct keys the current window has, before the top-N cut. */
 export type AiOverviewPeriod = "current" | "previous" | "keys"
+
+/**
+ * The period a branch stamps on its rows, as a literal the row type keeps.
+ *
+ * `CH.lit` widens a string to `string` — most literals are values rather than
+ * tags — so without this the three-way `period` every caller switches on would
+ * arrive as an open string.
+ */
+// SAFETY: the literal compiled into the branch IS the argument, so the row
+// carries one of the three tags and nothing else.
+const periodLit = (period: AiOverviewPeriod): CH.Expr<AiOverviewPeriod> =>
+	CH.lit(period) as CH.Expr<AiOverviewPeriod>
 
 const startParam = (window: AiOverviewWindow) =>
 	param.dateTimeString(window === "current" ? "startTime" : "prevStartTime")
@@ -417,7 +438,7 @@ export interface AiOverviewMeasuresOutput {
 }
 
 export interface AiOverviewTotalsOutput extends AiOverviewMeasuresOutput {
-	readonly period: string
+	readonly period: AiOverviewPeriod
 }
 
 export interface AiOverviewSeriesOutput extends AiOverviewTotalsOutput {
@@ -447,7 +468,7 @@ export interface AiOverviewBreakdownOutput extends AiOverviewTotalsOutput {
 export function aiOverviewTotalsQuery(opts: AiOverviewFilterOpts = {}): CHUnionQuery<AiOverviewTotalsOutput> {
 	const branch = (window: AiOverviewWindow) =>
 		fromQuery(nettedRows(opts, window), `netted_${window}`).select(($) => ({
-			period: CH.lit(window),
+			period: periodLit(window),
 			...measures($),
 		}))
 	return unionAll(branch("current"), branch("previous")).format("JSON")
@@ -466,7 +487,7 @@ export function aiOverviewSeriesQuery(opts: AiOverviewFilterOpts = {}): CHUnionQ
 	const branch = (window: AiOverviewWindow) =>
 		fromQuery(nettedRows(opts, window), `netted_${window}`)
 			.select(($) => ({
-				period: CH.lit(window),
+				period: periodLit(window),
 				bucket: isoBucket($.sessionStart),
 				...measures($),
 			}))
@@ -533,7 +554,7 @@ export function aiOverviewBreakdownQuery(
 	const branch = (window: AiOverviewWindow) =>
 		fromQuery(nettedRows(opts, window, opts.dimension), `netted_${window}`)
 			.select(($) => ({
-				period: CH.lit(window),
+				period: periodLit(window),
 				key: $.key,
 				keyCount: CH.lit(0),
 				...measures($),
@@ -541,7 +562,7 @@ export function aiOverviewBreakdownQuery(
 			.where(($) => [inSubquery($.key, keys)])
 			.groupBy("key")
 	const keyCount = fromQuery(rankedKeys(opts), "window_keys").select(() => ({
-		period: CH.lit("keys"),
+		period: periodLit("keys"),
 		key: CH.lit(""),
 		keyCount: CH.count(),
 		...noMeasures(),
@@ -565,6 +586,14 @@ const AI_OVERVIEW_MODEL_MIX_OTHER = "other"
  * well inside this.
  */
 export const AI_OVERVIEW_MODEL_MIX_MAX_ROWS = 4000
+
+export interface AiOverviewModelMixOutput {
+	/** ISO-8601 with a literal `Z`. */
+	readonly bucket: string
+	/** The model the spans named, or the folded `other` band. */
+	readonly model: string
+	readonly llmCallSpans: number
+}
 
 /**
  * The busiest models of the window, as a one-column subquery for `IN`.
@@ -616,7 +645,9 @@ const topModels = (opts: AiOverviewFilterOpts) => {
  * sessions the tiles above it measure. The current window alone: the chart has
  * no comparison band.
  */
-export function aiOverviewModelMixQuery(opts: AiOverviewFilterOpts = {}) {
+export function aiOverviewModelMixQuery(
+	opts: AiOverviewFilterOpts = {},
+): CHQuery<ColumnDefs, AiOverviewModelMixOutput, {}> {
 	const bands = topModels(opts)
 	return from(AiTraceIndex)
 		.innerJoinQuery(traceKeys(opts, "current"), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))

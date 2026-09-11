@@ -6,6 +6,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ExternalLinkIcon } from "@/components/icons"
+import { QueryErrorState } from "@/components/common/query-error-state"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { ModelLabel } from "@/components/agent-sessions/model-label"
 import { unresolvedModel, type DetectedModel } from "@/hooks/use-detected-models"
@@ -52,6 +53,9 @@ export interface OverviewTopSessionsProps {
 	/** The page's model detection, passed in because resolving a model is a read
 	 *  and this table is presentational. Absent, a model reads as its raw id. */
 	detectModel?: (model: string) => DetectedModel
+	/** The list read's failure, where it failed — drawn in place of the table,
+	 *  so no rows is not read as no sessions. */
+	error?: unknown
 	waiting?: boolean
 }
 
@@ -70,6 +74,7 @@ export function OverviewTopSessions({
 	erroredCount,
 	sessionsSearch,
 	detectModel = unresolvedModel,
+	error,
 	waiting = false,
 }: OverviewTopSessionsProps) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -118,7 +123,11 @@ export function OverviewTopSessions({
 				</div>
 			</div>
 
-			{rows.length === 0 ? (
+			{error !== undefined ? (
+				<div className="px-6 pb-4">
+					<QueryErrorState error={error} titleOverride="Failed to load the top sessions" />
+				</div>
+			) : rows.length === 0 ? (
 				<p className="px-6 pb-6 font-mono text-[11.5px] text-muted-foreground/70">
 					No sessions match this scope.
 				</p>
