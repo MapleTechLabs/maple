@@ -9,22 +9,22 @@ import {
 
 const item = (id: SettingsTab, icon: IconComponent = GearIcon) => ({ id, label: id, icon })
 
-/** Workspace items other than `setup-audit` are Clerk-gated, so self-hosted keeps only that one. */
+/** Organization, Members, Billing and Notifications are Clerk-gated, so self-hosted drops them. */
 const SELF_HOSTED = [
-	item("setup-audit"),
 	item("ingestion", ServerIcon),
-	item("api-keys"),
-	item("developer"),
-	item("mcp"),
+	item("data-platform"),
+	item("setup-audit"),
 	item("automation"),
+	item("api-keys"),
+	item("mcp"),
 ]
 
 const CLERK = [
 	item("organization"),
 	item("members"),
-	item("setup-audit"),
 	item("billing"),
 	item("ingestion", ServerIcon),
+	item("setup-audit"),
 	item("api-keys"),
 ]
 
@@ -47,10 +47,9 @@ describe("resolveActiveSettingsTab", () => {
 	})
 
 	it("lands on Ingestion when self-hosted, never on Setup Audit", () => {
-		// Regression: `setup-audit` is not Clerk-gated, so it is the FIRST visible item in
-		// self-hosted mode. A positional default would land here and run the audit's warehouse
-		// reads on every visit to Settings.
-		expect(SELF_HOSTED[0]?.id).toBe("setup-audit")
+		// `setup-audit` is not Clerk-gated, so it survives into self-hosted mode and a positional
+		// default could land on it — which would run the audit's warehouse reads on every visit
+		// to Settings. Ordering the nav must never be able to make that happen.
 		expect(resolveActiveSettingsTab(undefined, SELF_HOSTED)).toBe("ingestion")
 	})
 
