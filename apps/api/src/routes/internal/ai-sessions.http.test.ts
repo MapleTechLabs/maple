@@ -1220,6 +1220,49 @@ describe("POST /internal/ai-sessions/tools/totals", () => {
 			await harness.dispose()
 		}
 	})
+
+	it("reads the selected tool's description beside the totals, and only for a selected tool", async () => {
+		const contexts: Array<string | undefined> = []
+		let description = "Search traces by attribute."
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				return compiledQueryOf(compiled)
+					.decodeRows(
+						options?.context === "aiToolDescription"
+							? [{ description }]
+							: [{ period: "current", ...toolsMeasures, ...toolsSeen }],
+					)
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const selected = await harness.post("/internal/ai-sessions/tools/totals", {
+				...TOOLS_WINDOW,
+				tool: "search_traces",
+			})
+			expect(selected.status).toBe(200)
+			expect(selected.body.description).toBe("Search traces by attribute.")
+			expect([...contexts].sort()).toEqual(["aiToolDescription", "aiToolsTotals"])
+
+			// No call stamped one: the key is left out, so the header renders nothing.
+			description = ""
+			const unstamped = await harness.post("/internal/ai-sessions/tools/totals", {
+				...TOOLS_WINDOW,
+				tool: "run_sql",
+			})
+			expect("description" in unstamped.body).toBe(false)
+
+			// The overview selects no tool, so there is nothing to describe.
+			contexts.length = 0
+			const overview = await harness.post("/internal/ai-sessions/tools/totals", TOOLS_WINDOW)
+			expect(overview.status).toBe(200)
+			expect(contexts).toEqual(["aiToolsTotals"])
+		} finally {
+			await harness.dispose()
+		}
+	})
 })
 
 describe("POST /internal/ai-sessions/tools/breakdowns", () => {

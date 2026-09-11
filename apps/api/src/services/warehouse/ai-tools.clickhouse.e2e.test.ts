@@ -114,6 +114,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		attrs: agentSpan({
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "search_traces",
+			"gen_ai.tool.description": "Search traces.",
 			"gen_ai.agent.name": "slack-agent",
 		}),
 	},
@@ -149,7 +150,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 500,
 		durationNs: 3_000_000,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "search_traces" }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "search_traces",
+			"gen_ai.tool.description": "Search traces by attribute.",
+		}),
 	},
 	// TRACE_UNATTRIBUTED — a tool call with no model anywhere in its trace, at a
 	// zero duration (the structured-output pseudo-tool shape). It is a call: it
@@ -173,7 +178,11 @@ const FOREIGN_SPAN: SeedSpan = {
 	ms: BASE_MS + 600,
 	durationNs: 7_000_000,
 	status: "Ok",
-	attrs: agentSpan({ "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "search_traces" }),
+	attrs: agentSpan({
+		"gen_ai.operation.name": "execute_tool",
+		"gen_ai.tool.name": "search_traces",
+		"gen_ai.tool.description": "Another org's search.",
+	}),
 }
 
 const quote = (value: string): string => `'${value.replaceAll("'", "\\'")}'`
@@ -376,5 +385,24 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 				{ key: "search_traces", calls: 1 },
 			],
 		)
+	})
+
+	it("reads a tool's latest non-empty description, and nobody else's", async () => {
+		const describeTool = async (toolName: string) => {
+			const compiled = compileUnsafe(
+				Integrations.aiToolDescriptionQuery(),
+				{ ...window, toolName },
+				{ rowSchema: Integrations.aiToolDescriptionRowSchema },
+			)
+			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		}
+
+		// The latest `search_traces` call stamps none and an older one stamps an
+		// older text; the foreign org's is newer than both and must not win.
+		assert.deepStrictEqual(await describeTool("search_traces"), [
+			{ description: "Search traces by attribute." },
+		])
+		// No call stamped one: a single `''` row, which the route leaves out.
+		assert.deepStrictEqual(await describeTool("run_sql"), [{ description: "" }])
 	})
 })

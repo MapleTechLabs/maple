@@ -759,3 +759,59 @@ export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
 		.format("JSON")
 }
+
+/* -------------------------------------------------------------------------------------------------
+ * Tool detail — the header's description
+ * -----------------------------------------------------------------------------------------------*/
+
+/** The tool's most recent calls the description read looks at. A tool that
+ *  stamps a description stamps it on every call, so the latest few answer, and
+ *  the bound keeps the span read to that many primary-key seeks however busy the
+ *  tool is. */
+export const AI_TOOL_DESCRIPTION_CALLS = 100
+
+export interface AiToolDescriptionOutput {
+	/** `''` where none of those calls stamped one. */
+	readonly description: string
+}
+
+export const aiToolDescriptionRowSchema: CompiledQueryRowSchema<AiToolDescriptionOutput> = Schema.Struct({
+	description: Schema.String,
+})
+
+/**
+ * The latest non-empty `gen_ai.tool.description` (or a dialect's equivalent) on
+ * one tool's recent calls in the window. The tool is a param, like the error
+ * reads'; the toolbar does not narrow it, because a description is the tool's
+ * and not the selection's.
+ */
+export function aiToolDescriptionQuery() {
+	const recentCalls = from(AiTraceIndex)
+		.select(($) => ({ traceId: $.TraceId, spanId: $.SpanId, ts: $.Timestamp }))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.IsToolCall.eq(1),
+			$.ToolName.eq(param.string("toolName")),
+		])
+		.orderBy(["ts", "desc"])
+		.limit(AI_TOOL_DESCRIPTION_CALLS)
+
+	return from(TraceDetailSpans)
+		.select(($) => ({ description: CH.argMax(spanField($, "toolDescription"), $.Timestamp) }))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			inSubquery(
+				traceSpanKey,
+				fromQuery(recentCalls, "recent_tool_calls").select(($) => ({
+					traceId: $.traceId,
+					spanId: $.spanId,
+				})),
+			),
+			spanField($, "toolDescription").neq(""),
+		])
+		.format("JSON")
+}

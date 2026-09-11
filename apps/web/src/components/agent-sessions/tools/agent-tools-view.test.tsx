@@ -210,6 +210,29 @@ describe("ToolDetailView", () => {
 		).toBeGreaterThan(0)
 	})
 
+	it("describes the tool beside its name on one muted, truncated line, and says nothing without one", () => {
+		const data = buildToolDetailFixture("run_tests", {}, NOW, cells)
+		const view = (description: string | undefined) => (
+			<ToolDetailView
+				tool="run_tests"
+				search={{}}
+				onSearchChange={vi.fn()}
+				data={{ ...data, description }}
+				serviceOptions={[]}
+				modelOptions={[]}
+				envOptions={[]}
+			/>
+		)
+		const text = data.description!
+		const { rerender } = render(view(text))
+		const line = screen.getByText(text)
+		expect(line.className).toContain("truncate")
+		expect(line.className).toContain("text-muted-foreground")
+
+		rerender(view(undefined))
+		expect(screen.queryByText(text)).toBeNull()
+	})
+
 	it("has no tool-name search — the page is one tool", () => {
 		renderDetail({})
 		expect(screen.queryByPlaceholderText("Tool name…")).toBeNull()
