@@ -1,5 +1,5 @@
-// The four warehouse reads behind `/agent-sessions/tools`, and the only place
-// in the web app that sees their wire shape.
+// The warehouse reads behind `/agent-sessions/tools` and its detail page, and
+// the only place in the web app that sees their wire shape.
 //
 // One `map*` function per endpoint, deliberately: everything downstream speaks
 // the view model in `lib/agent-sessions/tool-analytics.ts` (epoch-ms buckets,
@@ -15,14 +15,18 @@
 import { Effect, Schema } from "effect"
 import {
 	AI_TOOLS_OTHER_SERIES_KEY,
+	AiToolErrorDetailRequest,
+	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
 	AiToolsSeriesRequest,
-	AiToolsSessionsRequest,
 	AiToolsTotalsRequest,
+	AI_TOOL_ERRORS_MAX,
 	type AiToolsAggregate,
 	type AiToolsBreakdownItem,
+	type AiToolErrorItem,
+	type AiToolErrorOccurrence,
+	type AiToolErrorSessionItem,
 	type AiToolsSeriesResponse,
-	type AiToolsSessionItem,
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -30,8 +34,10 @@ import {
 	OTHER_SERIES_KEY,
 	breakdownKeyLabel,
 	type ToolBreakdownRow,
+	type ToolErrorOccurrenceRow,
+	type ToolErrorRow,
+	type ToolErrorSessionRow,
 	type ToolSeriesPoint,
-	type ToolSessionRow,
 	type ToolTotals,
 } from "@/lib/agent-sessions/tool-analytics"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
@@ -39,12 +45,12 @@ import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-cli
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
 /**
- * The page's selection, as all four endpoints take it.
+ * The page's selection, as every endpoint takes it.
  *
  * `tool`, `model`, `service` and `env` are exact matches on facet values;
  * `search` is a tool-name substring and `failingOnly` keeps failed calls alone.
  *
- * Sent identically to all four so the numbers can never disagree about what
+ * Sent identically to all of them so the numbers can never disagree about what
  * they are counting: a totals read narrower than the series read would make the
  * tile and the chart tell different stories about one window.
  */
@@ -65,14 +71,11 @@ export type AiToolsSelection = Schema.Schema.Type<typeof AiToolsSelection>
 const AiToolSeriesInput = Schema.Struct({
 	...AiToolsSelection.fields,
 	bucketSeconds: Schema.Number,
+	/** Absent lets the server derive the split from the selection. The detail
+	 *  page sends `none` — see the domain request. */
+	split: Schema.optional(Schema.Literals(["tool", "model", "none"])),
 })
 export type AiToolSeriesInput = Schema.Schema.Type<typeof AiToolSeriesInput>
-
-const AiToolSessionsInput = Schema.Struct({
-	...AiToolsSelection.fields,
-	limit: Schema.optional(Schema.Number),
-})
-export type AiToolSessionsInput = Schema.Schema.Type<typeof AiToolSessionsInput>
 
 /** The selection minus the window, spread into a request payload. */
 const selectionFields = (input: AiToolsSelection) => ({
@@ -120,22 +123,11 @@ export function mapToolSeries(response: AiToolsSeriesResponse): ReadonlyArray<To
 export function mapToolBreakdown(
 	rows: ReadonlyArray<AiToolsBreakdownItem>,
 ): ReadonlyArray<ToolBreakdownRow> {
-	return rows.map((row) => ({ key: row.key, ...measuresOf(row), lastSeen: toEpochMs(row.lastSeen) }))
-}
-
-export function mapToolSessions(
-	rows: ReadonlyArray<AiToolsSessionItem>,
-): ReadonlyArray<ToolSessionRow> {
 	return rows.map((row) => ({
-		sessionId: row.sessionId,
-		agentName: row.agentName,
-		model: row.model,
-		serviceName: row.serviceName,
-		calls: row.calls,
-		errors: row.errors,
-		avgDurationNs: row.avgDurationNs,
-		maxDurationNs: row.maxDurationNs,
-		startedAt: toEpochMs(row.startedAt),
+		key: row.key,
+		...measuresOf(row),
+		lastSeen: toEpochMs(row.lastSeen),
+		firstSeen: toEpochMs(row.firstSeen),
 	}))
 }
 
@@ -162,6 +154,7 @@ export const getAiToolSeries = Effect.fn("AiSessionTools.series")(function* ({
 					startTime: input.startTime,
 					endTime: input.endTime,
 					bucketSeconds: input.bucketSeconds,
+					...(input.split !== undefined && { split: input.split }),
 					...selectionFields(input),
 				}),
 			})
@@ -192,18 +185,22 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 	return {
 		current: measuresOf(result.current),
 		// Nothing ran in the comparison window reads as "no comparison", not as
-		// -100%: `metricDelta` refuses to divide by a previous window of zero.
+		// -100%: `toolDelta` refuses to divide by a previous window of zero.
 		previous: measuresOf(result.previous),
+		allSessions: result.allSessions,
+		// `''` where nothing matched, which `toEpochMs` reads as NaN — the header
+		// drops the clause rather than printing an Invalid Date.
+		firstSeen: toEpochMs(result.firstSeen),
+		lastSeen: toEpochMs(result.lastSeen),
 	}
 })
 
 /**
- * Both breakdown panels in one read.
+ * The Tools table's rows.
  *
- * One endpoint rather than two because the scoping is asymmetric and the server
- * owns it: `tools` is scoped to the selected model but not to the selected
- * tool, and `models` the reverse, so neither panel can strand the reader on a
- * table holding only the row they already picked.
+ * Scoped to the rest of the selection but not to the selected tool — the table
+ * is how a reader picks a different one, so filtering by the current one would
+ * strand them on the single row they already clicked.
  */
 export const getAiToolBreakdowns = Effect.fn("AiSessionTools.breakdowns")(function* ({
 	data,
@@ -223,28 +220,130 @@ export const getAiToolBreakdowns = Effect.fn("AiSessionTools.breakdowns")(functi
 			})
 		}),
 	)
-	return { tools: mapToolBreakdown(result.tools), models: mapToolBreakdown(result.models) }
+	return { tools: mapToolBreakdown(result.tools) }
 })
 
-/** The busiest sessions matching the selection. Ordered by calls, not paged. */
-export const getAiToolSessions = Effect.fn("AiSessionTools.sessions")(function* ({
+/* -------------------------------------------------------------------------------------------------
+ * Tool detail — failures
+ * -----------------------------------------------------------------------------------------------*/
+
+/**
+ * The bounds here MIRROR the domain request's, deliberately.
+ *
+ * `decodeInput` turns a violation into a `WarehouseDecodeError` the page can
+ * render; the domain constructor below throws, which is a defect. A value that
+ * only the constructor refuses would therefore crash the page rather than fail
+ * the read.
+ */
+const AiToolErrorsInput = Schema.Struct({
+	...AiToolsSelection.fields,
+	/** Required here: these reads are one tool's. */
+	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+	limit: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
+	),
+})
+export type AiToolErrorsInput = Schema.Schema.Type<typeof AiToolErrorsInput>
+
+const AiToolErrorDetailInput = Schema.Struct({
+	...AiToolErrorsInput.fields,
+	/** `''` is the group of failures that named no type — the `unknown` row. */
+	errorType: Schema.String.check(Schema.isMaxLength(200)),
+	session: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+})
+export type AiToolErrorDetailInput = Schema.Schema.Type<typeof AiToolErrorDetailInput>
+
+export function mapToolErrors(rows: ReadonlyArray<AiToolErrorItem>): ReadonlyArray<ToolErrorRow> {
+	return rows.map((row) => ({
+		errorType: row.errorType,
+		message: row.message,
+		calls: row.calls,
+		sessions: row.sessions,
+		firstSeen: toEpochMs(row.firstSeen),
+		lastSeen: toEpochMs(row.lastSeen),
+	}))
+}
+
+const mapErrorSessions = (
+	rows: ReadonlyArray<AiToolErrorSessionItem>,
+): ReadonlyArray<ToolErrorSessionRow> =>
+	rows.map((row) => ({
+		sessionId: row.sessionId,
+		agentName: row.agentName,
+		model: row.model,
+		hits: row.hits,
+		lastSeen: toEpochMs(row.lastSeen),
+	}))
+
+const mapOccurrences = (
+	rows: ReadonlyArray<AiToolErrorOccurrence>,
+): ReadonlyArray<ToolErrorOccurrenceRow> =>
+	rows.map((row) => ({
+		timestamp: toEpochMs(row.timestamp),
+		traceId: row.traceId,
+		spanId: row.spanId,
+		sessionId: row.sessionId,
+		agentName: row.agentName,
+		model: row.model,
+		errorType: row.errorType,
+		message: row.message,
+		durationNs: row.durationNs,
+		statusCode: row.statusCode,
+		arguments: row.arguments,
+		argumentsBytes: row.argumentsBytes,
+		result: row.result,
+		resultBytes: row.resultBytes,
+	}))
+
+/** Every error type one tool failed with, worst first. */
+export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 	data,
 }: {
-	data: AiToolSessionsInput
+	data: AiToolErrorsInput
 }) {
-	const input = yield* decodeInput(AiToolSessionsInput, data, "aiToolSessions")
-	const result = yield* runWarehouseQuery("aiToolSessions", () =>
+	const input = yield* decodeInput(AiToolErrorsInput, data, "aiToolsErrors")
+	const result = yield* runWarehouseQuery("aiToolsErrors", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient
-			return yield* client.aiSessionsInternal.toolsSessions({
-				payload: new AiToolsSessionsRequest({
+			return yield* client.aiSessionsInternal.toolErrors({
+				payload: new AiToolErrorsRequest({
 					startTime: input.startTime,
 					endTime: input.endTime,
 					...selectionFields(input),
+					tool: input.tool,
 					...(input.limit !== undefined && { limit: input.limit }),
 				}),
 			})
 		}),
 	)
-	return { data: mapToolSessions(result.data) }
+	return { data: mapToolErrors(result.data) }
+})
+
+/** One error type: the sessions that hit it, and the calls themselves. */
+export const getAiToolErrorDetail = Effect.fn("AiSessionTools.errorDetail")(function* ({
+	data,
+}: {
+	data: AiToolErrorDetailInput
+}) {
+	const input = yield* decodeInput(AiToolErrorDetailInput, data, "aiToolsErrorDetail")
+	const result = yield* runWarehouseQuery("aiToolsErrorDetail", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.toolErrorDetail({
+				payload: new AiToolErrorDetailRequest({
+					startTime: input.startTime,
+					endTime: input.endTime,
+					...selectionFields(input),
+					tool: input.tool,
+					errorType: input.errorType,
+					...(input.session !== undefined && { session: input.session }),
+					...(input.limit !== undefined && { limit: input.limit }),
+				}),
+			})
+		}),
+	)
+	return {
+		sessions: mapErrorSessions(result.sessions),
+		occurrences: mapOccurrences(result.occurrences),
+	}
 })

@@ -6,21 +6,23 @@ import {
 	OTHER_SERIES_KEY,
 	TOOL_SERIES_COLOR_TOKENS,
 	errorRate,
-	foldSeries,
 	formatDurationNs,
 	formatToolMetric,
-	metricDelta,
-	metricRiseIsBad,
 	metricSpark,
 	metricValue,
 	rankSeriesKeys,
 	scopeSummary,
+	toolBadges,
 	toolChartTitle,
+	toolDelta,
 	toolMetricLabel,
+	toolsTableFooter,
 	toolSeriesColors,
 	toolSeriesMode,
+	type ToolBreakdownRow,
 	type ToolSeriesPoint,
 } from "./tool-analytics"
+import { AI_TOOLS_BREAKDOWN_MAX } from "@maple/domain/http"
 
 const measures = (over: Partial<typeof EMPTY_MEASURES> = {}) => ({ ...EMPTY_MEASURES, ...over })
 
@@ -77,7 +79,7 @@ describe("formatting", () => {
 	})
 
 	it("formats each metric in its own units", () => {
-		expect(formatToolMetric(1200, "calls")).toBe("1.2K")
+		expect(formatToolMetric(1200, "calls")).toBe("1,200")
 		expect(formatToolMetric(0.05, "error_rate")).toBe("5.0%")
 		expect(formatToolMetric(2_000_000_000, "duration")).toBe("2.00s")
 	})
@@ -88,24 +90,106 @@ describe("formatting", () => {
 	})
 })
 
-describe("metricDelta", () => {
-	it("is the fractional change against the previous window", () => {
-		expect(metricDelta(measures({ calls: 150 }), measures({ calls: 100 }), "calls", "p90")).toBeCloseTo(0.5)
-		expect(metricDelta(measures({ calls: 50 }), measures({ calls: 100 }), "calls", "p90")).toBeCloseTo(-0.5)
+describe("toolDelta", () => {
+	it("gives a count a percentage", () => {
+		expect(toolDelta(measures({ calls: 150 }), measures({ calls: 100 }), "calls", "p90")).toEqual({
+			text: "50%",
+			direction: "up",
+			good: true,
+		})
 	})
 
-	it("has nothing to report without a previous window", () => {
-		expect(metricDelta(measures({ calls: 150 }), undefined, "calls", "p90")).toBeNull()
+	it("gives a rate POINTS, not a percentage of a percentage", () => {
+		// 8% to 16% is "up 8 points". Calling it "up 100%" is a different — and
+		// much more alarming — statement about the same two numbers.
+		const delta = toolDelta(
+			measures({ calls: 100, errors: 16 }),
+			measures({ calls: 100, errors: 8 }),
+			"error_rate",
+			"p90",
+		)
+		expect(delta).toEqual({ text: "8.0pp", direction: "up", good: false })
 	})
 
-	it("refuses to divide by a previous window of zero", () => {
-		expect(metricDelta(measures({ calls: 150 }), measures({ calls: 0 }), "calls", "p90")).toBeNull()
+	it("gives a latency a duration, and grades a fall as good", () => {
+		const delta = toolDelta(
+			measures({ p90: 1_000_000_000 }),
+			measures({ p90: 3_000_000_000 }),
+			"duration",
+			"p90",
+		)
+		expect(delta?.direction).toBe("down")
+		expect(delta?.good).toBe(true)
+		expect(delta?.text).not.toBe("—")
 	})
 
-	it("knows which way is bad", () => {
-		expect(metricRiseIsBad("error_rate")).toBe(true)
-		expect(metricRiseIsBad("duration")).toBe(true)
-		expect(metricRiseIsBad("calls")).toBe(false)
+	it("has no percentage against a window of zero, and none without one at all", () => {
+		expect(toolDelta(measures({ calls: 150 }), measures({ calls: 0 }), "calls", "p90")).toBeNull()
+		expect(toolDelta(measures({ calls: 150 }), undefined, "calls", "p90")).toBeNull()
+	})
+})
+
+describe("toolBadges", () => {
+	const window = { startMs: 0, endMs: 1000 }
+	const row = (over: Partial<ToolBreakdownRow>): ToolBreakdownRow => ({
+		key: "k",
+		...EMPTY_MEASURES,
+		lastSeen: 0,
+		firstSeen: 0,
+		...over,
+	})
+
+	it("calls the slowest only among rows carrying real volume", () => {
+		// A tool called nine times in a week has the worst p90 in most windows
+		// and is never what the badge is for.
+		const badges = toolBadges(
+			[
+				row({ key: "busy", calls: 1000, p90: 5 }),
+				row({ key: "rare", calls: 1, p90: 5000 }),
+			],
+			window,
+		)
+		expect(badges.get("busy")).toBe("slowest")
+		expect(badges.get("rare")).toBeUndefined()
+	})
+
+	it("names no slowest when nothing has a measured p90", () => {
+		expect(toolBadges([row({ key: "a", calls: 100, p90: 0 })], window).get("a")).toBeUndefined()
+	})
+
+	it("calls a tool new when its first call lands well after the window opened", () => {
+		const badges = toolBadges(
+			[
+				row({ key: "old", calls: 10, firstSeen: 50 }),
+				row({ key: "fresh", calls: 10, firstSeen: 900 }),
+			],
+			window,
+		)
+		expect(badges.get("fresh")).toBe("new")
+		expect(badges.get("old")).toBeUndefined()
+	})
+})
+
+describe("toolsTableFooter", () => {
+	const rows = (count: number): ReadonlyArray<ToolBreakdownRow> =>
+		Array.from({ length: count }, (_, index) => ({
+			key: `t${index}`,
+			...EMPTY_MEASURES,
+			calls: 1,
+			lastSeen: 0,
+			firstSeen: 0,
+		}))
+
+	it("says all when the read was not capped", () => {
+		expect(toolsTableFooter(rows(3)).subject).toBe("Showing all 3 tools")
+		expect(toolsTableFooter(rows(1)).subject).toBe("Showing all 1 tool")
+	})
+
+	it("says which rows these are once the read hit its cap", () => {
+		// A full page is not "all" — the query returns the busiest N.
+		expect(toolsTableFooter(rows(AI_TOOLS_BREAKDOWN_MAX)).subject).toBe(
+			`Showing the ${AI_TOOLS_BREAKDOWN_MAX} busiest tools`,
+		)
 	})
 })
 
@@ -122,84 +206,6 @@ describe("rankSeriesKeys", () => {
 	it("breaks ties by name so the order never wobbles between renders", () => {
 		const points = [point(1, "beta", { calls: 5 }), point(1, "alpha", { calls: 5 })]
 		expect(rankSeriesKeys(points)).toEqual(["alpha", "beta"])
-	})
-})
-
-describe("foldSeries", () => {
-	const points = [
-		point(1, "a", { calls: 100, sessions: 10, errors: 5, p90: 1e9 }),
-		point(1, "b", { calls: 80 }),
-		point(1, "c", { calls: 60 }),
-		point(1, "d", { calls: 40 }),
-		point(1, "e", { calls: 30, sessions: 3, errors: 3, p90: 2e9 }),
-		point(1, "f", { calls: 10, sessions: 1, errors: 0, p90: 12e9 }),
-		point(2, "f", { calls: 4, p90: 5e9 }),
-	]
-
-	it("leaves a short list alone", () => {
-		const short = [point(1, "a", { calls: 2 }), point(1, "b", { calls: 1 })]
-		expect(foldSeries(short, 4)).toEqual({ points: short, keys: ["a", "b"] })
-	})
-
-	it("keeps the top N and folds the rest into one Other line", () => {
-		const folded = foldSeries(points, 4)
-		expect(folded.keys).toEqual(["a", "b", "c", "d", OTHER_SERIES_KEY])
-		expect(folded.points.some((p) => p.seriesKey === "e")).toBe(false)
-	})
-
-	it("adds the tail's counts", () => {
-		const folded = foldSeries(points, 4)
-		const other = folded.points.find((p) => p.seriesKey === OTHER_SERIES_KEY && p.bucket === 1)!
-		expect(other.calls).toBe(40)
-		expect(other.sessions).toBe(4)
-		expect(other.errors).toBe(3)
-	})
-
-	it("weights the tail's percentiles by calls rather than averaging them flat", () => {
-		const folded = foldSeries(points, 4)
-		const other = folded.points.find((p) => p.seriesKey === OTHER_SERIES_KEY && p.bucket === 1)!
-		// (2e9 * 30 + 12e9 * 10) / 40 — a flat mean would be 7e9.
-		expect(other.p90).toBeCloseTo(4.5e9)
-	})
-
-	it("folds each bucket independently", () => {
-		const folded = foldSeries(points, 4)
-		const second = folded.points.find((p) => p.seriesKey === OTHER_SERIES_KEY && p.bucket === 2)!
-		expect(second.calls).toBe(4)
-		expect(second.p90).toBeCloseTo(5e9)
-	})
-
-	it("merges the API's own folded tail into this one, as a single line", () => {
-		// The API folds past its own top-N before the page ever sees a point, so
-		// `Other` can arrive as a key. Ranked as a series it would draw a second
-		// grey line and a second legend entry for the same residue.
-		const withApiTail = [
-			point(1, "a", { calls: 100 }),
-			point(1, "b", { calls: 80 }),
-			point(1, OTHER_SERIES_KEY, { calls: 90, errors: 2 }),
-			point(1, "c", { calls: 5 }),
-		]
-		const folded = foldSeries(withApiTail, 2)
-		expect(folded.keys).toEqual(["a", "b", OTHER_SERIES_KEY])
-		const other = folded.points.filter((p) => p.seriesKey === OTHER_SERIES_KEY)
-		expect(other).toHaveLength(1)
-		expect(other[0]!.calls).toBe(95)
-		expect(other[0]!.errors).toBe(2)
-	})
-
-	it("folds an API tail even when nothing else needs folding", () => {
-		const short = [point(1, "a", { calls: 3 }), point(1, OTHER_SERIES_KEY, { calls: 1 })]
-		expect(foldSeries(short, 4).keys).toEqual(["a", OTHER_SERIES_KEY])
-	})
-
-	it("leaves a tail with no calls at a zero percentile rather than dividing by zero", () => {
-		const zeroTail = [
-			point(1, "a", { calls: 5 }),
-			point(1, "b", { calls: 4 }),
-			point(1, "c", { calls: 0, p90: 9e9 }),
-		]
-		const other = foldSeries(zeroTail, 2).points.find((p) => p.seriesKey === OTHER_SERIES_KEY)!
-		expect(other.p90).toBe(0)
 	})
 })
 
@@ -224,17 +230,14 @@ describe("toolSeriesColors", () => {
 })
 
 describe("toolChartTitle", () => {
-	it("reads measure · scope · split", () => {
+	it("reads measure · scope", () => {
 		expect(toolChartTitle({ metric: "error_rate", percentile: "p90", tool: "run_tests" })).toBe(
-			"Error rate · run_tests · by model",
+			"Error rate · run_tests",
 		)
+		expect(toolChartTitle({ metric: "calls", percentile: "p90" })).toBe("Tool calls")
 	})
 
-	it("splits by tool while nothing is picked", () => {
-		expect(toolChartTitle({ metric: "calls", percentile: "p90" })).toBe("Tool calls · by tool")
-	})
-
-	it("drops the split once one line is left", () => {
+	it("names both scopes once both are picked", () => {
 		expect(
 			toolChartTitle({ metric: "duration", percentile: "p95", tool: "grep", model: "claude-opus-5" }),
 		).toBe("P95 duration · grep · claude-opus-5")
@@ -244,12 +247,12 @@ describe("toolChartTitle", () => {
 describe("scopeSummary", () => {
 	it("says how much of the window the selection accounts for", () => {
 		expect(scopeSummary(measures({ calls: 120, sessions: 8 }), 4000)).toBe(
-			"120 of 4.0K calls match · 8 sessions",
+			"120 of 4,000 calls match · 8 sessions",
 		)
 	})
 
 	it("drops the denominator when nothing is narrowing it", () => {
-		expect(scopeSummary(measures({ calls: 4000, sessions: 8 }), 4000)).toBe("4.0K calls · 8 sessions")
+		expect(scopeSummary(measures({ calls: 4000, sessions: 8 }), 4000)).toBe("4,000 calls · 8 sessions")
 	})
 
 	it("counts one session in the singular", () => {

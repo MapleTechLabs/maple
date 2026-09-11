@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
 import {
+	aiToolErrorOccurrencesQuery,
+	aiToolErrorOccurrencesRowSchema,
+	aiToolErrorSessionsQuery,
+	aiToolErrorSessionsRowSchema,
+	aiToolErrorsQuery,
+	aiToolErrorsRowSchema,
 	aiToolsBreakdownsQuery,
 	aiToolsSeriesKind,
 	aiToolsSeriesQuery,
-	aiToolsSessionsQuery,
 	aiToolsTotalsQuery,
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
-	AI_TOOLS_SESSIONS_LIMIT,
 } from "./ai-tools"
 import { AI_TOOLS_OTHER_SERIES_KEY } from "@maple/domain/http"
 
@@ -26,6 +30,9 @@ const totalsParams = {
 	prevStartTime: "2026-08-16 00:00:01",
 	prevEndTime: "2026-08-18 00:00:00",
 }
+
+/** The error reads name the tool by param rather than by opts. */
+const errorParams = { ...params, toolName: "search_traces" }
 
 /** The two-step model attribution, as it compiles — the parent model call's
  *  model, else the trace's. A tool row never carries one itself. */
@@ -88,10 +95,19 @@ describe("tool call population", () => {
 		// Three reads of `ai_trace_index` per aggregation level: the tool calls,
 		// the parent models, the trace facts. The series adds a second copy of all
 		// three for its top-N ranking.
-		expect(orgPredicateCount(compileUnsafe(aiToolsSessionsQuery(), params).sql)).toBe(3)
-		expect(compileUnsafe(aiToolsSessionsQuery(), params).tenantScope).toBe("single-tenant")
+		expect(orgPredicateCount(compileUnsafe(aiToolsBreakdownsQuery(), params).sql)).toBe(3)
+		expect(compileUnsafe(aiToolsBreakdownsQuery(), params).tenantScope).toBe("single-tenant")
 		expect(compileUnionUnsafe(aiToolsTotalsQuery(), totalsParams).tenantScope).toBe("single-tenant")
-		expect(compileUnionUnsafe(aiToolsBreakdownsQuery(), params).tenantScope).toBe("single-tenant")
+		// The three error reads name the tool by param and read the span table
+		// inside a trace-id subquery, so the index scan is scoped too.
+		for (const compiled of [
+			compileUnsafe(aiToolErrorsQuery(), errorParams),
+			compileUnsafe(aiToolErrorSessionsQuery(), errorParams),
+			compileUnsafe(aiToolErrorOccurrencesQuery(), errorParams),
+		]) {
+			expect(compiled.tenantScope).toBe("single-tenant")
+			expect(compiled.sql).toContain("OrgId = 'org_1'")
+		}
 	})
 
 	it("applies the selection where each half of it can be applied", () => {
@@ -128,7 +144,7 @@ describe("tool call population", () => {
 		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).not.toContain("IsError = 1")
 	})
 
-	it("re-scopes all four reads, and the series' own ranking subquery", () => {
+	it("re-scopes every read, and the series' own ranking subquery", () => {
 		const scoped = { search: "run", failingOnly: true }
 		const series = compileUnsafe(aiToolsSeriesQuery(scoped), params).sql
 		// Twice in the series: once for the points, once for the top-N ranking —
@@ -138,8 +154,7 @@ describe("tool call population", () => {
 
 		for (const sql of [
 			compileUnionUnsafe(aiToolsTotalsQuery(scoped), totalsParams).sql,
-			compileUnionUnsafe(aiToolsBreakdownsQuery(scoped), params).sql,
-			compileUnsafe(aiToolsSessionsQuery(scoped), params).sql,
+			compileUnsafe(aiToolsBreakdownsQuery(scoped), params).sql,
 		]) {
 			expect(sql).toContain("ILIKE '%run%'")
 			expect(sql).toContain("IsError = 1")
@@ -235,62 +250,178 @@ describe("aiToolsTotalsQuery", () => {
 		// query returns 0 and the tile renders a real number.
 		expect(compiled.sql).toContain("ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50")
 		const rows = decodeRows(compiled, [
-			{ period: "previous", calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 },
+			{
+				period: "previous",
+				calls: 0,
+				sessions: 0,
+				errors: 0,
+				p50: 0,
+				p90: 0,
+				p95: 0,
+				firstSeen: "",
+				lastSeen: "",
+			},
 		])
 		expect(rows[0]?.period).toBe("previous")
 	})
 })
 
 describe("aiToolsBreakdownsQuery", () => {
-	it("scopes each panel to the OTHER half of the selection", () => {
-		const { sql } = compileUnionUnsafe(
+	it("drops the selection's own tool and keeps the rest", () => {
+		const { sql } = compileUnsafe(
 			aiToolsBreakdownsQuery({ tool: "search_traces", model: "gpt-5" }),
 			params,
 		)
-		const [tools, models] = sql.split("UNION ALL")
 
-		expect(tools).toContain("'tool' AS kind")
-		expect(tools).toContain("toolName AS key")
-		// The tool panel exists to pick a DIFFERENT tool, so it keeps the model
-		// filter and drops the tool one — otherwise it returns the single row the
-		// user already clicked.
-		expect(tools).toContain(`${MODEL_EXPR} = 'gpt-5'`)
-		expect(tools).not.toContain("ToolName = 'search_traces'")
-
-		expect(models).toContain("'model' AS kind")
-		expect(models).toContain("modelName AS key")
-		expect(models).toContain("ai_trace_index.ToolName = 'search_traces'")
-		expect(models).not.toContain(`${MODEL_EXPR} = 'gpt-5'`)
+		expect(sql).toContain("toolName AS key")
+		// The table exists to pick a DIFFERENT tool, so it keeps the model filter
+		// and drops the tool one — otherwise it returns the single row the user
+		// already clicked.
+		expect(sql).toContain(`${MODEL_EXPR} = 'gpt-5'`)
+		expect(sql).not.toContain("ToolName = 'search_traces'")
 	})
 
-	it("returns the busiest rows of each panel, with the last call under each key", () => {
-		const { sql } = compileUnionUnsafe(aiToolsBreakdownsQuery(), params)
+	it("returns the busiest rows, with the last call under each key", () => {
+		const { sql } = compileUnsafe(aiToolsBreakdownsQuery(), params)
 
 		expect(sql).toContain("toString(max(ts)) AS lastSeen")
 		expect(sql).toContain("ORDER BY calls DESC, key ASC")
-		expect(sql.split(`LIMIT ${AI_TOOLS_BREAKDOWN_LIMIT}`).length - 1).toBe(2)
+		expect(sql).toContain(`LIMIT ${AI_TOOLS_BREAKDOWN_LIMIT}`)
 	})
 })
 
-describe("aiToolsSessionsQuery", () => {
-	it("groups the selection's calls by the session that made them", () => {
-		const { sql } = compileUnsafe(aiToolsSessionsQuery({ tool: "search_traces" }), params)
+describe("aiToolsSeriesQuery split", () => {
+	it("merges every key inside the query when the caller asks for none", () => {
+		const selection = { tool: "search_traces", split: "none" } as const
+		expect(aiToolsSeriesKind(selection)).toBe("none")
 
-		expect(sql).toContain("sessionKey AS sessionId")
-		expect(sql).toContain("GROUP BY sessionId")
-		// Busiest first, with the id breaking ties so the list is stable.
-		expect(sql).toContain("ORDER BY calls DESC, sessionId ASC")
-		expect(sql).toContain(`LIMIT ${AI_TOOLS_SESSIONS_LIMIT}`)
-		// Labels, taken from whichever matched call carried one.
-		expect(sql).toContain("anyIf(agent, agent != '') AS agentName")
-		expect(sql).toContain("anyIf(modelName, modelName != '') AS model")
-		expect(sql).toContain("anyIf(svc, svc != '') AS serviceName")
-		// The matched calls' durations, in nanoseconds — not the session's.
-		expect(sql).toContain("max(durationNs) AS maxDurationNs")
-		expect(sql).toContain("toString(min(ts)) AS startedAt")
+		const { sql } = compileUnsafe(aiToolsSeriesQuery(selection), params)
+
+		// One series over the whole selection: no top-N subquery, and therefore
+		// no `other` fold — the quantiles and the session count are the measured
+		// ones rather than a client-side merge of per-model series.
+		expect(sql).not.toContain("top_series_keys")
+		expect(sql).not.toContain(AI_TOOLS_OTHER_SERIES_KEY)
+		expect(sql).toContain("'' AS seriesKey")
+		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+		expect(sql).toContain("quantile(0.95)(durationNs)")
 	})
 
-	it("takes the caller's page size", () => {
-		expect(compileUnsafe(aiToolsSessionsQuery({ limit: 10 }), params).sql).toContain("LIMIT 10")
+	it("still derives the kind when the caller names none", () => {
+		// The overview sends no `split`, so the derivation is unchanged.
+		expect(aiToolsSeriesKind({ tool: "t" })).toBe("model")
+		expect(aiToolsSeriesKind({ tool: "t", split: "tool" })).toBe("tool")
+	})
+})
+
+describe("aiToolsTotalsQuery empty window", () => {
+	it("reports no first or last call rather than the epoch", () => {
+		const { sql } = compileUnionUnsafe(aiToolsTotalsQuery(), totalsParams)
+
+		// A non-grouped `min()` over zero rows returns the DateTime default, so
+		// without the guard an empty window claims a first call in 1970 — which
+		// the response contract says is `''`.
+		expect(sql).toContain("if(count() = 0, '', toString(min(ts))) AS firstSeen")
+		expect(sql).toContain("if(count() = 0, '', toString(max(ts))) AS lastSeen")
+	})
+})
+
+describe("the tool detail reads", () => {
+	it("applies the service at the span level, not only in the trace prefilter", () => {
+		// The prefilter names TRACES, so a trace that failed this tool in a
+		// second service would otherwise contribute that service's spans too.
+		for (const sql of [
+			compileUnsafe(aiToolErrorsQuery({ service: "agent" }), errorParams).sql,
+			compileUnsafe(aiToolErrorOccurrencesQuery({ service: "agent" }), errorParams).sql,
+		]) {
+			expect(sql).toContain("trace_detail_spans.ServiceName = 'agent'")
+		}
+		// `env` has no span column and stays prefilter-only.
+		expect(
+			compileUnsafe(aiToolErrorsQuery({ env: "production" }), errorParams).sql,
+		).toContain("ai_trace_index.DeploymentEnv = 'production'")
+	})
+
+	it("truncates payloads by codepoint and reports their size in bytes", () => {
+		const { sql } = compileUnsafe(aiToolErrorOccurrencesQuery(), errorParams)
+
+		// `left` counts BYTES and would cut a multi-byte codepoint in half.
+		expect(sql).not.toContain("left(")
+		expect(sql).toContain("leftUTF8(")
+		expect(sql).toContain("AS argumentsBytes")
+		expect(sql).toContain("AS resultBytes")
+	})
+
+	it("narrows on an error type only when one was passed", () => {
+		// `''` is a real group — the failures that named no type — so the
+		// predicate is on presence of the opt, not on truth of the value.
+		expect(compileUnsafe(aiToolErrorSessionsQuery(), errorParams).sql).not.toContain(
+			"errorType =",
+		)
+		expect(
+			compileUnsafe(aiToolErrorSessionsQuery({ errorType: "" }), errorParams).sql,
+		).toContain("errorType = ''")
+		expect(
+			compileUnsafe(aiToolErrorSessionsQuery({ errorType: "Timeout" }), errorParams).sql,
+		).toContain("errorType = 'Timeout'")
+	})
+
+	it("decodes each read through its declared row schema", () => {
+		const errors = compileUnsafe(aiToolErrorsQuery(), errorParams, {
+			rowSchema: aiToolErrorsRowSchema,
+		})
+		expect(
+			decodeRows(errors, [
+				{
+					errorType: "TimeoutError",
+					message: "timed out",
+					calls: 4,
+					sessions: 2,
+					firstSeen: "2026-08-18 00:00:00",
+					lastSeen: "2026-08-18 01:00:00",
+				},
+			])[0],
+		).toMatchObject({ calls: 4, sessions: 2 })
+
+		const sessions = compileUnsafe(aiToolErrorSessionsQuery(), errorParams, {
+			rowSchema: aiToolErrorSessionsRowSchema,
+		})
+		expect(
+			decodeRows(sessions, [
+				{
+					sessionId: "s1",
+					agentName: "agent",
+					model: "gpt-5",
+					// Quoted on a gateway that refuses the 64-bit setting, which is
+					// why every count here is `CHNumber` and not `Schema.Number`.
+					hits: "7",
+					lastSeen: "2026-08-18 01:00:00",
+				},
+			])[0],
+		).toMatchObject({ hits: 7 })
+
+		const occurrences = compileUnsafe(aiToolErrorOccurrencesQuery(), errorParams, {
+			rowSchema: aiToolErrorOccurrencesRowSchema,
+		})
+		expect(
+			decodeRows(occurrences, [
+				{
+					timestamp: "2026-08-18 01:00:00",
+					traceId: "t1",
+					spanId: "s1",
+					sessionId: "sess",
+					agentName: "agent",
+					model: "gpt-5",
+					errorType: "TimeoutError",
+					message: "timed out",
+					durationNs: "1500000",
+					statusCode: "Error",
+					arguments: "{}",
+					argumentsBytes: "2",
+					result: "",
+					resultBytes: 0,
+				},
+			])[0],
+		).toMatchObject({ durationNs: 1_500_000, argumentsBytes: 2, resultBytes: 0 })
 	})
 })

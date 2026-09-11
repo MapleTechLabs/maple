@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatToolCount } from "@/lib/agent-sessions/tool-analytics"
 import { cn } from "@maple/ui/lib/utils"
 
 import { GearIcon, LayersIcon } from "@/components/icons"
@@ -95,7 +95,7 @@ function TabLink({
 						active ? "text-primary" : "text-muted-foreground/60",
 					)}
 				>
-					{formatNumber(count)}
+					{formatToolCount(count)}
 				</span>
 			)}
 		</Link>

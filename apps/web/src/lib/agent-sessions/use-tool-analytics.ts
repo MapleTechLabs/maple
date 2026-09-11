@@ -1,6 +1,6 @@
 // Every warehouse read `/agent-sessions/tools` makes, behind one hook.
 //
-// The page itself never touches an atom: it takes the four `Result`s this
+// The page itself never touches an atom: it takes the three `Result`s this
 // returns and renders them. That is what lets the lab mount the same page shell
 // over fixtures, and it keeps the wire shape confined to the mappers in
 // `api/warehouse/ai-session-tools.ts`.
@@ -14,36 +14,37 @@ import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atom
 import {
 	aiToolBreakdownsResultAtom,
 	aiToolSeriesResultAtom,
-	aiToolSessionsResultAtom,
 	aiToolTotalsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { AiToolsSelection } from "@/api/warehouse/ai-session-tools"
 
-import type {
-	ToolBreakdownRow,
-	ToolSeriesPoint,
-	ToolSessionRow,
-	ToolTotals,
-} from "./tool-analytics"
+import type { ToolBreakdownRow, ToolSeriesPoint, ToolTotals } from "./tool-analytics"
 import type { ToolAnalyticsSearch } from "./tool-search"
-
-/** Sessions listed for the current selection. The endpoint's own cap is 200. */
-const SESSIONS_LIMIT = 50
 
 export interface ToolAnalyticsResults {
 	readonly series: Result.Result<
 		{ data: ReadonlyArray<ToolSeriesPoint>; seriesKind: AiToolsSeriesKind },
 		QueryAtomFailure
 	>
-	/** Both windows in one read — `previous` is what the strip's deltas measure against. */
-	readonly totals: Result.Result<{ current: ToolTotals; previous: ToolTotals }, QueryAtomFailure>
+	/** Both windows in one read — `previous` is what the strip's deltas measure
+	 *  against — plus the window's whole session population, which is the
+	 *  Sessions tile's denominator, and the selection's extent. */
+	readonly totals: Result.Result<
+		{
+			current: ToolTotals
+			previous: ToolTotals
+			allSessions: number
+			firstSeen: number
+			lastSeen: number
+		},
+		QueryAtomFailure
+	>
 	readonly breakdowns: Result.Result<
 		{ tools: ReadonlyArray<ToolBreakdownRow>; models: ReadonlyArray<ToolBreakdownRow> },
 		QueryAtomFailure
 	>
-	readonly sessions: Result.Result<{ data: ReadonlyArray<ToolSessionRow> }, QueryAtomFailure>
 }
 
 export interface ToolAnalyticsWindow {
@@ -90,9 +91,5 @@ export function useToolAnalytics(
 	)
 	const totals = useRefreshableAtomValue(aiToolTotalsResultAtom({ data: selection }))
 	const breakdowns = useRefreshableAtomValue(aiToolBreakdownsResultAtom({ data: selection }))
-	const sessions = useRefreshableAtomValue(
-		aiToolSessionsResultAtom({ data: { ...selection, limit: SESSIONS_LIMIT } }),
-	)
-
-	return { series, totals, breakdowns, sessions }
+	return { series, totals, breakdowns }
 }

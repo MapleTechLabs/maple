@@ -17,6 +17,9 @@ interface ToolFilterToolbarProps {
 	service: string | undefined
 	serviceOptions: ReadonlyArray<ToolFilterOption>
 	onServiceChange: (value: string | undefined) => void
+	model: string | undefined
+	modelOptions: ReadonlyArray<ToolFilterOption>
+	onModelChange: (value: string | undefined) => void
 	env: string | undefined
 	envOptions: ReadonlyArray<ToolFilterOption>
 	onEnvChange: (value: string | undefined) => void
@@ -29,10 +32,10 @@ interface ToolFilterToolbarProps {
  * Which calls the page is about: a tool-name search, the service and
  * environment they ran in, and the one-chip triage filter.
  *
- * Deliberately no model select. Model is a *scope*, not a filter — it is picked
- * from the Models table, where its call volume and error rate are visible
- * beside it, and it shows up in the scope row as a removable chip. A second
- * place to set the same param would be two controls that can disagree.
+ * Model is one of the three selects rather than a table of its own: the page
+ * is about tools, and "which model ran them" is a lens on that list, not a
+ * second list to rank. It still shows up in the scope band as a removable chip,
+ * because the band is where everything narrowing the page is stated at once.
  *
  * Every control is the same 30px pill, and a control with a value set is drawn
  * in the primary tint so the toolbar reads as "what is narrowing this page" at
@@ -44,6 +47,9 @@ export function ToolFilterToolbar({
 	service,
 	serviceOptions,
 	onServiceChange,
+	model,
+	modelOptions,
+	onModelChange,
 	env,
 	envOptions,
 	onEnvChange,
@@ -72,6 +78,7 @@ export function ToolFilterToolbar({
 					options={serviceOptions}
 					onChange={onServiceChange}
 				/>
+				<FacetSelect label="model" value={model} options={modelOptions} onChange={onModelChange} />
 				<FacetSelect label="env" value={env} options={envOptions} onChange={onEnvChange} />
 
 				<button

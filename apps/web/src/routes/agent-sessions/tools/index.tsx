@@ -1,11 +1,11 @@
-import type { ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
-import type { ToolFilterOption } from "@/components/agent-sessions/tools/tool-filter-toolbar"
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -30,7 +30,7 @@ const toolsSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const Route = createFileRoute("/agent-sessions/tools")({
+export const Route = createFileRoute("/agent-sessions/tools/")({
 	component: AgentToolsPage,
 	validateSearch: Schema.toStandardSchemaV1(toolsSearchSchema),
 	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
@@ -55,6 +55,9 @@ function AgentToolsPageContent() {
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? TOOL_ANALYTICS_DEFAULT_PRESET
 	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
+	// One object for the whole render tree below: it is a dependency of every
+	// selection memo down there, and a fresh literal defeats all of them.
+	const window = useMemo(() => ({ startTime, endTime }), [startTime, endTime])
 
 	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) => {
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
@@ -81,7 +84,7 @@ function AgentToolsPageContent() {
 						<DashboardLayout.Scroll className="p-0">
 							<AgentToolsBody
 								search={search}
-								window={{ startTime, endTime }}
+								window={window}
 								preset={preset}
 								onSearchChange={onSearchChange}
 								headerControls={
@@ -105,10 +108,10 @@ function AgentToolsPageContent() {
 }
 
 /**
- * The four reads, resolved.
+ * The three reads, resolved.
  *
  * The **totals** read is the one the page waits on: it is the smallest of the
- * four and it is what the strip — the page's selector — is made of. Everything
+ * three and it is what the strip — the page's selector — is made of. Everything
  * else degrades to empty rather than to a skeleton, so a slow breakdown query
  * leaves an empty table under a chart that is already drawn, not a page of grey
  * boxes.
@@ -127,31 +130,41 @@ function AgentToolsBody({
 	headerControls: ReactNode
 }) {
 	const results = useToolAnalytics(search, window)
+	// A fresh object literal per render would defeat the `new`-badge memo in the
+	// Tools table, which keys on this identity.
+	const windowMs = useMemo(
+		() => ({ startMs: toEpochMs(window.startTime), endMs: toEpochMs(window.endTime) }),
+		[window.startTime, window.endTime],
+	)
+	// Same reason: it is memo input for the detail links the table builds.
+	const timeRange = useMemo(
+		() => ({
+			startTime: search.startTime,
+			endTime: search.endTime,
+			timePreset: search.timePreset,
+		}),
+		[search.startTime, search.endTime, search.timePreset],
+	)
 
-	// Service and environment options come from the sessions facets — the same
-	// counted lists the list page's sidebar uses. A dedicated facets endpoint for
-	// this page would be a second query returning the same two arrays.
+	// Service, model and environment options come from the sessions facets — the
+	// same counted lists the list page's sidebar uses. A dedicated facets
+	// endpoint for this page would be a second query returning the same arrays.
 	// Plain `useAtomValue`: the options refresh when the window rolls, which is
 	// enough, and keeping them off the Reload subscription stops a manual refresh
-	// from rebuilding the two selects underneath a click.
+	// from rebuilding the selects underneath a click.
 	const facetsResult = useAtomValue(aiSessionsFacetsResultAtom({ data: window }))
 	const facets = Result.builder(facetsResult)
 		.onSuccess((value) => value)
 		.orElse(() => undefined)
-	const serviceOptions: ReadonlyArray<ToolFilterOption> = facets?.services ?? []
-	const envOptions: ReadonlyArray<ToolFilterOption> = facets?.environments ?? []
 
 	const breakdowns = Result.builder(results.breakdowns)
 		.onSuccess((value) => value)
-		.orElse(() => ({ tools: [], models: [] }))
+		.orElse(() => ({ tools: [] }))
 	// `seriesKind` is the server's, derived from the same selection the query
 	// keyed on — the chart labels models as models without re-deriving it.
 	const series = Result.builder(results.series)
 		.onSuccess((value) => value)
 		.orElse(() => ({ data: [], seriesKind: "tool" }) as const)
-	const sessions = Result.builder(results.sessions)
-		.onSuccess((value) => value.data)
-		.orElse(() => [])
 
 	return Result.builder(results.totals)
 		.onInitial(() => (
@@ -169,11 +182,13 @@ function AgentToolsBody({
 			<AgentToolsView
 				search={search}
 				onSearchChange={onSearchChange}
+				window={windowMs}
 				data={{
 					series: series.data,
 					seriesKind: series.seriesKind,
 					totals: totals.current,
 					previousTotals: totals.previous,
+					allSessions: totals.allSessions,
 					// The "of M" denominator: the Tools breakdown is scoped to the
 					// selected model but NOT to the selected tool, so its sum is exactly
 					// the population the tool chip narrows. Zero while that read is in
@@ -181,17 +196,12 @@ function AgentToolsBody({
 					// than as a wrong ratio.
 					scopeCalls: breakdowns.tools.reduce((sum, row) => sum + row.calls, 0),
 					tools: breakdowns.tools,
-					models: breakdowns.models,
-					sessions,
 				}}
-				serviceOptions={serviceOptions}
-				envOptions={envOptions}
+				serviceOptions={facets?.services ?? []}
+				modelOptions={facets?.models ?? []}
+				envOptions={facets?.environments ?? []}
 				windowLabel={preset}
-				timeRange={{
-					startTime: search.startTime,
-					endTime: search.endTime,
-					timePreset: search.timePreset,
-				}}
+				timeRange={timeRange}
 				headerControls={headerControls}
 				waiting={result.waiting}
 			/>

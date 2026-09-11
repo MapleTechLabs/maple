@@ -4,7 +4,7 @@ import { AiToolsSeriesResponse } from "@maple/domain/http"
 
 import { OTHER_SERIES_KEY } from "@/lib/agent-sessions/tool-analytics"
 
-import { mapToolBreakdown, mapToolSeries, mapToolSessions } from "./ai-session-tools"
+import { mapToolBreakdown, mapToolErrors, mapToolSeries } from "./ai-session-tools"
 
 const measures = { calls: 3, sessions: 1, errors: 0, p50: 1_000, p90: 2_000, p95: 3_000 }
 
@@ -38,29 +38,32 @@ describe("mapToolSeries", () => {
 describe("mapToolBreakdown", () => {
 	it("reads a bare warehouse datetime as UTC", () => {
 		const [row] = mapToolBreakdown([
-			{ key: "bash", ...measures, lastSeen: "2026-09-10 11:59:00" },
+			{
+				key: "bash",
+				...measures,
+				lastSeen: "2026-09-10 11:59:00",
+				firstSeen: "2026-09-03 08:15:00",
+			},
 		])
 		expect(row?.lastSeen).toBe(Date.UTC(2026, 8, 10, 11, 59, 0))
+		expect(row?.firstSeen).toBe(Date.UTC(2026, 8, 3, 8, 15, 0))
 	})
 })
 
-describe("mapToolSessions", () => {
-	it("keeps durations in nanoseconds and the session key verbatim", () => {
-		const [row] = mapToolSessions([
+describe("mapToolErrors", () => {
+	it("reads the bare warehouse datetimes as UTC and keeps `''` as a real type", () => {
+		const [row] = mapToolErrors([
 			{
-				sessionId: "trace:abc",
-				agentName: "",
-				model: "gpt-5",
-				serviceName: "api",
-				calls: 4,
-				errors: 1,
-				avgDurationNs: 2_500_000,
-				maxDurationNs: 11_000_000,
-				startedAt: "2026-09-10 11:00:00",
+				errorType: "",
+				message: "",
+				calls: 2,
+				sessions: 1,
+				firstSeen: "2026-09-03 08:15:00",
+				lastSeen: "2026-09-10 11:59:00",
 			},
 		])
-		expect(row?.sessionId).toBe("trace:abc")
-		expect(row?.avgDurationNs).toBe(2_500_000)
-		expect(row?.startedAt).toBe(Date.UTC(2026, 8, 10, 11, 0, 0))
+		expect(row?.errorType).toBe("")
+		expect(row?.firstSeen).toBe(Date.UTC(2026, 8, 3, 8, 15, 0))
+		expect(row?.lastSeen).toBe(Date.UTC(2026, 8, 10, 11, 59, 0))
 	})
 })

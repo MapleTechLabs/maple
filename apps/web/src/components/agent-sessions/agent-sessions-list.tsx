@@ -29,6 +29,9 @@ import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 export interface AgentSessionRow {
 	readonly sessionId: string
 	readonly vendorId: string
+	/** The framework's own version, as it stamped it. `''`/absent where it did
+	 *  not — the tool detail's session list names it beside the framework. */
+	readonly vendorVersion?: string
 	readonly traceCount: number
 	readonly spanCount: number
 	readonly errorSpanCount: number

@@ -3,7 +3,6 @@ import { d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 
-import type { AiToolsSeriesKind } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
 	PlotFrame,
@@ -14,7 +13,6 @@ import {
 	focusCrosshair,
 	focusDot,
 	usePlotChromeColors,
-	useResolvedSeriesColors,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
@@ -24,14 +22,11 @@ import { cn } from "@maple/ui/lib/utils"
 import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/infra/chart-utils"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
-	OTHER_SERIES_KEY,
-	foldSeries,
+	aggregateByBucket,
 	formatToolMetric,
 	metricValue,
 	toolChartTitle,
 	toolMetricLabel,
-	toolSeriesColors,
-	toolSeriesMode,
 	type ToolMetric,
 	type ToolPercentile,
 	type ToolSeriesPoint,
@@ -40,7 +35,34 @@ import {
 const STROKE_WIDTH = 1.5
 const PLOT_HEIGHT = 220
 
-/** One bucket, carrying whichever series reported there. `null` is a genuine gap. */
+/** One line of the chart. `key` is the column it reads off a row. */
+interface ChartSeries {
+	readonly key: string
+	readonly label: string
+	readonly color: string
+}
+
+/** Duration draws all three readings at once; the driving one is in the primary. */
+const DURATION_SERIES = {
+	p50: durationSeries("p50"),
+	p90: durationSeries("p90"),
+	p95: durationSeries("p95"),
+} satisfies Record<ToolPercentile, ReadonlyArray<ChartSeries>>
+
+function durationSeries(driving: ToolPercentile): ReadonlyArray<ChartSeries> {
+	return (["p50", "p90", "p95"] as const).map((key) => ({
+		key,
+		label: key.toUpperCase(),
+		color:
+			key === driving
+				? "var(--primary)"
+				: key === "p95"
+					? "var(--severity-error)"
+					: "var(--muted-foreground)",
+	}))
+}
+
+/** One bucket of the whole scope. */
 interface ToolChartRow extends Record<string, string | number | Date | null> {
 	bucket: string
 	date: Date
@@ -52,31 +74,19 @@ interface ToolSeriesChartProps {
 	percentile: ToolPercentile
 	tool: string | undefined
 	model: string | undefined
-	/** What the series are keyed by, as the read reported it. */
-	seriesKind: AiToolsSeriesKind
-	/**
-	 * A model id as a reader should see it. Models arrive under the raw id an
-	 * instrumentation reported (`openai/gpt-5.6`) and are named here the way the
-	 * Models panel names them; the id itself stays the series identity, and its
-	 * colour.
-	 */
+	/** A model id as a reader should see it. */
 	modelLabel: (model: string) => string
 	waiting?: boolean
 }
 
 /**
- * The selected metric over the window, split by whatever the scope has not
- * pinned down yet — one line per tool, then one per model, then one.
+ * The selected metric over the window, as one trend for the whole scope.
  *
- * Lines rather than stacked bands, for every metric including the counts. The
- * series here are alternatives being compared ("is `bash` slower than `read`?"),
- * not parts of a whole, and a stack answers a question nobody asked while making
- * the comparison impossible to read.
- *
- * A bucket a series has no row for stays a **gap**, not a zero. These are
- * per-tool series over a window someone chose: a tool that was not called in an
- * hour has no error rate and no p90 there, and joining across it would draw a
- * dive to zero that never happened.
+ * The series arrive split by tool (the table's per-row sparks need them that
+ * way) and are folded here per bucket: counts add, percentiles are
+ * call-weighted — the same compromise `aggregateByBucket` documents. Duration
+ * draws P50, P90 and P95 together, since "is the tail moving while the median
+ * holds?" is the question the metric is picked for.
  */
 export function ToolSeriesChart({
 	series,
@@ -84,45 +94,37 @@ export function ToolSeriesChart({
 	percentile,
 	tool,
 	model,
-	seriesKind,
 	modelLabel,
 	waiting,
 }: ToolSeriesChartProps) {
-	const seriesLabel = useMemo(
-		() => (seriesKind === "model" ? modelLabel : (key: string) => key),
-		[seriesKind, modelLabel],
-	)
 	const chromeColors = usePlotChromeColors()
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
 	const narrow = useMediaQuery("max-sm")
 
-	const { rows, keys, totals } = useMemo(() => {
-		const folded = foldSeries(series)
-		const byBucket = new Map<number, ToolChartRow>()
-		const totals = new Map<string, number>()
+	const lines = useMemo<ReadonlyArray<ChartSeries>>(
+		() =>
+			metric === "duration"
+				? DURATION_SERIES[percentile]
+				: [{ key: metric, label: toolMetricLabel(metric, percentile), color: "var(--primary)" }],
+		[metric, percentile],
+	)
 
-		for (const point of folded.points) {
-			const iso = formatWarehouseDateTime(point.bucket)
-			const row = byBucket.get(point.bucket) ?? {
-				bucket: iso,
-				date: bucketDate(iso),
-			}
-			row[point.seriesKey] = metricValue(point, metric, percentile)
-			byBucket.set(point.bucket, row)
-			totals.set(point.seriesKey, (totals.get(point.seriesKey) ?? 0) + point.calls)
-		}
-
-		return {
-			rows: [...byBucket.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row),
-			keys: folded.keys,
-			totals,
-		}
-	}, [series, metric, percentile])
-
-	// Ranked order in, so a tool keeps its colour while its rank holds.
-	const colorTokens = useMemo(() => toolSeriesColors(keys), [keys])
-	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
+	const rows = useMemo<ReadonlyArray<ToolChartRow>>(
+		() =>
+			aggregateByBucket(series).map((bucket) => {
+				const iso = formatWarehouseDateTime(bucket.bucket)
+				return {
+					bucket: iso,
+					date: bucketDate(iso),
+					[metric]: metricValue(bucket, metric, percentile),
+					p50: bucket.p50,
+					p90: bucket.p90,
+					p95: bucket.p95,
+				}
+			}),
+		[series, metric, percentile],
+	)
 
 	const axis = useMemo(
 		() =>
@@ -135,16 +137,16 @@ export function ToolSeriesChart({
 
 	const tooltipSeries = useMemo<PlotTooltipSeries<ToolChartRow>[]>(
 		() =>
-			keys.map((key) => ({
-				label: key === OTHER_SERIES_KEY ? `${OTHER_SERIES_KEY} (approx.)` : seriesLabel(key),
-				color: colors.get(key) ?? chromeColors.border,
+			lines.map((line) => ({
+				label: line.label,
+				color: line.color,
 				value: (row: ToolChartRow) => {
-					const value = row[key]
+					const value = row[line.key]
 					return typeof value === "number" ? value : null
 				},
 				format: (value: number) => formatToolMetric(value, metric),
 			})),
-		[keys, colors, chromeColors.border, metric, seriesLabel],
+		[lines, metric],
 	)
 
 	const definition = useMemo(() => {
@@ -153,23 +155,22 @@ export function ToolSeriesChart({
 			const value = row[key]
 			return typeof value === "number" ? value : null
 		}
-		const colorOf = (key: string) => colors.get(key) ?? chromeColors.border
 		const curve = d3Curve(curveMonotoneX)
 
 		return defineChart({
 			marks: [
 				dashedGridY(),
-				...keys.map((key) =>
+				...lines.map((line) =>
 					lineY(rows, {
-						id: key,
+						id: line.key,
 						x: at,
-						y: valueOf(key),
-						stroke: colorOf(key),
+						y: valueOf(line.key),
+						stroke: line.color,
 						strokeWidth: STROKE_WIDTH,
 						curve,
 					}),
 				),
-				...keys.map((key) => focusDot(rows, at, valueOf(key), colorOf(key), chromeColors)),
+				...lines.map((line) => focusDot(rows, at, valueOf(line.key), line.color, chromeColors)),
 				focusCrosshair(chromeColors),
 			],
 			scales: {
@@ -193,7 +194,7 @@ export function ToolSeriesChart({
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, keys, colors, chromeColors, axis, metric, narrow, focusStore])
+	}, [rows, lines, chromeColors, axis, metric, narrow, focusStore])
 
 	const title = toolChartTitle({
 		metric,
@@ -203,19 +204,12 @@ export function ToolSeriesChart({
 	})
 
 	// The head is the title's parts, each drawn as what it is: the metric as a
-	// heading, the scope in the primary (it is the same selection the chips and
-	// the lit tile show), and the split as a note.
-	const mode = toolSeriesMode(tool, model)
+	// heading and the scope in the primary (it is the same selection the chips
+	// and the lit tile show).
 	const scopeParts = [tool, model === undefined ? undefined : modelLabel(model)].filter(
 		(part): part is string => part !== undefined,
 	)
 	const bucketMs = rows.length > 1 ? rows[1]!.date.getTime() - rows[0]!.date.getTime() : null
-	const note = [
-		keys.length > 1 ? `${keys.length} ${seriesKind === "model" ? "models" : "tools"}` : null,
-		bucketMs === null ? null : `${bucketLabel(bucketMs)} buckets`,
-	]
-		.filter((part) => part !== null)
-		.join(" · ")
 
 	return (
 		<section
@@ -234,37 +228,24 @@ export function ToolSeriesChart({
 						<span className="text-primary">{part}</span>
 					</span>
 				))}
-				{mode === "single" ? null : (
-					<>
-						<Dot />
-						<span className="text-muted-foreground">
-							by {mode === "tools" ? "tool" : "model"}
-						</span>
-					</>
-				)}
 				<span className="grow" />
-				<span className="text-[11px] text-muted-foreground/60">{note}</span>
+				<span className="text-[11px] text-muted-foreground/60">
+					{bucketMs === null ? null : `${bucketLabel(bucketMs)} buckets`}
+				</span>
 			</div>
 
 			{/* Only where there is more than one line to tell apart — a single
-			    series is already named by the head. The number beside each name is
-			    its call volume, which is what the series are ranked by and is not
-			    otherwise visible on a rate or a latency. */}
-			{keys.length > 1 ? (
+			    series is already named by the head. */}
+			{lines.length > 1 ? (
 				<div className="-mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] leading-3.5">
-					{keys.map((key) => (
-						<span key={key} className="flex items-center gap-1.5">
+					{lines.map((line) => (
+						<span key={line.key} className="flex items-center gap-1.5">
 							<span
 								aria-hidden
 								className="h-[2.5px] w-3 shrink-0 rounded-full"
-								style={{
-									backgroundColor: colors.get(key) ?? chromeColors.border,
-								}}
+								style={{ backgroundColor: line.color }}
 							/>
-							<span className="max-w-40 truncate text-foreground/75">{seriesLabel(key)}</span>
-							<span className="tabular-nums text-muted-foreground/80">
-								{formatToolMetric(totals.get(key) ?? 0, "calls")}
-							</span>
+							<span className="text-foreground/75">{line.label}</span>
 						</span>
 					))}
 				</div>

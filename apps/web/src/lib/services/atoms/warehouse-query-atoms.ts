@@ -117,8 +117,9 @@ import {
 import { getAiSessionSpans, getAiSessionSummary, getAiSessionsFacets, listAiSessions } from "@/api/warehouse/ai-sessions"
 import {
 	getAiToolBreakdowns,
+	getAiToolErrorDetail,
+	getAiToolErrors,
 	getAiToolSeries,
-	getAiToolSessions,
 	getAiToolTotals,
 } from "@/api/warehouse/ai-session-tools"
 import {
@@ -356,7 +357,7 @@ export const aiSessionSummaryResultAtom = makeQueryAtomFamily(getAiSessionSummar
 	staleTime: 60_000,
 })
 
-// Agent Sessions › Tools. Four reads over one selection, all 30s: the page is
+// Agent Sessions › Tools. Five reads over one selection, all 30s: the page is
 // a time-ranged analytics view whose numbers are watched while a rollout lands,
 // and one TTL keeps the strip, the chart and the breakdowns from refreshing
 // against each other.
@@ -372,7 +373,11 @@ export const aiToolBreakdownsResultAtom = makeQueryAtomFamily(getAiToolBreakdown
 	staleTime: 30_000,
 })
 
-export const aiToolSessionsResultAtom = makeQueryAtomFamily(getAiToolSessions, {
+export const aiToolErrorsResultAtom = makeQueryAtomFamily(getAiToolErrors, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorDetailResultAtom = makeQueryAtomFamily(getAiToolErrorDetail, {
 	staleTime: 30_000,
 })
 

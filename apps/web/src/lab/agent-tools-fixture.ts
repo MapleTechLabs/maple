@@ -18,13 +18,18 @@ import type { AiToolsSeriesKind } from "@maple/domain/http"
 import {
 	EMPTY_MEASURES,
 	type ToolBreakdownRow,
+	type ToolErrorOccurrenceRow,
+	type ToolErrorRow,
+	type ToolErrorSessionRow,
 	type ToolMeasures,
 	type ToolSeriesPoint,
-	type ToolSessionRow,
 	type ToolTotals,
 } from "@/lib/agent-sessions/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 import type { AgentToolsViewData } from "@/components/agent-sessions/tools/agent-tools-view"
+import type { ToolDetailViewData } from "@/components/agent-sessions/tools/tool-detail-view"
+import type { ToolErrorDetailData } from "@/components/agent-sessions/tools/tool-error-modal"
+import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 
 const HOUR = 3_600_000
 const BUCKET_MS = 3 * HOUR
@@ -270,7 +275,7 @@ const SESSION_SEEDS = [
 
 /**
  * Roll cells up by a key, adding the counts and call-weighting the percentiles —
- * the same compromise `foldSeries` documents, and for the same reason: there is
+ * the same compromise `aggregateByBucket` documents, and for the same reason: there is
  * no way to combine two p90s into the p90 of their union.
  */
 function rollup(
@@ -369,11 +374,15 @@ export function buildToolAnalyticsFixture(
 		p95: totals.p95 * 0.7,
 	}
 
-	const lastSeenBy = (keyOf: (cell: ToolFixtureCell) => string) => {
+	const lastSeenBy = (
+		keyOf: (cell: ToolFixtureCell) => string,
+		pick: (a: number, b: number) => number,
+	) => {
 		const out = new Map<string, number>()
 		for (const cell of filtered) {
 			const key = keyOf(cell)
-			out.set(key, Math.max(out.get(key) ?? 0, cell.bucket))
+			const seen = out.get(key)
+			out.set(key, seen === undefined ? cell.bucket : pick(seen, cell.bucket))
 		}
 		return out
 	}
@@ -382,29 +391,17 @@ export function buildToolAnalyticsFixture(
 		rows: ReadonlyArray<ToolFixtureCell>,
 		keyOf: (cell: ToolFixtureCell) => string,
 	): ReadonlyArray<ToolBreakdownRow> => {
-		const lastSeen = lastSeenBy(keyOf)
+		const lastSeen = lastSeenBy(keyOf, Math.max)
+		const firstSeen = lastSeenBy(keyOf, Math.min)
 		return [...rollup(rows, keyOf).entries()]
-			.map(([key, value]) => ({ key, ...value, lastSeen: lastSeen.get(key) ?? nowMs }))
+			.map(([key, value]) => ({
+				key,
+				...value,
+				lastSeen: lastSeen.get(key) ?? nowMs,
+				firstSeen: firstSeen.get(key) ?? nowMs,
+			}))
 			.sort((a, b) => b.calls - a.calls)
 	}
-
-	const sessions: ReadonlyArray<ToolSessionRow> = SESSION_SEEDS.filter(
-		(seed) =>
-			(search.tool === undefined || (seed.tools as ReadonlyArray<string>).includes(search.tool)) &&
-			(search.model === undefined || seed.model === search.model) &&
-			(search.service === undefined || seed.serviceName === search.service) &&
-			(search.failing !== true || seed.errors > 0),
-	).map((seed) => ({
-		sessionId: seed.sessionId,
-		agentName: seed.agentName,
-		model: seed.model,
-		serviceName: seed.serviceName,
-		calls: seed.calls,
-		errors: seed.errors,
-		avgDurationNs: seed.avgMs * MS,
-		maxDurationNs: seed.maxMs * MS,
-		startedAt: nowMs - seed.minutesAgo * 60_000,
-	}))
 
 	return {
 		series,
@@ -417,15 +414,20 @@ export function buildToolAnalyticsFixture(
 			filtered.filter((cell) => search.model === undefined || cell.model === search.model),
 			(cell) => cell.tool,
 		),
-		models: breakdown(
-			filtered.filter((cell) => search.tool === undefined || cell.tool === search.tool),
-			(cell) => cell.model,
-		),
-		sessions,
+		// The window's whole session population — the real one counts every agent
+		// session, including the ones that called no tool at all, so the fixture's
+		// is deliberately larger than any tool total.
+		allSessions: Math.round(cells.reduce((sum, cell) => sum + cell.sessions, 0) * 1.4),
 	}
 }
 
-/** The service / env options the toolbar's selects offer, counted like the real facets. */
+/** The window the fixture covers, which the `new` badge is measured against. */
+export function toolFixtureWindow(nowMs: number): { startMs: number; endMs: number } {
+	return { startMs: nowMs - BUCKETS * BUCKET_MS, endMs: nowMs }
+}
+
+/** The service / model / env options the toolbar's selects offer, counted like
+ *  the real facets. */
 export function toolFixtureFacets(cells: ReadonlyArray<ToolFixtureCell>) {
 	const count = (keyOf: (cell: ToolFixtureCell) => string) => {
 		const out = new Map<string, number>()
@@ -437,5 +439,230 @@ export function toolFixtureFacets(cells: ReadonlyArray<ToolFixtureCell>) {
 			.map(([name, value]) => ({ name, count: value }))
 			.sort((a, b) => b.count - a.count)
 	}
-	return { services: count((cell) => cell.service), environments: count((cell) => cell.env) }
+	return {
+		services: count((cell) => cell.service),
+		models: count((cell) => cell.model),
+		environments: count((cell) => cell.env),
+	}
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * The tool detail page, and the error modal it opens
+ *
+ * Written as failure PROFILES per tool rather than as rows, so the same shapes
+ * a reader needs to see are always present: a dominant failure that is most of
+ * a tool's errors, a long tail, and a group that named no error type at all —
+ * which is the row the real page has to render as `unknown` and cannot route on.
+ * -----------------------------------------------------------------------------------------------*/
+
+interface ErrorProfile {
+	readonly errorType: string
+	readonly message: string
+	/** Share of the tool's failures. The list is normalised, not checked. */
+	readonly share: number
+}
+
+const ERROR_PROFILES = new Map<string, ReadonlyArray<ErrorProfile>>(Object.entries({
+	run_tests: [
+		{
+			errorType: "TimeoutError",
+			message: "Test run exceeded 120s: 3 workers still running (integration/warehouse.test.ts)",
+			share: 0.41,
+		},
+		{
+			errorType: "AssertionError",
+			message: "expected 200 to equal 401 — auth middleware not applied to /internal",
+			share: 0.23,
+		},
+		{ errorType: "ExitCode(1)", message: "vitest: 4 failed | 212 passed (216) — see stderr", share: 0.18 },
+		{ errorType: "ENOENT", message: "no such file or directory: apps/web/src/routes/lab", share: 0.11 },
+		{
+			errorType: "SandboxUnavailable",
+			message: "container could not open a network namespace; refusing to run",
+			share: 0.05,
+		},
+		// The row every one of these tables eventually grows: a span that failed
+		// and said nothing about why.
+		{ errorType: "", message: "", share: 0.02 },
+	],
+	bash: [
+		{ errorType: "ExitCode(127)", message: "command not found: rg", share: 0.62 },
+		{ errorType: "TimeoutError", message: "command exceeded 30s", share: 0.28 },
+		{ errorType: "", message: "", share: 0.1 },
+	],
+	default: [
+		{ errorType: "UpstreamError", message: "502 from the upstream service", share: 0.7 },
+		{ errorType: "", message: "", share: 0.3 },
+	],
+} satisfies Record<string, ReadonlyArray<ErrorProfile>>))
+
+const errorProfilesFor = (tool: string): ReadonlyArray<ErrorProfile> =>
+	ERROR_PROFILES.get(tool) ?? ERROR_PROFILES.get("default")!
+
+const ARGUMENTS_BY_TOOL = new Map(Object.entries({
+	run_tests: `{
+  "paths": ["integration/warehouse.test.ts"],
+  "workers": 4,
+  "timeout_ms": 120000,
+  "reporter": "json",
+  "bail": false
+}`,
+	bash: `{
+  "command": "rg --json 'IsToolCall' packages/",
+  "timeout_ms": 30000
+}`,
+} satisfies Record<string, string>))
+
+const RESULT_BY_TYPE = new Map(Object.entries({
+	TimeoutError: `TimeoutError: Test run exceeded 120s: 3 workers still running
+  at Runner.waitForWorkers (runner.ts:214)
+  at run_tests (tools/run-tests.ts:88)
+
+{
+  "passed": 208,
+  "failed": 0,
+  "pending": 3,
+  "duration_ms": 120004,
+  "partial": true
+}`,
+} satisfies Record<string, string>))
+
+/** The error rows of one tool under the current scope. */
+export function buildToolErrorsFixture(
+	tool: string,
+	failures: number,
+	nowMs: number,
+): ReadonlyArray<ToolErrorRow> {
+	return errorProfilesFor(tool)
+		.map((profile, index) => ({
+			errorType: profile.errorType,
+			message: profile.message,
+			calls: Math.max(1, Math.round(failures * profile.share)),
+			sessions: Math.max(1, Math.round(failures * profile.share * 0.35)),
+			firstSeen: nowMs - (20 + index * 6) * 3_600_000,
+			lastSeen: nowMs - (2 + index * 37) * 60_000,
+		}))
+		.sort((a, b) => b.calls - a.calls)
+}
+
+/** The sessions list the detail page shows, in the list read's own row shape. */
+function detailSessions(tool: string, nowMs: number): ReadonlyArray<AgentSessionRow> {
+	return SESSION_SEEDS.filter((seed) => (seed.tools as ReadonlyArray<string>).includes(tool)).map(
+		(seed, index) => {
+			const startedAt = nowMs - seed.minutesAgo * 60_000
+			const durationMs = seed.maxMs * 4 + 12_000
+			return {
+				sessionId: seed.sessionId,
+				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
+				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
+				traceCount: 1 + (index % 6),
+				spanCount: 22 + index * 97,
+				errorSpanCount: seed.errors,
+				toolErrorCount: seed.errors,
+				turnErrorCount: 0,
+				serviceNames: [seed.serviceName],
+				models: [seed.model],
+				agentNames: seed.agentName === "" ? [] : [seed.agentName],
+				firstAgentName: seed.agentName,
+				llmCalls: Math.round(seed.calls / 3),
+				toolCalls: seed.calls,
+				totalTokens: seed.calls * 900,
+				inputTokens: seed.calls * 600,
+				cacheReadTokens: seed.calls * 200,
+				cacheWriteTokens: 0,
+				outputTokens: seed.calls * 100,
+				reasoningTokens: 0,
+				cost: seed.calls * 0.004,
+				startTime: new Date(startedAt).toISOString().replace("T", " ").slice(0, 23),
+				endTime: new Date(startedAt + durationMs).toISOString().replace("T", " ").slice(0, 23),
+				durationMs,
+			}
+		},
+	)
+}
+
+/** `/agent-sessions/tools/$toolName` over the same week the overview draws. */
+export function buildToolDetailFixture(
+	tool: string,
+	search: ToolAnalyticsSearch,
+	nowMs: number,
+	cells: ReadonlyArray<ToolFixtureCell>,
+): ToolDetailViewData {
+	const scoped = cells.filter(
+		(cell) =>
+			cell.tool === tool &&
+			(search.model === undefined || cell.model === search.model) &&
+			(search.service === undefined || cell.service === search.service) &&
+			(search.env === undefined || cell.env === search.env),
+	)
+	const series: ToolSeriesPoint[] = [
+		...rollup(scoped, (cell) => `${cell.bucket}`).entries(),
+	].map(([bucket, value]) => ({ bucket: Number(bucket), seriesKey: tool, ...value }))
+	const totals: ToolTotals = rollup(scoped, () => "all").get("all") ?? EMPTY_MEASURES
+	const sessions = detailSessions(tool, nowMs)
+
+	return {
+		series,
+		totals,
+		scopeCalls: cells
+			.filter((cell) => cell.tool === tool)
+			.reduce((sum, cell) => sum + cell.calls, 0),
+		firstSeen: scoped.reduce((min, cell) => Math.min(min, cell.bucket), nowMs),
+		lastSeen: scoped.reduce((max, cell) => Math.max(max, cell.bucket), 0),
+		errors: buildToolErrorsFixture(tool, totals.errors, nowMs),
+		errorsLoading: false,
+		errorsFailure: undefined,
+		sessions,
+		sessionsCapped: false,
+		sessionsLoading: false,
+		sessionsFailure: undefined,
+	}
+}
+
+/** One error type of one tool: its sessions, and the calls themselves. */
+export function buildToolErrorDetailFixture(
+	tool: string,
+	errorType: string,
+	rows: ReadonlyArray<ToolErrorRow>,
+	nowMs: number,
+): ToolErrorDetailData {
+	const row = rows.find((candidate) => candidate.errorType === errorType)
+	const hits = row?.calls ?? 0
+	const seeds = SESSION_SEEDS.filter((seed) => (seed.tools as ReadonlyArray<string>).includes(tool))
+
+	const sessions: ReadonlyArray<ToolErrorSessionRow> = seeds.map((seed, index) => ({
+		sessionId: seed.sessionId,
+		agentName: seed.agentName,
+		model: seed.model,
+		hits: Math.max(1, Math.round(hits / (index + 2))),
+		lastSeen: nowMs - (2 + index * 41) * 60_000,
+	}))
+
+	const occurrences: ReadonlyArray<ToolErrorOccurrenceRow> = Array.from({ length: 6 }).map(
+		(_, index) => {
+			const seed = seeds[index % Math.max(seeds.length, 1)]
+			const args = ARGUMENTS_BY_TOOL.get(tool) ?? '{\n  "input": "…"\n}'
+			const result =
+				RESULT_BY_TYPE.get(errorType) ??
+				`${errorType === "" ? "error" : errorType}: ${row?.message ?? ""}`
+			return {
+				timestamp: nowMs - (3 + index * 14) * 60_000,
+				traceId: `7f3a4b5c6d7e8f9012345678${index.toString().padStart(8, "0")}`,
+				spanId: `a1b2c3d4e5f6${index.toString().padStart(4, "0")}`,
+				sessionId: seed?.sessionId ?? "trace:7f3a4b5c",
+				agentName: seed?.agentName ?? "",
+				model: seed?.model ?? "",
+				errorType,
+				message: row?.message ?? "",
+				durationNs: 120_000 * MS,
+				statusCode: "Error",
+				arguments: args,
+				argumentsBytes: args.length,
+				result,
+				resultBytes: result.length,
+			}
+		},
+	)
+
+	return { sessions, occurrences }
 }

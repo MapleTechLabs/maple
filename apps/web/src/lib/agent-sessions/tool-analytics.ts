@@ -7,7 +7,8 @@
 // these shapes (see `api/warehouse/ai-session-tools.ts`); nothing downstream of
 // that ever sees a wire shape.
 
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { AI_TOOLS_BREAKDOWN_MAX } from "@maple/domain/http"
+import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
 export const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
@@ -46,21 +47,61 @@ export interface ToolBreakdownRow extends ToolMeasures {
 	readonly key: string
 	/** Epoch ms of the most recent call in this row. */
 	readonly lastSeen: number
+	/** Epoch ms of the earliest call in this row, bounded by the window. */
+	readonly firstSeen: number
 }
 
-/** A session that called the current selection. */
-export interface ToolSessionRow {
+/* -------------------------------------------------------------------------------------------------
+ * The tool detail page's failures
+ * -----------------------------------------------------------------------------------------------*/
+
+/** One error type a tool failed with. */
+export interface ToolErrorRow {
+	/** `''` is a real group: a call that failed naming no type. */
+	readonly errorType: string
+	readonly message: string
+	/** Failed calls with this type. */
+	readonly calls: number
+	readonly sessions: number
+	/** Epoch ms. */
+	readonly firstSeen: number
+	readonly lastSeen: number
+}
+
+/** One session that hit an error type — the modal's left pane. */
+export interface ToolErrorSessionRow {
 	readonly sessionId: string
 	readonly agentName: string
 	readonly model: string
-	readonly serviceName: string
-	readonly calls: number
-	readonly errors: number
-	readonly avgDurationNs: number
-	readonly maxDurationNs: number
+	readonly hits: number
 	/** Epoch ms. */
-	readonly startedAt: number
+	readonly lastSeen: number
 }
+
+/** One failed call, with what it was called with and what came back. */
+export interface ToolErrorOccurrenceRow {
+	/** Epoch ms. */
+	readonly timestamp: number
+	readonly traceId: string
+	readonly spanId: string
+	readonly sessionId: string
+	readonly agentName: string
+	readonly model: string
+	readonly errorType: string
+	readonly message: string
+	readonly durationNs: number
+	readonly statusCode: string
+	/** Truncated by the read; `*Bytes` is the true payload size. */
+	readonly arguments: string
+	readonly argumentsBytes: number
+	readonly result: string
+	readonly resultBytes: number
+}
+
+/** `''` is the failures that named no error type. */
+export const UNKNOWN_ERROR_TYPE_LABEL = "unknown"
+export const errorTypeLabel = (errorType: string): string =>
+	errorType === "" ? UNKNOWN_ERROR_TYPE_LABEL : errorType
 
 export const EMPTY_MEASURES: ToolMeasures = { calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 }
 
@@ -111,6 +152,19 @@ export function metricValue(
 	}
 }
 
+/**
+ * A count, grouped rather than compacted.
+ *
+ * `formatNumber` renders 12,480 as "12.5K", which is right for a headline and
+ * wrong for a table of call counts that are read against each other — 12.5K and
+ * 12.4K are the same number to a reader. Compaction starts at a million, where
+ * the exact digits stop being something anyone holds in their head and the
+ * lane starts to matter.
+ */
+export function formatToolCount(value: number): string {
+	return Math.abs(value) >= 1_000_000 ? formatNumber(value) : Math.round(value).toLocaleString()
+}
+
 /** `errors / calls`, or 0 for a row that never ran. */
 export function errorRate(measures: Pick<ToolMeasures, "calls" | "errors">): number {
 	return measures.calls > 0 ? measures.errors / measures.calls : 0
@@ -127,7 +181,7 @@ export function formatToolMetric(value: number, metric: ToolMetric): string {
 	switch (metric) {
 		case "calls":
 		case "sessions":
-			return formatNumber(value)
+			return formatToolCount(value)
 		case "error_rate":
 			return formatErrorRate(value)
 		case "duration":
@@ -151,32 +205,11 @@ export function toolMetricLabel(metric: ToolMetric, percentile: ToolPercentile):
  * Deltas
  * -----------------------------------------------------------------------------------------------*/
 
-/**
- * Fractional change against the previous window, or `null` when there is
- * nothing to compare against.
- *
- * A previous window of zero has no percentage — "up ∞%" is not a reading — and
- * an absent previous window (its query is still in flight, or failed) drops the
- * delta rather than the number it sits beside.
- */
-export function metricDelta(
-	current: ToolMeasures,
-	previous: ToolMeasures | undefined,
-	metric: ToolMetric,
-	percentile: ToolPercentile,
-): number | null {
-	if (previous === undefined) return null
-	const before = metricValue(previous, metric, percentile)
-	if (!Number.isFinite(before) || before === 0) return null
-	const after = metricValue(current, metric, percentile)
-	if (!Number.isFinite(after)) return null
-	return (after - before) / before
-}
-
-/** True when a rise in this metric is bad news — every metric here but the counts. */
-export function metricRiseIsBad(metric: ToolMetric): boolean {
-	return metric === "error_rate" || metric === "duration"
-}
+/** True when a rise in this metric is bad news — every metric here but the
+ *  counts. Read only by {@link toolDelta}, which is the one thing that grades a
+ *  move on this page. */
+const metricRiseIsBad = (metric: ToolMetric): boolean =>
+	metric === "error_rate" || metric === "duration"
 
 /* -------------------------------------------------------------------------------------------------
  * Series colours
@@ -199,7 +232,7 @@ export const TOOL_SERIES_COLOR_TOKENS = ["--chart-2", "--chart-3", "--chart-4", 
  * can already arrive under this key; `foldSeries` merges them into its own tail
  * rather than ranking them as a series, which is what keeps one legend entry.
  */
-export const OTHER_SERIES_KEY = "Other"
+export const OTHER_SERIES_KEY = "other"
 
 /** `''` is a real breakdown key: a tool call whose tool name, or whose model,
  *  the index could not resolve. It is shown, but it cannot be selected — the
@@ -232,9 +265,6 @@ export function toolSeriesColors(keys: ReadonlyArray<string>): ReadonlyMap<strin
  * Top-N folding
  * -----------------------------------------------------------------------------------------------*/
 
-/** How many named lines the chart draws before the rest fold into `Other`. */
-export const TOOL_SERIES_LIMIT = 4
-
 /**
  * The series keys in rank order, ranked by **calls** whatever metric is
  * selected.
@@ -254,87 +284,13 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 		.map(([key]) => key)
 }
 
-/**
- * Keep the top `limit` series and fold everything else into one `Other` line.
- *
- * Counts add. Percentiles do not — there is no way to combine two p90s into the
- * p90 of their union — so `Other`'s percentiles are the **call-weighted mean**
- * of its members', which is an approximation and is labelled as one in the
- * tooltip. It is the honest shape of the compromise: the alternative is either
- * dropping the tail (a chart that hides work) or a percentile of percentiles
- * presented as fact.
- *
- * Returns the folded points and the ranked key list the chart draws in order.
- */
-export function foldSeries(
-	points: ReadonlyArray<ToolSeriesPoint>,
-	limit: number = TOOL_SERIES_LIMIT,
-): { points: ReadonlyArray<ToolSeriesPoint>; keys: ReadonlyArray<string> } {
-	// `Other` never competes for a slot: the API's own tail and this one are the
-	// same residue, and ranking them apart would draw two grey lines.
-	const ranked = rankSeriesKeys(points).filter((key) => key !== OTHER_SERIES_KEY)
-	const apiFolded = points.some((point) => point.seriesKey === OTHER_SERIES_KEY)
-	if (ranked.length <= limit && !apiFolded) return { points, keys: ranked }
-
-	const kept = new Set(ranked.slice(0, limit))
-	const passthrough: ToolSeriesPoint[] = []
-	// Bucket → the tail's running sums, plus the call-weighted percentile sums.
-	const folded = new Map<number, { measures: ToolMeasures; weighted: { p50: number; p90: number; p95: number } }>()
-
-	for (const point of points) {
-		if (kept.has(point.seriesKey)) {
-			passthrough.push(point)
-			continue
-		}
-		const entry = folded.get(point.bucket) ?? {
-			measures: { ...EMPTY_MEASURES },
-			weighted: { p50: 0, p90: 0, p95: 0 },
-		}
-		folded.set(point.bucket, {
-			measures: {
-				calls: entry.measures.calls + point.calls,
-				sessions: entry.measures.sessions + point.sessions,
-				errors: entry.measures.errors + point.errors,
-				p50: 0,
-				p90: 0,
-				p95: 0,
-			},
-			weighted: {
-				p50: entry.weighted.p50 + point.p50 * point.calls,
-				p90: entry.weighted.p90 + point.p90 * point.calls,
-				p95: entry.weighted.p95 + point.p95 * point.calls,
-			},
-		})
-	}
-
-	const otherPoints: ToolSeriesPoint[] = [...folded.entries()].map(([bucket, entry]) => {
-		const weight = entry.measures.calls
-		return {
-			bucket,
-			seriesKey: OTHER_SERIES_KEY,
-			...entry.measures,
-			p50: weight > 0 ? entry.weighted.p50 / weight : 0,
-			p90: weight > 0 ? entry.weighted.p90 / weight : 0,
-			p95: weight > 0 ? entry.weighted.p95 / weight : 0,
-		}
-	})
-
-	return {
-		points: [...passthrough, ...otherPoints],
-		keys: [...ranked.slice(0, limit), OTHER_SERIES_KEY],
-	}
-}
-
 /* -------------------------------------------------------------------------------------------------
  * Chart title
  * -----------------------------------------------------------------------------------------------*/
 
 /**
  * What the chart is of, read left to right: the measure, then the scope it is
- * measured over, then what it is split by.
- *
- * "Error rate · run_tests · by model". The split is dropped for a single line —
- * there is nothing to be "by".
+ * measured over. "Error rate · run_tests".
  */
 export function toolChartTitle({
 	metric,
@@ -350,9 +306,6 @@ export function toolChartTitle({
 	const parts: string[] = [toolMetricLabel(metric, percentile)]
 	if (tool !== undefined) parts.push(tool)
 	if (model !== undefined) parts.push(model)
-	const mode = toolSeriesMode(tool, model)
-	if (mode === "tools") parts.push("by tool")
-	if (mode === "models") parts.push("by model")
 	return parts.join(" · ")
 }
 
@@ -360,12 +313,16 @@ export function toolChartTitle({
  * The scope line's count sentence: how much of the window the current selection
  * accounts for, and across how many sessions.
  */
-export function scopeSummary(totals: ToolTotals, matchedOfCalls: number): string {
-	const sessions = `${formatNumber(totals.sessions)} session${totals.sessions === 1 ? "" : "s"}`
+export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject?: string): string {
+	const sessions = `${formatToolCount(totals.sessions)} session${totals.sessions === 1 ? "" : "s"}`
+	// The tool detail page names the tool in its denominator ("of 3,908
+	// run_tests calls"), because there the whole page is one tool's and an
+	// unqualified "calls" would read as the org's.
+	const noun = subject === undefined ? "calls" : `${subject} calls`
 	if (matchedOfCalls <= 0 || matchedOfCalls === totals.calls) {
-		return `${formatNumber(totals.calls)} calls · ${sessions}`
+		return `${formatToolCount(totals.calls)} ${noun} · ${sessions}`
 	}
-	return `${formatNumber(totals.calls)} of ${formatNumber(matchedOfCalls)} calls match · ${sessions}`
+	return `${formatToolCount(totals.calls)} of ${formatToolCount(matchedOfCalls)} ${noun} match · ${sessions}`
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -427,4 +384,138 @@ export function metricSpark(
 	percentile: ToolPercentile,
 ): ReadonlyArray<number> {
 	return aggregateByBucket(points).map((bucket) => metricValue(bucket, metric, percentile))
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * Deltas, in the unit the metric is actually read in
+ * -----------------------------------------------------------------------------------------------*/
+
+/** A delta as a tile prints it: the number, and which way it moved. */
+export interface ToolDelta {
+	readonly text: string
+	readonly direction: "up" | "down" | "flat"
+	/** True when the move is an improvement — what the colour follows. */
+	readonly good: boolean
+}
+
+/**
+ * The change against the previous window, expressed the way the metric is read.
+ *
+ * A rate does not move by a percentage — 8% to 16% is "up 8 points", not "up
+ * 100%" — and a latency moves by a duration. Only the counts take a percentage,
+ * which is why this is not one formatter over `metricDelta`: the number, not
+ * just its unit, is different per metric.
+ */
+export function toolDelta(
+	current: ToolMeasures,
+	previous: ToolMeasures | undefined,
+	metric: ToolMetric,
+	percentile: ToolPercentile,
+): ToolDelta | null {
+	if (previous === undefined) return null
+	const before = metricValue(previous, metric, percentile)
+	const after = metricValue(current, metric, percentile)
+	if (!Number.isFinite(before) || !Number.isFinite(after)) return null
+
+	const direction = (change: number, epsilon: number): ToolDelta["direction"] =>
+		Math.abs(change) < epsilon ? "flat" : change > 0 ? "up" : "down"
+	const rose = after > before
+	const good = metricRiseIsBad(metric) ? !rose : rose
+
+	if (metric === "error_rate") {
+		const points = (after - before) * 100
+		return { text: `${Math.abs(points).toFixed(1)}pp`, direction: direction(points, 0.05), good }
+	}
+	if (metric === "duration") {
+		const change = after - before
+		return {
+			text: formatDurationNs(Math.abs(change)),
+			// A tenth of a millisecond is not a latency change anyone is reading.
+			direction: direction(change, 100_000),
+			good,
+		}
+	}
+	// Counts: a percentage, and no percentage at all against a window of zero —
+	// "up ∞%" is not a reading.
+	if (before === 0) return null
+	const change = (after - before) / before
+	return { text: formatPercent(Math.abs(change)), direction: direction(change, 0.001), good }
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * Table badges
+ * -----------------------------------------------------------------------------------------------*/
+
+export type ToolBadge = "slowest" | "new"
+
+/** Volume floor a row must clear to be called the slowest, as a share of the
+ *  busiest row. A tool called nine times in a week has the slowest p90 in most
+ *  windows and is never what the badge is for. */
+const SLOWEST_MIN_VOLUME_SHARE = 0.1
+
+/** How far into the window a tool's first call has to land before it reads as
+ *  new. Bounded by the window, so this is "new in this range". */
+const NEW_AFTER_WINDOW_SHARE = 0.2
+
+/**
+ * The one-word annotations the Tools table puts beside a name.
+ *
+ * `slowest` is the worst P90 among the rows that carry real volume, not the
+ * worst P90 outright. `new` is a tool whose first call in the window lands well
+ * after the window opened — the honest version of "new" available without a
+ * lookback read.
+ */
+export function toolBadges(
+	rows: ReadonlyArray<ToolBreakdownRow>,
+	window: { readonly startMs: number; readonly endMs: number },
+): ReadonlyMap<string, ToolBadge> {
+	const out = new Map<string, ToolBadge>()
+	if (rows.length === 0) return out
+
+	const busiest = rows.reduce((max, row) => Math.max(max, row.calls), 0)
+	const contenders = rows.filter((row) => row.calls >= busiest * SLOWEST_MIN_VOLUME_SHARE)
+	const slowest = contenders.reduce<ToolBreakdownRow | undefined>(
+		(worst, row) => (worst === undefined || row.p90 > worst.p90 ? row : worst),
+		undefined,
+	)
+	if (slowest !== undefined && slowest.p90 > 0) out.set(slowest.key, "slowest")
+
+	const span = window.endMs - window.startMs
+	if (span > 0) {
+		const cutoff = window.startMs + span * NEW_AFTER_WINDOW_SHARE
+		for (const row of rows) {
+			if (row.firstSeen > cutoff && !out.has(row.key)) out.set(row.key, "new")
+		}
+	}
+	return out
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * Footers
+ * -----------------------------------------------------------------------------------------------*/
+
+/**
+ * "Showing all 26 tools · 34,412 calls · 2.4% errors" — the table's own totals,
+ * which are the window's before the tool chip narrows it.
+ *
+ * The read is capped, so a full page is not "all": at the limit the sentence
+ * says which rows these are, and the totals beside it are the shown rows' and
+ * not the window's.
+ */
+export function toolsTableFooter(
+	rows: ReadonlyArray<ToolBreakdownRow>,
+	limit: number = AI_TOOLS_BREAKDOWN_MAX,
+): {
+	readonly subject: string
+	readonly detail: string
+} {
+	const calls = rows.reduce((sum, row) => sum + row.calls, 0)
+	const errors = rows.reduce((sum, row) => sum + row.errors, 0)
+	return {
+		subject:
+			rows.length >= limit
+				? `Showing the ${formatToolCount(limit)} busiest tools`
+				: `Showing all ${formatToolCount(rows.length)} tool${rows.length === 1 ? "" : "s"}`,
+		detail: `· ${formatToolCount(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
+	}
 }

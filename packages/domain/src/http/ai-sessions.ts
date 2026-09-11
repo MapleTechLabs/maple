@@ -586,11 +586,14 @@ const aiToolsMeasures = {
 }
 
 /**
- * Which dimension the chart's series are keyed by. Derived from the selection,
- * not chosen: no tool selected compares tools, a tool without a model compares
- * the models it ran under, and both selected is a single `tool` series.
+ * Which dimension the chart's series are keyed by. Derived from the selection
+ * unless the request names one: no tool selected compares tools, a tool without
+ * a model compares the models it ran under, and both selected is a single
+ * `tool` series. `none` is one series over the whole selection — every key
+ * merged INSIDE the query, so its quantiles and its session count are measured
+ * rather than averaged.
  */
-export const AiToolsSeriesKind = Schema.Literals(["tool", "model"])
+export const AiToolsSeriesKind = Schema.Literals(["tool", "model", "none"])
 export type AiToolsSeriesKind = Schema.Schema.Type<typeof AiToolsSeriesKind>
 
 export class AiToolsSeriesRequest extends Schema.Class<AiToolsSeriesRequest>("AiToolsSeriesRequest")({
@@ -599,6 +602,13 @@ export class AiToolsSeriesRequest extends Schema.Class<AiToolsSeriesRequest>("Ai
 	/** Whole seconds, greater than zero — it reaches `toStartOfInterval` as an
 	 *  `INTERVAL n SECOND` literal, so a fraction is a 400 and not a 500. */
 	bucketSeconds: BucketSeconds,
+	/**
+	 * What the series split by. Absent lets the server derive it from the
+	 * selection, which is what the overview wants; the tool detail page sends
+	 * `none` because it draws one tool and merging a per-model split client-side
+	 * would sum sessions across models and average their quantiles.
+	 */
+	split: Schema.optionalKey(AiToolsSeriesKind),
 	...aiToolsSelection,
 }) {}
 
@@ -641,6 +651,18 @@ export class AiToolsTotalsRequest extends Schema.Class<AiToolsTotalsRequest>("Ai
 export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("AiToolsTotalsResponse")({
 	current: AiToolsAggregate,
 	/**
+	 * Every session of the window, before the selection and before the toolbar —
+	 * the denominator the Sessions tile states its share against, and the count
+	 * the tab strip shows. Unfiltered on purpose: a share against a denominator
+	 * that moves with the filters is not a share.
+	 */
+	allSessions: Schema.Number,
+	/** The first and last matched call, as warehouse datetime literals; `''`
+	 *  where nothing matched. Bounded by the window, so "first seen" is
+	 *  "first seen in this range". */
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+	/**
 	 * The window of equal length immediately before the caller's, measured by
 	 * the same query — the deltas the tiles show. Zeros where nothing ran then,
 	 * which the client renders as "no comparison" rather than a -100%.
@@ -648,12 +670,19 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	previous: AiToolsAggregate,
 }) {}
 
+/** Rows the Tools breakdown returns, busiest first — the same cap the query
+ *  applies and the footer states, so the page can say "the 50 busiest" rather
+ *  than "all 50". */
+export const AI_TOOLS_BREAKDOWN_MAX = 50
+
 export const AiToolsBreakdownItem = Schema.Struct({
 	/** The tool name or the model name, per which list this came from. */
 	key: Schema.String,
 	...aiToolsMeasures,
 	/** The latest tool call under this key, as a warehouse datetime literal. */
 	lastSeen: Schema.String,
+	/** The earliest one, same shape — what the table's `new` badge reads. */
+	firstSeen: Schema.String,
 })
 export type AiToolsBreakdownItem = Schema.Schema.Type<typeof AiToolsBreakdownItem>
 
@@ -669,56 +698,115 @@ export class AiToolsBreakdownsResponse extends Schema.Class<AiToolsBreakdownsRes
 	"AiToolsBreakdownsResponse",
 )({
 	/**
-	 * Every tool, scoped to the selected MODEL but NOT to the selected tool —
-	 * the panel exists to pick a different tool, so filtering by the current one
-	 * would return the single row already on screen.
+	 * Every tool, scoped to the rest of the selection but NOT to the selected
+	 * tool — the table exists to pick a different tool, so filtering by the
+	 * current one would return the single row already on screen.
 	 */
 	tools: Schema.Array(AiToolsBreakdownItem),
-	/** Every model, scoped to the selected TOOL and not to the selected model. */
-	models: Schema.Array(AiToolsBreakdownItem),
 }) {}
 
-/** Sessions one drill-in returns. The list is ordered by calls, so this is
- *  "the busiest N", not an arbitrary page. */
-export const AI_TOOLS_SESSIONS_MAX = 200
+/* -------------------------------------------------------------------------------------------------
+ * Tool detail — the failures of one tool
+ *
+ * Two reads, and both are keyed by a REQUIRED `tool`: they are the tool detail
+ * page's, and the whole-org version of either question is the overview's error
+ * rate column. Everything else about the selection is the same bag the four
+ * reads above take, so the page's toolbar narrows its failures exactly as it
+ * narrows its charts.
+ * -----------------------------------------------------------------------------------------------*/
 
-export class AiToolsSessionsRequest extends Schema.Class<AiToolsSessionsRequest>(
-	"AiToolsSessionsRequest",
-)({
+/** The selection with the tool required — the tool detail page's own scope. */
+const aiToolSelectionForTool = {
+	...aiToolsSelection,
+	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+}
+
+/** Error types one breakdown returns, and occurrences one modal opens with. */
+export const AI_TOOL_ERRORS_MAX = 100
+
+export const AiToolErrorItem = Schema.Struct({
+	/** `error.type` as the span reported it. `''` is a real group: a call that
+	 *  failed without naming a type, which the page labels `unknown`. */
+	errorType: Schema.String,
+	/** The most recent status message under this type, truncated by the read. */
+	message: Schema.String,
+	/** Failed calls with this type. */
+	calls: Schema.Number,
+	sessions: Schema.Number,
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+})
+export type AiToolErrorItem = Schema.Schema.Type<typeof AiToolErrorItem>
+
+export class AiToolErrorsRequest extends Schema.Class<AiToolErrorsRequest>("AiToolErrorsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	...aiToolsSelection,
-	limit: Schema.optional(
-		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOLS_SESSIONS_MAX })),
+	...aiToolSelectionForTool,
+	limit: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
 	),
 }) {}
 
-export const AiToolsSessionItem = Schema.Struct({
-	/** The sessions list's own key, so this row links straight to that page —
-	 *  the vendor's session id, or `trace:<TraceId>` where it exposes none. */
+export class AiToolErrorsResponse extends Schema.Class<AiToolErrorsResponse>("AiToolErrorsResponse")({
+	data: Schema.Array(AiToolErrorItem),
+}) {}
+
+/** One session that hit an error type, for the modal's left pane. */
+export const AiToolErrorSessionItem = Schema.Struct({
 	sessionId: Schema.String,
-	// Labels, not facts: one value per session where the session is homogeneous
-	// (almost always), an arbitrary one of the matched calls' values where it is
-	// not. `''` where nothing named one.
 	agentName: Schema.String,
 	model: Schema.String,
-	serviceName: Schema.String,
-	/** Tool calls of this session that the selection matched — not the session's
-	 *  whole tool count unless nothing is selected. */
-	calls: Schema.Number,
-	errors: Schema.Number,
-	/** Nanoseconds, over the matched calls alone. */
-	avgDurationNs: Schema.Number,
-	maxDurationNs: Schema.Number,
-	/** The first matched call, as a warehouse datetime literal. */
-	startedAt: Schema.String,
+	/** Occurrences of this error type in this session. */
+	hits: Schema.Number,
+	lastSeen: Schema.String,
 })
-export type AiToolsSessionItem = Schema.Schema.Type<typeof AiToolsSessionItem>
+export type AiToolErrorSessionItem = Schema.Schema.Type<typeof AiToolErrorSessionItem>
 
-export class AiToolsSessionsResponse extends Schema.Class<AiToolsSessionsResponse>(
-	"AiToolsSessionsResponse",
+/** One failed call, with what it was called with and what came back. */
+export const AiToolErrorOccurrence = Schema.Struct({
+	timestamp: Schema.String,
+	traceId: Schema.String,
+	spanId: Schema.String,
+	sessionId: Schema.String,
+	agentName: Schema.String,
+	model: Schema.String,
+	errorType: Schema.String,
+	message: Schema.String,
+	/** Nanoseconds, like every other AI duration. */
+	durationNs: Schema.Number,
+	statusCode: Schema.String,
+	/** Truncated by the read; `*Bytes` is the payload's true size, which is what
+	 *  the modal prints beside the block. */
+	arguments: Schema.String,
+	argumentsBytes: Schema.Number,
+	result: Schema.String,
+	resultBytes: Schema.Number,
+})
+export type AiToolErrorOccurrence = Schema.Schema.Type<typeof AiToolErrorOccurrence>
+
+export class AiToolErrorDetailRequest extends Schema.Class<AiToolErrorDetailRequest>(
+	"AiToolErrorDetailRequest",
 )({
-	data: Schema.Array(AiToolsSessionItem),
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...aiToolSelectionForTool,
+	/** The error type the modal is open on. Present-but-empty selects the calls
+	 *  that named no type, which is the `unknown` row. */
+	errorType: Schema.String.check(Schema.isMaxLength(200)),
+	/** Narrow the occurrences to one session — the left pane's selection. */
+	session: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	limit: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
+	),
+}) {}
+
+export class AiToolErrorDetailResponse extends Schema.Class<AiToolErrorDetailResponse>(
+	"AiToolErrorDetailResponse",
+)({
+	/** Every session that hit this error type, busiest first — NOT narrowed by
+	 *  `session`, which is what makes the pane a way out of the one selected. */
+	sessions: Schema.Array(AiToolErrorSessionItem),
+	occurrences: Schema.Array(AiToolErrorOccurrence),
 }) {}
 
 export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInternal")
@@ -779,9 +867,16 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("toolsSessions", "/tools/sessions", {
-			payload: AiToolsSessionsRequest,
-			success: AiToolsSessionsResponse,
+		HttpApiEndpoint.post("toolErrors", "/tools/errors", {
+			payload: AiToolErrorsRequest,
+			success: AiToolErrorsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolErrorDetail", "/tools/error-detail", {
+			payload: AiToolErrorDetailRequest,
+			success: AiToolErrorDetailResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

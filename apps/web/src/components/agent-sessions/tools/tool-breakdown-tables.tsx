@@ -1,26 +1,31 @@
 import { useMemo, type ReactNode } from "react"
+import { Link } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { useTableSort, type SortDir } from "@/components/infra/primitives/data-table"
 import { relativeRatio } from "@/components/infra/primitives/share-bar"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
-import { ModelLabel } from "@/components/agent-sessions/model-label"
-import type { DetectedModel } from "@/hooks/use-detected-models"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import type { ToolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
 import {
 	breakdownKeyLabel,
 	errorRate,
 	formatDurationNs,
+	formatToolCount,
+	toolBadges,
+	toolsTableFooter,
+	type ToolBadge,
 	type ToolBreakdownRow,
 	type ToolPercentile,
 } from "@/lib/agent-sessions/tool-analytics"
 
 /* -------------------------------------------------------------------------------------------------
- * Table chrome shared by the three tables on this page
+ * Table chrome shared by every table on the tools pages
  *
  * Not the infra `DataTable`: that one is a card with 11px sans column heads and
- * 12px rows, and this page's tables are set open on the surface in mono, with
+ * 12px rows, and these tables are set open on the surface in mono, with
  * uppercase tracked heads and 38px rows. Same job, different register, and the
  * register is the point.
  * -----------------------------------------------------------------------------------------------*/
@@ -108,9 +113,10 @@ export function Th<K extends string>({
 	)
 }
 
-/** Rows scroll inside this once a list outgrows it, so the page never grows past the sessions below. */
+/** Rows scroll inside this once a list outgrows it, so one long table never
+ *  pushes the sections under it off the page. */
 export function TableBody({
-	maxHeight = 420,
+	maxHeight = 460,
 	waiting,
 	children,
 }: {
@@ -129,9 +135,9 @@ export function TableBody({
 }
 
 /**
- * The selected-row marker: a 2px lane reserved on every row and painted only
- * on the picked one, so the rows never shift sideways as the selection moves.
- * The same mark as the metric strip's — "this is what the chart is now about".
+ * The row: 38px, a hairline under it, and a 2px lane reserved on the left that
+ * only a selected row paints — so rows never shift sideways as a selection
+ * moves. The same mark the metric strip uses.
  */
 export const ROW =
 	"relative flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border/50 px-2.5 text-left transition-colors last:border-0 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors focus-visible:outline-none"
@@ -142,75 +148,80 @@ export function TableEmpty({ children }: { children: ReactNode }) {
 	return <div className="px-2.5 py-12 text-center font-mono text-xs text-muted-foreground">{children}</div>
 }
 
+/** The table's closing line: what is on screen, then the totals behind it. */
+export function TableFooter({ subject, detail }: { subject: string; detail: string }) {
+	return (
+		<div className="flex h-9 items-center gap-[9px] px-2.5 font-mono text-xs">
+			<span className="text-muted-foreground">{subject}</span>
+			<span className="text-muted-foreground/60">{detail}</span>
+		</div>
+	)
+}
+
 /**
  * Error rate → severity tone. Thresholds rather than a gradient because the
  * question is triage-shaped: under 1% is background noise for a tool that runs
  * thousands of times, over 10% is something a person should look at today.
  */
-function errorTone(rate: number): { bar: string; text: string } {
-	if (rate >= 0.1)
-		return {
-			bar: "bg-[var(--severity-error)]",
-			text: "text-[var(--severity-error)]",
-		}
-	if (rate >= 0.01)
-		return {
-			bar: "bg-[var(--severity-warn)]",
-			text: "text-[var(--severity-warn)]",
-		}
+export function errorTone(rate: number): { bar: string; text: string } {
+	if (rate >= 0.1) return { bar: "bg-[var(--severity-error)]", text: "text-[var(--severity-error)]" }
+	if (rate >= 0.01) return { bar: "bg-[var(--severity-warn)]", text: "text-[var(--severity-warn)]" }
 	return { bar: "bg-[var(--severity-info)]", text: "text-muted-foreground" }
 }
 
-function formatRate(rate: number): string {
+export function formatRate(rate: number): string {
 	return rate === 0 ? "—" : `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
 }
 
 /**
- * The error column: a bar scaled against the worst row in the table, and the
- * rate itself.
+ * A share column: a bar scaled against the worst row in the table, and the
+ * number itself.
  *
  * Against the worst row rather than against 100%, because a table where every
  * tool fails under 2% would otherwise be a column of invisible slivers — and
  * ranking these rows against each other is the entire job of the column. The
- * percentage beside it is what keeps the bar from being read as an absolute.
+ * value beside it is what keeps the bar from being read as an absolute.
  */
-function ErrorCell({ rate, max, emphasis }: { rate: number; max: number; emphasis?: boolean }) {
-	const tone = errorTone(rate)
-	const ratio = relativeRatio(rate, max)
+export function ShareCell({
+	ratio,
+	max,
+	label,
+	tone,
+}: {
+	ratio: number
+	max: number
+	label: string
+	tone: { bar: string; text: string }
+}) {
+	const width = relativeRatio(ratio, max)
 	return (
-		<span className="flex w-[116px] shrink-0 items-center justify-end gap-2.5">
-			<span className="hidden h-1 w-[60px] shrink-0 overflow-hidden rounded-[2px] bg-muted @min-[520px]/panel:block">
+		<span className="flex w-[150px] shrink-0 items-center justify-end gap-2.5">
+			<span className="hidden h-1 w-[60px] shrink-0 overflow-hidden rounded-[2px] bg-muted @min-[560px]/panel:block">
 				<span
 					className={cn("block h-full", tone.bar)}
-					style={{ width: `${Math.max(ratio * 100, rate > 0 ? 3 : 0)}%` }}
+					style={{ width: `${Math.max(width * 100, ratio > 0 ? 3 : 0)}%` }}
 				/>
 			</span>
-			<span
-				className={cn(
-					"w-[46px] text-right font-mono text-xs tabular-nums",
-					tone.text,
-					emphasis && "font-medium",
-				)}
-			>
-				{formatRate(rate)}
+			<span className={cn("w-[46px] text-right font-mono text-xs tabular-nums", tone.text)}>
+				{label}
 			</span>
 		</span>
 	)
 }
 
-/** A 64×22 line: the row's metric over the window, in the tool's series colour when selected. */
-function LineSpark({ values, className }: { values: ReadonlyArray<number>; className?: string }) {
-	if (values.length < 2) return <span className="h-[22px] w-16 shrink-0" />
+/** A 110×22 line: the row's call volume over the window, in the primary. */
+export function LineSpark({ values, className }: { values: ReadonlyArray<number>; className?: string }) {
+	if (values.length < 2) return <span className="h-[22px] w-[110px] shrink-0" />
 	const max = Math.max(...values, 0.0001)
 	const step = 110 / (values.length - 1)
 	const points = values
-		.map((v, i) => {
-			const safe = Number.isFinite(v) && v >= 0 ? v : 0
-			return `${(i * step).toFixed(1)},${(20 - (safe / max) * 18).toFixed(1)}`
+		.map((value, index) => {
+			const safe = Number.isFinite(value) && value >= 0 ? value : 0
+			return `${(index * step).toFixed(1)},${(20 - (safe / max) * 18).toFixed(1)}`
 		})
 		.join(" ")
 	return (
-		<svg viewBox="0 0 110 22" className={cn("h-[22px] w-16 shrink-0", className)} aria-hidden>
+		<svg viewBox="0 0 110 22" className={cn("h-[22px] w-[110px] shrink-0", className)} aria-hidden>
 			<polyline
 				points={points}
 				fill="none"
@@ -222,16 +233,39 @@ function LineSpark({ values, className }: { values: ReadonlyArray<number>; class
 	)
 }
 
-type ToolSortKey = "key" | "calls" | "duration" | "errors" | "sessions"
+/** `slowest` / `new` — one word, in the tone of what it is saying. */
+export function Badge({ badge }: { badge: ToolBadge }) {
+	return (
+		<span
+			className={cn(
+				"flex h-[17px] shrink-0 items-center rounded-[3px] px-1.5 font-mono text-2xs leading-3",
+				badge === "slowest"
+					? "bg-[var(--severity-error)]/20 text-[var(--severity-error)]"
+					: "bg-muted text-muted-foreground",
+			)}
+		>
+			{badge}
+		</span>
+	)
+}
+
+type ToolSortKey = "key" | "calls" | "p50" | "p90" | "p95" | "errorRate" | "errors" | "sessions" | "lastSeen"
 
 interface ToolsTableProps {
 	rows: ReadonlyArray<ToolBreakdownRow>
+	/** Which percentile the page is keyed on — that column is the lit one. */
 	percentile: ToolPercentile
-	/** The picked tool (`?tool=`), rendered as the selected row. */
+	/** The window, for the `new` badge and nothing else. */
+	window: { startMs: number; endMs: number }
+	/**
+	 * Carried into every row's link. The AMBIENT scope only — the toolbar's
+	 * filters and the window — never `q` or `tool`: `q` ILIKE-filters tool names,
+	 * and on a page that is one tool it would filter that tool's own name out.
+	 */
+	detailSearch: ToolDetailLinkSearch
+	/** The tool a `?tool=` link arrived with, drawn as the selected row. */
 	selected: string | undefined
-	/** Clicking the picked row clears it — selection is a toggle, like the analytics breakdowns. */
-	onSelect: (tool: string | undefined) => void
-	/** That tool's metric over the window, for the row's spark. Empty where the series does not cover it. */
+	/** That tool's call volume over the window, for the row's spark. */
 	sparkFor: (tool: string) => ReadonlyArray<number>
 	/** The colour the chart draws this tool in, or none when it is not a line there. */
 	colorFor: (tool: string) => string | undefined
@@ -239,47 +273,58 @@ interface ToolsTableProps {
 }
 
 /**
- * The page's primary breakdown: every tool in the window, ranked, each row a
- * click away from becoming the page's scope.
+ * Every tool in the window, ranked, each row a click away from its own page.
  *
- * One duration column, not three. The percentile is already chosen in the
- * metric strip and shown in the column head, so three latency columns here
- * would restate a decision the reader has made and leave the name column
- * nothing to live in.
+ * All three percentiles at once, not the one the strip is keyed on: "is the
+ * tail getting worse while the median holds?" is the question this table is
+ * scanned for, and it cannot be asked one column at a time. The percentile the
+ * page IS keyed on is the bright one, so the table still says which number the
+ * chart above it is drawing.
  */
 export function ToolsTable({
 	rows,
 	percentile,
+	window,
+	detailSearch,
 	selected,
-	onSelect,
 	sparkFor,
 	colorFor,
 	waiting,
 }: ToolsTableProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const prepared = useMemo(
-		() =>
-			rows.map((row) => ({
-				...row,
-				duration: row[percentile],
-				errorRate: errorRate(row),
-			})),
-		[rows, percentile],
+		() => rows.map((row) => ({ ...row, errorRate: errorRate(row) })),
+		[rows],
 	)
 	const maxErrorRate = useMemo(
 		() => prepared.reduce((max, row) => Math.max(max, row.errorRate), 0),
 		[prepared],
 	)
+	const badges = useMemo(() => toolBadges(rows, window), [rows, window])
 	const { sorted, sortKey, sortDir, handleSort } = useTableSort(prepared, {
 		initialKey: "calls" as ToolSortKey,
 		stringKeys: ["key"],
 	})
+	const footer = toolsTableFooter(rows)
+
+	const duration = (value: number, driving: boolean, hidden?: string) => (
+		<span
+			className={cn(
+				"w-[76px] shrink-0 text-right font-mono text-xs tabular-nums",
+				driving ? "text-foreground/85" : "text-muted-foreground",
+				hidden,
+			)}
+		>
+			{formatDurationNs(value)}
+		</span>
+	)
 
 	return (
-		<section className="@container/panel min-w-0 px-6 py-5" aria-label="Tools breakdown">
-			<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 pb-3 font-mono">
+		<section className="@container/panel min-w-0 px-6 pt-5 pb-6" aria-label="Tools">
+			<div className="flex items-baseline gap-2.5 pb-3 font-mono">
 				<span className="text-[12.5px] font-medium text-foreground">Tools</span>
-				<span className="text-[11.5px] leading-3.5 text-muted-foreground/70">
-					{formatNumber(rows.length)} · click a row to scope the chart, KPIs and sessions
+				<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+					{formatToolCount(rows.length)}
 				</span>
 			</div>
 
@@ -293,7 +338,7 @@ export function ToolsTable({
 						dir={sortDir}
 						onSort={handleSort}
 					/>
-					<Th label="Volume" width="w-16 shrink-0" hidden="hidden @min-[520px]/panel:flex" />
+					<Th label="Volume" width="w-[110px] shrink-0" hidden="hidden @min-[720px]/panel:flex" />
 					<Th<ToolSortKey>
 						label="Calls"
 						width="w-[76px] shrink-0"
@@ -304,31 +349,71 @@ export function ToolsTable({
 						onSort={handleSort}
 					/>
 					<Th<ToolSortKey>
-						label={percentile.toUpperCase()}
-						width="w-[62px] shrink-0"
+						label="P50"
+						width="w-[76px] shrink-0"
 						align="right"
-						sortKey="duration"
+						sortKey="p50"
+						currentKey={sortKey}
+						dir={sortDir}
+						onSort={handleSort}
+						hidden="hidden @min-[900px]/panel:flex"
+					/>
+					<Th<ToolSortKey>
+						label="P90"
+						width="w-[76px] shrink-0"
+						align="right"
+						sortKey="p90"
 						currentKey={sortKey}
 						dir={sortDir}
 						onSort={handleSort}
 					/>
 					<Th<ToolSortKey>
+						label="P95"
+						width="w-[76px] shrink-0"
+						align="right"
+						sortKey="p95"
+						currentKey={sortKey}
+						dir={sortDir}
+						onSort={handleSort}
+						hidden="hidden @min-[900px]/panel:flex"
+					/>
+					<Th<ToolSortKey>
 						label="Error rate"
-						width="w-[116px] shrink-0 pl-6"
+						width="w-[150px] shrink-0 pl-6"
+						sortKey="errorRate"
+						currentKey={sortKey}
+						dir={sortDir}
+						onSort={handleSort}
+					/>
+					<Th<ToolSortKey>
+						label="Errors"
+						width="w-[76px] shrink-0"
+						align="right"
 						sortKey="errors"
 						currentKey={sortKey}
 						dir={sortDir}
 						onSort={handleSort}
+						hidden="hidden @min-[640px]/panel:flex"
 					/>
 					<Th<ToolSortKey>
 						label="Sessions"
-						width="w-[62px] shrink-0"
+						width="w-[76px] shrink-0"
 						align="right"
 						sortKey="sessions"
 						currentKey={sortKey}
 						dir={sortDir}
 						onSort={handleSort}
-						hidden="hidden @min-[600px]/panel:flex"
+						hidden="hidden @min-[640px]/panel:flex"
+					/>
+					<Th<ToolSortKey>
+						label="Last call"
+						width="w-[96px] shrink-0"
+						align="right"
+						sortKey="lastSeen"
+						currentKey={sortKey}
+						dir={sortDir}
+						onSort={handleSort}
+						hidden="hidden @min-[800px]/panel:flex"
 					/>
 					<span className="w-3.5 shrink-0" aria-hidden />
 				</TableHead>
@@ -338,248 +423,91 @@ export function ToolsTable({
 						<TableEmpty>No tool calls in the selected window.</TableEmpty>
 					) : (
 						sorted.map((row) => {
-							const isSelected = row.key === selected
 							const color = colorFor(row.key)
-							return (
-								<button
-									key={row.key}
-									type="button"
-									aria-pressed={isSelected}
-									disabled={row.key === ""}
-									onClick={() => onSelect(isSelected ? undefined : row.key)}
-									className={cn(
-										ROW,
-										isSelected ? ROW_SELECTED : ROW_IDLE,
-										row.key === "" && "cursor-default",
-									)}
-								>
+							const badge = badges.get(row.key)
+							const cells = (
+								<>
 									<span className="flex w-0 min-w-0 flex-1 items-center gap-[9px]">
 										<span
 											aria-hidden
 											className={cn(
 												"size-2 shrink-0 rounded-[2px]",
-												color === undefined && "bg-muted-foreground/30",
+												color === undefined && "bg-muted-foreground/50",
 											)}
-											style={
-												color === undefined ? undefined : { backgroundColor: color }
-											}
+											style={color === undefined ? undefined : { backgroundColor: color }}
 										/>
 										<span
 											className={cn(
 												"truncate font-mono text-[12.5px] text-foreground",
-												isSelected && "font-medium",
+												row.key === selected && "font-medium",
 											)}
 											title={breakdownKeyLabel(row.key)}
 										>
 											{breakdownKeyLabel(row.key)}
 										</span>
+										{badge === undefined ? null : <Badge badge={badge} />}
 									</span>
 									<LineSpark
-										values={sparkFor(row.key).slice(-16)}
-										className={cn(
-											"hidden @min-[520px]/panel:block",
-											isSelected ? "text-primary" : "text-primary/60",
-										)}
+										values={sparkFor(row.key).slice(-24)}
+										className="hidden text-primary/70 @min-[720px]/panel:block"
 									/>
-									<span
-										className={cn(
-											"w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground",
-											isSelected && "font-medium",
-										)}
-									>
-										{formatNumber(row.calls)}
+									<span className="w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground">
+										{formatToolCount(row.calls)}
 									</span>
-									<span className="w-[62px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground/80">
-										{formatDurationNs(row.duration)}
-									</span>
-									<ErrorCell
-										rate={row.errorRate}
+									{duration(row.p50, percentile === "p50", "hidden @min-[900px]/panel:block")}
+									{duration(row.p90, percentile === "p90")}
+									{duration(row.p95, percentile === "p95", "hidden @min-[900px]/panel:block")}
+									<ShareCell
+										ratio={row.errorRate}
 										max={maxErrorRate}
-										emphasis={isSelected}
+										label={formatRate(row.errorRate)}
+										tone={errorTone(row.errorRate)}
 									/>
-									<span className="hidden w-[62px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[600px]/panel:block">
-										{formatNumber(row.sessions)}
+									<span
+										className={cn(
+											"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums @min-[640px]/panel:block",
+											row.errors > 0
+												? "text-[var(--severity-error)]"
+												: "text-muted-foreground/60",
+										)}
+									>
+										{formatToolCount(row.errors)}
 									</span>
-									<span className="flex w-3.5 shrink-0 items-center justify-end text-primary">
-										{isSelected ? <ChevronRightIcon size={14} aria-hidden /> : null}
+									<span className="hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block">
+										{formatToolCount(row.sessions)}
 									</span>
-								</button>
+									<span className="hidden w-[96px] shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
+										{formatRelativeTimeOrDate(row.lastSeen, undefined, effectiveTimezone)}
+									</span>
+									<span className="flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60">
+										{row.key === "" ? null : <ChevronRightIcon size={14} aria-hidden />}
+									</span>
+								</>
 							)
-						})
-					)}
-				</TableBody>
-			</Table>
-		</section>
-	)
-}
 
-type ModelSortKey = "key" | "calls" | "duration" | "errors"
-
-interface ModelsPanelProps {
-	rows: ReadonlyArray<ToolBreakdownRow>
-	percentile: ToolPercentile
-	selected: string | undefined
-	onSelect: (model: string | undefined) => void
-	/** Resolves a model id to its vendor and display name — see `useDetectedModels`. */
-	detect: (model: string) => DetectedModel
-	waiting?: boolean
-	/** Named in the panel's subtitle when a tool narrows it. */
-	tool?: string
-}
-
-/**
- * The models running the current scope, beside the tools rather than under
- * them: "which tool is slow" and "which model is slow at it" are the same
- * question asked one level apart, and reading them side by side is what makes
- * the second one cheap to ask.
- *
- * Narrower than the Tools table on purpose — no sparkline, no sessions column.
- * A model list is short (single digits, usually), and the comparison it exists
- * for is between four numbers in one glance, not a ranked scan.
- */
-export function ModelsPanel({
-	rows,
-	percentile,
-	selected,
-	onSelect,
-	detect,
-	waiting,
-	tool,
-}: ModelsPanelProps) {
-	const prepared = useMemo(
-		() =>
-			rows.map((row) => ({
-				...row,
-				duration: row[percentile],
-				errorRate: errorRate(row),
-			})),
-		[rows, percentile],
-	)
-	const { sorted, sortKey, sortDir, handleSort } = useTableSort(prepared, {
-		initialKey: "calls" as ModelSortKey,
-		stringKeys: ["key"],
-	})
-
-	return (
-		<section
-			className="@container/panel min-w-0 border-t border-border px-6 py-5 @min-[1000px]/page:border-t-0 @min-[1000px]/page:border-l"
-			aria-label="Models breakdown"
-		>
-			<div className="flex h-7 items-center gap-2 font-mono">
-				<span className="text-[12.5px] font-medium text-foreground">Models</span>
-				<span className="text-[11px] tabular-nums text-muted-foreground">
-					{formatNumber(rows.length)}
-				</span>
-				{tool === undefined ? null : (
-					<span className="truncate text-[11px] text-muted-foreground/60">within {tool}</span>
-				)}
-			</div>
-
-			<Table>
-				<TableHead className="border-t-0">
-					<Th<ModelSortKey>
-						label="Model"
-						width="w-0 flex-1 min-w-0"
-						sortKey="key"
-						currentKey={sortKey}
-						dir={sortDir}
-						onSort={handleSort}
-					/>
-					<Th<ModelSortKey>
-						label="Calls"
-						width="w-[62px] shrink-0"
-						align="right"
-						sortKey="calls"
-						currentKey={sortKey}
-						dir={sortDir}
-						onSort={handleSort}
-					/>
-					<Th<ModelSortKey>
-						label={percentile.toUpperCase()}
-						width="w-[66px] shrink-0"
-						align="right"
-						sortKey="duration"
-						currentKey={sortKey}
-						dir={sortDir}
-						onSort={handleSort}
-					/>
-					<Th<ModelSortKey>
-						label="Err"
-						width="w-[58px] shrink-0"
-						align="right"
-						sortKey="errors"
-						currentKey={sortKey}
-						dir={sortDir}
-						onSort={handleSort}
-					/>
-				</TableHead>
-
-				<TableBody waiting={waiting}>
-					{sorted.length === 0 ? (
-						<TableEmpty>No models reported for this scope.</TableEmpty>
-					) : (
-						sorted.map((row) => {
-							const isSelected = row.key === selected
-							return (
-								<button
+							// The unattributed row has no name to route on: a tool call the
+							// index could not name has no page of its own.
+							return row.key === "" ? (
+								<div key={row.key} className={cn(ROW, "before:bg-transparent")}>
+									{cells}
+								</div>
+							) : (
+								<Link
 									key={row.key}
-									type="button"
-									aria-pressed={isSelected}
-									disabled={row.key === ""}
-									onClick={() => onSelect(isSelected ? undefined : row.key)}
-									className={cn(
-										ROW,
-										isSelected ? ROW_SELECTED : ROW_IDLE,
-										row.key === "" && "cursor-default",
-									)}
+									to="/agent-sessions/tools/$toolName"
+									params={{ toolName: row.key }}
+									search={detailSearch}
+									className={cn(ROW, row.key === selected ? ROW_SELECTED : ROW_IDLE)}
 								>
-									<span className="w-0 min-w-0 flex-1 font-mono text-xs text-foreground">
-										{row.key === "" ? (
-											<span className="text-muted-foreground">
-												{breakdownKeyLabel(row.key)}
-											</span>
-										) : (
-											<ModelLabel
-												detected={detect(row.key)}
-												size={12}
-												className={cn(
-													"gap-[7px]",
-													isSelected
-														? "[&_svg]:text-primary"
-														: "[&_svg]:text-muted-foreground",
-												)}
-											/>
-										)}
-									</span>
-									<span className="w-[62px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
-										{formatNumber(row.calls)}
-									</span>
-									<span
-										className={cn(
-											"w-[66px] shrink-0 text-right font-mono text-xs tabular-nums",
-											isSelected ? "text-foreground" : "text-muted-foreground",
-										)}
-									>
-										{formatDurationNs(row.duration)}
-									</span>
-									<span
-										className={cn(
-											"w-[58px] shrink-0 text-right font-mono text-xs tabular-nums",
-											errorTone(row.errorRate).text,
-										)}
-									>
-										{formatRate(row.errorRate)}
-									</span>
-								</button>
+									{cells}
+								</Link>
 							)
 						})
 					)}
 				</TableBody>
 			</Table>
 
-			<div className="flex h-9 items-center px-2.5 font-mono text-[11px] text-muted-foreground">
-				Click a model to narrow the chart to one line.
-			</div>
+			<TableFooter subject={footer.subject} detail={footer.detail} />
 		</section>
 	)
 }

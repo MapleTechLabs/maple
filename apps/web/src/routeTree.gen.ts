@@ -28,7 +28,6 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AgentSessionsIndexRouteImport } from './routes/agent-sessions/index'
 import { Route as AgentSessionsSessionIdRouteImport } from './routes/agent-sessions/$sessionId'
-import { Route as AgentSessionsToolsRouteImport } from './routes/agent-sessions/tools'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
 import { Route as AlertsRuleIdRouteImport } from './routes/alerts/$ruleId'
 import { Route as AlertsCreateRouteImport } from './routes/alerts/create'
@@ -72,6 +71,8 @@ import { Route as ServicesServiceNameRouteImport } from './routes/services/$serv
 import { Route as ShareTokenRouteImport } from './routes/share/$token'
 import { Route as TracesIndexRouteImport } from './routes/traces/index'
 import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
+import { Route as AgentSessionsToolsIndexRouteImport } from './routes/agent-sessions/tools/index'
+import { Route as AgentSessionsToolsToolNameRouteImport } from './routes/agent-sessions/tools/$toolName'
 import { Route as AlertsIncidentsIncidentIdRouteImport } from './routes/alerts/incidents/$incidentId'
 import { Route as ErrorsIssuesIndexRouteImport } from './routes/errors/issues/index'
 import { Route as ErrorsIssuesIssueIdRouteImport } from './routes/errors/issues/$issueId'
@@ -192,11 +193,6 @@ const AgentSessionsIndexRoute = AgentSessionsIndexRouteImport.update({
 const AgentSessionsSessionIdRoute = AgentSessionsSessionIdRouteImport.update({
   id: '/agent-sessions/$sessionId',
   path: '/agent-sessions/$sessionId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AgentSessionsToolsRoute = AgentSessionsToolsRouteImport.update({
-  id: '/agent-sessions/tools',
-  path: '/agent-sessions/tools',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsIndexRoute = AlertsIndexRouteImport.update({
@@ -415,6 +411,17 @@ const TracesTraceIdRoute = TracesTraceIdRouteImport.update({
   path: '/traces/$traceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentSessionsToolsIndexRoute = AgentSessionsToolsIndexRouteImport.update({
+  id: '/agent-sessions/tools/',
+  path: '/agent-sessions/tools/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentSessionsToolsToolNameRoute =
+  AgentSessionsToolsToolNameRouteImport.update({
+    id: '/agent-sessions/tools/$toolName',
+    path: '/agent-sessions/tools/$toolName',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AlertsIncidentsIncidentIdRoute =
   AlertsIncidentsIncidentIdRouteImport.update({
     id: '/alerts/incidents/$incidentId',
@@ -576,7 +583,6 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
-  '/agent-sessions/tools': typeof AgentSessionsToolsRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
@@ -621,6 +627,7 @@ export interface FileRoutesByFullPath {
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
+  '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
@@ -633,6 +640,7 @@ export interface FileRoutesByFullPath {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/agent-sessions/tools/': typeof AgentSessionsToolsIndexRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
   '/infra/containers/': typeof InfraContainersIndexRoute
@@ -666,7 +674,6 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
-  '/agent-sessions/tools': typeof AgentSessionsToolsRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
@@ -711,6 +718,7 @@ export interface FileRoutesByTo {
   '/replays': typeof ReplaysIndexRoute
   '/services': typeof ServicesIndexRoute
   '/traces': typeof TracesIndexRoute
+  '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
@@ -723,6 +731,7 @@ export interface FileRoutesByTo {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/agent-sessions/tools': typeof AgentSessionsToolsIndexRoute
   '/errors/issues': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare': typeof InfraCloudflareIndexRoute
   '/infra/containers': typeof InfraContainersIndexRoute
@@ -758,7 +767,6 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
-  '/agent-sessions/tools': typeof AgentSessionsToolsRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
@@ -803,6 +811,7 @@ export interface FileRoutesById {
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
+  '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
   '/infra/cloudflare/$zoneName': typeof InfraCloudflareZoneNameRoute
@@ -815,6 +824,7 @@ export interface FileRoutesById {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/agent-sessions/tools/': typeof AgentSessionsToolsIndexRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
   '/infra/containers/': typeof InfraContainersIndexRoute
@@ -851,7 +861,6 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/agent-sessions/$sessionId'
-    | '/agent-sessions/tools'
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
@@ -896,6 +905,7 @@ export interface FileRouteTypes {
     | '/replays/'
     | '/services/'
     | '/traces/'
+    | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
     | '/errors/issues/$issueId'
     | '/infra/cloudflare/$zoneName'
@@ -908,6 +918,7 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/agent-sessions/tools/'
     | '/errors/issues/'
     | '/infra/cloudflare/'
     | '/infra/containers/'
@@ -941,7 +952,6 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/agent-sessions/$sessionId'
-    | '/agent-sessions/tools'
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
@@ -986,6 +996,7 @@ export interface FileRouteTypes {
     | '/replays'
     | '/services'
     | '/traces'
+    | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
     | '/errors/issues/$issueId'
     | '/infra/cloudflare/$zoneName'
@@ -998,6 +1009,7 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/agent-sessions/tools'
     | '/errors/issues'
     | '/infra/cloudflare'
     | '/infra/containers'
@@ -1032,7 +1044,6 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/agent-sessions/$sessionId'
-    | '/agent-sessions/tools'
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
@@ -1077,6 +1088,7 @@ export interface FileRouteTypes {
     | '/replays/'
     | '/services/'
     | '/traces/'
+    | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
     | '/errors/issues/$issueId'
     | '/infra/cloudflare/$zoneName'
@@ -1089,6 +1101,7 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/agent-sessions/tools/'
     | '/errors/issues/'
     | '/infra/cloudflare/'
     | '/infra/containers/'
@@ -1124,7 +1137,6 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   AgentSessionsSessionIdRoute: typeof AgentSessionsSessionIdRoute
-  AgentSessionsToolsRoute: typeof AgentSessionsToolsRoute
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
   AnomaliesIncidentIdRoute: typeof AnomaliesIncidentIdRoute
@@ -1155,11 +1167,13 @@ export interface RootRouteChildren {
   ReplaysIndexRoute: typeof ReplaysIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   TracesIndexRoute: typeof TracesIndexRoute
+  AgentSessionsToolsToolNameRoute: typeof AgentSessionsToolsToolNameRoute
   AlertsIncidentsIncidentIdRoute: typeof AlertsIncidentsIncidentIdRoute
   ErrorsIssuesIssueIdRoute: typeof ErrorsIssuesIssueIdRoute
   InfraCloudflareZoneNameRoute: typeof InfraCloudflareZoneNameRoute
   InfraContainersContainerNameRoute: typeof InfraContainersContainerNameRoute
   InfraPlanetscaleDbNameRoute: typeof InfraPlanetscaleDbNameRoute
+  AgentSessionsToolsIndexRoute: typeof AgentSessionsToolsIndexRoute
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   InfraCloudflareIndexRoute: typeof InfraCloudflareIndexRoute
   InfraContainersIndexRoute: typeof InfraContainersIndexRoute
@@ -1309,13 +1323,6 @@ declare module '@tanstack/react-router' {
       path: '/agent-sessions/$sessionId'
       fullPath: '/agent-sessions/$sessionId'
       preLoaderRoute: typeof AgentSessionsSessionIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/agent-sessions/tools': {
-      id: '/agent-sessions/tools'
-      path: '/agent-sessions/tools'
-      fullPath: '/agent-sessions/tools'
-      preLoaderRoute: typeof AgentSessionsToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts/': {
@@ -1619,6 +1626,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TracesTraceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agent-sessions/tools/': {
+      id: '/agent-sessions/tools/'
+      path: '/agent-sessions/tools'
+      fullPath: '/agent-sessions/tools/'
+      preLoaderRoute: typeof AgentSessionsToolsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agent-sessions/tools/$toolName': {
+      id: '/agent-sessions/tools/$toolName'
+      path: '/agent-sessions/tools/$toolName'
+      fullPath: '/agent-sessions/tools/$toolName'
+      preLoaderRoute: typeof AgentSessionsToolsToolNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alerts/incidents/$incidentId': {
       id: '/alerts/incidents/$incidentId'
       path: '/alerts/incidents/$incidentId'
@@ -1875,7 +1896,6 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   AgentSessionsSessionIdRoute: AgentSessionsSessionIdRoute,
-  AgentSessionsToolsRoute: AgentSessionsToolsRoute,
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,
   AnomaliesIncidentIdRoute: AnomaliesIncidentIdRoute,
@@ -1906,11 +1926,13 @@ const rootRouteChildren: RootRouteChildren = {
   ReplaysIndexRoute: ReplaysIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   TracesIndexRoute: TracesIndexRoute,
+  AgentSessionsToolsToolNameRoute: AgentSessionsToolsToolNameRoute,
   AlertsIncidentsIncidentIdRoute: AlertsIncidentsIncidentIdRoute,
   ErrorsIssuesIssueIdRoute: ErrorsIssuesIssueIdRoute,
   InfraCloudflareZoneNameRoute: InfraCloudflareZoneNameRoute,
   InfraContainersContainerNameRoute: InfraContainersContainerNameRoute,
   InfraPlanetscaleDbNameRoute: InfraPlanetscaleDbNameRoute,
+  AgentSessionsToolsIndexRoute: AgentSessionsToolsIndexRoute,
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   InfraCloudflareIndexRoute: InfraCloudflareIndexRoute,
   InfraContainersIndexRoute: InfraContainersIndexRoute,

@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // Agent Sessions › Tools, against real rows.
 //
-// The tools page's four reads all hang off two derivations the compiled SQL
+// The tools page's reads all hang off two derivations the compiled SQL
 // cannot prove on its own:
 //
 //   - the MODEL of a tool call, which is never on the tool row. It comes from
@@ -225,8 +225,6 @@ const compareWindow = {
 	prevEndTime: chDateTime(BASE_MS - HOUR_MS),
 }
 
-const TRACE_SESSION = (traceId: string) => `trace:${traceId}`
-
 describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 	beforeAll(async () => {
 		await clickhouseExec(`CREATE DATABASE ${database}`)
@@ -238,31 +236,41 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		await clickhouseExec(`DROP DATABASE IF EXISTS ${database}`)
 	}, 30_000)
 
-	it("attributes every tool call's model and session, and nobody else's", async () => {
-		const compiled = compileUnionUnsafe(Integrations.aiToolsBreakdownsQuery(), window)
+	it("attributes every tool call's session, and nobody else's", async () => {
+		const compiled = compileUnsafe(Integrations.aiToolsBreakdownsQuery(), window)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
-
-		const panel = (kind: string) =>
-			rows
-				.filter((row) => row.kind === kind)
-				.map((row) => ({ key: row.key, calls: row.calls, sessions: row.sessions, errors: row.errors }))
 
 		// Three sessions invoked `search_traces` once each; `run_sql` ran once and
 		// failed. The foreign org's identical tool call is in neither.
-		assert.deepStrictEqual(panel("tool"), [
-			{ key: "search_traces", calls: 3, sessions: 3, errors: 0 },
-			{ key: "run_sql", calls: 1, sessions: 1, errors: 1 },
-		])
+		assert.deepStrictEqual(
+			rows.map((row) => ({
+				key: row.key,
+				calls: row.calls,
+				sessions: row.sessions,
+				errors: row.errors,
+			})),
+			[
+				{ key: "search_traces", calls: 3, sessions: 3, errors: 0 },
+				{ key: "run_sql", calls: 1, sessions: 1, errors: 1 },
+			],
+		)
+	})
 
-		// The three attribution paths, in one assertion: gpt-5 got both of
-		// TRACE_PARENT's calls — one through its parent chat span, one only
-		// through the trace fallback — claude got the parent-attributed one, and
-		// the trace with no model at all keys under ''.
-		assert.deepStrictEqual(panel("model"), [
-			{ key: GPT, calls: 2, sessions: 1, errors: 1 },
-			{ key: "", calls: 1, sessions: 1, errors: 0 },
-			{ key: CLAUDE, calls: 1, sessions: 1, errors: 0 },
-		])
+	it("merges every key inside the query when the caller asks for no split", async () => {
+		// The tool detail page's read. Merging a per-model split on the client
+		// instead would sum sessions across models and average their quantiles —
+		// `search_traces` ran once in each of three sessions under two models.
+		const compiled = compileUnsafe(
+			Integrations.aiToolsSeriesQuery({ tool: "search_traces", split: "none" }),
+			{ ...window, bucketSeconds: 86_400 },
+		)
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+
+		assert.strictEqual(rows.length, 1)
+		assert.deepStrictEqual(
+			{ seriesKey: rows[0]?.seriesKey, calls: rows[0]?.calls, sessions: rows[0]?.sessions },
+			{ seriesKey: "", calls: 3, sessions: 3 },
+		)
 	})
 
 	it("buckets the series and keys it by the dimension the selection implies", async () => {
@@ -323,40 +331,11 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 	})
 
-	it("lists the selection's sessions under the keys the sessions page uses", async () => {
-		const compiled = compileUnsafe(
-			Integrations.aiToolsSessionsQuery({ tool: "search_traces" }),
-			window,
-		)
-		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
-
-		assert.deepStrictEqual(
-			rows.map((row) => ({
-				sessionId: row.sessionId,
-				model: row.model,
-				calls: row.calls,
-				maxDurationNs: row.maxDurationNs,
-			})),
-			[
-				// The vendor's own id — the same string the sessions list shows, so
-				// the drill-in links straight back to it.
-				{ sessionId: SESSION_ID, model: GPT, calls: 1, maxDurationNs: 1_000_000 },
-				{ sessionId: TRACE_SESSION(TRACE_FALLBACK), model: CLAUDE, calls: 1, maxDurationNs: 3_000_000 },
-				// The unattributed trace: a session of one trace, and no model.
-				{ sessionId: TRACE_SESSION(TRACE_UNATTRIBUTED), model: "", calls: 1, maxDurationNs: 0 },
-			],
-		)
-		assert.strictEqual(rows[0]?.agentName, "slack-agent")
-		assert.strictEqual(rows[0]?.serviceName, "agent-service")
-	})
-
 	it("narrows every read by the toolbar's search and failing-only", async () => {
 		const toolCalls = async (opts: Parameters<typeof Integrations.aiToolsBreakdownsQuery>[0]) => {
-			const compiled = compileUnionUnsafe(Integrations.aiToolsBreakdownsQuery(opts), window)
+			const compiled = compileUnsafe(Integrations.aiToolsBreakdownsQuery(opts), window)
 			const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
-			return rows
-				.filter((row) => row.kind === "tool")
-				.map((row) => ({ key: row.key, calls: row.calls }))
+			return rows.map((row) => ({ key: row.key, calls: row.calls }))
 		}
 
 		// A substring, case-insensitively — the toolbar is a search box, not a
@@ -381,24 +360,17 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		const current = totalRows.find((row) => row.period === "current")
 		assert.deepStrictEqual({ calls: current?.calls, errors: current?.errors }, { calls: 1, errors: 1 })
 
-		// And so does the sessions drill-in.
-		const sessions = compileUnsafe(Integrations.aiToolsSessionsQuery({ search: "search" }), window)
-		const sessionRows = Effect.runSync(sessions.decodeRows(await runJson(sessions.sql)))
-		assert.deepStrictEqual(
-			sessionRows.map((row) => row.sessionId).sort(),
-			[SESSION_ID, TRACE_SESSION(TRACE_FALLBACK), TRACE_SESSION(TRACE_UNATTRIBUTED)].sort(),
-		)
 	})
 
 	it("selects by the model a tool call was attributed to, not by a column", async () => {
 		// The decisive case: `run_sql` has no model on its own row AND none on its
 		// parent. It is selected here only because the trace fallback put it on
 		// gpt-5 — a filter pushed onto `ai_trace_index.Model` would return nothing.
-		const compiled = compileUnionUnsafe(Integrations.aiToolsBreakdownsQuery({ model: GPT }), window)
+		const compiled = compileUnsafe(Integrations.aiToolsBreakdownsQuery({ model: GPT }), window)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 
 		assert.deepStrictEqual(
-			rows.filter((row) => row.kind === "tool").map((row) => ({ key: row.key, calls: row.calls })),
+			rows.map((row) => ({ key: row.key, calls: row.calls })),
 			[
 				{ key: "run_sql", calls: 1 },
 				{ key: "search_traces", calls: 1 },

@@ -1,9 +1,10 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	AiSessionTooLargeError,
+	AiToolErrorDetailResponse,
+	AiToolErrorsResponse,
 	AiToolsBreakdownsResponse,
 	AiToolsSeriesResponse,
-	AiToolsSessionsResponse,
 	AiToolsTotalsResponse,
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
@@ -387,9 +388,10 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 				.handle("toolsSeries", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const selection = toolsSelection(payload)
-						// The chart's series key is derived from the selection, so the
-						// response can say what it is without waiting for rows.
+						const selection = { ...toolsSelection(payload), split: payload.split }
+						// The series key is the request's where it named one, else derived
+						// from the selection — so the response can say what it is without
+						// waiting for rows.
 						const seriesKind = Integrations.aiToolsSeriesKind(selection)
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
@@ -428,9 +430,16 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						)
 						// An aggregate over no rows still yields one row per branch, so a
 						// missing period is a shape failure rather than an empty window.
+						// The query already reports `''` for a period that matched
+						// nothing, so these two carry that contract unchanged.
+						const current = rows.find((row) => row.period === "current")
 						return new AiToolsTotalsResponse({
 							current: aggregateOf(rows, "current"),
 							previous: aggregateOf(rows, "previous"),
+							// The third branch: the window's whole session population.
+							allSessions: rows.find((row) => row.period === "window")?.sessions ?? 0,
+							firstSeen: current?.firstSeen ?? "",
+							lastSeen: current?.lastSeen ?? "",
 						})
 					}),
 				)
@@ -440,31 +449,27 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 						const rows = yield* warehouse.compiledQuery(
 							tenant,
-							CH.compileUnion(Integrations.aiToolsBreakdownsQuery(toolsSelection(payload)), {
+							CH.compile(Integrations.aiToolsBreakdownsQuery(toolsSelection(payload)), {
 								orgId: tenant.orgId,
 								startTime: payload.startTime,
 								endTime: payload.endTime,
 							}),
 							{ context: "aiToolsBreakdowns" },
 						)
-						// One UNION ALL result carrying both panels, split by `kind` —
-						// the same shape the facets read returns.
-						const panel = (kind: Integrations.AiToolsBreakdownKind) =>
-							rows.filter((row) => row.kind === kind).map(breakdownItem)
-						return new AiToolsBreakdownsResponse({
-							tools: panel("tool"),
-							models: panel("model"),
-						})
+						return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
 					}),
 				)
-				.handle("toolsSessions", ({ payload }) =>
+				.handle("toolErrors", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.tools.tool": payload.tool,
+						})
 						const rows = yield* warehouse.compiledQuery(
 							tenant,
 							CH.compile(
-								Integrations.aiToolsSessionsQuery({
+								Integrations.aiToolErrorsQuery({
 									...toolsSelection(payload),
 									limit: payload.limit,
 								}),
@@ -472,18 +477,75 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									orgId: tenant.orgId,
 									startTime: payload.startTime,
 									endTime: payload.endTime,
+									// The tool is a param, not an opts field, so one compiled
+									// statement serves every tool detail page.
+									toolName: payload.tool,
 								},
+								{ rowSchema: Integrations.aiToolErrorsRowSchema },
 							),
-							{ profile: "list", context: "aiToolsSessions" },
+							{ context: "aiToolsErrors" },
 						)
-						return new AiToolsSessionsResponse({ data: rows })
+						return new AiToolErrorsResponse({ data: rows })
+					}),
+				)
+				.handle("toolErrorDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.tools.tool": payload.tool,
+							"maple.ai.tools.errorType": payload.errorType,
+						})
+						if (payload.session !== undefined) {
+							yield* Effect.annotateCurrentSpan({
+								"maple.ai.tools.session": payload.session,
+							})
+						}
+						const params = {
+							orgId: tenant.orgId,
+							startTime: payload.startTime,
+							endTime: payload.endTime,
+							toolName: payload.tool,
+						}
+						const selection = {
+							...toolsSelection(payload),
+							errorType: payload.errorType,
+							limit: payload.limit,
+						}
+						// Two reads, one modal: the sessions pane is NOT narrowed by the
+						// session the reader picked — it is how they pick a different one.
+						const [sessions, occurrences] = yield* Effect.all(
+							[
+								warehouse.compiledQuery(
+									tenant,
+									CH.compile(Integrations.aiToolErrorSessionsQuery(selection), params, {
+										rowSchema: Integrations.aiToolErrorSessionsRowSchema,
+									}),
+									{ profile: "list", context: "aiToolsErrorSessions" },
+								),
+								warehouse.compiledQuery(
+									tenant,
+									CH.compile(
+										Integrations.aiToolErrorOccurrencesQuery({
+											...selection,
+											session: payload.session,
+										}),
+										params,
+										{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+									),
+									{ profile: "list", context: "aiToolsErrorOccurrences" },
+								),
+							],
+							{ concurrency: 2 },
+						)
+						return new AiToolErrorDetailResponse({ sessions, occurrences })
 					}),
 				)
 		}),
 )
 
 /**
- * The tools page's selection, as every one of its four reads takes it.
+ * The tools page's selection, as every one of its reads takes it.
  *
  * The page's `metric` and `percentile` are not here and are not in the request
  * either: every read returns calls, sessions, errors and all three percentiles,
@@ -501,7 +563,7 @@ const toolsSelection = (payload: {
 	model: payload.model,
 	service: payload.service,
 	env: payload.env,
-	// The toolbar's two predicates. They go to all four reads, not just the
+	// The toolbar's two predicates. They go to every read, not just the
 	// tables they visibly narrow: a search the tiles ignored would count calls
 	// the chart below it was not drawing.
 	search: payload.search,
@@ -564,6 +626,7 @@ const breakdownItem = (row: Integrations.AiToolsBreakdownsOutput): AiToolsBreakd
 	p90: row.p90,
 	p95: row.p95,
 	lastSeen: row.lastSeen,
+	firstSeen: row.firstSeen,
 })
 
 const NO_TOKENS: AiSessionTokenTotals = { input: 0, output: 0, cacheRead: 0 }

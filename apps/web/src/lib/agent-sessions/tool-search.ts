@@ -9,6 +9,7 @@
 
 import { Schema } from "effect"
 
+import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { TOOL_METRICS, TOOL_PERCENTILES } from "./tool-analytics"
 
@@ -38,6 +39,14 @@ export const ToolAnalyticsSearchFields = {
 	env: Schema.optional(Schema.String),
 	/** Restrict to calls that failed. */
 	failing: BooleanParam,
+	/**
+	 * The error type the tool detail page's modal is open on. Present-but-empty
+	 * is the failures that named no type, which is a real row — so the param is
+	 * "absent means closed", not "empty means closed".
+	 */
+	error: Schema.optional(Schema.String),
+	/** The session the open modal's occurrences are narrowed to. */
+	session: Schema.optional(Schema.String),
 }
 
 export const ToolAnalyticsSearch = Schema.Struct(ToolAnalyticsSearchFields)
@@ -55,3 +64,31 @@ export const selectedMetric = (search: ToolAnalyticsSearch) => search.metric ?? 
 /** The percentile actually in force. */
 export const selectedPercentile = (search: ToolAnalyticsSearch) =>
 	search.percentile ?? DEFAULT_TOOL_PERCENTILE
+
+/**
+ * What travels from the overview's table into a tool's own page.
+ *
+ * The ambient scope — the toolbar's filters and the window — and nothing else.
+ * `q` is a tool-NAME search, so carrying it onto a page that is one tool would
+ * filter that tool's own name; `tool` is the route param there and a stale one
+ * could disagree with it. Both are dropped rather than reconciled.
+ */
+export interface ToolDetailLinkSearch extends TimeRangeSearch {
+	readonly model?: string
+	readonly service?: string
+	readonly env?: string
+	readonly failing?: boolean
+}
+
+export function toolDetailLinkSearch(
+	search: ToolAnalyticsSearch,
+	timeRange: TimeRangeSearch | undefined,
+): ToolDetailLinkSearch {
+	return {
+		...(search.model !== undefined && { model: search.model }),
+		...(search.service !== undefined && { service: search.service }),
+		...(search.env !== undefined && { env: search.env }),
+		...(search.failing !== undefined && { failing: search.failing }),
+		...timeRange,
+	}
+}
