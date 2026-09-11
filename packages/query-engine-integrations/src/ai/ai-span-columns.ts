@@ -211,3 +211,24 @@ export function sessionUsageSum(netted: string, measure: SessionUsageMeasure): E
 export function sessionLlmCalls(netted: string): Expr<number> {
 	return CH.rawExpr(`toFloat64(${nettedSum(netted, 2, "toFloat64(n.2)")})`, T.float64)
 }
+
+/**
+ * The session's model calls that carried a PRICE — {@link sessionLlmCalls}
+ * restricted to the reporters whose netted cost is above zero.
+ *
+ * The coverage behind a cost figure, and it has to be netted to be a share of
+ * anything: `Cost` is whatever the instrumentation reported and nothing prices
+ * a call Maple-side, so a window's cost is only as complete as the calls that
+ * carried one — and a gateway that prices the call the app's SDK could not is
+ * the same call twice until the response id collapses it.
+ *
+ * Written out rather than passed through {@link nettedSum}, whose unkeyed half
+ * reads one element of the tuple: this claim is a condition over two of them.
+ */
+export function sessionPricedLlmCalls(netted: string): Expr<number> {
+	const priced = "toFloat64(n.2 AND n.4 > 0)"
+	return CH.rawExpr(
+		`arraySum(arrayMap(n -> ${priced}, arrayFilter(n -> n.1 = '', ${netted}))) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, ${priced}), arrayFilter(n -> n.1 != '', ${netted})))))`,
+		T.float64,
+	)
+}

@@ -237,7 +237,7 @@ const orderTuple = (...parts: ReadonlyArray<unknown>): CH.Expr<unknown> =>
  * a session-bearing trace carry no session id themselves, and keying on that
  * would file each of them as its own sessionless trace.
  */
-const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH.Expr<string> =>
+export const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH.Expr<string> =>
 	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
 
 /**
@@ -315,6 +315,38 @@ export interface AiSessionFilterOpts {
 	 * as a prefix against both id columns of the index.
 	 */
 	readonly search?: string
+}
+
+/**
+ * The six counted filters, as every read that selects sessions applies them.
+ *
+ * A TRACE-level existence test — "some agent span of this trace carries this
+ * value" — and never a row predicate, for the reasons {@link indexTraces}
+ * gives. Shared with the overview's `traceKeys` so the list and the overview
+ * cannot drift into selecting different sessions; the list appends its own
+ * `search` clause after these.
+ */
+export const sessionFilterConditions = (
+	opts: AiSessionFilterOpts,
+	$: {
+		readonly VendorId: CH.Expr<string>
+		readonly ServiceName: CH.Expr<string>
+		readonly DeploymentEnv: CH.Expr<string>
+		readonly Model: CH.Expr<string>
+		readonly AgentName: CH.Expr<string>
+		readonly ToolName: CH.Expr<string>
+	},
+) => {
+	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
+	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
+	return [
+		CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
+		CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
+		CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
+		CH.when(values(opts.models), (v) => carries(CH.inList($.Model, v))),
+		CH.when(values(opts.agentNames), (v) => carries(CH.inList($.AgentName, v))),
+		CH.when(values(opts.toolNames), (v) => carries(CH.inList($.ToolName, v))),
+	]
 }
 
 export interface AiSessionPageOpts extends AiSessionFilterOpts {
@@ -488,9 +520,7 @@ const MAX_NAMES_PER_TRACE = 20
  * `usageReportersExpr`.
  */
 const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
-	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
 	const search = opts.search?.trim() || undefined
-	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
 		.select(($) => {
 			// Ranks the trace's spans for the agent-name `argMin`: a span that
@@ -564,15 +594,10 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 		])
 		.groupBy("traceId")
 		.having(($) => [
-			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
-			CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
-			CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
-			CH.when(values(opts.models), (v) => carries(CH.inList($.Model, v))),
-			CH.when(values(opts.agentNames), (v) => carries(CH.inList($.AgentName, v))),
-			CH.when(values(opts.toolNames), (v) => carries(CH.inList($.ToolName, v))),
+			...sessionFilterConditions(opts, $),
 			CH.when(search, (needle) => {
 				const pattern = idSearchPattern(needle)
-				return carries($.SessionId.like(pattern).or($.TraceId.like(pattern)))
+				return CH.countIf($.SessionId.like(pattern).or($.TraceId.like(pattern))).gt(0)
 			}),
 		])
 }

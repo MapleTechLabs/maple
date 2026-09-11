@@ -19,7 +19,8 @@ export interface DetectedModel {
 	readonly family: string | null
 }
 
-const unresolved = (model: string): DetectedModel => ({
+/** What a model reads as before — or without — a detection read. */
+export const unresolvedModel = (model: string): DetectedModel => ({
 	model,
 	displayName: shortTarget(model),
 	vendorSlug: null,
@@ -67,6 +68,6 @@ export function useDetectedModels(models: ReadonlyArray<string>): (model: string
 			.onSuccess((value: ReadonlyArray<DetectAiModelResponse>) => value)
 			.orElse(() => [] as ReadonlyArray<DetectAiModelResponse>)
 		const byModel = new Map(detected.map((entry) => [entry.model, entry]))
-		return (model: string) => byModel.get(model.trim()) ?? unresolved(model)
+		return (model: string) => byModel.get(model.trim()) ?? unresolvedModel(model)
 	}, [result])
 }

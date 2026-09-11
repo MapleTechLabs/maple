@@ -1,5 +1,8 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
+	AiOverviewBreakdownResponse,
+	AiOverviewModelMixResponse,
+	AiOverviewSummaryResponse,
 	AiSessionTooLargeError,
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
@@ -11,13 +14,15 @@ import {
 	ListAiSessionsResponse,
 	MapleInternalApi,
 	MAX_AI_SESSION_SPANS_RESPONSE_BYTES,
+	type AiOverviewBreakdownRow,
+	type AiOverviewMeasures,
 	type AiSessionTokenReporting,
 	type AiSessionTokenTotals,
 	type AiSessionTurnSummary,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 import { Effect } from "effect"
-import { CH } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 
@@ -400,8 +405,241 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						return summary
 					}),
 				)
+				.handle("overviewSummary", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.overview.bucket_seconds": payload.bucketSeconds,
+						})
+						// The comparison window is the caller's, shifted back by its own
+						// length: `previous` ends where `current` begins, so the two
+						// never overlap and the delta is over equal spans.
+						const params = {
+							orgId: tenant.orgId,
+							startTime: payload.startTime,
+							endTime: payload.endTime,
+							...previousWindow(payload.startTime, payload.endTime),
+						}
+						const selection = overviewSelection(payload)
+						// Two reads and not one: the tiles' percentiles cannot be folded
+						// from the chart's, so the window has to be grouped twice — and
+						// side by side that costs one read's latency rather than two.
+						const [totals, series] = yield* Effect.all(
+							[
+								warehouse.compiledQuery(
+									tenant,
+									CH.compileUnion(Integrations.aiOverviewTotalsQuery(selection), params),
+									{ context: "aiOverviewTotals" },
+								),
+								warehouse.compiledQuery(
+									tenant,
+									CH.compileUnion(Integrations.aiOverviewSeriesQuery(selection), {
+										...params,
+										bucketSeconds: payload.bucketSeconds,
+									}),
+									{ context: "aiOverviewSeries" },
+								),
+							],
+							{ concurrency: 2 },
+						)
+						const points = (period: Integrations.AiOverviewPeriod) =>
+							series
+								.filter((row) => row.period === period)
+								.map((row) => ({ bucket: row.bucket, ...overviewMeasures(row) }))
+						yield* Effect.annotateCurrentSpan({ "maple.ai.overview.rows": series.length })
+						return new AiOverviewSummaryResponse({
+							bucketSeconds: payload.bucketSeconds,
+							// No row for a period means nothing ran in it: the branch
+							// grouped the window and found no sessions to group. The zeros
+							// stand in for it, which is what a client renders as "no
+							// comparison" rather than as a -100%.
+							current: overviewMeasures(totals.find((row) => row.period === "current")),
+							previous: overviewMeasures(totals.find((row) => row.period === "previous")),
+							series: points("current"),
+							previousSeries: points("previous"),
+						})
+					}),
+				)
+				.handle("overviewBreakdown", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.overview.dimension": payload.dimension,
+						})
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compileUnion(
+								Integrations.aiOverviewBreakdownQuery({
+									...overviewSelection(payload),
+									dimension: payload.dimension,
+									limit: payload.limit,
+								}),
+								{
+									orgId: tenant.orgId,
+									startTime: payload.startTime,
+									endTime: payload.endTime,
+									...previousWindow(payload.startTime, payload.endTime),
+								},
+							),
+							{ context: "aiOverviewBreakdown" },
+						)
+						const previous = new Map(
+							rows.filter((row) => row.period === "previous").map((row) => [row.key, row]),
+						)
+						// The busiest first, and the ranking the query made is by sessions
+						// alone — cost orders the keys it tied.
+						const ranked = rows
+							.filter((row) => row.period === "current")
+							.sort((a, b) => b.sessions - a.sessions || b.cost - a.cost || a.key.localeCompare(b.key))
+						const breakdown: ReadonlyArray<AiOverviewBreakdownRow> = ranked.map((row) => ({
+							key: row.key,
+							current: overviewMeasures(row),
+							// Zeros for a key that did not appear before, which reads as
+							// "new" rather than as a missing row.
+							previous: overviewMeasures(previous.get(row.key)),
+						}))
+						const totalKeys = rows.find((row) => row.period === "keys")?.keyCount ?? 0
+						yield* Effect.annotateCurrentSpan({
+							"maple.ai.overview.rows": breakdown.length,
+							"maple.ai.overview.total_keys": totalKeys,
+						})
+						return new AiOverviewBreakdownResponse({
+							dimension: payload.dimension,
+							rows: breakdown,
+							totalKeys,
+						})
+					}),
+				)
+				.handle("overviewModelMix", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.overview.bucket_seconds": payload.bucketSeconds,
+						})
+						// No comparison window: the chart plots the selected window's
+						// bands and nothing behind them.
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(Integrations.aiOverviewModelMixQuery(overviewSelection(payload)), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+								bucketSeconds: payload.bucketSeconds,
+							}),
+							{ context: "aiOverviewModelMix" },
+						)
+						// The read folds its own tail, so the row cap is a guard the page
+						// cannot reach; a hit means the fold stopped bounding the response
+						// and the newest buckets are the ones missing.
+						yield* Effect.annotateCurrentSpan({
+							"maple.ai.overview.rows": rows.length,
+							"maple.ai.overview.model_mix_capped":
+								rows.length >= Integrations.AI_OVERVIEW_MODEL_MIX_MAX_ROWS,
+						})
+						return new AiOverviewModelMixResponse({
+							bucketSeconds: payload.bucketSeconds,
+							rows: rows.map((row) => ({
+								bucket: row.bucket,
+								model: row.model,
+								llmCallSpans: row.llmCallSpans,
+							})),
+						})
+					}),
+				)
 		}),
 )
+
+/**
+ * The overview's selection, as both of its reads take it — the sessions list's
+ * counted filters, so the two pages measure the same sessions.
+ */
+const overviewSelection = (payload: {
+	readonly vendorIds?: ReadonlyArray<string>
+	readonly serviceNames?: ReadonlyArray<string>
+	readonly deploymentEnvs?: ReadonlyArray<string>
+	readonly models?: ReadonlyArray<string>
+	readonly agentNames?: ReadonlyArray<string>
+	readonly toolNames?: ReadonlyArray<string>
+	readonly hasErrors?: boolean
+}) => ({
+	vendorIds: payload.vendorIds,
+	serviceNames: payload.serviceNames,
+	deploymentEnvs: payload.deploymentEnvs,
+	models: payload.models,
+	agentNames: payload.agentNames,
+	toolNames: payload.toolNames,
+	hasErrors: payload.hasErrors,
+})
+
+/**
+ * The window of equal length ending where the caller's begins — the tiles'
+ * comparison. Computed here rather than asked for, so the delta cannot be
+ * quietly taken against a window of a different size.
+ *
+ * `prevEndTime` IS the caller's `startTime`: the read bounds the previous
+ * branch half-open (`[prevStartTime, prevEndTime)`), so the boundary second
+ * belongs to the current window alone and no session is measured in both.
+ *
+ * Both bounds are datetimes the request contract has already checked parse, so
+ * the arithmetic here cannot produce the `Invalid Date` a formatter throws on.
+ */
+const previousWindow = (startTime: string, endTime: string) => {
+	const start = parseWarehouseDateTime(startTime)
+	const span = parseWarehouseDateTime(endTime) - start
+	return {
+		prevStartTime: formatWarehouseDateTime(start - span),
+		prevEndTime: formatWarehouseDateTime(start),
+	}
+}
+
+const NO_OVERVIEW_MEASURES: AiOverviewMeasures = {
+	sessions: 0,
+	erroredSessions: 0,
+	llmCalls: 0,
+	llmCallSpans: 0,
+	erroredLlmCalls: 0,
+	toolCalls: 0,
+	erroredToolCalls: 0,
+	cost: 0,
+	pricedLlmCalls: 0,
+	tokens: 0,
+	inputTokens: 0,
+	cacheReadTokens: 0,
+	cacheWriteTokens: 0,
+	outputTokens: 0,
+	reasoningTokens: 0,
+	sessionDurationP50Ns: 0,
+	sessionDurationP95Ns: 0,
+}
+
+/** One row's measures, or zeros for a period or a key that has no row. */
+const overviewMeasures = (
+	row: Integrations.AiOverviewMeasuresOutput | undefined,
+): AiOverviewMeasures => {
+	if (row === undefined) return NO_OVERVIEW_MEASURES
+	return {
+		sessions: row.sessions,
+		erroredSessions: row.erroredSessions,
+		llmCalls: row.llmCalls,
+		llmCallSpans: row.llmCallSpans,
+		erroredLlmCalls: row.erroredLlmCalls,
+		toolCalls: row.toolCalls,
+		erroredToolCalls: row.erroredToolCalls,
+		cost: row.cost,
+		pricedLlmCalls: row.pricedLlmCalls,
+		tokens: row.tokens,
+		inputTokens: row.inputTokens,
+		cacheReadTokens: row.cacheReadTokens,
+		cacheWriteTokens: row.cacheWriteTokens,
+		outputTokens: row.outputTokens,
+		reasoningTokens: row.reasoningTokens,
+		sessionDurationP50Ns: row.sessionDurationP50Ns,
+		sessionDurationP95Ns: row.sessionDurationP95Ns,
+	}
+}
 
 const NO_TOKENS: AiSessionTokenTotals = { input: 0, output: 0, cacheRead: 0 }
 
