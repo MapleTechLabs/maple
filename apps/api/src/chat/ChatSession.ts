@@ -45,7 +45,7 @@ import {
 	type ChatToolCall,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "./session"
+import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
 
 /** What the class reads off its Durable Object state: the SQLite handle and the object's own `waitUntil`. */
 interface ChatSessionState {

@@ -24,7 +24,6 @@ import type {
 	InvestigationPlan,
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
-	IssueSeverity,
 } from "@maple/domain/http"
 import { Option } from "effect"
 import { permittedTools, RESCUE_TOOL_NAMES, seedHypotheses, seedToolNames } from "./hypothesis-catalogue"
@@ -62,38 +61,6 @@ export interface NormalizedPlan {
 	readonly plannerSubmitted: boolean
 	/** What normalization changed, persisted with the plan so a reader can see it. */
 	readonly notes: ReadonlyArray<string>
-}
-
-/**
- * How many hypotheses a subject of this shape deserves.
- *
- * This is the surviving half of the old `fanoutSize` table. The half that is
- * gone decided *whether* to fan out at all — that question no longer exists, and
- * conflating the two is what let a medium-severity alert compute a width of five
- * and dispatch zero.
- *
- * An anomaly is capped below the others because an anomaly is already a narrow
- * claim about one signal; five angles on it mostly produces four polite
- * negatives. A null severity reads as medium rather than as "minimum": an
- * unclassified incident is unclassified, not unimportant, and treating it as the
- * floor is how error incidents — which carry no severity until someone triages
- * them — would get the thinnest investigations.
- */
-export const widthFor = (
-	severity: IssueSeverity | null | undefined,
-	incidentKind: string | undefined,
-): number => {
-	if (incidentKind === "anomaly") return 3
-	switch (severity) {
-		case "critical":
-			return 5
-		case "high":
-			return 4
-		case "low":
-			return 3
-		default:
-			return 4
-	}
 }
 
 /**

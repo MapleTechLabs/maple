@@ -21,7 +21,7 @@ import { hypothesisAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 import { submitCandidate, submitDiagnosis } from "./submit-tools"
-import { buildIncidentContextMessage } from "./incident-context"
+import { buildIncidentContextMessage } from "@maple/domain/incident-context"
 import type { PlannedHypothesis } from "./plan-normalize"
 
 export interface HypothesisAgentInput {

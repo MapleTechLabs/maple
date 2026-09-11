@@ -1,6 +1,6 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Schema, Tracer } from "effect"
-import type { InternalRpcToolNotFoundError } from "@maple/domain/internal-rpc"
+import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
 import { mapleToolCatalog, toInputSchema } from "./tools/registry"
@@ -94,11 +94,11 @@ describe("MCP dispatcher", () => {
 			const error = yield* Effect.flip(
 				executor.execute(TENANT, "not_a_maple_tool", {}, "mcp") as Effect.Effect<
 					never,
-					InternalRpcToolNotFoundError,
+					McpToolNotFoundError,
 					never
 				>,
 			)
-			expect(error._tag).toBe("@maple/internal-rpc/ToolNotFoundError")
+			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
 			expect(error.name).toBe("not_a_maple_tool")
 		}),
 	)

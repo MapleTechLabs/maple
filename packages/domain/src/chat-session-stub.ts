@@ -2,25 +2,23 @@
 /**
  * Reaching a chat session's Durable Object.
  *
- * This module is deliberately tiny and dependency-free: it is imported by `ai-triage-enqueue` and
- * `InvestigationService`, which are themselves reachable from the MCP tool registry, so anything
- * heavy here would close an import cycle back through the chat run graph.
+ * Separate from the wire contract because this is the one place the object is
+ * addressed rather than described, and addressing it means handling a namespace
+ * handle off a Worker env — a value nothing has parsed yet.
  *
- * Starting a turn is now a single `beginTurn` call. Under Flue there were two very different paths
- * into the same conversation — the browser POSTed to `/agents/maple-chat/:id` on the chat-flue
- * Worker, and `InvestigationService` POSTed the *same* URL back over the `CHAT_FLUE` service
- * binding with an internal service token, purely because the agent lived in another Worker. The
- * turn now runs inside the Durable Object itself (see `ChatSession.beginTurn`), so both paths are
- * one method call and neither has to keep the turn alive.
+ * Both Workers need it: the one that hosts the class, and `apps/api`, which holds
+ * a cross-script reference to it. Keeping the shape in one place is what makes
+ * that reference structurally safe.
  */
-import type {
-	ChatEvent,
-	ChatEventInput,
-	ChatMessage,
-	ChatTurnTenantEncoded,
-} from "@maple/domain/chat-session"
+import type { ChatEvent, ChatEventInput, ChatMessage, ChatTurnTenantEncoded } from "./chat-session"
 
-/** The `ChatSession` Durable Object's RPC surface. Mirrors `./ChatSession.ts`. */
+/**
+ * The `ChatSession` Durable Object's RPC surface, and how to reach it off a Worker env.
+ *
+ * This lives in the domain rather than beside the object because both Workers need it: the one
+ * that hosts the class, and `apps/api`, which holds a cross-script reference to it. Keeping the
+ * shape in one place is what makes that reference structurally safe.
+ */
 export interface ChatSessionStub {
 	readonly cursor: () => Promise<number>
 	readonly running: () => Promise<boolean>

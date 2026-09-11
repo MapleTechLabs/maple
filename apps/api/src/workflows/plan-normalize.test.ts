@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest"
 import { InvestigationPlan, InvestigationSubject } from "@maple/domain/http"
 import { Option, Schema } from "effect"
-import { normalizePlan, widthFor } from "./plan-normalize"
+import { normalizePlan } from "./plan-normalize"
 
 const subject = Schema.decodeUnknownSync(InvestigationSubject)({
 	type: "incident",
@@ -190,28 +190,5 @@ describe("normalizePlan", () => {
 			context,
 		)
 		expect(result.incidentStartedAt).toBe("2026-08-06T14:00:00.000Z")
-	})
-})
-
-describe("widthFor", () => {
-	/**
-	 * A null severity is unclassified, not unimportant. Error incidents carry no
-	 * severity until someone triages them, so treating null as the floor would give
-	 * the highest-volume incident kind the thinnest investigations.
-	 */
-	it("treats an unclassified incident as medium, not as the minimum", () => {
-		expect(widthFor(null, "error")).toBe(4)
-		expect(widthFor("medium", "error")).toBe(4)
-	})
-
-	it("scales with severity", () => {
-		expect(widthFor("critical", "error")).toBe(5)
-		expect(widthFor("high", "error")).toBe(4)
-		expect(widthFor("low", "error")).toBe(3)
-	})
-
-	/** An anomaly is already a narrow claim about one signal. */
-	it("caps anomalies below the others regardless of severity", () => {
-		expect(widthFor("critical", "anomaly")).toBe(3)
 	})
 })

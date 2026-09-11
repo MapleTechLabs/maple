@@ -11,7 +11,6 @@
  */
 import { Effect } from "effect"
 
-export const rpcModule = Effect.promise(() => import("../internal-rpc"))
 export const vcsSyncModule = Effect.promise(() => import("../vcs-sync-runtime"))
 export const planetScaleWebhookModule = Effect.promise(() => import("../planetscale-webhook-runtime"))
 export const auditEventsModule = Effect.promise(() => import("../audit-events-runtime"))

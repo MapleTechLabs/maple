@@ -43,7 +43,6 @@ describe("API runtime graph boundaries", () => {
 				["McpServicesLive"],
 			],
 			[readModule("../worker/http.ts"), ["../runtime/service-graph"], ["HttpServicesLive"]],
-			[readModule("../worker/rpc.ts"), ["../runtime/mcp-service-graph"], ["InvestigationServicesLive"]],
 			[
 				readModule("../workflows/InvestigationFanoutWorkflow.run.ts"),
 				["../runtime/mcp-service-graph"],

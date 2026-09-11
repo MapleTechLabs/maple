@@ -30,10 +30,10 @@ import {
 	orgIdFromChatSessionId,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
+import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { chatSessionStub, type ChatSessionStub } from "@/chat/session"
 import { AuthService } from "@/services/auth/AuthService"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { ApiKeysService } from "@/services/org/ApiKeysService"

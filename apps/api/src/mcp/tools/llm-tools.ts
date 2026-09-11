@@ -14,7 +14,8 @@
  */
 import { Cause, Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
-import type { McpToolExecutorApi, McpToolSurface } from "@/mcp/dispatcher"
+import type { McpToolExecutorApi } from "@/mcp/dispatcher"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
 import { truncateToolOutput } from "@/mcp/tools/tool-output"
 import type { TenantContext } from "@/services/auth/tenant-context"

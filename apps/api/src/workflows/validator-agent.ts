@@ -22,7 +22,7 @@ import { AGENTS } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 import { submitVerdict } from "./submit-tools"
-import { buildIncidentContextMessage } from "./incident-context"
+import { buildIncidentContextMessage } from "@maple/domain/incident-context"
 
 /** What one lane handed the validator. `null` candidate = the lane found nothing. */
 export interface ValidatorCandidateInput {

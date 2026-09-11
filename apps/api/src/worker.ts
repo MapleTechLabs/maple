@@ -34,7 +34,6 @@ import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
 import { buildApp, makeFetch } from "./worker/http"
-import { buildRpcServices, makeInternalRpc } from "./worker/rpc"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
 import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
 
@@ -128,10 +127,9 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 			Layer.CurrentMemoMap,
 		)(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
-		const rpcServices = yield* cachedRecoverable(buildRpcServices(isolate, ports))
 		yield* registerCrons(ports)
 		yield* registerQueueConsumers(ports)
-		return { fetch: makeFetch(app, ports), ...makeInternalRpc(rpcServices, ports) }
+		return { fetch: makeFetch(app, ports) }
 	}).pipe(
 		// The init IS the entry point: the cron and queue sources need the host
 		// Worker, which exists only here.

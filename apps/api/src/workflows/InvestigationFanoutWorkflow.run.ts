@@ -38,9 +38,10 @@ import {
 	InvestigationSubjectSnapshot,
 	LensVerdict,
 } from "@maple/domain/http"
-import type {
-	InvestigationFanoutWorkflowPayload,
-	InvestigationFanoutWorkflowResult,
+import {
+	widthFor,
+	type InvestigationFanoutWorkflowPayload,
+	type InvestigationFanoutWorkflowResult,
 } from "@maple/domain/investigation-fanout"
 import { InvestigationId, OrgId, UserId } from "@maple/domain/primitives"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
@@ -70,8 +71,8 @@ import {
 import { McpServicesLive } from "../runtime/mcp-service-graph"
 import { durableStep } from "./durable-step"
 import { runHypothesisAgent, runSoloHypothesisAgent } from "./hypothesis-agent"
-import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "./incident-context"
-import { normalizePlan, widthFor, type NormalizedPlan, type PlannedHypothesis } from "./plan-normalize"
+import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/incident-context"
+import { normalizePlan, type NormalizedPlan, type PlannedHypothesis } from "./plan-normalize"
 import { runPlannerAgent } from "./planner-agent"
 import { runValidatorAgent } from "./validator-agent"
 
@@ -336,7 +337,12 @@ const hypothesisOn =
 				snapshot: snapshotOrNull(input.snapshot),
 				model: resolveLensModel(
 					env,
-					investigationTags("investigation-lens", input.orgId, input.investigationId, input.hypothesis.id),
+					investigationTags(
+						"investigation-lens",
+						input.orgId,
+						input.investigationId,
+						input.hypothesis.id,
+					),
 				),
 				tenant: tenantFor(input.orgId),
 				deadlineAtMs: input.deadlineAtMs,
@@ -436,7 +442,12 @@ const validatorOn =
 				// does the reasoning the whole fan-out exists to enable.
 				model: resolveTriageModel(
 					env,
-					investigationTags("investigation-validator", input.orgId, input.investigationId, "validator"),
+					investigationTags(
+						"investigation-validator",
+						input.orgId,
+						input.investigationId,
+						"validator",
+					),
 				),
 				tenant: tenantFor(input.orgId),
 				deadlineAtMs: input.deadlineAtMs,

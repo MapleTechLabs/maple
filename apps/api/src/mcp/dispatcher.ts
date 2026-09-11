@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { InternalRpcToolNotFoundError, type InternalMcpToolDescriptor } from "@maple/domain/internal-rpc"
+import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer } from "effect"
 import { executeRegisteredMcpToolUnscoped, mapleToolCatalog, toInputSchema } from "./tools/registry"
 import type { McpToolResult } from "./tools/types"
@@ -18,9 +19,9 @@ import { recordMcpToolAudit } from "@/services/audit/audit-access"
  * evaluate first could observe the tool catalog as `undefined`. Deferring removes the
  * ordering dependency entirely rather than papering over one edge of the cycle.
  */
-let toolDescriptors: ReadonlyArray<InternalMcpToolDescriptor> | undefined
+let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
 
-const listToolDescriptors = (): ReadonlyArray<InternalMcpToolDescriptor> =>
+const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 	(toolDescriptors ??= mapleToolCatalog.map((definition) => ({
 		name: definition.name,
 		description: definition.description,
@@ -122,32 +123,13 @@ const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (name:
 	)
 })
 
-/**
- * Which entry point drove this tool call.
- *
- * Four surfaces share one dispatcher, and until this existed none of them were
- * distinguishable in telemetry: the public-vs-internal traffic split had to be
- * inferred from the ratio of `tools/call` spans to executor spans. Required
- * rather than defaulted, for the same reason `tenant` is — a caller that forgets
- * it should not silently be counted as somebody else.
- */
-export type McpToolSurface =
-	/** The public MCP transport (`mcp/server.ts`). */
-	| "mcp"
-	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
-	| "chat"
-	/** Agent workflow passes (`workflows/agent-pass.ts`). */
-	| "workflow"
-	/** Worker-to-worker internal RPC (`internal-rpc.ts`). */
-	| "rpc"
-
 export interface McpToolExecutorApi {
 	readonly execute: (
 		tenant: TenantContext,
 		name: string,
 		input: unknown,
 		surface: McpToolSurface,
-	) => Effect.Effect<McpToolResult, InternalRpcToolNotFoundError>
+	) => Effect.Effect<McpToolResult, McpToolNotFoundError>
 }
 
 /**

@@ -18,7 +18,7 @@ import { Effect, Option } from "effect"
 import { plannerAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
-import { buildIncidentContextMessage } from "./incident-context"
+import { buildIncidentContextMessage } from "@maple/domain/incident-context"
 import { submitPlan } from "./submit-tools"
 
 export interface PlannerAgentInput {

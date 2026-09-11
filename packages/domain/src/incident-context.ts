@@ -17,7 +17,7 @@
  * and every hypothesis lane — because a lane that saw a different framing of the
  * same incident than the planner did is a very expensive way to disagree.
  */
-import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
+import type { InvestigationSubject, InvestigationSubjectSnapshot } from "./http"
 
 /**
  * The instruction on a single-pass investigation's opening turn.

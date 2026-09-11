@@ -11,7 +11,7 @@ import {
 import { Cause, Effect, Schema } from "effect"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { orgIdFromChatSessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@/chat/session"
+import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { mapleToolCatalog } from "@/mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "@/mcp/tools/mutating"
 import { McpToolExecutor } from "@/mcp/dispatcher"
@@ -125,7 +125,7 @@ export const HttpChatLive = HttpApiBuilder.group(MapleInternalApi, "chat", (hand
 			// A defect remains a transport failure, but it is declared and serialized instead
 			// of falling through HttpApi as a bodyless 500.
 			const result = yield* executor.execute(tenant, tool, payload.input, "chat").pipe(
-				Effect.catchTag("@maple/internal-rpc/ToolNotFoundError", () =>
+				Effect.catchTag("@maple/mcp/ToolNotFoundError", () =>
 					Effect.fail(new ChatToolNotFoundError({ tool, message: `Unknown tool "${tool}".` })),
 				),
 				Effect.catchDefect((defect) => executionDefect(tool, defect)),

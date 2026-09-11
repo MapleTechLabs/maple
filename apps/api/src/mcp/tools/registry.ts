@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { InternalRpcToolNotFoundError } from "@maple/domain/internal-rpc"
+import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { Effect, Schema } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
@@ -267,7 +267,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 ) {
 	const definition = mapleToolDefinitions.find((candidate) => candidate.name === name)
 	if (!definition) {
-		return yield* new InternalRpcToolNotFoundError({
+		return yield* new McpToolNotFoundError({
 			name,
 			message: `Unknown MCP tool: ${name}`,
 		})

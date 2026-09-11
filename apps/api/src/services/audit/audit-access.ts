@@ -3,7 +3,7 @@ import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { AuditedRead, type AuditLogSource } from "@maple/domain/http"
 import type { ActorId, OrgId, UserId } from "@maple/domain/primitives"
-import type { McpToolSurface } from "@/mcp/dispatcher"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { AuditActorInfo } from "@/services/auth/audit-actor"
 import { CurrentAuditActor } from "@/services/auth/audit-actor"
 import type { TenantContext } from "@/services/auth/tenant-context"
