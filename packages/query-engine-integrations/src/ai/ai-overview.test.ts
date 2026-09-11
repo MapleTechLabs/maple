@@ -26,6 +26,11 @@ const seriesParams = { ...params, bucketSeconds: 300 }
 const SESSION_KEY =
 	"if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)"
 
+/** The same key, resolved off the trace rollup's own columns — where the
+ *  `hasErrors` test is applied. */
+const ROLLUP_SESSION_KEY = "if(rawSessionId = '', concat('trace:', TraceId), rawSessionId)"
+
+
 /** `OrgId = 'x'` on every level that reads a table — a subquery contributes
  *  nothing to the outer query's scope. */
 const orgPredicateCount = (sql: string) => sql.split("OrgId = 'org_1'").length - 1
@@ -69,7 +74,7 @@ describe("overview population", () => {
 	})
 
 	it("scopes every level that reads the table to the org", () => {
-		// Two levels per branch — the trace keys and the session rows — and two
+		// Two levels per branch — the trace rollup and the session rows — and two
 		// branches.
 		expect(orgPredicateCount(totalsSql())).toBe(4)
 		expect(compileUnionUnsafe(aiOverviewTotalsQuery(), params).tenantScope).toBe("single-tenant")
@@ -121,10 +126,26 @@ describe("overview population", () => {
 		const sql = totalsSql({ hasErrors: true })
 
 		// A session-level test, not a trace-level one: a session spans traces and
-		// the list matches it when any of its agent spans failed.
-		expect(sql).toContain("HAVING sum(ai_trace_index.IsError) > 0")
-		expect(sql).toContain(`${SESSION_KEY} IN (SELECT`)
-		expect(totalsSql()).not.toContain("sum(ai_trace_index.IsError) > 0")
+		// the list matches it when any of its agent spans failed — summed over the
+		// trace rollup, which is the same sum one level up.
+		expect(sql).toContain("HAVING sum(errorSpans) > 0")
+		expect(sql).toContain(`${ROLLUP_SESSION_KEY} IN (SELECT`)
+		expect(totalsSql()).not.toContain("HAVING sum(errorSpans) > 0")
+	})
+
+	it("applies the failed-session test once, at the trace level", () => {
+		const withErrors = totalsSql({ hasErrors: true })
+
+		// The errored set is a read of its own; deriving it at each level that
+		// filters is the same scan four times over. Every level above joins the
+		// already-filtered trace set instead, so the set is built once per window.
+		expect(withErrors.split("HAVING sum(errorSpans) > 0").length - 1).toBe(2)
+		expect(orgPredicateCount(withErrors)).toBe(6)
+		const breakdown = compileUnionUnsafe(
+			aiOverviewBreakdownQuery({ dimension: "service", hasErrors: true }),
+			params,
+		).sql
+		expect(breakdown.split("FROM ai_trace_index").length - 1).toBe(15)
 	})
 })
 
@@ -224,7 +245,10 @@ describe("the breakdown's dimensions", () => {
 		// stopped being used still shows what it cost.
 		expect(sql.split("key IN (SELECT").length - 1).toBe(2)
 		expect(sql).toContain(`LIMIT ${AI_OVERVIEW_BREAKDOWN_MAX}`)
-		expect(sql).toContain("uniqExact(toString(ai_trace_index.Model)) AS keyCount")
+		// The count is the groups the ranking already forms, counted — not a
+		// third read of the index for the same aggregation.
+		expect(sql).toContain("count() AS keyCount")
+		expect(sql).toContain("AS window_keys")
 		expect(sql).toContain("'keys' AS period")
 	})
 
@@ -307,11 +331,11 @@ describe("the model mix", () => {
 		expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
 		expect(sql).toContain("countIf(Model IN ('gpt-5.5')) > 0")
 		expect(sql).toContain("countIf(ToolName IN ('send_email')) > 0")
-		expect(sql).toContain(`${SESSION_KEY} IN (SELECT`)
-		expect(orgPredicateCount(sql)).toBe(4)
+		expect(sql).toContain(`${ROLLUP_SESSION_KEY} IN (SELECT`)
+		expect(orgPredicateCount(sql)).toBe(3)
 
 		const unfiltered = modelMixSql()
 		expect(unfiltered).not.toContain("HAVING")
-		expect(unfiltered).not.toContain(`${SESSION_KEY} IN (SELECT`)
+		expect(unfiltered).not.toContain(`${ROLLUP_SESSION_KEY} IN (SELECT`)
 	})
 })

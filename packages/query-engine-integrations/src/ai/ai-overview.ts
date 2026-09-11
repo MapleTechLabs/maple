@@ -66,7 +66,7 @@ import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from 
 import { AI_OVERVIEW_BREAKDOWN_MAX, type AiOverviewDimension } from "@maple/domain/http"
 import { AiTraceIndex } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
-import { sessionKey } from "./ai-sessions"
+import { sessionFilterConditions, sessionKey } from "./ai-sessions"
 import {
 	childClaimsExpr,
 	MAX_USAGE_REPORTERS_PER_TRACE,
@@ -143,8 +143,8 @@ const withinWindow = (
 ]
 
 /**
- * One row per agent trace of the window that passes the selection: its id and
- * the session it is filed under.
+ * One row per agent trace of the window that passes the selection: its id, the
+ * session it is filed under, and how many of its spans failed.
  *
  * `max(SessionId)` because the id sits on the turn-owning span alone and every
  * other row of the trace reads `''`, which `max` discards. The filters are
@@ -152,40 +152,53 @@ const withinWindow = (
  * there — a row predicate would also narrow the rows the session id is read
  * from, and would file a trace under `trace:` whenever its session-bearing
  * span belonged to another vendor.
+ *
+ * `errorSpans` is read here so the `hasErrors` test below needs no second pass
+ * over the index: a session failed when the traces filed under it did.
  */
-const traceKeys = (opts: AiOverviewFilterOpts, window: AiOverviewWindow) => {
-	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
-	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
-	return from(AiTraceIndex)
-		.select(($) => ({ TraceId: $.TraceId, rawSessionId: CH.max_($.SessionId) }))
+const traceRollup = (opts: AiOverviewFilterOpts, window: AiOverviewWindow) =>
+	from(AiTraceIndex)
+		.select(($) => ({
+			TraceId: $.TraceId,
+			rawSessionId: CH.max_($.SessionId),
+			errorSpans: CH.sum($.IsError),
+		}))
 		.where(($) => [$.OrgId.eq(param.string("orgId")), ...withinWindow($.Timestamp, window)])
 		.groupBy("TraceId")
-		.having(($) => [
-			CH.when(values(opts.vendorIds), (v) => carries(CH.inList($.VendorId, v))),
-			CH.when(values(opts.serviceNames), (v) => carries(CH.inList($.ServiceName, v))),
-			CH.when(values(opts.deploymentEnvs), (v) => carries(CH.inList($.DeploymentEnv, v))),
-			CH.when(values(opts.models), (v) => carries(CH.inList($.Model, v))),
-			CH.when(values(opts.agentNames), (v) => carries(CH.inList($.AgentName, v))),
-			CH.when(values(opts.toolNames), (v) => carries(CH.inList($.ToolName, v))),
-		])
-}
+		.having(($) => sessionFilterConditions(opts, $))
 
 /**
  * The session keys of the window with a failed agent span — the `hasErrors`
  * filter, as the list applies it.
  *
  * A session-level test and not a trace-level one: a session spans traces, and
- * the list matches it when ANY of its agent spans failed. It reads the whole
+ * the list matches it when ANY of its agent spans failed. Summed over the
+ * trace rollup, which is the same sum one level up. It reads the whole
  * population rather than the dimension's, so a `model` breakdown under
  * `hasErrors` measures the sessions the list would have listed.
  */
 const erroredSessionKeys = (opts: AiOverviewFilterOpts, window: AiOverviewWindow) =>
-	from(AiTraceIndex)
-		.innerJoinQuery(traceKeys(opts, window), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
-		.select(($) => ({ sessionId: sessionKey($.trace.rawSessionId, $.TraceId) }))
-		.where(($) => [$.OrgId.eq(param.string("orgId")), ...withinWindow($.Timestamp, window)])
+	fromQuery(traceRollup(opts, window), "errored_traces")
+		.select(($) => ({ sessionId: sessionKey($.rawSessionId, $.TraceId) }))
 		.groupBy("sessionId")
-		.having(($) => [CH.sum($.IsError).gt(0)])
+		.having(($) => [CH.sum($.errorSpans).gt(0)])
+
+/**
+ * The trace set every level of every read joins: the window's agent traces
+ * that passed the selection, keyed by the session they are filed under.
+ *
+ * The failed-session test is applied HERE and nowhere else. It is a read of
+ * its own, and a level that applied it for itself derived the whole errored
+ * set again — four times over in one breakdown.
+ */
+const traceKeys = (opts: AiOverviewFilterOpts, window: AiOverviewWindow) =>
+	fromQuery(traceRollup(opts, window), "selected_traces")
+		.select(($) => ({ TraceId: $.TraceId, rawSessionId: $.rawSessionId }))
+		.where(($) => [
+			CH.whenTrue(opts.hasErrors, () =>
+				inSubquery(sessionKey($.rawSessionId, $.TraceId), erroredSessionKeys(opts, window)),
+			),
+		])
 
 interface CallColumns {
 	readonly IsLlmCall: CH.Expr<number>
@@ -315,9 +328,6 @@ const sessionRows = (
 			$.OrgId.eq(param.string("orgId")),
 			...withinWindow($.Timestamp, window),
 			population === undefined ? undefined : population($),
-			CH.whenTrue(opts.hasErrors, () =>
-				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, window)),
-			),
 		])
 	return key === undefined ? rows.groupBy("sessionId") : rows.groupBy("sessionId", "key")
 }
@@ -494,7 +504,9 @@ export function aiOverviewSeriesQuery(opts: AiOverviewFilterOpts = {}): CHUnionQ
 }
 
 /**
- * The busiest keys of the current window, as a one-column subquery for `IN`.
+ * Every key of the current window with its session count — one row per key,
+ * which is both the ranking the table is cut from and the count of what the
+ * table is not showing.
  *
  * Ranked on sessions alone, off the raw index rows rather than the netted
  * pipeline: which keys the table shows is a question about counts, and running
@@ -502,10 +514,10 @@ export function aiOverviewSeriesQuery(opts: AiOverviewFilterOpts = {}): CHUnionQ
  * is worth. The key breaks ties instead, so two keys with the same session
  * count cannot swap places between loads.
  */
-const topKeys = (opts: AiOverviewBreakdownOpts) => {
+const rankedKeys = (opts: AiOverviewBreakdownOpts) => {
 	const population = dimensionPopulation(opts.dimension)
 	const key = dimensionKey(opts.dimension)
-	const ranked = from(AiTraceIndex)
+	return from(AiTraceIndex)
 		.innerJoinQuery(traceKeys(opts, "current"), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
 		.select(($) => ({
 			rankKey: key($),
@@ -515,15 +527,18 @@ const topKeys = (opts: AiOverviewBreakdownOpts) => {
 			$.OrgId.eq(param.string("orgId")),
 			...withinWindow($.Timestamp, "current"),
 			population === undefined ? undefined : population($),
-			CH.whenTrue(opts.hasErrors, () =>
-				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, "current")),
-			),
 		])
 		.groupBy("rankKey")
-		.orderBy(["rankSessions", "desc"], ["rankKey", "asc"])
-		.limit(opts.limit ?? AI_OVERVIEW_BREAKDOWN_MAX)
-	return fromQuery(ranked, "top_keys").select(($) => ({ topKey: $.rankKey }))
 }
+
+/** The busiest of them, as a one-column subquery for `IN`. */
+const topKeys = (opts: AiOverviewBreakdownOpts) =>
+	fromQuery(
+		rankedKeys(opts)
+			.orderBy(["rankSessions", "desc"], ["rankKey", "asc"])
+			.limit(opts.limit ?? AI_OVERVIEW_BREAKDOWN_MAX),
+		"top_keys",
+	).select(($) => ({ topKey: $.rankKey }))
 
 /**
  * The breakdown table: the busiest keys of the current window, each measured
@@ -532,13 +547,14 @@ const topKeys = (opts: AiOverviewBreakdownOpts) => {
  * Three branches. Two measure the keys the ranking picked — the previous one
  * over the same keys, so a key that stopped being used still shows what it
  * cost. The third counts the window's distinct keys, which is what lets the
- * table say how many it is not showing; it reads the same population off the
- * index rather than the netted pipeline, because it is a count of keys and not
- * of anything a session did.
+ * table say how many it is not showing: the groups the ranking already forms,
+ * counted, rather than a third read of the index.
  */
 export function aiOverviewBreakdownQuery(
 	opts: AiOverviewBreakdownOpts,
 ): CHUnionQuery<AiOverviewBreakdownOutput> {
+	// Rendered into BOTH measuring branches: a `CHUnionQuery` takes no `WITH`,
+	// so the branches have no CTE to share the ranking through.
 	const keys = topKeys(opts)
 	const branch = (window: AiOverviewWindow) =>
 		fromQuery(nettedRows(opts, window, opts.dimension), `netted_${window}`)
@@ -550,24 +566,12 @@ export function aiOverviewBreakdownQuery(
 			}))
 			.where(($) => [inSubquery($.key, keys)])
 			.groupBy("key")
-	const population = dimensionPopulation(opts.dimension)
-	const key = dimensionKey(opts.dimension)
-	const keyCount = from(AiTraceIndex)
-		.innerJoinQuery(traceKeys(opts, "current"), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
-		.select(($) => ({
-			period: CH.lit("keys"),
-			key: CH.lit(""),
-			keyCount: CH.uniqExact(key($)),
-			...noMeasures(),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			...withinWindow($.Timestamp, "current"),
-			population === undefined ? undefined : population($),
-			CH.whenTrue(opts.hasErrors, () =>
-				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, "current")),
-			),
-		])
+	const keyCount = fromQuery(rankedKeys(opts), "window_keys").select(() => ({
+		period: CH.lit("keys"),
+		key: CH.lit(""),
+		keyCount: CH.count(),
+		...noMeasures(),
+	}))
 	return unionAll(branch("current"), branch("previous"), keyCount).format("JSON")
 }
 
@@ -597,9 +601,9 @@ export const AI_OVERVIEW_MODEL_MIX_MAX_ROWS = 4000
  * rows here are spans, so there is no session to keep whole.
  *
  * Sessions are selected the way every other read in this file selects them —
- * `traceKeys`, plus the session-level `hasErrors` test — so the mix describes
- * the sessions the tiles above it measure. The current window alone: the chart
- * has no comparison band.
+ * `traceKeys`, the failed-session test included — so the mix describes the
+ * sessions the tiles above it measure. The current window alone: the chart has
+ * no comparison band.
  */
 export function aiOverviewModelMixQuery(opts: AiOverviewFilterOpts = {}) {
 	return from(AiTraceIndex)
@@ -617,9 +621,6 @@ export function aiOverviewModelMixQuery(opts: AiOverviewFilterOpts = {}) {
 			...withinWindow($.Timestamp, "current"),
 			$.IsLlmCall.eq(1),
 			$.Model.neq(""),
-			CH.whenTrue(opts.hasErrors, () =>
-				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, "current")),
-			),
 		])
 		.groupBy("bucket", "model")
 		.orderBy(["bucket", "asc"], ["llmCallSpans", "desc"])

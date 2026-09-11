@@ -50,12 +50,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -69,12 +73,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -135,12 +143,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
           AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
           AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
@@ -154,12 +166,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -172,7 +188,7 @@ UNION ALL
 SELECT
           'keys' AS period,
           '' AS key,
-          uniqExact(toString(ai_trace_index.Model)) AS keyCount,
+          count() AS keyCount,
           0 AS sessions,
           0 AS erroredSessions,
           0 AS llmCalls,
@@ -192,19 +208,27 @@ SELECT
           0 AS sessionDurationP95Ns,
           0 AS llmDurationP50Ns,
           0 AS llmDurationP95Ns
+        FROM (SELECT
+          toString(ai_trace_index.Model) AS rankKey,
+          uniqExact(if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)) AS rankSessions
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsLlmCall = 1
+        GROUP BY rankKey) AS window_keys
 FORMAT JSON
 
 -- builder:ai-overview:aiOverviewBreakdownQuery:service
@@ -259,31 +283,32 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+          rawSessionId AS rawSessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS errored_traces
+        GROUP BY sessionId
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY sessionId, key) AS session_rows) AS netted_current
         WHERE key IN (SELECT
           rankKey AS topKey
@@ -293,31 +318,32 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+          rawSessionId AS rawSessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS errored_traces
+        GROUP BY sessionId
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY rankKey
         ORDER BY rankSessions DESC, rankKey ASC
         LIMIT 12) AS top_keys)
@@ -374,31 +400,32 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+          rawSessionId AS rawSessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
           AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2025-12-30 06:45:00'
+          AND Timestamp < '2026-01-01 10:30:00'
+        GROUP BY TraceId) AS errored_traces
+        GROUP BY sessionId
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
           AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
-        GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY sessionId, key) AS session_rows) AS netted_previous
         WHERE key IN (SELECT
           rankKey AS topKey
@@ -408,31 +435,32 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+          rawSessionId AS rawSessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS errored_traces
+        GROUP BY sessionId
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY rankKey
         ORDER BY rankSessions DESC, rankKey ASC
         LIMIT 12) AS top_keys)
@@ -441,7 +469,7 @@ UNION ALL
 SELECT
           'keys' AS period,
           '' AS key,
-          uniqExact(toString(ai_trace_index.ServiceName)) AS keyCount,
+          count() AS keyCount,
           0 AS sessions,
           0 AS erroredSessions,
           0 AS llmCalls,
@@ -461,34 +489,39 @@ SELECT
           0 AS sessionDurationP95Ns,
           0 AS llmDurationP50Ns,
           0 AS llmDurationP95Ns
+        FROM (SELECT
+          toString(ai_trace_index.ServiceName) AS rankKey,
+          uniqExact(if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)) AS rankSessions
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+        GROUP BY TraceId) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS errored_traces
         GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY rankKey) AS window_keys
 FORMAT JSON
 
 -- builder:ai-overview:aiOverviewBreakdownQuery:tool
@@ -543,12 +576,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -562,12 +599,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -628,12 +669,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
           AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
           AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
@@ -647,12 +692,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -665,7 +714,7 @@ UNION ALL
 SELECT
           'keys' AS period,
           '' AS key,
-          uniqExact(toString(ai_trace_index.ToolName)) AS keyCount,
+          count() AS keyCount,
           0 AS sessions,
           0 AS erroredSessions,
           0 AS llmCalls,
@@ -685,19 +734,27 @@ SELECT
           0 AS sessionDurationP95Ns,
           0 AS llmDurationP50Ns,
           0 AS llmDurationP95Ns
+        FROM (SELECT
+          toString(ai_trace_index.ToolName) AS rankKey,
+          uniqExact(if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)) AS rankSessions
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsToolCall = 1
+        GROUP BY rankKey) AS window_keys
 FORMAT JSON
 
 -- builder:ai-overview:aiOverviewModelMixQuery:default
@@ -708,12 +765,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -776,12 +837,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -838,12 +903,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
           AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
           AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
@@ -903,12 +972,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
@@ -963,12 +1036,16 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
           AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
           AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
@@ -1025,27 +1102,11 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId
-        HAVING countIf(VendorId IN ('eve')) > 0
-          AND countIf(ServiceName IN ('maple-slack-agent')) > 0
-          AND countIf(DeploymentEnv IN ('production')) > 0
-          AND countIf(Model IN ('gpt-5.5')) > 0
-          AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
-          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+          rawSessionId AS rawSessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1056,12 +1117,29 @@ SELECT
           AND countIf(DeploymentEnv IN ('production')) > 0
           AND countIf(Model IN ('gpt-5.5')) > 0
           AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0) AS trace ON ai_trace_index.TraceId = trace.TraceId
+          AND countIf(ToolName IN ('send_email')) > 0) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId
+        HAVING countIf(VendorId IN ('eve')) > 0
+          AND countIf(ServiceName IN ('maple-slack-agent')) > 0
+          AND countIf(DeploymentEnv IN ('production')) > 0
+          AND countIf(Model IN ('gpt-5.5')) > 0
+          AND countIf(AgentName IN ('billing-agent')) > 0
+          AND countIf(ToolName IN ('send_email')) > 0) AS errored_traces
+        GROUP BY sessionId
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY sessionId) AS session_rows) AS netted_current
 UNION ALL
 SELECT
@@ -1113,27 +1191,11 @@ SELECT
         FROM ai_trace_index
         INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2025-12-30 06:45:00'
-          AND Timestamp < '2026-01-01 10:30:00'
-        GROUP BY TraceId
-        HAVING countIf(VendorId IN ('eve')) > 0
-          AND countIf(ServiceName IN ('maple-slack-agent')) > 0
-          AND countIf(DeploymentEnv IN ('production')) > 0
-          AND countIf(Model IN ('gpt-5.5')) > 0
-          AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0) AS trace ON ai_trace_index.TraceId = trace.TraceId
-        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
-          AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
-          AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
-          AND if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) IN (SELECT
-          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId
-        FROM ai_trace_index
-        INNER JOIN (SELECT
+          rawSessionId AS rawSessionId
+        FROM (SELECT
           TraceId AS TraceId,
-          max(SessionId) AS rawSessionId
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
@@ -1144,12 +1206,29 @@ SELECT
           AND countIf(DeploymentEnv IN ('production')) > 0
           AND countIf(Model IN ('gpt-5.5')) > 0
           AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0) AS trace ON ai_trace_index.TraceId = trace.TraceId
+          AND countIf(ToolName IN ('send_email')) > 0) AS selected_traces
+        WHERE if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) IN (SELECT
+          if(rawSessionId = '', concat('trace:', TraceId), rawSessionId) AS sessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2025-12-30 06:45:00'
+          AND Timestamp < '2026-01-01 10:30:00'
+        GROUP BY TraceId
+        HAVING countIf(VendorId IN ('eve')) > 0
+          AND countIf(ServiceName IN ('maple-slack-agent')) > 0
+          AND countIf(DeploymentEnv IN ('production')) > 0
+          AND countIf(Model IN ('gpt-5.5')) > 0
+          AND countIf(AgentName IN ('billing-agent')) > 0
+          AND countIf(ToolName IN ('send_email')) > 0) AS errored_traces
+        GROUP BY sessionId
+        HAVING sum(errorSpans) > 0)) AS trace ON ai_trace_index.TraceId = trace.TraceId
         WHERE ai_trace_index.OrgId = 'org_sql_catalog'
           AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
           AND ai_trace_index.Timestamp < '2026-01-01 10:30:00'
-        GROUP BY sessionId
-        HAVING sum(ai_trace_index.IsError) > 0)
         GROUP BY sessionId) AS session_rows) AS netted_previous
 FORMAT JSON
 
