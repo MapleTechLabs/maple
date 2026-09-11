@@ -262,6 +262,15 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 			),
 	},
 	{
+		// The model mix: model-call SPANS per bucket and model, off the same
+		// selection and with no netting at all — the one overview read that is a
+		// plain GROUP BY over the index.
+		module: "ai-overview",
+		name: "aiOverviewModelMixQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiOverviewModelMixQuery(), bucketed),
+	},
+	{
 		module: "ai-sessions",
 		name: "aiSessionSpansQuery",
 		label: "default",

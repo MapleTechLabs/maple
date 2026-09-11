@@ -641,16 +641,20 @@ export const AiOverviewSeriesPoint = Schema.Struct({
 })
 export type AiOverviewSeriesPoint = Schema.Schema.Type<typeof AiOverviewSeriesPoint>
 
-export class AiOverviewSummaryRequest extends Schema.Class<AiOverviewSummaryRequest>(
-	"AiOverviewSummaryRequest",
-)({
+/** The selection every bucketed overview read takes: the window, the width its
+ *  buckets are cut at, and the filters. */
+const aiOverviewBucketedSelection = {
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	/** Whole seconds, greater than zero — it reaches `toStartOfInterval` as an
 	 *  `INTERVAL n SECOND` literal, so a fraction is a 400 and not a 500. */
 	bucketSeconds: BucketSeconds,
 	...aiOverviewSelection,
-}) {}
+}
+
+export class AiOverviewSummaryRequest extends Schema.Class<AiOverviewSummaryRequest>(
+	"AiOverviewSummaryRequest",
+)(aiOverviewBucketedSelection) {}
 
 export class AiOverviewSummaryResponse extends Schema.Class<AiOverviewSummaryResponse>(
 	"AiOverviewSummaryResponse",
@@ -766,6 +770,42 @@ export class AiOverviewBreakdownResponse extends Schema.Class<AiOverviewBreakdow
 	totalKeys: Schema.Number,
 }) {}
 
+/** One bucket's share of one model. */
+export const AiOverviewModelMixPoint = Schema.Struct({
+	/** ISO-8601 with a literal `Z`, the shape every Maple timeseries emits. */
+	bucket: Schema.String,
+	/** The model the spans named. Never `''` — a call that named no model has no
+	 *  share of a model mix, and the read leaves it out. */
+	model: Schema.String,
+	/** Model-call SPANS, counted raw. See {@link AiOverviewModelMixResponse}. */
+	llmCallSpans: Schema.Number,
+})
+export type AiOverviewModelMixPoint = Schema.Schema.Type<typeof AiOverviewModelMixPoint>
+
+export class AiOverviewModelMixRequest extends Schema.Class<AiOverviewModelMixRequest>(
+	"AiOverviewModelMixRequest",
+)(aiOverviewBucketedSelection) {}
+
+export class AiOverviewModelMixResponse extends Schema.Class<AiOverviewModelMixResponse>(
+	"AiOverviewModelMixResponse",
+)({
+	/** Echoed back, so a client rendering an axis reads the width the buckets
+	 *  were actually cut at rather than re-deriving it. */
+	bucketSeconds: Schema.Number,
+	/**
+	 * One row per (bucket, model) the window saw, oldest bucket first and the
+	 * busiest model of a bucket first.
+	 *
+	 * The share of model SPANS — the raw population the summary reports as
+	 * `llmCallSpans`, so a gateway's mirror of a call is counted under the model
+	 * it names, twice. Netting would charge a mirrored call to one model alone
+	 * and leave the bands disagreeing with the error rate above them. A band's
+	 * share is its count over its bucket's, and the client folds the minor
+	 * models into an "other" band rather than plotting a line per model.
+	 */
+	rows: Schema.Array(AiOverviewModelMixPoint),
+}) {}
+
 export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInternal")
 	.add(
 		HttpApiEndpoint.post("list", "/list", {
@@ -813,6 +853,13 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		HttpApiEndpoint.post("overviewBreakdown", "/overview/breakdown", {
 			payload: AiOverviewBreakdownRequest,
 			success: AiOverviewBreakdownResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("overviewModelMix", "/overview/model-mix", {
+			payload: AiOverviewModelMixRequest,
+			success: AiOverviewModelMixResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

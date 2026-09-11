@@ -567,3 +567,59 @@ export function aiOverviewBreakdownQuery(
 		])
 	return unionAll(branch("current"), branch("previous"), keyCount).format("JSON")
 }
+
+/**
+ * Rows one model mix returns, across every bucket and model together.
+ *
+ * Not a top-N: the client folds the minor models into an "other" band and
+ * needs every model of every bucket to do it. The cap is there so a month at a
+ * one-minute bucket, in an org that routes across a long model list, cannot
+ * answer with a response nothing can render.
+ */
+export const AI_OVERVIEW_MODEL_MIX_MAX_ROWS = 4000
+
+/**
+ * The model mix: the window's model-call SPANS, split by model, bucket by
+ * bucket.
+ *
+ * The share of model SPANS and not of netted calls — this is a plain GROUP BY
+ * over the index, where the netting is a per-session array pass — so a
+ * gateway's mirror of a call is counted under the model it names, twice. It is
+ * the same population the summary counts as `llmCallSpans`, less the calls
+ * whose instrumentation named no model: those carry no share of a model mix,
+ * so the two totals differ by exactly them.
+ *
+ * A span is filed under the bucket ITS OWN timestamp falls in, where the
+ * summary's series files a whole session under the bucket it started in. The
+ * rows here are spans, so there is no session to keep whole.
+ *
+ * Sessions are selected the way every other read in this file selects them —
+ * `traceKeys`, plus the session-level `hasErrors` test — so the mix describes
+ * the sessions the tiles above it measure. The current window alone: the chart
+ * has no comparison band.
+ */
+export function aiOverviewModelMixQuery(opts: AiOverviewFilterOpts = {}) {
+	return from(AiTraceIndex)
+		.innerJoinQuery(traceKeys(opts, "current"), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
+		.select(($) => ({
+			bucket: isoBucket($.Timestamp),
+			// `toString` for the reason the breakdown's key takes it: `Model` is
+			// `LowCardinality(String)` in the index, and a model key is a plain
+			// `String` everywhere else the page reads one.
+			model: CH.toString_($.Model),
+			llmCallSpans: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			...withinWindow($.Timestamp, "current"),
+			$.IsLlmCall.eq(1),
+			$.Model.neq(""),
+			CH.whenTrue(opts.hasErrors, () =>
+				inSubquery(sessionKey($.trace.rawSessionId, $.TraceId), erroredSessionKeys(opts, "current")),
+			),
+		])
+		.groupBy("bucket", "model")
+		.orderBy(["bucket", "asc"], ["llmCallSpans", "desc"])
+		.limit(AI_OVERVIEW_MODEL_MIX_MAX_ROWS)
+		.format("JSON")
+}

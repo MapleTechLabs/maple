@@ -1,6 +1,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	AiOverviewBreakdownResponse,
+	AiOverviewModelMixResponse,
 	AiOverviewSummaryResponse,
 	AiSessionTooLargeError,
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -502,6 +503,35 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							dimension: payload.dimension,
 							rows: breakdown,
 							totalKeys: rows.find((row) => row.period === "keys")?.keyCount ?? 0,
+						})
+					}),
+				)
+				.handle("overviewModelMix", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.overview.bucket_seconds": payload.bucketSeconds,
+						})
+						// No comparison window: the chart plots the selected window's
+						// bands and nothing behind them.
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(Integrations.aiOverviewModelMixQuery(overviewSelection(payload)), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+								bucketSeconds: payload.bucketSeconds,
+							}),
+							{ context: "aiOverviewModelMix" },
+						)
+						return new AiOverviewModelMixResponse({
+							bucketSeconds: payload.bucketSeconds,
+							rows: rows.map((row) => ({
+								bucket: row.bucket,
+								model: row.model,
+								llmCallSpans: row.llmCallSpans,
+							})),
 						})
 					}),
 				)

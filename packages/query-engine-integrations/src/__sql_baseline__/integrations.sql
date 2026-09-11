@@ -700,6 +700,30 @@ SELECT
           AND ai_trace_index.IsToolCall = 1
 FORMAT JSON
 
+-- builder:ai-overview:aiOverviewModelMixQuery:default
+SELECT
+          formatDateTime(toStartOfInterval(ai_trace_index.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          toString(ai_trace_index.Model) AS model,
+          count() AS llmCallSpans
+        FROM ai_trace_index
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsLlmCall = 1
+          AND ai_trace_index.Model != ''
+        GROUP BY bucket, model
+        ORDER BY bucket ASC, llmCallSpans DESC
+        LIMIT 4000
+        FORMAT JSON
+
 -- builder:ai-overview:aiOverviewSeriesQuery:default
 SELECT * FROM (
 SELECT

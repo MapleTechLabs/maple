@@ -1349,3 +1349,74 @@ describe("POST /internal/ai-sessions/overview/breakdown", () => {
 		}
 	})
 })
+
+describe("POST /internal/ai-sessions/overview/model-mix", () => {
+	const MODEL_MIX_BODY = { ...WINDOW, bucketSeconds: 300 }
+
+	/** `count()` arrives quoted from a BYO-ClickHouse cluster and as a number
+	 *  from managed Tinybird; the row schema has to take both. */
+	const ROWS = [
+		{ bucket: "2026-08-19T09:00:00.000Z", model: "gpt-5.5", llmCallSpans: "5" },
+		{ bucket: "2026-08-19T09:00:00.000Z", model: "claude-sonnet-5", llmCallSpans: 2 },
+		{ bucket: "2026-08-19T10:00:00.000Z", model: "gpt-5.5", llmCallSpans: "3" },
+	]
+
+	const modelMixHarness = () => {
+		const contexts: Array<string | undefined> = []
+		let sql: string | undefined
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				sql = compiledQueryOf(compiled).sql
+				return compiledQueryOf(compiled).decodeRows(ROWS).pipe(Effect.orDie)
+			},
+		})
+		return { harness, contexts, readSql: () => sql ?? "" }
+	}
+
+	it("counts the model-call spans of the window, bucket by bucket", async () => {
+		const { harness, contexts, readSql } = modelMixHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/model-mix", MODEL_MIX_BODY)
+			expect(response.status).toBe(200)
+			expect(contexts).toEqual(["aiOverviewModelMix"])
+			// One index read, cut at the width the caller asked for, over the
+			// model-call spans alone.
+			expect(readSql()).toContain("FROM ai_trace_index")
+			expect(readSql()).toContain("INTERVAL 300 SECOND")
+			expect(readSql()).toContain("AND ai_trace_index.IsLlmCall = 1")
+			expect(readSql()).not.toContain("__PARAM_")
+			// The caller's window alone — no comparison band, so no second pair of
+			// bounds.
+			expect(readSql()).toContain(`Timestamp >= '${WINDOW.startTime}'`)
+			expect(readSql()).not.toContain("2026-08-19 07:00:00")
+			expect(response.body).toMatchObject({
+				bucketSeconds: 300,
+				rows: [
+					{ bucket: "2026-08-19T09:00:00.000Z", model: "gpt-5.5", llmCallSpans: 5 },
+					{ bucket: "2026-08-19T09:00:00.000Z", model: "claude-sonnet-5", llmCallSpans: 2 },
+					{ bucket: "2026-08-19T10:00:00.000Z", model: "gpt-5.5", llmCallSpans: 3 },
+				],
+			})
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a fractional bucket with a 400 rather than a 500", async () => {
+		const harness = makeHarness({ compiledQuery: () => Effect.die("the read must never run") })
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/model-mix", {
+				...WINDOW,
+				bucketSeconds: 1.5,
+			})
+			// `param.int` rejects a fraction inside the builder, which would be a
+			// 500 — the contract catches it at the boundary instead.
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})

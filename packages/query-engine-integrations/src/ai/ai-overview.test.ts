@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { AI_OVERVIEW_BREAKDOWN_MAX } from "@maple/domain/http"
-import { aiOverviewBreakdownQuery, aiOverviewSeriesQuery, aiOverviewTotalsQuery } from "./ai-overview"
+import {
+	aiOverviewBreakdownQuery,
+	aiOverviewModelMixQuery,
+	aiOverviewSeriesQuery,
+	aiOverviewTotalsQuery,
+	AI_OVERVIEW_MODEL_MIX_MAX_ROWS,
+} from "./ai-overview"
 
 const params = {
 	orgId: "org_1",
@@ -238,5 +244,74 @@ describe("the breakdown's dimensions", () => {
 		// carries so the levels have one shape.
 		expect(totalsSql()).toContain("GROUP BY sessionId")
 		expect(totalsSql()).not.toContain("GROUP BY sessionId, key")
+	})
+})
+
+describe("the model mix", () => {
+	const modelMixSql = (opts: Parameters<typeof aiOverviewModelMixQuery>[0] = {}) =>
+		compileUnsafe(aiOverviewModelMixQuery(opts), seriesParams).sql
+
+	it("counts the model-call spans that name a model, per bucket and model", () => {
+		const sql = modelMixSql()
+
+		expect(sql).toContain("FROM ai_trace_index")
+		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("__PARAM_")
+		// The population: model-call spans that named a model. The netting never
+		// runs here, so a gateway's mirror is a span of its own — the summary's
+		// `llmCallSpans` population, less the calls that named nothing.
+		expect(sql).toContain("AND ai_trace_index.IsLlmCall = 1")
+		expect(sql).toContain("AND ai_trace_index.Model != ''")
+		expect(sql).toContain("count() AS llmCallSpans")
+		expect(sql).toContain("toString(ai_trace_index.Model) AS model")
+		expect(sql).toContain("GROUP BY bucket, model")
+		expect(sql).not.toContain("AS netted")
+	})
+
+	it("buckets the span's own timestamp, at the width the caller asked for", () => {
+		const sql = modelMixSql()
+
+		// The span's timestamp and not the session's start: the rows are spans,
+		// so there is no session to keep inside one bucket.
+		expect(sql).toContain("toStartOfInterval(ai_trace_index.Timestamp, INTERVAL 300 SECOND)")
+		expect(sql).toContain("ORDER BY bucket ASC, llmCallSpans DESC")
+		// A guard and not a top-N — the client folds the minor models into
+		// "other" and needs every model of every bucket to do it.
+		expect(sql).toContain(`LIMIT ${AI_OVERVIEW_MODEL_MIX_MAX_ROWS}`)
+	})
+
+	it("reads the current window alone, scoped to the org on every level", () => {
+		const sql = modelMixSql()
+
+		expect(sql).toContain(`Timestamp >= '${params.startTime}'`)
+		expect(sql).toContain(`Timestamp <= '${params.endTime}'`)
+		// The chart has no comparison band, so the previous window's params are
+		// never resolved.
+		expect(sql).not.toContain(params.prevStartTime)
+		// The trace keys and the spans themselves.
+		expect(orgPredicateCount(sql)).toBe(2)
+		expect(compileUnsafe(aiOverviewModelMixQuery(), seriesParams).tenantScope).toBe("single-tenant")
+	})
+
+	it("selects sessions with the same tests every other overview read applies", () => {
+		const sql = modelMixSql({
+			vendorIds: ["eve"],
+			models: ["gpt-5.5"],
+			toolNames: ["send_email"],
+			hasErrors: true,
+		})
+
+		// The per-trace existence tests, so a session that used the model is
+		// measured across every model it used — and the session-level failure
+		// test, which adds its own two levels to the org scoping.
+		expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
+		expect(sql).toContain("countIf(Model IN ('gpt-5.5')) > 0")
+		expect(sql).toContain("countIf(ToolName IN ('send_email')) > 0")
+		expect(sql).toContain(`${SESSION_KEY} IN (SELECT`)
+		expect(orgPredicateCount(sql)).toBe(4)
+
+		const unfiltered = modelMixSql()
+		expect(unfiltered).not.toContain("HAVING")
+		expect(unfiltered).not.toContain(`${SESSION_KEY} IN (SELECT`)
 	})
 })

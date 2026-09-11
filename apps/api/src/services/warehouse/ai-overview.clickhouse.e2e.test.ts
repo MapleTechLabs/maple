@@ -567,6 +567,61 @@ describe.skipIf(!clickhouseE2eEnabled)("agent overview reads", () => {
 		)
 	})
 
+	it("splits the window's model-call spans by model, without netting a single one", async () => {
+		const modelMix = async (opts: Integrations.AiOverviewFilterOpts = {}) => {
+			const compiled = compileUnsafe(Integrations.aiOverviewModelMixQuery(opts), {
+				...window,
+				bucketSeconds: 300,
+			})
+			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		}
+
+		const rows = await modelMix()
+		const { current } = await totals()
+
+		// Two buckets, half an hour apart, and the busiest model of a bucket
+		// first. The gateway's mirror is a SPAN of its own here — the netting
+		// that makes it one call never runs — so GPT carries two.
+		assert.deepStrictEqual(
+			rows.map((row) => ({ model: row.model, spans: row.llmCallSpans })),
+			[
+				{ model: GPT, spans: 2 },
+				{ model: CLAUDE, spans: 1 },
+				{ model: CLAUDE, spans: 1 },
+			],
+		)
+		assert.strictEqual(rows[0]!.bucket, rows[1]!.bucket)
+		assert.isTrue(rows[1]!.bucket < rows[2]!.bucket, `${rows[1]!.bucket} < ${rows[2]!.bucket}`)
+
+		// The tool call is not a model call, and the pre-0031 row is a model call
+		// that named no model — so the mix is exactly the summary's SPAN
+		// population less that one row. GPT's two spans against the one call they
+		// net to is the whole difference between this read and the breakdown.
+		assert.strictEqual(
+			sumOf(rows, (row) => row.llmCallSpans),
+			current!.llmCallSpans - 1,
+		)
+		assert.strictEqual(
+			sumOf(rows, (row) => row.llmCallSpans),
+			4,
+		)
+		assert.isFalse(rows.some((row) => row.model === "" || row.model === "search_traces"))
+
+		// A model filter is the per-trace existence test every other overview
+		// read applies: it drops the sessionless trace, which never called GPT,
+		// and keeps every model span of the traces it selected — so Claude is
+		// still a band under a GPT filter.
+		const gptOnly = await modelMix({ models: [GPT] })
+		assert.deepStrictEqual(
+			gptOnly.map((row) => ({ model: row.model, spans: row.llmCallSpans })),
+			[
+				{ model: GPT, spans: 2 },
+				{ model: CLAUDE, spans: 1 },
+			],
+		)
+		assert.strictEqual(gptOnly[0]!.bucket, rows[0]!.bucket)
+	})
+
 	it("selects sessions the way the list selects them, by any span of the trace", async () => {
 		// A model filter and a tool filter together: they are matched by
 		// DIFFERENT spans of the same trace, which a row predicate could never

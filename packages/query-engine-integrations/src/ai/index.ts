@@ -42,8 +42,10 @@ export {
 
 export {
 	aiOverviewBreakdownQuery,
+	aiOverviewModelMixQuery,
 	aiOverviewSeriesQuery,
 	aiOverviewTotalsQuery,
+	AI_OVERVIEW_MODEL_MIX_MAX_ROWS,
 	type AiOverviewBreakdownOpts,
 	type AiOverviewBreakdownOutput,
 	type AiOverviewFilterOpts,
