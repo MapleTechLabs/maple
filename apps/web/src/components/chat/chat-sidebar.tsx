@@ -241,7 +241,7 @@ function ChatSidebarRow({
 				)}
 			>
 				{isLoading ? (
-					<DotLoader label="Working" color="var(--primary)" size={14} />
+					<DotLoader label="Working" color="var(--primary)" />
 				) : Icon ? (
 					<Icon size={14} className="shrink-0 opacity-70" />
 				) : null}

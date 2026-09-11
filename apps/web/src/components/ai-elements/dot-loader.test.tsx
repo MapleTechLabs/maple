@@ -3,14 +3,14 @@
 import { cleanup, render } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { DOT_LOADER_VARIANT_COUNT, DotLoader } from "./dot-loader"
+import { DotLoader } from "./dot-loader"
 
 afterEach(() => {
 	cleanup()
 })
 
 /**
- * jsdom ships no `matchMedia`, and the dot-matrix loaders ask it whether motion is welcome.
+ * jsdom ships no `matchMedia`, and the dot-matrix loader asks it whether motion is welcome.
  * Answering "no preference" is the branch that actually animates, which is the one under test.
  */
 vi.stubGlobal("matchMedia", (query: string) => ({
@@ -25,42 +25,39 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 }))
 
 /**
- * The animation a loader draws lives in the class names on its dots, so the set of those names
- * identifies which variant was picked without reaching into the pool.
+ * The animation a loader draws lives in the class names on its dots, and its footprint lives in
+ * the matrix's own width and height, so together they identify what was rendered without
+ * reaching into the component's geometry constants.
  */
-const signature = (root: Element) =>
-	[...root.querySelectorAll(".dmx-dot")]
+const signature = (root: Element) => ({
+	dots: [...root.querySelectorAll(".dmx-dot")]
 		.map((dot) => dot.className)
 		.sort()
-		.join("|")
+		.join("|"),
+	box: (root as HTMLElement).style.cssText.match(/width: \d+px; height: \d+px/)?.[0],
+})
 
 describe("DotLoader", () => {
-	it("draws from a pool wide enough that the chat doesn't look like it has one loader", () => {
-		expect(DOT_LOADER_VARIANT_COUNT).toBeGreaterThanOrEqual(12)
-	})
-
-	it("picks a different animation across mounts", () => {
-		// 40 draws from a pool this size lands on at least a handful of distinct animations with
-		// margin far beyond flakiness: the odds of fewer than three are astronomically small.
+	it("draws the same animation at the same size everywhere it is used", () => {
 		const { container } = render(
 			<>
-				{Array.from({ length: 40 }, (_, i) => (
-					<DotLoader key={i} />
-				))}
+				<DotLoader />
+				<DotLoader label="Working" color="var(--primary)" />
+				<DotLoader className="opacity-0" />
 			</>,
 		)
 
-		const drawn = new Set([...container.querySelectorAll(".dmx-root")].map(signature))
-		expect(drawn.size).toBeGreaterThanOrEqual(3)
+		const drawn = [...container.querySelectorAll(".dmx-root")].map(signature)
+		expect(drawn).toHaveLength(3)
+		for (const one of drawn) {
+			expect(one).toEqual(drawn[0])
+		}
 	})
 
-	it("keeps its animation while it stays mounted", () => {
-		const { container, rerender } = render(<DotLoader />)
-		const first = signature(container.querySelector(".dmx-root")!)
+	it("fills the 14px box its settled-state icons are drawn in", () => {
+		const { container } = render(<DotLoader />)
 
-		rerender(<DotLoader />)
-
-		expect(signature(container.querySelector(".dmx-root")!)).toBe(first)
+		expect(signature(container.querySelector(".dmx-root")!).box).toBe("width: 14px; height: 14px")
 	})
 
 	it("stays out of the accessibility tree unless it is given a name of its own", () => {

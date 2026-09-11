@@ -39,8 +39,8 @@ function deriveStatus(state: string): ToolStatus {
  * one, and an expanded twelve-call burst would otherwise be twelve grids animating against
  * each other.
  *
- * The slot is a fixed box rather than a sized glyph so the line does not jump when a call
- * settles and the 18px matrix is replaced by a 14px check.
+ * The slot is a fixed box rather than a sized glyph, and the matrix draws in the same 14px box
+ * as the check that replaces it, so the line does not move when a call settles.
  */
 function StatusGlyph({ status, live }: { status: ToolStatus; live: boolean }) {
 	const glyph =
@@ -217,8 +217,8 @@ interface ToolProps {
 	input?: unknown
 	output?: unknown
 	errorText?: string
-	/** This row is the turn's live edge, so its running state is an orb and a running clock
-	 *  rather than a quiet loader. */
+	/** This row is the turn's live edge, so its running state is the dot matrix and a running
+	 *  clock rather than a quiet spinner. */
 	live?: boolean
 }
 
@@ -261,7 +261,7 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 			>
 				<StatusGlyph status={status} live={live} />
 				{/* The tool icon differentiates rows when you're scanning a group of a dozen. A live
-				    row has nothing to differentiate itself from, and next to the orb it was just a
+				    row has nothing to differentiate itself from, and next to the loader it was just a
 				    second glyph competing with a finely-dotted one. */}
 				{live ? null : <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />}
 				<span

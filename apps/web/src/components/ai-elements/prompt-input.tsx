@@ -109,7 +109,7 @@ export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProp
 )
 
 /**
- * One cell of the submit button's orb↔stop crossfade. Same shape as `CopyButton`'s layer stack:
+ * One cell of the submit button's loader↔stop crossfade. Same shape as `CopyButton`'s layer stack:
  * both glyphs occupy the single grid cell so the button never reflows, and the swap is scale +
  * opacity rather than a swap of mounted nodes.
  */
@@ -128,7 +128,7 @@ export type PromptInputSubmitProps = ComponentProps<typeof InputGroupButton> & {
  * Send button, which becomes a stop button while a turn is running. An
  * investigation pass can spend a minute across a dozen tool calls, so being able
  * to call it off is the difference between a chat you can steer and one you wait
- * out. Without `onStop` the orb is inert — the caller has nothing to cancel.
+ * out. Without `onStop` the loader is inert — the caller has nothing to cancel.
  */
 export const PromptInputSubmit = ({
 	className,

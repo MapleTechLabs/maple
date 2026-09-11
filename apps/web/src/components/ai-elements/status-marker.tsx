@@ -15,11 +15,11 @@ interface StatusMarkerProps {
  *
  * It shows only when nothing else in the turn is live — before the first token, and in
  * the gap between a settled tool burst and the prose that follows. While a tool is
- * running, that tool's own row or group header carries the orb instead, so the state is
+ * running, that tool's own row or group header carries the loader instead, so the state is
  * only ever one loader on screen at a time. See `showsThinkingRow` in `chat-transcript.tsx`.
  *
  * `MarkerIcon` otherwise forces `size-3.5` on its child; the slot is widened to 20px so the
- * 18px dot matrix sits in it without being scaled.
+ * dot matrix sits in it with the same breathing room the icons on neighbouring rows get.
  *
  * Both animations here stay off the React streaming path: `shimmer` is the CSS utility from
  * `@maple/ui/styles/shadcn-utilities.css` (it sweeps `currentColor`, so it inherits the

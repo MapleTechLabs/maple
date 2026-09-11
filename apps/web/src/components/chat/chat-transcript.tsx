@@ -46,7 +46,7 @@ import type { AiTriageResult } from "@maple/domain/http"
  * Whether the turn needs its own "still working" row.
  *
  * A turn should have exactly one live element, at its trailing edge. A running tool already
- * renders one — the orb in its row, or in its group's header — so adding the status marker on
+ * renders one — the loader in its row, or in its group's header — so adding the status marker on
  * top put two identical animations six pixels apart, each narrating the same call ("Search
  * Traces" above "Searching…"). The marker earns its place only when nothing else is live:
  * before the first token, and in the gap after a burst settles but before prose starts.
@@ -67,7 +67,7 @@ function showsThinkingRow(message: UIMessage, isLoading: boolean, isLastMessage:
 		// row under it animated a second time against the one already saying so.
 		if (part.type === "task" && part.status === "running") return false
 		if (!isToolPart(part)) continue
-		// A proposal renders as an approval card, which is not a live row — it has no orb to defer to.
+		// A proposal renders as an approval card, which is not a live row — it has no loader to defer to.
 		if (part.state === "proposed") continue
 		if (deriveToolStatus(part.state) === "running") return false
 	}
