@@ -116,6 +116,11 @@ import {
 } from "@/api/warehouse/replays"
 import { getAiSessionSpans, getAiSessionSummary, getAiSessionsFacets, listAiSessions } from "@/api/warehouse/ai-sessions"
 import {
+	getAiOverviewBreakdown,
+	getAiOverviewModelMix,
+	getAiOverviewSummary,
+} from "@/api/warehouse/ai-agent-overview"
+import {
 	getWebAnalyticsBreakdowns,
 	getWebAnalyticsEvents,
 	getWebAnalyticsLive,
@@ -348,6 +353,22 @@ export const aiSessionSpansResultAtom = makeQueryAtomFamily(getAiSessionSpans, {
 
 export const aiSessionSummaryResultAtom = makeQueryAtomFamily(getAiSessionSummary, {
 	staleTime: 60_000,
+})
+
+// The overview board's three reads. 30s like every other filtered analytics
+// atom: the whole input is the cache key, so each of the six breakdown
+// dimensions keys separately and a filter change is a new read rather than a
+// stale one.
+export const aiOverviewSummaryResultAtom = makeQueryAtomFamily(getAiOverviewSummary, {
+	staleTime: 30_000,
+})
+
+export const aiOverviewBreakdownResultAtom = makeQueryAtomFamily(getAiOverviewBreakdown, {
+	staleTime: 30_000,
+})
+
+export const aiOverviewModelMixResultAtom = makeQueryAtomFamily(getAiOverviewModelMix, {
+	staleTime: 30_000,
 })
 
 export const replaysFacetsResultAtom = makeQueryAtomFamily(getReplaysFacets, {

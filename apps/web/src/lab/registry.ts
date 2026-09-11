@@ -100,6 +100,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/agent-overview",
+		title: "Agent overview",
+		description:
+			"The `/agent-sessions/overview` board over two synthetic weeks — a healthy one, and a day whose 14:00 step lifts the error rate, the tool calls per session and the cost per session while the cache-read band collapses.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/agent-sessions",
 		title: "Agent sessions list",
 		description:
