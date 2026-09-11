@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
+// The virtualizer sizes its viewport from offsetHeight, which jsdom reports as 0, so the page
+// scroller's height is stubbed — the scroller's alone, since a list that found no scroller must
+// not pass here on the strength of its own stubbed height. ResizeObserver is stubbed because jsdom
+// has none and the scroll-margin hook observes the scroller.
 
+import type { ReactNode } from "react"
 import { cleanup, fireEvent, render, within } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { sessionLinkWindow } from "@/lib/agent-sessions/session-window"
 import { AgentSessionsList, type AgentSessionRow } from "./agent-sessions-list"
 
@@ -15,24 +20,27 @@ vi.mock("@tanstack/react-router", () => ({
 	useNavigate: () => navigate,
 }))
 
-// The table is virtualized against a scroll ancestor that jsdom gives zero
-// height, so the real `useVirtualizer` yields no rows and nothing renders.
-// Stub it to emit one row per session — that keeps the assertions on the
-// component's actual row markup.
-vi.mock("@tanstack/react-virtual", () => ({
-	useVirtualizer: ({ count }: { count: number }) => ({
-		getVirtualItems: () =>
-			Array.from({ length: count }, (_, index) => ({
-				index,
-				key: index,
-				start: index * 53,
-				end: (index + 1) * 53,
-			})),
-		getTotalSize: () => count * 53,
-		measureElement: () => {},
-		options: { scrollMargin: 0 },
-	}),
-}))
+const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight")
+
+beforeAll(() => {
+	Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+		configurable: true,
+		get(this: HTMLElement) {
+			return this.dataset.slot === "page-scroll-area" ? 900 : 0
+		},
+	})
+})
+
+afterAll(() => {
+	if (offsetHeight) Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetHeight)
+})
+
+/** What `PageLayout.ScrollArea` renders — the scroller the list virtualizes against. */
+function PageScroller({ children }: { children: ReactNode }) {
+	return <div data-slot="page-scroll-area">{children}</div>
+}
+
+const renderList = (ui: ReactNode) => render(ui, { wrapper: PageScroller })
 
 const session: AgentSessionRow = {
 	sessionId: "wrun_01M0CSAEW96BH2W9185XZPRPKH",
@@ -72,10 +80,17 @@ class MockIntersectionObserver {
 	}
 }
 
+class MockResizeObserver {
+	observe() {}
+	unobserve() {}
+	disconnect() {}
+}
+
 describe("AgentSessionsList", () => {
 	beforeEach(() => {
 		MockIntersectionObserver.instances = []
 		vi.stubGlobal("IntersectionObserver", MockIntersectionObserver)
+		vi.stubGlobal("ResizeObserver", MockResizeObserver)
 		navigate.mockReset()
 	})
 
@@ -84,9 +99,21 @@ describe("AgentSessionsList", () => {
 		vi.unstubAllGlobals()
 	})
 
+	it("renders a row per session inside the page's scroller", () => {
+		const view = renderList(
+			<AgentSessionsList
+				{...sort}
+				sessions={[session, { ...session, sessionId: "wrun_01M0CSAEW96BH2W9185XZPRQ44" }]}
+			/>,
+		)
+		// The header row, then one per session; the virtualizer's spacer rows are
+		// aria-hidden and so not counted.
+		expect(view.getAllByRole("row")).toHaveLength(3)
+	})
+
 	it("asks for the next page when the sentinel comes into view, but not while one is in flight", () => {
 		const onReachEnd = vi.fn()
-		const view = render(
+		const view = renderList(
 			<AgentSessionsList {...sort} sessions={[session]} hasMore onReachEnd={onReachEnd} loadingMore={false} />,
 		)
 
@@ -110,12 +137,12 @@ describe("AgentSessionsList", () => {
 	})
 
 	it("renders no sentinel once the backend has no more pages", () => {
-		render(<AgentSessionsList {...sort} sessions={[session]} hasMore={false} />)
+		renderList(<AgentSessionsList {...sort} sessions={[session]} hasMore={false} />)
 		expect(MockIntersectionObserver.instances).toHaveLength(0)
 	})
 
 	it("names the framework by its mark alone, and splits the failures by kind", () => {
-		const view = render(
+		const view = renderList(
 			<AgentSessionsList
 				{...sort}
 				sessions={[
@@ -144,13 +171,13 @@ describe("AgentSessionsList", () => {
 	})
 
 	it("says a session without errors has none, rather than leaving the cell blank", () => {
-		const view = render(<AgentSessionsList {...sort} sessions={[session]} />)
+		const view = renderList(<AgentSessionsList {...sort} sessions={[session]} />)
 		const errors = view.getAllByRole("cell")[8]!
 		expect(errors.textContent).toBe("—")
 	})
 
 	it("labels a framework's session key apart from a session that is one trace", () => {
-		const view = render(
+		const view = renderList(
 			<AgentSessionsList
 				{...sort}
 				sessions={[session, { ...session, sessionId: "trace:7f3a4b5c6d7e8f901234567890abcdef" }]}
@@ -162,7 +189,7 @@ describe("AgentSessionsList", () => {
 
 	it("sorts through the column headers, marking the one the rows are in", () => {
 		const onSortChange = vi.fn()
-		const view = render(
+		const view = renderList(
 			<AgentSessionsList sessions={[session]} sortBy="cost" sortDir="desc" onSortChange={onSortChange} />,
 		)
 		const cost = view.getByRole("columnheader", { name: "Cost" })
@@ -174,7 +201,7 @@ describe("AgentSessionsList", () => {
 	})
 
 	it("opens the session over its own window from the row, and only once from its link", () => {
-		const view = render(<AgentSessionsList {...sort} sessions={[session]} />)
+		const view = renderList(<AgentSessionsList {...sort} sessions={[session]} />)
 
 		fireEvent.click(view.getAllByRole("row")[1]!)
 		expect(navigate).toHaveBeenCalledWith({
@@ -189,7 +216,7 @@ describe("AgentSessionsList", () => {
 	})
 
 	it("explains the retention cap instead of paging further", () => {
-		const view = render(<AgentSessionsList {...sort} sessions={[session]} isCapped />)
+		const view = renderList(<AgentSessionsList {...sort} sessions={[session]} isCapped />)
 		expect(MockIntersectionObserver.instances).toHaveLength(0)
 		expect(view.getByText(/Showing the 1 most recent sessions/)).toBeTruthy()
 	})

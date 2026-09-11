@@ -102,7 +102,9 @@ const TABLE_FEATURES = tableFeatures({ columnSizingFeature })
 /** Two lines — the name over the id — at text-sm and text-xs, plus the cell padding. */
 const ROW_HEIGHT = 53
 
-const HEADER_CELL_CLASS = "h-10 px-2 text-left align-middle font-medium text-muted-foreground"
+// No wrap: a two-word label ("LLM calls") breaking onto a second line would
+// make the whole header row taller.
+const HEADER_CELL_CLASS = "h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-muted-foreground"
 
 /**
  * Column layout, shared by the real table and the loading skeleton so the two can't drift apart.
@@ -114,9 +116,10 @@ const HEADER_CELL_CLASS = "h-10 px-2 text-left align-middle font-medium text-mut
  *
  * Budget: Errors (100) is always on — the triage signal, as Status is for traces. Every other column
  * joins where Session keeps ≥200px beside it, the sortable measures first, so a width that shows a
- * measure can also sort by it: Started (88) at 400, Duration (88) at 480, Cost (80) at 560, LLM calls
- * (100) at 660, Tool calls (100) at 760 and Tokens (130) at 900. Services (170) at 1060 and Model
- * (160) at 1220 come last — the filter rail answers both for the whole list.
+ * measure can also sort by it: Started (96) at 400, Duration (100) at 500, Cost (80) at 580, LLM
+ * calls (110) at 690, Tool calls (116) at 810 and Tokens (130) at 940. Services (170) at 1110 and
+ * Model (160) at 1270 come last — the filter rail answers both for the whole list. A sortable
+ * column is at least as wide as its label and arrow at text-sm plus the cell's padding.
  */
 interface SessionColumnLayout {
 	readonly id: string
@@ -135,55 +138,55 @@ const SESSION_COLUMNS: readonly SessionColumnLayout[] = [
 		header: "Services",
 		width: 170,
 		skeleton: "w-24",
-		responsive: "hidden @min-[1060px]/page:table-cell",
+		responsive: "hidden @min-[1110px]/page:table-cell",
 	},
 	{
 		id: "model",
 		header: "Model",
 		width: 160,
 		skeleton: "w-24",
-		responsive: "hidden @min-[1220px]/page:table-cell",
+		responsive: "hidden @min-[1270px]/page:table-cell",
 	},
 	{
 		id: "durationMs",
 		header: "Duration",
-		width: 88,
+		width: 100,
 		skeleton: "w-12",
-		responsive: "hidden @min-[480px]/page:table-cell",
+		responsive: "hidden @min-[500px]/page:table-cell",
 	},
 	{
 		id: "llmCalls",
 		header: "LLM calls",
-		width: 100,
+		width: 110,
 		skeleton: "w-8",
-		responsive: "hidden @min-[660px]/page:table-cell",
+		responsive: "hidden @min-[690px]/page:table-cell",
 	},
 	{
 		id: "toolCalls",
 		header: "Tool calls",
-		width: 100,
+		width: 116,
 		skeleton: "w-8",
-		responsive: "hidden @min-[760px]/page:table-cell",
+		responsive: "hidden @min-[810px]/page:table-cell",
 	},
 	{
 		id: "totalTokens",
 		header: "Tokens",
 		width: 130,
 		skeleton: "w-20",
-		responsive: "hidden @min-[900px]/page:table-cell",
+		responsive: "hidden @min-[940px]/page:table-cell",
 	},
 	{
 		id: "cost",
 		header: "Cost",
 		width: 80,
 		skeleton: "w-10",
-		responsive: "hidden @min-[560px]/page:table-cell",
+		responsive: "hidden @min-[580px]/page:table-cell",
 	},
 	{ id: "errorSpanCount", header: "Errors", width: 100, skeleton: "w-12" },
 	{
 		id: "startTime",
 		header: "Started",
-		width: 88,
+		width: 96,
 		skeleton: "w-14",
 		responsive: "hidden @min-[400px]/page:table-cell",
 	},
@@ -321,7 +324,7 @@ export function AgentSessionsList({
 			{
 				id: "durationMs",
 				header: sortHeader("Duration", "durationMs", "From the first agent span to the last"),
-				size: 88,
+				size: 100,
 				// Traces and spans live in the tooltip — they describe ingestion, the
 				// calls and tools beside them describe the agent.
 				cell: ({ row }) => (
@@ -336,7 +339,7 @@ export function AgentSessionsList({
 			{
 				id: "llmCalls",
 				header: sortHeader("LLM calls", "llmCalls", "Model requests the agent made"),
-				size: 100,
+				size: 110,
 				cell: ({ row }) => (
 					<WorkCount
 						icon={PixelSparkleIcon}
@@ -349,7 +352,7 @@ export function AgentSessionsList({
 			{
 				id: "toolCalls",
 				header: sortHeader("Tool calls", "toolCalls", "Tools the agent invoked"),
-				size: 100,
+				size: 116,
 				cell: ({ row }) => (
 					<WorkCount
 						icon={GearIcon}
@@ -387,7 +390,7 @@ export function AgentSessionsList({
 			{
 				id: "startTime",
 				header: sortHeader("Started", "startTime"),
-				size: 88,
+				size: 96,
 				cell: ({ row }) => (
 					<StartedAt
 						startTime={row.original.startTime}
@@ -404,6 +407,9 @@ export function AgentSessionsList({
 
 	// Rows ride the page's own scroller, as on /replays, rather than an inner
 	// one: the sentinel below the table then still marks the end of the list.
+	// So the table must sit inside a `PageLayout.ScrollArea`. Outside one the
+	// hook falls back to the tbody itself, which has no height until it has
+	// rows and gets no rows until it has height.
 	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
 	const virtualizer = useVirtualizer({
 		count: rows.length,

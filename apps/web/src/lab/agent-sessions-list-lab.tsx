@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { PageLayout } from "@maple/ui/components/ui/page-layout"
 
 import {
 	agentSessionsSort,
@@ -22,9 +23,10 @@ import { AgentSessionsList, type AgentSessionRow } from "@/components/agent-sess
  */
 
 /** Widths worth checking, because the columns are container queries against
- *  `@container/page`, which the frame below declares: Model leaves below
- *  1220px, Services below 1060, Tokens below 900, the call counts below
- *  760/660, and below 400 the time moves into the Session cell. */
+ *  `@container/page`, which `PageLayout.Content` declares: Model leaves below
+ *  1270px, Services below 1110, Tokens below 940, the call counts below
+ *  810/690, Cost and Duration below 580/500, and below 400 the time moves
+ *  into the Session cell. */
 const WIDTHS = [
 	{ label: "Full", value: null },
 	{ label: "1300px", value: 1300 },
@@ -198,7 +200,7 @@ export function AgentSessionsListLab() {
 	const { sortBy, sortDir } = agentSessionsSort(sortSearch)
 
 	return (
-		<div className="flex flex-col gap-4 p-6">
+		<div className="flex h-svh flex-col gap-4 p-6">
 			<div className="flex items-center gap-2">
 				{WIDTHS.map((option) => (
 					<button
@@ -215,13 +217,21 @@ export function AgentSessionsListLab() {
 					</button>
 				))}
 			</div>
-			<div className="@container/page" style={width === null ? undefined : { width }}>
-				<AgentSessionsList
-					sessions={rows}
-					sortBy={sortBy}
-					sortDir={sortDir}
-					onSortChange={(key) => setSortSearch((prev) => agentSessionsSortPatch(prev, key))}
-				/>
+			{/* The route's own layout primitives: the list virtualizes against the
+			    page's scroll area, and without one it renders no rows at all. */}
+			<div className="flex min-h-0 flex-1 flex-col" style={width === null ? undefined : { width }}>
+				<PageLayout.Root>
+					<PageLayout.Content>
+						<PageLayout.ScrollArea>
+							<AgentSessionsList
+								sessions={rows}
+								sortBy={sortBy}
+								sortDir={sortDir}
+								onSortChange={(key) => setSortSearch((prev) => agentSessionsSortPatch(prev, key))}
+							/>
+						</PageLayout.ScrollArea>
+					</PageLayout.Content>
+				</PageLayout.Root>
 			</div>
 		</div>
 	)
