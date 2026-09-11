@@ -147,10 +147,14 @@ export const AiTraceIndex = table("ai_trace_index", {
 	ReasoningTokens: T.float64,
 	// Migration 0032 — why a failing span failed and what a tool call says it
 	// does, so the tool detail page's failures and header read this index too.
-	// Both strings are truncated by the view.
+	// Both strings are truncated by the view. `FailedToolCallResult` is '' and
+	// `ErrorFingerprint` 0 on spans that did not fail; select the fingerprint
+	// through `toString`, as every hash.
 	ErrorType: T.string,
 	StatusMessage: T.string,
 	ToolDescription: T.string,
+	FailedToolCallResult: T.string,
+	ErrorFingerprint: T.uint64,
 })
 
 export const TraceListMv = table("trace_list_mv", {

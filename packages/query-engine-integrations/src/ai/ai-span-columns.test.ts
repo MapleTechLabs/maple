@@ -10,6 +10,7 @@ import {
 	GENAI_PROVIDER_NAME_KEYS,
 	GENAI_RESPONSE_ID_KEYS,
 	GENAI_ERROR_TYPE_KEYS,
+	GENAI_TOOL_CALL_RESULT_KEYS,
 	GENAI_TOOL_DESCRIPTION_KEYS,
 	GENAI_TOOL_NAME_KEYS,
 	GENAI_USAGE_KEYS,
@@ -76,9 +77,12 @@ describe("GenAI column key lists match the integration layer", () => {
 	// Both directions, in both lists: the tool detail page groups its failures by
 	// the index's `ErrorType` and renders the index's `ToolDescription`, so a key
 	// only one side reads is a failure the page files under `unknown` or a
-	// description it never shows.
-	it("the failure's type and the tool's description, exactly", () => {
+	// description it never shows. The index's `FailedToolCallResult` and the
+	// `ErrorFingerprint` hashed from it read the call's result the same way, or a
+	// failure explained only there is grouped by an empty status message.
+	it("the failure's type, the call's result and the tool's description, exactly", () => {
 		expect([...GENAI_ERROR_TYPE_KEYS]).toEqual([...decodedKeys("errorType")])
+		expect([...GENAI_TOOL_CALL_RESULT_KEYS]).toEqual([...decodedKeys("toolCallResult")])
 		expect([...GENAI_TOOL_DESCRIPTION_KEYS]).toEqual([...decodedKeys("toolDescription")])
 	})
 

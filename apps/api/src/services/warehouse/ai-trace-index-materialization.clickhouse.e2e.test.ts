@@ -24,6 +24,7 @@ import {
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_AI_VENDOR_VERSION_ATTR,
 } from "@maple/domain/gen-ai"
+import { genAiErrorFingerprintText } from "@maple/domain/tinybird/gen-ai-columns"
 import * as Integrations from "@maple/query-engine-integrations"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
@@ -56,7 +57,9 @@ const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().
  *  millisecond literal above padded out to nanoseconds. */
 const chTimestamp = (epochMs: number): string => `${chDateTime(epochMs)}000000`
 
-const quote = (value: string): string => `'${value.replaceAll("'", "\\'")}'`
+// Backslashes too: a JSON payload's `\n` has to reach the span as the two
+// characters it is, not as the newline a ClickHouse literal reads it as.
+const quote = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
 
 const FOREIGN_ORG_ID = "org_ai_trace_index_e2e_other"
 
@@ -336,6 +339,65 @@ const FOREIGN_SPAN: SeedSpan = {
 	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve" },
 }
 
+// One tool's calls under a third org, so no session read above sees them. The
+// first two fail the way an agent framework that catches a tool's error records
+// it: an `Ok` span naming `error.type`, no status message, and the error only in
+// the call's result, as JSON. They differ by nothing but an array index, which
+// is one mistake — one fingerprint.
+const TOOL_FAILURE_ORG_ID = "org_ai_trace_index_e2e_tool_failures"
+const TOOL_FAILURE_TRACE = "aitraceindexe2e000000000000000008"
+
+const missingKeyResult = (index: number): string =>
+	JSON.stringify({ result: `Invalid tool input: Missing key\n  at ["evidence"][${index}]["traceIds"]` })
+
+const toolCallSpan = (
+	spanId: string,
+	offsetMs: number,
+	fields: Pick<SeedSpan, "status" | "statusMessage" | "attrs">,
+): SeedSpan => ({
+	traceId: TOOL_FAILURE_TRACE,
+	spanId,
+	name: "execute_tool submit_findings",
+	ms: BASE_MS + 240_000 + offsetMs,
+	service: "agent-service",
+	...fields,
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
+		"gen_ai.operation.name": "execute_tool",
+		"gen_ai.tool.name": "submit_findings",
+		...fields.attrs,
+	},
+})
+
+const MISSING_KEY_0_SPAN = toolCallSpan("span-tool-failure-1", 0, {
+	status: "Ok",
+	attrs: { "error.type": "tool_error", "gen_ai.tool.call.result": missingKeyResult(0) },
+})
+const MISSING_KEY_1_SPAN = toolCallSpan("span-tool-failure-2", 1_000, {
+	status: "Ok",
+	attrs: { "error.type": "tool_error", "gen_ai.tool.call.result": missingKeyResult(1) },
+})
+// A failure described only by its status, as other frameworks record one: no
+// result, so the status message is what it is fingerprinted by.
+const STATUS_ONLY_FAILURE_SPAN = toolCallSpan("span-tool-failure-3", 2_000, {
+	status: "Error",
+	statusMessage: "effect-agent.execute_tool: Tool execution reached a failed terminal state",
+	attrs: {},
+})
+// A call that succeeded: its result is a payload, not a failure, so the index
+// carries neither the result nor a fingerprint.
+const TOOL_SUCCESS_SPAN = toolCallSpan("span-tool-success-1", 3_000, {
+	status: "Ok",
+	attrs: { "gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }) },
+})
+
+const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	MISSING_KEY_0_SPAN,
+	MISSING_KEY_1_SPAN,
+	STATUS_ONLY_FAILURE_SPAN,
+	TOOL_SUCCESS_SPAN,
+]
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
 		.flatMap(([key, value]) => [quote(key), quote(value)])
@@ -345,6 +407,7 @@ const seed = async (): Promise<void> => {
 	const rows = [
 		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
+		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
 	]
 		.map(
 			([orgId, span]) =>
@@ -388,7 +451,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        DeploymentEnv, Model, AgentName, ToolName, SpanId, ParentSpanId, Duration,
 			        IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId,
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
-			        ErrorType, StatusMessage, ToolDescription
+			        ErrorType, StatusMessage, ToolDescription,
+			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
 			 FROM ai_trace_index ORDER BY Timestamp ASC`,
 		)
 
@@ -413,9 +477,11 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				/** 0032: why the span failed, and what the tool documents itself as. */
 				ErrorType: string
 				ToolDescription: string
+				FailedToolCallResult: string
 			}> = {},
 		) => {
 			const { buckets = [0, 0, 0, 0, 0], ...columns } = expect
+			const isError = columns.IsError ?? (span.status === "Error" ? 1 : 0)
 			return {
 				OrgId: orgId,
 				Timestamp: chTimestamp(span.ms),
@@ -430,7 +496,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				SpanId: span.spanId,
 				ParentSpanId: span.parentSpanId ?? "",
 				Duration: 1_000_000,
-				IsError: span.status === "Error" ? 1 : 0,
+				IsError: isError,
 				IsLlmCall: 0,
 				IsToolCall: 0,
 				Tokens: 0,
@@ -445,7 +511,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				ErrorType: "",
 				StatusMessage: span.statusMessage ?? "",
 				ToolDescription: "",
+				FailedToolCallResult: "",
 				...columns,
+				// Every failed span belongs to a failure group, and no other does.
+				HasErrorFingerprint: isError,
 			}
 		}
 
@@ -512,7 +581,58 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				buckets: [6, 4, 0, 5, 0],
 			}),
 			indexRow(FOREIGN_ORG_ID, FOREIGN_SPAN),
+			// The failure explained only in the call's result: carried, under the
+			// type it named.
+			indexRow(TOOL_FAILURE_ORG_ID, MISSING_KEY_0_SPAN, {
+				ToolName: "submit_findings",
+				IsToolCall: 1,
+				IsError: 1,
+				ErrorType: "tool_error",
+				FailedToolCallResult: missingKeyResult(0),
+			}),
+			indexRow(TOOL_FAILURE_ORG_ID, MISSING_KEY_1_SPAN, {
+				ToolName: "submit_findings",
+				IsToolCall: 1,
+				IsError: 1,
+				ErrorType: "tool_error",
+				FailedToolCallResult: missingKeyResult(1),
+			}),
+			// Failed by status, with no result to carry.
+			indexRow(TOOL_FAILURE_ORG_ID, STATUS_ONLY_FAILURE_SPAN, { ToolName: "submit_findings", IsToolCall: 1 }),
+			// A result, but no failure: nothing carried.
+			indexRow(TOOL_FAILURE_ORG_ID, TOOL_SUCCESS_SPAN, { ToolName: "submit_findings", IsToolCall: 1 }),
 		])
+	})
+
+	// The fingerprint off the real view, against the TypeScript mirror its
+	// grouping is unit-tested with: each failure's hash is `cityHash64` of the
+	// mirror's text, or the view's redaction chain and the mirror have drifted.
+	it("fingerprints a failure by its tool call result, else by its status message", async () => {
+		const rows = await runJson(
+			`SELECT SpanId, toString(ErrorFingerprint) AS ErrorFingerprint
+			 FROM ai_trace_index WHERE OrgId = ${quote(TOOL_FAILURE_ORG_ID)}`,
+		)
+		const fingerprint = (span: SeedSpan) => rows.find((row) => row.SpanId === span.spanId)?.ErrorFingerprint
+		const hashOf = async (row: { readonly failedToolCallResult: string; readonly statusMessage: string }) => {
+			const [hashed] = await runJson(
+				`SELECT toString(cityHash64(${quote(genAiErrorFingerprintText(row))})) AS hash`,
+			)
+			return hashed?.hash
+		}
+
+		// One missing key at two array indexes: one group, in the warehouse too.
+		assert.strictEqual(fingerprint(MISSING_KEY_1_SPAN), fingerprint(MISSING_KEY_0_SPAN))
+		assert.strictEqual(
+			fingerprint(MISSING_KEY_0_SPAN),
+			await hashOf({ failedToolCallResult: missingKeyResult(0), statusMessage: "" }),
+		)
+		// No result: the status message is the group.
+		assert.strictEqual(
+			fingerprint(STATUS_ONLY_FAILURE_SPAN),
+			await hashOf({ failedToolCallResult: "", statusMessage: STATUS_ONLY_FAILURE_SPAN.statusMessage ?? "" }),
+		)
+		assert.notStrictEqual(fingerprint(STATUS_ONLY_FAILURE_SPAN), fingerprint(MISSING_KEY_0_SPAN))
+		assert.strictEqual(fingerprint(TOOL_SUCCESS_SPAN), "0")
 	})
 
 	// Both reads, wired the way the route and the client wire them: the page is

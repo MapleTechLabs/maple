@@ -259,20 +259,20 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v22 adds the failure type, the status message and the tool description
-		// to `ai_trace_index` and recreates `ai_trace_index_mv` to fill them
-		// (ClickHouse migration 0032), so the Agent Sessions tool detail page
-		// renders from the index alone. No part is rewritten and no row moves;
-		// rows materialized under v21 keep '' in the new columns until raw
-		// retention ages them out.
+		// v22 adds the failure type, the status message, the tool description, a
+		// failed tool call's result and an error fingerprint to `ai_trace_index`
+		// and recreates `ai_trace_index_mv` to fill them (ClickHouse migration
+		// 0032), so the Agent Sessions tool detail page renders from the index
+		// alone. No part is rewritten and no row moves; rows materialized under
+		// v21 keep '' or 0 in the new columns until raw retention ages them out.
 		//
 		// projectRevision is carried forward deliberately — it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 22,
-		fingerprint: "c7b52331edfc1024",
-		digest: "c7b52331edfc1024f3c17b59acdf478ad0d40a756fc17c1e7c11b4cde87b36c1",
-		manifestDigest: "c01a33d716dcba009ef84c7428c7b5e8041e37604ee72fb6a838ae0b0b7304b5",
+		fingerprint: "ffa6bcb08863f58f",
+		digest: "ffa6bcb08863f58ff44cd3be5be3f8dcee849b7b704dc8dc91d622cf28e06d5a",
+		manifestDigest: "b1f8e56de0f33d42c366a3176b87f1ad17bf8d363008165d4b5ae11b18bb4f05",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

@@ -829,15 +829,17 @@ describe("migration 0031 — ai_trace_index list columns", () => {
 describe("migration 0032 — ai_trace_index tool detail columns", () => {
 	const migration = migrations.find((entry) => entry.version === 32)!
 
-	it("adds the failure type, the status message and the tool description, then recreates the view", () => {
+	it("adds the failure's type, message, tool call result and fingerprint and the tool description, then recreates the view", () => {
 		const statements = migration.statements as ReadonlyArray<string>
-		const alters = statements.slice(0, 3)
-		const [drop, create, ...rest] = statements.slice(3)
+		const alters = statements.slice(0, 5)
+		const [drop, create, ...rest] = statements.slice(5)
 		expect(rest).toEqual([])
 		expect(alters).toEqual([
 			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorType LowCardinality(String)",
 			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS StatusMessage String",
 			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ToolDescription String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS FailedToolCallResult String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorFingerprint UInt64",
 		])
 		// An MV's SELECT is frozen at creation, so the 0031 view is dropped
 		// before the widened one is created.
@@ -854,6 +856,17 @@ describe("migration 0032 — ai_trace_index tool detail columns", () => {
 		expect(create).toContain(
 			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), SpanAttributes['tool.description']), 2000) AS ToolDescription",
 		)
+		// A tool call's result is carried only where the call failed, cut the same
+		// way.
+		expect(create).toContain(
+			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.result'], ''), SpanAttributes['ai.toolCall.result']), 1000), '') AS FailedToolCallResult",
+		)
+		// The fingerprint hashes that result, else the index's own status message,
+		// through the redaction chain `error_events` uses — its first pattern
+		// innermost, its last outermost — and is 0 on a span that did not fail.
+		expect(create).toContain("cityHash64(replaceRegexpAll(replaceRegexpAll(")
+		expect(create).toContain("leftUTF8(StatusMessage, 400)), 400), '[a-zA-Z0-9._%+-]+@")
+		expect(create).toContain("'[0-9a-fA-F-]{6,}|[0-9]+', '#')), 0) AS ErrorFingerprint")
 		// Every column the target holds is still projected: the view maps to the
 		// table by NAME.
 		for (const column of [
@@ -862,6 +875,8 @@ describe("migration 0032 — ai_trace_index tool detail columns", () => {
 			"ErrorType",
 			"StatusMessage",
 			"ToolDescription",
+			"FailedToolCallResult",
+			"ErrorFingerprint",
 		]) {
 			expect(create).toContain(` AS ${column}`)
 		}
