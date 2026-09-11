@@ -17,7 +17,6 @@ import {
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 import { cn } from "@maple/ui/lib/utils"
 
 import { QueryErrorState } from "@/components/common/query-error-state"
@@ -125,7 +124,6 @@ export function ToolSeriesChart({
 }: ToolSeriesChartProps) {
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
-	const narrow = useMediaQuery("max-sm")
 
 	const bars = useMemo<ReadonlyArray<ChartSeries>>(
 		() =>
@@ -216,14 +214,16 @@ export function ToolSeriesChart({
 					},
 				},
 			},
-			margin: { left: narrow ? 40 : 48, right: 8, top: 4 },
+			// `left` unset: the frame measures the tick labels, and a fixed width
+			// clipped duration ticks ("5.7min" drew as ".7min").
+			margin: { right: 8, top: 4 },
 			focus: "group-x",
 			// Sparse buckets sit far apart; keep the whole column live between them.
 			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, bars, axis, metric, narrow, focusStore])
+	}, [rows, bars, axis, metric, focusStore])
 
 	const title = toolChartTitle({
 		metric,

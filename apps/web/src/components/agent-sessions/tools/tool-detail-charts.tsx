@@ -210,7 +210,9 @@ function Cell({
 					},
 				},
 			},
-			margin: { left: 44, right: 8, top: 6 },
+			// `left` unset: the frame measures the tick labels, and a fixed width
+			// clipped duration ticks ("5.7min" drew as ".7min").
+			margin: { right: 8, top: 6 },
 			focus: "group-x",
 			// Sparse buckets sit far apart; keep the whole column live between them.
 			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
