@@ -50,6 +50,7 @@ import {
 } from "@/components/icons"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { displayError } from "@/lib/error-messages"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -88,6 +89,19 @@ export function apiKeyStatus(apiKey: ApiKey, now: number): ApiKeyStatus {
 	if (expiresAt === null || !Number.isFinite(expiresAt)) return "active"
 	if (expiresAt <= now) return "expired"
 	return expiresAt - now < EXPIRING_WINDOW_MS ? "expiring" : "active"
+}
+
+/**
+ * Whether any key's status can still change on the wall clock alone — it has an expiry ahead of it,
+ * so it will cross into the last-week window or past the expiry itself while the page is open. When
+ * nothing can, the live clock never schedules a timer.
+ */
+function hasPendingStatusBoundary(keys: ReadonlyArray<ApiKey>, now: number): boolean {
+	return keys.some((apiKey) => {
+		if (apiKey.revoked || apiKey.expires_at === null) return false
+		const expiresAt = Date.parse(apiKey.expires_at)
+		return Number.isFinite(expiresAt) && expiresAt > now
+	})
 }
 
 function matchesSearch(apiKey: ApiKey, needle: string): boolean {
@@ -149,7 +163,11 @@ export function ApiKeysSection() {
 	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind
 	// a badge that only appeared on wide viewports, so the tab counts told you a key still worked
 	// when it did not.
-	const now = Date.now()
+	//
+	// The clock has to advance, not just be read once: the key collection only emits when its rows
+	// change, so a key that expires while this page is open would otherwise sit in Active behind a
+	// status frozen at the last render. The timer stops itself once no key has an expiry left.
+	const now = useLiveClock({ enabled: hasPendingStatusBoundary(keys, Date.now()) })
 	const statuses = new Map(keys.map((k) => [k.id, apiKeyStatus(k, now)] as const))
 	const statusOf = (k: ApiKey): ApiKeyStatus => statuses.get(k.id) ?? "active"
 
@@ -172,7 +190,9 @@ export function ApiKeysSection() {
 		// Keys about to stop working lead the list; everything else keeps collection order.
 		.sort((a, b) => Number(statusOf(b) === "expiring") - Number(statusOf(a) === "expiring"))
 
-	const showSearch = buckets[activeView].length > 5
+	// A filter that is applied must stay clearable. Switching from a big bucket to a small one used
+	// to hide the input while its text kept filtering, stranding the list on "No keys match".
+	const showSearch = buckets[activeView].length > 5 || needle.length > 0
 
 	return (
 		<div className="space-y-6">
@@ -289,6 +309,7 @@ export function ApiKeysSection() {
 									key={key.id}
 									apiKey={key}
 									status={statusOf(key)}
+									now={now}
 									onRoll={key.revoked ? undefined : () => openRollDialog(key)}
 									onRevoke={key.revoked ? undefined : () => openRevokeDialog(key)}
 								/>
@@ -547,11 +568,14 @@ function expiresInLabel(expiresAt: number, now: number): string {
 function ApiKeyRow({
 	apiKey,
 	status,
+	now,
 	onRoll,
 	onRevoke,
 }: {
 	apiKey: ApiKey
 	status: ApiKeyStatus
+	/** The same clock the status was derived from, so the badge cannot disagree with the bucket. */
+	now: number
 	onRoll?: () => void
 	onRevoke?: () => void
 }) {
@@ -613,7 +637,7 @@ function ApiKeyRow({
 						    breaks a running integration rides in the name row instead. */}
 						{expiresSoon && expiresAt !== null && (
 							<Badge variant="warning" size="sm">
-								{expiresInLabel(expiresAt, Date.now())}
+								{expiresInLabel(expiresAt, now)}
 							</Badge>
 						)}
 					</div>
