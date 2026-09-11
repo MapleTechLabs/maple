@@ -455,8 +455,7 @@ describe("POST /internal/ai-sessions/list", () => {
 
 	it("carries the index's row through in the page's order, its agent-span extent as the bounds", async () => {
 		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled) =>
-				compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie),
+			compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie),
 		})
 
 		try {
@@ -597,9 +596,7 @@ describe("POST /internal/ai-sessions/details", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) => {
 				const { sql } = compiledQueryOf(compiled)
-				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(
-					sql,
-				)
+				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(sql)
 				spansBounds.push([start?.[1] ?? "", start?.[2] ?? ""])
 				// The first read (the earlier day) sees the session's first spans, the
 				// second its last; only one of them sees the `trace:` session at all.
@@ -943,12 +940,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 
 	/** The session's own row, in the wire shape `aiSessionTotalsRowSchema` decodes. */
 	const totalsRow = (overrides: Record<string, unknown>) => {
-		const {
-			turnKey: _turnKey,
-			conversationId: _conversationId,
-			traceIds: _traceIds,
-			...measures
-		} = turnRow({})
+		const { turnKey: _turnKey, conversationId: _conversationId, traceIds: _traceIds, ...measures } = turnRow({})
 		return { traceCount: "1", ...measures, ...overrides }
 	}
 
@@ -973,12 +965,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 	it("reports the session's own row as the totals, and the turn rows beside it", async () => {
 		const { harness, sqls } = summaryHarness(
 			[
-				turnRow({
-					inputTokens: "300",
-					llmInputTokens: "150",
-					outputTokens: "60",
-					llmOutputTokens: "30",
-				}),
+				turnRow({ inputTokens: "300", llmInputTokens: "150", outputTokens: "60", llmOutputTokens: "30" }),
 				turnRow({
 					turnKey: "turn_1",
 					conversationId: "turn_1",
@@ -1037,14 +1024,10 @@ describe("POST /internal/ai-sessions/summary", () => {
 			})
 			const turns = response.body.turns as Array<Record<string, unknown>>
 			expect(turns).toHaveLength(2)
-			expect(turns[1]).toMatchObject({
-				turnKey: "turn_1",
-				tokens: { input: 100, output: 0, cacheRead: 0 },
-			})
+			expect(turns[1]).toMatchObject({ turnKey: "turn_1", tokens: { input: 100, output: 0, cacheRead: 0 } })
 			expect(turns[1]).not.toHaveProperty("cost")
 			expect(sqls).toHaveLength(2)
-			for (const sql of sqls)
-				expect(sql).toContain(`SpanAttributes['maple_ai.session.id'] = '${SESSION_ID}'`)
+			for (const sql of sqls) expect(sql).toContain(`SpanAttributes['maple_ai.session.id'] = '${SESSION_ID}'`)
 		} finally {
 			await harness.dispose()
 		}
@@ -1062,10 +1045,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 		)
 		try {
 			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
-			expect(response.body).toMatchObject({
-				tokens: { input: 300, output: 0, cacheRead: 0 },
-				tokenReporting: "per-call",
-			})
+			expect(response.body).toMatchObject({ tokens: { input: 300, output: 0, cacheRead: 0 }, tokenReporting: "per-call" })
 		} finally {
 			await harness.dispose()
 		}
@@ -1092,15 +1072,10 @@ describe("POST /internal/ai-sessions/summary", () => {
 		const rows = Array.from({ length: AI_SESSION_SUMMARY_MAX_TURNS + 1 }, (_, index) =>
 			turnRow({ turnKey: `turn_${index}`, conversationId: `turn_${index}`, spanCount: "1" }),
 		)
-		const { harness } = summaryHarness(rows, [
-			totalsRow({ spanCount: String(AI_SESSION_SUMMARY_MAX_TURNS + 1) }),
-		])
+		const { harness } = summaryHarness(rows, [totalsRow({ spanCount: String(AI_SESSION_SUMMARY_MAX_TURNS + 1) })])
 		try {
 			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
-			expect(response.body).toMatchObject({
-				spanCount: AI_SESSION_SUMMARY_MAX_TURNS + 1,
-				turnsTruncated: true,
-			})
+			expect(response.body).toMatchObject({ spanCount: AI_SESSION_SUMMARY_MAX_TURNS + 1, turnsTruncated: true })
 			expect(response.body.turns).toHaveLength(AI_SESSION_SUMMARY_MAX_TURNS)
 		} finally {
 			await harness.dispose()
@@ -1144,9 +1119,7 @@ describe("POST /internal/ai-sessions/tools/series", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) =>
 				compiledQueryOf(compiled)
-					.decodeRows([
-						{ bucket: "2026-08-19T09:00:00.000Z", seriesKey: "gpt-5", ...toolsMeasures },
-					])
+					.decodeRows([{ bucket: "2026-08-19T09:00:00.000Z", seriesKey: "gpt-5", ...toolsMeasures }])
 					.pipe(Effect.orDie),
 		})
 
@@ -1242,14 +1215,61 @@ describe("POST /internal/ai-sessions/tools/totals", () => {
 
 		try {
 			const response = await harness.post("/internal/ai-sessions/tools/totals", TOOLS_WINDOW)
-			expect(response.body.previous).toEqual({
-				calls: 0,
-				sessions: 0,
-				errors: 0,
-				p50: 0,
-				p90: 0,
-				p95: 0,
+			expect(response.body.previous).toEqual({ calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 })
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("measures only the periods the caller asked for", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				if (options?.context === "aiToolsTotals") seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled)
+					.decodeRows(
+						options?.context === "aiToolDescription"
+							? [{ description: "" }]
+							: [{ period: "current", ...toolsMeasures, ...toolsSeen }],
+					)
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/totals", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				periods: ["current"],
 			})
+			expect(response.status).toBe(200)
+			// One branch, and the comparison window's bounds never reach the SQL.
+			expect(seen[0]).not.toContain("UNION ALL")
+			expect(seen[0]).not.toContain("'2026-08-19 07:00:00'")
+			// A period the caller did not ask for is ABSENT, not zeroed: the page
+			// that omitted it draws no delta and no share, and a zero there would
+			// read as "nothing ran then".
+			expect("previous" in response.body).toBe(false)
+			expect("allSessions" in response.body).toBe(false)
+			expect(response.body.current).toEqual(toolsMeasures)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses an empty, unknown, or currentless period list", async () => {
+		const harness = makeHarness({})
+		try {
+			// `current` is the only aggregate the response requires, so a list
+			// without it would answer a zeroed window with no first or last call —
+			// a 200 stating that nothing ran. It is a 400 instead.
+			for (const periods of [[], ["yesterday"], ["previous"], ["window", "previous"]]) {
+				const response = await harness.post("/internal/ai-sessions/tools/totals", {
+					...TOOLS_WINDOW,
+					periods,
+				})
+				expect(response.status, JSON.stringify(periods)).toBe(400)
+			}
 		} finally {
 			await harness.dispose()
 		}
@@ -1324,11 +1344,11 @@ describe("POST /internal/ai-sessions/tools/breakdowns", () => {
 	})
 })
 
+/** A fingerprint past 2^53 — the reason the contract carries it as a string. */
+const FINGERPRINT = "12345678901234567890"
+
 describe("POST /internal/ai-sessions/tools/errors", () => {
-	// The tool is a compile PARAM, not an opts field, so one compiled statement
-	// serves every tool page. A handler that forgot to pass it would compile a
-	// statement whose tool predicate is unbound.
-	it("binds the tool as a param and returns its error types", async () => {
+	it("reads the index alone and returns the tool's error groups, each trend in order", async () => {
 		const seen: string[] = []
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) => {
@@ -1336,12 +1356,17 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 				return compiledQueryOf(compiled)
 					.decodeRows([
 						{
-							errorType: "TimeoutError",
-							message: "Test run exceeded 120s",
-							calls: 186,
-							sessions: 64,
+							fingerprint: FINGERPRINT,
+							errorType: "tool_error",
+							message: '{"result":"Invalid tool input: Expected array\\n  at [\\"evidence\\"]"}',
+							calls: 387,
+							sessions: 175,
+							variants: 1,
 							firstSeen: "2026-08-19 09:04:00",
 							lastSeen: "2026-08-19 10:59:00",
+							callsSince: 281,
+							// A map on the wire, in no order.
+							trend: { "2026-08-19T10:00:00.000Z": 2, "2026-08-19T09:00:00.000Z": 385 },
 						},
 					])
 					.pipe(Effect.orDie)
@@ -1351,16 +1376,32 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 		try {
 			const response = await harness.post("/internal/ai-sessions/tools/errors", {
 				...TOOLS_WINDOW,
+				bucketSeconds: 3_600,
 				tool: "run_tests",
 			})
 			expect(response.status).toBe(200)
-			expect(seen[0]).toContain("'run_tests'")
-			// The span read is pruned by the (trace, span) ids the index answered —
-			// without that subquery it is a whole-window scan of every span in the org.
-			expect(seen[0]).toContain("(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN")
-			expect((response.body.data as ReadonlyArray<{ errorType: string }>)[0]?.errorType).toBe(
-				"TimeoutError",
-			)
+			expect(seen[0]).toContain("ai_trace_index.ToolName = 'run_tests'")
+			// Migration 0032 put the failure's text and fingerprint on the index, so
+			// this read never seeks `trace_detail_spans` across the window.
+			expect(seen[0]).not.toContain("trace_detail_spans")
+			expect(seen[0]).toContain("INTERVAL 3600 SECOND")
+			expect(response.body.data).toEqual([
+				{
+					fingerprint: FINGERPRINT,
+					errorType: "tool_error",
+					message: '{"result":"Invalid tool input: Expected array\\n  at [\\"evidence\\"]"}',
+					calls: 387,
+					sessions: 175,
+					variants: 1,
+					firstSeen: "2026-08-19 09:04:00",
+					lastSeen: "2026-08-19 10:59:00",
+					callsSince: 281,
+					trend: [
+						{ bucket: "2026-08-19T09:00:00.000Z", calls: 385 },
+						{ bucket: "2026-08-19T10:00:00.000Z", calls: 2 },
+					],
+				},
+			])
 		} finally {
 			await harness.dispose()
 		}
@@ -1369,8 +1410,29 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 	it("refuses a request with no tool", async () => {
 		const harness = makeHarness({})
 		try {
-			const response = await harness.post("/internal/ai-sessions/tools/errors", TOOLS_WINDOW)
+			const response = await harness.post("/internal/ai-sessions/tools/errors", {
+				...TOOLS_WINDOW,
+				bucketSeconds: 3_600,
+			})
 			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	// The trend's bucket reaches `toStartOfInterval` as an `INTERVAL n SECOND`
+	// literal, so a fraction is refused here rather than failing in the warehouse.
+	it("refuses a trend bucket that is not whole seconds", async () => {
+		const harness = makeHarness({})
+		try {
+			for (const bucketSeconds of [undefined, 1.5, 0]) {
+				const response = await harness.post("/internal/ai-sessions/tools/errors", {
+					...TOOLS_WINDOW,
+					...(bucketSeconds !== undefined && { bucketSeconds }),
+					tool: "run_tests",
+				})
+				expect(response.status, `bucketSeconds ${bucketSeconds}`).toBe(400)
+			}
 		} finally {
 			await harness.dispose()
 		}
@@ -1384,6 +1446,7 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 			for (const limit of [0, AI_TOOL_ERRORS_MAX + 1]) {
 				const response = await harness.post("/internal/ai-sessions/tools/errors", {
 					...TOOLS_WINDOW,
+					bucketSeconds: 3_600,
 					tool: "run_tests",
 					limit,
 				})
@@ -1396,13 +1459,12 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 })
 
 describe("POST /internal/ai-sessions/tools/error-detail", () => {
-	// Two reads, one modal, and only ONE of them takes the session filter: the
-	// sessions pane is how a reader picks a different session, so narrowing it
-	// to the one they already picked would strand them in it.
-	it("narrows the occurrences to the session and leaves the sessions pane whole", async () => {
+	it("reads the group's sessions, variants and breakdown side by side, off the index", async () => {
+		const contexts: Array<string | undefined> = []
 		const seen: string[] = []
 		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled) => {
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
 				seen.push(compiledQueryOf(compiled).sql)
 				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
 			},
@@ -1412,53 +1474,235 @@ describe("POST /internal/ai-sessions/tools/error-detail", () => {
 			const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
 				...TOOLS_WINDOW,
 				tool: "run_tests",
-				errorType: "TimeoutError",
-				session: "wrun_01M0",
+				fingerprint: FINGERPRINT,
 			})
 			expect(response.status).toBe(200)
-			const withSession = seen.filter((sql) => sql.includes("'wrun_01M0'"))
-			expect(withSession.length).toBe(1)
-			// Both reads are keyed on the error type the modal is open on.
-			expect(seen.every((sql) => sql.includes("'TimeoutError'"))).toBe(true)
+			expect(response.body).toEqual({ sessions: [], variants: [], breakdown: [] })
+			expect([...contexts].sort()).toEqual([
+				"aiToolsErrorBreakdown",
+				"aiToolsErrorSessions",
+				"aiToolsErrorVariants",
+			])
+			for (const sql of seen) {
+				expect(sql).toContain(`fingerprint = '${FINGERPRINT}'`)
+				expect(sql).not.toContain("trace_detail_spans")
+			}
 		} finally {
 			await harness.dispose()
 		}
 	})
 
-	// `''` is a real error type; ABSENT is not. Without the field there is no
-	// group to open a modal on, so it is required rather than defaulted.
-	it("refuses a request with no error type", async () => {
+	// The fingerprint reaches a column comparison. Anything that is not a UInt64
+	// in decimal is a malformed request, not a query to run.
+	it("refuses a fingerprint that is not a decimal UInt64", async () => {
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+		})
+		try {
+			for (const fingerprint of ["", "abc", "-1", "012", "1.5", "0x1f", "18446744073709551616"]) {
+				const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
+					...TOOLS_WINDOW,
+					tool: "run_tests",
+					fingerprint,
+				})
+				expect(response.status, `fingerprint ${JSON.stringify(fingerprint)}`).toBe(400)
+			}
+			// `0` is the group of failures materialized before the fingerprint, and
+			// the largest UInt64 is still one.
+			for (const fingerprint of ["0", "18446744073709551615"]) {
+				const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
+					...TOOLS_WINDOW,
+					tool: "run_tests",
+					fingerprint,
+				})
+				expect(response.status, `fingerprint ${fingerprint}`).toBe(200)
+			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/tools/error-samples", () => {
+	const occurrence = {
+		timestamp: "2026-08-19 10:15:00.000000000",
+		traceId: "7f3a4b5c6d7e8f901234567890abcdef",
+		spanId: "00000000000007d0",
+		sessionId: "wrun_01M0",
+		vendorId: "maple",
+		agentName: "tester",
+		model: "claude-sonnet-5",
+		service: "maple-investigations",
+		errorType: "tool_error",
+		message: '{"result":"Invalid tool input: Missing key\\n  at [\\"claim\\"]"}',
+		durationNs: 1_000_000,
+	}
+	const older = {
+		...occurrence,
+		timestamp: "2026-08-19 09:40:00.000000000",
+		spanId: "00000000000007c0",
+	}
+
+	it("narrows the samples to the group, the session and the variant", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-samples", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				fingerprint: FINGERPRINT,
+				session: "wrun_01M0",
+				variant: "at [1]",
+			})
+			expect(response.status).toBe(200)
+			expect(seen[0]).toContain(`fingerprint = '${FINGERPRINT}'`)
+			expect(seen[0]).toContain("sessionKey = 'wrun_01M0'")
+			expect(seen[0]).toContain("failureMessage = 'at [1]'")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	// The payloads are the one fact the modal shows that the index does not
+	// carry, so they are read for the page the index already ranked — never over
+	// the caller's window.
+	it("reads the payloads for the page, over its own extent", async () => {
+		const contexts: Array<string | undefined> = []
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled)
+					.decodeRows(
+						options?.context === "aiToolsErrorOccurrences"
+							? [occurrence]
+							: [
+									{
+										traceId: occurrence.traceId,
+										spanId: occurrence.spanId,
+										statusCode: "Ok",
+										arguments: "{}",
+										argumentsBytes: 2,
+										result: occurrence.message,
+										resultBytes: 58,
+									},
+								],
+					)
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-samples", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				fingerprint: FINGERPRINT,
+			})
+			expect(response.status).toBe(200)
+			expect(contexts).toEqual(["aiToolsErrorOccurrences", "aiToolsErrorPayloads"])
+			const [occurrencesSql, payloadSql] = seen
+			// One row past the default page, to know whether there is another.
+			expect(occurrencesSql).toContain("LIMIT 26")
+			expect(occurrencesSql).not.toContain("trace_detail_spans")
+			// The only `trace_detail_spans` read on the page, and it is a tuple
+			// seek bounded by the page's own timestamps.
+			expect(payloadSql).toContain(
+				`(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('${occurrence.traceId}', '${occurrence.spanId}'))`,
+			)
+			expect(payloadSql).toContain("Timestamp >= '2026-08-19 10:15:00.000000000'")
+			expect(payloadSql).toContain("Timestamp <= '2026-08-19 10:15:00.000000000'")
+			expect(payloadSql).not.toContain("'2026-08-19 11:00:00'")
+			expect(response.body).toEqual({
+				occurrences: [
+					{
+						...occurrence,
+						statusCode: "Ok",
+						arguments: "{}",
+						argumentsBytes: 2,
+						result: occurrence.message,
+						resultBytes: 58,
+					},
+				],
+			})
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("hands back the last row of a full page as the next page's cursor", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled)
+					.decodeRows(options?.context === "aiToolsErrorOccurrences" ? [occurrence, older] : [])
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-samples", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				fingerprint: FINGERPRINT,
+				limit: 1,
+				before: { timestamp: "2026-08-19 10:30:00.000000000", spanId: "00000000000007e0" },
+			})
+			expect(response.status).toBe(200)
+			expect(seen[0]).toContain("spanId < '00000000000007e0'")
+			const body = response.body as {
+				occurrences: ReadonlyArray<{ spanId: string }>
+				nextCursor?: unknown
+			}
+			// The extra row only says there is more; it is the next page's first.
+			expect(body.occurrences.map((row) => row.spanId)).toEqual([occurrence.spanId])
+			expect(body.nextCursor).toEqual({ timestamp: occurrence.timestamp, spanId: occurrence.spanId })
+			expect(seen[1]).not.toContain(older.spanId)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("runs no span read at all on an empty page", async () => {
+		const contexts: Array<string | undefined> = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-samples", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				fingerprint: "0",
+			})
+			expect(response.status).toBe(200)
+			expect(response.body).toEqual({ occurrences: [] })
+			expect(contexts).toEqual(["aiToolsErrorOccurrences"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a cursor that is not a warehouse position", async () => {
 		const harness = makeHarness({})
 		try {
-			const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
+			const response = await harness.post("/internal/ai-sessions/tools/error-samples", {
 				...TOOLS_WINDOW,
 				tool: "run_tests",
+				fingerprint: FINGERPRINT,
+				before: { timestamp: "yesterday", spanId: "00000000000007e0" },
 			})
 			expect(response.status).toBe(400)
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("keeps an empty error type as the group that named none", async () => {
-		const seen: string[] = []
-		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled) => {
-				seen.push(compiledQueryOf(compiled).sql)
-				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
-			},
-		})
-
-		try {
-			const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
-				...TOOLS_WINDOW,
-				tool: "run_tests",
-				errorType: "",
-			})
-			expect(response.status).toBe(200)
-			// An absent filter and a filter on `''` are different questions: the
-			// second is the `unknown` row, and it has to narrow.
-			expect(seen[0]).toContain("= ''")
 		} finally {
 			await harness.dispose()
 		}

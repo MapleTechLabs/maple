@@ -124,6 +124,7 @@ import {
 import {
 	getAiToolBreakdowns,
 	getAiToolErrorDetail,
+	getAiToolErrorSamples,
 	getAiToolErrors,
 	getAiToolSeries,
 	getAiToolTotals,
@@ -388,6 +389,10 @@ export const aiToolErrorsResultAtom = makeQueryAtomFamily(getAiToolErrors, {
 })
 
 export const aiToolErrorDetailResultAtom = makeQueryAtomFamily(getAiToolErrorDetail, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorSamplesResultAtom = makeQueryAtomFamily(getAiToolErrorSamples, {
 	staleTime: 30_000,
 })
 

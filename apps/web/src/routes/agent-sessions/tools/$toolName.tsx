@@ -1,14 +1,18 @@
-import { useMemo, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
+import { AI_TOOL_ERRORS_MAX, type AiToolErrorSampleCursor } from "@maple/domain/http"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { ToolDetailView } from "@/components/agent-sessions/tools/tool-detail-view"
 import {
 	ToolErrorModal,
 	type ToolErrorDetailData,
+	type ToolErrorSamplesState,
 } from "@/components/agent-sessions/tools/tool-error-modal"
+import { prepareToolErrors, type ToolErrorsWindow } from "@/components/agent-sessions/tools/tool-errors-table"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { NotFoundError } from "@/components/route-error"
@@ -20,17 +24,20 @@ import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Atom, Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import type { AiToolErrorSamplesInput } from "@/api/warehouse/ai-session-tools"
 import {
 	TOOL_ANALYTICS_DEFAULT_PRESET,
 	ToolAnalyticsSearchFields,
 	type ToolAnalyticsSearch,
 } from "@/lib/agent-sessions/tool-search"
 import type { ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
+import { errorTrendBucket } from "@/lib/agent-sessions/tool-error-display"
 import { toolAnalyticsSelection } from "@/lib/agent-sessions/use-tool-analytics"
 import {
 	aiSessionsFacetsResultAtom,
 	aiToolErrorDetailResultAtom,
+	aiToolErrorSamplesResultAtom,
 	aiToolErrorsResultAtom,
 	aiToolSeriesResultAtom,
 	aiToolTotalsResultAtom,
@@ -44,6 +51,9 @@ const toolDetailSearchSchema = Schema.Struct({
 
 /** Sessions the detail page lists — the most recent, not the busiest. */
 const SESSIONS_LIMIT = 50
+
+/** The only period this page's header states. See the totals atom below. */
+const TOOL_DETAIL_TOTALS_PERIODS = ["current"] as const
 
 export const Route = createFileRoute("/agent-sessions/tools/$toolName")({
 	component: ToolDetailPage,
@@ -149,6 +159,10 @@ function ToolDetailBody({
 		() => ({ ...toolAnalyticsSelection(search, window), tool, search: undefined }),
 		[search, window, tool],
 	)
+	const range = useMemo<ToolErrorsWindow>(
+		() => ({ startMs: toEpochMs(window.startTime), endMs: toEpochMs(window.endTime) }),
+		[window],
+	)
 	const bucketSeconds = chartBucketSeconds(window.startTime, window.endTime)
 
 	// `split: "none"` — this page is one tool, so the server merges every key
@@ -157,8 +171,23 @@ function ToolDetailBody({
 	const series = useRefreshableAtomValue(
 		aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds, split: "none" as const } }),
 	)
-	const totals = useRefreshableAtomValue(aiToolTotalsResultAtom({ data: selection }))
-	const errors = useRefreshableAtomValue(aiToolErrorsResultAtom({ data: selection }))
+	// `periods: ["current"]` — this page's header states the window and nothing
+	// else. It draws no delta tiles and no all-sessions share, and each period the
+	// totals read measures is its own scan of the window.
+	const totals = useRefreshableAtomValue(
+		aiToolTotalsResultAtom({ data: { ...selection, periods: TOOL_DETAIL_TOTALS_PERIODS } }),
+	)
+	// Every group up to the contract's cap: the table folds its own long tail,
+	// and a tool with more distinct failures than that has a different problem.
+	const errors = useRefreshableAtomValue(
+		aiToolErrorsResultAtom({
+			data: {
+				...selection,
+				bucketSeconds: errorTrendBucket(range.startMs, range.endMs).seconds,
+				limit: AI_TOOL_ERRORS_MAX,
+			},
+		}),
+	)
 	// The sessions that ran this tool, from the list read the sessions page uses
 	// — the row's framework, extent and span counts are the list's answers, and
 	// a tool-shaped aggregate knows none of them.
@@ -201,12 +230,12 @@ function ToolDetailBody({
 		.orElse(() => undefined)
 
 	// The modal is mounted from the ROW, not from the search param: an `?error=`
-	// the window no longer holds must not issue an occurrences read for an error
-	// type that is not on the page.
+	// the window no longer holds must not issue a read for a group that is not on
+	// the page.
 	const openError =
 		search.error === undefined
 			? undefined
-			: errorRows.find((candidate) => candidate.errorType === search.error)
+			: errorRows.find((candidate) => candidate.fingerprint === search.error)
 
 	return Result.builder(totals)
 		.onInitial(() => (
@@ -235,6 +264,7 @@ function ToolDetailBody({
 					firstSeen: resolved.firstSeen,
 					lastSeen: resolved.lastSeen,
 					description: resolved.description,
+					range,
 					errors: errorRows,
 					errorsLoading: Result.isInitial(errors),
 					errorsFailure,
@@ -251,12 +281,14 @@ function ToolDetailBody({
 					openError === undefined ? null : (
 						<ErrorModal
 							tool={tool}
-							row={openError}
-							failures={errorRows.reduce((sum, row) => sum + row.calls, 0)}
+							rows={errorRows}
+							fingerprint={openError.fingerprint}
+							range={range}
+							toolCalls={resolved.current.calls}
 							selection={selection}
 							session={search.session}
-							onSelectSession={(session) => onSearchChange({ session })}
-							onClose={() => onSearchChange({ error: undefined, session: undefined })}
+							variant={search.variant}
+							onSearchChange={onSearchChange}
 						/>
 					)
 				}
@@ -267,61 +299,135 @@ function ToolDetailBody({
 }
 
 /**
- * The modal's own read, mounted only once the Errors table holds the row the
- * URL names — so the page never pays for the occurrences of an error nobody
- * opened, nor for one a stale link names that this window no longer has.
+ * The modal's own reads, mounted only once the Errors table holds the row the
+ * URL names — so the page never pays for the samples of a group nobody opened,
+ * nor for one a stale link names that this window no longer has.
  */
 function ErrorModal({
 	tool,
-	row,
-	failures,
+	rows,
+	fingerprint,
+	range,
+	toolCalls,
 	selection,
 	session,
-	onSelectSession,
-	onClose,
+	variant,
+	onSearchChange,
 }: {
 	tool: string
-	row: ToolErrorRow
-	/** Every failed call of this tool, for the "N% of <tool> failures" line. */
-	failures: number
+	rows: ReadonlyArray<ToolErrorRow>
+	fingerprint: string
+	range: ToolErrorsWindow
+	toolCalls: number
 	selection: ReturnType<typeof toolAnalyticsSelection> & { tool: string }
 	session: string | undefined
-	onSelectSession: (session: string | undefined) => void
-	onClose: () => void
+	variant: string | undefined
+	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
 }) {
+	const prepared = useMemo(() => prepareToolErrors(rows, range), [rows, range])
+	const index = prepared.rows.findIndex((row) => row.fingerprint === fingerprint)
+	const group = prepared.rows[index]!
 	const detail = useRefreshableAtomValue(
-		aiToolErrorDetailResultAtom({
-			data: {
-				...selection,
-				errorType: row.errorType,
-				...(session !== undefined && { session }),
-			},
-		}),
+		aiToolErrorDetailResultAtom({ data: { ...selection, fingerprint } }),
 	)
+	const samplesInput = useMemo(
+		() => ({
+			...selection,
+			fingerprint,
+			...(session !== undefined && { session }),
+			...(variant !== undefined && { variant }),
+		}),
+		[selection, fingerprint, session, variant],
+	)
+	const samples = useErrorSamples(samplesInput)
 
-	const modal = (data: ToolErrorDetailData, waiting: boolean, failure?: unknown, loading?: boolean) => (
+	return (
 		<ToolErrorModal
 			tool={tool}
-			error={row}
-			data={data}
-			failure={failure}
-			toolFailures={failures}
+			group={group}
+			position={{ index, total: prepared.rows.length }}
+			// The header and every count come from the row the reader clicked, so
+			// the modal opens complete and its rail fills in.
+			detail={Result.builder(detail)
+				.onSuccess((value) => value)
+				.orElse(() => EMPTY_DETAIL)}
+			detailLoading={Result.isInitial(detail)}
+			detailFailure={Result.builder(detail)
+				.onError((failure) => failure as unknown)
+				.orElse(() => undefined)}
+			samples={samples}
+			toolFailures={rows.reduce((sum, row) => sum + row.calls, 0)}
+			toolCalls={toolCalls}
+			range={range}
 			session={session}
-			onSelectSession={onSelectSession}
-			onClose={onClose}
-			waiting={waiting}
-			loading={loading}
+			onSelectSession={(next) => onSearchChange({ session: next })}
+			variant={variant}
+			onSelectVariant={(next) => onSearchChange({ variant: next })}
+			onStep={(offset) => {
+				const next = prepared.rows[index + offset]
+				if (next !== undefined) onSearchChange({ error: next.fingerprint, session: undefined, variant: undefined })
+			}}
+			onClose={() => onSearchChange({ error: undefined, session: undefined, variant: undefined })}
 		/>
 	)
-
-	// The header and both counts come from the row the reader clicked, so the
-	// modal opens complete and fills in — a spinner here would hide the number
-	// that made them open it. A FAILED read is the one case that cannot fill in,
-	// and it says so rather than sitting at "loading" forever.
-	return Result.builder(detail)
-		.onError((failure) => modal(EMPTY_DETAIL, false, failure))
-		.onSuccess((value, result) => modal(value, result.waiting))
-		.orElse(() => modal(EMPTY_DETAIL, true, undefined, true))
 }
 
-const EMPTY_DETAIL: ToolErrorDetailData = { sessions: [], occurrences: [] }
+const EMPTY_DETAIL: ToolErrorDetailData = { sessions: [], variants: [], breakdown: [] }
+
+const NO_CURSORS: ReadonlyArray<AiToolErrorSampleCursor> = []
+
+/**
+ * A group's samples, a page at a time, as the cursors that fetched them.
+ *
+ * Keyed by the narrowing they extend: a different session or variant is a new
+ * list, and the old pages must not be appended to it. Each page is its own
+ * query atom — and its own bounded payload read — so loading more never
+ * re-reads what is already on screen.
+ */
+function useErrorSamples(data: AiToolErrorSamplesInput): ToolErrorSamplesState {
+	const key = JSON.stringify(data)
+	const [loaded, setLoaded] = useState<{ key: string; cursors: ReadonlyArray<AiToolErrorSampleCursor> }>({
+		key,
+		cursors: NO_CURSORS,
+	})
+	const cursors = loaded.key === key ? loaded.cursors : NO_CURSORS
+
+	const pageAtoms = useMemo(
+		() =>
+			[undefined, ...cursors].map((before) =>
+				aiToolErrorSamplesResultAtom({ data: before === undefined ? data : { ...data, before } }),
+			),
+		[data, cursors],
+	)
+	// One subscription over every open page, however many there are.
+	const pagesAtom = useMemo(() => Atom.make((get) => pageAtoms.map((atom) => get(atom))), [pageAtoms])
+	const pages = useAtomValue(pagesAtom)
+	const retryLastPage = useAtomRefresh(pageAtoms[pageAtoms.length - 1]!)
+
+	const first = pages[0]!
+	const last = pages[pages.length - 1]!
+	const nextCursor = Result.isSuccess(last) ? last.value.nextCursor : undefined
+	const loadingMore = pages.length > 1 && Result.isInitial(last)
+	const failedMore = pages.length > 1 && Result.isFailure(last)
+	const occurrences = useMemo(
+		() => pages.flatMap((page) => (Result.isSuccess(page) ? page.value.occurrences : [])),
+		[pages],
+	)
+
+	return {
+		occurrences,
+		loading: Result.isInitial(first),
+		failure: Result.builder(first)
+			.onError((failure) => failure as unknown)
+			.orElse(() => undefined),
+		paging: failedMore ? "failed" : loadingMore ? "loading" : nextCursor !== undefined ? "more" : "end",
+		onLoadMore: () => {
+			if (failedMore) {
+				retryLastPage()
+				return
+			}
+			if (nextCursor === undefined || loadingMore) return
+			setLoaded({ key, cursors: [...cursors, nextCursor] })
+		},
+	}
+}

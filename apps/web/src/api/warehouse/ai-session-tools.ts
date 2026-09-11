@@ -16,8 +16,12 @@ import { Effect, Schema } from "effect"
 import {
 	AI_TOOLS_OTHER_SERIES_KEY,
 	AiToolErrorDetailRequest,
+	AiToolErrorFingerprint,
+	AiToolErrorSampleCursor,
+	AiToolErrorSamplesRequest,
 	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
+	AiToolsPeriod,
 	AiToolsSeriesRequest,
 	AiToolsTotalsRequest,
 	AI_TOOL_ERRORS_MAX,
@@ -26,6 +30,7 @@ import {
 	type AiToolErrorItem,
 	type AiToolErrorOccurrence,
 	type AiToolErrorSessionItem,
+	type AiToolErrorVariantItem,
 	type AiToolsSeriesResponse,
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -34,9 +39,11 @@ import {
 	OTHER_SERIES_KEY,
 	breakdownKeyLabel,
 	type ToolBreakdownRow,
+	type ToolErrorBreakdownRow,
 	type ToolErrorOccurrenceRow,
 	type ToolErrorRow,
 	type ToolErrorSessionRow,
+	type ToolErrorVariantRow,
 	type ToolSeriesPoint,
 	type ToolTotals,
 } from "@/lib/agent-sessions/tool-analytics"
@@ -163,13 +170,25 @@ export const getAiToolSeries = Effect.fn("AiSessionTools.series")(function* ({
 	return { data: mapToolSeries(result), seriesKind: result.seriesKind }
 })
 
-/** Both windows in one read — the current one and the equal-length one before it. */
+/**
+ * The window's totals, and by default the two the overview compares them
+ * against: the equal-length window before it, and every session in it.
+ *
+ * `periods` is which of the three to measure — each is its own scan, so a page
+ * that draws no deltas asks for `current` alone.
+ */
+const AiToolTotalsInput = Schema.Struct({
+	...AiToolsSelection.fields,
+	periods: Schema.optional(Schema.Array(AiToolsPeriod)),
+})
+export type AiToolTotalsInput = Schema.Schema.Type<typeof AiToolTotalsInput>
+
 export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 	data,
 }: {
-	data: AiToolsSelection
+	data: AiToolTotalsInput
 }) {
-	const input = yield* decodeInput(AiToolsSelection, data, "aiToolTotals")
+	const input = yield* decodeInput(AiToolTotalsInput, data, "aiToolTotals")
 	const result = yield* runWarehouseQuery("aiToolTotals", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient
@@ -177,6 +196,7 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 				payload: new AiToolsTotalsRequest({
 					startTime: input.startTime,
 					endTime: input.endTime,
+					...(input.periods !== undefined && { periods: input.periods }),
 					...selectionFields(input),
 				}),
 			})
@@ -185,9 +205,12 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 	return {
 		current: measuresOf(result.current),
 		// Nothing ran in the comparison window reads as "no comparison", not as
-		// -100%: `toolDelta` refuses to divide by a previous window of zero.
-		previous: measuresOf(result.previous),
-		allSessions: result.allSessions,
+		// -100%: `toolDelta` refuses to divide by a previous window of zero. A
+		// caller that did not ask for the window reads the same way.
+		previous: result.previous === undefined ? undefined : measuresOf(result.previous),
+		// Zero rather than absent: the tile that states a share against it is the
+		// overview's, and the overview always asks for the period.
+		allSessions: result.allSessions ?? 0,
 		// `''` where nothing matched, which `toEpochMs` reads as NaN — the header
 		// drops the clause rather than printing an Invalid Date.
 		firstSeen: toEpochMs(result.firstSeen),
@@ -236,10 +259,16 @@ export const getAiToolBreakdowns = Effect.fn("AiSessionTools.breakdowns")(functi
  * only the constructor refuses would therefore crash the page rather than fail
  * the read.
  */
-const AiToolErrorsInput = Schema.Struct({
+const AiToolErrorsSelection = Schema.Struct({
 	...AiToolsSelection.fields,
 	/** Required here: these reads are one tool's. */
 	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+})
+
+const AiToolErrorsInput = Schema.Struct({
+	...AiToolErrorsSelection.fields,
+	/** The trend's bucket, in whole seconds. */
+	bucketSeconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
 	),
@@ -247,21 +276,32 @@ const AiToolErrorsInput = Schema.Struct({
 export type AiToolErrorsInput = Schema.Schema.Type<typeof AiToolErrorsInput>
 
 const AiToolErrorDetailInput = Schema.Struct({
-	...AiToolErrorsInput.fields,
-	/** `''` is the group of failures that named no type — the `unknown` row. */
-	errorType: Schema.String.check(Schema.isMaxLength(200)),
-	session: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	...AiToolErrorsSelection.fields,
+	fingerprint: AiToolErrorFingerprint,
 })
 export type AiToolErrorDetailInput = Schema.Schema.Type<typeof AiToolErrorDetailInput>
 
+const AiToolErrorSamplesInput = Schema.Struct({
+	...AiToolErrorDetailInput.fields,
+	session: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	variant: Schema.optional(Schema.String.check(Schema.isMaxLength(2_000))),
+	/** The previous page's cursor, exactly as the read handed it back. */
+	before: Schema.optional(AiToolErrorSampleCursor),
+})
+export type AiToolErrorSamplesInput = Schema.Schema.Type<typeof AiToolErrorSamplesInput>
+
 export function mapToolErrors(rows: ReadonlyArray<AiToolErrorItem>): ReadonlyArray<ToolErrorRow> {
 	return rows.map((row) => ({
+		fingerprint: row.fingerprint,
 		errorType: row.errorType,
 		message: row.message,
 		calls: row.calls,
 		sessions: row.sessions,
+		variants: row.variants,
 		firstSeen: toEpochMs(row.firstSeen),
 		lastSeen: toEpochMs(row.lastSeen),
+		callsSince: row.callsSince,
+		trend: row.trend.map((point) => ({ bucket: toEpochMs(point.bucket), calls: point.calls })),
 	}))
 }
 
@@ -272,10 +312,13 @@ const mapErrorSessions = (
 		sessionId: row.sessionId,
 		vendorId: row.vendorId,
 		agentName: row.agentName,
-		model: row.model,
+		service: row.service,
 		hits: row.hits,
 		lastSeen: toEpochMs(row.lastSeen),
 	}))
+
+const mapVariants = (rows: ReadonlyArray<AiToolErrorVariantItem>): ReadonlyArray<ToolErrorVariantRow> =>
+	rows.map((row) => ({ message: row.message, calls: row.calls, lastSeen: toEpochMs(row.lastSeen) }))
 
 const mapOccurrences = (
 	rows: ReadonlyArray<AiToolErrorOccurrence>,
@@ -288,6 +331,7 @@ const mapOccurrences = (
 		vendorId: row.vendorId,
 		agentName: row.agentName,
 		model: row.model,
+		service: row.service,
 		errorType: row.errorType,
 		message: row.message,
 		durationNs: row.durationNs,
@@ -298,7 +342,7 @@ const mapOccurrences = (
 		resultBytes: row.resultBytes,
 	}))
 
-/** Every error type one tool failed with, worst first. */
+/** Every error group one tool failed with, most failed calls first. */
 export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 	data,
 }: {
@@ -312,6 +356,7 @@ export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 				payload: new AiToolErrorsRequest({
 					startTime: input.startTime,
 					endTime: input.endTime,
+					bucketSeconds: input.bucketSeconds,
 					...selectionFields(input),
 					tool: input.tool,
 					...(input.limit !== undefined && { limit: input.limit }),
@@ -322,7 +367,8 @@ export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 	return { data: mapToolErrors(result.data) }
 })
 
-/** One error type: the sessions that hit it, and the calls themselves. */
+/** One error group's facts: the sessions it hit, the raw texts it folded, and
+ *  where it happens. */
 export const getAiToolErrorDetail = Effect.fn("AiSessionTools.errorDetail")(function* ({
 	data,
 }: {
@@ -338,15 +384,41 @@ export const getAiToolErrorDetail = Effect.fn("AiSessionTools.errorDetail")(func
 					endTime: input.endTime,
 					...selectionFields(input),
 					tool: input.tool,
-					errorType: input.errorType,
-					...(input.session !== undefined && { session: input.session }),
-					...(input.limit !== undefined && { limit: input.limit }),
+					fingerprint: input.fingerprint,
 				}),
 			})
 		}),
 	)
 	return {
 		sessions: mapErrorSessions(result.sessions),
-		occurrences: mapOccurrences(result.occurrences),
+		variants: mapVariants(result.variants),
+		breakdown: result.breakdown satisfies ReadonlyArray<ToolErrorBreakdownRow>,
 	}
+})
+
+/** One page of an error group's failed calls, newest first, with their payloads. */
+export const getAiToolErrorSamples = Effect.fn("AiSessionTools.errorSamples")(function* ({
+	data,
+}: {
+	data: AiToolErrorSamplesInput
+}) {
+	const input = yield* decodeInput(AiToolErrorSamplesInput, data, "aiToolsErrorSamples")
+	const result = yield* runWarehouseQuery("aiToolsErrorSamples", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.toolErrorSamples({
+				payload: new AiToolErrorSamplesRequest({
+					startTime: input.startTime,
+					endTime: input.endTime,
+					...selectionFields(input),
+					tool: input.tool,
+					fingerprint: input.fingerprint,
+					...(input.session !== undefined && { session: input.session }),
+					...(input.variant !== undefined && { variant: input.variant }),
+					...(input.before !== undefined && { before: input.before }),
+				}),
+			})
+		}),
+	)
+	return { occurrences: mapOccurrences(result.occurrences), nextCursor: result.nextCursor }
 })

@@ -17,7 +17,7 @@ import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import { ToolDetailCharts } from "./tool-detail-charts"
 import { ToolDetailSessions } from "./tool-detail-sessions"
-import { ToolErrorsTable } from "./tool-errors-table"
+import { ToolErrorsTable, type ToolErrorsWindow } from "./tool-errors-table"
 import { ToolFilterToolbar, type ToolFilterOption } from "./tool-filter-toolbar"
 import { ToolScopeRow, type ToolScopeChip } from "./tool-scope-row"
 
@@ -31,6 +31,8 @@ export interface ToolDetailViewData {
 	readonly lastSeen: number
 	/** The tool's latest `gen_ai.tool.description`; absent where no call stamped one. */
 	readonly description?: string
+	/** The window, as epoch ms — what the Errors table's trends are drawn over. */
+	readonly range: ToolErrorsWindow
 	readonly errors: ReadonlyArray<ToolErrorRow>
 	/** The Errors read's state, so an empty table is only ever a finding. */
 	readonly errorsLoading: boolean
@@ -154,11 +156,15 @@ export function ToolDetailView({
 			<ToolErrorsTable
 				rows={data.errors}
 				tool={tool}
+				toolCalls={data.totals.calls}
+				window={data.range}
 				selected={search.error}
-				// Opening a different error drops the session the last one was
-				// narrowed to — a `?session=` left behind would narrow occurrences
-				// of an error that never happened in it.
-				onSelect={(errorType) => onSearchChange({ error: errorType, session: undefined })}
+				// Opening a different group drops the session and variant the last
+				// one was narrowed to — either left behind would narrow samples of a
+				// group that never failed that way.
+				onSelect={(fingerprint) =>
+					onSearchChange({ error: fingerprint, session: undefined, variant: undefined })
+				}
 				loading={data.errorsLoading}
 				failure={data.errorsFailure}
 				waiting={waiting}

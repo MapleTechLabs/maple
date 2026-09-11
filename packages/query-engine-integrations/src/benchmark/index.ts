@@ -75,20 +75,30 @@ const AI_TOOLS_SELECTION = {
 	failingOnly: true,
 }
 
-/** The tool detail page's selection: one tool, named by a param rather than by
- *  the opts, so one compiled statement serves every tool. */
+/** The tool detail page's selection: one tool, plus the toolbar's. The model is
+ *  what keeps the parent-model join in these baselines — every one of these
+ *  reads drops it when nothing filters or splits by a model. */
 const AI_TOOLS_ERROR_SELECTION = {
-	// The handler sends the tool in the opts as well as the param: the opts
-	// narrow the trace prefilter, the param the span read.
 	tool: "search_traces",
 	model: "claude-sonnet-5",
-	// The service lands twice — on the trace prefilter and on the span read —
-	// which is exactly what the baseline is here to pin.
 	service: "agent",
 	failingOnly: true,
 }
 
-/** The window plus the tool the error reads resolve from a param. */
+/** One error group, as the page names it: `ErrorFingerprint` in decimal, past
+ *  2^53 like most of them. */
+const AI_TOOL_ERROR_FINGERPRINT = "12345678901234567890"
+
+/** Two failing calls of one tool, as the occurrences read hands them to the
+ *  payload read: its whole prefilter, and its bounds. */
+const AI_TOOL_ERROR_CALLS = [
+	{ timestamp: "2026-01-02 11:15:00.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d0" },
+	{ timestamp: "2026-01-02 11:45:30.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d1" },
+] as const
+
+/** The window plus the tool `aiToolDescriptionQuery` resolves from a param —
+ *  the one read here that takes no opts, because a description is the tool's
+ *  and not the selection's. Every other tool read takes the tool in its opts. */
 const toolWindow = { ...window, toolName: "search_traces" }
 
 /** The tiles' second window: equal length, ending where the caller's begins. */
@@ -279,6 +289,15 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnionUnsafe(CH.aiToolsTotalsQuery(AI_TOOLS_SELECTION), aiToolsCompare),
 	},
 	{
+		// The detail page's own totals: one period, and no parent-model join —
+		// what that page's header actually waits on.
+		module: "ai-tools",
+		name: "aiToolsTotalsQuery",
+		label: "current-only",
+		compile: () =>
+			compileUnionUnsafe(CH.aiToolsTotalsQuery({ tool: AI_TOOLS_SELECTION.tool }, ["current"]), window),
+	},
+	{
 		// The table drops the selection's OWN tool and keeps the rest — pinned
 		// here so a refactor that stops dropping it shows as a baseline diff.
 		module: "ai-tools",
@@ -298,14 +317,15 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 			}),
 	},
 	{
-		// The tool detail page's failures. The only tools reads that touch
-		// `trace_detail_spans`, and the baseline is what proves the span scan
-		// stays inside the trace-id subquery the index answers.
+		// The tool detail page's failures, grouped by fingerprint. Every call of
+		// the selection is numbered from the newest before the failures are kept,
+		// which is what a group's "calls since" reads — the baseline pins that
+		// order, since the other one type-checks and counts failures instead.
 		module: "ai-tools",
 		name: "aiToolErrorsQuery",
 		label: "default",
 		compile: () =>
-			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), toolWindow, {
+			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), bucketed, {
 				rowSchema: CH.aiToolErrorsRowSchema,
 			}),
 	},
@@ -315,12 +335,37 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () =>
 			compileUnsafe(
-				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, errorType: "TimeoutError" }),
-				toolWindow,
+				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				window,
 				{ rowSchema: CH.aiToolErrorSessionsRowSchema },
 			),
 	},
 	{
+		module: "ai-tools",
+		name: "aiToolErrorVariantsQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorVariantsQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				window,
+				{ rowSchema: CH.aiToolErrorVariantsRowSchema },
+			),
+	},
+	{
+		// Pairs rather than two groupings: one scan, and the page folds the counts.
+		module: "ai-tools",
+		name: "aiToolErrorBreakdownQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorBreakdownQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				window,
+				{ rowSchema: CH.aiToolErrorBreakdownRowSchema },
+			),
+	},
+	{
+		// A second page of one session's samples of one variant: every narrowing
+		// the modal can send at once, including the keyset position.
 		module: "ai-tools",
 		name: "aiToolErrorOccurrencesQuery",
 		label: "default",
@@ -328,11 +373,27 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 			compileUnsafe(
 				CH.aiToolErrorOccurrencesQuery({
 					...AI_TOOLS_ERROR_SELECTION,
-					errorType: "TimeoutError",
+					fingerprint: AI_TOOL_ERROR_FINGERPRINT,
 					session: "wrun_sql_catalog",
+					variant: '{"result":"Invalid tool input: Missing key\\n  at [\\"claim\\"]"}',
+					before: { timestamp: AI_TOOL_ERROR_CALLS[1].timestamp, spanId: AI_TOOL_ERROR_CALLS[1].spanId },
 				}),
-				toolWindow,
+				window,
 				{ rowSchema: CH.aiToolErrorOccurrencesRowSchema },
+			),
+	},
+	{
+		// The one read on the tool detail page that is not the index: the
+		// payloads of the occurrences the modal already has. The baseline is what
+		// proves it is a tuple seek over their own extent and never the window.
+		module: "ai-tools",
+		name: "aiToolErrorPayloadsQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorPayloadsQuery(AI_TOOL_ERROR_CALLS),
+				{ orgId: ORG_ID, ...CH.aiToolErrorPayloadSlice(AI_TOOL_ERROR_CALLS) },
+				{ rowSchema: CH.aiToolErrorPayloadsRowSchema },
 			),
 	},
 	{

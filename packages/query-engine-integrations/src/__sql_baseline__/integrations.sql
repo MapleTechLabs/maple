@@ -995,64 +995,85 @@ SELECT
 
 -- builder:ai-tools:aiToolDescriptionQuery:default
 SELECT
-          argMax(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), nullIf(SpanAttributes['tool.description'], ''), ''), Timestamp) AS description
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
-          traceId AS traceId,
-          spanId AS spanId
-        FROM (SELECT
-          TraceId AS traceId,
-          SpanId AS spanId,
-          Timestamp AS ts
+          argMax(ToolDescription, Timestamp) AS description
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND IsToolCall = 1
           AND ToolName = 'search_traces'
-        ORDER BY ts DESC
-        LIMIT 100) AS recent_tool_calls)
-          AND coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), nullIf(SpanAttributes['tool.description'], ''), '') != ''
+          AND ToolDescription != ''
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorBreakdownQuery:default
+SELECT
+          modelName AS model,
+          service AS service,
+          count() AS calls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        WHERE fingerprint = '12345678901234567890'
+        GROUP BY model, service
+        ORDER BY calls DESC, model ASC, service ASC
+        LIMIT 100
         FORMAT JSON
 
 -- builder:ai-tools:aiToolErrorOccurrencesQuery:default
 SELECT
-          toString(trace_detail_spans.Timestamp) AS timestamp,
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS sessionId,
-          ifNull(trace.traceVendorId, '') AS vendorId,
-          ifNull(trace.traceAgentName, '') AS agentName,
-          ifNull(trace.traceModel, '') AS model,
-          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
-          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
-          trace_detail_spans.Duration AS durationNs,
-          trace_detail_spans.StatusCode AS statusCode,
-          leftUTF8(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.args'], ''), ''), 4000) AS arguments,
-          length(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.args'], ''), '')) AS argumentsBytes,
-          leftUTF8(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.result'], ''), ''), 4000) AS result,
-          length(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.result'], ''), '')) AS resultBytes
-        FROM trace_detail_spans
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel,
-          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          toString(ts) AS timestamp,
           traceId AS traceId,
-          spanId AS spanId
+          spanId AS spanId,
+          sessionKey AS sessionId,
+          vendor AS vendorId,
+          agent AS agentName,
+          modelName AS model,
+          service AS service,
+          errorType AS errorType,
+          failureMessage AS message,
+          durationNs AS durationNs
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
@@ -1060,9 +1081,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1094,53 +1119,38 @@ SELECT
           AND ai_trace_index.ServiceName = 'agent'
           AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
-        GROUP BY traceId, spanId)
-          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
-          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))
-          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') = 'TimeoutError'
-          AND if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) = 'wrun_sql_catalog'
-        ORDER BY timestamp DESC, spanId ASC
-        LIMIT 50
+        WHERE fingerprint = '12345678901234567890'
+          AND sessionKey = 'wrun_sql_catalog'
+          AND failureMessage = '{"result":"Invalid tool input: Missing key\\n  at [\\"claim\\"]"}'
+          AND (ts < '2026-01-02 11:45:30.000000000' OR (ts = '2026-01-02 11:45:30.000000000' AND spanId < '00000000000007d1'))
+        ORDER BY timestamp DESC, spanId DESC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorPayloadsQuery:default
+SELECT
+          TraceId AS traceId,
+          SpanId AS spanId,
+          StatusCode AS statusCode,
+          leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(SpanAttributes['ai.toolCall.args'], ''), ''), 4000) AS arguments,
+          length(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(SpanAttributes['ai.toolCall.args'], ''), '')) AS argumentsBytes,
+          leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(SpanAttributes['ai.toolCall.result'], ''), ''), 4000) AS result,
+          length(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(SpanAttributes['ai.toolCall.result'], ''), '')) AS resultBytes
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 11:15:00.000000000'
+          AND Timestamp <= '2026-01-02 11:45:30.000000000'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d0'), tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d1'))
         FORMAT JSON
 
 -- builder:ai-tools:aiToolErrorSessionsQuery:default
 SELECT
-          session AS sessionId,
+          sessionKey AS sessionId,
           anyIf(vendor, vendor != '') AS vendorId,
           anyIf(agent, agent != '') AS agentName,
-          anyIf(model, model != '') AS model,
+          anyIf(service, service != '') AS service,
           count() AS hits,
           toString(max(ts)) AS lastSeen
-        FROM (SELECT
-          trace_detail_spans.Timestamp AS ts,
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
-          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
-          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
-          ifNull(trace.traceVendorId, '') AS vendor,
-          ifNull(trace.traceAgentName, '') AS agent,
-          ifNull(trace.traceModel, '') AS model,
-          trace_detail_spans.ServiceName AS svc,
-          trace_detail_spans.Duration AS durationNs
-        FROM trace_detail_spans
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel,
-          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
-          traceId AS traceId,
-          spanId AS spanId
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
@@ -1148,9 +1158,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1182,10 +1196,7 @@ SELECT
           AND ai_trace_index.ServiceName = 'agent'
           AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
-        GROUP BY traceId, spanId)
-          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
-          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
-        WHERE errorType = 'TimeoutError'
+        WHERE fingerprint = '12345678901234567890'
         GROUP BY sessionId
         ORDER BY hits DESC, sessionId ASC
         LIMIT 50
@@ -1193,26 +1204,52 @@ SELECT
 
 -- builder:ai-tools:aiToolErrorsQuery:default
 SELECT
-          errorType AS errorType,
-          argMax(message, ts) AS message,
+          fingerprint AS fingerprint,
+          argMax(callErrorType, ts) AS errorType,
+          argMax(failureMessage, ts) AS message,
           count() AS calls,
-          uniqExact(session) AS sessions,
+          uniqExact(sessionKey) AS sessions,
+          uniqExact(failureMessage) AS variants,
           toString(min(ts)) AS firstSeen,
-          toString(max(ts)) AS lastSeen
+          toString(max(ts)) AS lastSeen,
+          min(newerCalls) AS callsSince,
+          sumMap(map(bucket, toUInt64(1))) AS trend
         FROM (SELECT
-          trace_detail_spans.Timestamp AS ts,
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
-          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
-          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
-          ifNull(trace.traceVendorId, '') AS vendor,
-          ifNull(trace.traceAgentName, '') AS agent,
-          ifNull(trace.traceModel, '') AS model,
-          trace_detail_spans.ServiceName AS svc,
-          trace_detail_spans.Duration AS durationNs
-        FROM trace_detail_spans
+          ts AS ts,
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sessionKey AS sessionKey,
+          isError AS isError,
+          errorType AS callErrorType,
+          failureMessage AS failureMessage,
+          fingerprint AS fingerprint,
+          row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1 AS newerCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
         LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
           anyIf(Model, Model != '') AS traceModel,
@@ -1222,13 +1259,25 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
-          traceId AS traceId,
-          spanId AS spanId
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5') AS tool_calls) AS numbered_tool_calls
+        WHERE isError = 1
+        GROUP BY fingerprint
+        ORDER BY calls DESC, fingerprint ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorVariantsQuery:default
+SELECT
+          failureMessage AS message,
+          count() AS calls,
+          toString(max(ts)) AS lastSeen
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
@@ -1236,9 +1285,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1270,12 +1323,10 @@ SELECT
           AND ai_trace_index.ServiceName = 'agent'
           AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
-        GROUP BY traceId, spanId)
-          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
-          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
-        GROUP BY errorType
-        ORDER BY calls DESC, errorType ASC
-        LIMIT 50
+        WHERE fingerprint = '12345678901234567890'
+        GROUP BY message
+        ORDER BY calls DESC, message ASC
+        LIMIT 20
         FORMAT JSON
 
 -- builder:ai-tools:aiToolsBreakdownsQuery:default
@@ -1296,9 +1347,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1348,22 +1403,16 @@ SELECT
           ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceModel AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          SpanId AS SpanId,
-          anyIf(Model, Model != '') AS parentModel
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND Model != ''
-        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1394,22 +1443,16 @@ SELECT
           ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceModel AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          SpanId AS SpanId,
-          anyIf(Model, Model != '') AS parentModel
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND Model != ''
-        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1443,22 +1486,16 @@ SELECT
           ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceModel AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          SpanId AS SpanId,
-          anyIf(Model, Model != '') AS parentModel
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND Model != ''
-        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1491,22 +1528,16 @@ SELECT
           ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceModel AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          SpanId AS SpanId,
-          anyIf(Model, Model != '') AS parentModel
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND Model != ''
-        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1544,22 +1575,16 @@ SELECT
           ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceModel AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
-        LEFT JOIN (SELECT
-          TraceId AS TraceId,
-          SpanId AS SpanId,
-          anyIf(Model, Model != '') AS parentModel
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-01 10:30:00'
-          AND Timestamp <= '2026-01-03 14:15:00'
-          AND Model != ''
-        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1595,9 +1620,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1642,9 +1671,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1677,6 +1710,51 @@ SELECT
         ORDER BY bucket ASC, calls DESC, seriesKey ASC
         FORMAT JSON
 
+-- builder:ai-tools:aiToolsTotalsQuery:current-only
+SELECT
+          'current' AS period,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          if(count() = 0, '', toString(min(ts))) AS firstSeen,
+          if(count() = 0, '', toString(max(ts))) AS lastSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          trace.traceModel AS modelName,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS tool_calls_current
+FORMAT JSON
+
 -- builder:ai-tools:aiToolsTotalsQuery:default
 SELECT
           'current' AS period,
@@ -1695,9 +1773,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
@@ -1747,9 +1829,13 @@ SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
-          ai_trace_index.ServiceName AS svc,
-          ai_trace_index.AgentName AS agent,
+          trace.traceVendorId AS vendor,
+          trace.traceAgentName AS agent,
           ai_trace_index.IsError AS isError,
+          ai_trace_index.ServiceName AS service,
+          ai_trace_index.ErrorType AS errorType,
+          coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage,
+          toString(ai_trace_index.ErrorFingerprint) AS fingerprint,
           ai_trace_index.Duration AS durationNs
         FROM ai_trace_index
         LEFT JOIN (SELECT
