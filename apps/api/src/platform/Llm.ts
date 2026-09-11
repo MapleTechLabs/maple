@@ -14,10 +14,10 @@ import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
-import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
-import type * as AiModel from "effect/unstable/ai/Model"
-import * as Telemetry from "effect/unstable/ai/Telemetry"
+import * as LanguageModel from "effect/unstable/ai/LanguageModel"
+import * as AiModel from "effect/unstable/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { type ModelCallTelemetry, withModelCallTelemetry } from "./genai-spans"
 import { layerWorkersAi } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
@@ -40,7 +40,7 @@ const OPENROUTER_APP_TITLE = "Maple"
  * Broadcast destination.
  *
  * The session, turn and workflow also go on Maple's own model-call span, on either provider — see
- * {@link withAgentSessionSpans}. One set of tags feeds both, so a call and its Broadcast twin cannot
+ * {@link instrumentedModel}. One set of tags feeds both, so a call and its Broadcast twin cannot
  * be filed under different sessions.
  */
 export interface LlmCallTags {
@@ -67,6 +67,13 @@ export const DEFAULT_WORKERS_AI_MODEL = "@cf/moonshotai/kimi-k2.6"
 export type LlmProvider = "openrouter" | "workers-ai"
 
 export const DEFAULT_LLM_PROVIDER: LlmProvider = "openrouter"
+
+/**
+ * `gen_ai.provider.name` for a provider path. Cloudflare has no well-known value in the convention,
+ * so it takes the convention's `vendor.product` shape (`aws.bedrock`, `gcp.vertex_ai`).
+ */
+export const genAiProviderName = (provider: LlmProvider): string =>
+	provider === "workers-ai" ? "cloudflare.workers_ai" : "openrouter"
 
 /**
  * Workers AI has no per-request API key when reached through the `AI` binding, but the client still
@@ -221,7 +228,7 @@ const sessionIdFor = (tags: LlmCallTags): string | undefined => tags.sessionId?.
  * The ingest gateway files a GenAI span under a session only when the span carries
  * `maple_ai.session.id` (its `maple` vendor), and takes the key alone as proof of an agent span.
  * So it goes on exactly two spans: every model-call span the model opens (see
- * {@link withAgentSessionSpans}) and the span that roots the turn — a pass, in a workflow — which the
+ * {@link instrumentedModel}) and the span that roots the turn — a pass, in a workflow — which the
  * session view partitions turns by, walking each span up to its nearest tagged ancestor. Nothing
  * wider: an `Effect.annotateSpans` over the run would file every HTTP and database span as one.
  * Empty without a session.
@@ -239,29 +246,31 @@ export const agentSessionSpanAttributes = (
 }
 
 /**
- * Stamp the agent-session identity onto every model-call span the model opens.
+ * A provider's language model, with every model-call span carrying the full Gen-AI content.
  *
- * Effect AI's own span carries no session key, so without this every trace became a session of its
- * own (`trace:<TraceId>`) — one per chat turn, one per investigation pass. The session list reads a
- * trace's session off any one of its spans, so the model-call span is enough to file the tool and
- * engine spans around it too.
+ * Effect AI's own span carries the model, the response id and two token totals. The rest — messages,
+ * system instructions, cache and reasoning tokens, cost, time to first chunk — and the agent-session
+ * identity are written by `./genai-spans.ts`. The session key matters most: without it every trace
+ * became a session of its own (`trace:<TraceId>`), one per chat turn and one per investigation pass.
+ * The session list reads a trace's session off any one of its spans, so the model-call span is enough
+ * to file the tool and engine spans around it too.
  *
- * Effect AI applies the transformer before the span ends: for `streamText` (the only call Maple
- * makes) as the stream finishes, including when it fails; `generateText` would skip it on failure.
+ * Built with `AiModel.make` exactly as the providers' own `model()` constructors are — `"openai"` is
+ * the provider identity both of them declare — so the only difference is the wrapped service.
  */
-const withAgentSessionSpans = <A, R>(
-	layer: Layer.Layer<A, never, R>,
-	tags: LlmCallTags | undefined,
-): Layer.Layer<A, never, R> => {
-	const attributes = Object.entries(agentSessionSpanAttributes(tags))
-	if (attributes.length === 0) return layer
-	return Layer.provide(
-		layer,
-		Layer.succeed(Telemetry.CurrentSpanTransformer, ({ span }) => {
-			for (const [key, value] of attributes) span.attribute(key, value)
-		}),
+const instrumentedModel = <R>(
+	name: string,
+	make: Effect.Effect<LanguageModel.Service, never, R>,
+	telemetry: ModelCallTelemetry,
+): Layer.Layer<ModelServices, never, R> =>
+	AiModel.make(
+		"openai",
+		name,
+		Layer.effect(
+			LanguageModel.LanguageModel,
+			Effect.map(make, (service) => withModelCallTelemetry(service, telemetry)),
+		),
 	)
-}
 
 const openRouterModel = (
 	env: LlmEnv,
@@ -269,24 +278,32 @@ const openRouterModel = (
 	effortKey: keyof LlmEnv,
 	fallbackEffort: ReasoningEffort | undefined,
 	tags: LlmCallTags | undefined,
-): ResolvedModel => ({
-	provider: "openrouter",
-	name,
-	layer: withAgentSessionSpans(
-		OpenRouterLanguageModel.model(
+): ResolvedModel => {
+	const effort = readReasoningEffort(env, effortKey) ?? fallbackEffort
+	return {
+		provider: "openrouter",
+		name,
+		layer: instrumentedModel(
 			name,
-			openRouterConfig(readReasoningEffort(env, effortKey) ?? fallbackEffort, tags),
+			OpenRouterLanguageModel.make({ model: name, config: openRouterConfig(effort, tags) }),
+			{
+				providerName: genAiProviderName("openrouter"),
+				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
+				sessionAttributes: agentSessionSpanAttributes(tags),
+			},
 		),
+		limits: limitsFor(env, name),
 		tags,
-	),
-	limits: limitsFor(env, name),
-	tags,
-})
+	}
+}
 
 const workersAiModel = (env: LlmEnv, name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
-	layer: withAgentSessionSpans(OpenAiLanguageModel.model(name), tags),
+	layer: instrumentedModel(name, OpenAiLanguageModel.make({ model: name }), {
+		providerName: genAiProviderName("workers-ai"),
+		sessionAttributes: agentSessionSpanAttributes(tags),
+	}),
 	limits: limitsFor(env, name),
 	tags,
 })

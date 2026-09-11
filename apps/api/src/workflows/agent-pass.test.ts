@@ -13,7 +13,7 @@
  */
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Tracer } from "effect"
 import { Model, Tool, Toolkit } from "effect/unstable/ai"
 import { MapleToolFailure } from "@/mcp/tools/llm-tools"
 import {
@@ -210,6 +210,46 @@ describe("runAgentPass", () => {
 
 			assert.isTrue(result.deadlineHit)
 			assert.isTrue(Option.isNone(result.answer))
+		}),
+	)
+
+	it.effect("describes the agent on its pass span and each tool call on its own span", () =>
+		Effect.gen(function* () {
+			const spans: Array<Tracer.NativeSpan> = []
+			const tracer = Tracer.make({
+				span: (options) => {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
+
+			yield* run([
+				turn(call("c1", "query_data", { sql: "select 1" })),
+				turn(call("c2", "submit_candidate", { claim: "found it" })),
+			]).pipe(Effect.withSpan("investigation.test"), Effect.withTracer(tracer))
+
+			const pass = spans.find((span) => span.name === "investigation.test")?.attributes
+			assert.strictEqual(pass?.get("gen_ai.operation.name"), "invoke_agent")
+			assert.strictEqual(pass?.get("gen_ai.agent.name"), "hypothesis-test")
+			assert.strictEqual(pass?.get("gen_ai.agent.description"), "test lane")
+			assert.strictEqual(pass?.get("gen_ai.conversation.id"), "pass-1")
+			assert.strictEqual(pass?.get("gen_ai.provider.name"), "openrouter")
+			assert.strictEqual(pass?.get("gen_ai.request.model"), "scripted/test-model")
+			const definitions = JSON.parse(String(pass?.get("gen_ai.tool.definitions")))
+			assert.includeMembers(
+				definitions.map((tool: { readonly name: string }) => tool.name),
+				["query_data", "submit_candidate"],
+			)
+
+			const tool = spans.find((span) => span.name === "execute_tool query_data")?.attributes
+			assert.deepStrictEqual(JSON.parse(String(tool?.get("gen_ai.tool.call.arguments"))), {
+				sql: "select 1",
+			})
+			assert.deepStrictEqual(JSON.parse(String(tool?.get("gen_ai.tool.call.result"))), {
+				result: "query_data completed",
+			})
+			assert.isNotEmpty(tool?.get("gen_ai.tool.description"))
 		}),
 	)
 

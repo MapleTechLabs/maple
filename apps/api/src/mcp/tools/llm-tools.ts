@@ -17,6 +17,7 @@ import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi, McpToolSurface } from "@/mcp/dispatcher"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
 import { truncateToolOutput } from "@/mcp/tools/tool-output"
+import { withToolCallContent } from "@/platform/genai-spans"
 import type { TenantContext } from "@/services/auth/tenant-context"
 
 /**
@@ -160,18 +161,20 @@ export const buildMapleToolkit = (
 					// hand the model the message and let it route around.
 					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 				)
+			const handle = (params: unknown) => {
+				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
+				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
+					return fail(
+						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
+							"exact arguments in this turn. Read the result you already have, or call it differently.",
+					)
+				}
+				return dispatch(params)
+			}
 			return [
 				definition.name,
-				(params: unknown) => {
-					if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
-					if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
-						return fail(
-							`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
-								"exact arguments in this turn. Read the result you already have, or call it differently.",
-						)
-					}
-					return dispatch(params)
-				},
+				(params: unknown) =>
+					withToolCallContent(handle(params), { description: definition.description, params }),
 			]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.

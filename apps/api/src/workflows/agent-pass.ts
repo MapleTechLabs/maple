@@ -32,7 +32,13 @@ import { agentPolicyFor, buildSystemPrompt, type AgentDefinition } from "@/chat/
 import { buildMapleToolkit } from "@/mcp/tools/llm-tools"
 import { evaluatePermission } from "@maple/domain/permission"
 import { accumulateUsage, makeRunUsage, type RunUsage } from "@/chat/tools"
-import { type LlmClients, type ResolvedModel, agentSessionSpanAttributes } from "@/platform/Llm"
+import {
+	type LlmClients,
+	type ResolvedModel,
+	agentSessionSpanAttributes,
+	genAiProviderName,
+} from "@/platform/Llm"
+import { invokeAgentAttributes } from "@/platform/genai-spans"
 import { McpToolExecutor } from "@/mcp/dispatcher"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { summarizeCause } from "@/platform/describe-cause"
@@ -129,10 +135,6 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 	Effect.gen(function* () {
 		type A = S["Type"]
 		const toolExecutor = yield* McpToolExecutor
-		// The pass's own span roots the turn: the session view files a lane's untagged tool, HTTP and
-		// database spans by their nearest tagged ancestor, and concurrent lanes would otherwise be
-		// partitioned by start time alone. The model-call spans carry the same keys via the model.
-		yield* Effect.annotateCurrentSpan(agentSessionSpanAttributes(input.model.tags))
 		const usage = input.usage ?? makeRunUsage()
 		let answer: Option.Option<A> = Option.none()
 		let toolCalls = 0
@@ -153,6 +155,22 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 		// of it — tool parameter encoding services, the completion declaration — resolves to the same
 		// place through the erased type.
 		const toolkit: Toolkit.Any = Toolkit.merge(tools.toolkit, input.submit.toolkit)
+
+		// The pass's own span roots the turn: the session view files a lane's untagged tool, HTTP and
+		// database spans by their nearest tagged ancestor, and concurrent lanes would otherwise be
+		// partitioned by start time alone. The model-call spans carry the same keys via the model. It
+		// is also the pass's `invoke_agent` span, which is where the agent and its tools are described.
+		yield* Effect.annotateCurrentSpan({
+			...agentSessionSpanAttributes(input.model.tags),
+			...invokeAgentAttributes({
+				agentName: input.agent.name,
+				agentDescription: input.agent.description,
+				conversationId: input.id,
+				providerName: genAiProviderName(input.model.provider),
+				model: input.model.name,
+				tools: Object.values(toolkit.tools),
+			}),
+		})
 
 		const definition = Agent.withModel(
 			Agent.make(input.agent.name, {

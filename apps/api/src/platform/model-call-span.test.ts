@@ -137,6 +137,72 @@ describe("the model-call span", () => {
 		}),
 	)
 
+	/**
+	 * The regression from the move onto Effect AI: its providers annotate the model and two token
+	 * totals, and every investigation span lost its messages, cache and reasoning tokens and cost.
+	 */
+	it.live("carries the conversation, the usage buckets, the cost and the timings", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const env = { ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }
+			const sse = [
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
+				"",
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
+				"",
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
+				"",
+				"data: [DONE]",
+				"",
+			].join("\n")
+
+			yield* LanguageModel.streamText({
+				prompt: [
+					{ role: "system", content: "Be brief." },
+					{ role: "user", content: [{ type: "text", text: "hi" }] },
+				],
+			}).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+				Effect.provideService(FetchHttpClient.Fetch, () =>
+					Promise.resolve(
+						new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
+					),
+				),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			const attributes = recorder.spans.find(
+				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			)?.endedWith
+			assert.isDefined(attributes, "no model-call span was opened")
+			const json = (key: string) => JSON.parse(String(attributes?.get(key)))
+
+			assert.strictEqual(attributes?.get("gen_ai.provider.name"), "openrouter")
+			assert.strictEqual(attributes?.get("gen_ai.request.stream"), true)
+			assert.strictEqual(attributes?.get("gen_ai.request.reasoning.level"), "high")
+			assert.strictEqual(attributes?.get("gen_ai.output.type"), "text")
+			assert.deepStrictEqual(json("gen_ai.system_instructions"), [
+				{ type: "text", content: "Be brief." },
+			])
+			assert.deepStrictEqual(json("gen_ai.input.messages"), [
+				{ role: "user", parts: [{ type: "text", content: "hi" }] },
+			])
+			assert.deepStrictEqual(json("gen_ai.output.messages"), [
+				{ role: "assistant", parts: [{ type: "text", content: "Looking" }], finish_reason: "stop" },
+			])
+			assert.deepStrictEqual(attributes?.get("gen_ai.response.finish_reasons"), ["stop"])
+			assert.strictEqual(attributes?.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes?.get("gen_ai.usage.output_tokens"), 12)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cache_read.input_tokens"), 30)
+			assert.strictEqual(attributes?.get("gen_ai.usage.reasoning.output_tokens"), 5)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cost"), 0.0042)
+			assert.isAtLeast(Number(attributes?.get("gen_ai.response.time_to_first_chunk")), 0)
+			assert.isAtLeast(Number(attributes?.get("maple_ai.model_duration_ms")), 0)
+		}),
+	)
+
 	it.live("carries no session when the caller has none", () =>
 		Effect.gen(function* () {
 			const recorder = recordingTracer()
