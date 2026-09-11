@@ -67,7 +67,7 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 						onViewChange={setView}
 						turns={turns}
 						summary={summary}
-						paging={undefined}
+						progress={undefined}
 						totals={undefined}
 						selectedSpanId={selectedSpanId}
 						onSelectSpan={setSelectedSpanId}
