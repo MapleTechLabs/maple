@@ -10,6 +10,7 @@ import { Schema } from "effect"
 
 import type { AiOverviewDimension } from "@maple/domain/http"
 import type { AgentSessionsSearchState } from "@/components/agent-sessions/agent-sessions-filter-inputs"
+import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { BooleanFromStringParam } from "@/lib/search-params"
 
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
@@ -68,6 +69,26 @@ export type AgentOverviewSearch = Schema.Schema.Type<typeof AgentOverviewSearch>
 
 /** Wide enough that a nightly agent shows up at all. */
 export const AGENT_OVERVIEW_DEFAULT_PRESET = "7d"
+
+/**
+ * What the page calls the window it is showing — `7d`, `24h`, `45m`.
+ *
+ * A preset names itself. An absolute range has no preset, and the default above
+ * does not name it either: the resolver hands a start/end pair straight back
+ * and never looks at the default, so a two-hour range picked by hand would
+ * otherwise be labelled "prev 7d". It is named after its own length instead, to
+ * the nearest whole unit.
+ */
+export function overviewWindowLabel(search: TimeRangeSearch, windowMs: number): string {
+	if (search.timePreset !== undefined) return search.timePreset
+	if (search.startTime === undefined || search.endTime === undefined) {
+		return AGENT_OVERVIEW_DEFAULT_PRESET
+	}
+	const minutes = Math.max(1, Math.round(windowMs / 60_000))
+	if (minutes < 60) return `${minutes}m`
+	const hours = Math.round(minutes / 60)
+	return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`
+}
 
 /** The value in force for one dimension, or nothing. */
 export const selectedDimensionValue = (

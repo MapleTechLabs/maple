@@ -5,7 +5,8 @@
 // a literal `Z`; `toEpochMs` reads them as UTC, where `new Date(value)` would
 // read a bare warehouse datetime as local time. Durations arrive in
 // nanoseconds and leave in milliseconds, because every formatter downstream
-// takes milliseconds.
+// takes milliseconds — the per-call quantiles are dropped here rather than
+// converted, since nothing on the board reads them.
 //
 // The page's filters are single-valued — one model, one agent, one tool — and
 // the contract takes arrays. The widening happens in `selectionFields`, so a
@@ -18,6 +19,7 @@ import {
 	AiOverviewDimension,
 	AiOverviewModelMixRequest,
 	AiOverviewSummaryRequest,
+	BucketSeconds,
 	type AiOverviewBreakdownRow,
 	type AiOverviewMeasures,
 	type AiOverviewModelMixPoint,
@@ -58,7 +60,8 @@ export type AiOverviewSelection = Schema.Schema.Type<typeof AiOverviewSelection>
 
 const AiOverviewBucketedInput = Schema.Struct({
 	...AiOverviewSelection.fields,
-	bucketSeconds: Schema.Number,
+	/** The domain's own bound, for the reason the breakdown input gives below. */
+	bucketSeconds: BucketSeconds,
 })
 export type AiOverviewBucketedInput = Schema.Schema.Type<typeof AiOverviewBucketedInput>
 
@@ -116,8 +119,6 @@ export function mapOverviewMeasures(row: AiOverviewMeasures): OverviewMeasures {
 		reasoningTokens: row.reasoningTokens,
 		sessionDurationP50Ms: row.sessionDurationP50Ns / NS_PER_MS,
 		sessionDurationP95Ms: row.sessionDurationP95Ns / NS_PER_MS,
-		llmDurationP50Ms: row.llmDurationP50Ns / NS_PER_MS,
-		llmDurationP95Ms: row.llmDurationP95Ns / NS_PER_MS,
 	}
 }
 

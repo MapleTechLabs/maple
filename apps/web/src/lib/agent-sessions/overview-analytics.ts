@@ -31,8 +31,10 @@ import { OVERVIEW_DIMENSIONS, type OverviewDimension } from "./overview-search"
  * What every overview read reports, so a tile, a point on a chart and a table
  * row are the same numbers under different groupings.
  *
- * Identical to the wire's `AiOverviewMeasures` except that the four quantiles
- * are milliseconds here; see `api/warehouse/ai-agent-overview.ts`.
+ * A subset of the wire's `AiOverviewMeasures`: the session quantiles are
+ * milliseconds here rather than nanoseconds, and the per-call ones are dropped
+ * because nothing on the board reads them. See
+ * `api/warehouse/ai-agent-overview.ts`.
  */
 export interface OverviewMeasures {
 	readonly sessions: number
@@ -56,8 +58,6 @@ export interface OverviewMeasures {
 	readonly reasoningTokens: number
 	readonly sessionDurationP50Ms: number
 	readonly sessionDurationP95Ms: number
-	readonly llmDurationP50Ms: number
-	readonly llmDurationP95Ms: number
 }
 
 export const EMPTY_OVERVIEW_MEASURES: OverviewMeasures = {
@@ -78,8 +78,6 @@ export const EMPTY_OVERVIEW_MEASURES: OverviewMeasures = {
 	reasoningTokens: 0,
 	sessionDurationP50Ms: 0,
 	sessionDurationP95Ms: 0,
-	llmDurationP50Ms: 0,
-	llmDurationP95Ms: 0,
 }
 
 /** One bucket of a summary series. `bucket` is epoch milliseconds. */
@@ -130,10 +128,16 @@ export const llmCallsPerSession = (m: OverviewMeasures): number => ratio(m.llmCa
 export const cacheHitRatio = (m: OverviewMeasures): number =>
 	ratio(m.cacheReadTokens, m.inputTokens + m.cacheReadTokens)
 
-/** `cost` is 0 for "nobody priced it" and not for "free" — this is how much of
- *  the window it actually covers. */
-export const pricedShare = (m: OverviewMeasures): number =>
-	ratio(m.pricedLlmCalls, m.llmCallSpans)
+/**
+ * `cost` is 0 for "nobody priced it" and not for "free" — this is how much of
+ * the window it actually covers.
+ *
+ * Over `llmCalls` and never `llmCallSpans` — the mirror image of the LLM error
+ * rate above. The server nets the priced calls exactly as it nets the volume,
+ * so the two are one population and a fully priced window reads 100% rather
+ * than the netting factor.
+ */
+export const pricedShare = (m: OverviewMeasures): number => ratio(m.pricedLlmCalls, m.llmCalls)
 
 /* -------------------------------------------------------------------------------------------------
  * Token bands

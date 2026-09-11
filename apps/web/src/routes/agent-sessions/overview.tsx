@@ -12,7 +12,11 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { NotFoundError } from "@/components/route-error"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import {
+	TimeRangeSearchFields,
+	applyTimeRangeSearch,
+	type TimeRangeSearch,
+} from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -24,6 +28,7 @@ import {
 	EMPTY_OVERVIEW_FACETS,
 	OverviewSearchFields,
 	compareEnabled,
+	overviewWindowLabel,
 	type AgentOverviewSearch,
 	type OverviewFacets,
 } from "@/lib/agent-sessions/overview-search"
@@ -90,7 +95,6 @@ function AgentOverviewPageContent() {
 							<AgentOverviewBody
 								search={search}
 								window={window}
-								preset={preset}
 								onSearchChange={onSearchChange}
 								headerControls={
 									<TimeRangeHeaderControls
@@ -123,13 +127,11 @@ function AgentOverviewPageContent() {
 function AgentOverviewBody({
 	search,
 	window,
-	preset,
 	onSearchChange,
 	headerControls,
 }: {
-	search: AgentOverviewSearch
+	search: AgentOverviewSearch & TimeRangeSearch
 	window: { startTime: string; endTime: string }
-	preset: string
 	onSearchChange: (patch: Partial<AgentOverviewSearch>) => void
 	headerControls: ReactNode
 }) {
@@ -146,6 +148,10 @@ function AgentOverviewBody({
 		}),
 		[search.startTime, search.endTime, search.timePreset],
 	)
+	// Read off the resolved window, not off the page's default preset: the
+	// resolver hands an absolute range straight back, so the default never
+	// named it and "prev 7d" beside a two-hour range would be a fiction.
+	const windowLabel = overviewWindowLabel(timeRange, windowMs.endMs - windowMs.startMs)
 
 	// The selects' options come from the sessions facets — the same counted
 	// lists the list page's sidebar uses, unfiltered so picking one model does
@@ -215,7 +221,7 @@ function AgentOverviewBody({
 						// than re-derived for the axis.
 						bucketSeconds: summary.bucketSeconds,
 						windowMs,
-						windowLabel: preset,
+						windowLabel,
 						compare: compareEnabled(search),
 					})}
 					facets={facets}
@@ -224,7 +230,7 @@ function AgentOverviewBody({
 						duration: sessionsOf(results.topSessions.duration),
 						errored: sessionsOf(results.topSessions.errored),
 					}}
-					windowLabel={preset}
+					windowLabel={windowLabel}
 					timeRange={timeRange}
 					headerControls={headerControls}
 					waiting={result.waiting}

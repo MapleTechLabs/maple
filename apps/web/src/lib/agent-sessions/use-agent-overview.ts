@@ -21,7 +21,7 @@ import type {
 	AiOverviewSummaryData,
 } from "@/api/warehouse/ai-agent-overview"
 import type { ListAiSessionsInput, listAiSessions } from "@/api/warehouse/ai-sessions"
-import { chartBucketSeconds } from "@/components/infra/chart-utils"
+import { smallMultipleBucketSeconds } from "@/components/infra/chart-utils"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { Result } from "@/lib/effect-atom"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -126,7 +126,9 @@ export function useAgentOverview(
 	window: AgentOverviewWindow,
 ): AgentOverviewResults {
 	const selection = useMemo(() => overviewSelection(search, window), [search, window])
-	const bucketSeconds = chartBucketSeconds(window.startTime, window.endTime)
+	// The grid is nine ~104px-tall plots rather than one wide chart, so the
+	// buckets are cut at a width that reads at that size.
+	const bucketSeconds = smallMultipleBucketSeconds(window.startTime, window.endTime)
 	const bucketed = { ...selection, bucketSeconds }
 
 	const summary = useRefreshableAtomValue(aiOverviewSummaryResultAtom({ data: bucketed }))

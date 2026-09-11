@@ -9,6 +9,7 @@ import {
 	buildMovers,
 	buildOverviewSeries,
 	buildOverviewTiles,
+	bucketWidthLabel,
 	cacheHitRatio,
 	costPerSession,
 	formatOverviewCount,
@@ -55,6 +56,14 @@ describe("derivations", () => {
 
 	it("measures the cache hit ratio against everything that could have been a prompt read", () => {
 		expect(cacheHitRatio(measures({ inputTokens: 30, cacheReadTokens: 70 }))).toBe(0.7)
+	})
+
+	it("divides the priced share by the netted volume the server priced", () => {
+		// 47 of 50 netted calls carried a price. The 59 spans behind them did not
+		// each need one, and dividing by those would read as 80% coverage.
+		expect(pricedShare(measures({ llmCalls: 50, llmCallSpans: 59, pricedLlmCalls: 47 }))).toBe(
+			0.94,
+		)
 	})
 })
 
@@ -149,6 +158,21 @@ describe("formatters", () => {
 	it("reads a zero duration as nothing measured rather than as 0μs", () => {
 		expect(formatOverviewDuration(0)).toBe("—")
 	})
+
+	it("names every width the grid's buckets are actually cut at", () => {
+		// The ladder `smallMultipleBucketSeconds` snaps to, one unit each.
+		const ladder = [300, 900, 1_800, 3_600, 10_800, 21_600, 43_200, 86_400]
+		expect(ladder.map(bucketWidthLabel)).toEqual([
+			"5m",
+			"15m",
+			"30m",
+			"1h",
+			"3h",
+			"6h",
+			"12h",
+			"1d",
+		])
+	})
 })
 
 describe("buildOverviewTiles", () => {
@@ -158,7 +182,8 @@ describe("buildOverviewTiles", () => {
 		cost: 40,
 		tokens: 1_000,
 		toolCalls: 500,
-		llmCallSpans: 200,
+		llmCalls: 200,
+		llmCallSpans: 236,
 		pricedLlmCalls: 188,
 		sessionDurationP50Ms: 40_000,
 		sessionDurationP95Ms: 90_000,
@@ -403,7 +428,13 @@ describe("overviewScopeSummary", () => {
 
 describe("buildAgentOverviewData", () => {
 	const input = {
-		current: measures({ sessions: 100, cost: 40, llmCallSpans: 100, pricedLlmCalls: 94 }),
+		current: measures({
+			sessions: 100,
+			cost: 40,
+			llmCalls: 100,
+			llmCallSpans: 118,
+			pricedLlmCalls: 94,
+		}),
 		previous: measures({ sessions: 80, cost: 40 }),
 		series: [{ bucket: 2_000, ...measures({ sessions: 10 }) }],
 		previousSeries: [{ bucket: 1_000, ...measures({ sessions: 8 }) }],

@@ -6,6 +6,7 @@ import {
 	compareEnabled,
 	failingOnly,
 	overviewApiDimension,
+	overviewWindowLabel,
 	sessionsLinkSearch,
 	toggleOverviewFilter,
 	type AgentOverviewSearch,
@@ -108,5 +109,28 @@ describe("sessionsLinkSearch", () => {
 
 	it("lets the errored tab ask for failures the board is not filtered to", () => {
 		expect(sessionsLinkSearch({}, { hasErrors: true }).hasErrors).toBe(true)
+	})
+})
+
+describe("overviewWindowLabel", () => {
+	const hours = (count: number) => count * 3_600_000
+	/** An absolute range in the URL, which is what makes the default irrelevant. */
+	const ABSOLUTE = { startTime: "2026-09-10 00:00:00", endTime: "2026-09-10 03:00:00" }
+
+	it("lets a preset name itself", () => {
+		expect(overviewWindowLabel({ timePreset: "24h" }, hours(24))).toBe("24h")
+	})
+
+	it("falls back to the page's default only while the URL carries no window", () => {
+		expect(overviewWindowLabel({}, hours(3))).toBe("7d")
+		// Half a range is not a range: the resolver would still use the default.
+		expect(overviewWindowLabel({ startTime: ABSOLUTE.startTime }, hours(3))).toBe("7d")
+	})
+
+	it("names an absolute range after its own length, not after the default", () => {
+		expect(overviewWindowLabel(ABSOLUTE, hours(3))).toBe("3h")
+		expect(overviewWindowLabel(ABSOLUTE, hours(24))).toBe("24h")
+		expect(overviewWindowLabel(ABSOLUTE, hours(72))).toBe("3d")
+		expect(overviewWindowLabel(ABSOLUTE, 45 * 60_000)).toBe("45m")
 	})
 })

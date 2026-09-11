@@ -16,6 +16,11 @@ export type AgentSessionsTab = "overview" | "sessions"
  * undoes the switch. Only the window travels between them — the overview's
  * dimension filters mean nothing to a list that pages one session at a time.
  *
+ * The tab already showing is the exception: it navigates to where it already
+ * is, so it MERGES rather than replaces. A `search` object replaces the whole
+ * search, and clicking the tab you are on is not how anyone asks for their
+ * filters to be cleared.
+ *
  * The Sessions list has no time picker (it is fixed to a rolling week), so a
  * jump from there carries no window and this page falls back to its own default.
  */
@@ -68,7 +73,7 @@ function TabLink({
 	return (
 		<Link
 			to={to}
-			search={search}
+			search={active ? (prev: Record<string, unknown>) => ({ ...prev, ...search }) : search}
 			aria-current={active ? "page" : undefined}
 			className={cn(
 				"flex h-9 items-center gap-[7px] border-b-2 px-3 font-mono text-[12.5px] transition-colors first:pl-0.5",

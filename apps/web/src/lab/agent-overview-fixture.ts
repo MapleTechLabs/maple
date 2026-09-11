@@ -67,8 +67,6 @@ interface SessionRates {
 	pricedShare: number
 	p50Ms: number
 	p95Ms: number
-	llmP50Ms: number
-	llmP95Ms: number
 }
 
 const HEALTHY: SessionRates = {
@@ -85,8 +83,6 @@ const HEALTHY: SessionRates = {
 	pricedShare: 0.94,
 	p50Ms: 42_000,
 	p95Ms: 96_000,
-	llmP50Ms: 1_900,
-	llmP95Ms: 7_400,
 }
 
 /** The step the investigating board is drawn around. Sessions barely move. */
@@ -100,8 +96,6 @@ const REGRESSED: SessionRates = {
 	tokensPerSession: 118_000,
 	cacheShare: 0.12,
 	p95Ms: 227_000,
-	llmP50Ms: 3_100,
-	llmP95Ms: 18_600,
 }
 
 /** A deterministic wobble, so a board looks like traffic and not like a ruler. */
@@ -143,7 +137,7 @@ function measuresOf(rates: SessionRates): OverviewMeasures {
 		toolCalls,
 		erroredToolCalls: Math.round(toolCalls * rates.toolErrorRate),
 		cost: Number((sessions * rates.costPerSession).toFixed(2)),
-		pricedLlmCalls: Math.round(llmCallSpans * rates.pricedShare),
+		pricedLlmCalls: Math.round(llmCalls * rates.pricedShare),
 		tokens,
 		inputTokens: Math.round(prompt * (1 - rates.cacheShare)),
 		cacheReadTokens: Math.round(prompt * rates.cacheShare),
@@ -152,21 +146,13 @@ function measuresOf(rates: SessionRates): OverviewMeasures {
 		reasoningTokens: Math.round(tokens * 0.06),
 		sessionDurationP50Ms: rates.p50Ms,
 		sessionDurationP95Ms: rates.p95Ms,
-		llmDurationP50Ms: rates.llmP50Ms,
-		llmDurationP95Ms: rates.llmP95Ms,
 	}
 }
 
 /** Counts sum; quantiles do not, so the window's own are passed in. */
 function foldMeasures(
 	points: ReadonlyArray<OverviewMeasures>,
-	quantiles: Pick<
-		OverviewMeasures,
-		| "sessionDurationP50Ms"
-		| "sessionDurationP95Ms"
-		| "llmDurationP50Ms"
-		| "llmDurationP95Ms"
-	>,
+	quantiles: Pick<OverviewMeasures, "sessionDurationP50Ms" | "sessionDurationP95Ms">,
 ): OverviewMeasures {
 	const sum = points.reduce<OverviewMeasures>(
 		(total, point) => ({
@@ -488,14 +474,10 @@ export function buildOverviewFixture(scenario: OverviewScenario, nowMs: number):
 	const current = foldMeasures(series, {
 		sessionDurationP50Ms: currentRates.p50Ms,
 		sessionDurationP95Ms: currentRates.p95Ms,
-		llmDurationP50Ms: currentRates.llmP50Ms,
-		llmDurationP95Ms: currentRates.llmP95Ms,
 	})
 	const previous = foldMeasures(previousSeries, {
 		sessionDurationP50Ms: spec.previous.p50Ms,
 		sessionDurationP95Ms: spec.previous.p95Ms,
-		llmDurationP50Ms: spec.previous.llmP50Ms,
-		llmDurationP95Ms: spec.previous.llmP95Ms,
 	})
 
 	// Breakdown rows are measured over the WINDOW, like the tiles above them —

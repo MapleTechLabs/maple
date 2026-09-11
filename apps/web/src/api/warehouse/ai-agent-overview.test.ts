@@ -33,12 +33,16 @@ const wire = (overrides: Partial<AiOverviewMeasures> = {}): AiOverviewMeasures =
 })
 
 describe("mapOverviewMeasures", () => {
-	it("converts every quantile from nanoseconds to milliseconds", () => {
+	it("converts the session quantiles from nanoseconds to milliseconds", () => {
 		const row = mapOverviewMeasures(wire())
 		expect(row.sessionDurationP50Ms).toBe(42_000)
 		expect(row.sessionDurationP95Ms).toBe(96_000)
-		expect(row.llmDurationP50Ms).toBe(1_900)
-		expect(row.llmDurationP95Ms).toBe(7_400)
+	})
+
+	it("drops the per-call quantiles, which nothing on the board reads", () => {
+		const row = mapOverviewMeasures(wire())
+		expect(row).not.toHaveProperty("llmDurationP50Ms")
+		expect(row).not.toHaveProperty("llmDurationP95Ms")
 	})
 
 	it("carries the raw span population separately from the netted volume", () => {
