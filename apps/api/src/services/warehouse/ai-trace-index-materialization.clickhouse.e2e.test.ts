@@ -727,6 +727,39 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		])
 	})
 
+	it("distributes the sessions over each range the way the page measures them", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionDistributionsQuery(), WINDOW)
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		const distribution = (measure: Integrations.AiSessionDistributionMeasure) => {
+			const row = rows.find((candidate) => candidate.measure === measure)
+			return row === undefined
+				? undefined
+				: Object.entries(row.buckets)
+						.map(([floor, count]) => [Number(floor), count])
+						.sort(([a], [b]) => a! - b!)
+		}
+
+		// The page's figures (see "measures each session off the index"), bucketed:
+		// the sessionless trace's 1ms clamps into the first second, the eve
+		// session's 30.001s falls in the half-octave from 2^4.5 s.
+		assert.deepStrictEqual(distribution("durationMs"), [
+			[1000, 1],
+			[2 ** 4.5 * 1000, 1],
+		])
+		// Netted, not summed: 150 tokens and one call for the eve session, whose
+		// roll-up and gateway mirror would otherwise read 300 and 450, and two.
+		assert.deepStrictEqual(distribution("totalTokens"), [
+			[8, 1],
+			[128, 1],
+		])
+		assert.deepStrictEqual(distribution("llmCalls"), [[1, 2]])
+		// Zeros have no bucket: the sessionless trace reported no cost and ran no tool.
+		assert.deepStrictEqual(distribution("cost"), [[2 ** -5.5, 1]])
+		assert.deepStrictEqual(distribution("toolCalls"), [[1, 1]])
+		const tokens = rows.find((row) => row.measure === "totalTokens")
+		assert.ok(tokens !== undefined && tokens.p50 >= 15 && tokens.p95 <= 150)
+	})
+
 	it("counts the facets the filters select", async () => {
 		const compiled = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), WINDOW)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))

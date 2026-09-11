@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { getRouteApi } from "@tanstack/react-router"
+import type { AiSessionDistribution } from "@maple/domain/http"
 
 import { Result } from "@/lib/effect-atom"
 import {
@@ -15,7 +16,12 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
-import { RangeFilterSection, type RangePreset } from "@maple/ui/components/filters/range-filter-section"
+import { percentilePresets, toLogBuckets } from "@/components/filters/range-distribution"
+import {
+	RangeFilterSection,
+	type RangeBucket,
+	type RangePreset,
+} from "@maple/ui/components/filters/range-filter-section"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { modelVendorIcon } from "@/lib/agent-sessions/model-vendor-icon"
 import { useDetectedModels } from "@/hooks/use-detected-models"
@@ -38,31 +44,36 @@ function withSelected(
 	return [...missing.map((name) => ({ name, count: 0 })), ...options]
 }
 
-// No distribution behind these — a histogram would need the fan-out for every
-// session in the window, which the facets read is built to avoid. Static
-// thresholds, named for the question each one answers.
-const DURATION_PRESETS: RangePreset[] = [
-	{ key: "quick", label: "Quick", value: "<10s", max: 10 },
-	{ key: "minute", label: "Over a minute", value: ">1m", min: 60 },
-	{ key: "long", label: "Long-running", value: ">10m", min: 600 },
-]
-const COST_PRESETS: RangePreset[] = [
-	{ key: "dime", label: "Over 10¢", value: ">$0.10", min: 0.1 },
-	{ key: "dollar", label: "Over $1", value: ">$1", min: 1 },
-]
-const TOKEN_PRESETS: RangePreset[] = [
-	{ key: "100k", label: "Over 100k", min: 100_000 },
-	{ key: "1m", label: "Over 1M", min: 1_000_000 },
-]
-const LLM_CALL_PRESETS: RangePreset[] = [
-	{ key: "single", label: "Single call", value: "1", min: 1, max: 1 },
-	{ key: "loop", label: "Over 10", min: 10 },
-	{ key: "deep", label: "Over 50", min: 50 },
-]
-const TOOL_CALL_PRESETS: RangePreset[] = [
-	{ key: "none", label: "No tools", value: "0", max: 0 },
-	{ key: "many", label: "Over 10", min: 10 },
-]
+// The shortcuts that name an intent rather than a threshold. The percentiles
+// join them once the distributions land; until then these are the presets.
+const QUICK_PRESET: RangePreset = { key: "quick", label: "Quick", value: "<10s", max: 10 }
+const SINGLE_CALL_PRESET: RangePreset = { key: "single", label: "Single call", value: "1", min: 1, max: 1 }
+const NO_TOOLS_PRESET: RangePreset = { key: "none", label: "No tools", value: "0", max: 0 }
+
+type Distributions = Record<
+	"durationMs" | "cost" | "totalTokens" | "llmCalls" | "toolCalls",
+	AiSessionDistribution
+>
+
+/** One range section's histogram and presets. `scale` takes the warehouse's
+ *  unit to the control's — ms to the URL's seconds — and `stepsPerOctave` is
+ *  the spacing `aiSessionDistributionsQuery` buckets the measure at. */
+function distributionControls(
+	distribution: AiSessionDistribution | undefined,
+	unit: "s" | "usd" | "count",
+	stepsPerOctave: number,
+	intents: ReadonlyArray<RangePreset>,
+	scale = 1,
+): { histogram?: RangeBucket[]; presets: RangePreset[] } {
+	if (distribution === undefined) return { presets: [...intents] }
+	return {
+		histogram: toLogBuckets(
+			distribution.buckets.map((bucket) => ({ floor: bucket.floor * scale, count: bucket.count })),
+			stepsPerOctave,
+		),
+		presets: [...intents, ...percentilePresets(distribution.p50 * scale, distribution.p95 * scale, unit)],
+	}
+}
 
 type ListKey = "vendors" | "services" | "environments" | "models" | "agents" | "tools"
 type RangeKey =
@@ -94,9 +105,19 @@ interface AgentSessionsFilterSidebarProps {
 		},
 		unknown
 	>
+	/**
+	 * How the same window's sessions spread over each range, unfiltered like the
+	 * facets. A read of its own and a slower one — it nets every session's usage —
+	 * so the ranges work from their inputs and intent presets until it lands, or
+	 * if it fails.
+	 */
+	distributionsResult: Result.Result<Distributions, unknown>
 }
 
-export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilterSidebarProps) {
+export function AgentSessionsFilterSidebar({
+	facetsResult,
+	distributionsResult,
+}: AgentSessionsFilterSidebarProps) {
 	const navigate = routeApi.useNavigate()
 	const search: AgentSessionsSearchState = routeApi.useSearch()
 
@@ -110,6 +131,17 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 		[facetsResult],
 	)
 	const detectModel = useDetectedModels(modelNames)
+
+	const distributions = Result.builder(distributionsResult)
+		.onSuccess((value): Distributions | undefined => value)
+		.orElse(() => undefined)
+	// Half-octaves for the continuous two, octaves for the counts, whose bounds
+	// have to stay whole for the request schema to take them.
+	const duration = distributionControls(distributions?.durationMs, "s", 2, [QUICK_PRESET], 1 / 1000)
+	const cost = distributionControls(distributions?.cost, "usd", 2, [])
+	const tokens = distributionControls(distributions?.totalTokens, "count", 1, [])
+	const llmCalls = distributionControls(distributions?.llmCalls, "count", 1, [SINGLE_CALL_PRESET])
+	const toolCalls = distributionControls(distributions?.toolCalls, "count", 1, [NO_TOOLS_PRESET])
 
 	const setList = (key: ListKey, values: string[]) => {
 		navigate({ search: (prev) => ({ ...prev, [key]: values.length > 0 ? values : undefined }) })
@@ -212,13 +244,17 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 
 						<Separator className="my-2" />
 
+						{/* Each histogram counts the sessions where its measure is above
+						    zero — a log axis has no place for none — so the readouts that
+						    would otherwise overstate what they hold say who they count. */}
 						<RangeFilterSection
 							title="Session length"
 							unit="s"
 							minValue={search.durationMin}
 							maxValue={search.durationMax}
 							onRangeChange={setRange("durationMin", "durationMax")}
-							presets={DURATION_PRESETS}
+							histogram={duration.histogram}
+							presets={duration.presets}
 							defaultOpen={false}
 						/>
 
@@ -229,7 +265,9 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 							minValue={search.costMin}
 							maxValue={search.costMax}
 							onRangeChange={setRange("costMin", "costMax")}
-							presets={COST_PRESETS}
+							histogram={cost.histogram}
+							histogramUnitLabel="priced sessions"
+							presets={cost.presets}
 							defaultOpen={false}
 						/>
 
@@ -239,7 +277,8 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 							minValue={search.tokensMin}
 							maxValue={search.tokensMax}
 							onRangeChange={setRange("tokensMin", "tokensMax")}
-							presets={TOKEN_PRESETS}
+							histogram={tokens.histogram}
+							presets={tokens.presets}
 							defaultOpen={false}
 						/>
 
@@ -249,7 +288,8 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 							minValue={search.llmCallsMin}
 							maxValue={search.llmCallsMax}
 							onRangeChange={setRange("llmCallsMin", "llmCallsMax")}
-							presets={LLM_CALL_PRESETS}
+							histogram={llmCalls.histogram}
+							presets={llmCalls.presets}
 							defaultOpen={false}
 						/>
 
@@ -259,7 +299,9 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 							minValue={search.toolCallsMin}
 							maxValue={search.toolCallsMax}
 							onRangeChange={setRange("toolCallsMin", "toolCallsMax")}
-							presets={TOOL_CALL_PRESETS}
+							histogram={toolCalls.histogram}
+							histogramUnitLabel="sessions with tools"
+							presets={toolCalls.presets}
 							defaultOpen={false}
 						/>
 
