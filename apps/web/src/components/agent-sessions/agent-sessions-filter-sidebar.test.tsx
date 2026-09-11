@@ -114,7 +114,7 @@ describe("AgentSessionsFilterSidebar", () => {
 
 	it("paints services and frameworks in their colors, and explains the sections named for a concept", () => {
 		search = { services: ["billing-worker"] }
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		const swatchBeside = (label: string) =>
 			screen.getByText(label).parentElement?.querySelector<HTMLElement>("span[style]")
