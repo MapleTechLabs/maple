@@ -14,7 +14,7 @@ export const hasEvalCredentials = (): boolean => Boolean(process.env.OPENROUTER_
 /**
  * Build the eval model via OpenRouter.
  *
- * Deliberately *not* app-attributed or tagged the way `apps/api/src/platform/Llm.ts` is: this is
+ * Deliberately *not* app-attributed or tagged the way `apps/ai/src/platform/Llm.ts` is: this is
  * CI-only traffic, and keeping it off Maple's OpenRouter app page keeps eval spend out of the
  * product's numbers. See `docs/openrouter-tracing.md`.
  */

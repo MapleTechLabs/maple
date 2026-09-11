@@ -38,7 +38,7 @@ import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Duration, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { applyDiagnosisWrites, subjectTypeOf } from "@/services/errors/apply-diagnosis"
-import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@/workflows/incident-context"
+import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/ai-incident-context"
 import { routeInvestigation, type InvestigationRoute } from "@/services/errors/investigation-route"
 import { FanoutStartError } from "@/services/errors/investigation-fanout-error"
 import {

@@ -1,3 +1,21 @@
+import { Context } from "effect"
+import { aiService, aiTools, toolCallbacks } from "@/ai/client"
+import type {
+	InvokePlannerInput,
+	InvokePlannerOutput,
+	InvokeHypothesisInput,
+	InvokeHypothesisOutput,
+	InvokeValidatorInput,
+	InvokeValidatorOutput,
+} from "@maple/domain/ai-service"
+export type {
+	InvokePlannerInput,
+	InvokePlannerOutput,
+	InvokeHypothesisInput,
+	InvokeHypothesisOutput,
+	InvokeValidatorInput,
+	InvokeValidatorOutput,
+} from "@maple/domain/ai-service"
 /**
  * Planned investigation workflow logic — the body the alchemy Workflow class in
  * `./InvestigationFanoutWorkflow.ts` runs, over alchemy's `task` primitive.
@@ -30,13 +48,12 @@
  */
 import { investigationLensRuns, investigations } from "@maple/db"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { makeChatSessionId } from "@maple/domain/chat-session"
 import {
 	AiTriageResult,
 	InvestigationPlan,
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
-	LensVerdict,
+	type LensVerdict,
 } from "@maple/domain/http"
 import type {
 	InvestigationFanoutWorkflowPayload,
@@ -47,18 +64,11 @@ import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { randomUUID } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
-import { Cause, Clock, type Context, Effect, Exit, Layer, Option, Schema, type Scope } from "effect"
+import { Cause, Clock, Effect, Exit, Layer, Option, Schema, type Scope } from "effect"
 import type ChatSessionObject from "@/chat/ChatSession"
-import type { McpToolExecutor } from "@/mcp/dispatcher"
+import { McpToolExecutor } from "@/mcp/dispatcher"
 import { Database } from "@/platform/DatabaseLive"
-import {
-	type LlmCallTags,
-	type LlmClients,
-	type LlmEnv,
-	layerLlm,
-	resolveLensModel,
-	resolveTriageModel,
-} from "@/platform/Llm"
+
 import { msToDate } from "@/platform/time"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { trackTokenUsage } from "@/services/billing/autumn-tracker"
@@ -69,11 +79,13 @@ import {
 } from "@/services/errors/apply-diagnosis"
 import { McpServicesLive } from "../runtime/mcp-service-graph"
 import { durableStep } from "./durable-step"
-import { runHypothesisAgent, runSoloHypothesisAgent } from "./hypothesis-agent"
-import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "./incident-context"
-import { normalizePlan, widthFor, type NormalizedPlan, type PlannedHypothesis } from "./plan-normalize"
-import { runPlannerAgent } from "./planner-agent"
-import { runValidatorAgent } from "./validator-agent"
+import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/ai-incident-context"
+import {
+	normalizePlan,
+	widthFor,
+	type NormalizedPlan,
+	type PlannedHypothesis,
+} from "@maple/domain/ai-plan-normalize"
 
 export type {
 	InvestigationFanoutWorkflowPayload,
@@ -88,21 +100,6 @@ const decodeSnapshotOption = Schema.decodeUnknownOption(InvestigationSubjectSnap
 const decodePlanOption = Schema.decodeUnknownOption(InvestigationPlan)
 const decodeReport = Schema.decodeUnknownEffect(AiTriageResult)
 const decodeReportOption = Schema.decodeUnknownOption(AiTriageResult)
-const decodeLensVerdictOption = Schema.decodeUnknownOption(LensVerdict)
-/**
- * A `Schema.Class` instance is not structured-cloneable, and every value a
- * Cloudflare Workflow step returns is structured-cloned into the step cache.
- * Returning the validator's report as the class it decoded to killed the run
- * with `Could not serialize object of type "AiTriageResult"` — recorded as
- * `validation_failed`, i.e. a spent fan-out that published nothing.
- *
- * Everything downstream of `invokeValidator` already types the report as
- * `unknown` and decodes it again, so the encoded form is the contract; this is
- * what makes the real implementation honour it, the way the test stubs always
- * did by returning plain objects.
- */
-const encodeReport = Schema.encodeSync(AiTriageResult)
-
 /** Internal actor the lane tools run as — same identity the internal MCP RPC path uses. */
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
@@ -151,9 +148,6 @@ const HYPOTHESIS_STEP = { retries: { limit: 1, delay: "5 seconds" }, timeout: "1
 const VALIDATE_STEP = { retries: { limit: 1, delay: "5 seconds" }, timeout: "5 minutes" } as const
 const PERSIST_STEP = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } } as const
 
-/** What the three agent passes need from the run: the LLM client and the MCP tools they call through. */
-export type AgentServices = LlmClients | McpToolExecutor
-
 /**
  * One service graph for the whole instance, built once per run and shared by
  * every step: building it constructs hundreds of Schema ASTs, and five of them
@@ -167,81 +161,13 @@ export type AgentServices = LlmClients | McpToolExecutor
  * Postgres connection and the tracer from the run's telemetry layer — so the
  * agents' statements stay on that connection rather than dialing a second socket.
  */
-const liveAgentServices = (env: LlmEnv): Layer.Layer<AgentServices, never, Database> =>
+const liveToolServices = (env: Record<string, unknown>): Layer.Layer<McpToolExecutor, never, Database> =>
 	McpServicesLive.pipe(
-		Layer.provideMerge(layerLlm(env)),
 		Layer.provideMerge(workerEnvLayer(env)),
 		// The graph's build failures are config and validation errors — a deploy
 		// that shipped without its env, which no run can recover from.
 		Layer.orDie,
 	)
-
-/**
- * Tags for one pass of an investigation.
- *
- * The session is the investigation's seeded chat session, not a fan-out-local id, so every pass,
- * each pass's OpenRouter Broadcast twin, and any attended follow-up turn land in one agent session.
- * The turn is the pass — `runAgentPass`'s correlation id — so the session view keeps the lanes apart.
- */
-const investigationTags = (
-	surface: LlmCallTags["surface"],
-	orgId: string,
-	investigationId: string,
-	pass: string,
-): LlmCallTags => ({
-	surface,
-	orgId,
-	sessionId: makeChatSessionId(orgId, `inv-${investigationId}`),
-	turnId: `inv_${investigationId}_${pass}`,
-	workflowName: "investigation",
-})
-
-// Planner
-
-export interface InvokePlannerInput {
-	readonly orgId: string
-	readonly investigationId: string
-	readonly subject: unknown
-	readonly snapshot: unknown
-	readonly deadlineAtMs: number
-}
-
-export interface InvokePlannerOutput {
-	/** Null when the planner never submitted; `normalizePlan` falls back to seeds. */
-	readonly plan: unknown | null
-	readonly model: string
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly toolCount: number
-}
-
-const plannerOn =
-	(agents: Context.Context<AgentServices>, env: LlmEnv) =>
-	(input: InvokePlannerInput): Effect.Effect<InvokePlannerOutput, Schema.SchemaError> =>
-		Effect.gen(function* () {
-			const subject = yield* decodeSubject(input.subject)
-			const output = yield* runPlannerAgent({
-				investigationId: input.investigationId,
-				subject,
-				snapshot: snapshotOrNull(input.snapshot),
-				// The strong model. One pass decides how the whole run is spent: a bad plan
-				// wastes every lane downstream of it, which is far more expensive than the
-				// difference between the two tiers.
-				model: resolveTriageModel(
-					env,
-					investigationTags("ai-triage", input.orgId, input.investigationId, "plan"),
-				),
-				tenant: tenantFor(input.orgId),
-				deadlineAtMs: input.deadlineAtMs,
-			}).pipe(Effect.provideContext(agents))
-			return {
-				plan: Option.getOrNull(output.plan),
-				model: output.model,
-				inputTokens: output.usage.input,
-				outputTokens: output.usage.output,
-				toolCount: output.toolSteps,
-			}
-		})
 
 /**
  * Publish what normalization decided, as its own span.
@@ -276,45 +202,6 @@ export interface HypothesisStepResult {
 	readonly outputTokens: number
 }
 
-export interface InvokeHypothesisInput {
-	readonly orgId: string
-	readonly investigationId: string
-	readonly hypothesis: PlannedHypothesis
-	readonly scopeSummary: string
-	readonly subject: unknown
-	readonly snapshot: unknown
-	readonly deadlineAtMs: number
-	/** True on the collapsed path: answer with a full diagnosis, not a candidate. */
-	readonly solo: boolean
-	/** True when this lane's row shows a prior execution — the step re-ran after
-	 *  its result was lost to a retry boundary. */
-	readonly rerun: boolean
-}
-
-export interface InvokeHypothesisOutput {
-	/** Null when the lane reached no candidate. */
-	readonly claim: string | null
-	readonly mechanism: string | null
-	readonly confidence: "high" | "medium" | "low" | null
-	readonly selfDoubt: string | null
-	readonly suggestedActions: ReadonlyArray<string>
-	readonly evidence: ReadonlyArray<unknown>
-	/** Set only on the collapsed path: the report to publish directly. */
-	readonly report: unknown | null
-	readonly model: string
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly toolCount: number
-	/**
-	 * True when the lane answered because its wall clock ran out, not because it
-	 * was done. Carried to the row and into the validator's view of the candidate:
-	 * "checked and found nothing" and "ran out of clock" are different reports, and
-	 * ranking them the same is how a cut-short lane gets counted as a clean
-	 * negative that rules out a rival.
-	 */
-	readonly deadlineHit: boolean
-}
-
 const tenantFor = (orgId: string): TenantContext => ({
 	orgId: Schema.decodeSync(OrgId)(orgId),
 	userId: internalServiceUserId,
@@ -324,142 +211,7 @@ const tenantFor = (orgId: string): TenantContext => ({
 
 const snapshotOrNull = (snapshot: unknown) => Option.getOrNull(decodeSnapshotOption(snapshot))
 
-const hypothesisOn =
-	(agents: Context.Context<AgentServices>, env: LlmEnv) =>
-	(input: InvokeHypothesisInput): Effect.Effect<InvokeHypothesisOutput, Schema.SchemaError> =>
-		Effect.gen(function* () {
-			const agentInput = {
-				investigationId: input.investigationId,
-				hypothesis: input.hypothesis,
-				scopeSummary: input.scopeSummary,
-				subject: yield* decodeSubject(input.subject),
-				snapshot: snapshotOrNull(input.snapshot),
-				model: resolveLensModel(
-					env,
-					investigationTags("investigation-lens", input.orgId, input.investigationId, input.hypothesis.id),
-				),
-				tenant: tenantFor(input.orgId),
-				deadlineAtMs: input.deadlineAtMs,
-				rerun: input.rerun,
-			}
-
-			if (input.solo) {
-				const output = yield* runSoloHypothesisAgent(agentInput).pipe(Effect.provideContext(agents))
-				const report = Option.getOrNull(output.report)
-				// Encoded for the same reason the validator's is: this leaves the lane as a
-				// plain JSON value, both for the `jsonb` write and for anything that carries
-				// it across a step boundary later.
-				const encodedReport = report === null ? null : encodeReport(report)
-				return {
-					// The collapsed path has no candidate to rank, but the lane row still
-					// renders: the claim slot carries the published cause so the Hypotheses tab
-					// shows what was tested rather than an empty lane next to a verdict.
-					claim: report?.suspectedCause ?? null,
-					mechanism: null,
-					confidence: report?.confidence ?? null,
-					selfDoubt: null,
-					suggestedActions: report?.suggestedActions ?? [],
-					evidence: encodedReport?.evidence ?? [],
-					report: encodedReport,
-					model: output.model,
-					inputTokens: output.usage.input,
-					outputTokens: output.usage.output,
-					toolCount: output.toolSteps,
-					deadlineHit: output.deadlineHit,
-				}
-			}
-
-			const output = yield* runHypothesisAgent(agentInput).pipe(Effect.provideContext(agents))
-			// A lane that reached no candidate is a real result, not a failure — the
-			// workflow records it as a `no_finding` lane and the validator is told it
-			// reported nothing.
-			const candidate = Option.getOrUndefined(output.candidate)
-			return {
-				claim: candidate?.claim ?? null,
-				mechanism: candidate?.mechanism ?? null,
-				confidence: candidate?.confidence ?? null,
-				selfDoubt: candidate?.selfDoubt ?? null,
-				suggestedActions: candidate?.suggestedActions ?? [],
-				evidence: candidate?.evidence ?? [],
-				report: null,
-				model: output.model,
-				inputTokens: output.usage.input,
-				outputTokens: output.usage.output,
-				toolCount: output.toolSteps,
-				deadlineHit: output.deadlineHit,
-			}
-		})
-
 // Validator
-
-export interface InvokeValidatorInput {
-	readonly orgId: string
-	readonly investigationId: string
-	readonly subject: unknown
-	readonly snapshot: unknown
-	readonly candidates: ReadonlyArray<{
-		readonly lensId: string
-		readonly name: string | null
-		readonly claim: string | null
-		readonly mechanism: string | null
-		readonly confidence: string | null
-		readonly selfDoubt: string | null
-		readonly suggestedActions: ReadonlyArray<string>
-		readonly evidence: ReadonlyArray<unknown>
-		readonly note: string | null
-		readonly deadlineHit: boolean
-	}>
-	readonly deadlineAtMs: number
-}
-
-export interface InvokeValidatorOutput {
-	readonly promotedLensId: string | null
-	readonly report: unknown | null
-	readonly rivals: ReadonlyArray<{ lensId: string; verdict: LensVerdict; reason: string }>
-	readonly note: string
-	readonly model: string
-	readonly inputTokens: number
-	readonly outputTokens: number
-}
-
-const validatorOn =
-	(agents: Context.Context<AgentServices>, env: LlmEnv) =>
-	(input: InvokeValidatorInput): Effect.Effect<InvokeValidatorOutput, Schema.SchemaError> =>
-		Effect.gen(function* () {
-			const subject = yield* decodeSubject(input.subject)
-			const output = yield* runValidatorAgent({
-				investigationId: input.investigationId,
-				subject,
-				snapshot: snapshotOrNull(input.snapshot),
-				candidates: input.candidates,
-				// The validator runs on the strong model even when lanes run cheap: it
-				// does the reasoning the whole fan-out exists to enable.
-				model: resolveTriageModel(
-					env,
-					investigationTags("investigation-validator", input.orgId, input.investigationId, "validator"),
-				),
-				tenant: tenantFor(input.orgId),
-				deadlineAtMs: input.deadlineAtMs,
-			}).pipe(Effect.provideContext(agents))
-			return {
-				promotedLensId: output.verdict.promotedLensId,
-				report: output.verdict.report === null ? null : encodeReport(output.verdict.report),
-				rivals: output.verdict.rivals.map((rival) => ({
-					lensId: rival.lensId,
-					// A verdict outside the lens alphabet is the validator not ranking the
-					// lane, which `validate` records as rejected.
-					verdict: Option.getOrElse(
-						decodeLensVerdictOption(rival.verdict),
-						(): LensVerdict => "rejected",
-					),
-					reason: rival.reason,
-				})),
-				note: output.verdict.note,
-				model: output.model,
-				inputTokens: output.usage.input,
-				outputTokens: output.usage.output,
-			}
-		})
 
 /** The subset of an `investigation_lens_runs` row a partial is built from. */
 interface PartialLaneRow {
@@ -570,7 +322,7 @@ export interface InvestigationFanoutDeps {
 	/** Test seam: stub the ranking. */
 	readonly invokeValidator?: (input: InvokeValidatorInput) => Effect.Effect<InvokeValidatorOutput, unknown>
 	/** Test seam: the agents' service graph, so tests never build the real one. */
-	readonly agentServices?: Layer.Layer<AgentServices, never, Database>
+	readonly toolServices?: Layer.Layer<McpToolExecutor, never, Database>
 	/** Test seam: observe transcript seeding without a Durable Object. */
 	readonly seedTranscript?: (input: SeedTranscriptInput) => Effect.Effect<void>
 }
@@ -715,15 +467,24 @@ export const runInvestigationFanout = (
 		const { planDeadlineAtMs, hypothesisDeadlineAtMs, subject, snapshot, issueId } = claimed
 
 		// Built into the run's Scope, which alchemy closes after the run, so one
-		// graph serves every step. `Database` is the run's own — see `liveAgentServices`.
-		const agents = yield* Layer.build(
-			(deps.agentServices ?? liveAgentServices(env)).pipe(
+		// graph serves every step. `Database` is the run's own — see `liveToolServices`.
+		const toolContext = yield* Layer.build(
+			(deps.toolServices ?? liveToolServices(env)).pipe(
 				Layer.provide(Layer.succeed(Database, database)),
 			),
 		)
-		const invokePlanner = deps.invokePlanner ?? plannerOn(agents, env)
-		const invokeHypothesis = deps.invokeHypothesis ?? hypothesisOn(agents, env)
-		const invokeValidator = deps.invokeValidator ?? validatorOn(agents, env)
+		const client = aiService(env)
+		const tools = yield* aiTools
+		const executor = Context.get(toolContext, McpToolExecutor)
+		const callbacks = yield* toolCallbacks(executor, tenantFor(orgId), "workflow")
+		const invokePlanner =
+			deps.invokePlanner ?? ((input: InvokePlannerInput) => client.plan(input, tools, callbacks))
+		const invokeHypothesis =
+			deps.invokeHypothesis ??
+			((input: InvokeHypothesisInput) => client.hypothesis(input, tools, callbacks))
+		const invokeValidator =
+			deps.invokeValidator ??
+			((input: InvokeValidatorInput) => client.validate(input, tools, callbacks))
 
 		// --------------------------------------------------------------- plan
 		const planned = yield* durableStep(

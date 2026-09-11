@@ -203,7 +203,7 @@ jobs:
                     # so the Alchemy-entrypoints typecheck resolves each graph through
                     # that app's node_modules.
                     - shard: quality
-                      install-filters: "@maple/api @maple/electric-sync @maple/alerting @maple/sandbox @maple/web @maple/landing @maple/local-ui"
+                      install-filters: "@maple/ai @maple/api @maple/electric-sync @maple/alerting @maple/sandbox @maple/web @maple/landing @maple/local-ui"
                     - shard: effect-lint
                       install-filters: ""
                     - shard: build-web
@@ -219,7 +219,7 @@ jobs:
                       install-filters: "@maple/web"
                     - shard: typecheck-rest
                       install-filters: >-
-                          @maple/alerting @maple/cli @maple/clickhouse-builder-docs
+                          @maple/ai @maple/alerting @maple/cli @maple/clickhouse-builder-docs
                           @maple/electric-sync @maple/landing @maple/local-ui
                           @maple/sandbox @maple/scraper ./lib/* ./examples/*
                     - shard: typecheck-packages
@@ -238,7 +238,7 @@ jobs:
                       install-filters: ""
                     - shard: test-rest
                       install-filters: >-
-                          @maple/alerting @maple/cli @maple/electric-sync @maple/landing
+                          @maple/ai @maple/alerting @maple/cli @maple/electric-sync @maple/landing
                           @maple/local-ui @maple/sandbox @maple/scraper ./lib/*
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6

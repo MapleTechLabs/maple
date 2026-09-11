@@ -1,36 +1,15 @@
-/**
- * Running one chat turn, inside the `ChatSession` Durable Object.
- *
- * This module is the heavy half of the DO: the Effect runtime, the app service graph and the agent
- * engine. `ChatSession.ts` reaches it through a dynamic import for the same reason
- * `worker.ts` dynamic-imports its route graph — the static graph builds hundreds of Schema ASTs at
- * module scope, which would blow Cloudflare's ~1s startup-CPU budget (error 10021) on a class that
- * is exported from the worker entry.
- *
- * Two things changed shape when the turn moved in here:
- *
- *   - **Appends are method calls.** The turn used to run in the request that submitted the message
- *     and write back over the DO stub, one RPC per token delta. It now holds the object itself.
- *   - **`submit_diagnosis` resolves itself.** It used to be threaded in as a callback from three
- *     call sites, because `InvestigationService` starting an investigation's own turn would have
- *     made the service require itself through the Effect requirements channel. Here the turn builds
- *     its *own* runtime, so it just resolves `InvestigationService` — no cycle, and no
- *     `env: workerEnv ?? {}` fallback silently degrading the model config when a caller forgot to
- *     thread the worker env through.
- */
+/** The API owns the turn slot, durable transcript, tool authorization and billing. */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@/mcp/expected-failures"
-import {
-	decodeChatTurnTenant,
-	investigationIdFromChatSessionId,
-	type ChatMessage,
-	type ChatTurnTenantEncoded,
-} from "@maple/domain/chat-session"
+import { decodeChatTurnTenant, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Stream } from "effect"
+import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 import type { ChatSession } from "./ChatSession"
-import { makeRunUsage, type RunUsage } from "./tools"
+import { makeRunUsage, AiRunUsage, AiServiceError } from "@maple/domain/ai-service"
+import { aiService, aiTools, toolCallbacks } from "@/ai/client"
+import { SubmitDiagnosisRequest } from "@maple/domain/http"
+import { decodeChatEventPayload, ChatMessage } from "@maple/domain/chat-session"
 
 /**
  * Low-cardinality facts collected during the run and emitted once on the turn span.
@@ -43,11 +22,10 @@ interface TurnObservability {
 }
 
 const makeTurnObservability = (): TurnObservability => ({})
-import { runChatTurn } from "./run"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { summarizeCause } from "@/platform/describe-cause"
 import { trackTokenUsage } from "@/services/billing/autumn-tracker"
-import { InvestigationId } from "@maple/domain/primitives"
+import { investigationIdForSession } from "@maple/domain/ai-investigation-context"
 
 // Deliberately not `maple-api`: background work sharing the request-facing
 // service's name skewed its percentiles (p99 32s, 2026-09-04).
@@ -84,24 +62,6 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded): TenantContext => {
 		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
 	}
 }
-
-/**
- * How much transcript a turn replays.
- *
- * The log is append-only and never pruned, so without a bound a long-lived conversation grows
- * until it exceeds the model's context window — and then stays broken, because every retry sends
- * the same oversized request. Bounding by characters as well as by count matters because one
- * pasted stack trace can outweigh fifty short turns.
- */
-/**
- * Compaction is the engine's job now.
- *
- * `AgentPolicy` carries `contextTokenLimit` and a compaction policy, fed from the resolved
- * model's context window, so the transcript is pruned and summarized inside the run rather than
- * by a second model call after the answer was delivered.
- */
-
-const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
 
 /**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
@@ -174,7 +134,7 @@ export const meterTurn = (
 /**
  * `triage` billing coordinates for an investigation session, or `undefined` if this is not one.
  *
- * The `InvestigationId` decode is the same guard `buildDiagnosisCompletion` uses, so the set of
+ * The address decoder is shared with report submission, so the set of
  * sessions that bill as triage is exactly the set that gets a `submit_diagnosis` tool: an `inv-`
  * suffix that is not a UUID is not an investigation, and must not be charged as one. It still
  * bills — as the plain chat turn it is.
@@ -183,11 +143,10 @@ const investigationBilling = (
 	sessionId: string,
 	messageId: string,
 ): { readonly source: "triage"; readonly idempotencyKey: string } | undefined => {
-	const rawId = investigationIdFromChatSessionId(sessionId)
-	if (rawId === undefined) return undefined
-	const decoded = decodeInvestigationIdOption(rawId)
-	if (Option.isNone(decoded)) return undefined
-	return { source: "triage", idempotencyKey: `${decoded.value}:turn-${messageId}` }
+	const investigationId = investigationIdForSession(sessionId)
+	return investigationId === undefined
+		? undefined
+		: { source: "triage", idempotencyKey: `${investigationId}:turn-${messageId}` }
 }
 
 /**
@@ -202,22 +161,19 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ InvestigationServicesLive },
 		{ layerPg },
 		{ mapleDbConnectionLayer },
-		{ layerLlm, resolveTriageModel },
-		{ buildDiagnosisCompletion },
+
 		{ McpToolExecutor },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("../platform/DatabasePgLive"),
 		import("../platform/pg-connection-source"),
-		import("../platform/Llm"),
-		import("./tools"),
+
 		import("../mcp/dispatcher"),
 	])
 	const { InvestigationService } = await import("@/services/errors/InvestigationService")
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
-			Layer.provideMerge(layerLlm(input.env)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(workerEnvLayer(input.env)),
@@ -246,12 +202,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const investigations = yield* InvestigationService
 		const toolExecutor = yield* McpToolExecutor
 		const history = input.session.history()
-		const model = resolveTriageModel(input.env, {
-			surface: "chat",
-			orgId: tenant.orgId,
-			sessionId: input.sessionId,
-			turnId: input.messageId,
-		})
 
 		// The session recorded the user's message before the run started, so the transcript's tail is
 		// this run's input rather than part of its history.
@@ -262,28 +212,52 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const text = latest?.role === "user" ? latest.text : ""
 		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
 
-		yield* runChatTurn({
-			sessionId: input.sessionId,
-			messageId: input.messageId,
-			tenant,
-			toolExecutor,
-			model,
-			submitDiagnosis: investigations.submitDiagnosis,
-			text,
-			history: prior,
-			...(compaction === undefined ? undefined : { compaction }),
-			usage,
-			// An abort clears the claim; the run notices at the next event rather than streaming into
-			// a conversation that has moved on.
-			holdsTurn: () => input.session.holdsTurn(input.messageId),
-			append: (event) => {
-				input.session.append(event)
-				if (event.type === "turn-end" && event.task === undefined) {
-					recordedTerminal = true
-					observability.outcome = event.reason
-				}
+		const tools = yield* aiTools
+		const callbacks = yield* toolCallbacks(toolExecutor, tenant, "chat", () =>
+			input.session.holdsTurn(input.messageId),
+		)
+		const investigationId = investigationIdForSession(input.sessionId)
+		const runCallback = Effect.runPromiseWith(yield* Effect.context<never>())
+		yield* aiService(input.env).chat(
+			{
+				sessionId: input.sessionId,
+				messageId: input.messageId,
+				tenant: input.tenant,
+				tools,
+				text,
+				history: prior.map((message) => Schema.encodeSync(ChatMessage)(message)),
+				...(compaction === undefined ? undefined : { compaction }),
 			},
-		})
+			{
+				...callbacks,
+				submitDiagnosis: (raw) =>
+					runCallback(
+						Effect.gen(function* () {
+							if (!input.session.holdsTurn(input.messageId) || investigationId === undefined) {
+								return yield* Effect.fail(
+									new AiServiceError({ message: "Investigation turn is no longer active" }),
+								)
+							}
+							const request = yield* Schema.decodeUnknownEffect(SubmitDiagnosisRequest)(raw)
+							yield* investigations.submitDiagnosis(tenant.orgId, investigationId, request)
+						}),
+					),
+				publish: async (payloads, totals) => {
+					Object.assign(usage, Schema.decodeUnknownSync(AiRunUsage)(totals))
+					if (!input.session.holdsTurn(input.messageId)) return false
+					for (const payload of payloads) {
+						const { seq: _seq, ...event } = decodeChatEventPayload(payload, 0)
+						if ("messageId" in event && event.messageId !== input.messageId) continue
+						input.session.append(event)
+						if (event.type === "turn-end" && event.task === undefined) {
+							recordedTerminal = true
+							observability.outcome = event.reason
+						}
+					}
+					return input.session.holdsTurn(input.messageId)
+				},
+			},
+		)
 
 		if (!recordedTerminal && !input.session.holdsTurn(input.messageId)) {
 			observability.outcome = "aborted"

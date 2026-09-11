@@ -39,7 +39,14 @@
 		"./where-clause": "./src/where-clause.ts",
 		"./http/warehouse-errors": "./src/http/warehouse-errors.ts",
 		"./chat-preamble": "./src/chat-preamble.ts",
-		"./chat-session": "./src/chat-session.ts"
+		"./chat-session": "./src/chat-session.ts",
+		"./ai-hypothesis-catalogue": "./src/ai-hypothesis-catalogue.ts",
+		"./ai-plan-normalize": "./src/ai-plan-normalize.ts",
+		"./ai-incident-context": "./src/ai-incident-context.ts",
+		"./ai-tool-output": "./src/ai-tool-output.ts",
+		"./ai-investigation-context": "./src/ai-investigation-context.ts",
+		"./ai-service": "./src/ai-service.ts",
+		"./ai-permissions": "./src/ai-permissions.ts"
 	},
 	"scripts": {
 		"gen:anticipated-errors": "bun scripts/gen-anticipated-errors.ts",

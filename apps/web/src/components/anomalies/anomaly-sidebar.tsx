@@ -246,7 +246,7 @@ export function AnomalySidebar({
 				) : null}
 			</DetailRail.Group>
 
-			<DetailRail.Group label="Triage">
+			<DetailRail.Group label="Investigation">
 				{triageChip ? (
 					<span
 						className={cn(
@@ -257,7 +257,9 @@ export function AnomalySidebar({
 						{triageChip.label}
 					</span>
 				) : (
-					<p className="text-xs text-muted-foreground">No AI triage has run for this incident.</p>
+					<p className="text-xs text-muted-foreground">
+						No investigation has run for this incident.
+					</p>
 				)}
 			</DetailRail.Group>
 		</div>

@@ -184,7 +184,8 @@ loop in verification without a human ever seeing it.
 | Transitions, leases, timeline events    | `apps/api/src/services/errors/ErrorIssueWorkflowService.ts`   |
 | The errors tick (incidents, regression) | `apps/api/src/services/errors/error-tick-persistence.ts`      |
 | Starting an investigation               | `apps/api/src/services/errors/ai-triage-enqueue.ts`           |
-| Planner / lenses / validator            | `apps/api/src/workflows/`                                     |
+| Planner / hypotheses / validator        | `apps/ai/src/investigations/`                             |
+| Durable investigation orchestration     | `apps/api/src/workflows/InvestigationFanoutWorkflow.run.ts`   |
 | Writing a diagnosis back                | `apps/api/src/services/errors/apply-diagnosis.ts`             |
 | PR links and verification windows       | `apps/api/src/services/errors/IssueFixVerificationService.ts` |
 | The verification tick                   | `apps/api/src/services/errors/FixVerificationTickService.ts`  |

@@ -11,8 +11,6 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import { OpenAiClient } from "@effect/ai-openai-compat"
-import { OpenRouterClient } from "@effect/ai-openrouter"
 import { McpToolExecutor } from "@/mcp/dispatcher"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
 import {
@@ -172,15 +170,10 @@ beforeEach(async () => {
 const env = { MAPLE_DB: undefined }
 
 /** The agents' graph, never reached: every test stubs the three passes. */
-// These cases never reach a model call, so the provider clients only have to exist.
-const noAgents = Layer.mergeAll(
-	Layer.mock(OpenRouterClient.OpenRouterClient)({}),
-	Layer.mock(OpenAiClient.OpenAiClient)({}),
-	Layer.mock(McpToolExecutor)({}),
-)
+const toolServices = Layer.mergeAll(Layer.mock(McpToolExecutor)({}))
 
 const baseDeps = (overrides: Partial<InvestigationFanoutDeps> = {}): InvestigationFanoutDeps => ({
-	agentServices: noAgents,
+	toolServices: toolServices,
 	seedTranscript: () => Effect.void,
 	invokePlanner: () =>
 		Effect.succeed({

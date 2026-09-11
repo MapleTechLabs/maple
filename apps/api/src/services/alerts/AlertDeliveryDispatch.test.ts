@@ -75,7 +75,7 @@ const noEmailDeps: DispatchDeps = {
 	resolveSlackBotToken: failingSlackToken,
 }
 
-describe("buildAlertChatUrl (Ask Maple AI link)", () => {
+describe("buildAlertChatUrl (Ask Maple link)", () => {
 	it("targets the incident diagnosis page when an incident exists", () => {
 		const url = buildAlertChatUrl("https://web.localhost", baseContext)
 		assert.isTrue(url.startsWith("https://web.localhost/alerts/incidents/inc_1?alert="), url)

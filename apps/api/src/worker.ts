@@ -15,6 +15,7 @@
  */
 import {
 	cachedRecoverable,
+	AiWorker,
 	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
 	MapleStack,
@@ -45,10 +46,6 @@ import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow
  * or read by name by code the Worker does not own (the LLM shim's `AI`).
  */
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
-	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
-	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
-	// for this resource.
-	AI: Cloudflare.AI.Gateway("maple-api-ai"),
 	...emailBinding(stage),
 })
 
@@ -95,6 +92,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage }),
+			MAPLE_AI: yield* AiWorker,
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
 			...configuredEnv,
 			...devEnv,

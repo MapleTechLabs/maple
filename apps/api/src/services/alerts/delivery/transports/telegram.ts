@@ -92,7 +92,7 @@ export const telegramTransport: HttpTransport<Config> = {
 					inline_keyboard: [
 						[
 							{ text: "Open in Maple", url: linkUrl },
-							{ text: "✨ Ask Maple AI", url: chatUrl },
+							{ text: "✨ Ask Maple", url: chatUrl },
 						],
 					],
 				},

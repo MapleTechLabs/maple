@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest"
 import { mapleToolCatalog } from "./registry"
 import { MUTATING_TOOL_NAMES } from "./mutating"
 import { evaluatePermission, isToolVisible } from "@maple/domain/permission"
-import { DEFAULT_RULESET, READ_ONLY_RULESET } from "@/chat/permissions"
+import { defaultRuleset, readOnlyRuleset } from "@maple/domain/ai-permissions"
+const tools = mapleToolCatalog.map((tool) => ({
+	name: tool.name,
+	description: tool.description,
+	inputSchema: {},
+	mutating: MUTATING_TOOL_NAMES.has(tool.name),
+}))
+const DEFAULT_RULESET = defaultRuleset(tools)
+const READ_ONLY_RULESET = readOnlyRuleset(tools)
 
 describe("MUTATING_TOOL_NAMES", () => {
 	it("every approval-gated tool exists in the registry", () => {

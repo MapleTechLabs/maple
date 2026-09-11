@@ -1,5 +1,5 @@
 /**
- * Message RENDERING for the chat-style providers, plus the "Ask Maple AI"
+ * Message RENDERING for the chat-style providers, plus the "Ask Maple"
  * deep-link and the template resolver.
  *
  * Transport — which provider gets which request, how it is sent, how failures
@@ -66,7 +66,7 @@ const toBase64Url = (raw: string): string =>
 	Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 
 /**
- * "Ask Maple AI" deep-link. Points at the incident-scoped diagnosis page, which
+ * "Ask Maple" deep-link. Points at the incident-scoped diagnosis page, which
  * auto-generates the AI diagnosis and hosts the alert chat alongside it. The
  * encoded alert context is carried so the page renders + seeds the chat without
  * a round-trip. When there is no incident row yet (e.g. a `test` notification)
@@ -161,7 +161,7 @@ const buildSlackActionsBlock = (linkUrl: string, chatUrl: string) => ({
 		},
 		{
 			type: "button",
-			text: { type: "plain_text", text: "✨ Ask Maple AI", emoji: true },
+			text: { type: "plain_text", text: "✨ Ask Maple", emoji: true },
 			url: chatUrl,
 		},
 	],
@@ -275,7 +275,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, ch
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl}) · [Ask Maple](${chatUrl})`,
 				inline: false,
 			},
 		],
@@ -500,7 +500,7 @@ export const buildDiscordEmbedsFromTemplate = (
 		fields: [
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl}) · [Ask Maple](${chatUrl})`,
 				inline: false,
 			},
 		],

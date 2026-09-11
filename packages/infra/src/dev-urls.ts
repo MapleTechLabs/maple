@@ -1,6 +1,7 @@
 /** Every app `bun dev` can run. */
 export const DEV_APPS = [
 	"api",
+	"ai",
 	"alerting",
 	"electric-sync",
 	"web",
@@ -35,6 +36,7 @@ export const selectedDevApps = (): ReadonlySet<DevApp> => {
 		.split(",")
 		.map((name) => name.trim())
 		.filter(isDevApp)
+	if (selected.includes("api") && !selected.includes("ai")) selected.push("ai")
 	return selected.length > 0 ? new Set(selected) : new Set(DEV_APPS)
 }
 

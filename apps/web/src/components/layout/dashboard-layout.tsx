@@ -132,7 +132,7 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 						<ChatBubbleSparkleIcon size={16} />
 					</TooltipTrigger>
 					<TooltipContent className="flex items-center gap-1.5">
-						Ask Maple AI <Kbd>C</Kbd>
+						Ask Maple <Kbd>C</Kbd>
 					</TooltipContent>
 				</Tooltip>
 				<ConnectButton />
