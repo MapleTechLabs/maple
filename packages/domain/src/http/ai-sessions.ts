@@ -757,6 +757,8 @@ export class AiToolErrorsResponse extends Schema.Class<AiToolErrorsResponse>("Ai
 /** One session that hit an error type, for the modal's left pane. */
 export const AiToolErrorSessionItem = Schema.Struct({
 	sessionId: Schema.String,
+	/** The framework, derived per trace as the sessions list derives it. */
+	vendorId: Schema.String,
 	agentName: Schema.String,
 	model: Schema.String,
 	/** Occurrences of this error type in this session. */
@@ -771,6 +773,7 @@ export const AiToolErrorOccurrence = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	sessionId: Schema.String,
+	vendorId: Schema.String,
 	agentName: Schema.String,
 	model: Schema.String,
 	errorType: Schema.String,

@@ -17,13 +17,11 @@ import { useDetectedModels } from "@/hooks/use-detected-models"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
-import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { sessionLinkWindow, sessionRowId } from "@/lib/agent-sessions/session-window"
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
-import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import { ModelLabel } from "./model-label"
-import { sessionIdentity } from "./session-detail/session-header"
 import { CATEGORY_TEXT } from "./session-detail/span-visuals"
+import { SessionName } from "./session-name"
 
 /** The wire row from `listAiSessions` — one AI agent session, newest first. */
 export interface AgentSessionRow {
@@ -157,15 +155,6 @@ export function AgentSessionsList({
 		<div className="@container">
 			{sessions.map((session) => {
 				const hasErrors = session.errorSpanCount > 0
-				const VendorIcon = vendorIcon(session.vendorId)
-				const vendor = vendorLabel(session.vendorId)
-				// `sessionIdentity` reads the first name, so it is handed the one
-				// name the warehouse resolved in span order rather than the
-				// unordered `agentNames` set — see `firstAgentName`.
-				const { heading } = sessionIdentity({
-					agentNames: session.firstAgentName === "" ? [] : [session.firstAgentName],
-					vendorIds: [session.vendorId],
-				})
 				const [firstModel, ...otherModels] = session.models
 				return (
 					<Link
@@ -190,15 +179,12 @@ export function AgentSessionsList({
 						    recognise one, so it reads as metadata under the name. */}
 						<div className="min-w-0 flex-1 overflow-hidden">
 							<div className="flex items-center gap-2">
-								<span
-									className="flex shrink-0 items-center text-muted-foreground"
-									title={vendor}
-								>
-									<VendorIcon size={15} aria-hidden />
-								</span>
-								<span className="min-w-0 truncate text-sm font-medium" title={heading}>
-									{heading}
-								</span>
+								{/* `firstAgentName`, not the unordered `agentNames` set. */}
+								<SessionName
+									agentName={session.firstAgentName}
+									vendorId={session.vendorId}
+									className="text-sm font-medium"
+								/>
 								{/* On phones the right-hand lanes are gone, so the timestamp
 								    anchors the top-right corner of the stacked row. */}
 								<span

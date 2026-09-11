@@ -65,7 +65,7 @@ import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiFieldSourceKeys } from "./ai-integrations"
-import { sessionKey } from "./ai-sessions"
+import { SESSION_ORDER_SENTINEL, orderTuple, sessionKey } from "./ai-sessions"
 
 /**
  * The page's selection, as every read here takes it.
@@ -167,6 +167,12 @@ const parentModels = (window: AiToolsWindow) =>
  * one answer, and the fallback exists for traces whose tool spans carry no
  * model lineage at all — where any model of the trace is a better answer than
  * none. Tool calls attributed this way are the vercel/unknown minority.
+ *
+ * `traceVendorId` and `traceAgentName` name the session the way the sessions
+ * list does — the same `argMin` orderings as `aiSessionsListQuery`'s per-trace
+ * level — for the failure modal, which links each failure to its session. The
+ * aggregates below never select them, and ClickHouse prunes unselected columns
+ * of a derived table.
  */
 const traceFacts = (window: AiToolsWindow) =>
 	from(AiTraceIndex)
@@ -174,6 +180,14 @@ const traceFacts = (window: AiToolsWindow) =>
 			TraceId: $.TraceId,
 			rawSessionId: CH.max_($.SessionId),
 			traceModel: CH.anyIf($.Model, $.Model.neq("")),
+			traceVendorId: CH.argMin(
+				$.VendorId,
+				orderTuple(CH.if_($.SessionId.neq(""), CH.lit(0), CH.lit(1)), $.Timestamp),
+			),
+			traceAgentName: CH.argMin(
+				$.AgentName,
+				CH.if_($.AgentName.neq(""), $.Timestamp, CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL))),
+			),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
@@ -580,7 +594,8 @@ const toolErrorSpans = (opts: AiToolErrorsOpts) =>
 			// A status message and nothing else is what most failures carry, so the
 			// message is the identity of the group as often as the type is.
 			message: leftUTF8($.StatusMessage, CH.lit(AI_TOOL_ERROR_MESSAGE_MAX)),
-			agent: spanField($, "agentName"),
+			vendor: CH.ifNull($.trace.traceVendorId, CH.lit("")),
+			agent: CH.ifNull($.trace.traceAgentName, CH.lit("")),
 			model: CH.ifNull($.trace.traceModel, CH.lit("")),
 			svc: $.ServiceName,
 			durationNs: $.Duration,
@@ -640,6 +655,7 @@ export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
 /** The modal's left pane: which sessions hit this error type, and how often. */
 export interface AiToolErrorSessionsOutput {
 	readonly sessionId: string
+	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
 	readonly hits: number
@@ -649,6 +665,7 @@ export interface AiToolErrorSessionsOutput {
 export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSessionsOutput> =
 	Schema.Struct({
 		sessionId: Schema.String,
+		vendorId: Schema.String,
 		agentName: Schema.String,
 		model: Schema.String,
 		hits: CHNumber,
@@ -659,6 +676,7 @@ export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
 	return fromQuery(toolErrorSpans(opts), "tool_error_spans")
 		.select(($) => ({
 			sessionId: $.session,
+			vendorId: CH.anyIf($.vendor, $.vendor.neq("")),
 			agentName: CH.anyIf($.agent, $.agent.neq("")),
 			model: CH.anyIf($.model, $.model.neq("")),
 			hits: CH.count(),
@@ -684,6 +702,7 @@ export interface AiToolErrorOccurrencesOutput {
 	readonly traceId: string
 	readonly spanId: string
 	readonly sessionId: string
+	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
 	readonly errorType: string
@@ -703,6 +722,7 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 		traceId: Schema.String,
 		spanId: Schema.String,
 		sessionId: Schema.String,
+		vendorId: Schema.String,
 		agentName: Schema.String,
 		model: Schema.String,
 		errorType: Schema.String,
@@ -726,7 +746,8 @@ export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 				traceId: $.TraceId,
 				spanId: $.SpanId,
 				sessionId: sessionKey(CH.ifNull($.trace.rawSessionId, CH.lit("")), $.TraceId),
-				agentName: spanField($, "agentName"),
+				vendorId: CH.ifNull($.trace.traceVendorId, CH.lit("")),
+				agentName: CH.ifNull($.trace.traceAgentName, CH.lit("")),
 				model: CH.ifNull($.trace.traceModel, CH.lit("")),
 				errorType: spanField($, "errorType"),
 				message: leftUTF8($.StatusMessage, CH.lit(AI_TOOL_ERROR_MESSAGE_MAX)),

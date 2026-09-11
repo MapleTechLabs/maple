@@ -654,6 +654,7 @@ export function buildToolErrorDetailFixture(
 
 	const sessions: ReadonlyArray<ToolErrorSessionRow> = seeds.map((seed, index) => ({
 		sessionId: seed.sessionId,
+		vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
 		agentName: seed.agentName,
 		model: seed.model,
 		hits: Math.max(1, Math.round(hits / (index + 2))),
@@ -662,7 +663,7 @@ export function buildToolErrorDetailFixture(
 
 	const occurrences: ReadonlyArray<ToolErrorOccurrenceRow> = Array.from({ length: 6 }).map(
 		(_, index) => {
-			const seed = seeds[index % Math.max(seeds.length, 1)]
+			const seed = sessions[index % Math.max(sessions.length, 1)]
 			const args = ARGUMENTS_BY_TOOL.get(tool) ?? '{\n  "input": "…"\n}'
 			const result =
 				RESULT_BY_TYPE.get(errorType) ??
@@ -672,6 +673,7 @@ export function buildToolErrorDetailFixture(
 				traceId: `7f3a4b5c6d7e8f9012345678${index.toString().padStart(8, "0")}`,
 				spanId: `a1b2c3d4e5f6${index.toString().padStart(4, "0")}`,
 				sessionId: seed?.sessionId ?? "trace:7f3a4b5c",
+				vendorId: seed?.vendorId ?? "",
 				agentName: seed?.agentName ?? "",
 				model: seed?.model ?? "",
 				errorType,

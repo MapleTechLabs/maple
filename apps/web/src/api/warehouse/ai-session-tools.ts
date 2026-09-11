@@ -269,6 +269,7 @@ const mapErrorSessions = (
 ): ReadonlyArray<ToolErrorSessionRow> =>
 	rows.map((row) => ({
 		sessionId: row.sessionId,
+		vendorId: row.vendorId,
 		agentName: row.agentName,
 		model: row.model,
 		hits: row.hits,
@@ -283,6 +284,7 @@ const mapOccurrences = (
 		traceId: row.traceId,
 		spanId: row.spanId,
 		sessionId: row.sessionId,
+		vendorId: row.vendorId,
 		agentName: row.agentName,
 		model: row.model,
 		errorType: row.errorType,
