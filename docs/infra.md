@@ -8,6 +8,38 @@ readable and the incidents stay findable.
 If you are about to delete a comment in a stack file because "the history is in git" —
 put it here instead. Git blame does not survive a refactor of the line it annotates.
 
+## The AI Worker (`maple-ai`)
+
+`apps/ai` hosts every agent surface: the MCP transport and its tools, the chat
+`ChatSession` Durable Object, and the `InvestigationFanoutWorkflow`. `apps/api`
+keeps the hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to
+it over a service binding, so the OAuth issuer and the RFC 8707 resource
+identifiers never move off api's origin.
+
+Measured before committing to the split (rolldown, unminified, same tree),
+dropping the MCP registry, the chat routes and the two hosted classes from api:
+
+| | with AI | without |
+| --- | --- | --- |
+| worker bundle | 11.74 MB | 9.34 MB |
+| bundle chunks | 85 | 50 |
+| module evaluation | ~336 ms | ~278 ms |
+
+The per-request half is not in that table: a `/mcp` call no longer builds
+`AllRoutes` and `ApiAuthLive`, and a `/v2` call no longer builds 47 tool schemas.
+A 2026-09-08 attempt that moved only the transport measured 1.0%, which is what
+moving the registry too is worth avoiding.
+
+Two things a future change here needs to know:
+
+- **The `ChatSession` class carries `transferredFrom: "api"`.** Dropping a
+  locally hosted Durable Object class while keeping a cross-script reference is
+  the shape that destroys a namespace, and alchemy refuses it before uploading.
+  The property is inert once a stage has transferred, so it stays.
+- **The Workflow has no equivalent.** Moving `InvestigationFanoutWorkflow` to a
+  new script mints a new physical workflow and orphans in-flight runs, which sit
+  in `status='running'` until the stale watchdog or a manual sweep clears them.
+
 ## Layout
 
 - `alchemy.run.ts` — the root stack. Provides `MapleStack` (stage, domains, public URLs,
