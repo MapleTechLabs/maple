@@ -22,7 +22,7 @@
 // prove the scope.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Array as Arr, Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "@maple/domain/gen-ai"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -503,6 +503,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 
 		// Step two: the one fact the index does not carry, read for exactly those
 		// calls and bounded by their own timestamps rather than the window.
+		if (!Arr.isReadonlyArrayNonEmpty(calls)) return assert.fail("expected an occurrence")
 		const slice = Integrations.aiToolErrorPayloadSlice(calls)
 		assert.strictEqual(slice.sliceStart, slice.sliceEnd)
 		const payloads = compileUnsafe(
@@ -547,6 +548,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			["tools-flaky-1", "tools-flaky-2"],
 		)
 
+		if (!Arr.isReadonlyArrayNonEmpty(calls)) return assert.fail("expected occurrences")
 		const slice = Integrations.aiToolErrorPayloadSlice(calls)
 		const partitionOf = (literal: string) => literal.slice(0, 10)
 		assert.notStrictEqual(partitionOf(slice.sliceStart), partitionOf(slice.sliceEnd))

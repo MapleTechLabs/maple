@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { Array as Arr, Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
 import {
 	aiToolDescriptionQuery,
@@ -20,6 +20,7 @@ import {
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
 	AI_TOOL_OCCURRENCES_LIMIT,
+	type AiToolErrorCallKey,
 } from "./ai-tools"
 import { AI_TOOLS_OTHER_SERIES_KEY } from "@maple/domain/http"
 
@@ -526,7 +527,7 @@ describe("the tool detail reads", () => {
 })
 
 describe("aiToolErrorPayloadsQuery", () => {
-	const calls = [
+	const calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey> = [
 		{ timestamp: "2026-08-18 04:00:00.000000000", traceId: "t2", spanId: "s2" },
 		{ timestamp: "2026-08-18 01:00:00.000000000", traceId: "t1", spanId: "s1" },
 	]

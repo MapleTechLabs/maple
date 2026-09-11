@@ -90,7 +90,7 @@ const AI_TOOLS_ERROR_SELECTION = {
 const AI_TOOL_ERROR_CALLS = [
 	{ timestamp: "2026-01-02 11:15:00.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d0" },
 	{ timestamp: "2026-01-02 11:45:30.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d1" },
-]
+] as const
 
 /** The window plus the tool `aiToolDescriptionQuery` resolves from a param —
  *  the one read here that takes no opts, because a description is the tool's

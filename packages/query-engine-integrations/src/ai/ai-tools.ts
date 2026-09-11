@@ -81,7 +81,7 @@ import {
 	type AiToolsPeriod,
 } from "@maple/domain/http"
 import type { AiGenAiField } from "@maple/domain/gen-ai"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
@@ -835,7 +835,7 @@ const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
  * so the call is inside its own bounds by construction, and a pad would only buy
  * partitions.
  */
-export function aiToolErrorPayloadsQuery(calls: ReadonlyArray<AiToolErrorCallKey>) {
+export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
 	return from(TraceDetailSpans)
 		.select(($) => {
 			const args = spanField($, "toolCallArguments")
@@ -867,14 +867,15 @@ export function aiToolErrorPayloadsQuery(calls: ReadonlyArray<AiToolErrorCallKey
 }
 
 /** The bounds one {@link aiToolErrorPayloadsQuery} is read over: the earliest
- *  and latest of the occurrences it is for, exactly as the index reported them. */
+ *  and latest of the occurrences it is for, exactly as the index reported them.
+ *  No occurrences have no extent, which is why both take a non-empty list. */
 export interface AiToolErrorPayloadSlice {
 	readonly sliceStart: string
 	readonly sliceEnd: string
 }
 
 export function aiToolErrorPayloadSlice(
-	calls: ReadonlyArray<AiToolErrorCallKey>,
+	calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>,
 ): AiToolErrorPayloadSlice {
 	const timestamps = calls.map((call) => call.timestamp)
 	return {

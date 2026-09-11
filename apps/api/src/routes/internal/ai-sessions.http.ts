@@ -25,7 +25,7 @@ import {
 	type AiToolsPeriod,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
-import { Effect } from "effect"
+import { Array as Arr, Effect } from "effect"
 import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
@@ -634,7 +634,7 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						// which is the partitions those calls landed in and no others. A
 						// modal that opened on nothing reads no spans at all.
 						const payloads =
-							occurrences.length === 0
+							!Arr.isReadonlyArrayNonEmpty(occurrences)
 								? []
 								: yield* warehouse.compiledQuery(
 										tenant,
