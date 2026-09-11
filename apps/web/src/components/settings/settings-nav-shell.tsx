@@ -10,18 +10,34 @@ export interface NavShellItem<TId extends string> {
 }
 
 /** Sibling pages that share the shell (rendered as router Links rather than tab buttons). */
-export interface NavShellLink {
-	id: string
+export interface NavShellLink<TLinkId extends string = string> {
+	id: TLinkId
 	label: string
 	icon: IconComponent
 	to: string
 }
 
-export interface NavShellSection<TId extends string> {
+/**
+ * Tabs and sibling-page links share one ordered list rather than sitting in separate buckets.
+ * Two buckets meant a link could only ever render after every tab in its group, which silently
+ * decided where Integrations sat in the settings nav — a layout rule masquerading as a data shape.
+ */
+export type NavShellRow<TId extends string, TLinkId extends string = never> =
+	| NavShellItem<TId>
+	| NavShellLink<TLinkId>
+
+const isLink = <TId extends string, TLinkId extends string>(
+	row: NavShellRow<TId, TLinkId>,
+): row is NavShellLink<TLinkId> => "to" in row
+
+/**
+ * `TLinkId` defaults to `never`, so a nav with no sibling-page links (`/account`) keeps `row.id`
+ * narrowed to its own tab union instead of widening to `string`.
+ */
+export interface NavShellSection<TId extends string, TLinkId extends string = never> {
 	id: string
 	title: string
-	items: ReadonlyArray<NavShellItem<TId>>
-	links?: ReadonlyArray<NavShellLink>
+	items: ReadonlyArray<NavShellRow<TId, TLinkId>>
 }
 
 /**
@@ -48,12 +64,12 @@ function ActiveIndicator() {
  * entitlements, `/account` shows every tab to any signed-in user. Keeping the two unions apart
  * is what stops account tabs from leaking into the org page's search schema.
  */
-export function SettingsNavShell<TId extends string>({
+export function SettingsNavShell<TId extends string, TLinkId extends string = never>({
 	sections,
 	active,
 	onSelectTab,
 }: {
-	sections: ReadonlyArray<NavShellSection<TId>>
+	sections: ReadonlyArray<NavShellSection<TId, TLinkId>>
 	/** Active tab id, or a link id when a sibling page renders the nav. */
 	active: string
 	onSelectTab: (tab: TId) => void
@@ -66,29 +82,25 @@ export function SettingsNavShell<TId extends string>({
 						{section.title}
 					</div>
 					<div className="flex flex-col gap-0.5">
-						{section.items.map((item) => {
-							const isActive = item.id === active
-							return (
+						{section.items.map((row) => {
+							const isActive = row.id === active
+							return isLink(row) ? (
+								<Link key={row.id} to={row.to} className={rowClass(isActive)}>
+									{isActive && <ActiveIndicator />}
+									<row.icon size={16} className="shrink-0" />
+									{row.label}
+								</Link>
+							) : (
 								<button
-									key={item.id}
+									key={row.id}
 									type="button"
-									onClick={() => onSelectTab(item.id)}
+									onClick={() => onSelectTab(row.id)}
 									className={rowClass(isActive)}
 								>
 									{isActive && <ActiveIndicator />}
-									<item.icon size={16} className="shrink-0" />
-									{item.label}
+									<row.icon size={16} className="shrink-0" />
+									{row.label}
 								</button>
-							)
-						})}
-						{section.links?.map((link) => {
-							const isActive = link.id === active
-							return (
-								<Link key={link.to} to={link.to} className={rowClass(isActive)}>
-									{isActive && <ActiveIndicator />}
-									<link.icon size={16} className="shrink-0" />
-									{link.label}
-								</Link>
 							)
 						})}
 					</div>
