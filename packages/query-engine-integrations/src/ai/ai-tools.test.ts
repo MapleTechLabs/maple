@@ -37,10 +37,10 @@ const totalsParams = {
 	prevEndTime: "2026-08-18 00:00:00",
 }
 
-/** The tool detail page's reads take the tool in the opts, like every other
- *  filter; only the description read, which takes no opts at all, names it by
- *  param. Both sets of params are the plain window. */
-const errorParams = { ...params, toolName: "search_traces" }
+/** The description read takes no opts at all — a description is the tool's and
+ *  not the selection's — so it is the one read here that names the tool by
+ *  param. Every other tool read takes it in the opts, like every other filter. */
+const descriptionParams = { ...params, toolName: "search_traces" }
 
 /** The detail page's selection: one tool, everything else the toolbar's. */
 const errorSelection = { tool: "search_traces" } as const
@@ -116,9 +116,9 @@ describe("tool call population", () => {
 		expect(compileUnsafe(aiToolsBreakdownsQuery(), params).tenantScope).toBe("single-tenant")
 		expect(compileUnionUnsafe(aiToolsTotalsQuery(), totalsParams).tenantScope).toBe("single-tenant")
 		for (const compiled of [
-			compileUnsafe(aiToolErrorsQuery(errorSelection), errorParams),
-			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), errorParams),
-			compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), errorParams),
+			compileUnsafe(aiToolErrorsQuery(errorSelection), params),
+			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params),
+			compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params),
 		]) {
 			expect(compiled.tenantScope).toBe("single-tenant")
 			expect(compiled.sql).toContain("OrgId = 'org_1'")
@@ -132,7 +132,7 @@ describe("tool call population", () => {
 		const withoutParent = [
 			compileUnsafe(aiToolsBreakdownsQuery(), params).sql,
 			compileUnionUnsafe(aiToolsTotalsQuery({ tool: "search_traces" }), totalsParams).sql,
-			compileUnsafe(aiToolErrorsQuery(errorSelection), errorParams).sql,
+			compileUnsafe(aiToolErrorsQuery(errorSelection), params).sql,
 			// One tool, one series: the chart is not keyed by model either.
 			compileUnsafe(aiToolsSeriesQuery({ tool: "search_traces", split: "none" }), params).sql,
 		]
@@ -154,6 +154,22 @@ describe("tool call population", () => {
 			expect(sql).toContain("parentModel")
 		}
 		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).not.toContain("parentModel")
+	})
+
+	it("joins it unconditionally for the two modal reads that PRINT a model", () => {
+		// Without this the model beside a failure would be the trace's until the
+		// reader sets a model filter and the parent-resolved one after — the same
+		// failure described two ways. Both are behind a click, so the join is off
+		// the page's critical path; the Errors table, which is on it and prints no
+		// model, is the read above that keeps the default.
+		for (const sql of [
+			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql,
+			compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params).sql,
+		]) {
+			expect(sql).toContain("LEFT JOIN")
+			expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
+		}
+		expect(compileUnsafe(aiToolErrorsQuery(errorSelection), params).sql).not.toContain("parentModel")
 	})
 
 	it("applies the selection where each half of it can be applied", () => {
@@ -396,13 +412,13 @@ describe("aiToolsTotalsQuery empty window", () => {
 describe("the tool detail reads", () => {
 	it("reads the index alone — the failure's type and message are columns", () => {
 		for (const sql of [
-			compileUnsafe(aiToolErrorsQuery({ ...errorSelection, model: "gpt-5", service: "agent" }), errorParams)
+			compileUnsafe(aiToolErrorsQuery({ ...errorSelection, model: "gpt-5", service: "agent" }), params)
 				.sql,
 			compileUnsafe(
 				aiToolErrorOccurrencesQuery({ ...errorSelection, model: "gpt-5", service: "agent" }),
-				errorParams,
+				params,
 			).sql,
-			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), errorParams).sql,
+			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql,
 		]) {
 			// Migration 0032. Before it these three seeked `trace_detail_spans`
 			// inside the traces the index named, which costs by the partitions the
@@ -413,12 +429,12 @@ describe("the tool detail reads", () => {
 			expect(sql).toContain("ai_trace_index.ToolName = 'search_traces'")
 		}
 		expect(
-			compileUnsafe(aiToolErrorsQuery({ ...errorSelection, env: "production" }), errorParams).sql,
+			compileUnsafe(aiToolErrorsQuery({ ...errorSelection, env: "production" }), params).sql,
 		).toContain("ai_trace_index.DeploymentEnv = 'production'")
 	})
 
 	it("groups the failures by type and labels each with its latest message", () => {
-		const { sql } = compileUnsafe(aiToolErrorsQuery(errorSelection), errorParams)
+		const { sql } = compileUnsafe(aiToolErrorsQuery(errorSelection), params)
 
 		expect(sql).toContain("argMax(message, ts) AS message")
 		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
@@ -429,14 +445,14 @@ describe("the tool detail reads", () => {
 	it("narrows on an error type only when one was passed", () => {
 		// `''` is a real group — the failures that named no type — so the
 		// predicate is on presence of the opt, not on truth of the value.
-		expect(compileUnsafe(aiToolErrorSessionsQuery(errorSelection), errorParams).sql).not.toContain(
+		expect(compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql).not.toContain(
 			"errorType =",
 		)
 		expect(
-			compileUnsafe(aiToolErrorSessionsQuery({ ...errorSelection, errorType: "" }), errorParams).sql,
+			compileUnsafe(aiToolErrorSessionsQuery({ ...errorSelection, errorType: "" }), params).sql,
 		).toContain("errorType = ''")
 		expect(
-			compileUnsafe(aiToolErrorSessionsQuery({ ...errorSelection, errorType: "Timeout" }), errorParams)
+			compileUnsafe(aiToolErrorSessionsQuery({ ...errorSelection, errorType: "Timeout" }), params)
 				.sql,
 		).toContain("errorType = 'Timeout'")
 	})
@@ -444,7 +460,7 @@ describe("the tool detail reads", () => {
 	it("narrows the occurrences to one session, and orders them newest first", () => {
 		const { sql } = compileUnsafe(
 			aiToolErrorOccurrencesQuery({ ...errorSelection, errorType: "Timeout", session: "sess_1" }),
-			errorParams,
+			params,
 		)
 
 		expect(sql).toContain("sessionKey = 'sess_1'")
@@ -453,7 +469,7 @@ describe("the tool detail reads", () => {
 	})
 
 	it("decodes each read through its declared row schema", () => {
-		const errors = compileUnsafe(aiToolErrorsQuery(errorSelection), errorParams, {
+		const errors = compileUnsafe(aiToolErrorsQuery(errorSelection), params, {
 			rowSchema: aiToolErrorsRowSchema,
 		})
 		expect(
@@ -469,7 +485,7 @@ describe("the tool detail reads", () => {
 			])[0],
 		).toMatchObject({ calls: 4, sessions: 2 })
 
-		const sessions = compileUnsafe(aiToolErrorSessionsQuery(errorSelection), errorParams, {
+		const sessions = compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params, {
 			rowSchema: aiToolErrorSessionsRowSchema,
 		})
 		expect(
@@ -487,7 +503,7 @@ describe("the tool detail reads", () => {
 			])[0],
 		).toMatchObject({ hits: 7 })
 
-		const occurrences = compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), errorParams, {
+		const occurrences = compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params, {
 			rowSchema: aiToolErrorOccurrencesRowSchema,
 		})
 		expect(
@@ -567,7 +583,7 @@ describe("aiToolErrorPayloadsQuery", () => {
 })
 
 describe("aiToolDescriptionQuery", () => {
-	const compiled = compileUnsafe(aiToolDescriptionQuery(), errorParams, {
+	const compiled = compileUnsafe(aiToolDescriptionQuery(), descriptionParams, {
 		rowSchema: aiToolDescriptionRowSchema,
 	})
 

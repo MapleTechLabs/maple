@@ -1257,10 +1257,13 @@ describe("POST /internal/ai-sessions/tools/totals", () => {
 		}
 	})
 
-	it("refuses an empty or unknown period list", async () => {
+	it("refuses an empty, unknown, or currentless period list", async () => {
 		const harness = makeHarness({})
 		try {
-			for (const periods of [[], ["yesterday"]]) {
+			// `current` is the only aggregate the response requires, so a list
+			// without it would answer a zeroed window with no first or last call —
+			// a 200 stating that nothing ran. It is a 400 instead.
+			for (const periods of [[], ["yesterday"], ["previous"], ["window", "previous"]]) {
 				const response = await harness.post("/internal/ai-sessions/tools/totals", {
 					...TOOLS_WINDOW,
 					periods,

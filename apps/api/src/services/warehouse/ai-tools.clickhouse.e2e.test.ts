@@ -531,6 +531,43 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 	})
 
+	it("bounds the payload read by an extent that spans both partitions", async () => {
+		// The whole tool, not one error type: both failures, a calendar day apart.
+		// A slice that collapsed to one instant — which one occurrence gives it —
+		// would never show whether the bound actually reaches the older partition.
+		const occurrences = compileUnsafe(
+			Integrations.aiToolErrorOccurrencesQuery({ tool: "flaky_tool" }),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+		)
+		const calls = Effect.runSync(occurrences.decodeRows(await runJson(occurrences.sql)))
+		// Newest first.
+		assert.deepStrictEqual(
+			calls.map((row) => row.spanId),
+			["tools-flaky-1", "tools-flaky-2"],
+		)
+
+		const slice = Integrations.aiToolErrorPayloadSlice(calls)
+		const partitionOf = (literal: string) => literal.slice(0, 10)
+		assert.notStrictEqual(partitionOf(slice.sliceStart), partitionOf(slice.sliceEnd))
+
+		const payloads = compileUnsafe(
+			Integrations.aiToolErrorPayloadsQuery(calls),
+			{ orgId: ORG_ID, ...slice },
+			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
+		)
+		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+		assert.deepStrictEqual(
+			[...rows]
+				.sort((a, b) => a.spanId.localeCompare(b.spanId))
+				.map((row) => ({ spanId: row.spanId, arguments: row.arguments, result: row.result })),
+			[
+				{ spanId: "tools-flaky-1", arguments: '{"retries":3}', result: "" },
+				{ spanId: "tools-flaky-2", arguments: '{"retries":1}', result: '{"error":"503"}' },
+			],
+		)
+	})
+
 	it("reads a tool's latest non-empty description, and nobody else's", async () => {
 		const describeTool = async (toolName: string) => {
 			const compiled = compileUnsafe(
