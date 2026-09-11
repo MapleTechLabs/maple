@@ -1,4 +1,5 @@
-// Every warehouse read `/agent-sessions/tools` makes, behind one hook.
+// Every warehouse read `/agent-sessions/tools` makes, behind one hook — plus
+// the tab strip's counts, which the Sessions list reads too.
 //
 // The page itself never touches an atom: it takes the `Result`s this
 // returns and renders them. That is what lets the lab mount the same page shell
@@ -9,7 +10,7 @@ import { useMemo } from "react"
 
 import type { AiToolsSeriesKind } from "@maple/domain/http"
 
-import type { Result } from "@/lib/effect-atom"
+import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	aiToolBreakdownsResultAtom,
@@ -103,4 +104,34 @@ export function useToolAnalytics(
 	const totals = useRefreshableAtomValue(aiToolTotalsResultAtom({ data: selection }))
 	const breakdowns = useRefreshableAtomValue(aiToolBreakdownsResultAtom({ data: selection }))
 	return { series, scopeSeries, totals, breakdowns }
+}
+
+/**
+ * The tab strip's counts, which both Agent Sessions pages show: the window's
+ * sessions (`allSessions`, unscoped server-side) and the tools called in it (the
+ * breakdown's rows, so capped at its limit).
+ *
+ * Read over the bare window rather than a page's selection, so neither page's
+ * filters move the numbers and switching tabs never changes them. That is also
+ * what makes them cheap: with no filters set this is the exact key the Tools
+ * page reads itself, and the Sessions list's rolling week snaps to the same
+ * window as the Tools default preset — each page finds the other's reads cached.
+ *
+ * `undefined` until a read lands, so a tab never shows a 0 it does not mean.
+ */
+export function useAgentSessionsTabCounts(window: ToolAnalyticsWindow): {
+	sessions?: number
+	tools?: number
+} {
+	const { startTime, endTime } = window
+	const selection = useMemo(
+		() => toolAnalyticsSelection({}, { startTime, endTime }),
+		[startTime, endTime],
+	)
+	const totals = useAtomValue(aiToolTotalsResultAtom({ data: selection }))
+	const breakdowns = useAtomValue(aiToolBreakdownsResultAtom({ data: selection }))
+	return {
+		sessions: Result.isSuccess(totals) ? totals.value.allSessions : undefined,
+		tools: Result.isSuccess(breakdowns) ? breakdowns.value.tools.length : undefined,
+	}
 }

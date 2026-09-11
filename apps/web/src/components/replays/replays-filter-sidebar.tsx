@@ -20,10 +20,10 @@ import { Separator } from "@maple/ui/components/ui/separator"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	RangeFilterSection,
-	formatSeconds,
 	type RangeBucket,
 	type RangePreset,
 } from "@maple/ui/components/filters/range-filter-section"
+import { percentilePresets, toLogBuckets } from "@/components/filters/range-distribution"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
@@ -54,73 +54,21 @@ interface ReplaysFacets {
 	readonly durationP95: number
 }
 
-/** Share of sessions the axis must cover before the rest is folded into a single
- *  overflow bar. Real data has abandoned tabs measured in days; on a log axis one
- *  of those stretches the range past 500h and squashes every genuine session into
- *  the first few pixels. */
-const AXIS_COVERAGE = 0.99
-
 // The warehouse buckets session length into half-octaves from 1s and returns only
-// the non-empty ones (see sessionReplaysFacetsQuery). Rebuild the full run, in
-// seconds, so the histogram's axis stays continuous instead of collapsing gaps
-// into neighbouring bars.
+// the non-empty ones, named by their floor in ms (see sessionReplaysFacetsQuery).
 export function toDurationBuckets(raw: ReadonlyArray<ReplaysFacetItem>): RangeBucket[] {
-	const counts = new Map<number, number>()
-	for (const item of raw) {
-		const floorMs = Number(item.name)
-		if (!Number.isFinite(floorMs) || floorMs <= 0) continue
-		counts.set(Math.round(Math.log2(floorMs / 1000) * 2), item.count)
-	}
-	if (counts.size === 0) return []
-
-	const octaves = [...counts.keys()]
-	const buckets: RangeBucket[] = []
-	for (let k = Math.min(...octaves); k <= Math.max(...octaves); k++) {
-		const from = 2 ** (k / 2)
-		buckets.push({ from, to: from * Math.SQRT2, count: counts.get(k) ?? 0 })
-	}
-
-	// Keep the outliers visible as one unbounded bar at the right edge rather than
-	// dropping them — they're real sessions, and folding them into the last kept
-	// bucket would misreport it as a spike.
-	const total = buckets.reduce((sum, b) => sum + b.count, 0)
-	if (total === 0) return buckets
-	let covered = 0
-	for (const [index, bucket] of buckets.entries()) {
-		covered += bucket.count
-		if (covered < total * AXIS_COVERAGE) continue
-		const tail = buckets.slice(index + 1)
-		const tailCount = tail.reduce((sum, b) => sum + b.count, 0)
-		if (tailCount === 0) return buckets.slice(0, index + 1)
-		return [
-			...buckets.slice(0, index + 1),
-			{ from: tail[0]!.from, to: Number.POSITIVE_INFINITY, count: tailCount, unbounded: true },
-		]
-	}
-	return buckets
+	return toLogBuckets(
+		raw.map((item) => ({ floor: Number(item.name) / 1000, count: item.count })),
+		2,
+	)
 }
 
-// "Bounced" is the one shortcut that names an intent rather than a threshold;
-// the percentiles are this audience's own vocabulary and carry their resolved
-// value. Percentiles under a second make a degenerate preset — skip them.
+// "Bounced" is the one shortcut that names an intent rather than a threshold.
 function sessionLengthPresets(p50Ms: number, p95Ms: number): RangePreset[] {
-	const presets: RangePreset[] = [{ key: "bounced", label: "Bounced", value: "<10s", max: 10 }]
-	for (const [key, label, ms] of [
-		["p50", "> p50", p50Ms],
-		["p95", "> p95", p95Ms],
-	] as const) {
-		const seconds = roundThreshold(ms / 1000)
-		if (seconds >= 1) presets.push({ key, label, value: formatSeconds(seconds), min: seconds })
-	}
-	return presets
-}
-
-/** A percentile lands on values like 2647s, which reads as "44m 7s" — precision
- *  no one asked for on a shortcut. Round to the nearest minute above a minute;
- *  the seconds it drops can't change which sessions you care about. */
-function roundThreshold(seconds: number): number {
-	if (seconds < 60) return Math.round(seconds)
-	return Math.round(seconds / 60) * 60
+	return [
+		{ key: "bounced", label: "Bounced", value: "<10s", max: 10 },
+		...percentilePresets(p50Ms / 1000, p95Ms / 1000, "s"),
+	]
 }
 
 // Active time has no distribution behind it — computing one means scanning

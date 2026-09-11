@@ -78,8 +78,9 @@ export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("
 	...aiSessionCountedFilters,
 	// The session-level filters: applied to the ranked row over the measures
 	// the index carries per agent span, so they have no facet count behind
-	// them. `hasErrors` means a failed agent span; a session whose only error
-	// is on a non-agent span shows the badge but is not matched.
+	// them — the ranges' histograms are `POST /distributions`. `hasErrors`
+	// means a failed agent span; a session whose only error is on a non-agent
+	// span shows the badge but is not matched.
 	hasErrors: Schema.optional(Schema.Boolean),
 	/** Drop the `trace:` sessions — traces whose vendor exposes no session key. */
 	excludeTraceSessions: Schema.optional(Schema.Boolean),
@@ -274,6 +275,47 @@ export class ListAiSessionsFacetsResponse extends Schema.Class<ListAiSessionsFac
 	agents: Schema.Array(AiSessionFacetItem),
 	/** …per tool name, matching `toolNames`. */
 	tools: Schema.Array(AiSessionFacetItem),
+}) {}
+
+export class ListAiSessionsDistributionsRequest extends Schema.Class<ListAiSessionsDistributionsRequest>(
+	"ListAiSessionsDistributionsRequest",
+)({
+	// The window alone, like the facets: a distribution the range filters had
+	// narrowed would hide the values a reader is about to widen a range to.
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+/** One non-empty bucket: sessions whose measure is at least `floor` and
+ *  below the next bucket's. */
+export const AiSessionDistributionBucket = Schema.Struct({
+	floor: Schema.Number,
+	count: Schema.Number,
+})
+
+/**
+ * How the window's sessions spread over one measure, counting the sessions
+ * where it is above zero. The buckets are log-spaced from 1 in the measure's
+ * own unit — half-octaves for `durationMs` and `cost`, octaves for the counts,
+ * whose bounds stay whole — ascending, and only the non-empty ones: the client
+ * fills the gaps. A measure no session has is no buckets and zero percentiles.
+ */
+export const AiSessionDistribution = Schema.Struct({
+	buckets: Schema.Array(AiSessionDistributionBucket),
+	p50: Schema.Number,
+	p95: Schema.Number,
+})
+export type AiSessionDistribution = Schema.Schema.Type<typeof AiSessionDistribution>
+
+export class ListAiSessionsDistributionsResponse extends Schema.Class<ListAiSessionsDistributionsResponse>(
+	"ListAiSessionsDistributionsResponse",
+)({
+	/** The agent spans' extent in ms — what `durationMinMs`/`durationMaxMs` filter. */
+	durationMs: AiSessionDistribution,
+	cost: AiSessionDistribution,
+	totalTokens: AiSessionDistribution,
+	llmCalls: AiSessionDistribution,
+	toolCalls: AiSessionDistribution,
 }) {}
 
 /** Which of a session's spans a read returns. `ai` is the vendor-stamped
@@ -671,6 +713,9 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	 * which the client renders as "no comparison" rather than a -100%.
 	 */
 	previous: AiToolsAggregate,
+	/** The selected tool's latest non-empty `gen_ai.tool.description` in the
+	 *  window. Absent when no tool is selected or no call stamped one. */
+	description: Schema.optionalKey(Schema.String),
 }) {}
 
 /** Rows the Tools breakdown returns, busiest first — the same cap the query
@@ -757,6 +802,8 @@ export class AiToolErrorsResponse extends Schema.Class<AiToolErrorsResponse>("Ai
 /** One session that hit an error type, for the modal's left pane. */
 export const AiToolErrorSessionItem = Schema.Struct({
 	sessionId: Schema.String,
+	/** The framework, derived per trace as the sessions list derives it. */
+	vendorId: Schema.String,
 	agentName: Schema.String,
 	model: Schema.String,
 	/** Occurrences of this error type in this session. */
@@ -771,6 +818,7 @@ export const AiToolErrorOccurrence = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	sessionId: Schema.String,
+	vendorId: Schema.String,
 	agentName: Schema.String,
 	model: Schema.String,
 	errorType: Schema.String,
@@ -831,6 +879,13 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		HttpApiEndpoint.post("facets", "/facets", {
 			payload: ListAiSessionsFacetsRequest,
 			success: ListAiSessionsFacetsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("distributions", "/distributions", {
+			payload: ListAiSessionsDistributionsRequest,
+			success: ListAiSessionsDistributionsResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

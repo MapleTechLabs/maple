@@ -4,7 +4,7 @@
 // pages' own wiring — which control writes which search param, which row links
 // where, and what the tables say about the rows they are given.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -12,11 +12,10 @@ import {
 	buildToolCells,
 	buildToolDetailFixture,
 	buildToolErrorDetailFixture,
-	toolFixtureWindow,
 } from "@/lab/agent-tools-fixture"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
-import { AgentToolsView } from "./agent-tools-view"
+import { AgentToolsView, type AgentToolsViewProps } from "./agent-tools-view"
 import { ToolDetailView } from "./tool-detail-view"
 import { ToolErrorModal } from "./tool-error-modal"
 
@@ -50,20 +49,23 @@ vi.mock("./tool-detail-charts", () => ({
 
 const NOW = Date.UTC(2026, 8, 10, 12, 0, 0)
 const cells = buildToolCells(NOW)
-const WINDOW = toolFixtureWindow(NOW)
 
-function renderView(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
+function renderView(
+	search: ToolAnalyticsSearch,
+	onSearchChange = vi.fn(),
+	props: Partial<AgentToolsViewProps> = {},
+) {
 	const data = buildToolAnalyticsFixture(search, NOW, cells)
 	render(
 		<AgentToolsView
 			search={search}
 			onSearchChange={onSearchChange}
 			data={data}
-			window={WINDOW}
 			serviceOptions={[]}
 			modelOptions={[]}
 			envOptions={[]}
 			windowLabel="7d"
+			{...props}
 		/>,
 	)
 	return { onSearchChange, data }
@@ -157,7 +159,6 @@ describe("AgentToolsView", () => {
 				search={{}}
 				onSearchChange={vi.fn()}
 				data={{ ...data, tools: [], toolsFailure: new Error("boom") }}
-				window={WINDOW}
 				serviceOptions={[]}
 				modelOptions={[]}
 				envOptions={[]}
@@ -166,6 +167,31 @@ describe("AgentToolsView", () => {
 		)
 		expect(screen.queryByText(/No tool calls/)).toBeNull()
 		expect(screen.getByText(/Failed to load tools/)).toBeTruthy()
+	})
+
+	it("has no page title, and ends the toolbar row with the window controls", () => {
+		renderView({}, vi.fn(), { actions: <button type="button">Reload</button> })
+		expect(screen.queryByRole("heading", { name: "Tools" })).toBeNull()
+
+		// After every filter and in the same row, before the scope band — where the
+		// Sessions list's toolbar ends in its own Reload.
+		const reload = screen.getByRole("button", { name: "Reload" })
+		const search = screen.getByPlaceholderText("Tool name…")
+		const failing = screen.getByRole("button", { name: /Failing only/ })
+		const follows = (a: Node, b: Node) =>
+			(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+		expect(follows(search, failing)).toBe(true)
+		expect(follows(failing, reload)).toBe(true)
+		expect(follows(reload, screen.getByText("Tool calls"))).toBe(true)
+		expect(reload.closest(".ml-auto")?.parentElement?.contains(search)).toBe(true)
+	})
+
+	it("counts the tabs from what it is given, not the filtered table, and never shows an unknown count", () => {
+		// A name search narrows the table; the tabs must read the same on both pages.
+		renderView({ q: "read" }, vi.fn(), { tabCounts: { sessions: 812 } })
+		expect(document.querySelector('[data-to="/agent-sessions"]')?.textContent).toBe("Sessions812")
+		// The tools count has not landed: no number, rather than a 0.
+		expect(document.querySelector('[data-to="/agent-sessions/tools"]')?.textContent).toBe("Tools")
 	})
 })
 
@@ -212,6 +238,34 @@ describe("ToolDetailView", () => {
 		expect(
 			screen.getAllByText(new RegExp(`${data.totals.sessions} sessions`)).length,
 		).toBeGreaterThan(0)
+	})
+
+	it("describes the tool beside its name on one muted, truncated line, and says nothing without one", () => {
+		const data = buildToolDetailFixture("run_tests", {}, NOW, cells)
+		const view = (description: string | undefined) => (
+			<ToolDetailView
+				tool="run_tests"
+				search={{}}
+				onSearchChange={vi.fn()}
+				data={{ ...data, description }}
+				serviceOptions={[]}
+				modelOptions={[]}
+				envOptions={[]}
+			/>
+		)
+		const text = data.description!
+		const { rerender } = render(view(text))
+		const line = screen.getByText(text)
+		expect(line.className).toContain("truncate")
+		expect(line.className).toContain("text-muted-foreground")
+
+		rerender(view(undefined))
+		expect(screen.queryByText(text)).toBeNull()
+	})
+
+	it("has no tool-name search — the page is one tool", () => {
+		renderDetail({})
+		expect(screen.queryByPlaceholderText("Tool name…")).toBeNull()
 	})
 
 	it("names the tool in the scope band's denominator", () => {
@@ -315,13 +369,50 @@ describe("ToolErrorModal", () => {
 
 	it("narrows the occurrences to a session, and back out again", () => {
 		const { onSelectSession } = renderModal()
-		fireEvent.click(screen.getAllByText(detail.sessions[0]!.sessionId)[0]!)
+		fireEvent.click(
+			screen.getByRole("button", { name: `Show occurrences in ${detail.sessions[0]!.sessionId}` }),
+		)
 		expect(onSelectSession).toHaveBeenCalledWith(detail.sessions[0]!.sessionId)
 
 		cleanup()
 		const second = renderModal(detail.sessions[0]!.sessionId).onSelectSession
 		fireEvent.click(screen.getByText("All sessions"))
 		expect(second).toHaveBeenCalledWith(undefined)
+	})
+
+	it("names each session as the Sessions list does, and links to it on the trace view", () => {
+		renderModal()
+		const named = detail.sessions.find((candidate) => candidate.agentName === "planner")!
+		const link = screen
+			.getAllByText("planner")
+			.map((element) => element.closest("a"))
+			.find((anchor) => JSON.parse(anchor?.getAttribute("data-search") ?? "{}").span === undefined)
+		expect(link?.getAttribute("data-to")).toBe("/agent-sessions/$sessionId")
+		expect(JSON.parse(link?.getAttribute("data-params") ?? "{}")).toEqual({ sessionId: named.sessionId })
+		// No window: the failures' extent is not the session's, and the detail page
+		// would read it as the session's.
+		expect(JSON.parse(link?.getAttribute("data-search") ?? "{}")).toEqual({
+			tool: "run_tests",
+			view: "trace",
+		})
+		// A session with no agent name is headed by its framework, not left blank
+		// and never titled by its raw id.
+		const unnamed = detail.sessions.find((candidate) => candidate.agentName === "")!
+		expect(unnamed.vendorId).toBe("eve")
+		const unnamedRow = screen.getByRole("button", {
+			name: `Show occurrences in ${unnamed.sessionId}`,
+		}).parentElement!
+		expect(within(unnamedRow).getByText("eve session")).toBeTruthy()
+	})
+
+	it("links an occurrence to its span inside the session", () => {
+		renderModal()
+		const first = detail.occurrences[0]!
+		// The mocked `Link` renders no `href`, so its anchors carry no link role.
+		const spans = Array.from(document.querySelectorAll("a"))
+			.map((anchor) => JSON.parse(anchor.getAttribute("data-search") ?? "{}"))
+			.filter((search) => search.span !== undefined)
+		expect(spans[0]).toMatchObject({ span: first.spanId, tool: "run_tests", view: "trace" })
 	})
 
 	it("totals a session's occurrences by that session's hits, not the error's", () => {

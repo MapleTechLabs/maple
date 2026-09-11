@@ -7356,6 +7356,10 @@
       "name": "Setup Audit"
     },
     {
+      "description": "Which signals are reaching Maple. The input every empty state needs to tell 'nothing is wired up' apart from 'nothing happened'.",
+      "name": "Telemetry Signals"
+    },
+    {
       "description": "Durable investigation war-rooms — autonomous or human-opened diagnostic sessions over incidents and ad-hoc questions, each carrying its structured AI diagnosis.",
       "name": "Investigations"
     },

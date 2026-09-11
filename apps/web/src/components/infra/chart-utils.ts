@@ -204,6 +204,21 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 						scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])], timeZone),
 					}
 				: axis,
+		/**
+		 * `x` padded by half a bucket each way, for marks with WIDTH (bars): they
+		 * are centred on the bucket, so the unpadded extent cuts the end bars in
+		 * half — see `timeseriesBandXAxis`.
+		 */
+		xBand:
+			domainMs && stepMs !== undefined
+				? {
+						...axis,
+						scale: bucketTimeScale(
+							[new Date(domainMs[0] - stepMs / 2), new Date(domainMs[1] + stepMs / 2)],
+							timeZone,
+						),
+					}
+				: axis,
 		/** `[first, last]` epoch ms, absent when there is nothing to plot. */
 		domainMs,
 		/** The bucket width in ms — the smallest positive gap — absent under two buckets. */

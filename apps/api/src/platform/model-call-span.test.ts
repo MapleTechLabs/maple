@@ -75,6 +75,43 @@ const recordingTracer = () => {
 	return { spans, tracer }
 }
 
+/** One OpenRouter stream frame. */
+const chunk = (delta: Record<string, unknown>, finishReason: string | null) => ({
+	id: "gen-3",
+	object: "chat.completion.chunk",
+	created: 1730000000,
+	model: "z-ai/glm-5.3-flash",
+	choices: [{ index: 0, delta, finish_reason: finishReason }],
+})
+
+/** The model-call span's attributes as it ended, for one call answered by `frames`. */
+const endedModelCall = (
+	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
+	frames: ReadonlyArray<unknown>,
+	env: Parameters<typeof resolveTriageModel>[0] = ENV,
+	status = 200,
+) =>
+	Effect.gen(function* () {
+		const recorder = recordingTracer()
+		const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`
+
+		yield* LanguageModel.streamText({ prompt }).pipe(
+			Stream.runDrain,
+			Effect.ignore,
+			Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+			Effect.provideService(FetchHttpClient.Fetch, () =>
+				Promise.resolve(new Response(body, { status, headers: { "content-type": "text/event-stream" } })),
+			),
+			Effect.withTracer(recorder.tracer),
+		)
+
+		const span = recorder.spans.find(
+			(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+		)
+		assert.isDefined(span, "no model-call span was opened")
+		return span?.endedWith ?? new Map<string, unknown>()
+	})
+
 describe("the model-call span", () => {
 	it.live("carries the served response id and model, from the provider itself", () =>
 		Effect.gen(function* () {
@@ -137,6 +174,181 @@ describe("the model-call span", () => {
 		}),
 	)
 
+	/**
+	 * The regression from the move onto Effect AI: its providers annotate the model and two token
+	 * totals, and every investigation span lost its messages, cache and reasoning tokens and cost.
+	 */
+	it.live("carries the conversation, the usage buckets, the cost and the timings", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const env = { ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }
+			const sse = [
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
+				"",
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
+				"",
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
+				"",
+				"data: [DONE]",
+				"",
+			].join("\n")
+
+			yield* LanguageModel.streamText({
+				prompt: [
+					{ role: "system", content: "Be brief." },
+					{ role: "user", content: [{ type: "text", text: "hi" }] },
+				],
+			}).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+				Effect.provideService(FetchHttpClient.Fetch, () =>
+					Promise.resolve(
+						new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
+					),
+				),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			const attributes = recorder.spans.find(
+				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			)?.endedWith
+			assert.isDefined(attributes, "no model-call span was opened")
+			const json = (key: string) => JSON.parse(String(attributes?.get(key)))
+
+			assert.strictEqual(attributes?.get("gen_ai.provider.name"), "openrouter")
+			assert.strictEqual(attributes?.get("gen_ai.request.stream"), true)
+			assert.strictEqual(attributes?.get("gen_ai.request.reasoning.level"), "high")
+			assert.strictEqual(attributes?.get("gen_ai.output.type"), "text")
+			assert.deepStrictEqual(json("gen_ai.system_instructions"), [
+				{ type: "text", content: "Be brief." },
+			])
+			assert.deepStrictEqual(json("gen_ai.input.messages"), [
+				{ role: "user", parts: [{ type: "text", content: "hi" }] },
+			])
+			assert.deepStrictEqual(json("gen_ai.output.messages"), [
+				{ role: "assistant", parts: [{ type: "text", content: "Looking" }], finish_reason: "stop" },
+			])
+			assert.deepStrictEqual(attributes?.get("gen_ai.response.finish_reasons"), ["stop"])
+			assert.strictEqual(attributes?.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes?.get("gen_ai.usage.output_tokens"), 12)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cache_read.input_tokens"), 30)
+			assert.strictEqual(attributes?.get("gen_ai.usage.reasoning.output_tokens"), 5)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cost"), 0.0042)
+			const firstChunkMs = Math.round(Number(attributes?.get("gen_ai.response.time_to_first_chunk")) * 1000)
+			assert.isAtLeast(firstChunkMs, 0)
+			assert.isAtMost(firstChunkMs, Number(attributes?.get("maple_ai.model_duration_ms")))
+		}),
+	)
+
+	it.live("carries the prompt's tool calls and results, with the finish reason in semconv form", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall(
+				[
+					{ role: "user", content: [{ type: "text", text: "why is checkout slow?" }] },
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "tool-call",
+								id: "call_0",
+								name: "service_map",
+								params: {},
+								providerExecuted: false,
+							},
+						],
+					},
+					{
+						role: "tool",
+						content: [
+							{
+								type: "tool-result",
+								id: "call_0",
+								name: "service_map",
+								isFailure: false,
+								result: "checkout -> db",
+								providerExecuted: false,
+							},
+						],
+					},
+				],
+				// Text rather than a tool call: decoding a streamed tool call needs the toolkit that declared
+				// it, which a bare `streamText` does not have.
+				[
+					chunk({ role: "assistant", content: "Checking the database." }, null),
+					{
+						...chunk({}, "tool_calls"),
+						usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+					},
+				],
+			)
+
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.input.messages"))), [
+				{ role: "user", parts: [{ type: "text", content: "why is checkout slow?" }] },
+				{
+					role: "assistant",
+					parts: [{ type: "tool_call", id: "call_0", name: "service_map", arguments: {} }],
+				},
+				{
+					role: "tool",
+					parts: [{ type: "tool_call_response", id: "call_0", response: "checkout -> db" }],
+				},
+			])
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.output.messages"))), [
+				{
+					role: "assistant",
+					parts: [{ type: "text", content: "Checking the database." }],
+					finish_reason: "tool_call",
+				},
+			])
+			assert.deepStrictEqual(attributes.get("gen_ai.response.finish_reasons"), ["tool_call"])
+		}),
+	)
+
+	/** A provider failure delivered as a finish reason completes the stream, so the span exit stays green. */
+	it.live("marks a call the provider failed", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall("hi", [
+				chunk({ role: "assistant", content: "partial" }, null),
+				{ ...chunk({}, "error"), usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 } },
+			])
+
+			assert.strictEqual(attributes.get("error.type"), "provider_error")
+			assert.strictEqual(attributes.get("gen_ai.response.status"), "failed")
+		}),
+	)
+
+	it.live("asks for no reasoning level when reasoning is off", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall(
+				"hi",
+				[
+					{
+						...chunk({ role: "assistant", content: "hi" }, "stop"),
+						usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+					},
+				],
+				{ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "off" },
+			)
+
+			assert.strictEqual(attributes.get("gen_ai.provider.name"), "openrouter")
+			assert.isFalse(attributes.has("gen_ai.request.reasoning.level"))
+		}),
+	)
+
+	/** The transformer applies as the stream ends, including when it fails before a single chunk. */
+	it.live("still carries the conversation when the provider rejects the call", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall("hi", [], ENV, 400)
+
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.input.messages"))), [
+				{ role: "user", parts: [{ type: "text", content: "hi" }] },
+			])
+			assert.isFalse(attributes.has("gen_ai.response.time_to_first_chunk"))
+			assert.isFalse(attributes.has("maple_ai.model_duration_ms"))
+		}),
+	)
+
 	it.live("carries no session when the caller has none", () =>
 		Effect.gen(function* () {
 			const recorder = recordingTracer()
@@ -149,6 +361,10 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
+			assert.isTrue(
+				recorder.spans.some((span) => span.attributes.get("gen_ai.operation.name") === "chat"),
+				"no model-call span was opened",
+			)
 			assert.isFalse(recorder.spans.some((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)))
 		}),
 	)

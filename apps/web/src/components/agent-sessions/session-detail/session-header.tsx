@@ -10,6 +10,7 @@ import { CopyableValue } from "@/components/attributes"
 import { CopyIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
+import { vendorColor } from "@/lib/agent-sessions/vendor-color"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 
@@ -34,7 +35,12 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
 			<div className="flex min-w-0 items-center gap-2">
-				<VendorIcon size={18} className="shrink-0 text-muted-foreground" aria-hidden />
+				<VendorIcon
+					size={18}
+					className="shrink-0"
+					style={{ color: vendorColor(summary.vendorIds[0] ?? "") }}
+					aria-hidden
+				/>
 				<DashboardLayout.Title title={identity.heading}>{identity.heading}</DashboardLayout.Title>
 				{summary.failed && <Badge variant="error">Failed</Badge>}
 			</div>
@@ -65,11 +71,16 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 	)
 }
 
+const PLACEHOLDER_AGENT_NAME = "default"
+
 /**
  * What to call the session. A named agent is the best name there is; without
  * one the framework stands in, and without even that the page says "Agent
  * session" rather than parroting an unidentified vendor id. The framework is
  * returned separately only when it is not already the heading.
+ *
+ * `default` is what an SDK stamps when the app named no agent, so it is treated
+ * as no name: a list of sessions all headed "default" identifies none of them.
  */
 export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "vendorIds">): {
 	heading: string
@@ -77,7 +88,7 @@ export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "ve
 } {
 	const vendorId = summary.vendorIds[0]
 	const framework = vendorId === undefined ? undefined : vendorLabel(vendorId)
-	const agentName = summary.agentNames[0]
+	const agentName = summary.agentNames.find((name) => name !== PLACEHOLDER_AGENT_NAME)
 	if (agentName !== undefined) return { heading: agentName, framework }
 	if (framework !== undefined && framework !== "Unidentified") {
 		return { heading: `${framework} session`, framework: undefined }

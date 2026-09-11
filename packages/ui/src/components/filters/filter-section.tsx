@@ -107,6 +107,12 @@ interface FilterSectionBaseProps {
 	/** Option-name → icon, rendered before the label (like colorMap's swatch). */
 	getOptionIcon?: (name: string) => IconComponent | undefined
 	/**
+	 * Option-name → CSS color for its `getOptionIcon` mark, for brand marks that
+	 * carry their brand's color. The mark itself is the color, never a swatch
+	 * beside it; `undefined` leaves it in the label's color.
+	 */
+	getOptionIconColor?: (name: string) => string | undefined
+	/**
 	 * Option-name → an already-rendered icon node, in the same slot as
 	 * `getOptionIcon`. Separate from it rather than a widening of it, because
 	 * `IconComponent` is `ComponentType<SVGProps<SVGSVGElement>>` and the icons
@@ -155,6 +161,7 @@ function FilterSectionBase({
 	searchable,
 	colorMap,
 	getOptionIcon,
+	getOptionIconColor,
 	renderOptionIcon,
 	getOptionLabel,
 	excluded = EMPTY,
@@ -249,24 +256,7 @@ function FilterSectionBase({
 				<span className="flex min-w-0 items-center gap-1.5">
 					<span className="truncate">{title}</span>
 					{description !== undefined && (
-						<Tooltip>
-							{/* A span, not the default button: this sits inside the
-							    collapse trigger, which is already a button. */}
-							<TooltipTrigger
-								render={
-									<span
-										className="inline-flex shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
-										aria-label={`About ${title}`}
-									/>
-								}
-								onClick={(event) => event.stopPropagation()}
-							>
-								<CircleInfoIcon className="size-3" />
-							</TooltipTrigger>
-							<TooltipPopup className="max-w-72 text-left font-normal normal-case tracking-normal">
-								{description}
-							</TooltipPopup>
-						</Tooltip>
+						<FilterDescription title={title}>{description}</FilterDescription>
 					)}
 				</span>
 				<span className="flex items-center gap-1.5">
@@ -399,6 +389,7 @@ function FilterSectionBase({
 													"size-3.5 shrink-0",
 													isExcluded && "opacity-40",
 												)}
+												style={{ color: getOptionIconColor?.(option.name) }}
 											/>
 										) : (
 											renderOptionIcon?.(option.name)
@@ -479,6 +470,38 @@ function FilterSectionBase({
 	)
 }
 
+/**
+ * The info mark beside a title, with what the control filters on behind it.
+ * A span, not the default button: it sits inside a collapse trigger or a
+ * checkbox label, and neither should act on the way to reading it.
+ */
+function FilterDescription({ title, children }: { title: string; children: React.ReactNode }) {
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<span
+						className="inline-flex shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
+						aria-label={`About ${title}`}
+						tabIndex={0}
+					/>
+				}
+				onClick={(event) => {
+					// Cancelled for the label, which would tick its checkbox; stopped
+					// for the collapse trigger, which listens for the bubble.
+					event.preventDefault()
+					event.stopPropagation()
+				}}
+			>
+				<CircleInfoIcon className="size-3" />
+			</TooltipTrigger>
+			<TooltipPopup className="max-w-72 text-left font-normal normal-case tracking-normal">
+				{children}
+			</TooltipPopup>
+		</Tooltip>
+	)
+}
+
 interface FilterRowActionProps {
 	onClick: () => void
 	/** Full sentence for assistive tech; the visible text is only two words wide. */
@@ -530,9 +553,17 @@ interface SingleCheckboxFilterProps {
 	checked: boolean
 	onChange: (checked: boolean) => void
 	count?: number
+	/** What ticking it does, behind an info mark — as `FilterSection`'s `description`. */
+	description?: React.ReactNode
 }
 
-export function SingleCheckboxFilter({ title, checked, onChange, count }: SingleCheckboxFilterProps) {
+export function SingleCheckboxFilter({
+	title,
+	checked,
+	onChange,
+	count,
+	description,
+}: SingleCheckboxFilterProps) {
 	return (
 		<div className="flex items-center gap-2 py-1.5">
 			<Checkbox
@@ -542,10 +573,13 @@ export function SingleCheckboxFilter({ title, checked, onChange, count }: Single
 			/>
 			<Label
 				htmlFor={`filter-${title}`}
-				className="flex-1 min-w-0 truncate cursor-pointer text-xs text-foreground font-normal"
+				className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal"
 				title={title}
 			>
-				{title}
+				<span className="truncate">{title}</span>
+				{description !== undefined && (
+					<FilterDescription title={title}>{description}</FilterDescription>
+				)}
 			</Label>
 			{count !== undefined && (
 				<span className="text-xs text-muted-foreground tabular-nums">{count.toLocaleString()}</span>

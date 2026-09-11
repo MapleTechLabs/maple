@@ -114,7 +114,13 @@ import {
 	getSessionTraceSummaries,
 	listReplays,
 } from "@/api/warehouse/replays"
-import { getAiSessionSpans, getAiSessionSummary, getAiSessionsFacets, listAiSessions } from "@/api/warehouse/ai-sessions"
+import {
+	getAiSessionSpans,
+	getAiSessionSummary,
+	getAiSessionsDistributions,
+	getAiSessionsFacets,
+	listAiSessions,
+} from "@/api/warehouse/ai-sessions"
 import {
 	getAiToolBreakdowns,
 	getAiToolErrorDetail,
@@ -346,6 +352,10 @@ export const listAiSessionsResultAtom = makeQueryAtomFamily(listAiSessions, {
 })
 
 export const aiSessionsFacetsResultAtom = makeQueryAtomFamily(getAiSessionsFacets, {
+	staleTime: 30_000,
+})
+
+export const aiSessionsDistributionsResultAtom = makeQueryAtomFamily(getAiSessionsDistributions, {
 	staleTime: 30_000,
 })
 

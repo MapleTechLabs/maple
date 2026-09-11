@@ -195,8 +195,8 @@ function Content({ children }: { children: React.ReactNode }) {
 }
 
 /** Pinned above the scroll area — the page header, and anything else that shouldn't scroll away. */
-function Sticky({ children }: { children: React.ReactNode }) {
-	return <PageLayout.StickyArea>{children}</PageLayout.StickyArea>
+function Sticky({ children, className }: { children: React.ReactNode; className?: string }) {
+	return <PageLayout.StickyArea className={className}>{children}</PageLayout.StickyArea>
 }
 
 /**

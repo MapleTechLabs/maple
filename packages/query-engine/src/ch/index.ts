@@ -470,6 +470,13 @@ export {
 	type TelemetryPulseOutput,
 } from "./queries/liveness"
 
+// Queries — Signal presence (what the org has ever sent, per signal; drives every empty state)
+export {
+	signalPresenceQuery,
+	type SignalPresenceOutput,
+	type TelemetrySignal,
+} from "./queries/signal-presence"
+
 // Queries — Top Operations (per-service operation ranking by metric)
 export {
 	topOperationsQuery,

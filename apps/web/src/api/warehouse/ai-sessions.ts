@@ -9,6 +9,7 @@ import {
 	GetAiSessionSpansRequest,
 	GetAiSessionSummaryRequest,
 	ListAiSessionDetailsRequest,
+	ListAiSessionsDistributionsRequest,
 	ListAiSessionsFacetsRequest,
 	ListAiSessionsRequest,
 } from "@maple/domain/http"
@@ -151,6 +152,36 @@ export const getAiSessionsFacets = Effect.fn("AiSessions.aiSessionsFacets")(func
 		models: result.models,
 		agents: result.agents,
 		tools: result.tools,
+	}
+})
+
+// List distributions (filter sidebar histograms and percentile presets)
+
+/** Same window as the facets, and as unfiltered — see `ListAiSessionsDistributionsRequest`. */
+export const getAiSessionsDistributions = Effect.fn("AiSessions.aiSessionsDistributions")(function* ({
+	data,
+}: {
+	data: AiSessionsFacetsInput
+}) {
+	const input = yield* decodeInput(AiSessionsFacetsInput, data, "aiSessionsDistributions")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const result = yield* runWarehouseQuery("aiSessionsDistributions", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.distributions({
+				payload: new ListAiSessionsDistributionsRequest({
+					startTime: input.startTime ?? fallback.startTime,
+					endTime: input.endTime ?? fallback.endTime,
+				}),
+			})
+		}),
+	)
+	return {
+		durationMs: result.durationMs,
+		cost: result.cost,
+		totalTokens: result.totalTokens,
+		llmCalls: result.llmCalls,
+		toolCalls: result.toolCalls,
 	}
 })
 
