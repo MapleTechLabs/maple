@@ -186,7 +186,7 @@ const FAILED_RESPONSE_STATUSES = ["failed", "error"]
  * String. That wrapper is also why the sentinel is 2106 and not 3000: `DateTime`
  * tops out at 2106-02-07 and anything past it fails to parse.
  */
-const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
+export const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
 
 /**
  * How far past the page's own agent-span bounds the `trace_detail_spans`
@@ -225,7 +225,7 @@ const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
 /** Lexicographic ordering key — ClickHouse compares tuples element by element,
  *  which is how one `argMin` expresses "lowest rank, then earliest". Not in the
  *  builder's function set, and never selected: it only ever orders an argMin. */
-const orderTuple = (...parts: ReadonlyArray<unknown>): CH.Expr<unknown> =>
+export const orderTuple = (...parts: ReadonlyArray<unknown>): CH.Expr<unknown> =>
 	compileFnCall<unknown>("tuple", ...parts)
 
 /**

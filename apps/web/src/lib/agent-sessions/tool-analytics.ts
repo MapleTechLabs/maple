@@ -71,6 +71,7 @@ export interface ToolErrorRow {
 /** One session that hit an error type — the modal's left pane. */
 export interface ToolErrorSessionRow {
 	readonly sessionId: string
+	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
 	readonly hits: number
@@ -85,6 +86,7 @@ export interface ToolErrorOccurrenceRow {
 	readonly traceId: string
 	readonly spanId: string
 	readonly sessionId: string
+	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
 	readonly errorType: string

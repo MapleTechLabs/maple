@@ -65,11 +65,16 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 	)
 }
 
+const PLACEHOLDER_AGENT_NAME = "default"
+
 /**
  * What to call the session. A named agent is the best name there is; without
  * one the framework stands in, and without even that the page says "Agent
  * session" rather than parroting an unidentified vendor id. The framework is
  * returned separately only when it is not already the heading.
+ *
+ * `default` is what an SDK stamps when the app named no agent, so it is treated
+ * as no name: a list of sessions all headed "default" identifies none of them.
  */
 export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "vendorIds">): {
 	heading: string
@@ -77,7 +82,7 @@ export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "ve
 } {
 	const vendorId = summary.vendorIds[0]
 	const framework = vendorId === undefined ? undefined : vendorLabel(vendorId)
-	const agentName = summary.agentNames[0]
+	const agentName = summary.agentNames.find((name) => name !== PLACEHOLDER_AGENT_NAME)
 	if (agentName !== undefined) return { heading: agentName, framework }
 	if (framework !== undefined && framework !== "Unidentified") {
 		return { heading: `${framework} session`, framework: undefined }

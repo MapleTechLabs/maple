@@ -399,6 +399,7 @@ describe("the tool detail reads", () => {
 			decodeRows(sessions, [
 				{
 					sessionId: "s1",
+					vendorId: "eve",
 					agentName: "agent",
 					model: "gpt-5",
 					// Quoted on a gateway that refuses the 64-bit setting, which is
@@ -419,6 +420,7 @@ describe("the tool detail reads", () => {
 					traceId: "t1",
 					spanId: "s1",
 					sessionId: "sess",
+					vendorId: "eve",
 					agentName: "agent",
 					model: "gpt-5",
 					errorType: "TimeoutError",

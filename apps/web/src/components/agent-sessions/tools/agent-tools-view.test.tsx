@@ -4,7 +4,7 @@
 // pages' own wiring — which control writes which search param, which row links
 // where, and what the tables say about the rows they are given.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -339,13 +339,50 @@ describe("ToolErrorModal", () => {
 
 	it("narrows the occurrences to a session, and back out again", () => {
 		const { onSelectSession } = renderModal()
-		fireEvent.click(screen.getAllByText(detail.sessions[0]!.sessionId)[0]!)
+		fireEvent.click(
+			screen.getByRole("button", { name: `Show occurrences in ${detail.sessions[0]!.sessionId}` }),
+		)
 		expect(onSelectSession).toHaveBeenCalledWith(detail.sessions[0]!.sessionId)
 
 		cleanup()
 		const second = renderModal(detail.sessions[0]!.sessionId).onSelectSession
 		fireEvent.click(screen.getByText("All sessions"))
 		expect(second).toHaveBeenCalledWith(undefined)
+	})
+
+	it("names each session as the Sessions list does, and links to it on the trace view", () => {
+		renderModal()
+		const named = detail.sessions.find((candidate) => candidate.agentName === "planner")!
+		const link = screen
+			.getAllByText("planner")
+			.map((element) => element.closest("a"))
+			.find((anchor) => JSON.parse(anchor?.getAttribute("data-search") ?? "{}").span === undefined)
+		expect(link?.getAttribute("data-to")).toBe("/agent-sessions/$sessionId")
+		expect(JSON.parse(link?.getAttribute("data-params") ?? "{}")).toEqual({ sessionId: named.sessionId })
+		// No window: the failures' extent is not the session's, and the detail page
+		// would read it as the session's.
+		expect(JSON.parse(link?.getAttribute("data-search") ?? "{}")).toEqual({
+			tool: "run_tests",
+			view: "trace",
+		})
+		// A session with no agent name is headed by its framework, not left blank
+		// and never titled by its raw id.
+		const unnamed = detail.sessions.find((candidate) => candidate.agentName === "")!
+		expect(unnamed.vendorId).toBe("eve")
+		const unnamedRow = screen.getByRole("button", {
+			name: `Show occurrences in ${unnamed.sessionId}`,
+		}).parentElement!
+		expect(within(unnamedRow).getByText("eve session")).toBeTruthy()
+	})
+
+	it("links an occurrence to its span inside the session", () => {
+		renderModal()
+		const first = detail.occurrences[0]!
+		// The mocked `Link` renders no `href`, so its anchors carry no link role.
+		const spans = Array.from(document.querySelectorAll("a"))
+			.map((anchor) => JSON.parse(anchor.getAttribute("data-search") ?? "{}"))
+			.filter((search) => search.span !== undefined)
+		expect(spans[0]).toMatchObject({ span: first.spanId, tool: "run_tests", view: "trace" })
 	})
 
 	it("totals a session's occurrences by that session's hits, not the error's", () => {

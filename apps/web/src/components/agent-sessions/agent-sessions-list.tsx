@@ -36,8 +36,8 @@ import { sessionLinkWindow, sessionRowIdParts } from "@/lib/agent-sessions/sessi
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import { ModelLabel, modelTitle } from "./model-label"
-import { sessionIdentity } from "./session-detail/session-header"
 import { CATEGORY_TEXT } from "./session-detail/span-visuals"
+import { sessionHeading } from "./session-name"
 
 /** The wire row from `listAiSessions` — one AI agent session, newest first. */
 export interface AgentSessionRow {
@@ -597,13 +597,8 @@ function StartedAt({
 function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone: string }) {
 	const VendorIcon = vendorIcon(session.vendorId)
 	const vendor = vendorLabel(session.vendorId)
-	// `sessionIdentity` reads the first name, so it is handed the one name the
-	// warehouse resolved in span order rather than the unordered `agentNames`
-	// set — see `firstAgentName`.
-	const { heading } = sessionIdentity({
-		agentNames: session.firstAgentName === "" ? [] : [session.firstAgentName],
-		vendorIds: [session.vendorId],
-	})
+	// `firstAgentName`, not the unordered `agentNames` set — see `sessionHeading`.
+	const heading = sessionHeading(session.firstAgentName, session.vendorId)
 	const id = sessionRowIdParts(session.sessionId)
 	return (
 		<div className="min-w-0">

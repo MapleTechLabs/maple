@@ -1433,5 +1433,10 @@ describe("SessionHeader", () => {
 			heading: "planner",
 			framework: undefined,
 		})
+		// `default` is the SDK's placeholder, not a name.
+		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toEqual({
+			heading: "Claude Agent SDK session",
+			framework: undefined,
+		})
 	})
 })
