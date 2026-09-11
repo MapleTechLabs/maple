@@ -41,6 +41,7 @@ export interface MapColumnLike {
 export interface GenAiSpanColumnsLike {
 	readonly SpanName: Expr<string>
 	readonly StatusCode: Expr<string>
+	readonly StatusMessage: Expr<string>
 	readonly SpanAttributes: MapColumnLike
 }
 
@@ -53,6 +54,7 @@ const mapColumn = (name: string): MapColumnLike => {
 const rawSpan: GenAiSpanColumnsLike = {
 	SpanName: CH.dynamicColumn<string>("SpanName"),
 	StatusCode: CH.dynamicColumn<string>("StatusCode"),
+	StatusMessage: CH.dynamicColumn<string>("StatusMessage"),
 	SpanAttributes: mapColumn("SpanAttributes"),
 }
 
@@ -72,6 +74,11 @@ export const firstNonEmptyAttr = (attrs: MapColumnLike, keys: ReadonlyArray<stri
 	const candidates = keys.slice(0, -1).map((key) => CH.nullIf(attrs.get(key), ""))
 	return candidates.length === 0 ? attrs.get(last) : CH.coalesce(...candidates, attrs.get(last))
 }
+
+/** Characters, not bytes: `left` cuts mid-codepoint on any text holding one,
+ *  and these two columns hold whatever a framework wrote. */
+const leftUTF8 = (value: Expr<string>, chars: number): Expr<string> =>
+	CH.compileFnCall<string>("leftUTF8", value, CH.lit(chars))
 
 // Identity — model, agent, tool
 
@@ -98,6 +105,18 @@ export const GENAI_AGENT_NAME_KEYS = ["gen_ai.agent.name", "ai.telemetry.functio
 /** The tool an `execute_tool` span ran. */
 export const GENAI_TOOL_NAME_KEYS = ["gen_ai.tool.name", "ai.toolCall.name", "tool.name"] as const
 
+/** What the tool told the model it does — the tool detail page's header. Only
+ *  tool spans carry it, and a tool that stamps one stamps it on every call. */
+export const GENAI_TOOL_DESCRIPTION_KEYS = ["gen_ai.tool.description", "tool.description"] as const
+
+/**
+ * How much of a description the index carries. A description is a sentence
+ * meant for a model, but nothing stops a framework from inlining a schema or a
+ * whole prompt, and the index is a narrow table read a million rows at a time.
+ * The header shows it as prose, so a cut past this is a cut nobody sees.
+ */
+export const GENAI_TOOL_DESCRIPTION_MAX = 2_000
+
 export function genAiModelExpr(spanAttributes: MapColumnLike): Expr<string> {
 	return firstNonEmptyAttr(spanAttributes, GENAI_MODEL_KEYS)
 }
@@ -108,6 +127,10 @@ export function genAiAgentNameExpr(spanAttributes: MapColumnLike): Expr<string> 
 
 export function genAiToolNameExpr(spanAttributes: MapColumnLike): Expr<string> {
 	return firstNonEmptyAttr(spanAttributes, GENAI_TOOL_NAME_KEYS)
+}
+
+export function genAiToolDescriptionExpr(spanAttributes: MapColumnLike): Expr<string> {
+	return leftUTF8(firstNonEmptyAttr(spanAttributes, GENAI_TOOL_DESCRIPTION_KEYS), GENAI_TOOL_DESCRIPTION_MAX)
 }
 
 /** The provider's id for the response — the one fact two observations of the
@@ -220,6 +243,28 @@ export function genAiIsErrorCond($: Pick<GenAiSpanColumnsLike, "StatusCode" | "S
 	return $.StatusCode.eq("Error")
 		.or(attrs.get("error.type").neq(""))
 		.or(CH.inList(attrs.get("gen_ai.response.status"), GENAI_FAILED_RESPONSE_STATUSES))
+}
+
+/** WHY the span failed, where it named a reason — plain OTel semconv, which is
+ *  why one key answers for every dialect. `''` is a real answer: a call that
+ *  failed naming no type, which the tools page labels `unknown`. */
+export const GENAI_ERROR_TYPE_KEYS = ["error.type"] as const
+
+export function genAiErrorTypeExpr(spanAttributes: MapColumnLike): Expr<string> {
+	return firstNonEmptyAttr(spanAttributes, GENAI_ERROR_TYPE_KEYS)
+}
+
+/**
+ * How much of a span's status message the index carries. A status message and
+ * nothing else is what most failures carry, so it is the identity of a failure
+ * group as often as the type is — but a framework that puts a stack trace there
+ * would otherwise make the index as wide as the raw span, and a `GROUP BY` on
+ * one is not free either. The tools page clamps the message to a line anyway.
+ */
+export const GENAI_STATUS_MESSAGE_MAX = 400
+
+export function genAiStatusMessageExpr($: Pick<GenAiSpanColumnsLike, "StatusMessage">): Expr<string> {
+	return leftUTF8($.StatusMessage, GENAI_STATUS_MESSAGE_MAX)
 }
 
 // Usage — the five token buckets `spanTokenBuckets` sums, each under its
@@ -403,6 +448,9 @@ export const GENAI_IS_TOOL_CALL_SQL = sql(flag(genAiIsToolCallCond(rawSpan)))
 export const GENAI_IS_ERROR_SQL = sql(flag(genAiIsErrorCond(rawSpan)))
 export const GENAI_TOKENS_SQL = sql(genAiTokensExpr(rawSpan.SpanAttributes))
 export const GENAI_COST_SQL = sql(genAiCostExpr(rawSpan.SpanAttributes))
+export const GENAI_ERROR_TYPE_SQL = sql(genAiErrorTypeExpr(rawSpan.SpanAttributes))
+export const GENAI_STATUS_MESSAGE_SQL = sql(genAiStatusMessageExpr(rawSpan))
+export const GENAI_TOOL_DESCRIPTION_SQL = sql(genAiToolDescriptionExpr(rawSpan.SpanAttributes))
 
 const usageBuckets = genAiUsageBucketsExpr(rawSpan.SpanAttributes)
 export const GENAI_INPUT_TOKENS_SQL = sql(usageBuckets.input)

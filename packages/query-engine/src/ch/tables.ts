@@ -145,6 +145,12 @@ export const AiTraceIndex = table("ai_trace_index", {
 	CacheWriteTokens: T.float64,
 	OutputTokens: T.float64,
 	ReasoningTokens: T.float64,
+	// Migration 0032 — why a failing span failed and what a tool call says it
+	// does, so the tool detail page's failures and header read this index too.
+	// Both strings are truncated by the view.
+	ErrorType: T.string,
+	StatusMessage: T.string,
+	ToolDescription: T.string,
 })
 
 export const TraceListMv = table("trace_list_mv", {

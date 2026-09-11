@@ -258,4 +258,21 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "78e6c9b0a73120a1d1cca1ccd35932c5af75b0748b64f0c60c6b6199165e4912",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v22 adds the failure type, the status message and the tool description
+		// to `ai_trace_index` and recreates `ai_trace_index_mv` to fill them
+		// (ClickHouse migration 0032), so the Agent Sessions tool detail page
+		// renders from the index alone. No part is rewritten and no row moves;
+		// rows materialized under v21 keep '' in the new columns until raw
+		// retention ages them out.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 22,
+		fingerprint: "c7b52331edfc1024",
+		digest: "c7b52331edfc1024f3c17b59acdf478ad0d40a756fc17c1e7c11b4cde87b36c1",
+		manifestDigest: "c01a33d716dcba009ef84c7428c7b5e8041e37604ee72fb6a838ae0b0b7304b5",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)

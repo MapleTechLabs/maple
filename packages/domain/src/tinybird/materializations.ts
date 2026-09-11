@@ -54,6 +54,7 @@ import {
 	GENAI_CACHE_READ_TOKENS_SQL,
 	GENAI_CACHE_WRITE_TOKENS_SQL,
 	GENAI_COST_SQL,
+	GENAI_ERROR_TYPE_SQL,
 	GENAI_INPUT_TOKENS_SQL,
 	GENAI_IS_ERROR_SQL,
 	GENAI_IS_LLM_CALL_SQL,
@@ -62,7 +63,9 @@ import {
 	GENAI_OUTPUT_TOKENS_SQL,
 	GENAI_REASONING_TOKENS_SQL,
 	GENAI_RESPONSE_ID_SQL,
+	GENAI_STATUS_MESSAGE_SQL,
 	GENAI_TOKENS_SQL,
+	GENAI_TOOL_DESCRIPTION_SQL,
 	GENAI_TOOL_NAME_SQL,
 } from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
@@ -1025,7 +1028,11 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * convention; rows materialized between the two keep the over-count.
  * Migration 0031 added the vendor version and the five token buckets, which
  * is what lets the list render a row without touching `trace_detail_spans`;
- * rows materialized before it carry `''`/0 for those too.
+ * rows materialized before it carry `''`/0 for those too. Migration 0032 added
+ * the failure's type, the status message and the tool's description, which does
+ * the same for the tool detail page; rows before it read `''` there, so a
+ * failure older than the migration groups under `unknown` and a tool whose only
+ * calls predate it shows no description.
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
@@ -1066,7 +1073,10 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_CACHE_READ_TOKENS_SQL} AS CacheReadTokens,
           ${GENAI_CACHE_WRITE_TOKENS_SQL} AS CacheWriteTokens,
           ${GENAI_OUTPUT_TOKENS_SQL} AS OutputTokens,
-          ${GENAI_REASONING_TOKENS_SQL} AS ReasoningTokens
+          ${GENAI_REASONING_TOKENS_SQL} AS ReasoningTokens,
+          ${GENAI_ERROR_TYPE_SQL} AS ErrorType,
+          ${GENAI_STATUS_MESSAGE_SQL} AS StatusMessage,
+          ${GENAI_TOOL_DESCRIPTION_SQL} AS ToolDescription
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
       `,

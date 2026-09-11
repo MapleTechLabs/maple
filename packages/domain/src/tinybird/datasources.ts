@@ -1157,6 +1157,19 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		CacheWriteTokens: t.float64(),
 		OutputTokens: t.float64(),
 		ReasoningTokens: t.float64(),
+		// Migration 0032 — why a failing span failed and what a tool call says it
+		// does, so the tool detail page is this index too. `IsError` said THAT a
+		// call failed and nothing more, so its Errors table, its failure modal and
+		// its header each seeked `trace_detail_spans` inside the window's whole
+		// spread of partitions — seconds to tens of seconds, and the header's
+		// description was the page's render gate. All three are facts of the tool
+		// span itself. `StatusMessage` and `ToolDescription` are truncated by the
+		// view (`GENAI_STATUS_MESSAGE_MAX`, `GENAI_TOOL_DESCRIPTION_MAX`); only
+		// tool spans ever carry a description, so the column is '' on the rest.
+		// '' on rows materialized before it, like 0026/0029/0031.
+		ErrorType: t.string().lowCardinality(),
+		StatusMessage: t.string(),
+		ToolDescription: t.string(),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
