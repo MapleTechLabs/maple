@@ -7,5 +7,5 @@ export function GlobalChatContent({
 	tabId: string
 	onFirstMessage?: (tabId: string, text: string) => void
 }) {
-	return <ChatConversation tabId={tabId} isActive typeAnywhere="page" onFirstMessage={onFirstMessage} />
+	return <ChatConversation tabId={tabId} isActive onFirstMessage={onFirstMessage} />
 }

@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render } from "@testing-library/react"
 import { useRef } from "react"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { useTypeAnywhereFocus } from "./use-type-anywhere-focus"
 
@@ -46,17 +46,20 @@ describe("useTypeAnywhereFocus", () => {
 		expect((getByTestId("composer") as HTMLTextAreaElement).value).toBe("")
 	})
 
-	it("still types when the open dialog is the chat panel itself", () => {
-		const { getByTestId } = render(<Probe scoped={false} />, { container: openDialog() })
-		fireEvent.keyDown(document.body, { key: "h" })
-		expect((getByTestId("composer") as HTMLTextAreaElement).value).toBe("h")
-	})
-
-	it("leaves the keyboard to an unrelated open dialog", () => {
+	it("leaves the keyboard to an open dialog", () => {
 		openDialog()
 		const { getByTestId } = render(<Probe scoped={false} />)
 		fireEvent.keyDown(document.body, { key: "h" })
 		expect((getByTestId("composer") as HTMLTextAreaElement).value).toBe("")
+	})
+
+	it("stops the keystroke before the page's single-key shortcuts see it", () => {
+		const onDocumentKey = vi.fn()
+		document.addEventListener("keydown", onDocumentKey)
+		render(<Probe scoped={false} />)
+		fireEvent.keyDown(document.body, { key: "t" })
+		expect(onDocumentKey).not.toHaveBeenCalled()
+		document.removeEventListener("keydown", onDocumentKey)
 	})
 
 	it("leaves modifier combos and multi-char keys alone", () => {
