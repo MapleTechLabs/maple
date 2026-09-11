@@ -3,6 +3,8 @@ import { useMemo, useState } from "react"
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolDetailView } from "@/components/agent-sessions/tools/tool-detail-view"
 import { ToolErrorModal } from "@/components/agent-sessions/tools/tool-error-modal"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import {
@@ -11,7 +13,6 @@ import {
 	buildToolDetailFixture,
 	buildToolErrorDetailFixture,
 	toolFixtureFacets,
-	toolFixtureWindow,
 } from "./agent-tools-fixture"
 
 /**
@@ -50,12 +51,21 @@ export function AgentToolsLab() {
 	const [nowMs] = useState(() => Date.now())
 	const cells = useMemo(() => buildToolCells(nowMs), [nowMs])
 	const facets = useMemo(() => toolFixtureFacets(cells), [cells])
-	const window = useMemo(() => toolFixtureWindow(nowMs), [nowMs])
 
 	// Stands in for the URL. Same shape, same defaults-stay-absent rule.
 	const [search, setSearch] = useState<ToolAnalyticsSearch>({})
 	const [width, setWidth] = useState<number | null>(null)
 	const [view, setView] = useState<LabView>("overview")
+	// The fixture is a fixed week: the picker is here for its place at the end of
+	// the toolbar, not to re-window the data.
+	const [preset, setPreset] = useState("7d")
+
+	// The tab counts over the unfiltered week, as the route reads them — the
+	// toolbar's filters narrow the table, never the tabs.
+	const tabCounts = useMemo(() => {
+		const all = buildToolAnalyticsFixture({}, nowMs, cells)
+		return { sessions: all.allSessions, tools: all.tools.length }
+	}, [nowMs, cells])
 
 	const overview = useMemo(
 		() => buildToolAnalyticsFixture(search, nowMs, cells),
@@ -125,11 +135,19 @@ export function AgentToolsLab() {
 						search={search}
 						onSearchChange={onSearchChange}
 						data={overview}
-						window={window}
 						serviceOptions={facets.services}
 						modelOptions={facets.models}
 						envOptions={facets.environments}
 						windowLabel="7d"
+						tabCounts={tabCounts}
+						actions={
+							<PageRefreshProvider>
+								<TimeRangeHeaderControls
+									presetValue={preset}
+									onTimeChange={(range) => setPreset(range.presetValue ?? preset)}
+								/>
+							</PageRefreshProvider>
+						}
 					/>
 				) : (
 					<ToolDetailView

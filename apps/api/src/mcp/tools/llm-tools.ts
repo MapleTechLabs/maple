@@ -18,6 +18,7 @@ import type { McpToolExecutorApi } from "@/mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
 import { truncateToolOutput } from "@/mcp/tools/tool-output"
+import { withToolCallContent } from "@/platform/genai-spans"
 import type { TenantContext } from "@/services/auth/tenant-context"
 
 /**
@@ -60,6 +61,10 @@ export const summarizeToolFailure = (cause: Cause.Cause<unknown>): string => {
 export const APPROVAL_NOTE =
 	"\n\nThis is an approval-gated action. Calling it proposes the change for the user to approve; " +
 	"it does NOT take effect until they do. Call it once with the intended arguments and stop."
+
+/** The description the model sees, which is also the one its tool span records. */
+const describe = (definition: { readonly description: string }, gated: boolean): string =>
+	gated ? `${definition.description}${APPROVAL_NOTE}` : definition.description
 
 export interface BuildMapleToolsOptions {
 	/** Which registry tools to expose. Defaults to all of them. */
@@ -137,7 +142,7 @@ export const buildMapleToolkit = (
 	const tools = definitions.map((definition) => {
 		const gated = options.gate?.(definition.name) ?? false
 		return Tool.dynamic(definition.name, {
-			description: gated ? `${definition.description}${APPROVAL_NOTE}` : definition.description,
+			description: describe(definition, gated),
 			parameters: toInputSchema(definition.schema),
 			success: Schema.String,
 			failure: MapleToolFailure,
@@ -161,18 +166,23 @@ export const buildMapleToolkit = (
 					// hand the model the message and let it route around.
 					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 				)
+			const handle = (params: unknown) => {
+				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
+				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
+					return fail(
+						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
+							"exact arguments in this turn. Read the result you already have, or call it differently.",
+					)
+				}
+				return dispatch(params)
+			}
 			return [
 				definition.name,
-				(params: unknown) => {
-					if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
-					if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
-						return fail(
-							`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
-								"exact arguments in this turn. Read the result you already have, or call it differently.",
-						)
-					}
-					return dispatch(params)
-				},
+				(params: unknown) =>
+					withToolCallContent(
+						Effect.suspend(() => handle(params)),
+						{ description: describe(definition, gated), params },
+					),
 			]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.

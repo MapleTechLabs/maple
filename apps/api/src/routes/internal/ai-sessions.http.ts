@@ -12,6 +12,7 @@ import {
 	GetAiSessionSpansResponse,
 	GetAiSessionSummaryResponse,
 	ListAiSessionDetailsResponse,
+	ListAiSessionsDistributionsResponse,
 	ListAiSessionsFacetsResponse,
 	ListAiSessionsResponse,
 	MapleInternalApi,
@@ -284,6 +285,42 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						})
 					}),
 				)
+				.handle("distributions", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						// Nets every session in the window — the cost of a cost-sorted
+						// page — which is why it is its own request rather than a branch
+						// of the facets, whose index scan the Tools pages also wait on.
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(Integrations.aiSessionDistributionsQuery(), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+							}),
+							{ profile: "list", context: "aiSessionsDistributions" },
+						)
+						const distribution = (measure: Integrations.AiSessionDistributionMeasure) => {
+							const row = rows.find((candidate) => candidate.measure === measure)
+							if (row === undefined) return { buckets: [], p50: 0, p95: 0 }
+							return {
+								buckets: Object.entries(row.buckets)
+									.map(([floor, count]) => ({ floor: Number(floor), count }))
+									.sort((a, b) => a.floor - b.floor),
+								p50: row.p50,
+								p95: row.p95,
+							}
+						}
+						return new ListAiSessionsDistributionsResponse({
+							durationMs: distribution("durationMs"),
+							cost: distribution("cost"),
+							totalTokens: distribution("totalTokens"),
+							llmCalls: distribution("llmCalls"),
+							toolCalls: distribution("toolCalls"),
+						})
+					}),
+				)
 				.handle("spans", ({ payload }) =>
 					Effect.gen(function* () {
 						// Annotated before the read: a 413 never reaches the code below.
@@ -440,16 +477,40 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						// length: `previous` ends where `current` begins, so the two
 						// never overlap and the delta is over equal spans.
 						const previous = previousWindow(payload.startTime, payload.endTime)
-						const rows = yield* warehouse.compiledQuery(
-							tenant,
-							CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
-								orgId: tenant.orgId,
-								startTime: payload.startTime,
-								endTime: payload.endTime,
-								...previous,
-							}),
-							{ context: "aiToolsTotals" },
+						const [rows, descriptionRows] = yield* Effect.all(
+							[
+								warehouse.compiledQuery(
+									tenant,
+									CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
+										orgId: tenant.orgId,
+										startTime: payload.startTime,
+										endTime: payload.endTime,
+										...previous,
+									}),
+									{ context: "aiToolsTotals" },
+								),
+								// The detail page's header names the tool, so only a selected
+								// tool has a description to look up.
+								payload.tool === undefined
+									? Effect.succeed([])
+									: warehouse.compiledQuery(
+											tenant,
+											CH.compile(
+												Integrations.aiToolDescriptionQuery(),
+												{
+													orgId: tenant.orgId,
+													startTime: payload.startTime,
+													endTime: payload.endTime,
+													toolName: payload.tool,
+												},
+												{ rowSchema: Integrations.aiToolDescriptionRowSchema },
+											),
+											{ profile: "list", context: "aiToolDescription" },
+										),
+							],
+							{ concurrency: 2 },
 						)
+						const description = descriptionRows[0]?.description ?? ""
 						// An aggregate over no rows still yields one row per branch, so a
 						// missing period is a shape failure rather than an empty window.
 						// The query already reports `''` for a period that matched
@@ -462,6 +523,7 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							allSessions: rows.find((row) => row.period === "window")?.sessions ?? 0,
 							firstSeen: current?.firstSeen ?? "",
 							lastSeen: current?.lastSeen ?? "",
+							...(description !== "" && { description }),
 						})
 					}),
 				)

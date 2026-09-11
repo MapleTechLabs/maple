@@ -137,12 +137,12 @@ export function ToolDetailSessions({
 
 								<span className="hidden w-[140px] shrink-0 @min-[900px]/panel:flex">
 									{hasErrors ? (
-										<span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--severity-error)]/30 bg-[var(--severity-error)]/10 px-2 py-0.5">
+										<span className="inline-flex items-center gap-1 rounded-full border border-[var(--severity-error)]/30 bg-[var(--severity-error)]/10 px-1.5 py-0.5">
 											<span
 												aria-hidden
 												className="size-1 shrink-0 rounded-full bg-[var(--severity-error)]"
 											/>
-											<span className="font-mono text-2xs font-medium leading-3 text-[var(--severity-error)]">
+											<span className="font-mono text-[11px] font-medium leading-3 text-[var(--severity-error)]">
 												{plural(session.errorSpanCount, "error")}
 											</span>
 										</span>

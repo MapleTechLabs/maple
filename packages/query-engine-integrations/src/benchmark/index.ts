@@ -221,6 +221,14 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnionUnsafe(CH.aiSessionFacetsQuery(), window),
 	},
 	{
+		// The netting over every session in the window, unnested per measure:
+		// the tuple array only type-checks when every element agrees.
+		module: "ai-sessions",
+		name: "aiSessionDistributionsQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiSessionDistributionsQuery(), window),
+	},
+	{
 		// Agent Sessions › Tools. The chart's series key is derived from the
 		// selection, so the unfiltered shape (per-tool series, with the long tail
 		// folded into `other`) and the tool-selected one (per-model series) are
@@ -277,6 +285,17 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiToolsBreakdownsQuery",
 		label: "default",
 		compile: () => compileUnsafe(CH.aiToolsBreakdownsQuery(AI_TOOLS_SELECTION), window),
+	},
+	{
+		// The tool detail header's description: a span read inside the tool's
+		// most recent calls, which the baseline pins as a bounded subquery.
+		module: "ai-tools",
+		name: "aiToolDescriptionQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.aiToolDescriptionQuery(), toolWindow, {
+				rowSchema: CH.aiToolDescriptionRowSchema,
+			}),
 	},
 	{
 		// The tool detail page's failures. The only tools reads that touch

@@ -56,8 +56,6 @@ export interface AgentToolsViewProps {
 	/** Applied to the URL by the route. Keys set to `undefined` are cleared. */
 	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
 	data: AgentToolsViewData
-	/** The resolved window in epoch ms — what the table's `new` badge is measured against. */
-	window: { startMs: number; endMs: number }
 	serviceOptions: ReadonlyArray<ToolFilterOption>
 	modelOptions: ReadonlyArray<ToolFilterOption>
 	envOptions: ReadonlyArray<ToolFilterOption>
@@ -65,8 +63,10 @@ export interface AgentToolsViewProps {
 	windowLabel: string
 	/** The window, carried by the tab strip's link to the Sessions list. */
 	timeRange?: TimeRangeSearch
-	/** The time-range picker, or whatever the host wants beside the title. */
-	headerControls?: ReactNode
+	/** The tab strip's counts — see `useAgentSessionsTabCounts`. A count left out is not shown. */
+	tabCounts?: { sessions?: number; tools?: number }
+	/** The time-range picker and Reload, at the right end of the toolbar. */
+	actions?: ReactNode
 	/** Dim the data surfaces while a refetch is in flight. */
 	waiting?: boolean
 }
@@ -84,22 +84,25 @@ export interface AgentToolsViewProps {
  *
  * One column of full-bleed sections divided by hairlines, not a stack of cards:
  * the page is one instrument, and every section is a different reading of the
- * same scope. Reading order is the order the questions get asked: what am I
- * looking at (header, window), over which calls (toolbar), narrowed to what
+ * same scope. Reading order is the order the questions get asked: which view
+ * (tabs), over which calls and window (toolbar), narrowed to what
  * (scope), how much of it (strip), how it moved (chart), and which tool — where
  * a row stops being a comparison and becomes a page of its own.
+ *
+ * No title: the tab strip names the page. The strip and the toolbar sit at the
+ * same height as on the Sessions list, so switching tabs moves neither.
  */
 export function AgentToolsView({
 	search,
 	onSearchChange,
 	data,
-	window,
 	serviceOptions,
 	modelOptions,
 	envOptions,
 	windowLabel,
 	timeRange,
-	headerControls,
+	tabCounts,
+	actions,
 	waiting,
 }: AgentToolsViewProps) {
 	const metric = selectedMetric(search)
@@ -138,32 +141,22 @@ export function AgentToolsView({
 	// tool-name search box, which on a one-tool page filters that tool's name.
 	const detailSearch = useMemo(() => toolDetailLinkSearch(search, timeRange), [search, timeRange])
 
+	// `pt-4` is the Sessions list's sticky padding, and the strip's hairline and
+	// the toolbar's `py-3` are matched there too: one height on both tabs.
 	return (
-		<div className="flex flex-col">
-			<header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-[22px] pb-4">
-				<div className="flex min-w-0 flex-col gap-1.5">
-					<h1 className="text-[28px] font-semibold leading-8 tracking-[-0.02em] text-foreground">
-						Tools
-					</h1>
-					<p className="font-mono text-[13px] leading-[18px] text-muted-foreground">
-						How every tool your agents call is behaving — volume, latency and failures.
-					</p>
-				</div>
-				{headerControls ? (
-					<div className="flex shrink-0 items-center gap-2 pt-1">{headerControls}</div>
-				) : null}
-			</header>
-
+		<div className="flex flex-col pt-4">
 			<AgentSessionsTabs
 				active="tools"
 				search={timeRange}
-				counts={{ sessions: data.allSessions, tools: data.tools.length }}
+				counts={tabCounts}
 				className="border-b border-border px-6"
 			/>
 
 			<ToolFilterToolbar
-				query={search.q ?? ""}
-				onSearch={(value) => onSearchChange({ q: value === "" ? undefined : value })}
+				nameSearch={{
+					query: search.q ?? "",
+					onSearch: (value) => onSearchChange({ q: value === "" ? undefined : value }),
+				}}
 				service={search.service}
 				serviceOptions={serviceOptions}
 				onServiceChange={(value) => onSearchChange({ service: value })}
@@ -178,6 +171,7 @@ export function AgentToolsView({
 					onSearchChange({ failing: search.failing === true ? undefined : true })
 				}
 				waiting={waiting}
+				actions={actions}
 			/>
 
 			<ToolScopeRow
@@ -218,7 +212,6 @@ export function AgentToolsView({
 			<ToolsTable
 				rows={data.tools}
 				percentile={percentile}
-				window={window}
 				detailSearch={detailSearch}
 				selected={search.tool}
 				sparkFor={(tool) => sparkByTool.get(tool) ?? []}

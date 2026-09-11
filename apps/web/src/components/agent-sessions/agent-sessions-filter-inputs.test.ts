@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { agentSessionsFilterInputs, hasAgentSessionsFilters } from "./agent-sessions-filter-inputs"
+import {
+	agentSessionsFilterInputs,
+	agentSessionsSortPatch,
+	hasAgentSessionsFilters,
+} from "./agent-sessions-filter-inputs"
 
 const window = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
 
@@ -47,10 +51,19 @@ describe("agentSessionsFilterInputs", () => {
 		})
 	})
 
-	it("sorts by the menu row the URL resolves to, never by a pair the menu lacks", () => {
+	it("sends a sort only when it is not the default, filling in the half the URL leaves off", () => {
 		expect(agentSessionsFilterInputs({ sortBy: "startTime", sortDir: "desc" }, window)).toEqual(window)
-		expect(agentSessionsFilterInputs({ sortBy: "cost", sortDir: "asc" }, window)).toEqual(window)
-		expect(agentSessionsFilterInputs({ sortBy: "startTime", sortDir: "asc" }, window)).toEqual({
+		expect(agentSessionsFilterInputs({ sortBy: "cost", sortDir: "asc" }, window)).toEqual({
+			...window,
+			sortBy: "cost",
+			sortDir: "asc",
+		})
+		expect(agentSessionsFilterInputs({ sortBy: "cost" }, window)).toEqual({
+			...window,
+			sortBy: "cost",
+			sortDir: "desc",
+		})
+		expect(agentSessionsFilterInputs({ sortDir: "asc" }, window)).toEqual({
 			...window,
 			sortBy: "startTime",
 			sortDir: "asc",
@@ -64,5 +77,34 @@ describe("agentSessionsFilterInputs", () => {
 		expect(hasAgentSessionsFilters({ durationMin: 0 })).toBe(true)
 		const inputs = agentSessionsFilterInputs({ hasErrors: false, grouped: false, q: "  " }, window)
 		expect(inputs).toEqual(window)
+	})
+})
+
+describe("agentSessionsSortPatch", () => {
+	it("starts a newly sorted column descending", () => {
+		expect(agentSessionsSortPatch({}, "cost")).toEqual({ sortBy: "cost", sortDir: "desc" })
+		expect(agentSessionsSortPatch({ sortBy: "cost", sortDir: "asc" }, "toolCalls")).toEqual({
+			sortBy: "toolCalls",
+			sortDir: "desc",
+		})
+	})
+
+	it("flips the column the list is already sorted by", () => {
+		expect(agentSessionsSortPatch({ sortBy: "cost", sortDir: "desc" }, "cost")).toEqual({
+			sortBy: "cost",
+			sortDir: "asc",
+		})
+		expect(agentSessionsSortPatch({ sortBy: "cost", sortDir: "asc" }, "cost")).toEqual({
+			sortBy: "cost",
+			sortDir: "desc",
+		})
+	})
+
+	// The default order leaves the URL clean, so a shared link only carries a
+	// sort when one was chosen.
+	it("clears both params when a click lands back on newest first", () => {
+		expect(agentSessionsSortPatch({}, "startTime")).toEqual({ sortBy: "startTime", sortDir: "asc" })
+		const patch = agentSessionsSortPatch({ sortBy: "startTime", sortDir: "asc" }, "startTime")
+		expect(patch).toStrictEqual({ sortBy: undefined, sortDir: undefined })
 	})
 })

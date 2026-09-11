@@ -6,7 +6,8 @@ import { SessionAuthorization } from "./current-tenant"
 // (`gen_ai.request.model`, an OpenRouter id, a Bedrock id) → the model's
 // vendor and display name. Resolved by `@maple/ai-model-catalog`; the icon
 // is the dashboard's to pick from `vendorSlug` / `family`, so it never
-// crosses the wire.
+// crosses the wire. The vendor's brand color does: it is catalog data, and
+// the dashboard keeps no catalog of its own.
 
 /** Trimmed, then bounded: matched against a catalog, never stored — nothing legitimate is longer. */
 const ModelString = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(500))
@@ -27,6 +28,12 @@ export class DetectAiModelsRequest extends Schema.Class<DetectAiModelsRequest>("
 export const AiModelDetectionSource = Schema.Literals(["openrouter", "heuristic", "unknown"])
 export type AiModelDetectionSource = Schema.Schema.Type<typeof AiModelDetectionSource>
 
+/** A brand's color on the light canvas and on the dark one, each holding 3:1 there. */
+export const AiModelBrandColor = Schema.Struct({
+	light: Schema.String,
+	dark: Schema.String,
+})
+
 export class DetectAiModelResponse extends Schema.Class<DetectAiModelResponse>("DetectAiModelResponse")({
 	/** The input, trimmed. */
 	model: Schema.String,
@@ -42,6 +49,8 @@ export class DetectAiModelResponse extends Schema.Class<DetectAiModelResponse>("
 	vendorSlug: Schema.NullOr(Schema.String),
 	/** `Z.ai` */
 	vendorName: Schema.NullOr(Schema.String),
+	/** The vendor's brand color, when the catalog lists one. */
+	brandColor: Schema.NullOr(AiModelBrandColor),
 	/** A product family with a mark of its own (`claude`, `gemini`, `grok`, `kimi`). */
 	family: Schema.NullOr(Schema.String),
 	source: AiModelDetectionSource,

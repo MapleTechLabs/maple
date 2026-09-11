@@ -12,6 +12,7 @@ const resolved: DetectedModel = {
 	displayName: "Claude Sonnet 4.5",
 	vendorSlug: "anthropic",
 	vendorName: "Anthropic",
+	brandColor: { light: "#D97757", dark: "#D97757" },
 	family: "claude",
 }
 
@@ -22,22 +23,24 @@ const unresolved: DetectedModel = {
 	displayName: "my-deployment",
 	vendorSlug: null,
 	vendorName: null,
+	brandColor: null,
 	family: null,
 }
 
 describe("ModelLabel", () => {
-	it("names the model and draws a mark beside it", () => {
+	it("names the model and draws a mark beside it, in the vendor's brand color", () => {
 		const { container } = render(<ModelLabel detected={resolved} />)
 
 		expect(screen.getByText("Claude Sonnet 4.5")).toBeTruthy()
-		expect(container.querySelector("svg")).toBeTruthy()
+		expect(container.querySelector("svg")?.style.color).toBe("rgb(217, 119, 87)")
 	})
 
 	it("draws the same shape for a model nothing resolved, so the row does not reflow", () => {
 		const { container } = render(<ModelLabel detected={unresolved} />)
 
 		expect(screen.getByText("my-deployment")).toBeTruthy()
-		expect(container.querySelector("svg")).toBeTruthy()
+		// No brand, so the mark keeps the color of the text it labels.
+		expect(container.querySelector("svg")?.style.color).toBe("")
 	})
 
 	it("counts the models a lane has no room for, outside the truncating name", () => {
@@ -52,5 +55,10 @@ describe("ModelLabel", () => {
 
 		const { container } = render(<ModelLabel detected={resolved} title="gpt-4o, claude-opus-5" />)
 		expect(container.querySelector("[title]")?.getAttribute("title")).toBe("gpt-4o, claude-opus-5")
+	})
+
+	it("leaves the title off for a caller that names the model in its own tooltip", () => {
+		const { container } = render(<ModelLabel detected={resolved} title={null} />)
+		expect(container.querySelector("[title]")).toBeNull()
 	})
 })

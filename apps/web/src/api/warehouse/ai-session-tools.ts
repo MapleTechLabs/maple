@@ -192,6 +192,7 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 		// drops the clause rather than printing an Invalid Date.
 		firstSeen: toEpochMs(result.firstSeen),
 		lastSeen: toEpochMs(result.lastSeen),
+		description: result.description,
 	}
 })
 
@@ -269,6 +270,7 @@ const mapErrorSessions = (
 ): ReadonlyArray<ToolErrorSessionRow> =>
 	rows.map((row) => ({
 		sessionId: row.sessionId,
+		vendorId: row.vendorId,
 		agentName: row.agentName,
 		model: row.model,
 		hits: row.hits,
@@ -283,6 +285,7 @@ const mapOccurrences = (
 		traceId: row.traceId,
 		spanId: row.spanId,
 		sessionId: row.sessionId,
+		vendorId: row.vendorId,
 		agentName: row.agentName,
 		model: row.model,
 		errorType: row.errorType,

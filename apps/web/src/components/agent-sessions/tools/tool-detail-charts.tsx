@@ -1,18 +1,18 @@
 import { useMemo } from "react"
-import { d3Curve, defineChart, lineY } from "@tanstack/charts"
+import { barY, defineChart, group } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { curveMonotoneX } from "d3-shape"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
 	PlotFrame,
 	PlotTooltipBody,
+	UNBOUNDED_FOCUS_DISTANCE,
 	createTooltipFocusStore,
 	cursorTooltip,
 	dashedGridY,
-	focusCrosshair,
-	focusDot,
-	usePlotChromeColors,
+	linearYDomain,
+	minBarLength,
+	niceLinearDomain,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
@@ -24,7 +24,9 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { errorRate, formatDurationNs, type ToolSeriesPoint } from "@/lib/agent-sessions/tool-analytics"
 
 const PLOT_HEIGHT = 160
-const STROKE_WIDTH = 1.75
+const BAR_RADIUS = 2
+const MAX_BAR_THICKNESS = 48
+const DIMMED_FILL_OPACITY = 0.3
 
 // Hoisted, not written at the call site: every `Cell` memo below keys on these,
 // and a fresh array (or arrow) per render rebuilds the chart definition on every
@@ -44,7 +46,7 @@ const CALLS_PER_SESSION_SERIES = [
 
 const formatOneDecimal = (value: number): string => value.toFixed(1)
 
-/** One line of one cell. `key` is the column it reads off the row. */
+/** One bar series of one cell. `key` is the column it reads off the row. */
 interface ChartSeries {
 	readonly key: string
 	readonly label: string
@@ -56,6 +58,18 @@ interface ChartRow extends Record<string, string | number | Date | null> {
 	date: Date
 }
 
+/** One bar: a series at a bucket. `row` carries the whole bucket for the tooltip. */
+interface BarCell {
+	readonly row: ChartRow
+	readonly key: string
+	readonly color: string
+}
+
+function valueAt(row: ChartRow, key: string): number | null {
+	const value = row[key]
+	return typeof value === "number" ? value : null
+}
+
 /**
  * The tool detail page's four readings of one tool, as a 2×2 grid divided by
  * hairlines.
@@ -65,6 +79,9 @@ interface ChartRow extends Record<string, string | number | Date | null> {
  * is flat while its error rate climbs is a different story from one where both
  * rise together, and a selector makes that story something you have to
  * remember rather than see.
+ *
+ * Bars, not smoothed lines: a tool's calls are sparse, and a curve through a
+ * handful of buckets reads as a trend the samples do not support.
  *
  * The series read behind this page asks for `split: "none"`, so a point is
  * already the whole tool's bucket — its quantiles are measured and its session
@@ -139,7 +156,6 @@ function Cell({
 	series: ReadonlyArray<ChartSeries>
 	format: (value: number) => string
 }) {
-	const chromeColors = usePlotChromeColors()
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
 
@@ -149,32 +165,38 @@ function Cell({
 	)
 
 	const definition = useMemo(() => {
-		const at = (row: ChartRow) => row.date
-		const valueOf = (key: string) => (row: ChartRow) => {
-			const value = row[key]
-			return typeof value === "number" ? value : null
-		}
-		const curve = d3Curve(curveMonotoneX)
+		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: series.map((entry) => entry.key) }))
+		// One call against a peak of hundreds paints sub-pixel — see `minBarLength`.
+		const lift = minBarLength(yDomain)
+		// Long-form: `barY` groups side by side off `z` within ONE mark. Grouped,
+		// never stacked — the duration percentiles do not add.
+		const cells = rows.flatMap((row) =>
+			series.map((entry) => ({ row, key: entry.key, color: entry.color })),
+		)
 		return defineChart({
 			marks: [
 				dashedGridY(),
-				...series.map((line) =>
-					lineY(rows, {
-						id: line.key,
-						x: at,
-						y: valueOf(line.key),
-						stroke: line.color,
-						strokeWidth: STROKE_WIDTH,
-						curve,
-					}),
-				),
-				...series.map((line) => focusDot(rows, at, valueOf(line.key), line.color, chromeColors)),
-				focusCrosshair(chromeColors),
+				barY(cells, {
+					x: (cell: BarCell) => cell.row.date,
+					y: (cell: BarCell) => lift(valueAt(cell.row, cell.key)),
+					z: (cell: BarCell) => cell.key,
+					fill: (cell: BarCell) => cell.color,
+					layout: group(),
+					radius: BAR_RADIUS,
+					maxThickness: MAX_BAR_THICKNESS,
+					// The hovered bucket keeps its fill and every other one dims.
+					states: [
+						{
+							when: (context: { matches: (match: "x") => boolean }) => !context.matches("x"),
+							style: { fillOpacity: DIMMED_FILL_OPACITY },
+						},
+					],
+				}),
 			],
 			scales: {
-				x: axis.x,
+				x: axis.xBand,
 				y: {
-					scale: scaleLinear,
+					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,
 						ticks: {
@@ -188,22 +210,23 @@ function Cell({
 					},
 				},
 			},
-			margin: { left: 44, right: 8, top: 6 },
+			// `left` unset: the frame measures the tick labels, and a fixed width
+			// clipped duration ticks ("5.7min" drew as ".7min").
+			margin: { right: 8, top: 6 },
 			focus: "group-x",
+			// Sparse buckets sit far apart; keep the whole column live between them.
+			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, series, chromeColors, axis, format, focusStore])
+	}, [rows, series, axis, format, focusStore])
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<ChartRow>[]>(
+	const tooltipSeries = useMemo<PlotTooltipSeries<BarCell>[]>(
 		() =>
-			series.map((line) => ({
-				label: line.label,
-				color: line.color,
-				value: (row: ChartRow) => {
-					const value = row[line.key]
-					return typeof value === "number" ? value : null
-				},
+			series.map((entry) => ({
+				label: entry.label,
+				color: entry.color,
+				value: (cell: BarCell) => valueAt(cell.row, entry.key),
 				format,
 			})),
 		[series, format],
@@ -218,14 +241,14 @@ function Cell({
 				<span className="grow" />
 				{series.length > 1 ? (
 					<span className="flex items-center gap-4 font-mono text-[11px] leading-3.5">
-						{series.map((line) => (
-							<span key={line.key} className="flex items-center gap-1.5">
+						{series.map((entry) => (
+							<span key={entry.key} className="flex items-center gap-1.5">
 								<span
 									aria-hidden
-									className="h-[2.5px] w-3 shrink-0 rounded-full"
-									style={{ backgroundColor: line.color }}
+									className="size-2 shrink-0 rounded-[2px]"
+									style={{ backgroundColor: entry.color }}
 								/>
-								<span className="text-foreground/75">{line.label}</span>
+								<span className="text-foreground/75">{entry.label}</span>
 							</span>
 						))}
 					</span>
@@ -245,7 +268,7 @@ function Cell({
 								points={points}
 								series={tooltipSeries}
 								focusStore={focusStore}
-								heading={(row: ChartRow) => axis.heading(row.bucket)}
+								heading={(cell: BarCell) => axis.heading(cell.row.bucket)}
 							/>
 						)}
 					/>

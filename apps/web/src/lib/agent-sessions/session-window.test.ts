@@ -6,6 +6,7 @@ import {
 	resolveWindow,
 	sessionLinkWindow,
 	sessionRowId,
+	sessionRowIdParts,
 } from "@/lib/agent-sessions/session-window"
 
 describe("resolveWindow", () => {
@@ -79,6 +80,30 @@ describe("sessionRowId", () => {
 	// trace that isn't one.
 	it("leaves a prefixed id that is not a trace id alone", () => {
 		expect(sessionRowId("trace:not-a-trace-id")).toBe("trace:not-a-trace-id")
+	})
+})
+
+describe("sessionRowIdParts", () => {
+	it("names a framework's key as a session, whole", () => {
+		expect(sessionRowIdParts("wrun_01KZTEBCDEFGHIJKLMNOPQRSTUV")).toEqual({
+			kind: "session",
+			id: "wrun_01KZTEBCDEFGHIJKLMNOPQRSTUV",
+			short: "wrun_01KZTEBCDEFGHIJKLMNOPQRSTUV",
+		})
+	})
+
+	// The label says "Trace", so the prefix it stands in for is dropped from
+	// both halves — the tooltip's id is the trace id a reader can search for.
+	it("names a synthesized id as its trace", () => {
+		expect(sessionRowIdParts("trace:7f3a4b5c6d7e8f901234567890abcdef")).toEqual({
+			kind: "trace",
+			id: "7f3a4b5c6d7e8f901234567890abcdef",
+			short: "7f3a4b5c6d7e…",
+		})
+	})
+
+	it("does not call a prefixed id that is not a trace id a trace", () => {
+		expect(sessionRowIdParts("trace:not-a-trace-id").kind).toBe("session")
 	})
 })
 

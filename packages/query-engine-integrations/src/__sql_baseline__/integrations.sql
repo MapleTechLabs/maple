@@ -252,6 +252,73 @@ SELECT
         ORDER BY startTime DESC
         FORMAT JSON
 
+-- builder:ai-sessions:aiSessionDistributionsQuery:default
+SELECT
+          tupleElement(measured, 1) AS measure,
+          sumMap(map(toString(tupleElement(measured, 3)), toUInt64(1))) AS buckets,
+          quantile(0.5)(tupleElement(measured, 2)) AS p50,
+          quantile(0.95)(tupleElement(measured, 2)) AS p95
+        FROM (SELECT
+          arrayJoin([tuple('durationMs', durationMs, pow(2, floor(log2(greatest(durationMs / 1000, 1)) * 2) / 2) * 1000), tuple('cost', cost, pow(2, floor(log2(greatest(cost, 0.001)) * 2) / 2)), tuple('totalTokens', totalTokens, pow(2, floor(log2(totalTokens)))), tuple('llmCalls', llmCalls, pow(2, floor(log2(llmCalls)))), tuple('toolCalls', toolCalls, pow(2, floor(log2(toolCalls))))]) AS measured
+        FROM (SELECT
+          toFloat64(agentDurationMs) AS durationMs,
+          toFloat64(toolCalls) AS toolCalls,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost
+        FROM (SELECT
+          agentDurationMs AS agentDurationMs,
+          toolCalls AS toolCalls,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
+          if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
+          toString(min(traceAgentStart)) AS agentStart,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
+          groupUniqArrayArray(models) AS models,
+          groupUniqArrayArray(agentNames) AS agentNames,
+          argMin(firstAgentName, firstAgentAt) AS firstAgentName,
+          sum(toolCalls) AS toolCalls,
+          sum(errorAgentSpans) AS errorAgentSpans,
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY traceId) AS index_traces
+        GROUP BY sessionId) AS window_sessions) AS netted_sessions) AS session_measures) AS measured_sessions
+        WHERE tupleElement(measured, 2) > 0
+        GROUP BY measure
+        FORMAT JSON
+
 -- builder:ai-sessions:aiSessionFacetsQuery:default
 SELECT
           arrayJoin(names) AS name,
@@ -926,13 +993,39 @@ SELECT
           AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
         FORMAT JSON
 
+-- builder:ai-tools:aiToolDescriptionQuery:default
+SELECT
+          argMax(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), nullIf(SpanAttributes['tool.description'], ''), ''), Timestamp) AS description
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          TraceId AS traceId,
+          SpanId AS spanId,
+          Timestamp AS ts
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND IsToolCall = 1
+          AND ToolName = 'search_traces'
+        ORDER BY ts DESC
+        LIMIT 100) AS recent_tool_calls)
+          AND coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), nullIf(SpanAttributes['tool.description'], ''), '') != ''
+        FORMAT JSON
+
 -- builder:ai-tools:aiToolErrorOccurrencesQuery:default
 SELECT
           toString(trace_detail_spans.Timestamp) AS timestamp,
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS sessionId,
-          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agentName,
+          ifNull(trace.traceVendorId, '') AS vendorId,
+          ifNull(trace.traceAgentName, '') AS agentName,
           ifNull(trace.traceModel, '') AS model,
           coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
           leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
@@ -946,7 +1039,9 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -983,7 +1078,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1009,6 +1106,7 @@ SELECT
 -- builder:ai-tools:aiToolErrorSessionsQuery:default
 SELECT
           session AS sessionId,
+          anyIf(vendor, vendor != '') AS vendorId,
           anyIf(agent, agent != '') AS agentName,
           anyIf(model, model != '') AS model,
           count() AS hits,
@@ -1020,7 +1118,8 @@ SELECT
           if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
           coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
           leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
-          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agent,
+          ifNull(trace.traceVendorId, '') AS vendor,
+          ifNull(trace.traceAgentName, '') AS agent,
           ifNull(trace.traceModel, '') AS model,
           trace_detail_spans.ServiceName AS svc,
           trace_detail_spans.Duration AS durationNs
@@ -1028,7 +1127,9 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1065,7 +1166,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1103,7 +1206,8 @@ SELECT
           if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
           coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
           leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
-          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agent,
+          ifNull(trace.traceVendorId, '') AS vendor,
+          ifNull(trace.traceAgentName, '') AS agent,
           ifNull(trace.traceModel, '') AS model,
           trace_detail_spans.ServiceName AS svc,
           trace_detail_spans.Duration AS durationNs
@@ -1111,7 +1215,9 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1148,7 +1254,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1206,7 +1314,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1257,7 +1367,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1301,7 +1413,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1348,7 +1462,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1394,7 +1510,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1445,7 +1563,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1493,7 +1613,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1538,7 +1660,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1589,7 +1713,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1639,7 +1765,9 @@ SELECT
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
@@ -1667,7 +1795,9 @@ SELECT
         FROM (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
-          anyIf(Model, Model != '') AS traceModel
+          anyIf(Model, Model != '') AS traceModel,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS traceVendorId,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS traceAgentName
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
