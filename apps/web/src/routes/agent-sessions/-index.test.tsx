@@ -44,6 +44,10 @@ vi.mock("@/components/agent-sessions/tools/agent-sessions-tabs", () => ({
 	AgentSessionsTabs: () => null,
 }))
 
+vi.mock("@/lib/agent-sessions/use-tool-analytics", () => ({
+	useAgentSessionsTabCounts: () => ({}),
+}))
+
 vi.mock("@/hooks/use-organization-feature-flags", () => ({
 	useOrganizationFeatureFlags: () => ({ flags: { agentTracing: true }, isLoaded: true }),
 }))

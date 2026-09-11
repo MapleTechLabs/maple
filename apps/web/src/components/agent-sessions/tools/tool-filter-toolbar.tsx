@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
@@ -26,6 +28,9 @@ interface ToolFilterToolbarProps {
 	failingOnly: boolean
 	onToggleFailingOnly: () => void
 	waiting?: boolean
+	/** Trailing controls, right-aligned after the filters: the overview's
+	 *  time-range picker and Reload, where the Sessions list's toolbar ends in its own Reload. */
+	actions?: ReactNode
 }
 
 /**
@@ -55,6 +60,7 @@ export function ToolFilterToolbar({
 	failingOnly,
 	onToggleFailingOnly,
 	waiting = false,
+	actions,
 }: ToolFilterToolbarProps) {
 	return (
 		<div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
@@ -103,6 +109,8 @@ export function ToolFilterToolbar({
 					Failing only
 				</button>
 			</div>
+
+			{actions ? <div className="ml-auto">{actions}</div> : null}
 		</div>
 	)
 }

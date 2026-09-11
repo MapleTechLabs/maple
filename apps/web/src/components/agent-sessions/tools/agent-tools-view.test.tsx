@@ -15,7 +15,7 @@ import {
 } from "@/lab/agent-tools-fixture"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
-import { AgentToolsView } from "./agent-tools-view"
+import { AgentToolsView, type AgentToolsViewProps } from "./agent-tools-view"
 import { ToolDetailView } from "./tool-detail-view"
 import { ToolErrorModal } from "./tool-error-modal"
 
@@ -50,7 +50,11 @@ vi.mock("./tool-detail-charts", () => ({
 const NOW = Date.UTC(2026, 8, 10, 12, 0, 0)
 const cells = buildToolCells(NOW)
 
-function renderView(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
+function renderView(
+	search: ToolAnalyticsSearch,
+	onSearchChange = vi.fn(),
+	props: Partial<AgentToolsViewProps> = {},
+) {
 	const data = buildToolAnalyticsFixture(search, NOW, cells)
 	render(
 		<AgentToolsView
@@ -61,6 +65,7 @@ function renderView(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
 			modelOptions={[]}
 			envOptions={[]}
 			windowLabel="7d"
+			{...props}
 		/>,
 	)
 	return { onSearchChange, data }
@@ -162,6 +167,31 @@ describe("AgentToolsView", () => {
 		)
 		expect(screen.queryByText(/No tool calls/)).toBeNull()
 		expect(screen.getByText(/Failed to load tools/)).toBeTruthy()
+	})
+
+	it("has no page title, and ends the toolbar row with the window controls", () => {
+		renderView({}, vi.fn(), { actions: <button type="button">Reload</button> })
+		expect(screen.queryByRole("heading", { name: "Tools" })).toBeNull()
+
+		// After every filter and in the same row, before the scope band — where the
+		// Sessions list's toolbar ends in its own Reload.
+		const reload = screen.getByRole("button", { name: "Reload" })
+		const search = screen.getByPlaceholderText("Tool name…")
+		const failing = screen.getByRole("button", { name: /Failing only/ })
+		const follows = (a: Node, b: Node) =>
+			(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+		expect(follows(search, failing)).toBe(true)
+		expect(follows(failing, reload)).toBe(true)
+		expect(follows(reload, screen.getByText("Tool calls"))).toBe(true)
+		expect(reload.closest(".ml-auto")?.parentElement?.contains(search)).toBe(true)
+	})
+
+	it("counts the tabs from what it is given, not the filtered table, and never shows an unknown count", () => {
+		// A name search narrows the table; the tabs must read the same on both pages.
+		renderView({ q: "read" }, vi.fn(), { tabCounts: { sessions: 812 } })
+		expect(document.querySelector('[data-to="/agent-sessions"]')?.textContent).toBe("Sessions812")
+		// The tools count has not landed: no number, rather than a 0.
+		expect(document.querySelector('[data-to="/agent-sessions/tools"]')?.textContent).toBe("Tools")
 	})
 })
 
