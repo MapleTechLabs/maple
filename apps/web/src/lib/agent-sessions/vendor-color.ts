@@ -8,7 +8,7 @@ import { AI_VENDOR_BRAND_COLORS, type BrandColor, MONOCHROME } from "@maple/ai-m
  * dark where the brand color alone would not hold 3:1. Same rule as the icons:
  * a framework whose color we cannot name with confidence gets the neutral.
  */
-const VENDOR_COLORS: Record<string, BrandColor> = {
+const VENDOR_COLORS = {
 	claude_agent_sdk: AI_VENDOR_BRAND_COLORS.anthropic,
 	crewai: { light: "#FF5A50", dark: "#FF5A50" },
 	effect_ai: MONOCHROME,
@@ -31,13 +31,17 @@ const VENDOR_COLORS: Record<string, BrandColor> = {
 
 const NEUTRAL = "var(--muted-foreground)"
 
+// `hasOwn`, not a bare read: an ingested `constructor` is not a vendor.
+const isListedVendor = (vendorId: string): vendorId is keyof typeof VENDOR_COLORS =>
+	Object.hasOwn(VENDOR_COLORS, vendorId)
+
 /**
  * The CSS color for `vendorLabel(vendorId)`'s brand — a `light-dark()` pair
  * where the canvases differ, which resolves against the `color-scheme` the
  * theme pins. Tint with `color-mix()`, never hex-alpha concatenation.
  */
 export function vendorColor(vendorId: string): string {
-	const brand = VENDOR_COLORS[vendorId]
-	if (brand === undefined) return NEUTRAL
+	if (!isListedVendor(vendorId)) return NEUTRAL
+	const brand: BrandColor = VENDOR_COLORS[vendorId]
 	return brand.light === brand.dark ? brand.light : `light-dark(${brand.light}, ${brand.dark})`
 }

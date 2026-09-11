@@ -19,5 +19,6 @@ describe("vendorColor", () => {
 		expect(vendorColor("litellm")).toBe("var(--muted-foreground)")
 		expect(vendorColor("unknown:genai")).toBe("var(--muted-foreground)")
 		expect(vendorColor("")).toBe("var(--muted-foreground)")
+		expect(vendorColor("constructor")).toBe("var(--muted-foreground)")
 	})
 })

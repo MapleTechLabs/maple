@@ -475,6 +475,7 @@ function FilterDescription({ title, children }: { title: string; children: React
 					<span
 						className="inline-flex shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
 						aria-label={`About ${title}`}
+						tabIndex={0}
 					/>
 				}
 				onClick={(event) => {
