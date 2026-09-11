@@ -1,7 +1,18 @@
-import { useCallback } from "react"
-import { Link } from "@tanstack/react-router"
+import { useCallback, useMemo, type ReactNode } from "react"
+import { Link, useNavigate } from "@tanstack/react-router"
+import {
+	columnSizingFeature,
+	type ColumnDef,
+	flexRender,
+	tableFeatures,
+	useTable,
+} from "@tanstack/react-table"
+import { useVirtualizer } from "@tanstack/react-virtual"
+import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatCount } from "@maple/ui/components/filters/range-filter-section"
@@ -13,15 +24,18 @@ import {
 	SquareSparkleIcon,
 	type IconComponent,
 } from "@/components/icons"
+import { ServicePills } from "@/components/common/service-pills"
+import { SortableHeader } from "@/components/common/sortable-header"
 import { useDetectedModels } from "@/hooks/use-detected-models"
+import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
-import { sessionLinkWindow, sessionRowId } from "@/lib/agent-sessions/session-window"
+import { sessionLinkWindow, sessionRowIdParts } from "@/lib/agent-sessions/session-window"
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
-import { ModelLabel } from "./model-label"
+import { ModelLabel, modelTitle } from "./model-label"
 import { sessionIdentity } from "./session-detail/session-header"
 import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 
@@ -66,7 +80,7 @@ function absoluteTs(startTime: string, timeZone: string): string {
 	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
+const plural = (count: number, noun: string) => `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`
 
 /** The row's buckets under the detail page's keys, so one palette serves both. */
 function rowTokenBuckets(session: AgentSessionRow): Record<TokenBucketKey, number> {
@@ -79,8 +93,115 @@ function rowTokenBuckets(session: AgentSessionRow): Record<TokenBucketKey, numbe
 	}
 }
 
+/**
+ * v9 registers features explicitly. Sorting is server-side and nothing else here is table-driven,
+ * so column sizing — the declared widths the header cells read back — is the only one needed.
+ */
+const TABLE_FEATURES = tableFeatures({ columnSizingFeature })
+
+/** Two lines — the name over the id — at text-sm and text-xs, plus the cell padding. */
+const ROW_HEIGHT = 53
+
+// No wrap: a two-word label ("LLM calls") breaking onto a second line would
+// make the whole header row taller.
+const HEADER_CELL_CLASS = "h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-muted-foreground"
+
+/**
+ * Column layout, shared by the real table and the loading skeleton so the two can't drift apart.
+ *
+ * `responsive` drops a column when the table gets too narrow to hold it, protecting Session — the
+ * only column that identifies the row, and the only one that flexes. Thresholds are *container*
+ * queries against `@container/page` (declared by PageLayout.Content), as on the traces table: the
+ * app sidebar and the filter rail take width the viewport knows nothing about.
+ *
+ * Budget: Errors (100) is always on — the triage signal, as Status is for traces. Every other column
+ * joins where Session keeps ≥200px beside it, the sortable measures first, so a width that shows a
+ * measure can also sort by it: Started (96) at 400, Duration (100) at 500, Cost (80) at 580, LLM
+ * calls (110) at 690, Tool calls (116) at 810 and Tokens (130) at 940. Services (170) at 1110 and
+ * Model (160) at 1270 come last — the filter rail answers both for the whole list. A sortable
+ * column is at least as wide as its label and arrow at text-sm plus the cell's padding.
+ */
+interface SessionColumnLayout {
+	readonly id: string
+	readonly header: string
+	readonly skeleton: string
+	readonly width?: number
+	/** Applied to both the th and the td — keep it a literal so Tailwind's scanner sees it. */
+	readonly responsive?: string
+}
+
+const SESSION_COLUMNS: readonly SessionColumnLayout[] = [
+	// No width: under table-fixed the unsized column absorbs whatever the sized ones leave.
+	{ id: "session", header: "Session", skeleton: "w-40" },
+	{
+		id: "services",
+		header: "Services",
+		width: 170,
+		skeleton: "w-24",
+		responsive: "hidden @min-[1110px]/page:table-cell",
+	},
+	{
+		id: "model",
+		header: "Model",
+		width: 160,
+		skeleton: "w-24",
+		responsive: "hidden @min-[1270px]/page:table-cell",
+	},
+	{
+		id: "durationMs",
+		header: "Duration",
+		width: 100,
+		skeleton: "w-12",
+		responsive: "hidden @min-[500px]/page:table-cell",
+	},
+	{
+		id: "llmCalls",
+		header: "LLM calls",
+		width: 110,
+		skeleton: "w-8",
+		responsive: "hidden @min-[690px]/page:table-cell",
+	},
+	{
+		id: "toolCalls",
+		header: "Tool calls",
+		width: 116,
+		skeleton: "w-8",
+		responsive: "hidden @min-[810px]/page:table-cell",
+	},
+	{
+		id: "totalTokens",
+		header: "Tokens",
+		width: 130,
+		skeleton: "w-20",
+		responsive: "hidden @min-[940px]/page:table-cell",
+	},
+	{
+		id: "cost",
+		header: "Cost",
+		width: 80,
+		skeleton: "w-10",
+		responsive: "hidden @min-[580px]/page:table-cell",
+	},
+	{ id: "errorSpanCount", header: "Errors", width: 100, skeleton: "w-12" },
+	{
+		id: "startTime",
+		header: "Started",
+		width: 96,
+		skeleton: "w-14",
+		responsive: "hidden @min-[400px]/page:table-cell",
+	},
+]
+
+const COLUMN_LAYOUT: ReadonlyMap<string, SessionColumnLayout> = new Map(
+	SESSION_COLUMNS.map((column) => [column.id, column]),
+)
+
 interface AgentSessionsListProps {
 	sessions: ReadonlyArray<AgentSessionRow>
+	/** The order the server returned the rows in — the header it names is marked. */
+	sortBy: AiSessionSortKey
+	sortDir: AiSessionSortDir
+	onSortChange: (key: AiSessionSortKey) => void
 	/** Fetch the next page — invoked when the bottom sentinel scrolls into view. */
 	onReachEnd?: () => void
 	/** Whether more pages remain (renders the sentinel + footer). */
@@ -119,14 +240,186 @@ function SessionsSentinel({
 	return <div ref={elementRef} aria-hidden className="h-px w-full" />
 }
 
+export function AgentSessionsListSkeleton() {
+	return (
+		<TableSkeleton
+			rows={10}
+			tableClassName="w-full table-fixed"
+			columns={SESSION_COLUMNS.map((column) => ({
+				header: column.header,
+				headClassName: column.responsive,
+				cellClassName: column.responsive,
+				skeleton: column.skeleton,
+				width: column.width,
+			}))}
+		/>
+	)
+}
+
 export function AgentSessionsList({
 	sessions,
+	sortBy,
+	sortDir,
+	onSortChange,
 	onReachEnd,
 	hasMore = false,
 	loadingMore = false,
 	isCapped = false,
 }: AgentSessionsListProps) {
+	const navigate = useNavigate()
 	const { effectiveTimezone } = useTimezonePreference()
+	// One batch for the whole page, re-asked only when paging brings a model
+	// the list has not seen. Before it lands every row still names its model.
+	const detect = useDetectedModels(sessions.flatMap((session) => session.models))
+
+	const columns = useMemo<ColumnDef<typeof TABLE_FEATURES, AgentSessionRow>[]>(() => {
+		const sortHeader = (label: string, sortKey: AiSessionSortKey, hint?: string) => () => (
+			<SortableHeader
+				label={label}
+				sortKey={sortKey}
+				activeKey={sortBy}
+				dir={sortDir}
+				onSort={onSortChange}
+				hint={hint}
+			/>
+		)
+		return [
+			{
+				id: "session",
+				header: "Session",
+				cell: ({ row }) => <SessionCell session={row.original} timeZone={effectiveTimezone} />,
+			},
+			{
+				id: "services",
+				header: "Services",
+				size: 170,
+				cell: ({ row }) => <ServicePills services={row.original.serviceNames} />,
+			},
+			{
+				id: "model",
+				header: "Model",
+				size: 160,
+				cell: ({ row }) => {
+					const { models } = row.original
+					const [firstModel] = models
+					// The first model by name and mark, the rest as a count; the raw ids
+					// gateways report go in the tooltip, where two models that truncate
+					// alike are still told apart.
+					return firstModel === undefined ? null : (
+						<Hint
+							className="block min-w-0 text-xs text-muted-foreground"
+							content={
+								<div className="flex flex-col gap-0.5">
+									{models.map((model) => (
+										<span key={model}>{modelTitle(detect(model))}</span>
+									))}
+								</div>
+							}
+						>
+							<ModelLabel detected={detect(firstModel)} moreCount={models.length - 1} title={null} />
+						</Hint>
+					)
+				},
+			},
+			{
+				id: "durationMs",
+				header: sortHeader("Duration", "durationMs", "From the first agent span to the last"),
+				size: 100,
+				// Traces and spans live in the tooltip — they describe ingestion, the
+				// calls and tools beside them describe the agent.
+				cell: ({ row }) => (
+					<Hint
+						className="font-mono text-xs tabular-nums"
+						content={`Across ${plural(row.original.traceCount, "trace")} · ${plural(row.original.spanCount, "span")}`}
+					>
+						{formatSessionDuration(row.original.durationMs)}
+					</Hint>
+				),
+			},
+			{
+				id: "llmCalls",
+				header: sortHeader("LLM calls", "llmCalls", "Model requests the agent made"),
+				size: 110,
+				cell: ({ row }) => (
+					<WorkCount
+						icon={PixelSparkleIcon}
+						tone={CATEGORY_TEXT.inference}
+						count={row.original.llmCalls}
+						noun="LLM call"
+					/>
+				),
+			},
+			{
+				id: "toolCalls",
+				header: sortHeader("Tool calls", "toolCalls", "Tools the agent invoked"),
+				size: 116,
+				cell: ({ row }) => (
+					<WorkCount
+						icon={GearIcon}
+						tone={CATEGORY_TEXT.tool}
+						count={row.original.toolCalls}
+						noun="tool call"
+					/>
+				),
+			},
+			{
+				id: "totalTokens",
+				header: sortHeader("Tokens", "totalTokens", "Reported by the session's model calls"),
+				size: 130,
+				cell: ({ row }) => <TokenBar session={row.original} />,
+			},
+			{
+				id: "cost",
+				header: sortHeader("Cost", "cost", "As priced by the instrumentation; blank where it reported none"),
+				size: 80,
+				// Blank where nothing was reported — a "$0.00" would read as "measured,
+				// and it was free".
+				cell: ({ row }) =>
+					row.original.cost > 0 ? (
+						<Hint className="font-mono text-xs tabular-nums" content="As priced by the instrumentation">
+							{formatCost(row.original.cost)}
+						</Hint>
+					) : null,
+			},
+			{
+				id: "errorSpanCount",
+				header: sortHeader("Errors", "errorSpanCount", "Failed turns and tool calls"),
+				size: 100,
+				cell: ({ row }) => <ErrorChips session={row.original} />,
+			},
+			{
+				id: "startTime",
+				header: sortHeader("Started", "startTime"),
+				size: 96,
+				cell: ({ row }) => (
+					<StartedAt
+						startTime={row.original.startTime}
+						timeZone={effectiveTimezone}
+						className="block truncate text-xs text-muted-foreground"
+					/>
+				),
+			},
+		]
+	}, [effectiveTimezone, detect, sortBy, sortDir, onSortChange])
+
+	const table = useTable({ features: TABLE_FEATURES, data: sessions, columns })
+	const { rows } = table.getRowModel()
+
+	// Rows ride the page's own scroller, as on /replays, rather than an inner
+	// one: the sentinel below the table then still marks the end of the list.
+	// So the table must sit inside a `PageLayout.ScrollArea`. Outside one the
+	// hook falls back to the tbody itself, which has no height until it has
+	// rows and gets no rows until it has height.
+	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
+	const virtualizer = useVirtualizer({
+		count: rows.length,
+		getScrollElement,
+		estimateSize: () => ROW_HEIGHT,
+		overscan: 10,
+		scrollMargin,
+	})
+	const virtualItems = virtualizer.getVirtualItems()
+
 	if (sessions.length === 0) {
 		return (
 			<Empty>
@@ -149,163 +442,102 @@ export function AgentSessionsList({
 		)
 	}
 
-	// One batch for the whole page, re-asked only when paging brings a model
-	// the list has not seen. Before it lands every row still names its model.
-	const detect = useDetectedModels(sessions.flatMap((session) => session.models))
+	const firstItem = virtualItems[0]
+	const lastItem = virtualItems[virtualItems.length - 1]
 
 	return (
-		<div className="@container">
-			{sessions.map((session) => {
-				const hasErrors = session.errorSpanCount > 0
-				const VendorIcon = vendorIcon(session.vendorId)
-				const vendor = vendorLabel(session.vendorId)
-				// `sessionIdentity` reads the first name, so it is handed the one
-				// name the warehouse resolved in span order rather than the
-				// unordered `agentNames` set — see `firstAgentName`.
-				const { heading } = sessionIdentity({
-					agentNames: session.firstAgentName === "" ? [] : [session.firstAgentName],
-					vendorIds: [session.vendorId],
-				})
-				const [firstModel, ...otherModels] = session.models
-				return (
-					<Link
-						key={session.sessionId}
-						to="/agent-sessions/$sessionId"
-						params={{ sessionId: session.sessionId }}
-						// The session's own bounds, not the list's window — its agent spans'
-						// extent until the row's details land, the true one after — so the
-						// detail page reads straight from these.
-						search={sessionLinkWindow(session)}
-						className="relative flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @2xl:gap-4"
-					>
-						{/* Errored sessions get a left accent so they can be picked out
-						    while scanning — same signal as the replays list. */}
-						{hasErrors && (
-							<span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-destructive" />
+		<div>
+			<div className="rounded-md border">
+				{/*
+				 * table-fixed makes the declared column widths authoritative: the sized columns stay
+				 * pinned and Session, the only column that should flex, takes the remainder.
+				 */}
+				<table className="w-full table-fixed caption-bottom text-sm" aria-label="Agent sessions">
+					<thead className="sticky top-0 z-10 bg-background [&_tr]:border-b">
+						{table.getHeaderGroups().map((headerGroup) => (
+							<tr key={headerGroup.id}>
+								{headerGroup.headers.map((header) => (
+									<th
+										key={header.id}
+										aria-sort={
+											header.id === sortBy
+												? sortDir === "asc"
+													? "ascending"
+													: "descending"
+												: undefined
+										}
+										className={cn(HEADER_CELL_CLASS, COLUMN_LAYOUT.get(header.id)?.responsive)}
+										style={{
+											width: header.getSize() !== 150 ? header.getSize() : undefined,
+										}}
+									>
+										{header.isPlaceholder
+											? null
+											: flexRender(header.column.columnDef.header, header.getContext())}
+									</th>
+								))}
+							</tr>
+						))}
+					</thead>
+					<tbody ref={listRef}>
+						{firstItem && (
+							<tr aria-hidden style={{ height: firstItem.start - virtualizer.options.scrollMargin }}>
+								<td />
+							</tr>
 						)}
-
-						{/* Identity lane: what the session IS on the first line — the agent
-						    it ran, beside the framework's mark — and what it is CALLED on
-						    the second. The id is how you cite a session, not how you
-						    recognise one, so it reads as metadata under the name. */}
-						<div className="min-w-0 flex-1 overflow-hidden">
-							<div className="flex items-center gap-2">
-								<span
-									className="flex shrink-0 items-center text-muted-foreground"
-									title={vendor}
+						{virtualItems.map((virtualRow) => {
+							const row = rows[virtualRow.index]!
+							const session = row.original
+							return (
+								<tr
+									key={row.id}
+									ref={virtualizer.measureElement}
+									data-index={virtualRow.index}
+									onClick={() =>
+										navigate({
+											to: "/agent-sessions/$sessionId",
+											params: { sessionId: session.sessionId },
+											search: sessionLinkWindow(session),
+										})
+									}
+									className="cursor-pointer border-b transition-colors hover:bg-muted/50"
 								>
-									<VendorIcon size={15} aria-hidden />
-								</span>
-								<span className="min-w-0 truncate text-sm font-medium" title={heading}>
-									{heading}
-								</span>
-								{/* On phones the right-hand lanes are gone, so the timestamp
-								    anchors the top-right corner of the stacked row. */}
-								<span
-									className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
-									title={absoluteTs(session.startTime, effectiveTimezone)}
-								>
-									{formatRelativeTimeOrDate(
-										session.startTime,
-										undefined,
-										effectiveTimezone,
-									)}
-								</span>
-							</div>
-							<div
-								className="mt-0.5 truncate font-mono text-xs text-muted-foreground"
-								title={session.sessionId}
+									{row.getAllCells().map((cell) => (
+										<td
+											key={cell.id}
+											className={cn("p-2 align-middle", COLUMN_LAYOUT.get(cell.column.id)?.responsive)}
+										>
+											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+										</td>
+									))}
+								</tr>
+							)
+						})}
+						{lastItem && (
+							<tr
+								aria-hidden
+								style={{
+									height:
+										virtualizer.getTotalSize() -
+										(lastItem.end - virtualizer.options.scrollMargin),
+								}}
 							>
-								{sessionRowId(session.sessionId)}
-							</div>
-							{hasErrors && (
-								<div className="mt-1.5 flex flex-wrap items-center gap-1.5 @2xl:hidden">
-									<ErrorChips session={session} />
-								</div>
-							)}
-						</div>
-
-						{/* Services lane */}
-						<div className="hidden w-[10rem] shrink-0 overflow-hidden @2xl:block">
-							<span
-								className="block truncate text-xs text-muted-foreground"
-								title={session.serviceNames.join(", ")}
-							>
-								{session.serviceNames.join(" · ")}
-							</span>
-						</div>
-
-						{/* Model lane: what the session ran on. Last lane in, because it is
-						    the one a reader can also get from the filter rail — every lane's
-						    breakpoint is set so the identity lane keeps a legible ~180px
-						    even at the width where the lane appears. The first model by
-						    name and mark, the rest as a count; the raw ids gateways report
-						    stay in the title, where two models that truncate alike are
-						    still told apart. */}
-						<div className="hidden w-[9rem] shrink-0 overflow-hidden text-xs text-muted-foreground @7xl:block">
-							{firstModel !== undefined && (
-								<ModelLabel
-									detected={detect(firstModel)}
-									moreCount={otherModels.length}
-									title={session.models.join(", ")}
-								/>
-							)}
-						</div>
-
-						{/* Activity lane: duration + the work done, in the session page's
-						    colours for inference and tools. Traces and spans move to the
-						    tooltip — they describe ingestion, calls and tools describe the
-						    agent. */}
-						<div
-							className="hidden w-[15.25rem] shrink-0 grid-cols-[4.25rem_5.5rem_5.5rem] items-center overflow-hidden whitespace-nowrap @4xl:grid"
-							title={`${plural(session.traceCount, "trace")} · ${plural(session.spanCount, "span")}`}
-						>
-							<span className="font-mono text-[13px] font-semibold tabular-nums">
-								{formatSessionDuration(session.durationMs)}
-							</span>
-							<WorkCount
-								icon={PixelSparkleIcon}
-								tone={CATEGORY_TEXT.inference}
-								count={session.llmCalls}
-								noun="call"
-							/>
-							<WorkCount
-								icon={GearIcon}
-								tone={CATEGORY_TEXT.tool}
-								count={session.toolCalls}
-								noun="tool"
-							/>
-						</div>
-
-						{/* Usage lane: the token buckets as a bar, the total and the cost.
-						    Blank where nothing was reported — a "0" here would read as
-						    "measured, and it was free". */}
-						<div className="hidden w-[12rem] shrink-0 grid-cols-[4rem_4.25rem_1fr] items-center gap-2 overflow-hidden whitespace-nowrap @6xl:grid">
-							<TokenBar session={session} />
-							<span className="text-right font-mono text-xs tabular-nums text-muted-foreground">
-								{session.cost > 0 ? formatCost(session.cost) : ""}
-							</span>
-						</div>
-
-						{/* Signal lane: what failed, tools apart from turns */}
-						<div className="hidden w-[7.5rem] shrink-0 flex-col items-start justify-center gap-1 overflow-hidden @2xl:flex">
-							{hasErrors && <ErrorChips session={session} />}
-						</div>
-
-						{/* Time lane. Fixed width and right-aligned: sized to its content it
-						    is a lane whose width changes per row, which drags every lane to
-						    its left out of column with the row above. */}
-						<div className="hidden w-[4.5rem] shrink-0 items-center justify-end @2xl:flex">
-							<span
-								className="truncate text-right text-xs text-muted-foreground"
-								title={absoluteTs(session.startTime, effectiveTimezone)}
-							>
-								{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
-							</span>
-						</div>
-					</Link>
-				)
-			})}
+								<td />
+							</tr>
+						)}
+						{loadingMore && (
+							<tr>
+								<td colSpan={SESSION_COLUMNS.length} className="p-2">
+									<div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+										<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+										Loading more sessions…
+									</div>
+								</td>
+							</tr>
+						)}
+					</tbody>
+				</table>
+			</div>
 
 			{hasMore && <SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />}
 
@@ -315,19 +547,132 @@ export function AgentSessionsList({
 					see older ones
 				</p>
 			)}
-
-			{loadingMore && (
-				<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-					<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-					Loading more sessions…
-				</div>
-			)}
 		</div>
 	)
 }
 
-/** "12 calls" with the kind's glyph, in its hue — the same pair the session
- *  page's waterfall and flow use for the kind of work. */
+/** An inline figure with a tooltip saying what it counts. */
+function Hint({
+	content,
+	className,
+	children,
+}: {
+	content: ReactNode
+	className?: string
+	children: ReactNode
+}) {
+	return (
+		<Tooltip>
+			<TooltipTrigger render={<span />} className={className}>
+				{children}
+			</TooltipTrigger>
+			<TooltipContent>{content}</TooltipContent>
+		</Tooltip>
+	)
+}
+
+function StartedAt({
+	startTime,
+	timeZone,
+	className,
+}: {
+	startTime: string
+	timeZone: string
+	className: string
+}) {
+	return (
+		<Hint className={className} content={absoluteTs(startTime, timeZone)}>
+			{formatRelativeTimeOrDate(startTime, undefined, timeZone)}
+		</Hint>
+	)
+}
+
+/**
+ * What the session IS on the first line — the agent it ran, beside the
+ * framework's mark — and what it is CALLED on the second. The id is how you
+ * cite a session, not how you recognise one, so it reads as metadata under the
+ * name, labelled with the kind of id it is: a framework's session key, or the
+ * one trace a framework without session keys produced.
+ */
+function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone: string }) {
+	const VendorIcon = vendorIcon(session.vendorId)
+	const vendor = vendorLabel(session.vendorId)
+	// `sessionIdentity` reads the first name, so it is handed the one name the
+	// warehouse resolved in span order rather than the unordered `agentNames`
+	// set — see `firstAgentName`.
+	const { heading } = sessionIdentity({
+		agentNames: session.firstAgentName === "" ? [] : [session.firstAgentName],
+		vendorIds: [session.vendorId],
+	})
+	const id = sessionRowIdParts(session.sessionId)
+	return (
+		<div className="min-w-0">
+			<div className="flex min-w-0 items-center gap-2">
+				<Tooltip>
+					<TooltipTrigger
+						render={<span />}
+						role="img"
+						aria-label={vendor}
+						className="flex shrink-0 items-center text-muted-foreground"
+					>
+						<VendorIcon size={15} aria-hidden />
+					</TooltipTrigger>
+					<TooltipContent>{vendor}</TooltipContent>
+				</Tooltip>
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<Link
+								to="/agent-sessions/$sessionId"
+								params={{ sessionId: session.sessionId }}
+								// The session's own bounds, not the list's window — its agent spans'
+								// extent until the row's details land, the true one after — so the
+								// detail page reads straight from these.
+								search={sessionLinkWindow(session)}
+								// The row navigates on its own; the link is for a new tab and the
+								// keyboard, and must not navigate twice.
+								onClick={(event) => event.stopPropagation()}
+							/>
+						}
+						className="min-w-0 truncate text-sm font-medium hover:underline focus-visible:underline focus-visible:outline-none"
+					>
+						{heading}
+					</TooltipTrigger>
+					<TooltipContent>
+						{session.agentNames.length > 0
+							? `Agents: ${session.agentNames.join(", ")}`
+							: "No agent name was reported"}
+					</TooltipContent>
+				</Tooltip>
+				{/* Until the Started column fits, the time anchors the cell's top-right corner. */}
+				<StartedAt
+					startTime={session.startTime}
+					timeZone={timeZone}
+					className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden"
+				/>
+			</div>
+			<Tooltip>
+				<TooltipTrigger render={<div />} className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs">
+					<span className="shrink-0 text-muted-foreground/70">
+						{id.kind === "trace" ? "Trace" : "Session"}
+					</span>
+					<span className="min-w-0 truncate font-mono text-muted-foreground">{id.short}</span>
+				</TooltipTrigger>
+				<TooltipContent>
+					<p>
+						{id.kind === "trace"
+							? "No session key was reported, so this session is this one trace"
+							: "The session ID the framework reported"}
+					</p>
+					<p className="mt-0.5 break-all font-mono">{id.id}</p>
+				</TooltipContent>
+			</Tooltip>
+		</div>
+	)
+}
+
+/** A count with the kind's glyph, in its hue — the same pair the session page's
+ *  waterfall and flow use for the kind of work. The header names the unit. */
 function WorkCount({
 	icon: Icon,
 	tone,
@@ -339,19 +684,25 @@ function WorkCount({
 	count: number
 	noun: string
 }) {
-	// Compact: a busy session runs to four and five figures, and the lane's slot
-	// is sized for the label, not for the widest count it will ever hold.
+	// Compact: a busy session runs to four and five figures, and the column is
+	// sized for its header, not for the widest count it will ever hold.
 	return (
-		<span
-			className={cn("inline-flex items-center gap-1 text-xs tabular-nums", tone)}
-			title={plural(count, noun)}
+		<Hint
+			className={cn(
+				"inline-flex items-center gap-1 text-xs tabular-nums",
+				count > 0 ? tone : "text-muted-foreground",
+			)}
+			content={plural(count, noun)}
 		>
 			<Icon size={12} className="shrink-0" aria-hidden />
-			{formatCount(count)} {noun}
-			{count === 1 ? "" : "s"}
-		</span>
+			{formatCount(count)}
+		</Hint>
 	)
 }
+
+/** The share of the index's total the buckets must reach to be drawn — the
+ *  dedupe can leave the two a little apart, never this far. */
+const BUCKET_COVERAGE_MIN = 0.9
 
 /**
  * The detail page's Tokens rail at row height: one segment per non-empty
@@ -362,10 +713,6 @@ function WorkCount({
  * index sums the reported figures as stamped, the buckets carve the cache back
  * out of an inclusive prompt figure, and the sort and filter read the index.
  */
-/** The share of the index's total the buckets must reach to be drawn — the
- *  dedupe can leave the two a little apart, never this far. */
-const BUCKET_COVERAGE_MIN = 0.9
-
 function TokenBar({ session }: { session: AgentSessionRow }) {
 	const buckets = rowTokenBuckets(session)
 	const drawn = TOKEN_BUCKETS.filter((bucket) => buckets[bucket.key] > 0)
@@ -376,39 +723,44 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 	// row falls back to the total rather than draw the slice as the whole.
 	const bucketTotal = drawnTotal >= session.totalTokens * BUCKET_COVERAGE_MIN ? drawnTotal : 0
 	const total = bucketTotal > 0 ? bucketTotal : session.totalTokens
-	const title = [
-		`${total.toLocaleString()} tokens`,
-		...drawn.map((bucket) => `${bucket.label}: ${buckets[bucket.key].toLocaleString()}`),
-	].join("\n")
-	// The bar and the figure are two of the lane's grid slots rather than a
-	// nested flex row: every row's track then starts at the same x, which is the
-	// only way segment widths can be read down the list.
+	// Blank where nothing was reported — a "0" would read as "measured, and it
+	// was nothing".
+	if (total === 0) return null
+	// The bar and the figure are two grid slots rather than a nested flex row:
+	// every row's track then starts at the same x, which is the only way segment
+	// widths can be read down the list.
 	return (
-		<>
-			<span className="flex h-1.5 items-center" title={title}>
+		<Hint
+			className="grid grid-cols-[4rem_1fr] items-center gap-2"
+			content={
+				<div className="flex flex-col gap-0.5 tabular-nums">
+					<span className="font-medium">{plural(total, "token")}</span>
+					{drawn.map((bucket) => (
+						<span key={bucket.key} className="flex items-center gap-1.5">
+							<span aria-hidden className={cn("size-1.5 rounded-full", bucket.fill)} />
+							{bucket.label}: {buckets[bucket.key].toLocaleString()}
+						</span>
+					))}
+				</div>
+			}
+		>
+			<span className="flex h-1.5 items-center">
 				{/* A session that reported only a total draws no bar — an empty track
 				    would read as "measured, and it was nothing". */}
 				{bucketTotal > 0 && (
-					<span
-						aria-hidden
-						className="flex h-1.5 w-full gap-px overflow-hidden rounded-xs bg-muted"
-					>
+					<span aria-hidden className="flex h-1.5 w-full gap-px overflow-hidden rounded-xs bg-muted">
 						{drawn.map((bucket) => (
 							<span
 								key={bucket.key}
 								className={bucket.fill}
-								style={{
-									width: `${(buckets[bucket.key] / bucketTotal) * 100}%`,
-								}}
+								style={{ width: `${(buckets[bucket.key] / bucketTotal) * 100}%` }}
 							/>
 						))}
 					</span>
 				)}
 			</span>
-			<span className="text-right font-mono text-xs tabular-nums text-muted-foreground" title={title}>
-				{total > 0 ? `${formatCount(total)} tok` : ""}
-			</span>
-		</>
+			<span className="font-mono text-xs tabular-nums text-muted-foreground">{formatCount(total)}</span>
+		</Hint>
 	)
 }
 
@@ -417,18 +769,24 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
  * agent may have recovered from, a turn that failed is the session not
  * answering — so they are two chips in two tones rather than one count. A
  * failure the index cannot classify (an errored span outside the agent's own)
- * still lights the row's accent, and shows here only when it is all there is.
+ * shows only when it is all there is.
  */
 function ErrorChips({ session }: { session: AgentSessionRow }) {
+	// Unlike cost, none is a measurement here — the index counts every errored
+	// span — so the cell says so rather than sitting empty.
+	if (session.errorSpanCount === 0) {
+		return <span className="text-xs text-muted-foreground/50">—</span>
+	}
 	const classified = session.toolErrorCount + session.turnErrorCount
-	const other = Math.max(0, session.errorSpanCount - classified)
+	const other = session.errorSpanCount - classified
 	return (
-		<>
+		<div className="flex flex-col items-start gap-1">
 			{session.turnErrorCount > 0 && (
 				<ErrorChip
 					icon={FaceRobotIcon}
 					count={session.turnErrorCount}
-					noun="turn error"
+					noun="turn"
+					hint={`${plural(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
 					className="border-destructive/30 bg-destructive/10 text-destructive"
 				/>
 			)}
@@ -436,18 +794,20 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 				<ErrorChip
 					icon={GearIcon}
 					count={session.toolErrorCount}
-					noun="tool error"
+					noun="tool"
+					hint={`${plural(session.toolErrorCount, "failed tool call")} — the agent may have recovered`}
 					className="border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
 				/>
 			)}
 			{classified === 0 && other > 0 && (
 				<ErrorChip
 					count={other}
-					noun="error"
+					noun="span"
+					hint={`${plural(other, "errored span")} outside the agent's turns and tools`}
 					className="border-destructive/30 bg-destructive/10 text-destructive"
 				/>
 			)}
-		</>
+		</div>
 	)
 }
 
@@ -455,19 +815,22 @@ function ErrorChip({
 	icon: Icon,
 	count,
 	noun,
+	hint,
 	className,
 }: {
 	icon?: IconComponent
 	count: number
 	noun: string
+	hint: string
 	className: string
 }) {
 	return (
-		<span
+		<Hint
 			className={cn(
 				"inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums",
 				className,
 			)}
+			content={hint}
 		>
 			{Icon ? (
 				<Icon size={10} className="shrink-0" aria-hidden />
@@ -475,16 +838,13 @@ function ErrorChip({
 				<span className="size-1 rounded-full bg-current" aria-hidden />
 			)}
 			{/* Two digits of room, and the noun always as wide as its plural: a
-			    row's "1 tool error" above the next row's "12 tool errors"
-			    otherwise makes two chips that never line up. Past 99 the chip does
-			    widen — a third digit costs every row space for a count almost no
-			    session reaches. */}
+			    row's "1 tool" above the next row's "12 tools" otherwise makes two
+			    chips that never line up. Past 99 the chip does widen — a third
+			    digit costs every row space for a count almost no session reaches. */}
 			<span>
 				<span className="inline-block min-w-[2ch] text-right">{count}</span>{" "}
-				<span className="inline-block" style={{ minWidth: `${noun.length + 1}ch` }}>
-					{count === 1 ? noun : `${noun}s`}
-				</span>
+				<span className="inline-block min-w-[5ch]">{count === 1 ? noun : `${noun}s`}</span>
 			</span>
-		</span>
+		</Hint>
 	)
 }

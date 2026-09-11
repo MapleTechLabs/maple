@@ -143,9 +143,10 @@ function ToolDetailBody({
 	headerControls: ReactNode
 }) {
 	// Memoized like the overview's: it is the cache key of five atoms, and a
-	// fresh object each render re-subscribes all of them.
+	// fresh object each render re-subscribes all of them. No name search: this
+	// page has no box for one, and a `?q=` would filter the tool's own name out.
 	const selection = useMemo(
-		() => ({ ...toolAnalyticsSelection(search, window), tool }),
+		() => ({ ...toolAnalyticsSelection(search, window), tool, search: undefined }),
 		[search, window, tool],
 	)
 	const bucketSeconds = chartBucketSeconds(window.startTime, window.endTime)

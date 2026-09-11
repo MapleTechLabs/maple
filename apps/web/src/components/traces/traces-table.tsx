@@ -15,7 +15,8 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Badge } from "@maple/ui/components/ui/badge"
-import { ArrowUpDownIcon } from "@/components/icons"
+import { ServicePills } from "@/components/common/service-pills"
+import { SortableHeader } from "@/components/common/sortable-header"
 import { type Trace } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -25,7 +26,6 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
 import { useListNavigation } from "@/hooks/use-list-navigation"
-import { ServiceDot } from "@maple/ui/components/service-dot"
 
 type TraceSortKey = NonNullable<TracesSearchParams["sortBy"]>
 type TraceSortDir = NonNullable<TracesSearchParams["sortDir"]>
@@ -94,43 +94,6 @@ function HttpStatusBadge({ statusCode }: { statusCode: number }) {
 		>
 			{statusCode}
 		</Badge>
-	)
-}
-
-/**
- * Clickable column header. Sorting is server-side — the list is paged, so
- * reordering the rows already fetched would only sort the current window.
- */
-function SortableHeader({
-	label,
-	sortKey,
-	activeKey,
-	dir,
-	onSort,
-}: {
-	label: string
-	sortKey: TraceSortKey
-	activeKey: TraceSortKey
-	dir: TraceSortDir
-	onSort: (key: TraceSortKey) => void
-}) {
-	const active = activeKey === sortKey
-	return (
-		<button
-			type="button"
-			onClick={() => onSort(sortKey)}
-			className={`inline-flex items-center gap-1 transition-colors ${
-				active ? "text-foreground" : "hover:text-foreground"
-			}`}
-		>
-			{label}
-			<ArrowUpDownIcon
-				size={10}
-				className={`transition-opacity ${active ? "opacity-100" : "opacity-40"} ${
-					active && dir === "asc" ? "rotate-180" : ""
-				}`}
-			/>
-		</button>
 	)
 }
 
@@ -319,26 +282,7 @@ function TracesTableView({
 				id: "services",
 				header: "Services",
 				size: 160,
-				cell: ({ row }) => (
-					<div className="flex min-w-0 flex-wrap gap-1">
-						{row.original.services.slice(0, 3).map((service: string) => (
-							<Badge
-								key={service}
-								variant="outline"
-								className="max-w-full font-mono text-[10px]"
-								title={service}
-							>
-								<ServiceDot serviceName={service} className="size-1.5" />
-								<span className="truncate">{service}</span>
-							</Badge>
-						))}
-						{row.original.services.length > 3 && (
-							<Badge variant="outline" className="text-[10px]">
-								+{row.original.services.length - 3}
-							</Badge>
-						)}
-					</div>
-				),
+				cell: ({ row }) => <ServicePills services={row.original.services} />,
 			},
 			{
 				accessorKey: "spanCount",

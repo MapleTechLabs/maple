@@ -1,29 +1,38 @@
 import { useMemo, useState } from "react"
+import { PageLayout } from "@maple/ui/components/ui/page-layout"
 
+import {
+	agentSessionsSort,
+	agentSessionsSortPatch,
+	type AgentSessionsSearchState,
+} from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import { AgentSessionsList, type AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 
 /**
  * `/agent-sessions` without a warehouse behind it.
  *
  * The list is the real one — the route mounts this same component — over rows
- * chosen for the shapes that break its lanes: a named agent beside an
- * unidentified vendor, a session with no agent name at all, a duration that
- * runs to minutes next to one that runs to milliseconds, a session that
- * reported a total but no buckets, one that reported no usage at all, and both
- * kinds of failure.
+ * chosen for the shapes that break its columns: a named agent beside an
+ * unidentified vendor, a session with no agent name at all, a session that is
+ * one trace, a duration that runs to minutes next to one that runs to
+ * milliseconds, a session that reported a total but no buckets, one that
+ * reported no usage at all, and both kinds of failure.
  *
  * `ai_trace_index` does not exist in the local Tinybird container, so the live
  * page renders empty here; this is where a row change gets looked at.
  */
 
-/** Widths worth checking, because the lanes are container queries: usage drops
- *  below `@5xl`, activity below `@4xl`/`@3xl`, models below `@4xl`, and
- *  everything but identity below `@2xl`. */
+/** Widths worth checking, because the columns are container queries against
+ *  `@container/page`, which `PageLayout.Content` declares: Model leaves below
+ *  1270px, Services below 1110, Tokens below 940, the call counts below
+ *  810/690, Cost and Duration below 580/500, and below 400 the time moves
+ *  into the Session cell. */
 const WIDTHS = [
 	{ label: "Full", value: null },
-	{ label: "1400px", value: 1400 },
-	{ label: "1100px", value: 1100 },
+	{ label: "1300px", value: 1300 },
+	{ label: "1000px", value: 1000 },
 	{ label: "700px", value: 700 },
+	{ label: "380px", value: 380 },
 ] as const
 
 const BASE: AgentSessionRow = {
@@ -113,7 +122,8 @@ function buildRows(nowMs: number): ReadonlyArray<AgentSessionRow> {
 		{
 			...BASE,
 			...at(51, 12_400),
-			sessionId: "wrun_01M0CSAEW96BH2W9185XZPRAB1",
+			// An unidentified vendor stamps no session key, so the session is the trace.
+			sessionId: "trace:4bf92f3577b34da6a3ce929d0e0e4736",
 			vendorId: "unknown:my-inhouse-agent",
 			agentNames: ["nightly-reconcile"],
 			firstAgentName: "nightly-reconcile",
@@ -185,9 +195,12 @@ export function AgentSessionsListLab() {
 	const [nowMs] = useState(() => Date.now())
 	const rows = useMemo(() => buildRows(nowMs), [nowMs])
 	const [width, setWidth] = useState<number | null>(null)
+	// No server to re-rank the rows: the headers only mark the order they would ask for.
+	const [sortSearch, setSortSearch] = useState<Pick<AgentSessionsSearchState, "sortBy" | "sortDir">>({})
+	const { sortBy, sortDir } = agentSessionsSort(sortSearch)
 
 	return (
-		<div className="flex flex-col gap-4 p-6">
+		<div className="flex h-svh flex-col gap-4 p-6">
 			<div className="flex items-center gap-2">
 				{WIDTHS.map((option) => (
 					<button
@@ -204,8 +217,21 @@ export function AgentSessionsListLab() {
 					</button>
 				))}
 			</div>
-			<div className="rounded-lg border border-border" style={width === null ? undefined : { width }}>
-				<AgentSessionsList sessions={rows} />
+			{/* The route's own layout primitives: the list virtualizes against the
+			    page's scroll area, and without one it renders no rows at all. */}
+			<div className="flex min-h-0 flex-1 flex-col" style={width === null ? undefined : { width }}>
+				<PageLayout.Root>
+					<PageLayout.Content>
+						<PageLayout.ScrollArea>
+							<AgentSessionsList
+								sessions={rows}
+								sortBy={sortBy}
+								sortDir={sortDir}
+								onSortChange={(key) => setSortSearch((prev) => agentSessionsSortPatch(prev, key))}
+							/>
+						</PageLayout.ScrollArea>
+					</PageLayout.Content>
+				</PageLayout.Root>
 			</div>
 		</div>
 	)

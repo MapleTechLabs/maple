@@ -14,13 +14,12 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 import { AgentSessionsFilterSidebar } from "./agent-sessions-filter-sidebar"
-import { AgentSessionsToolbar } from "./agent-sessions-toolbar"
-import { sortOptionFor } from "./agent-sessions-filter-inputs"
 
 const facets = Result.success({
 	vendors: [
 		{ name: "eve", count: 12 },
 		{ name: "vercel_ai_sdk", count: 3 },
+		{ name: "claude_agent_sdk", count: 2 },
 	],
 	services: [{ name: "agent-runner", count: 15 }],
 	environments: [{ name: "production", count: 15 }],
@@ -28,6 +27,58 @@ const facets = Result.success({
 	agents: [],
 	tools: [{ name: "search_traces", count: 4 }],
 })
+
+const distributions = Result.success({
+	durationMs: {
+		buckets: [
+			{ floor: 1000, count: 3 },
+			{ floor: 22627.41699796952, count: 2 },
+		],
+		p50: 30_000,
+		p95: 30_000,
+	},
+	cost: {
+		buckets: [
+			{ floor: 2 ** -5.5, count: 1 },
+			{ floor: 1, count: 1 },
+		],
+		p50: 0.03,
+		p95: 1.234,
+	},
+	totalTokens: {
+		buckets: [
+			{ floor: 8, count: 1 },
+			{ floor: 128, count: 1 },
+		],
+		p50: 15,
+		p95: 150,
+	},
+	llmCalls: {
+		buckets: [
+			{ floor: 1, count: 2 },
+			{ floor: 4, count: 1 },
+		],
+		p50: 1,
+		p95: 4,
+	},
+	toolCalls: {
+		buckets: [
+			{ floor: 1, count: 1 },
+			{ floor: 8, count: 1 },
+		],
+		p50: 1,
+		p95: 8,
+	},
+})
+
+const Sidebar = (props: {
+	distributionsResult?: Parameters<typeof AgentSessionsFilterSidebar>[0]["distributionsResult"]
+}) => (
+	<AgentSessionsFilterSidebar
+		facetsResult={facets}
+		distributionsResult={props.distributionsResult ?? distributions}
+	/>
+)
 
 /** What the recorded navigate call would write, given the search it started from. */
 const nextSearch = (): Record<string, unknown> => {
@@ -45,7 +96,7 @@ describe("AgentSessionsFilterSidebar", () => {
 	afterEach(cleanup)
 
 	it("renders a section per counted dimension, hiding the ones with nothing to offer", () => {
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		for (const title of ["Framework", "Service", "Environment", "Model", "Tool"]) {
 			expect(screen.getByText(title)).toBeTruthy()
@@ -61,9 +112,26 @@ describe("AgentSessionsFilterSidebar", () => {
 		expect(screen.getByText("Hide single-trace sessions")).toBeTruthy()
 	})
 
+	it("paints services and frameworks in their colors, and explains the sections named for a concept", () => {
+		search = { services: ["billing-worker"] }
+		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+
+		const swatchBeside = (label: string) =>
+			screen.getByText(label).parentElement?.querySelector<HTMLElement>("span[style]")
+		expect(swatchBeside("Claude Agent SDK")?.style.backgroundColor).toBe("rgb(217, 119, 87)")
+		expect(swatchBeside("agent-runner")).toBeTruthy()
+		// A selected service the window no longer offers keeps its swatch.
+		expect(swatchBeside("billing-worker")).toBeTruthy()
+
+		for (const title of ["Framework", "Model", "Tool", "Hide single-trace sessions"]) {
+			expect(screen.getByLabelText(`About ${title}`)).toBeTruthy()
+		}
+		expect(screen.queryByLabelText("About Service")).toBeNull()
+	})
+
 	it("accumulates a second framework rather than replacing the first", () => {
 		search = { vendors: ["eve"] }
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		fireEvent.click(screen.getByText("Vercel AI SDK"))
 		expect(nextSearch().vendors).toEqual(["eve", "vercel_ai_sdk"])
@@ -71,26 +139,60 @@ describe("AgentSessionsFilterSidebar", () => {
 
 	it("keeps a selected value that the window no longer offers", () => {
 		search = { tools: ["send_email"] }
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		expect(screen.getByText("send_email")).toBeTruthy()
 	})
 
-	it("writes a preset as the range it names, and clears it on a second click", () => {
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+	it("writes a percentile preset as the range it names, and clears it on a second click", () => {
+		render(<Sidebar />)
 
-		fireEvent.click(screen.getByText("Cost"))
-		fireEvent.click(screen.getByText("Over $1"))
-		expect(nextSearch()).toMatchObject({ costMin: 1, costMax: undefined })
+		// p95 of $1.234, rounded to two significant figures.
+		fireEvent.click(screen.getByRole("button", { name: /^> p95\s?\$1\.20$/ }))
+		expect(nextSearch()).toMatchObject({ costMin: 1.2, costMax: undefined })
 
-		search = { costMin: 1 }
+		search = { costMin: 1.2 }
 		cleanup()
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
-		fireEvent.click(screen.getByText("Over $1"))
+		render(<Sidebar />)
+		fireEvent.click(screen.getByRole("button", { name: /^> p95\s?\$1\.20$/ }))
 		expect(nextSearch()).toMatchObject({
 			costMin: undefined,
 			costMax: undefined,
 		})
+	})
+
+	it("draws a histogram per range once the distributions land, and only the intents before", () => {
+		render(<Sidebar distributionsResult={Result.initial()} />)
+		expect(screen.queryByRole("img")).toBeNull()
+		expect(screen.getByRole("button", { name: /^No tools\s?0$/ })).toBeTruthy()
+		expect(screen.queryByRole("button", { name: /p50/ })).toBeNull()
+
+		cleanup()
+		render(<Sidebar />)
+		// Durations arrive in ms and are drawn in the URL's seconds.
+		expect(screen.getByRole("img", { name: /^Session length distribution .* from 1s to / })).toBeTruthy()
+		expect(screen.getByRole("button", { name: /^> p50\s?30s$/ })).toBeTruthy()
+		for (const title of ["Cost", "Tokens", "LLM calls", "Tool calls"]) {
+			expect(screen.getByRole("img", { name: new RegExp(`^${title} distribution`) })).toBeTruthy()
+		}
+	})
+
+	it("selects whole counts off a count histogram, its top bucket's last member inclusive", () => {
+		// jsdom lays nothing out and has no pointer capture; give the bars a width.
+		const rect = vi
+			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+			.mockReturnValue({ left: 0, width: 100 } as DOMRect)
+		HTMLElement.prototype.setPointerCapture = vi.fn()
+		render(<Sidebar />)
+
+		// Buckets [1,2) [2,4) [4,8) [8,16): a drag from the first bar to the third.
+		const bars = screen.getByRole("img", {
+			name: /^Tool calls distribution across 4 buckets, from 1 to 15$/,
+		})
+		fireEvent.pointerDown(bars, { clientX: 10, pointerId: 1 })
+		fireEvent.pointerUp(bars, { clientX: 60, pointerId: 1 })
+		expect(nextSearch()).toMatchObject({ toolCallsMin: 1, toolCallsMax: 7 })
+		rect.mockRestore()
 	})
 
 	it("clears every filter but leaves the window and the sort alone", () => {
@@ -103,7 +205,7 @@ describe("AgentSessionsFilterSidebar", () => {
 			sortBy: "cost",
 			sortDir: "desc",
 		}
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		fireEvent.click(screen.getByRole("button", { name: /clear all/i }))
 		const next = nextSearch()
@@ -119,48 +221,9 @@ describe("AgentSessionsFilterSidebar", () => {
 	})
 
 	it("toggles the single-trace filter on and writes nothing when it is off", () => {
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		fireEvent.click(screen.getByLabelText("Hide single-trace sessions"))
 		expect(nextSearch().grouped).toBe(true)
-	})
-})
-
-describe("AgentSessionsToolbar", () => {
-	afterEach(cleanup)
-
-	it("names the current sort and offers every measure", () => {
-		const onSortChange = vi.fn()
-		const onToggleErrorsOnly = vi.fn()
-		render(
-			<AgentSessionsToolbar
-				query=""
-				onSearch={vi.fn()}
-				errorsOnly={false}
-				onToggleErrorsOnly={onToggleErrorsOnly}
-				sortKey={sortOptionFor("cost", "desc").key}
-				onSortChange={onSortChange}
-				sessionCount={12}
-			/>,
-		)
-
-		// The menu itself is portal-rendered on open; jsdom sees the trigger,
-		// which names the sort it is set to.
-		const sort = screen.getByRole("combobox", { name: "Sort sessions" })
-		expect(sort.textContent).toContain("Most expensive")
-		// The error filter is a switch: on or off, never a button that looks
-		// like a warning about the list.
-		const errors = screen.getByRole("switch", { name: "With errors" })
-		expect(errors.getAttribute("aria-checked")).toBe("false")
-		fireEvent.click(errors)
-		expect(onToggleErrorsOnly).toHaveBeenCalledOnce()
-		expect(screen.getByText("12")).toBeTruthy()
-		expect(screen.getByPlaceholderText("Session or trace ID…")).toBeTruthy()
-	})
-
-	it("falls back to newest-first for a pair the menu does not offer", () => {
-		expect(sortOptionFor(undefined, undefined).key).toBe("newest")
-		expect(sortOptionFor("cost", "asc").key).toBe("newest")
-		expect(sortOptionFor("startTime", "asc").key).toBe("oldest")
 	})
 })

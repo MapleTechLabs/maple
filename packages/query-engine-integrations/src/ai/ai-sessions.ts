@@ -604,6 +604,58 @@ const carry = <Row extends Record<SessionColumn, unknown>>(row: Row): Pick<Row, 
 	Object.fromEntries(SESSION_COLUMNS.map((column) => [column, row[column]])) as Pick<Row, SessionColumn>
 
 /**
+ * One row per session in the caller's window, off `indexTraces`: every
+ * measure the index carries per span, summed, and the usage reporters the
+ * netting reads — the session level of the page and of the distributions,
+ * so a session measures the same in the row and in the histogram above it.
+ */
+const indexSessions = (opts: AiSessionFilterOpts) =>
+	fromQuery(indexTraces(opts, "window"), "index_traces")
+		.select(($) => ({
+			// The grouping key, and the only level that can compute it: the
+			// derived table is one row per trace, so a trace with no session id
+			// of its own becomes a session of one trace here rather than joining
+			// every other sessionless trace under `''`.
+			sessionId: sessionKey($.rawSessionId, $.traceId),
+			// Across traces the same ordering resolves the session's vendor: its
+			// earliest session-bearing span's, else its earliest agent span's.
+			vendorId: CH.argMin($.vendorId, $.vendorAt),
+			vendorVersion: CH.argMin($.vendorVersion, $.vendorAt),
+			agentStart: CH.toString_(CH.min_($.traceAgentStart)),
+			// The extent's END, not the last agent span's start: the row shows
+			// this as the session's end until the details replace it.
+			agentEnd: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceAgentEndNanos))),
+			// `count()`, not `uniq()`: the derived table already emits exactly one
+			// row per trace, so this is exact and cheaper.
+			traceCount: CH.count(),
+			spanCount: CH.sum($.agentSpanCount),
+			serviceNames: CH.groupUniqArrayArray($.serviceNames),
+			models: CH.groupUniqArrayArray($.models),
+			agentNames: CH.groupUniqArrayArray($.agentNames),
+			// Across traces the same ordering resolves the session's own first
+			// named agent: a trace that named none carries the sentinel and loses
+			// to any trace that did.
+			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
+			toolCalls: CH.sum($.toolCalls),
+			errorAgentSpans: CH.sum($.errorAgentSpans),
+			toolErrors: deepestFailureCount("failedSpans", "tool"),
+			turnErrors: deepestFailureCount("failedSpans", "turn"),
+			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
+			// `aiSessionDetailsQuery` for both.
+			agentDurationMs: CH.intDiv(
+				CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
+				1_000_000,
+			),
+			// The usage, still as reporters: netted one level up, summed two —
+			// with the two lookups the netting makes taken off the reporters here,
+			// once per session, rather than once per reporter inside the netting.
+			reporters: sessionReportersExpr("usageReporters"),
+			childClaims: childClaimsExpr("reporters"),
+			reportingIds: reportingSpanIdsExpr("reporters"),
+		}))
+		.groupBy("sessionId")
+
+/**
  * The page: which sessions the list shows, in what order, and everything a
  * row shows about them that the index can answer — the read the list renders
  * from, and the only one that sees the caller's whole window. See the file
@@ -642,9 +694,9 @@ const carry = <Row extends Record<SessionColumn, unknown>>(row: Row): Pick<Row, 
  * model calls nets every session in the window and ranks on the level that
  * has the sums. The session-level filters are `HAVING` on the ranked row, or
  * `WHERE` on the summed one, and cost nothing beyond the index scan the page
- * already is. What they cannot do is count — a facet for "sessions over $1"
- * would be another pass over the same index per bucket, which the sidebar
- * does not ask for.
+ * already is. What they cannot do is count: the sidebar's histograms of the
+ * same measures are `aiSessionDistributionsQuery`, which nets every session in
+ * the window once and buckets all five off that one pass.
  *
  * The remaining gap is between traces, not inside one: a session whose OTHER
  * traces lie entirely outside the range is still found only by the traces that
@@ -705,60 +757,16 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 	const paged = <Q extends { limit(n: number): Q; offset(n: number): Q }>(query: Q): Q =>
 		offset > 0 ? query.limit(limit).offset(offset) : query.limit(limit)
 
-	const sessions = fromQuery(indexTraces(opts, "window"), "index_traces")
-		.select(($) => ({
-			// The grouping key, and the only level that can compute it: the
-			// derived table is one row per trace, so a trace with no session id
-			// of its own becomes a session of one trace here rather than joining
-			// every other sessionless trace under `''`.
-			sessionId: sessionKey($.rawSessionId, $.traceId),
-			// Across traces the same ordering resolves the session's vendor: its
-			// earliest session-bearing span's, else its earliest agent span's.
-			vendorId: CH.argMin($.vendorId, $.vendorAt),
-			vendorVersion: CH.argMin($.vendorVersion, $.vendorAt),
-			agentStart: CH.toString_(CH.min_($.traceAgentStart)),
-			// The extent's END, not the last agent span's start: the row shows
-			// this as the session's end until the details replace it.
-			agentEnd: CH.toString_(fromUnixTimestamp64Nano(CH.max_($.traceAgentEndNanos))),
-			// `count()`, not `uniq()`: the derived table already emits exactly one
-			// row per trace, so this is exact and cheaper.
-			traceCount: CH.count(),
-			spanCount: CH.sum($.agentSpanCount),
-			serviceNames: CH.groupUniqArrayArray($.serviceNames),
-			models: CH.groupUniqArrayArray($.models),
-			agentNames: CH.groupUniqArrayArray($.agentNames),
-			// Across traces the same ordering resolves the session's own first
-			// named agent: a trace that named none carries the sentinel and loses
-			// to any trace that did.
-			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
-			toolCalls: CH.sum($.toolCalls),
-			errorAgentSpans: CH.sum($.errorAgentSpans),
-			toolErrors: deepestFailureCount("failedSpans", "tool"),
-			turnErrors: deepestFailureCount("failedSpans", "turn"),
-			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
-			// `aiSessionDetailsQuery` for both.
-			agentDurationMs: CH.intDiv(
-				CH.max_($.traceAgentEndNanos).sub(CH.toUnixTimestamp64Nano(CH.min_($.traceAgentStart))),
-				1_000_000,
-			),
-			// The usage, still as reporters: netted one level up, summed two —
-			// with the two lookups the netting makes taken off the reporters here,
-			// once per session, rather than once per reporter inside the netting.
-			reporters: sessionReportersExpr("usageReporters"),
-			childClaims: childClaimsExpr("reporters"),
-			reportingIds: reportingSpanIdsExpr("reporters"),
-		}))
-		.groupBy("sessionId")
-		.having(() => [
-			CH.whenTrue(opts.hasErrors, () => column.errorAgentSpans.gt(0)),
-			CH.whenTrue(opts.excludeTraceSessions, () =>
-				CH.not(column.sessionId.like(`${MAPLE_AI_TRACE_SESSION_PREFIX}%`)),
-			),
-			CH.when(opts.durationMinMs, (v) => column.agentDurationMs.gte(v)),
-			CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
-			CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
-			CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
-		])
+	const sessions = indexSessions(opts).having(() => [
+		CH.whenTrue(opts.hasErrors, () => column.errorAgentSpans.gt(0)),
+		CH.whenTrue(opts.excludeTraceSessions, () =>
+			CH.not(column.sessionId.like(`${MAPLE_AI_TRACE_SESSION_PREFIX}%`)),
+		),
+		CH.when(opts.durationMinMs, (v) => column.agentDurationMs.gte(v)),
+		CH.when(opts.durationMaxMs, (v) => column.agentDurationMs.lte(v)),
+		CH.when(opts.toolCallsMin, (v) => column.toolCalls.gte(v)),
+		CH.when(opts.toolCallsMax, (v) => column.toolCalls.lte(v)),
+	])
 	// A String order, and a correct one: the literal is fixed-width
 	// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
 	const ranked =
@@ -1041,8 +1049,10 @@ export type AiSessionFacetType = "vendor" | "service" | "environment" | "model" 
  * `trace_detail_spans` fan-out, which is the expensive half. It can be: every
  * one of the list's counted filters is applied at that level, so the population
  * a facet describes is exactly the population its filter selects. The
- * session-level filters (errors, the ranges) have no facet for the same reason
- * in reverse — their numbers exist only per ranked row.
+ * session-level filters (errors, the ranges) have no facet here for the same
+ * reason in reverse — their numbers exist only per session, after the netting
+ * this read is built to skip; the ranges are counted by
+ * `aiSessionDistributionsQuery`, a request of its own.
  *
  * What it cannot do is count per span. A session id is a fact about the TRACE,
  * so a facet keyed on the span's own value would count every agent span of a
@@ -1106,6 +1116,106 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 		facet("agent", ($) => $.AgentName),
 		facet("tool", ($) => $.ToolName),
 	).format("JSON")
+}
+
+// Range distributions (the sidebar's histograms and percentile presets)
+
+/** The session measures the list's range filters read, by the name the list row gives each. */
+export type AiSessionDistributionMeasure = "durationMs" | "cost" | "totalTokens" | "llmCalls" | "toolCalls"
+
+export interface AiSessionDistributionsOutput {
+	readonly measure: AiSessionDistributionMeasure
+	/** Sessions per non-empty bucket, keyed by the bucket's floor in the
+	 *  measure's own unit — see `DISTRIBUTION_BUCKET_FLOORS` for the spacing. */
+	readonly buckets: Record<string, number>
+	readonly p50: number
+	readonly p95: number
+}
+
+/**
+ * Where each measure's bucket starts, in SQL over the column of the same name:
+ * log-spaced, because every one of these is heavy-tailed. The continuous two
+ * step in half-octaves from 1 — floor × √2 is the ceiling — clamping what lies
+ * below their first bucket into it: a second, as the replays histogram does,
+ * and a tenth of a cent. The three counts step in octaves from 1, so every
+ * bound is a whole number a count filter accepts; a count is at least 1 once
+ * its zeros are gone.
+ */
+const DISTRIBUTION_BUCKET_FLOORS = {
+	durationMs: "pow(2, floor(log2(greatest(durationMs / 1000, 1)) * 2) / 2) * 1000",
+	cost: "pow(2, floor(log2(greatest(cost, 0.001)) * 2) / 2)",
+	totalTokens: "pow(2, floor(log2(totalTokens)))",
+	llmCalls: "pow(2, floor(log2(llmCalls)))",
+	toolCalls: "pow(2, floor(log2(toolCalls)))",
+} as const satisfies Record<AiSessionDistributionMeasure, string>
+
+/**
+ * How the window's sessions spread over each measure the list filters on —
+ * session length, cost, tokens, model calls and tool calls — as log-spaced
+ * bucket counts and the p50/p95 the presets name, for the sidebar's range
+ * sections.
+ *
+ * One read. Cost, tokens and model calls exist only once the session's usage
+ * reporters are netted, and the netting is most of what a page read costs
+ * (see `aiSessionPageQuery`), so it runs once here over every session in the
+ * window — the same work a cost sort does — and every measure is bucketed off
+ * its result: each session row is unnested into one `(measure, value, floor)`
+ * per measure and grouped by measure. Five grouped passes over the same
+ * sessions would be five nettings. Its own request rather than a branch of
+ * `aiSessionFacetsQuery`, which stays the index scan alone and is also what
+ * the Tools pages read.
+ *
+ * Unfiltered, like the facets: a distribution narrowed by the ranges would
+ * hide the values a reader is about to widen a range to. Each measure counts
+ * the sessions where it is above zero — a session with no priced call has no
+ * cost to place on a log axis, and the "no tools" population is a preset, not
+ * a bar — and a measure no session has returns no row.
+ *
+ * The session level is the page's own (`indexSessions`), so a session sits in
+ * the bucket its row's figure falls in. `quantile` is approximate past its
+ * reservoir, which a preset threshold does not notice.
+ */
+export function aiSessionDistributionsQuery() {
+	// The page's netting and sums, less every column the histograms do not read.
+	const netted = fromQuery(indexSessions({}), "window_sessions").select(($) => ({
+		agentDurationMs: $.agentDurationMs,
+		toolCalls: $.toolCalls,
+		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
+	}))
+	const measured = fromQuery(netted, "netted_sessions").select(($) => ({
+		durationMs: CH.toFloat64($.agentDurationMs),
+		toolCalls: CH.toFloat64($.toolCalls),
+		llmCalls: sessionLlmCalls("netted"),
+		totalTokens: sessionUsageSum("netted", "tokens"),
+		cost: sessionUsageSum("netted", "cost"),
+	}))
+	// Every element Float64, so the tuples share a type — `UInt64` and
+	// `Float64` have no supertype.
+	const unnested = fromQuery(measured, "session_measures").select(() => ({
+		measured: CH.untypedExpr(
+			`arrayJoin([${Object.entries(DISTRIBUTION_BUCKET_FLOORS)
+				.map(([measure, floor]) => `tuple('${measure}', ${measure}, ${floor})`)
+				.join(", ")}])`,
+		),
+	}))
+	const value = CH.rawExpr("tupleElement(measured, 2)", T.float64)
+	return fromQuery(unnested, "measured_sessions")
+		.select(() => ({
+			measure: CH.rawExpr(
+				"tupleElement(measured, 1)",
+				T.string,
+			) as CH.Expr<AiSessionDistributionMeasure>,
+			// Keyed by the floor as a string: a `Map` key cannot be a float.
+			buckets: CH.rawExpr(
+				"sumMap(map(toString(tupleElement(measured, 3)), toUInt64(1)))",
+				T.map(T.string, T.uint64),
+			),
+			p50: CH.rawExpr("quantile(0.5)(tupleElement(measured, 2))", T.float64),
+			p95: CH.rawExpr("quantile(0.95)(tupleElement(measured, 2))", T.float64),
+		}))
+		.where(() => [value.gt(0)])
+		.groupBy("measure")
+		.format("JSON")
 }
 
 // Session window resolution (id → bounds)

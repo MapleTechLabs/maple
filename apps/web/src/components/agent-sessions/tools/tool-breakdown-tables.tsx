@@ -16,9 +16,7 @@ import {
 	errorRate,
 	formatDurationNs,
 	formatToolCount,
-	toolBadges,
 	toolsTableFooter,
-	type ToolBadge,
 	type ToolBreakdownRow,
 	type ToolPercentile,
 } from "@/lib/agent-sessions/tool-analytics"
@@ -128,7 +126,7 @@ export function TableBody({
 }) {
 	return (
 		<div
-			className={cn("overflow-y-auto overscroll-contain transition-opacity", waiting && "opacity-60")}
+			className={cn("overflow-y-auto transition-opacity", waiting && "opacity-60")}
 			style={{ maxHeight }}
 		>
 			{children}
@@ -172,7 +170,7 @@ export function errorTone(rate: number): { bar: string; text: string } {
 }
 
 export function formatRate(rate: number): string {
-	return rate === 0 ? "—" : `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
+	return rate === 0 ? "0%" : `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
 }
 
 /**
@@ -235,30 +233,12 @@ export function LineSpark({ values, className }: { values: ReadonlyArray<number>
 	)
 }
 
-/** `slowest` / `new` — one word, in the tone of what it is saying. */
-export function Badge({ badge }: { badge: ToolBadge }) {
-	return (
-		<span
-			className={cn(
-				"flex h-[17px] shrink-0 items-center rounded-[3px] px-1.5 font-mono text-2xs leading-3",
-				badge === "slowest"
-					? "bg-[var(--severity-error)]/20 text-[var(--severity-error)]"
-					: "bg-muted text-muted-foreground",
-			)}
-		>
-			{badge}
-		</span>
-	)
-}
-
 type ToolSortKey = "key" | "calls" | "p50" | "p90" | "p95" | "errorRate" | "errors" | "sessions" | "lastSeen"
 
 interface ToolsTableProps {
 	rows: ReadonlyArray<ToolBreakdownRow>
 	/** Which percentile the page is keyed on — that column is the lit one. */
 	percentile: ToolPercentile
-	/** The window, for the `new` badge and nothing else. */
-	window: { startMs: number; endMs: number }
 	/**
 	 * Carried into every row's link. The AMBIENT scope only — the toolbar's
 	 * filters and the window — never `q` or `tool`: `q` ILIKE-filters tool names,
@@ -290,7 +270,6 @@ interface ToolsTableProps {
 export function ToolsTable({
 	rows,
 	percentile,
-	window,
 	detailSearch,
 	selected,
 	sparkFor,
@@ -308,7 +287,6 @@ export function ToolsTable({
 		() => prepared.reduce((max, row) => Math.max(max, row.errorRate), 0),
 		[prepared],
 	)
-	const badges = useMemo(() => toolBadges(rows, window), [rows, window])
 	const { sorted, sortKey, sortDir, handleSort } = useTableSort(prepared, {
 		initialKey: "calls" as ToolSortKey,
 		stringKeys: ["key"],
@@ -440,7 +418,6 @@ export function ToolsTable({
 					) : (
 						sorted.map((row) => {
 							const color = colorFor(row.key)
-							const badge = badges.get(row.key)
 							const cells = (
 								<>
 									<span className="flex w-0 min-w-0 flex-1 items-center gap-[9px]">
@@ -461,7 +438,6 @@ export function ToolsTable({
 										>
 											{breakdownKeyLabel(row.key)}
 										</span>
-										{badge === undefined ? null : <Badge badge={badge} />}
 									</span>
 									<LineSpark
 										values={sparkFor(row.key).slice(-24)}

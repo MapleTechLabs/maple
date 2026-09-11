@@ -1,23 +1,22 @@
 import { useMemo } from "react"
-import { d3Curve, defineChart, lineY } from "@tanstack/charts"
+import { barY, defineChart, group } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { curveMonotoneX } from "d3-shape"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
 	PlotFrame,
 	PlotTooltipBody,
+	UNBOUNDED_FOCUS_DISTANCE,
 	createTooltipFocusStore,
 	cursorTooltip,
 	dashedGridY,
-	focusCrosshair,
-	focusDot,
-	usePlotChromeColors,
+	linearYDomain,
+	minBarLength,
+	niceLinearDomain,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 import { cn } from "@maple/ui/lib/utils"
 
 import { QueryErrorState } from "@/components/common/query-error-state"
@@ -33,10 +32,12 @@ import {
 	type ToolSeriesPoint,
 } from "@/lib/agent-sessions/tool-analytics"
 
-const STROKE_WIDTH = 1.5
 const PLOT_HEIGHT = 220
+const BAR_RADIUS = 2
+const MAX_BAR_THICKNESS = 48
+const DIMMED_FILL_OPACITY = 0.3
 
-/** One line of the chart. `key` is the column it reads off a row. */
+/** One bar series of the chart. `key` is the column it reads off a row. */
 interface ChartSeries {
 	readonly key: string
 	readonly label: string
@@ -69,6 +70,18 @@ interface ToolChartRow extends Record<string, string | number | Date | null> {
 	date: Date
 }
 
+/** One bar: a series at a bucket. `row` carries the whole bucket for the tooltip. */
+interface ToolBarCell {
+	readonly row: ToolChartRow
+	readonly key: string
+	readonly color: string
+}
+
+function valueAt(row: ToolChartRow, key: string): number | null {
+	const value = row[key]
+	return typeof value === "number" ? value : null
+}
+
 interface ToolSeriesChartProps {
 	/** One point per bucket — the selection merged inside the query. */
 	series: ReadonlyArray<ToolSeriesPoint>
@@ -86,12 +99,17 @@ interface ToolSeriesChartProps {
 }
 
 /**
- * The selected metric over the window, as one trend for the whole scope.
+ * The selected metric over the window, as bars for the whole scope.
+ *
+ * Bars, not a smoothed line: agent sessions are low volume, and a curve through
+ * a handful of buckets reads as a trend the samples do not support. A bar per
+ * bucket shows exactly where readings exist.
  *
  * The series arrives already merged by the warehouse (`split: "none"`), never
  * folded here: a bucket's sessions do not add across tools and its percentiles
- * do not average. Duration draws P50, P90 and P95 together, since "is the tail
- * moving while the median holds?" is the question the metric is picked for.
+ * do not average. Duration draws P50, P90 and P95 side by side — grouped, never
+ * stacked, since percentiles do not add — because "is the tail moving while the
+ * median holds?" is the question the metric is picked for.
  */
 export function ToolSeriesChart({
 	series,
@@ -104,12 +122,10 @@ export function ToolSeriesChart({
 	modelLabel,
 	waiting,
 }: ToolSeriesChartProps) {
-	const chromeColors = usePlotChromeColors()
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
-	const narrow = useMediaQuery("max-sm")
 
-	const lines = useMemo<ReadonlyArray<ChartSeries>>(
+	const bars = useMemo<ReadonlyArray<ChartSeries>>(
 		() =>
 			metric === "duration"
 				? DURATION_SERIES[percentile]
@@ -144,48 +160,48 @@ export function ToolSeriesChart({
 		[rows, effectiveTimezone],
 	)
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<ToolChartRow>[]>(
+	const tooltipSeries = useMemo<PlotTooltipSeries<ToolBarCell>[]>(
 		() =>
-			lines.map((line) => ({
-				label: line.label,
-				color: line.color,
-				value: (row: ToolChartRow) => {
-					const value = row[line.key]
-					return typeof value === "number" ? value : null
-				},
+			bars.map((bar) => ({
+				label: bar.label,
+				color: bar.color,
+				value: (cell: ToolBarCell) => valueAt(cell.row, bar.key),
 				format: (value: number) => formatToolMetric(value, metric),
 			})),
-		[lines, metric],
+		[bars, metric],
 	)
 
 	const definition = useMemo(() => {
-		const at = (row: ToolChartRow) => row.date
-		const valueOf = (key: string) => (row: ToolChartRow) => {
-			const value = row[key]
-			return typeof value === "number" ? value : null
-		}
-		const curve = d3Curve(curveMonotoneX)
+		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: bars.map((bar) => bar.key) }))
+		// One call against a peak of hundreds paints sub-pixel — see `minBarLength`.
+		const lift = minBarLength(yDomain)
+		// Long-form: `barY` groups side by side off `z` within ONE mark.
+		const cells = rows.flatMap((row) => bars.map((bar) => ({ row, key: bar.key, color: bar.color })))
 
 		return defineChart({
 			marks: [
 				dashedGridY(),
-				...lines.map((line) =>
-					lineY(rows, {
-						id: line.key,
-						x: at,
-						y: valueOf(line.key),
-						stroke: line.color,
-						strokeWidth: STROKE_WIDTH,
-						curve,
-					}),
-				),
-				...lines.map((line) => focusDot(rows, at, valueOf(line.key), line.color, chromeColors)),
-				focusCrosshair(chromeColors),
+				barY(cells, {
+					x: (cell: ToolBarCell) => cell.row.date,
+					y: (cell: ToolBarCell) => lift(valueAt(cell.row, cell.key)),
+					z: (cell: ToolBarCell) => cell.key,
+					fill: (cell: ToolBarCell) => cell.color,
+					layout: group(),
+					radius: BAR_RADIUS,
+					maxThickness: MAX_BAR_THICKNESS,
+					// The hovered bucket keeps its fill and every other one dims.
+					states: [
+						{
+							when: (context: { matches: (match: "x") => boolean }) => !context.matches("x"),
+							style: { fillOpacity: DIMMED_FILL_OPACITY },
+						},
+					],
+				}),
 			],
 			scales: {
-				x: axis.x,
+				x: axis.xBand,
 				y: {
-					scale: scaleLinear,
+					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,
 						ticks: {
@@ -198,12 +214,16 @@ export function ToolSeriesChart({
 					},
 				},
 			},
-			margin: { left: narrow ? 40 : 48, right: 8, top: 4 },
+			// `left` unset: the frame measures the tick labels, and a fixed width
+			// clipped duration ticks ("5.7min" drew as ".7min").
+			margin: { right: 8, top: 4 },
 			focus: "group-x",
+			// Sparse buckets sit far apart; keep the whole column live between them.
+			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, lines, chromeColors, axis, metric, narrow, focusStore])
+	}, [rows, bars, axis, metric, focusStore])
 
 	const title = toolChartTitle({
 		metric,
@@ -243,18 +263,18 @@ export function ToolSeriesChart({
 				</span>
 			</div>
 
-			{/* Only where there is more than one line to tell apart — a single
+			{/* Only where there is more than one series to tell apart — a single
 			    series is already named by the head. */}
-			{lines.length > 1 ? (
+			{bars.length > 1 ? (
 				<div className="-mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] leading-3.5">
-					{lines.map((line) => (
-						<span key={line.key} className="flex items-center gap-1.5">
+					{bars.map((bar) => (
+						<span key={bar.key} className="flex items-center gap-1.5">
 							<span
 								aria-hidden
-								className="h-[2.5px] w-3 shrink-0 rounded-full"
-								style={{ backgroundColor: line.color }}
+								className="size-2 shrink-0 rounded-[2px]"
+								style={{ backgroundColor: bar.color }}
 							/>
-							<span className="text-foreground/75">{line.label}</span>
+							<span className="text-foreground/75">{bar.label}</span>
 						</span>
 					))}
 				</div>
@@ -277,7 +297,7 @@ export function ToolSeriesChart({
 								points={points}
 								series={tooltipSeries}
 								focusStore={focusStore}
-								heading={(row: ToolChartRow) => axis.heading(row.bucket)}
+								heading={(cell: ToolBarCell) => axis.heading(cell.row.bucket)}
 							/>
 						)}
 					/>
