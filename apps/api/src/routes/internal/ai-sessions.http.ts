@@ -22,7 +22,7 @@ import {
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 import { Effect } from "effect"
-import { CH } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 
@@ -560,12 +560,6 @@ const overviewSelection = (payload: {
 	hasErrors: payload.hasErrors,
 })
 
-/** `TinybirdDateTime` is UTC without a zone marker. */
-const warehouseDateTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
-
-/** Back to warehouse shape, seconds precision — what the params take. */
-const warehouseDateTime = (ms: number): string => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
-
 /**
  * The window of equal length ending where the caller's begins — the tiles'
  * comparison. Computed here rather than asked for, so the delta cannot be
@@ -574,13 +568,16 @@ const warehouseDateTime = (ms: number): string => new Date(ms).toISOString().rep
  * `prevEndTime` IS the caller's `startTime`: the read bounds the previous
  * branch half-open (`[prevStartTime, prevEndTime)`), so the boundary second
  * belongs to the current window alone and no session is measured in both.
+ *
+ * Both bounds are datetimes the request contract has already checked parse, so
+ * the arithmetic here cannot produce the `Invalid Date` a formatter throws on.
  */
 const previousWindow = (startTime: string, endTime: string) => {
-	const start = warehouseDateTimeMs(startTime)
-	const span = warehouseDateTimeMs(endTime) - start
+	const start = parseWarehouseDateTime(startTime)
+	const span = parseWarehouseDateTime(endTime) - start
 	return {
-		prevStartTime: warehouseDateTime(start - span),
-		prevEndTime: warehouseDateTime(start),
+		prevStartTime: formatWarehouseDateTime(start - span),
+		prevEndTime: formatWarehouseDateTime(start),
 	}
 }
 

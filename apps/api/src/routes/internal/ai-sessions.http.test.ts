@@ -1264,6 +1264,35 @@ describe("POST /internal/ai-sessions/overview/summary", () => {
 			await harness.dispose()
 		}
 	})
+
+	it("refuses a datetime the calendar does not have with a 400 rather than a 500", async () => {
+		const harness = makeHarness({ compiledQuery: () => Effect.die("the read must never run") })
+
+		try {
+			// The window's pattern admits it; `Date.parse` does not. It would reach
+			// the comparison window as a NaN and leave `toISOString` throwing.
+			const summary = await harness.post("/internal/ai-sessions/overview/summary", {
+				...WINDOW,
+				startTime: "2026-13-45 99:99:99",
+				bucketSeconds: 300,
+			})
+			expect(summary.status).toBe(400)
+			const breakdown = await harness.post("/internal/ai-sessions/overview/breakdown", {
+				...WINDOW,
+				startTime: "2026-13-45 99:99:99",
+				dimension: "model",
+			})
+			expect(breakdown.status).toBe(400)
+			const modelMix = await harness.post("/internal/ai-sessions/overview/model-mix", {
+				...WINDOW,
+				startTime: "2026-13-45 99:99:99",
+				bucketSeconds: 300,
+			})
+			expect(modelMix.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
 })
 
 describe("POST /internal/ai-sessions/overview/breakdown", () => {

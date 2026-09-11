@@ -652,9 +652,25 @@ const aiOverviewBucketedSelection = {
 	...aiOverviewSelection,
 }
 
+/**
+ * Both bounds have to be datetimes the calendar admits, not just the pattern.
+ *
+ * `TinybirdDateTime` takes `2026-13-45 99:99:99`, which parses to NaN — and
+ * every overview read derives its comparison window from these two, where a
+ * NaN is a `new Date(NaN).toISOString()` and a 500. Refused here instead.
+ */
+const aiOverviewWindowValid = Schema.makeFilter(
+	(request: { readonly startTime: string; readonly endTime: string }) =>
+		Number.isNaN(tinybirdDateTimeMs(request.startTime)) ||
+		Number.isNaN(tinybirdDateTimeMs(request.endTime))
+			? "startTime and endTime must be valid datetimes"
+			: true,
+	{ identifier: "OverviewWindowValid" },
+)
+
 export class AiOverviewSummaryRequest extends Schema.Class<AiOverviewSummaryRequest>(
 	"AiOverviewSummaryRequest",
-)(aiOverviewBucketedSelection) {}
+)(Schema.Struct(aiOverviewBucketedSelection).check(aiOverviewWindowValid)) {}
 
 export class AiOverviewSummaryResponse extends Schema.Class<AiOverviewSummaryResponse>(
 	"AiOverviewSummaryResponse",
@@ -739,18 +755,20 @@ export type AiOverviewBreakdownRow = Schema.Schema.Type<typeof AiOverviewBreakdo
 
 export class AiOverviewBreakdownRequest extends Schema.Class<AiOverviewBreakdownRequest>(
 	"AiOverviewBreakdownRequest",
-)({
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-	dimension: AiOverviewDimension,
-	limit: Schema.optionalKey(
-		Schema.Number.check(
-			Schema.isInt(),
-			Schema.isBetween({ minimum: 1, maximum: AI_OVERVIEW_BREAKDOWN_MAX }),
+)(
+	Schema.Struct({
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+		dimension: AiOverviewDimension,
+		limit: Schema.optionalKey(
+			Schema.Number.check(
+				Schema.isInt(),
+				Schema.isBetween({ minimum: 1, maximum: AI_OVERVIEW_BREAKDOWN_MAX }),
+			),
 		),
-	),
-	...aiOverviewSelection,
-}) {}
+		...aiOverviewSelection,
+	}).check(aiOverviewWindowValid),
+) {}
 
 export class AiOverviewBreakdownResponse extends Schema.Class<AiOverviewBreakdownResponse>(
 	"AiOverviewBreakdownResponse",
@@ -784,7 +802,7 @@ export type AiOverviewModelMixPoint = Schema.Schema.Type<typeof AiOverviewModelM
 
 export class AiOverviewModelMixRequest extends Schema.Class<AiOverviewModelMixRequest>(
 	"AiOverviewModelMixRequest",
-)(aiOverviewBucketedSelection) {}
+)(Schema.Struct(aiOverviewBucketedSelection).check(aiOverviewWindowValid)) {}
 
 export class AiOverviewModelMixResponse extends Schema.Class<AiOverviewModelMixResponse>(
 	"AiOverviewModelMixResponse",
