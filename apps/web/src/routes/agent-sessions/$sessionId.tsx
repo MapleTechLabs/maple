@@ -8,13 +8,13 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { SquareSparkleIcon } from "@/components/icons"
-import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { NotFoundError } from "@/components/route-error"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
+import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
 import {
 	isSessionView,
 	SessionViews,
@@ -81,10 +81,11 @@ function AgentSessionDetailContent() {
 	// reads as "resolve this session from its id".
 	const spansState = useSessionSpans(sessionId, queryWindow)
 	// The whole session's totals — only for a session that did not fit the
-	// first page. One that did is complete in hand, and what the page computes
-	// from it IS the total; the extra warehouse read would buy nothing.
+	// first page, where they are what the progress indicator counts toward.
+	// One that did is complete in hand, and what the page computes from it IS
+	// the total; the extra warehouse read would buy nothing.
 	const summaryResult = useAtomValue(
-		spansState.partial
+		spansState.progress !== undefined
 			? aiSessionSummaryResultAtom({ data: { sessionId, ...queryWindow } })
 			: disabledResultAtom<GetAiSessionSummaryResponse>(),
 	)
@@ -177,7 +178,7 @@ function SessionDetailBody({
 	spansState: SessionSpansState
 	totals: GetAiSessionSummaryResponse | undefined
 }) {
-	const { spans, partial, hasMore, loadingMore, loadMore, appSpans } = spansState
+	const { spans, progress } = spansState
 	const turns = useMemo(() => buildSessionTurns(spans), [spans])
 	const summary = useMemo(() => buildSessionSummary({ spans, turns }), [spans, turns])
 
@@ -220,7 +221,7 @@ function SessionDetailBody({
 	const startMs = totals?.startTime === undefined ? summary.startMs : toEpochMs(totals.startTime)
 	const endMs = totals?.endTime === undefined ? summary.endMs : toEpochMs(totals.endTime)
 	useEffect(() => {
-		if (search.t !== undefined || (partial && totals === undefined)) return
+		if (search.t !== undefined || (progress !== undefined && totals === undefined)) return
 		navigate({
 			replace: true,
 			search: (prev: Record<string, unknown>) => ({
@@ -229,7 +230,7 @@ function SessionDetailBody({
 				end: formatWarehouseDateTime(endMs),
 			}),
 		})
-	}, [navigate, search.t, partial, totals, startMs, endMs])
+	}, [navigate, search.t, progress, totals, startMs, endMs])
 
 	const selectSpan = useCallback(
 		(spanId: string | undefined) => {
@@ -249,7 +250,14 @@ function SessionDetailBody({
 				<DashboardLayout.Sticky>
 					<DashboardLayout.Header
 						titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
-					/>
+					>
+						{/* The one sign a session larger than a page is still arriving.
+						    Every view renders what is in hand and grows as pages land;
+						    nothing below asks the reader to fetch anything. */}
+						{progress !== undefined && progress.phase !== "complete" && (
+							<SessionLoadIndicator progress={progress} totals={totals} />
+						)}
+					</DashboardLayout.Header>
 				</DashboardLayout.Sticky>
 				{/* `py-0` (the content blocks carry the padding instead) so the views'
 				    sticky elements pin flush to the scroller's edges — sticky offsets
@@ -261,27 +269,6 @@ function SessionDetailBody({
 				    `overflow-x-hidden` means a span that escapes its truncation can
 				    never make the whole page scroll sideways. */}
 				<DashboardLayout.Scroll className="overflow-x-hidden py-0 pr-6">
-					{partial && (
-						<div className="shrink-0 py-4">
-							<Alert variant="warning">
-								<AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-2">
-									<span>
-										{hasMore ? "Showing the first " : "Showing "}
-										{summary.spanCount.toLocaleString()}
-										{totals === undefined ? " spans" : ` of ${totals.spanCount.toLocaleString()} spans`}
-										{hasMore
-											? " — the agent's later spans load in pages, and a turn's app spans on demand in the Traces view."
-											: " — every agent span is loaded; a turn's app spans load on demand in the Traces view."}
-									</span>
-									{hasMore && (
-										<Button variant="outline" size="xs" onClick={loadMore} disabled={loadingMore}>
-											{loadingMore ? "Loading…" : "Load more agent spans"}
-										</Button>
-									)}
-								</AlertDescription>
-							</Alert>
-						</div>
-					)}
 					{/* Content-driven height inside the scroller: `shrink-0` because a
 					    scroll container's flex items shrink to fit before they overflow,
 					    which would collapse the views instead of scrolling them; `grow`
@@ -293,8 +280,8 @@ function SessionDetailBody({
 							onViewChange={changeView}
 							turns={turns}
 							summary={summary}
-							paging={partial ? { hasMore, loadingMore, onLoadMore: loadMore, appSpans } : undefined}
-							totals={partial ? totals : undefined}
+							progress={progress}
+							totals={totals}
 							selectedSpanId={search.span}
 							onSelectSpan={selectSpan}
 						/>

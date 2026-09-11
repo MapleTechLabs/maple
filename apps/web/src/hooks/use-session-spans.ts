@@ -1,35 +1,39 @@
 import * as React from "react"
 
-import { AI_SESSION_SPANS_MAX_TRACE_IDS, type AiSessionSpan, type AiSessionSpanCursor } from "@maple/domain/http"
-import { formatWarehouseDateTime } from "@maple/query-engine"
+import type { AiSessionSpan, AiSessionSpanCursor, AiSessionSpanScope } from "@maple/domain/http"
 
 import {
 	getAiSessionSpans,
 	type AiSessionSpansInput,
 	type AiSessionSpansPage,
 } from "@/api/warehouse/ai-sessions"
-import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
 import type { SessionWindow } from "@/lib/agent-sessions/session-window"
 import { Result, useAtomValue, type Atom } from "@/lib/effect-atom"
+import { displayError } from "@/lib/error-messages"
 import { mapleRuntime } from "@/lib/registry"
 import { logClientError } from "@/lib/services/common/telemetry"
 import { aiSessionSpansResultAtom, type QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 
 /**
- * One turn's app spans — the service's own HTTP/DB work sharing the agent's
- * traces — as far as they have been loaded.
+ * How far the background load of a session larger than one page has come.
  *
- * `loaded` counts spans this hook fetched for the turn, not the app spans the
- * turn holds: the first page carried every span of the session's opening, so a
- * turn inside it has its app spans without a fetch. `cursor` set means the
- * turn has more than one page of them.
+ * `agent`: the agent's own spans are still arriving — the transcript's input,
+ * so the END of the session is not in hand yet. `app`: every agent span is
+ * loaded and the app's HTTP/DB spans are filling in behind them. `complete`:
+ * the whole session is here. `failed`: a page did not come back; what was
+ * loaded stays, and `retry` picks up where it stopped. `agentSpansComplete`
+ * is what a view that reads the agent's spans alone should look at: a page of
+ * the app's spans failing does not make the transcript's end go missing.
  */
-export interface TurnAppSpansState {
-	readonly loading: boolean
-	readonly loaded: number
-	readonly cursor: AiSessionSpanCursor | undefined
-	readonly complete: boolean
-	readonly failed: boolean
+export interface SessionLoadProgress {
+	readonly phase: "agent" | "app" | "complete" | "failed"
+	/** Every agent span is in hand, whatever the app's pages are doing. */
+	readonly agentSpansComplete: boolean
+	/** Every span in hand, both kinds. */
+	readonly loadedSpans: number
+	/** Agent spans in hand. */
+	readonly loadedAgentSpans: number
+	readonly retry: () => void
 }
 
 export interface SessionSpansState {
@@ -38,31 +42,22 @@ export interface SessionSpansState {
 	/** Every span loaded so far, deduplicated, in the session's own order. */
 	readonly spans: readonly AiSessionSpan[]
 	/**
-	 * The session did not fit the first page. Every later page carries the
-	 * agent's spans alone, so a turn beyond the opening shows the app's spans
-	 * only once `loadAppSpans` fetched them.
+	 * The session did not fit the first page and is (or was) being loaded in
+	 * the background. `undefined` for a session that came whole: then the spans
+	 * in hand ARE the session.
 	 */
-	readonly partial: boolean
-	/** Agent spans remain past what is loaded. */
-	readonly hasMore: boolean
-	readonly loadingMore: boolean
-	readonly loadMore: () => void
-	readonly appSpans: {
-		readonly of: (turn: SessionTurn) => TurnAppSpansState | undefined
-		readonly load: (turn: SessionTurn) => void
-	}
+	readonly progress: SessionLoadProgress | undefined
 }
 
-/** Agent spans a page carries past the first: the same ceiling the first page has. */
+/** Spans a page carries past the first: the same ceiling the first page has. */
 const PAGE_SIZE = 2_000
-
 /**
- * Slack around a turn's bounds for its app-span read. A turn past the first
- * page is bounded by its AGENT spans alone, and the server span that opened
- * the trace — the parent of the turn's own root — started before the first of
- * them. Same figure as the session window's own padding.
+ * The floor a page shrinks to when the byte cap (a 413) ends it. Spans heavy
+ * enough to trip 10MB at this many rows carry ~40KB each after mapping, which
+ * no session in production has come near.
  */
-const APP_SPANS_PADDING_MS = 60_000
+const MIN_PAGE_SIZE = 250
+const SESSION_TOO_LARGE_TAG = "@maple/http/ai-sessions/AiSessionTooLargeError"
 
 /** The two reads, injectable so a test can stand in fakes for both. */
 export interface SessionSpansReads {
@@ -77,55 +72,48 @@ const warehouseReads: SessionSpansReads = {
 	fetchPage: (data) => mapleRuntime.runPromise(getAiSessionSpans({ data })),
 }
 
-const NO_APP_SPANS: TurnAppSpansState = {
-	loading: false,
-	loaded: 0,
-	cursor: undefined,
-	complete: false,
-	failed: false,
-}
-
 /** What the hook has loaded past the first page, for one first-page input. */
 interface Loaded {
 	readonly key: string
+	/** Pages of the agent's spans, in order. */
 	readonly pages: ReadonlyArray<AiSessionSpansPage>
+	/** Pages of the app's spans, in order — read once every agent page is in. */
 	readonly appPages: ReadonlyArray<AiSessionSpansPage>
-	readonly appSpans: ReadonlyMap<string, TurnAppSpansState>
-	readonly loadingMore: boolean
+	readonly status: "loading" | "complete" | "failed"
+	/** Bumped by `retry`, which is what restarts the loader after a failure. */
+	readonly attempt: number
 }
 
 // Shared empties, so the derived `loaded` below keeps its identities across
 // renders while nothing has been fetched under the key — every memo downstream
 // of `spans` is keyed on them.
 const NO_PAGES: ReadonlyArray<AiSessionSpansPage> = []
-const NO_TURNS: ReadonlyMap<string, TurnAppSpansState> = new Map()
 
 const nothingLoaded = (key: string): Loaded => ({
 	key,
 	pages: NO_PAGES,
 	appPages: NO_PAGES,
-	appSpans: NO_TURNS,
-	loadingMore: false,
+	status: "loading",
+	attempt: 0,
 })
 
 /**
- * What a turn's app-span state is keyed by. Turn ids are derived from the
- * spans in hand and a page appended later can re-derive every one of them
- * (`buildSessionTurns` picks its anchor rule from the whole list); the span
- * that opened the turn survives that far more often than the id does.
- */
-const turnKey = (turn: SessionTurn) => turn.anchor.spanId
-
-/**
- * A session's spans, loaded in the order the reader needs them.
+ * A session's spans, all of them, loaded in the order the reader needs them.
  *
  * The first page is the session's opening, every span of it — a session that
- * fits is complete after one read, which is the common case and the only one
- * the page used to handle. A session that does not fit continues in pages of
- * the AGENT's spans alone: the transcript is built from those, and they are a
- * fraction of a large session's rows (in production a tenth, the rest being
- * the app's own SQL and HTTP). The app's spans for a turn past the opening are
- * fetched when the reader asks for that turn, by the turn's traces and bounds.
+ * fits is complete after one read, which is the common case. A session that
+ * does not fit is drained in the background from the moment the first page
+ * lands, without anything being asked of the reader: first every page of the
+ * AGENT's spans, which are what the transcript and the findings are built from
+ * and a fraction of a large session's rows (in production a tenth, the rest
+ * being the app's own SQL and HTTP), then every page of the app's spans behind
+ * them. Each view renders what is in hand and grows as pages arrive; the
+ * page's one progress indicator is the only sign anything is happening.
+ *
+ * Both phases continue from the first page's cursor: the cursor is a keyset
+ * position in the session's one span order, and a scope only filters rows, so
+ * `after` the first page's last span skips exactly the spans that page already
+ * carried — of either kind.
  *
  * Pages after the first live in component state rather than in atoms: they
  * are appended to one growing list keyed by the first page's input, the way
@@ -159,9 +147,74 @@ export function useSessionSpans(
 	)
 
 	const firstCursor = Result.isSuccess(firstPage) ? firstPage.value.nextCursor : undefined
-	const lastCursor = loaded.pages.length > 0 ? loaded.pages[loaded.pages.length - 1]!.nextCursor : firstCursor
-	const partial = firstCursor !== undefined
-	const hasMore = lastCursor !== undefined
+
+	// The loader reads where to resume from at start rather than from its
+	// closure: a retry after a failure continues from the pages in hand, and
+	// those are in state, not in the effect's dependencies.
+	const loadedRef = React.useRef(loaded)
+	loadedRef.current = loaded
+
+	React.useEffect(() => {
+		if (firstCursor === undefined) return
+		const resumeFrom = loadedRef.current.key === key ? loadedRef.current : nothingLoaded(key)
+		if (resumeFrom.status === "complete") return
+		let cancelled = false
+		const append = (scope: AiSessionSpanScope, page: AiSessionSpansPage) =>
+			update(key, (previous) =>
+				scope === "ai"
+					? { ...previous, pages: [...previous.pages, page] }
+					: { ...previous, appPages: [...previous.appPages, page] },
+			)
+		const setStatus = (status: Loaded["status"]) => update(key, (previous) => ({ ...previous, status }))
+
+		/** Fetches pages of one scope from `cursor` until the read ends. False if it stopped short. */
+		const drain = async (scope: AiSessionSpanScope, from: AiSessionSpanCursor | undefined): Promise<boolean> => {
+			let cursor: AiSessionSpanCursor | undefined = from
+			let limit = PAGE_SIZE
+			while (cursor !== undefined) {
+				if (cancelled) return false
+				let page: AiSessionSpansPage
+				try {
+					page = await reads.fetchPage({ ...input, scope, after: cursor, limit })
+				} catch (error: unknown) {
+					// The byte cap, not the row cap, ended the page: the same read
+					// with fewer rows is the fix the 413 asks for.
+					if (displayError(error)._tag === SESSION_TOO_LARGE_TAG && limit > MIN_PAGE_SIZE) {
+						limit = Math.max(MIN_PAGE_SIZE, Math.floor(limit / 2))
+						continue
+					}
+					logClientError("ai_session.pagination_failed", error)
+					if (!cancelled) setStatus("failed")
+					return false
+				}
+				if (cancelled) return false
+				append(scope, page)
+				cursor = page.nextCursor
+			}
+			return true
+		}
+
+		const lastCursor = (pages: ReadonlyArray<AiSessionSpansPage>) => pages[pages.length - 1]?.nextCursor
+		void (async () => {
+			if (resumeFrom.status === "failed") setStatus("loading")
+			const agentDone =
+				resumeFrom.pages.length > 0 && lastCursor(resumeFrom.pages) === undefined
+					? true
+					: await drain("ai", lastCursor(resumeFrom.pages) ?? firstCursor)
+			if (!agentDone) return
+			const appDone = await drain(
+				"app",
+				resumeFrom.appPages.length > 0 ? lastCursor(resumeFrom.appPages) : firstCursor,
+			)
+			if (appDone && !cancelled) setStatus("complete")
+		})()
+
+		return () => {
+			cancelled = true
+		}
+		// `loaded.attempt` is the retry signal; the pages themselves are read
+		// from the ref at start and must not restart the loop as they arrive.
+	}, [reads, input, key, firstCursor, loaded.attempt, update])
 
 	const spans = React.useMemo(() => {
 		const first = Result.isSuccess(firstPage) ? firstPage.value.data : []
@@ -172,80 +225,36 @@ export function useSessionSpans(
 		])
 	}, [firstPage, loaded.pages, loaded.appPages])
 
-	const loadMore = React.useCallback(() => {
-		if (loaded.loadingMore || lastCursor === undefined) return
-		update(key, (previous) => ({ ...previous, loadingMore: true }))
-		reads
-			.fetchPage({ ...input, scope: "ai", after: lastCursor, limit: PAGE_SIZE })
-			.then((page) => {
-				update(key, (previous) => ({ ...previous, pages: [...previous.pages, page], loadingMore: false }))
-			})
-			.catch((error: unknown) => {
-				logClientError("ai_session.pagination_failed", error)
-				update(key, (previous) => ({ ...previous, loadingMore: false }))
-			})
-	}, [reads, input, key, lastCursor, loaded.loadingMore, update])
-
-	const loadAppSpans = React.useCallback(
-		(turn: SessionTurn) => {
-			const id = turnKey(turn)
-			const state = loaded.appSpans.get(id) ?? NO_APP_SPANS
-			if (state.loading || state.complete) return
-			const setTurn = (next: TurnAppSpansState) =>
-				update(key, (previous) => ({ ...previous, appSpans: new Map(previous.appSpans).set(id, next) }))
-			setTurn({ ...state, loading: true, failed: false })
-			reads
-				.fetchPage({
-					sessionId,
-					startTime: formatWarehouseDateTime(turn.startMs - APP_SPANS_PADDING_MS),
-					endTime: formatWarehouseDateTime(turn.endMs + APP_SPANS_PADDING_MS),
-					// A turn of more traces than one read names — every model call
-					// its own trace, say — is read the way the session is, by its
-					// bounds: the same spans, one session resolution more.
-					...(turn.traceIds.length <= AI_SESSION_SPANS_MAX_TRACE_IDS && { traceIds: turn.traceIds }),
-					scope: "app",
-					limit: PAGE_SIZE,
-					...(state.cursor !== undefined && { after: state.cursor }),
-				})
-				.then((page) => {
-					update(key, (previous) => ({
-						...previous,
-						appPages: [...previous.appPages, page],
-						appSpans: new Map(previous.appSpans).set(id, {
-							loading: false,
-							loaded: state.loaded + page.data.length,
-							cursor: page.nextCursor,
-							complete: page.nextCursor === undefined,
-							failed: false,
-						}),
-					}))
-				})
-				.catch((error: unknown) => {
-					logClientError("ai_session.app_spans_failed", error)
-					setTurn({ ...state, loading: false, failed: true })
-				})
-		},
-		[reads, key, loaded.appSpans, sessionId, update],
+	const retry = React.useCallback(
+		() => update(key, (previous) => (previous.status === "failed" ? { ...previous, attempt: previous.attempt + 1 } : previous)),
+		[key, update],
 	)
 
-	const of = React.useCallback((turn: SessionTurn) => loaded.appSpans.get(turnKey(turn)), [loaded.appSpans])
+	const progress = React.useMemo<SessionLoadProgress | undefined>(() => {
+		if (firstCursor === undefined) return undefined
+		const agentDone = loaded.pages.length > 0 && loaded.pages[loaded.pages.length - 1]!.nextCursor === undefined
+		const phase: SessionLoadProgress["phase"] =
+			loaded.status === "failed"
+				? "failed"
+				: loaded.status === "complete"
+					? "complete"
+					: agentDone
+						? "app"
+						: "agent"
+		let loadedAgentSpans = 0
+		for (const span of spans) if (span.isAiSpan) loadedAgentSpans += 1
+		return { phase, agentSpansComplete: agentDone, loadedSpans: spans.length, loadedAgentSpans, retry }
+	}, [firstCursor, loaded.status, loaded.pages, spans, retry])
 
-	return {
-		firstPage,
-		spans,
-		partial,
-		hasMore,
-		loadingMore: loaded.loadingMore,
-		loadMore,
-		appSpans: { of, load: loadAppSpans },
-	}
+	return { firstPage, spans, progress }
 }
 
 /**
- * Later pages never repeat a span, but a turn's app-span read can: the first
- * page carried the session's opening whole, so a turn straddling its end has
- * some app spans twice. First occurrence wins, and the session's order — the
- * page order — is kept, since every consumer sorts by start time anyway.
+ * The scopes never overlap and the cursor skips the first page, so no span
+ * should arrive twice — but a session whose spans share a timestamp AND id
+ * across traces would, and one copy is the honest render. First occurrence
+ * wins, and the session's order — the page order — is kept, since every
+ * consumer sorts by start time anyway.
  */
 function dedupeInOrder(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
 	const seen = new Set<string>()
