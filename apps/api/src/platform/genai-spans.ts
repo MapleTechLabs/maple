@@ -118,23 +118,21 @@ export const semconvFinishReason = (reason: string): string =>
 
 type ResponseParts = Parameters<Telemetry.SpanTransformer>[0]["response"]
 
+type FinishPart = Extract<ResponseParts[number], { readonly type: "finish" }>
+
 /**
- * What the model sent back, folded into one assistant message.
+ * What the model streamed back, folded into one assistant message.
  *
- * A streamed response arrives as deltas, a generated one as whole parts; both are handled because
- * the transformer receives whichever the call produced. The finish part is returned alongside —
- * absent when the stream ended early, which is exactly when the partial message is worth keeping.
+ * The finish part is returned alongside — absent when the stream ended early, which is exactly when
+ * the partial message is worth keeping.
  */
 const summarizeResponse = (response: ResponseParts) => {
 	const parts: Array<SerializedPart> = []
 	const open = new Map<string, { readonly type: "text"; content: string }>()
-	let finish: Extract<ResponseParts[number], { readonly type: "finish" }> | undefined
+	let finish: FinishPart | undefined
 	let errored = false
 	for (const part of response) {
 		switch (part.type) {
-			case "text":
-				parts.push({ type: "text", content: part.text })
-				break
 			case "text-delta": {
 				const text = open.get(part.id)
 				if (text === undefined) {
@@ -216,16 +214,16 @@ export const messagesJson = (
 	let encoded = rendered.map(encodeMessage)
 	let start = fitFrom(encoded, budget)
 	// A single message can outweigh the whole budget — routinely, since a tool result may run to 50k
-	// against the 20k input cap. Bound each surviving part's payload and re-fit. A soft budget: JSON
-	// escaping and a message with many parts can overshoot it, bounded, which beats losing the
-	// attribute.
+	// against the 20k input cap. Bound each surviving message's payloads, splitting its allowance
+	// across its parts so a batch of parallel tool results shares one, and re-fit. A soft budget: JSON
+	// escaping and the per-part floor can overshoot it, bounded, which beats losing the attribute.
 	if (encoded.slice(start).reduce((sum, json) => sum + json.length + 1, 1) > budget) {
-		const cap = Math.max(256, Math.floor(budget / 8))
-		rendered = rendered.map((message, index) =>
-			index < start
-				? message
-				: { ...message, parts: message.parts.map((part) => boundPart(part, cap)) },
-		)
+		const perMessage = Math.floor(budget / 8)
+		rendered = rendered.map((message, index) => {
+			if (index < start) return message
+			const cap = Math.max(256, Math.floor(perMessage / Math.max(1, message.parts.length)))
+			return { ...message, parts: message.parts.map((part) => boundPart(part, cap)) }
+		})
 		encoded = rendered.map(encodeMessage)
 		start = fitFrom(encoded, budget)
 	}
@@ -239,13 +237,8 @@ export const messagesJson = (
  * `withPerCallFields` in `./Llm.ts`) the final usage object carries `cost`, and the provider passes
  * the raw usage through on the finish part. Maple never prices tokens itself.
  */
-const reportedCost = (metadata: unknown): number | undefined => {
-	if (!Predicate.hasProperty(metadata, "openrouter")) return undefined
-	const openrouter = metadata.openrouter
-	if (!Predicate.hasProperty(openrouter, "usage") || !Predicate.hasProperty(openrouter.usage, "cost")) {
-		return undefined
-	}
-	const cost = openrouter.usage.cost
+const reportedCost = (finish: FinishPart): number | undefined => {
+	const cost = finish.metadata.openrouter?.usage?.cost
 	return Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0 ? cost : undefined
 }
 
@@ -265,17 +258,16 @@ interface CallTiming {
 	finishedMs: number | undefined
 }
 
-/** `timing` is absent for a non-streaming call, which has neither a first chunk nor a stream. */
 const modelCallTransformer =
-	(telemetry: ModelCallTelemetry, timing: CallTiming | undefined): Telemetry.SpanTransformer =>
+	(telemetry: ModelCallTelemetry, timing: CallTiming): Telemetry.SpanTransformer =>
 	({ span, prompt, responseFormat, response }) => {
 		const input = messagesJson(inputMessages(prompt), INPUT_MESSAGES_BUDGET)
 		const system = systemInstructionsJson(prompt)
 		const { message, finish, failed } = summarizeResponse(response)
-		const cost = finish === undefined ? undefined : reportedCost(finish.metadata)
+		const cost = finish === undefined ? undefined : reportedCost(finish)
 		const attributes = {
 			"gen_ai.provider.name": telemetry.providerName,
-			"gen_ai.request.stream": timing !== undefined,
+			"gen_ai.request.stream": true,
 			...(telemetry.reasoningLevel === undefined
 				? undefined
 				: { "gen_ai.request.reasoning.level": telemetry.reasoningLevel }),
@@ -304,10 +296,10 @@ const modelCallTransformer =
 			// Seconds by convention. The span's own clock covers the whole stream lifetime, including
 			// the consumer draining it, so these two are stamped as parts pass through instead — as each
 			// is pulled, which is as close to the model as this side of the stream gets.
-			...(timing?.firstChunkMs === undefined
+			...(timing.firstChunkMs === undefined
 				? undefined
 				: { "gen_ai.response.time_to_first_chunk": (timing.firstChunkMs - timing.startedMs) / 1000 }),
-			...(timing?.finishedMs === undefined
+			...(timing.finishedMs === undefined
 				? undefined
 				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: timing.finishedMs - timing.startedMs }),
 			...telemetry.sessionAttributes,
@@ -318,20 +310,18 @@ const modelCallTransformer =
 	}
 
 /**
- * Build a provider's language model so that every call annotates its own span.
+ * Build a provider's language model so that every `streamText` call — the only call Maple makes, and
+ * the only one effect-agent makes — annotates its own span.
  *
- * The transformer goes in twice. Once at construction, where Effect AI captures it as the default
- * every method falls back to, so `generateText` and `generateObject` spans carry the content and the
- * session too. And once per `streamText` call — the only call Maple makes — because two of its
- * numbers are per call: the first chunk and the finish are timed as they pass through, and the
- * transformer reads them when Effect AI applies it, as the stream ends, including when it fails.
+ * The transformer is provided per call because two of its numbers are per call: the first chunk and
+ * the finish are timed as they pass through, and the transformer reads them when Effect AI applies
+ * it, as the stream ends, including when it fails.
  */
 export const instrumentLanguageModel = <R>(
 	make: Effect.Effect<LanguageModel.Service, never, R>,
 	telemetry: ModelCallTelemetry,
 ): Effect.Effect<LanguageModel.Service, never, R> =>
 	make.pipe(
-		Effect.provideService(Telemetry.CurrentSpanTransformer, modelCallTransformer(telemetry, undefined)),
 		Effect.map((service) => ({
 			...service,
 			streamText: ((options: Parameters<LanguageModel.Service["streamText"]>[0]) =>

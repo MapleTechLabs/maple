@@ -3,7 +3,10 @@
  * and tool results run to 50k, so these paths run in production far more often than the happy one.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { messagesJson, toolCallJson } from "./genai-spans"
+import { Effect, Schema } from "effect"
+import { Tool } from "effect/unstable/ai"
+import { makeRecordingTracer } from "@/testing/recording-tracer"
+import { invokeAgentAttributes, messagesJson, toolCallJson, withToolCallContent } from "./genai-spans"
 
 const TRUNCATION_MARKER = "…[truncated]"
 
@@ -40,6 +43,25 @@ describe("messagesJson", () => {
 		assert.strictEqual(dropped, 0)
 		assert.isBelow(json.length, 1_000)
 		assert.isTrue(String(JSON.parse(json)[0].parts[0].response).endsWith(TRUNCATION_MARKER))
+	})
+
+	it("splits a message's allowance across its parts, so parallel tool results share one", () => {
+		const { json, dropped } = messagesJson(
+			[
+				{
+					role: "tool",
+					parts: Array.from({ length: 20 }, (_, index) => ({
+						type: "tool_call_response" as const,
+						id: `t${index}`,
+						response: "x".repeat(5_000),
+					})),
+				},
+			],
+			20_000,
+		)
+
+		assert.strictEqual(dropped, 0)
+		assert.isAtMost(json.length, 20_000)
 	})
 
 	it("replaces a payload JSON cannot encode instead of throwing", () => {
@@ -97,4 +119,44 @@ describe("toolCallJson", () => {
 		assert.isAtMost(json.length, 8_000)
 		assert.strictEqual(JSON.parse(json).truncated, true)
 	})
+})
+
+describe("invokeAgentAttributes", () => {
+	it("drops schemas and shortens descriptions when the definitions outweigh their budget", () => {
+		const attributes = invokeAgentAttributes({
+			agentName: "lens",
+			agentDescription: "",
+			conversationId: "pass-1",
+			providerName: "openrouter",
+			model: "test-model",
+			tools: Array.from({ length: 40 }, (_, index) =>
+				Tool.make(`tool_${index}`, {
+					description: "d".repeat(1_000),
+					parameters: Schema.Struct({ query: Schema.String }),
+				}),
+			),
+		})
+		const definitions = JSON.parse(String(attributes["gen_ai.tool.definitions"]))
+
+		assert.strictEqual(definitions.length, 40)
+		assert.notProperty(definitions[0], "parameters")
+		assert.strictEqual(definitions[0].description, `${"d".repeat(128)}${TRUNCATION_MARKER}`)
+		assert.notProperty(attributes, "gen_ai.agent.description")
+	})
+})
+
+describe("withToolCallContent", () => {
+	it.effect("leaves the handler and its span alone when there is no tool span to describe", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+
+			const result = yield* withToolCallContent(Effect.succeed("done"), {
+				description: "a tool",
+				params: {},
+			}).pipe(Effect.withSpan("not_a_tool"), Effect.withTracer(tracer))
+
+			assert.strictEqual(result, "done")
+			assert.strictEqual(spans[0]?.attributes.size, 0)
+		}),
+	)
 })

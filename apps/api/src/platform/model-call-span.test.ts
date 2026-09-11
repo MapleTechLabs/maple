@@ -88,6 +88,8 @@ const chunk = (delta: Record<string, unknown>, finishReason: string | null) => (
 const endedModelCall = (
 	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
 	frames: ReadonlyArray<unknown>,
+	env: Parameters<typeof resolveTriageModel>[0] = ENV,
+	status = 200,
 ) =>
 	Effect.gen(function* () {
 		const recorder = recordingTracer()
@@ -96,11 +98,9 @@ const endedModelCall = (
 		yield* LanguageModel.streamText({ prompt }).pipe(
 			Stream.runDrain,
 			Effect.ignore,
-			Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+			Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
 			Effect.provideService(FetchHttpClient.Fetch, () =>
-				Promise.resolve(
-					new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
-				),
+				Promise.resolve(new Response(body, { status, headers: { "content-type": "text/event-stream" } })),
 			),
 			Effect.withTracer(recorder.tracer),
 		)
@@ -315,6 +315,37 @@ describe("the model-call span", () => {
 
 			assert.strictEqual(attributes.get("error.type"), "provider_error")
 			assert.strictEqual(attributes.get("gen_ai.response.status"), "failed")
+		}),
+	)
+
+	it.live("asks for no reasoning level when reasoning is off", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall(
+				"hi",
+				[
+					{
+						...chunk({ role: "assistant", content: "hi" }, "stop"),
+						usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+					},
+				],
+				{ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "off" },
+			)
+
+			assert.strictEqual(attributes.get("gen_ai.provider.name"), "openrouter")
+			assert.isFalse(attributes.has("gen_ai.request.reasoning.level"))
+		}),
+	)
+
+	/** The transformer applies as the stream ends, including when it fails before a single chunk. */
+	it.live("still carries the conversation when the provider rejects the call", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall("hi", [], ENV, 400)
+
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.input.messages"))), [
+				{ role: "user", parts: [{ type: "text", content: "hi" }] },
+			])
+			assert.isFalse(attributes.has("gen_ai.response.time_to_first_chunk"))
+			assert.isFalse(attributes.has("maple_ai.model_duration_ms"))
 		}),
 	)
 

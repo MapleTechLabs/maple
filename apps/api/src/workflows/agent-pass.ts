@@ -156,10 +156,10 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 		// place through the erased type.
 		const toolkit: Toolkit.Any = Toolkit.merge(tools.toolkit, input.submit.toolkit)
 
-		// The pass's own span roots the turn: the session view files a lane's untagged tool, HTTP and
-		// database spans by their nearest tagged ancestor, and concurrent lanes would otherwise be
-		// partitioned by start time alone. The model-call spans carry the same keys via the model. It
-		// is also the pass's `invoke_agent` span, which is where the agent and its tools are described.
+		// The pass's own `invoke_agent` span roots the turn: the session view files a lane's untagged
+		// tool, HTTP and database spans by their nearest tagged ancestor, and concurrent lanes would
+		// otherwise be partitioned by start time alone. The model-call spans carry the same keys via the
+		// model. It is also where the agent and its tools are described.
 		const threadId = decodeThreadId(input.id)
 		yield* Effect.annotateCurrentSpan({
 			...agentSessionSpanAttributes(input.model.tags),
@@ -248,4 +248,4 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 		)
 
 		return { answer, usage, toolCalls, deadlineHit }
-	})
+	}).pipe(Effect.withSpan(`invoke_agent ${input.agent.name}`))
