@@ -4,7 +4,7 @@
 // pages' own wiring — which control writes which search param, which row links
 // where, and what the tables say about the rows they are given.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -343,7 +343,12 @@ describe("ToolErrorModal", () => {
 		})
 		// A session with no agent name is headed by its framework, not left blank
 		// and never titled by its raw id.
-		expect(screen.queryAllByText(/ session$/).length).toBeGreaterThan(0)
+		const unnamed = detail.sessions.find((candidate) => candidate.agentName === "")!
+		expect(unnamed.vendorId).toBe("eve")
+		const unnamedRow = screen.getByRole("button", {
+			name: `Show occurrences in ${unnamed.sessionId}`,
+		}).parentElement!
+		expect(within(unnamedRow).getByText("eve session")).toBeTruthy()
 	})
 
 	it("links an occurrence to its span inside the session", () => {
