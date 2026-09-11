@@ -3,8 +3,7 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts",
-		"./brand-colors": "./src/brand-colors.ts"
+		".": "./src/index.ts"
 	},
 	"scripts": {
 		"catalog:generate": "bun scripts/generate-openrouter-catalog.ts",

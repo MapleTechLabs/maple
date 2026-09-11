@@ -12,6 +12,7 @@ const resolved: DetectedModel = {
 	displayName: "Claude Sonnet 4.5",
 	vendorSlug: "anthropic",
 	vendorName: "Anthropic",
+	brandColor: { light: "#D97757", dark: "#D97757" },
 	family: "claude",
 }
 
@@ -22,6 +23,7 @@ const unresolved: DetectedModel = {
 	displayName: "my-deployment",
 	vendorSlug: null,
 	vendorName: null,
+	brandColor: null,
 	family: null,
 }
 
