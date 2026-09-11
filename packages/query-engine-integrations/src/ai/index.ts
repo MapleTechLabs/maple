@@ -41,6 +41,20 @@ export {
 } from "./ai-sessions"
 
 export {
+	aiOverviewBreakdownQuery,
+	aiOverviewSeriesQuery,
+	aiOverviewTotalsQuery,
+	type AiOverviewBreakdownOpts,
+	type AiOverviewBreakdownOutput,
+	type AiOverviewFilterOpts,
+	type AiOverviewMeasuresOutput,
+	type AiOverviewPeriod,
+	type AiOverviewSeriesOutput,
+	type AiOverviewTotalsOutput,
+	type AiOverviewWindow,
+} from "./ai-overview"
+
+export {
 	aiFieldSourceKeys,
 	aiSpanAttributeKeys,
 	genAiIntegration,

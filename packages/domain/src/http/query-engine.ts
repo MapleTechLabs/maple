@@ -36,7 +36,7 @@ import { FunnelBreakdownBy, FunnelKeyBy, FunnelStep } from "@maple/query-model"
  * of a 400. `packages/domain/src/query-engine.ts` already had this right; these
  * declarations did not.
  */
-const BucketSeconds = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)).pipe(
+export const BucketSeconds = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)).pipe(
 	Schema.annotate({
 		identifier: "BucketSeconds",
 		description: "Timeseries bucket width in whole seconds, greater than zero.",

@@ -64,6 +64,13 @@ const traceWindow = {
  *  because the page was ranked inside it. */
 const AI_PAGE_SESSION_IDS = ["wrun_sql_catalog", `${MAPLE_AI_TRACE_SESSION_PREFIX}${AI_TRACE_ID}`]
 
+/** The overview's reads see two windows at once: the caller's, and the one of
+ *  equal length immediately before it that the tiles compare against. */
+const aiCompare = { ...window, prevStartTime: "2025-12-30 06:45:00", prevEndTime: START_TIME }
+
+/** The same, plus the bucket the chart is cut at. */
+const aiCompareBucketed = { ...aiCompare, bucketSeconds: 300 }
+
 /** Stage two's whole param set — it never sees the caller's window: the
  *  page's bounds for the index levels, and one slice of the padded extent
  *  (`aiSessionDetailsSlices`) for the fan-out. */
@@ -189,6 +196,70 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiSessionFacetsQuery",
 		label: "default",
 		compile: () => compileUnionUnsafe(CH.aiSessionFacetsQuery(), window),
+	},
+	{
+		// The overview's tiles: every measure over the window and over the one
+		// before it, in one read. The netting runs inside an aggregate here,
+		// which is a shape no other builder emits.
+		module: "ai-overview",
+		name: "aiOverviewTotalsQuery",
+		label: "default",
+		compile: () => compileUnionUnsafe(CH.aiOverviewTotalsQuery(), aiCompare),
+	},
+	{
+		// Every filter the sidebar can send at once: the per-trace existence
+		// tests, plus the session-level `hasErrors` subquery, which is its own
+		// SQL shape.
+		module: "ai-overview",
+		name: "aiOverviewTotalsQuery",
+		label: "every-filter",
+		compile: () =>
+			compileUnionUnsafe(
+				CH.aiOverviewTotalsQuery({
+					vendorIds: ["eve"],
+					serviceNames: ["maple-slack-agent"],
+					deploymentEnvs: ["production"],
+					models: ["gpt-5.5"],
+					agentNames: ["billing-agent"],
+					toolNames: ["send_email"],
+					hasErrors: true,
+				}),
+				aiCompare,
+			),
+	},
+	{
+		module: "ai-overview",
+		name: "aiOverviewSeriesQuery",
+		label: "default",
+		compile: () => compileUnionUnsafe(CH.aiOverviewSeriesQuery(), aiCompareBucketed),
+	},
+	{
+		// A model breakdown reads model calls alone and keys off `Model`.
+		module: "ai-overview",
+		name: "aiOverviewBreakdownQuery",
+		label: "model",
+		compile: () =>
+			compileUnionUnsafe(CH.aiOverviewBreakdownQuery({ dimension: "model" }), aiCompare),
+	},
+	{
+		// A tool breakdown reads tool calls alone and keys off `ToolName`.
+		module: "ai-overview",
+		name: "aiOverviewBreakdownQuery",
+		label: "tool",
+		compile: () =>
+			compileUnionUnsafe(CH.aiOverviewBreakdownQuery({ dimension: "tool", limit: 5 }), aiCompare),
+	},
+	{
+		// The other four dimensions share one shape: every agent span, keyed by
+		// a column the span always carries.
+		module: "ai-overview",
+		name: "aiOverviewBreakdownQuery",
+		label: "service",
+		compile: () =>
+			compileUnionUnsafe(
+				CH.aiOverviewBreakdownQuery({ dimension: "service", hasErrors: true }),
+				aiCompare,
+			),
 	},
 	{
 		module: "ai-sessions",

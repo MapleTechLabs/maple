@@ -2,6 +2,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
 	AiSessionsInternalApiGroup,
+	AI_OVERVIEW_BREAKDOWN_MAX,
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
 	CurrentTenant,
@@ -1089,6 +1090,253 @@ describe("POST /internal/ai-sessions/summary", () => {
 			expect(response.status).toBe(200)
 			expect(response.body).toMatchObject({ spanCount: 0, turns: [], tokenReporting: "none" })
 			expect(response.body).not.toHaveProperty("startTime")
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+/**
+ * The overview's two reads. What matters here is the composition the route
+ * does and not the SQL: the previous window is computed server-side, the
+ * summary is two reads folded into one response, and the breakdown pairs each
+ * key's two periods and zero-fills the one that has no row.
+ */
+const OVERVIEW_MEASURES = {
+	sessions: "4",
+	erroredSessions: "1",
+	llmCalls: 9,
+	erroredLlmCalls: "2",
+	toolCalls: "6",
+	erroredToolCalls: "1",
+	cost: 0.42,
+	pricedLlmCalls: 7,
+	tokens: 18_400,
+	inputTokens: 12_000,
+	cacheReadTokens: 4_000,
+	cacheWriteTokens: 0,
+	outputTokens: 2_000,
+	reasoningTokens: 400,
+	sessionDurationP50Ns: 600_000_000,
+	sessionDurationP95Ns: 900_000_000,
+	llmDurationP50Ns: 4_000_000,
+	llmDurationP95Ns: 8_000_000,
+}
+
+/** One row of the totals or series union, in the wire shape it decodes from. */
+const overviewRow = (overrides: Record<string, unknown>) => ({ ...OVERVIEW_MEASURES, ...overrides })
+
+describe("POST /internal/ai-sessions/overview/summary", () => {
+	const SUMMARY_BODY = { ...WINDOW, bucketSeconds: 300 }
+
+	const TOTALS = [
+		overviewRow({ period: "current" }),
+		overviewRow({ period: "previous", sessions: "2", cost: 0.2 }),
+	]
+	const SERIES = [
+		overviewRow({ period: "current", bucket: "2026-08-19T09:00:00.000Z", sessions: "1" }),
+		overviewRow({ period: "current", bucket: "2026-08-19T10:00:00.000Z", sessions: "3" }),
+		overviewRow({ period: "previous", bucket: "2026-08-19T07:00:00.000Z", sessions: "2" }),
+	]
+
+	const summaryHarness = () => {
+		const contexts: Array<string> = []
+		const sqlByContext = new Map<string, string>()
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				const context = options?.context ?? ""
+				contexts.push(context)
+				sqlByContext.set(context, compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled)
+					.decodeRows(context === "aiOverviewTotals" ? TOTALS : SERIES)
+					.pipe(Effect.orDie)
+			},
+		})
+		return { harness, contexts, sqlByContext }
+	}
+
+	it("answers from two index reads, the tiles beside the chart", async () => {
+		const { harness, contexts, sqlByContext } = summaryHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", SUMMARY_BODY)
+			expect(response.status).toBe(200)
+			// Two groupings of one population: quantiles do not merge, so the
+			// tiles cannot be folded from the chart.
+			expect([...contexts].sort()).toEqual(["aiOverviewSeries", "aiOverviewTotals"])
+			for (const sql of sqlByContext.values()) {
+				expect(sql).toContain("FROM ai_trace_index")
+				expect(sql).not.toContain("trace_detail_spans")
+				expect(sql).not.toContain("__PARAM_")
+			}
+			// The chart's bucket reaches the read as the interval it was asked for.
+			expect(sqlByContext.get("aiOverviewSeries")).toContain("INTERVAL 300 SECOND")
+			expect(sqlByContext.get("aiOverviewTotals")).not.toContain("INTERVAL")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("compares against the window of equal length ending where the caller's begins", async () => {
+		const { harness, sqlByContext } = summaryHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", SUMMARY_BODY)
+			expect(response.status).toBe(200)
+			// The caller asked for 09:00–11:00, so the comparison is 07:00–09:00 —
+			// computed here, never asked for, so a delta cannot be taken against a
+			// window of a different size.
+			const sql = sqlByContext.get("aiOverviewTotals") ?? ""
+			expect(sql).toContain("Timestamp >= '2026-08-19 07:00:00'")
+			expect(sql).toContain("Timestamp <= '2026-08-19 09:00:00'")
+			expect(sql).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("folds the two reads into the window, its comparison, and the two series", async () => {
+		const { harness } = summaryHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", SUMMARY_BODY)
+			expect(response.status).toBe(200)
+			expect(response.body).toMatchObject({
+				bucketSeconds: 300,
+				current: { sessions: 4, erroredSessions: 1, llmCalls: 9, cost: 0.42, tokens: 18_400 },
+				previous: { sessions: 2, cost: 0.2 },
+			})
+			const series = response.body.series as ReadonlyArray<Record<string, unknown>>
+			expect(series.map((point) => point.bucket)).toEqual([
+				"2026-08-19T09:00:00.000Z",
+				"2026-08-19T10:00:00.000Z",
+			])
+			// A session is filed under the bucket it started in, so the buckets sum
+			// to the tile.
+			expect(series.reduce((total, point) => total + Number(point.sessions), 0)).toBe(4)
+			const previousSeries = response.body.previousSeries as ReadonlyArray<Record<string, unknown>>
+			expect(previousSeries.map((point) => point.bucket)).toEqual(["2026-08-19T07:00:00.000Z"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers an empty window with zeros rather than a missing period", async () => {
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", SUMMARY_BODY)
+			expect(response.status).toBe(200)
+			expect(response.body).toMatchObject({
+				current: { sessions: 0, cost: 0, llmDurationP95Ns: 0 },
+				previous: { sessions: 0 },
+				series: [],
+				previousSeries: [],
+			})
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a fractional bucket with a 400 rather than a 500", async () => {
+		const harness = makeHarness({
+			compiledQuery: () => Effect.die("the read must never run"),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/summary", {
+				...WINDOW,
+				bucketSeconds: 1.5,
+			})
+			// `param.int` rejects a fraction inside the builder, which would be a
+			// 500 — the contract catches it at the boundary instead.
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/overview/breakdown", () => {
+	const BREAKDOWN_BODY = { ...WINDOW, dimension: "model" }
+
+	const ROWS = [
+		overviewRow({ period: "current", key: "gpt-5.5", keyCount: 0, sessions: "3", cost: 0.9 }),
+		overviewRow({ period: "current", key: "claude-sonnet-5", keyCount: 0, sessions: "7", cost: 0.3 }),
+		overviewRow({ period: "current", key: "", keyCount: 0, sessions: "3", cost: 0.1 }),
+		overviewRow({ period: "previous", key: "gpt-5.5", keyCount: 0, sessions: "2", cost: 0.5 }),
+		overviewRow({ period: "keys", key: "", keyCount: 9, sessions: "0" }),
+	]
+
+	const breakdownHarness = (rows: ReadonlyArray<Record<string, unknown>> = ROWS) => {
+		let sql: string | undefined
+		const contexts: Array<string | undefined> = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				sql = compiledQueryOf(compiled).sql
+				return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
+			},
+		})
+		return { harness, contexts, readSql: () => sql ?? "" }
+	}
+
+	it("reads both windows and the window's key count in one query", async () => {
+		const { harness, contexts, readSql } = breakdownHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/breakdown", BREAKDOWN_BODY)
+			expect(response.status).toBe(200)
+			expect(contexts).toEqual(["aiOverviewBreakdown"])
+			// The dimension picks the column, and a model is read over model calls.
+			expect(readSql()).toContain("toString(ai_trace_index.Model) AS key")
+			expect(readSql()).toContain("AND ai_trace_index.IsLlmCall = 1")
+			expect(response.body).toMatchObject({ dimension: "model", totalKeys: 9 })
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("ranks the keys by sessions, pairs the two periods, and keeps the unattributed row", async () => {
+		const { harness } = breakdownHarness()
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/overview/breakdown", BREAKDOWN_BODY)
+			expect(response.status).toBe(200)
+			const rows = response.body.rows as ReadonlyArray<Record<string, never>>
+			// Busiest first, cost breaking the tie; `''` is a real key the page
+			// renders as unattributed rather than a gap.
+			expect(rows.map((row) => row.key)).toEqual(["claude-sonnet-5", "gpt-5.5", ""])
+			expect(rows[1]).toMatchObject({
+				key: "gpt-5.5",
+				current: { sessions: 3, cost: 0.9 },
+				previous: { sessions: 2, cost: 0.5 },
+			})
+			// A key the previous window never saw reads as zeros, not as a missing
+			// row — the client shows it as new rather than as a -100%.
+			expect(rows[0]).toMatchObject({ previous: { sessions: 0, cost: 0 } })
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a limit past the table's cap with a 400 rather than a 500", async () => {
+		const harness = makeHarness({ compiledQuery: () => Effect.die("the read must never run") })
+
+		try {
+			const tooMany = await harness.post("/internal/ai-sessions/overview/breakdown", {
+				...BREAKDOWN_BODY,
+				limit: AI_OVERVIEW_BREAKDOWN_MAX + 1,
+			})
+			expect(tooMany.status).toBe(400)
+			// And a dimension that is not a column of the index at all.
+			const unknown = await harness.post("/internal/ai-sessions/overview/breakdown", {
+				...WINDOW,
+				dimension: "customer",
+			})
+			expect(unknown.status).toBe(400)
 		} finally {
 			await harness.dispose()
 		}
