@@ -16,6 +16,7 @@ import {
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -71,6 +72,8 @@ interface ToolChartRow extends Record<string, string | number | Date | null> {
 interface ToolSeriesChartProps {
 	/** One point per bucket — the selection merged inside the query. */
 	series: ReadonlyArray<ToolSeriesPoint>
+	/** The series read has not answered — distinct from a window with no calls. */
+	loading?: boolean
 	/** The series read failed. */
 	failure?: unknown
 	metric: ToolMetric
@@ -92,6 +95,7 @@ interface ToolSeriesChartProps {
  */
 export function ToolSeriesChart({
 	series,
+	loading,
 	failure,
 	metric,
 	percentile,
@@ -258,6 +262,8 @@ export function ToolSeriesChart({
 
 			{failure !== undefined ? (
 				<QueryErrorState error={failure} titleOverride={`Failed to load ${title}`} />
+			) : loading && rows.length === 0 ? (
+				<Skeleton className="w-full" style={{ height: PLOT_HEIGHT }} />
 			) : rows.length === 0 ? (
 				<ChartEmpty height={PLOT_HEIGHT}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 			) : (

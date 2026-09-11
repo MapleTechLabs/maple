@@ -555,9 +555,21 @@ export function buildToolErrorsFixture(
 		.sort((a, b) => b.calls - a.calls)
 }
 
-/** The sessions list the detail page shows, in the list read's own row shape. */
-function detailSessions(tool: string, nowMs: number): ReadonlyArray<AgentSessionRow> {
-	return SESSION_SEEDS.filter((seed) => (seed.tools as ReadonlyArray<string>).includes(tool)).map(
+/** The sessions list the detail page shows, in the list read's own row shape —
+ *  narrowed like the metrics: a seed survives only where the scoped cells hold
+ *  its service (which carries the env), and under the selected model. */
+function detailSessions(
+	tool: string,
+	nowMs: number,
+	scoped: ReadonlyArray<ToolFixtureCell>,
+	model: string | undefined,
+): ReadonlyArray<AgentSessionRow> {
+	return SESSION_SEEDS.filter(
+		(seed) =>
+			(seed.tools as ReadonlyArray<string>).includes(tool) &&
+			scoped.some((cell) => cell.service === seed.serviceName) &&
+			(model === undefined || seed.model === model),
+	).map(
 		(seed, index) => {
 			const startedAt = nowMs - seed.minutesAgo * 60_000
 			const durationMs = seed.maxMs * 4 + 12_000
@@ -609,7 +621,7 @@ export function buildToolDetailFixture(
 		...rollup(scoped, (cell) => `${cell.bucket}`).entries(),
 	].map(([bucket, value]) => ({ bucket: Number(bucket), seriesKey: tool, ...value }))
 	const totals: ToolTotals = rollup(scoped, () => "all").get("all") ?? EMPTY_MEASURES
-	const sessions = detailSessions(tool, nowMs)
+	const sessions = detailSessions(tool, nowMs, scoped, search.model)
 
 	return {
 		series,

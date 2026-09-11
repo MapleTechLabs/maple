@@ -523,7 +523,10 @@ export function ToolsTable({
 				</TableBody>
 			</Table>
 
-			<TableFooter subject={footer.subject} detail={footer.detail} />
+			{/* Totals of rows that have not arrived (or never will) are not totals. */}
+			{failure === undefined && !loading ? (
+				<TableFooter subject={footer.subject} detail={footer.detail} />
+			) : null}
 		</section>
 	)
 }

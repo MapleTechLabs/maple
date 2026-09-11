@@ -955,11 +955,13 @@ SELECT
         WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
           AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
-          traceId AS traceId
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -995,10 +997,9 @@ SELECT
           AND ai_trace_index.ServiceName = 'agent'
           AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
-        GROUP BY traceId)
+        GROUP BY traceId, spanId)
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
           AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))
-          AND trace_detail_spans.ServiceName = 'agent'
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') = 'TimeoutError'
           AND if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) = 'wrun_sql_catalog'
         ORDER BY timestamp DESC, spanId ASC
@@ -1036,11 +1037,13 @@ SELECT
         WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
           AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
-          traceId AS traceId
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1076,10 +1079,9 @@ SELECT
           AND ai_trace_index.ServiceName = 'agent'
           AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
-        GROUP BY traceId)
+        GROUP BY traceId, spanId)
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
-          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))
-          AND trace_detail_spans.ServiceName = 'agent') AS tool_error_spans
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
         WHERE errorType = 'TimeoutError'
         GROUP BY sessionId
         ORDER BY hits DESC, sessionId ASC
@@ -1118,11 +1120,13 @@ SELECT
         WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
           AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
-          traceId AS traceId
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1158,10 +1162,9 @@ SELECT
           AND ai_trace_index.ServiceName = 'agent'
           AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
-        GROUP BY traceId)
+        GROUP BY traceId, spanId)
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
-          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))
-          AND trace_detail_spans.ServiceName = 'agent') AS tool_error_spans
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
         GROUP BY errorType
         ORDER BY calls DESC, errorType ASC
         LIMIT 50
@@ -1181,6 +1184,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1231,6 +1235,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1274,6 +1279,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1320,6 +1326,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1365,6 +1372,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1415,6 +1423,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1462,6 +1471,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1506,6 +1516,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1556,6 +1567,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
@@ -1605,6 +1617,7 @@ SELECT
         FROM (SELECT
           ai_trace_index.Timestamp AS ts,
           ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
           if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,

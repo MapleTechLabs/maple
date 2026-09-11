@@ -201,6 +201,7 @@ function AgentToolsBody({
 					series: series.data,
 					seriesKind: series.seriesKind,
 					scopeSeries,
+					seriesLoading: Result.isInitial(results.scopeSeries),
 					seriesFailure: scopeSeriesFailure,
 					totals: totals.current,
 					previousTotals: totals.previous,

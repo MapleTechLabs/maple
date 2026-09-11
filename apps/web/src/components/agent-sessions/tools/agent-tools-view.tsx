@@ -32,7 +32,8 @@ export interface AgentToolsViewData {
 	/** The whole selection merged inside the query, one point per bucket — what
 	 *  the chart and the tiles' sparks draw. */
 	readonly scopeSeries: ReadonlyArray<ToolSeriesPoint>
-	/** The scope series read failed — the chart says so instead of drawing nothing. */
+	/** The scope series read's state — the chart says which instead of drawing nothing. */
+	readonly seriesLoading?: boolean
 	readonly seriesFailure?: unknown
 	/** What `seriesKey` names, as the series read reported it — the server derives
 	 *  it from the selection, so the chart labels models as models. */
@@ -204,6 +205,7 @@ export function AgentToolsView({
 
 			<ToolSeriesChart
 				series={data.scopeSeries}
+				loading={data.seriesLoading}
 				failure={data.seriesFailure}
 				metric={metric}
 				percentile={percentile}

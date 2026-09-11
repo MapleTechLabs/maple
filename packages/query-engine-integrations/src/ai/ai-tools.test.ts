@@ -330,16 +330,19 @@ describe("aiToolsTotalsQuery empty window", () => {
 })
 
 describe("the tool detail reads", () => {
-	it("applies the service at the span level, not only in the trace prefilter", () => {
-		// The prefilter names TRACES, so a trace that failed this tool in a
-		// second service would otherwise contribute that service's spans too.
+	it("prefilters by the failing calls' spans, not only their traces", () => {
+		// A trace that failed this tool under a second model (or service) must
+		// not contribute those spans: model is only expressible in the prefilter,
+		// so the prefilter has to name spans.
 		for (const sql of [
-			compileUnsafe(aiToolErrorsQuery({ service: "agent" }), errorParams).sql,
-			compileUnsafe(aiToolErrorOccurrencesQuery({ service: "agent" }), errorParams).sql,
+			compileUnsafe(aiToolErrorsQuery({ model: "gpt-5", service: "agent" }), errorParams).sql,
+			compileUnsafe(aiToolErrorOccurrencesQuery({ model: "gpt-5", service: "agent" }), errorParams)
+				.sql,
 		]) {
-			expect(sql).toContain("trace_detail_spans.ServiceName = 'agent'")
+			expect(sql).toContain("(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT")
+			expect(sql).toContain("GROUP BY traceId, spanId")
+			expect(sql).toContain("ai_trace_index.ServiceName = 'agent'")
 		}
-		// `env` has no span column and stays prefilter-only.
 		expect(
 			compileUnsafe(aiToolErrorsQuery({ env: "production" }), errorParams).sql,
 		).toContain("ai_trace_index.DeploymentEnv = 'production'")

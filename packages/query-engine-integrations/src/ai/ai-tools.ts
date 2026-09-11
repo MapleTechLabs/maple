@@ -48,6 +48,7 @@
 // out: they are calls, and dropping them would move every percentile.
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as T from "@maple-dev/effect-clickhouse/types"
 import {
 	from,
 	fromQuery,
@@ -214,6 +215,7 @@ const toolCalls = (opts: AiToolsFilterOpts, window: AiToolsWindow = "current") =
 		.select(($) => ({
 			ts: $.Timestamp,
 			traceId: $.TraceId,
+			spanId: $.SpanId,
 			sessionKey: sessionKey($.trace.rawSessionId, $.TraceId),
 			toolName: $.ToolName,
 			modelName: resolvedModel($.parent.parentModel, $.trace.traceModel),
@@ -242,6 +244,7 @@ const toolCalls = (opts: AiToolsFilterOpts, window: AiToolsWindow = "current") =
 interface ToolCallColumns {
 	readonly ts: CH.Expr<string>
 	readonly traceId: CH.Expr<string>
+	readonly spanId: CH.Expr<string>
 	readonly sessionKey: CH.Expr<string>
 	readonly toolName: CH.Expr<string>
 	readonly modelName: CH.Expr<string>
@@ -485,17 +488,24 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
  * Without that subquery the span read is a whole-window scan of every span the
  * org emitted, which at this table's per-partition seek cost is seconds.
  *
- * Model is applied by the TRACE subquery alone, where the parent-model
- * attribution lives. A trace that ran two models and failed the same tool under
- * both therefore contributes both failures; the page states the selection above
- * the table, and the alternative is a second index scan to match span ids.
+ * The prefilter names SPANS, not just traces: `(TraceId, SpanId)` of the failing
+ * calls the selection matched. Model is only expressible there (it is the
+ * parent-model attribution, not a span column), so a trace-only prefilter would
+ * let a trace that failed the tool under two models contribute both. The tuple
+ * is still a primary-key seek — `trace_detail_spans` is ordered by
+ * `(OrgId, TraceId, SpanId)` — and it costs no second index scan.
  */
 
-/** The traces holding failing calls of the selection — the span read's prefilter. */
-const failingToolTraceIds = (opts: AiToolsFilterOpts) =>
+/** The failing calls of the selection, as `(traceId, spanId)` — the span reads' prefilter. */
+const failingToolSpans = (opts: AiToolsFilterOpts) =>
 	fromQuery(toolCalls({ ...opts, failingOnly: true }), "failing_tool_calls")
-		.select(($) => ({ traceId: $.traceId }))
-		.groupBy("traceId")
+		.select(($) => ({ traceId: $.traceId, spanId: $.spanId }))
+		.groupBy("traceId", "spanId")
+
+/** A span row's `(TraceId, SpanId)`, for that prefilter's tuple `IN`. Raw because
+ *  the DSL has no tuple; qualified because both reads join a table that also
+ *  has a `TraceId`. */
+const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
 
 const RESPONSE_STATUS_ATTR = "gen_ai.response.status"
 /** `gen_ai.response.status` values that mean the call failed — semconv's
@@ -579,14 +589,9 @@ const toolErrorSpans = (opts: AiToolErrorsOpts) =>
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
-			inSubquery($.TraceId, failingToolTraceIds(opts)),
+			inSubquery(traceSpanKey, failingToolSpans(opts)),
 			spanField($, "toolName").eq(param.string("toolName")),
 			spanFailed($),
-			// The service is a column on the span, so it is applied here as well
-			// as in the prefilter — without it a trace that failed this tool in a
-			// second service would contribute that service's spans too. `env` has
-			// no span column and stays prefilter-only: it narrows by trace.
-			CH.when(opts.service, (service) => $.ServiceName.eq(service)),
 		])
 
 /**
@@ -739,11 +744,9 @@ export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
-			inSubquery($.TraceId, failingToolTraceIds(opts)),
+			inSubquery(traceSpanKey, failingToolSpans(opts)),
 			spanField($, "toolName").eq(param.string("toolName")),
 			spanFailed($),
-			// See `toolErrorSpans`: the service is a span column, `env` is not.
-			CH.when(opts.service, (service) => $.ServiceName.eq(service)),
 			errorTypeFilter(opts, spanField($, "errorType")),
 			// The left pane's selection: one session's occurrences of this error.
 			CH.when(opts.session, (session) =>
