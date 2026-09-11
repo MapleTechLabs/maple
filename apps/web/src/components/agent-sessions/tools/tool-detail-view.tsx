@@ -107,6 +107,7 @@ export function ToolDetailView({
 								    width pushing the header controls onto the next line. */}
 								<TooltipTrigger
 									render={<span />}
+									tabIndex={0}
 									className="w-0 min-w-0 flex-1 cursor-default truncate text-[13px] leading-[18px] text-muted-foreground"
 								>
 									{data.description}
