@@ -22,6 +22,7 @@ import { PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService
 import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
 import { SetupAuditService } from "@/services/org/SetupAuditService"
+import { SignalPresenceService } from "@/services/org/SignalPresenceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
@@ -131,6 +132,9 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		RecommendationIssueService.layer.pipe(Layer.provide(warehouseLive)),
 		ScrapeTargetsService.layer.pipe(Layer.provide(planetScaleStubs)),
 		SetupAuditService.layer.pipe(Layer.provide(warehouseLive)),
+		// Sibling group in `AllV2GroupLayersLive`; the stub bundle is deliberately
+		// unused here, so it needs its own (warehouse-only) layer.
+		SignalPresenceService.layer.pipe(Layer.provide(warehouseLive)),
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(

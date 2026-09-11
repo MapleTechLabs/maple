@@ -30,6 +30,7 @@ import {
 	PlanetScaleServiceStubsLayer,
 	SlackIntegrationServiceStubLayer,
 	SetupAuditServiceStubLayer,
+	SignalPresenceServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -112,6 +113,7 @@ const makeHarness = () => {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(SetupAuditServiceStubLayer),
+		Layer.provide(SignalPresenceServiceStubLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		// session_replays (in AllV2GroupLayersLive) needs the warehouse at the routes level.
 		Layer.provide(warehouseLive),
