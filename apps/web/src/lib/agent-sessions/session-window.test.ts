@@ -51,7 +51,10 @@ describe("sessionLinkWindow", () => {
 	})
 
 	it("passes the true extent through once the row's details landed", () => {
-		expect(sessionLinkWindow({ ...row, hasDetails: true })).toEqual({ t: row.startTime, end: row.endTime })
+		expect(sessionLinkWindow({ ...row, hasDetails: true })).toEqual({
+			t: row.startTime,
+			end: row.endTime,
+		})
 	})
 })
 

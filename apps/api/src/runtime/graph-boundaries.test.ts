@@ -24,82 +24,12 @@ describe("API runtime graph boundaries", () => {
 		expect(imports.filter((specifier) => specifier.startsWith("effect/unstable/http"))).toEqual([])
 	})
 
-	it("keeps runtime entrypoints off the compatibility facade", () => {
-		const runtimeEntrypoints: ReadonlyArray<
-			readonly [
-				source: string,
-				expectedImports: ReadonlyArray<string>,
-				expectedRoots: ReadonlyArray<string>,
-			]
-		> = [
-			[
-				readModule("../chat/turn-runner.ts"),
-				["../runtime/mcp-service-graph"],
-				["InvestigationServicesLive"],
-			],
-			[
-				readModule("../mcp/__evals__/eval-runtime.ts"),
-				["@/runtime/mcp-service-graph"],
-				["McpServicesLive"],
-			],
-			[readModule("../worker/http.ts"), ["../runtime/service-graph"], ["HttpServicesLive"]],
-			[
-				readModule("../workflows/InvestigationFanoutWorkflow.run.ts"),
-				["../runtime/mcp-service-graph"],
-				["McpServicesLive"],
-			],
-		]
+	it("keeps the HTTP entrypoint off the compatibility facade", () => {
+		const source = readModule("../worker/http.ts")
 
-		for (const [source, expectedImports, expectedRoots] of runtimeEntrypoints) {
-			for (const expectedImport of expectedImports)
-				expect(importSpecifiers(source)).toContain(expectedImport)
-			expect(importSpecifiers(source).some((specifier) => /(?:^|\/)app$/.test(specifier))).toBe(false)
-			for (const root of expectedRoots) expect(source).toContain(root)
-			expect(source).not.toMatch(/\{\s*MainLive\s*\}/)
-		}
-	})
-
-	it("keeps the headless MCP root limited to registered tool requirements", () => {
-		const source = readModule("./mcp-service-graph.ts")
-		const imports = importSpecifiers(source)
-
-		expect(layerMembers(source, "McpRuntimeServicesLive")).toEqual([
-			"AlertReadModelsServiceLive",
-			"AlertRulesServiceLive",
-			"AlertsServiceLive",
-			// Lets `register_agent` (and issue-workflow mutations) write org audit entries.
-			"AuditLogServiceLive",
-			"DashboardPersistenceService.layer",
-			"ErrorActorsServiceLive",
-			"ErrorIssueReadModelsServiceLive",
-			"ErrorIssueWorkflowServiceLive",
-			"ErrorPolicyServiceLive",
-			"ErrorsServiceLive",
-			// Backs `link_pull_request`, and is what lets `propose_fix` turn its
-			// `pr_url` into a durable link rather than an event-payload string.
-			"IssueFixVerificationServiceLive",
-			"QueryEngineServiceLive",
-			"RecommendationIssueServiceLive",
-			// The agents' repository sandbox tools.
-			"RepoSandboxServiceLive",
-			"SetupAuditServiceLive",
-			"VcsSourceServiceLive",
-			"WarehouseQueryServiceLive",
-		])
-		expect(source).toContain(
-			"export const InvestigationServicesLive = Layer.mergeAll(McpServicesLive, InvestigationServiceLive)",
-		)
-		expect(imports).not.toContain("@/runtime/service-graph")
-		for (const routeOnlyService of [
-			"DailySpendService",
-			"CloudflareAnalyticsService",
-			"AnomalyDetectionService",
-			"AiTriageService",
-			"DigestService",
-			"DemoService",
-			"SlackIntegrationService",
-		]) {
-			expect(imports.some((specifier) => specifier.endsWith(`/${routeOnlyService}`))).toBe(false)
-		}
+		expect(importSpecifiers(source)).toContain("../runtime/service-graph")
+		expect(importSpecifiers(source).some((specifier) => /(?:^|\/)app$/.test(specifier))).toBe(false)
+		expect(source).toContain("HttpServicesLive")
+		expect(source).not.toMatch(/\{\s*MainLive\s*\}/)
 	})
 })

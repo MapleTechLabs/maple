@@ -7,7 +7,6 @@ import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@/plat
 import { ApiKeysService } from "@/services/org/ApiKeysService"
 import { AuthService } from "./AuthService"
 import { matchesMcpOAuthRedirectUri, McpOAuthService, validateMcpOAuthRedirectUri } from "./McpOAuthService"
-import { resolveMcpTenantContext } from "@/mcp/lib/resolve-tenant"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -215,21 +214,9 @@ describe("McpOAuthService", () => {
 				expect(resolved.value.scopes).toEqual(["mcp:tools"])
 				expect(resolved.value.mcpOAuthResource).toBe(resource)
 			}
-			const tenant = yield* resolveMcpTenantContext(
-				new Request(resource, { headers: { authorization: `Bearer ${tokens.access_token}` } }),
-			)
-			expect(tenant.orgId).toBe(orgId)
-			expect(tenant.roles).toEqual([memberRole])
-			const wrongAudience = yield* resolveMcpTenantContext(
-				new Request("https://other.example.com/mcp", {
-					headers: { authorization: `Bearer ${tokens.access_token}` },
-				}),
-			).pipe(Effect.flip)
-			expect(wrongAudience._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
-			if (wrongAudience._tag === "@maple/mcp/errors/McpAuthInvalidError") {
-				expect(wrongAudience.reason).toBe("invalid_target")
-			}
-
+			// The other half of this flow — that MCP accepts this token and rejects it
+			// for a different resource — now runs in apps/ai, where the code that
+			// resolves it lives: `mcp/lib/resolve-tenant.oauth.test.ts`.
 			const reused = yield* oauth
 				.exchangeAuthorizationCode(
 					{

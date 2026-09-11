@@ -1,6 +1,5 @@
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { Layer } from "effect"
-import { McpToolExecutor } from "@/mcp/dispatcher"
 import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { EmailService } from "@/platform/EmailService"
 import { Env } from "@/platform/Env"
@@ -349,4 +348,4 @@ const MainServicesLive = Layer.mergeAll(
  * `mcp-service-graph.ts` instead of importing or acquiring route-only services
  * such as billing, demo, digest, OAuth, anomaly detection, and Slack integration.
  */
-export const HttpServicesLive = McpToolExecutor.layer.pipe(Layer.provideMerge(MainServicesLive))
+export const HttpServicesLive = MainServicesLive

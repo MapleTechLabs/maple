@@ -4,7 +4,6 @@ import { Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { API_CORS_OPTIONS } from "@/http/api-cors"
-import { McpLive } from "@/mcp/app"
 import { Env } from "@/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
@@ -13,8 +12,6 @@ import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/v1/billing-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
-import { ChatSessionsRouter } from "@/routes/v1/chat-sessions.http"
-import { HttpChatLive } from "@/routes/internal/chat.http"
 import { V1ErrorBoundaryLive } from "@/routes/v1/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
 import { DiscoveryRouter, NotFoundRouter } from "@/routes/discovery.http"
@@ -119,9 +116,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiModelsInternalLive,
 		),
 	),
-	Layer.provide(
-		Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpChatLive, HttpDemoLive, HttpDigestLive),
-	),
+	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpDemoLive, HttpDigestLive)),
 	Layer.provide(V1ErrorBoundaryLive),
 )
 
@@ -191,7 +186,6 @@ const rawRoutes = <Routes extends Layer.Any>(
 
 const RawRoutes = rawRoutes(
 	Layer.mergeAll(
-		ChatSessionsRouter,
 		IntegrationsCallbackRouter,
 		SlackCallbackRouter,
 		SlackInternalRouter,
@@ -201,7 +195,6 @@ const RawRoutes = rawRoutes(
 		VcsWebhookRouter,
 		ClerkWebhookRouter,
 		AutumnWebhookRouter,
-		McpLive,
 		HealthRouter,
 		DocsRoute,
 		DocsV2Route,

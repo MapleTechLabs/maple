@@ -26,16 +26,13 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Context, Effect, Layer, Option } from "effect"
-import ChatSessionObject from "./chat/ChatSession"
 import { ApiObservabilityLive } from "./http/api-observability"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
 import { buildApp, makeFetch } from "./worker/http"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
-import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
 
 /**
  * The bindings that stay declared on `env`. Everything the services reach at
@@ -110,9 +107,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// The Durable Object and the Workflows this Worker hosts: yielding each
 		// binds it under the class name, registers it at plan time and exports
 		// the class from the generated entry.
-		yield* ChatSessionObject
 		yield* ClickHouseSchemaApplyWorkflow
-		yield* InvestigationFanoutWorkflow
 		const clients = yield* bindApiClients
 		const ports = apiPorts(clients, yield* Cloudflare.WorkerEnvironment)
 		// The service graphs are built on the first event, not here: init also
@@ -142,7 +137,6 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 				WorkerTelemetry({
 					serviceName: "maple-api",
 					dropSpanNames: ["McpServer/Notifications."],
-					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
 				}),
 				// The references the bridge's `HttpMiddleware.tracer` reads, built into
 				// every event beside the SDK; they cannot live in the app graph.
