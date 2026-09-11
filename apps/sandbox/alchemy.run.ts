@@ -8,7 +8,13 @@
  * class an image provides: it emits the Durable Object namespace, marks the class
  * container-backed in the script metadata, and provisions the application.
  */
-import { CLOUDFLARE_WORKER_PLACEMENT, MapleStack, resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	CLOUDFLARE_WORKER_PLACEMENT,
+	MapleStack,
+	WorkersObservabilityDestinations,
+	assetWorkerObservability,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
 import { requireSecretEntry } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
@@ -25,6 +31,11 @@ const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: `${import.meta.dirname}/src/worker.ts` }
 	const { stage } = yield* MapleStack
 	const production = stage.kind === "prd"
+	// This Worker carries no OTel SDK — it is a plain module so its `Sandbox`
+	// class export survives — so platform logs are the only way anything it
+	// records leaves the account. Without them a bug here is a 500 with nothing
+	// behind it, which is exactly how one shipped.
+	const destinations = yield* WorkersObservabilityDestinations
 	return {
 		main: `${import.meta.dirname}/src/worker.ts`,
 		name: resolveWorkerName("sandbox", stage),
@@ -32,6 +43,7 @@ const props = Effect.gen(function* () {
 		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		// Reached only over the api's service binding: no route, no hostname.
 		workersDev: false,
+		observability: assetWorkerObservability(destinations),
 		env: {
 			Sandbox: Cloudflare.Container<Sandbox>("Sandbox", {
 				image: SANDBOX_IMAGE,
