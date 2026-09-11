@@ -1,3 +1,257 @@
+-- builder:ai-sessions:aiSessionDetailsQuery:default
+SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          sum(session_traces.spanCount) AS spanCount,
+          sum(session_traces.errorSpanCount) AS errorSpanCount,
+          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
+          toString(min(session_traces.traceStart)) AS startTime,
+          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
+          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(ServiceName) AS serviceNames,
+          min(Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 09:30:00'
+          AND Timestamp <= '2026-01-02 13:30:00'
+          AND TraceId IN (SELECT
+          traceId AS traceId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+        GROUP BY traceId) AS session_traces
+        INNER JOIN (SELECT
+          traceId AS traceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
+        GROUP BY sessionId
+        ORDER BY startTime DESC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionDetailsQuery:every-counted-filter
+SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          sum(session_traces.spanCount) AS spanCount,
+          sum(session_traces.errorSpanCount) AS errorSpanCount,
+          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
+          toString(min(session_traces.traceStart)) AS startTime,
+          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
+          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(ServiceName) AS serviceNames,
+          min(Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 09:30:00'
+          AND Timestamp <= '2026-01-02 13:30:00'
+          AND TraceId IN (SELECT
+          traceId AS traceId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(DeploymentEnv IN ('production')) > 0
+          AND countIf(Model IN ('gpt-5.5')) > 0
+          AND countIf(AgentName IN ('billing-agent')) > 0
+          AND countIf(ToolName IN ('send_email')) > 0
+          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+        GROUP BY traceId) AS session_traces
+        INNER JOIN (SELECT
+          traceId AS traceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(DeploymentEnv IN ('production')) > 0
+          AND countIf(Model IN ('gpt-5.5')) > 0
+          AND countIf(AgentName IN ('billing-agent')) > 0
+          AND countIf(ToolName IN ('send_email')) > 0
+          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
+        GROUP BY sessionId
+        ORDER BY startTime DESC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionDetailsQuery:filtered
+SELECT
+          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
+          sum(session_traces.spanCount) AS spanCount,
+          sum(session_traces.errorSpanCount) AS errorSpanCount,
+          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
+          toString(min(session_traces.traceStart)) AS startTime,
+          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
+          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
+        FROM (SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(ServiceName) AS serviceNames,
+          min(Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 09:30:00'
+          AND Timestamp <= '2026-01-02 13:30:00'
+          AND TraceId IN (SELECT
+          traceId AS traceId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(VendorId IN ('eve')) > 0
+          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+        GROUP BY traceId) AS session_traces
+        INNER JOIN (SELECT
+          traceId AS traceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS traceId,
+          max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
+          min(Timestamp) AS traceAgentStart,
+          max(Timestamp) AS traceAgentEnd,
+          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
+          groupUniqArrayIf(20)(Model, Model != '') AS models,
+          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
+          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
+          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
+          sum(IsToolCall) AS toolCalls,
+          sum(IsError) AS errorAgentSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-02 10:30:00'
+          AND Timestamp <= '2026-01-02 12:30:00'
+        GROUP BY traceId
+        HAVING countIf(VendorId IN ('eve')) > 0
+          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
+        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
+        GROUP BY sessionId
+        ORDER BY startTime DESC
+        FORMAT JSON
+
 -- builder:ai-sessions:aiSessionFacetsQuery:default
 SELECT
           arrayJoin(names) AS name,
@@ -102,288 +356,81 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:ai-sessions:aiSessionListQuery:default
-SELECT
-          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
-          argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId,
-          argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion,
-          count() AS traceCount,
-          sum(session_traces.spanCount) AS spanCount,
-          sum(session_traces.errorSpanCount) AS errorSpanCount,
-          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS reasoningTokens,
-          toString(min(session_traces.traceStart)) AS startTime,
-          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
-          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
-        FROM (SELECT
-          TraceId AS traceId,
-          argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorId,
-          argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorVersion,
-          min(if((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), Timestamp, toDateTime('2106-01-01 00:00:00'))) AS sessionStart,
-          count() AS spanCount,
-          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(ServiceName) AS serviceNames,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])), coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])) + multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])) > 0) AS usageBuckets,
-          min(Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
-          AND TraceId IN (SELECT
-          traceId AS traceId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
-        GROUP BY traceId) AS session_traces
-        INNER JOIN (SELECT
-          traceId AS traceId,
-          rawSessionId AS rawSessionId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
-        GROUP BY sessionId
-        ORDER BY startTime DESC
-        FORMAT JSON
-
--- builder:ai-sessions:aiSessionListQuery:every-counted-filter
-SELECT
-          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
-          argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId,
-          argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion,
-          count() AS traceCount,
-          sum(session_traces.spanCount) AS spanCount,
-          sum(session_traces.errorSpanCount) AS errorSpanCount,
-          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS reasoningTokens,
-          toString(min(session_traces.traceStart)) AS startTime,
-          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
-          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
-        FROM (SELECT
-          TraceId AS traceId,
-          argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorId,
-          argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorVersion,
-          min(if((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), Timestamp, toDateTime('2106-01-01 00:00:00'))) AS sessionStart,
-          count() AS spanCount,
-          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(ServiceName) AS serviceNames,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])), coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])) + multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])) > 0) AS usageBuckets,
-          min(Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
-          AND TraceId IN (SELECT
-          traceId AS traceId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(DeploymentEnv IN ('production')) > 0
-          AND countIf(Model IN ('gpt-5.5')) > 0
-          AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0
-          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
-        GROUP BY traceId) AS session_traces
-        INNER JOIN (SELECT
-          traceId AS traceId,
-          rawSessionId AS rawSessionId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(DeploymentEnv IN ('production')) > 0
-          AND countIf(Model IN ('gpt-5.5')) > 0
-          AND countIf(AgentName IN ('billing-agent')) > 0
-          AND countIf(ToolName IN ('send_email')) > 0
-          AND countIf((SessionId LIKE 'wrun\\_01%' OR TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
-        GROUP BY sessionId
-        ORDER BY startTime DESC
-        FORMAT JSON
-
--- builder:ai-sessions:aiSessionListQuery:filtered
-SELECT
-          if(index_traces.rawSessionId = '', concat('trace:', session_traces.traceId), index_traces.rawSessionId) AS sessionId,
-          argMin(session_traces.vendorId, session_traces.sessionStart) AS vendorId,
-          argMin(session_traces.vendorVersion, session_traces.sessionStart) AS vendorVersion,
-          count() AS traceCount,
-          sum(session_traces.spanCount) AS spanCount,
-          sum(session_traces.errorSpanCount) AS errorSpanCount,
-          groupUniqArrayArray(session_traces.serviceNames) AS serviceNames,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS inputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheReadTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.5 - arraySum(c -> if(c.2 = r.1, c.5, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS cacheWriteTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.6 - arraySum(c -> if(c.2 = r.1, c.6, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS outputTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.8, greatest(0., r.7 - arraySum(c -> if(c.2 = r.1, c.7, 0.), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)))))) AS reasoningTokens,
-          toString(min(session_traces.traceStart)) AS startTime,
-          toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
-          intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
-        FROM (SELECT
-          TraceId AS traceId,
-          argMin(SpanAttributes['maple_ai.vendor.id'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorId,
-          argMin(SpanAttributes['maple_ai.vendor.version'], tuple(multiIf((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), 0, SpanAttributes['maple_ai.vendor.id'] != '', 1, 2), Timestamp)) AS vendorVersion,
-          min(if((mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != ''), Timestamp, toDateTime('2106-01-01 00:00:00'))) AS sessionStart,
-          count() AS spanCount,
-          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (SpanAttributes['error.type'] != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(ServiceName) AS serviceNames,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])), coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('openai', 'gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), SpanAttributes['llm.token_count.prompt'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), SpanAttributes['llm.token_count.prompt_details.cache_read'])) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_creation.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.cache_write.input_tokens'], ''), SpanAttributes['ai.usage.inputTokenDetails.cacheWriteTokens'])) + multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('anthropic', 'openai', 'openrouter'), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning']))), coalesce(nullIf(SpanAttributes['gen_ai.provider.name'], ''), nullIf(SpanAttributes['gen_ai.system'], ''), nullIf(SpanAttributes['ai.model.provider'], ''), nullIf(SpanAttributes['llm.provider'], ''), SpanAttributes['llm.system']) IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])), greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), SpanAttributes['llm.token_count.completion'])) - toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])))) + toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.reasoning.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.output_tokens.reasoning'], ''), nullIf(SpanAttributes['ai.usage.reasoningTokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokenDetails.reasoningTokens'], ''), SpanAttributes['llm.token_count.completion_details.reasoning'])) > 0) AS usageBuckets,
-          min(Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00' - INTERVAL 3600 SECOND
-          AND Timestamp <= '2026-01-02 12:30:00' + INTERVAL 3600 SECOND
-          AND TraceId IN (SELECT
-          traceId AS traceId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(VendorId IN ('eve')) > 0
-          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
-        GROUP BY traceId) AS session_traces
-        INNER JOIN (SELECT
-          traceId AS traceId,
-          rawSessionId AS rawSessionId
-        FROM (SELECT
-          TraceId AS traceId,
-          max(SessionId) AS rawSessionId,
-          min(Timestamp) AS traceAgentStart,
-          max(Timestamp) AS traceAgentEnd,
-          max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
-          groupUniqArrayIf(20)(Model, Model != '') AS models,
-          groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
-          argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
-          min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
-          sum(IsToolCall) AS toolCalls,
-          sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
-        FROM ai_trace_index
-        WHERE OrgId = 'org_sql_catalog'
-          AND Timestamp >= '2026-01-02 10:30:00'
-          AND Timestamp <= '2026-01-02 12:30:00'
-        GROUP BY traceId
-        HAVING countIf(VendorId IN ('eve')) > 0
-          AND countIf(ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
-        WHERE if(rawSessionId = '', concat('trace:', traceId), rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')) AS index_traces ON session_traces.traceId = index_traces.traceId
-        GROUP BY sessionId
-        ORDER BY startTime DESC
-        FORMAT JSON
-
 -- builder:ai-sessions:aiSessionPageQuery:default
 SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
-          toString(max(traceAgentEnd)) AS agentEnd,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))))))) AS llmCalls,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
           min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
@@ -391,7 +438,7 @@ SELECT
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -399,31 +446,85 @@ SELECT
         GROUP BY traceId) AS index_traces
         GROUP BY sessionId
         ORDER BY agentStart DESC, sessionId ASC
-        LIMIT 50
+        LIMIT 50) AS ranked_sessions) AS netted_sessions
+        ORDER BY agentStart DESC, sessionId ASC
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionPageQuery:every-filter
 SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
-          toString(max(traceAgentEnd)) AS agentEnd,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))))))) AS llmCalls,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
           min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
@@ -431,7 +532,7 @@ SELECT
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -449,14 +550,14 @@ SELECT
           AND NOT (sessionId LIKE 'trace:%')
           AND agentDurationMs >= 1000
           AND agentDurationMs <= 600000
-          AND cost >= 0.01
+          AND toolCalls >= 1
+          AND toolCalls <= 50) AS ranked_sessions) AS netted_sessions
+        WHERE cost >= 0.01
           AND cost <= 5
           AND totalTokens >= 100
           AND totalTokens <= 1000000
           AND llmCalls >= 1
           AND llmCalls <= 50
-          AND toolCalls >= 1
-          AND toolCalls <= 50
         ORDER BY cost ASC, agentStart DESC, sessionId ASC
         LIMIT 25
         OFFSET 25
@@ -464,26 +565,79 @@ SELECT
 
 -- builder:ai-sessions:aiSessionPageQuery:filtered
 SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 4)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.4), arrayFilter(n -> n.1 != '', netted))))) AS cost,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 5)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.5), arrayFilter(n -> n.1 != '', netted))))) AS inputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 6)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.6), arrayFilter(n -> n.1 != '', netted))))) AS cacheReadTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 7)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.7), arrayFilter(n -> n.1 != '', netted))))) AS cacheWriteTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted))))) AS outputTokens,
+          arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted))))) AS reasoningTokens
+        FROM (SELECT
+          sessionId AS sessionId,
+          vendorId AS vendorId,
+          vendorVersion AS vendorVersion,
+          agentStart AS agentStart,
+          agentEnd AS agentEnd,
+          traceCount AS traceCount,
+          spanCount AS spanCount,
+          serviceNames AS serviceNames,
+          models AS models,
+          agentNames AS agentNames,
+          firstAgentName AS firstAgentName,
+          toolCalls AS toolCalls,
+          errorAgentSpans AS errorAgentSpans,
+          toolErrors AS toolErrors,
+          turnErrors AS turnErrors,
+          agentDurationMs AS agentDurationMs,
+          arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
+        FROM (SELECT
           if(rawSessionId = '', concat('trace:', traceId), rawSessionId) AS sessionId,
+          argMin(vendorId, vendorAt) AS vendorId,
+          argMin(vendorVersion, vendorAt) AS vendorVersion,
           toString(min(traceAgentStart)) AS agentStart,
-          toString(max(traceAgentEnd)) AS agentEnd,
+          toString(fromUnixTimestamp64Nano(max(traceAgentEndNanos))) AS agentEnd,
+          count() AS traceCount,
+          sum(agentSpanCount) AS spanCount,
+          groupUniqArrayArray(serviceNames) AS serviceNames,
           groupUniqArrayArray(models) AS models,
           groupUniqArrayArray(agentNames) AS agentNames,
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
-          toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''), arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0, NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))))))) AS llmCalls,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT arrayExists(c -> c.2 = f.1, failedSpans), failedSpans)) AS turnErrors,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS totalTokens,
-          arraySum(n -> if(n.1 = '', n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))))) AS cost,
-          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs
+          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
+          arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
+          arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
+          tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
         FROM (SELECT
           TraceId AS traceId,
           max(SessionId) AS rawSessionId,
+          argMin(VendorId, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorId,
+          argMin(VendorVersion, tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorVersion,
+          min(tuple(if(SessionId != '', 0, 1), Timestamp)) AS vendorAt,
           min(Timestamp) AS traceAgentStart,
           max(Timestamp) AS traceAgentEnd,
           max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos,
+          count() AS agentSpanCount,
+          groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames,
           groupUniqArrayIf(20)(Model, Model != '') AS models,
           groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames,
           argMin(AgentName, if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentName,
@@ -491,7 +645,7 @@ SELECT
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -502,7 +656,39 @@ SELECT
         GROUP BY sessionId
         ORDER BY agentStart DESC, sessionId ASC
         LIMIT 25
-        OFFSET 25
+        OFFSET 25) AS ranked_sessions) AS netted_sessions
+        ORDER BY agentStart DESC, sessionId ASC
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionSpansQuery:ai-scope-after-cursor
+SELECT
+          TraceId AS traceId,
+          SpanId AS spanId,
+          ParentSpanId AS parentSpanId,
+          SpanName AS spanName,
+          SpanKind AS spanKind,
+          ServiceName AS serviceName,
+          Duration / 1000000 AS durationMs,
+          StatusCode AS statusCode,
+          StatusMessage AS statusMessage,
+          toString(Timestamp) AS timestamp,
+          mapFilter((k, v) -> (k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'llm.input_messages', 'input.value', 'llm.output_messages', 'output.value', 'openinference.span.kind', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%'), SpanAttributes) AS spanAttributes
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId IN (SELECT
+          TraceId AS TraceId
+        FROM traces
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != '')
+          AND SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND SpanAttributes['maple_ai.vendor.id'] != ''
+          AND (Timestamp > '2026-01-01 10:30:00.123456789' OR (Timestamp = '2026-01-01 10:30:00.123456789' AND SpanId > '00000000000007d0'))
+        ORDER BY timestamp ASC, spanId ASC
+        LIMIT 2000
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionSpansQuery:default
@@ -517,8 +703,7 @@ SELECT
           StatusCode AS statusCode,
           StatusMessage AS statusMessage,
           toString(Timestamp) AS timestamp,
-          SpanAttributes AS spanAttributes,
-          ResourceAttributes AS resourceAttributes
+          mapFilter((k, v) -> (k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'llm.input_messages', 'input.value', 'llm.output_messages', 'output.value', 'openinference.span.kind', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%'), SpanAttributes) AS spanAttributes
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -533,6 +718,83 @@ SELECT
           AND SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionSummaryQuery:default
+SELECT
+          if(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '') != '', coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), ''), TraceId) AS turnKey,
+          max(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '')) AS conversationId,
+          groupUniqArray(TraceId) AS traceIds,
+          toString(min(Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - toUnixTimestamp64Nano(min(Timestamp)), 1000000) AS durationMs,
+          count() AS spanCount,
+          countIf(SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))) AS llmCalls,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') != ''))) AS toolCalls,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(SpanAttributes['error.type'], ''), '') != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), ''))), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), ''))), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCacheReadTokens,
+          countIf(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '') != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), ''))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCost,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), ''), ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = '')) AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '')) AS models,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), ''), coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), '') != '') AS agentNames
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId IN (SELECT
+          TraceId AS TraceId
+        FROM traces
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != '')
+          AND SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+        GROUP BY turnKey
+        ORDER BY startTime ASC
+        LIMIT 1001
+        FORMAT JSON
+
+-- builder:ai-sessions:aiSessionTotalsQuery:default
+SELECT
+          uniqExact(TraceId) AS traceCount,
+          toString(min(Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - toUnixTimestamp64Nano(min(Timestamp)), 1000000) AS durationMs,
+          count() AS spanCount,
+          countIf(SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))) AS llmCalls,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') != ''))) AS toolCalls,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(SpanAttributes['error.type'], ''), '') != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), ''))), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), ''))), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCacheReadTokens,
+          countIf(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '') != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), ''))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCost,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), ''), ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = '')) AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '')) AS models,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), ''), coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), '') != '') AS agentNames
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId IN (SELECT
+          TraceId AS TraceId
+        FROM traces
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(SpanAttributes, 'maple_ai.session.id') AND SpanAttributes['maple_ai.session.id'] != '')
+          AND SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionWindowQuery:default
@@ -558,8 +820,7 @@ SELECT
           StatusCode AS statusCode,
           StatusMessage AS statusMessage,
           toString(Timestamp) AS timestamp,
-          SpanAttributes AS spanAttributes,
-          ResourceAttributes AS resourceAttributes
+          mapFilter((k, v) -> (k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'llm.input_messages', 'input.value', 'llm.output_messages', 'output.value', 'openinference.span.kind', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%'), SpanAttributes) AS spanAttributes
         FROM trace_detail_spans
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -567,6 +828,92 @@ SELECT
           AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
+        FORMAT JSON
+
+-- builder:ai-sessions:aiTraceSpansQuery:traces-app-scope
+SELECT
+          TraceId AS traceId,
+          SpanId AS spanId,
+          ParentSpanId AS parentSpanId,
+          SpanName AS spanName,
+          SpanKind AS spanKind,
+          ServiceName AS serviceName,
+          Duration / 1000000 AS durationMs,
+          StatusCode AS statusCode,
+          StatusMessage AS statusMessage,
+          toString(Timestamp) AS timestamp,
+          mapFilter((k, v) -> (k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'llm.input_messages', 'input.value', 'llm.output_messages', 'output.value', 'openinference.span.kind', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%'), SpanAttributes) AS spanAttributes
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef', '0123456789abcdef0123456789abcdef')
+          AND SpanAttributes['maple_ai.vendor.id'] = ''
+        ORDER BY timestamp ASC, spanId ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:ai-sessions:aiTraceSummaryQuery:default
+SELECT
+          if(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '') != '', coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), ''), TraceId) AS turnKey,
+          max(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '')) AS conversationId,
+          groupUniqArray(TraceId) AS traceIds,
+          toString(min(Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - toUnixTimestamp64Nano(min(Timestamp)), 1000000) AS durationMs,
+          count() AS spanCount,
+          countIf(SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))) AS llmCalls,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') != ''))) AS toolCalls,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(SpanAttributes['error.type'], ''), '') != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), ''))), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), ''))), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCacheReadTokens,
+          countIf(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '') != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), ''))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCost,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), ''), ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = '')) AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '')) AS models,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), ''), coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), '') != '') AS agentNames
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+        GROUP BY turnKey
+        ORDER BY startTime ASC
+        LIMIT 1001
+        FORMAT JSON
+
+-- builder:ai-sessions:aiTraceTotalsQuery:default
+SELECT
+          uniqExact(TraceId) AS traceCount,
+          toString(min(Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - toUnixTimestamp64Nano(min(Timestamp)), 1000000) AS durationMs,
+          count() AS spanCount,
+          countIf(SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))) AS llmCalls,
+          countIf((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') != ''))) AS toolCalls,
+          countIf((StatusCode = 'Error' OR (SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(SpanAttributes['error.type'], ''), '') != '' OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), ''))), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), ''))), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokens'], ''), nullIf(SpanAttributes['ai.usage.promptTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(SpanAttributes['ai.usage.outputTokens'], ''), nullIf(SpanAttributes['ai.usage.completionTokens'], ''), nullIf(SpanAttributes['llm.token_count.completion'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCacheReadTokens,
+          countIf(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '') != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), ''))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.cost'], ''), nullIf(SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(SpanAttributes['llm.cost.total'], ''), '')), (coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = ''))), 0) AS llmCost,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), ''), ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step') AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), nullIf(SpanAttributes['tool.name'], ''), '') = '')) AND coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), nullIf(SpanAttributes['llm.model_name'], ''), '') != '')) AS models,
+          groupUniqArrayIf(50)(coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), ''), coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), nullIf(SpanAttributes['ai.telemetry.functionId'], ''), '') != '') AS agentNames
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
         FORMAT JSON
 
 -- builder:ai-sessions:aiTraceWindowQuery:default
@@ -578,6 +925,755 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
         FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorOccurrencesQuery:default
+SELECT
+          toString(trace_detail_spans.Timestamp) AS timestamp,
+          trace_detail_spans.TraceId AS traceId,
+          trace_detail_spans.SpanId AS spanId,
+          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS sessionId,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agentName,
+          ifNull(trace.traceModel, '') AS model,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
+          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
+          trace_detail_spans.Duration AS durationNs,
+          trace_detail_spans.StatusCode AS statusCode,
+          leftUTF8(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.args'], ''), ''), 4000) AS arguments,
+          length(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.args'], ''), '')) AS argumentsBytes,
+          leftUTF8(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.result'], ''), ''), 4000) AS result,
+          length(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.result'], ''), '')) AS resultBytes
+        FROM trace_detail_spans
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        GROUP BY traceId, spanId)
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') = 'TimeoutError'
+          AND if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) = 'wrun_sql_catalog'
+        ORDER BY timestamp DESC, spanId ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorSessionsQuery:default
+SELECT
+          session AS sessionId,
+          anyIf(agent, agent != '') AS agentName,
+          anyIf(model, model != '') AS model,
+          count() AS hits,
+          toString(max(ts)) AS lastSeen
+        FROM (SELECT
+          trace_detail_spans.Timestamp AS ts,
+          trace_detail_spans.TraceId AS traceId,
+          trace_detail_spans.SpanId AS spanId,
+          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
+          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agent,
+          ifNull(trace.traceModel, '') AS model,
+          trace_detail_spans.ServiceName AS svc,
+          trace_detail_spans.Duration AS durationNs
+        FROM trace_detail_spans
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        GROUP BY traceId, spanId)
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
+        WHERE errorType = 'TimeoutError'
+        GROUP BY sessionId
+        ORDER BY hits DESC, sessionId ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorsQuery:default
+SELECT
+          errorType AS errorType,
+          argMax(message, ts) AS message,
+          count() AS calls,
+          uniqExact(session) AS sessions,
+          toString(min(ts)) AS firstSeen,
+          toString(max(ts)) AS lastSeen
+        FROM (SELECT
+          trace_detail_spans.Timestamp AS ts,
+          trace_detail_spans.TraceId AS traceId,
+          trace_detail_spans.SpanId AS spanId,
+          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
+          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agent,
+          ifNull(trace.traceModel, '') AS model,
+          trace_detail_spans.ServiceName AS svc,
+          trace_detail_spans.Duration AS durationNs
+        FROM trace_detail_spans
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        GROUP BY traceId, spanId)
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
+        GROUP BY errorType
+        ORDER BY calls DESC, errorType ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsBreakdownsQuery:default
+SELECT
+          toolName AS key,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          toString(max(ts)) AS lastSeen,
+          toString(min(ts)) AS firstSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_breakdown
+        GROUP BY key
+        ORDER BY calls DESC, key ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:default
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          if(toolName IN (SELECT
+          rankKey AS topKey
+        FROM (SELECT
+          toolName AS rankKey,
+          count() AS rankCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1) AS series_ranking
+        GROUP BY rankKey
+        ORDER BY rankCalls DESC, rankKey ASC
+        LIMIT 8) AS top_series_keys), toolName, 'other') AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1) AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:searched
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          if(toolName IN (SELECT
+          rankKey AS topKey
+        FROM (SELECT
+          toolName AS rankKey,
+          count() AS rankCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS series_ranking
+        GROUP BY rankKey
+        ORDER BY rankCalls DESC, rankKey ASC
+        LIMIT 8) AS top_series_keys), toolName, 'other') AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:split-none
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          '' AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:tool-selected
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          if(modelName IN (SELECT
+          rankKey AS topKey
+        FROM (SELECT
+          modelName AS rankKey,
+          count() AS rankCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS series_ranking
+        GROUP BY rankKey
+        ORDER BY rankCalls DESC, rankKey ASC
+        LIMIT 8) AS top_series_keys), modelName, 'other') AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsTotalsQuery:default
+SELECT
+          'current' AS period,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          if(count() = 0, '', toString(min(ts))) AS firstSeen,
+          if(count() = 0, '', toString(max(ts))) AS lastSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_calls_current
+UNION ALL
+SELECT
+          'previous' AS period,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          if(count() = 0, '', toString(min(ts))) AS firstSeen,
+          if(count() = 0, '', toString(max(ts))) AS lastSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2025-12-30 06:45:00'
+          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2025-12-30 06:45:00'
+          AND Timestamp <= '2026-01-01 10:30:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
+          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_calls_previous
+UNION ALL
+SELECT
+          'window' AS period,
+          0 AS calls,
+          uniqExact(if(rawSessionId = '', concat('trace:', TraceId), rawSessionId)) AS sessions,
+          0 AS errors,
+          0 AS p50,
+          0 AS p90,
+          0 AS p95,
+          '' AS firstSeen,
+          '' AS lastSeen
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS window_traces
+FORMAT JSON
 
 -- builder:billing-usage:dailyProductEventCountQuery:default
 SELECT

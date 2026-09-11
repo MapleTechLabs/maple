@@ -22,6 +22,7 @@ import {
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
+	MAPLE_AI_VENDOR_VERSION_ATTR,
 } from "@maple/domain/gen-ai"
 import * as Integrations from "@maple/query-engine-integrations"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
@@ -96,6 +97,7 @@ const AGENT_TURN_SPAN: SeedSpan = {
 	status: "Ok",
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
+		[MAPLE_AI_VENDOR_VERSION_ATTR]: "1",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 		"gen_ai.operation.name": "invoke_agent",
 		"gen_ai.agent.name": "slack-agent",
@@ -205,15 +207,15 @@ const AGENT_TOOL_SPAN: SeedSpan = {
 // A second agent span on the SAME trace, stamped by the SDK the agent calls
 // through and carrying no session id — an index row whose `SessionId` is ''.
 // `max(SessionId)` per trace is what keeps the trace under the eve session, and
-// the vendor `argMin` is what keeps the row's vendor `eve` rather than the
-// alphabetically-later `vercel_ai_sdk`.
+// the vendor `argMin` is what keeps the row's vendor `eve` (version 1) rather
+// than the alphabetically-later `vercel_ai_sdk` (version 5).
 const AGENT_SDK_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-agent-1b",
 	ms: BASE_MS + 5_000,
 	service: "agent-service",
 	status: "Ok",
-	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk" },
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk", [MAPLE_AI_VENDOR_VERSION_ATTR]: "5" },
 }
 
 // A plain child of the agent trace, BEFORE its first agent span: no `maple_ai.*`
@@ -377,7 +379,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		const rows = await runJson(
 			`SELECT OrgId, toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName,
 			        DeploymentEnv, Model, AgentName, ToolName, SpanId, ParentSpanId, Duration,
-			        IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId
+			        IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId,
+			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens
 			 FROM ai_trace_index ORDER BY Timestamp ASC`,
 		)
 
@@ -397,29 +400,40 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				Tokens: number
 				Cost: number
 				ResponseId: string
+				/** The five 0031 buckets, in order — the disjoint split `Tokens` sums. */
+				buckets: readonly [number, number, number, number, number]
 			}> = {},
-		) => ({
-			OrgId: orgId,
-			Timestamp: chTimestamp(span.ms),
-			TraceId: span.traceId,
-			SessionId: span.attrs[MAPLE_AI_SESSION_ID_ATTR] ?? "",
-			VendorId: span.attrs[MAPLE_AI_VENDOR_ID_ATTR] ?? "",
-			ServiceName: span.service,
-			DeploymentEnv: "",
-			Model: "",
-			AgentName: "",
-			ToolName: "",
-			SpanId: span.spanId,
-			ParentSpanId: span.parentSpanId ?? "",
-			Duration: 1_000_000,
-			IsError: span.status === "Error" ? 1 : 0,
-			IsLlmCall: 0,
-			IsToolCall: 0,
-			Tokens: 0,
-			Cost: 0,
-			ResponseId: "",
-			...expect,
-		})
+		) => {
+			const { buckets = [0, 0, 0, 0, 0], ...columns } = expect
+			return {
+				OrgId: orgId,
+				Timestamp: chTimestamp(span.ms),
+				TraceId: span.traceId,
+				SessionId: span.attrs[MAPLE_AI_SESSION_ID_ATTR] ?? "",
+				VendorId: span.attrs[MAPLE_AI_VENDOR_ID_ATTR] ?? "",
+				ServiceName: span.service,
+				DeploymentEnv: "",
+				Model: "",
+				AgentName: "",
+				ToolName: "",
+				SpanId: span.spanId,
+				ParentSpanId: span.parentSpanId ?? "",
+				Duration: 1_000_000,
+				IsError: span.status === "Error" ? 1 : 0,
+				IsLlmCall: 0,
+				IsToolCall: 0,
+				Tokens: 0,
+				Cost: 0,
+				ResponseId: "",
+				VendorVersion: span.attrs[MAPLE_AI_VENDOR_VERSION_ATTR] ?? "",
+				InputTokens: buckets[0],
+				CacheReadTokens: buckets[1],
+				CacheWriteTokens: buckets[2],
+				OutputTokens: buckets[3],
+				ReasoningTokens: buckets[4],
+				...columns,
+			}
+		}
 
 		// Every vendor-stamped span and nothing else: `AGENT_CHILD_SPAN` and
 		// `PLAIN_SPAN` carry no `maple_ai.*` and must be absent, and the two rows
@@ -427,11 +441,14 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// per TRACE rather than per span.
 		assert.deepStrictEqual(rows, [
 			indexRow(ORG_ID, EARLY_TURN_SPAN),
+			// OpenRouter nests the cache in the prompt and the reasoning in the
+			// completion, so the buckets carve both out and still sum to `Tokens`.
 			indexRow(ORG_ID, AGENT_TURN_SPAN, {
 				DeploymentEnv: "production",
 				AgentName: "slack-agent",
 				Tokens: 150,
 				Cost: 0.02,
+				buckets: [60, 40, 0, 40, 10],
 			}),
 			// Response model over request model; the one model call.
 			indexRow(ORG_ID, AGENT_CHAT_SPAN, {
@@ -441,6 +458,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				Tokens: 150,
 				Cost: 0.02,
 				ResponseId: "gen-e2e-1",
+				buckets: [60, 40, 0, 40, 10],
 			}),
 			// The gateway's observation of the same call: its own row, keyed by
 			// the same response id, priced under its own cost key.
@@ -450,6 +468,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				Tokens: 150,
 				Cost: 0.03,
 				ResponseId: "gen-e2e-1",
+				buckets: [60, 40, 0, 40, 10],
 			}),
 			indexRow(ORG_ID, MIRROR_ATTEMPT_SPAN, {
 				IsLlmCall: 1,
@@ -472,17 +491,19 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				Model: "gpt-5",
 				IsLlmCall: 1,
 				Tokens: 15,
+				buckets: [6, 4, 0, 5, 0],
 			}),
 			indexRow(FOREIGN_ORG_ID, FOREIGN_SPAN),
 		])
 	})
 
-	// Both stages, wired the way the route wires them: the page is ranked on the
-	// index over the caller's window, and its own agent-span bounds are what the
-	// fan-out is then run over. Running the second with the first's real output
-	// is the only thing that proves the bounds it reports are a window
-	// ClickHouse accepts back as a param — the compiled SQL cannot say that.
-	it("feeds the real compiled page and list queries end to end", async () => {
+	// Both reads, wired the way the route and the client wire them: the page is
+	// ranked and measured on the index over the caller's window, and its own
+	// agent-span bounds are what the details fan-out is then run over. Running
+	// the second with the first's real output is the only thing that proves the
+	// bounds it reports are a window ClickHouse accepts back as a param — the
+	// compiled SQL cannot say that.
+	it("feeds the real compiled page and details queries end to end", async () => {
 		const window = {
 			orgId: ORG_ID,
 			startTime: chDateTime(BASE_MS - HOUR_MS),
@@ -503,77 +524,100 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		)
 
 		// The eve session's bounds span BOTH its traces: it starts on the first
-		// trace's turn span and ends on the second trace's, which is what makes the
-		// fan-out window a property of the session rather than of one trace.
-		// `agentEnd` is the SECOND trace's turn span, not the first trace's — and
-		// not `EARLY_TURN_SPAN`, which carries the same session id three hours out
-		// and which the page never saw, so it did not stretch the bounds.
+		// trace's turn span and ends where the second trace's turn span ENDS (its
+		// 1ms later), which is what makes the fan-out window a property of the
+		// session rather than of one trace. Not `EARLY_TURN_SPAN`, which carries
+		// the same session id three hours out and which the page never saw, so
+		// it did not stretch the bounds.
 		const eve = page.find((row) => row.sessionId === SESSION_ID)
 		assert.deepStrictEqual(
 			[eve?.agentStart, eve?.agentEnd],
-			[chTimestamp(BASE_MS), chTimestamp(BASE_MS + 30_000)],
+			[chTimestamp(BASE_MS), chTimestamp(BASE_MS + 30_001)],
 		)
-
-		// The route's own derivation, character for character — string bounds that
-		// sort as the instants do.
-		const fanOutStart = page.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b))
-		const fanOutEnd = page.map((row) => row.agentEnd).reduce((a, b) => (a < b ? b : a))
-		// The upper bound lands on a fractional instant, and stage two compares
-		// `Timestamp <= '{fanOutEnd}'` against the DateTime64(9) column it came
-		// from. Truncate the literal anywhere and the row that SET the bound falls
-		// outside it — the sessionless session below is the canary.
-		assert.strictEqual(fanOutStart, chTimestamp(BASE_MS))
-		assert.strictEqual(fanOutEnd, chTimestamp(BASE_MS + 60_123))
-		assert.ok(fanOutEnd.endsWith(".123000000"))
-		// `orgId` and the page's two bounds — stage two takes no window param from
-		// the caller, so there is nothing else to pass.
-		const compiled = compileUnsafe(
-			Integrations.aiSessionListQuery({
-				sessionIds: page.map((row) => row.sessionId),
-			}),
-			{ orgId: ORG_ID, fanOutStart, fanOutEnd },
-		)
-		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
-
-		// Reordered into the page's order and dropped where the aggregation has no
-		// row, as the handler does — same two sessions, now with the facts the
-		// index cannot answer.
-		const byId = new Map(rows.map((row) => [row.sessionId, row]))
+		// The row as the list renders it before its details: the framework that
+		// ran the turn and ITS version — the session-bearing span's, not the SDK
+		// span's `5` on the same trace — its three traces, its seven agent spans
+		// (the plain child is not in the index), and the agent spans' services.
 		assert.deepStrictEqual(
-			page
-				.flatMap((row) => byId.get(row.sessionId) ?? [])
-				.map((row) => [row.sessionId, row.vendorId, row.traceCount, row.spanCount]),
-			[
-				// Survived the `<= fanOutEnd` boundary it defined.
-				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, "vercel_ai_sdk", 1, 1],
-				// Three traces merged, eight spans: the turn span, its chat and tool
-				// children, the SDK span that carries no session id, the plain child
-				// that is not in the index at all, the second trace's turn span, and
-				// the gateway's mirror trace with its attempt. `eve` and not the
-				// alphabetically-later `openrouter`/`vercel_ai_sdk`, because the
-				// vendor is the earliest SESSION-BEARING span's. `EARLY_TURN_SPAN` is
-				// not among them.
-				[SESSION_ID, "eve", 3, 8],
-			],
+			[eve?.vendorId, eve?.vendorVersion, eve?.traceCount, eve?.spanCount, [...(eve?.serviceNames ?? [])].sort()],
+			["eve", "1", 3, 7, ["agent-service", "openrouter"]],
 		)
-		// The buckets off the raw attributes, deepest reporter counted like the
-		// index's total and one claim per response id: the turn span's roll-up
-		// of its chat call is not added again, nor is the gateway's mirror of
-		// it; OpenRouter nests the cache in the prompt and the reasoning in the
-		// completion, so both are carved out; and the Vercel dialect's
-		// prompt/completion spellings are read. Each row sums to its `Tokens`.
-		const buckets = (row: Integrations.AiSessionListOutput) => [
+		const sessionless = page.find((row) => row.sessionId !== SESSION_ID)
+		assert.deepStrictEqual(
+			[sessionless?.vendorId, sessionless?.vendorVersion, sessionless?.traceCount, sessionless?.spanCount],
+			["vercel_ai_sdk", "", 1, 1],
+		)
+		// The buckets off the index, deepest reporter counted like the total and
+		// one claim per response id: the turn span's roll-up of its chat call is
+		// not added again, nor is the gateway's mirror of it. Each row sums to
+		// its `totalTokens`.
+		const buckets = (row: Integrations.AiSessionPageOutput) => [
 			row.inputTokens,
 			row.cacheReadTokens,
 			row.cacheWriteTokens,
 			row.outputTokens,
 			row.reasoningTokens,
 		]
-		assert.deepStrictEqual(buckets(byId.get(SESSION_ID)!), [60, 40, 0, 40, 10])
+		assert.deepStrictEqual(buckets(eve!), [60, 40, 0, 40, 10])
+		assert.deepStrictEqual(buckets(sessionless!), [6, 4, 0, 5, 0])
+
+		// The client's own derivation, character for character — string bounds
+		// that sort as the instants do.
+		const fanOutStart = page.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b))
+		const fanOutEnd = page.map((row) => row.agentEnd).reduce((a, b) => (a < b ? b : a))
+		// The upper bound lands on a fractional instant — the sessionless span's
+		// end, its start plus 1ms — and the details read compares
+		// `Timestamp <= '{fanOutEnd}'` against the DateTime64(9) column it came
+		// from. Truncate the literal anywhere and the row that SET the bound falls
+		// outside it — the sessionless session below is the canary.
+		assert.strictEqual(fanOutStart, chTimestamp(BASE_MS))
+		assert.strictEqual(fanOutEnd, chTimestamp(BASE_MS + 60_124))
+		assert.ok(fanOutEnd.endsWith(".124000000"))
+		// `orgId`, the page's two bounds and one slice of their padded extent —
+		// the details read takes no window param from the caller, so there is
+		// nothing else to pass. Run as the route runs it: once per slice, then
+		// folded; and once more over the whole padded extent as one read, which
+		// the folded rows must equal — a slice boundary that dropped or
+		// double-counted a span would show here and nowhere else.
+		const details = Integrations.aiSessionDetailsQuery({
+			sessionIds: page.map((row) => row.sessionId),
+		})
+		const readDetails = async (slice: Integrations.AiSessionDetailsSlice) => {
+			const compiled = compileUnsafe(details, { orgId: ORG_ID, fanOutStart, fanOutEnd, ...slice })
+			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		}
+		const slices = Integrations.aiSessionDetailsSlices(fanOutStart, fanOutEnd)
+		const rows = Integrations.mergeAiSessionDetails(await Promise.all(slices.map(readDetails)))
+		const whole = await readDetails({
+			spansStart: slices[0]!.spansStart,
+			spansEnd: slices[slices.length - 1]!.spansEnd,
+		})
+		const sorted = (list: ReadonlyArray<Integrations.AiSessionDetailsOutput>) =>
+			[...list]
+				.sort((a, b) => a.sessionId.localeCompare(b.sessionId))
+				.map((row) => ({ ...row, serviceNames: [...row.serviceNames].sort() }))
+		assert.deepStrictEqual(sorted(rows), sorted(whole))
+
+		// Merged by session id, as the client does — the same two sessions, now
+		// with the facts the index cannot answer.
+		const byId = new Map(rows.map((row) => [row.sessionId, row]))
 		assert.deepStrictEqual(
-			buckets(byId.get(`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`)!),
-			[6, 4, 0, 5, 0],
+			page
+				.flatMap((row) => byId.get(row.sessionId) ?? [])
+				.map((row) => [row.sessionId, row.spanCount, [...row.serviceNames].sort()]),
+			[
+				// Survived the `<= fanOutEnd` boundary it defined.
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, 1, ["agent-service"]],
+				// Three traces merged, eight spans: the seven agent spans the page
+				// counted plus the plain child that is not in the index at all — and
+				// with it the service the agent spans never touched. `EARLY_TURN_SPAN`
+				// is not among them.
+				[SESSION_ID, 8, ["agent-service", "openrouter", "web-service"]],
+			],
 		)
+		// The true extent: the plain child leads the first agent span by 50ms.
+		assert.strictEqual(byId.get(SESSION_ID)?.startTime, chTimestamp(BASE_MS - 50))
+		assert.strictEqual(byId.get(SESSION_ID)?.durationMs, 30_051)
 	})
 
 	const WINDOW = {

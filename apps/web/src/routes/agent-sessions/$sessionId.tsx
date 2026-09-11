@@ -2,24 +2,26 @@ import { useCallback, useEffect, useMemo, type ReactNode } from "react"
 import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import type { AiSessionSpan } from "@maple/domain/http"
+import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { SquareSparkleIcon } from "@/components/icons"
-import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { NotFoundError } from "@/components/route-error"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
+import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
 import {
 	isSessionView,
 	SessionViews,
 	type SessionView,
 } from "@/components/agent-sessions/session-detail/session-views"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
+import { useSessionSpans, type SessionSpansState } from "@/hooks/use-session-spans"
 import {
 	breadcrumbSessionId,
 	buildBackToSessionsHref,
@@ -29,7 +31,8 @@ import { buildSessionSummary } from "@/lib/agent-sessions/session-summary"
 import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
-import { aiSessionSpansResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
+import { aiSessionSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 const agentSessionSearchSchema = Schema.Struct({
 	// Warehouse timestamps: the session's first and last span, carried in from
@@ -47,6 +50,12 @@ const agentSessionSearchSchema = Schema.Struct({
 	// from. In the URL rather than component state so a pasted link reopens the
 	// exact span someone was looking at.
 	span: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	// A tool name to open pre-filtered to, set by the links out of
+	// `/agent-sessions/tools`. It seeds the views' existing span filter rather
+	// than adding a second one — a reader who arrived asking about `run_tests`
+	// should not have to type it again into a six-hundred-row waterfall, and the
+	// filter is theirs to clear from the toolbar like any other.
+	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
 })
 
 const SESSION_TOO_LARGE_TAG = "@maple/http/ai-sessions/AiSessionTooLargeError"
@@ -76,9 +85,18 @@ function AgentSessionDetailContent() {
 	const queryWindow = useMemo(() => resolveWindow(search.t, search.end), [search.t, search.end])
 	// `undefined` spreads to nothing, which is exactly the request the endpoint
 	// reads as "resolve this session from its id".
-	const result = useAtomValue(aiSessionSpansResultAtom({ data: { sessionId, ...queryWindow } }))
+	const spansState = useSessionSpans(sessionId, queryWindow)
+	// The whole session's totals — only for a session that did not fit the
+	// first page, where they are what the progress indicator counts toward.
+	// One that did is complete in hand, and what the page computes from it IS
+	// the total; the extra warehouse read would buy nothing.
+	const summaryResult = useAtomValue(
+		spansState.progress !== undefined
+			? aiSessionSummaryResultAtom({ data: { sessionId, ...queryWindow } })
+			: disabledResultAtom<GetAiSessionSummaryResponse>(),
+	)
 
-	return Result.builder(result)
+	return Result.builder(spansState.firstPage)
 		.onInitial(() => (
 			<SessionShell sessionId={sessionId}>
 				<DashboardLayout.Content>
@@ -147,7 +165,11 @@ function AgentSessionDetailContent() {
 					</DashboardLayout.Content>
 				</SessionShell>
 			) : (
-				<SessionDetailBody sessionId={sessionId} spans={value.data} truncated={value.truncated} />
+				<SessionDetailBody
+					sessionId={sessionId}
+					spansState={spansState}
+					totals={Result.isSuccess(summaryResult) ? summaryResult.value : undefined}
+				/>
 			),
 		)
 		.render()
@@ -155,13 +177,14 @@ function AgentSessionDetailContent() {
 
 function SessionDetailBody({
 	sessionId,
-	spans,
-	truncated,
+	spansState,
+	totals,
 }: {
 	sessionId: string
-	spans: readonly AiSessionSpan[]
-	truncated: boolean
+	spansState: SessionSpansState
+	totals: GetAiSessionSummaryResponse | undefined
 }) {
+	const { spans, progress } = spansState
 	const turns = useMemo(() => buildSessionTurns(spans), [spans])
 	const summary = useMemo(() => buildSessionSummary({ spans, turns }), [spans, turns])
 
@@ -195,17 +218,25 @@ function SessionDetailBody({
 	// A session still being written gets the bounds it had at read time, exactly
 	// as a link from the list page does — the padding `resolveWindow` adds is the
 	// only slack either one has.
+	//
+	// For a session that did not fit the first page the bounds are the whole
+	// session's, from the totals read: stamping where the spans in hand end
+	// would make every later load of the link read a session cut short. Until
+	// that read answers — and if it never does — the link stays unstamped,
+	// which costs a resolve per load and lies to no one.
+	const startMs = totals?.startTime === undefined ? summary.startMs : toEpochMs(totals.startTime)
+	const endMs = totals?.endTime === undefined ? summary.endMs : toEpochMs(totals.endTime)
 	useEffect(() => {
-		if (search.t !== undefined) return
+		if (search.t !== undefined || (progress !== undefined && totals === undefined)) return
 		navigate({
 			replace: true,
 			search: (prev: Record<string, unknown>) => ({
 				...prev,
-				t: formatWarehouseDateTime(summary.startMs),
-				end: formatWarehouseDateTime(summary.endMs),
+				t: formatWarehouseDateTime(startMs),
+				end: formatWarehouseDateTime(endMs),
 			}),
 		})
-	}, [navigate, search.t, summary.startMs, summary.endMs])
+	}, [navigate, search.t, progress, totals, startMs, endMs])
 
 	const selectSpan = useCallback(
 		(spanId: string | undefined) => {
@@ -225,7 +256,14 @@ function SessionDetailBody({
 				<DashboardLayout.Sticky>
 					<DashboardLayout.Header
 						titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
-					/>
+					>
+						{/* The one sign a session larger than a page is still arriving.
+						    Every view renders what is in hand and grows as pages land;
+						    nothing below asks the reader to fetch anything. */}
+						{progress !== undefined && progress.phase !== "complete" && (
+							<SessionLoadIndicator progress={progress} totals={totals} />
+						)}
+					</DashboardLayout.Header>
 				</DashboardLayout.Sticky>
 				{/* `py-0` (the content blocks carry the padding instead) so the views'
 				    sticky elements pin flush to the scroller's edges — sticky offsets
@@ -237,17 +275,6 @@ function SessionDetailBody({
 				    `overflow-x-hidden` means a span that escapes its truncation can
 				    never make the whole page scroll sideways. */}
 				<DashboardLayout.Scroll className="overflow-x-hidden py-0 pr-6">
-					{truncated && (
-						<div className="shrink-0 py-4">
-							<Alert variant="warning">
-								<AlertDescription>
-									This session has more spans than one response carries — everything after
-									the {summary.spanCount.toLocaleString()} spans below is missing, so the
-									totals and the waterfall both stop early.
-								</AlertDescription>
-							</Alert>
-						</div>
-					)}
 					{/* Content-driven height inside the scroller: `shrink-0` because a
 					    scroll container's flex items shrink to fit before they overflow,
 					    which would collapse the views instead of scrolling them; `grow`
@@ -259,9 +286,11 @@ function SessionDetailBody({
 							onViewChange={changeView}
 							turns={turns}
 							summary={summary}
-							truncated={truncated}
+							progress={progress}
+							totals={totals}
 							selectedSpanId={search.span}
 							onSelectSpan={selectSpan}
+							initialQuery={search.tool}
 						/>
 					</div>
 				</DashboardLayout.Scroll>

@@ -56,6 +56,7 @@ import { v16ToV17AuditLogModule } from "./local-store-migrations/v16-to-v17-audi
 import { v17ToV18ProductEventsFromTracesModule } from "./local-store-migrations/v17-to-v18-product-events-from-traces"
 import { v18ToV19AiTraceIndexUsageConventionsModule } from "./local-store-migrations/v18-to-v19-ai-trace-index-usage-conventions"
 import { v19ToV20ErrorEventsAttributeFallbackModule } from "./local-store-migrations/v19-to-v20-error-events-attribute-fallback"
+import { v20ToV21AiTraceIndexListColumnsModule } from "./local-store-migrations/v20-to-v21-ai-trace-index-list-columns"
 import type {
 	AnyLocalStoreMigrationModule,
 	LocalStoreMigration,
@@ -133,6 +134,7 @@ export const localStoreMigrations: ReadonlyArray<AnyLocalStoreMigrationModule> =
 	v17ToV18ProductEventsFromTracesModule,
 	v18ToV19AiTraceIndexUsageConventionsModule,
 	v19ToV20ErrorEventsAttributeFallbackModule,
+	v20ToV21AiTraceIndexListColumnsModule,
 ]
 
 export const validateMigrationRegistry = (

@@ -72,7 +72,7 @@ describe("buildTranscriptRows", () => {
 
 	it("never swallows a turn that carries a card of its own", () => {
 		// A diagnosis report is content, not plumbing — it must not disappear into a
-		// `Used N tools` header.
+		// tool group header.
 		const diagnosis = tools("m2", 1, { status: "diagnosis", report })
 		expect(isToolOnlyMessage(diagnosis)).toBe(false)
 		expect(kinds([tools("m1", 1), diagnosis, tools("m3", 1)])).toEqual(["message", "message", "message"])
@@ -106,14 +106,14 @@ describe("sub-agent parts", () => {
 					type: "task",
 					toolCallId: `${id}-t`,
 					agent: "explore",
-					description: "trace checkout latency",
+					prompt: "trace checkout latency",
 					status: "completed",
 					messages: [],
 				},
 			],
 		}) as UIMessage
 
-	it("is not tool-only, so it never disappears into a Used N tools header", () => {
+	it("is not tool-only, so it never disappears into a tool group header", () => {
 		// A sub-agent run is content: the reader delegated part of the investigation and should see
 		// that it happened, not have it folded away as plumbing.
 		expect(isToolOnlyMessage(task("m1"))).toBe(false)

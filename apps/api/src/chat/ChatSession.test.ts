@@ -101,6 +101,24 @@ describe("ChatSession.history", () => {
 		assert.equal(message.toolCalls[0]?.output, "3 traces")
 	})
 
+	it("records how much prose had streamed when each call was made", () => {
+		const { session } = makeSession()
+		session.append({ type: "turn-start", messageId: "a1" })
+		session.append({ type: "text-delta", messageId: "a1", text: "Looking." })
+		session.append({ type: "tool-call", messageId: "a1", callId: "c1", name: "t", input: {} })
+		session.append({ type: "text-delta", messageId: "a1", text: " Now the errors." })
+		session.append({ type: "tool-call", messageId: "a1", callId: "c2", name: "t", input: {} })
+		session.append({ type: "turn-end", messageId: "a1", reason: "stop" })
+
+		// The two flat fields lose the interleaving; these offsets are what the client
+		// rebuilds it from, so a reloaded turn reads the way it was watched.
+		const calls = session.history()[0]!.toolCalls
+		assert.deepEqual(
+			calls.map((call) => call.textOffset),
+			["Looking.".length, "Looking. Now the errors.".length],
+		)
+	})
+
 	it("keeps an approval-gated call marked as proposed and without output", () => {
 		const { session } = makeSession()
 		session.append({ type: "turn-start", messageId: "a1" })

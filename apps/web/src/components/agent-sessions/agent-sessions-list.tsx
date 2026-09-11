@@ -14,9 +14,11 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 import { useDetectedModels } from "@/hooks/use-detected-models"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
-import { sessionRowId } from "@/lib/agent-sessions/session-window"
+import { sessionLinkWindow, sessionRowId } from "@/lib/agent-sessions/session-window"
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import { ModelLabel } from "./model-label"
@@ -27,6 +29,9 @@ import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 export interface AgentSessionRow {
 	readonly sessionId: string
 	readonly vendorId: string
+	/** The framework's own version, as it stamped it. `''`/absent where it did
+	 *  not — the tool detail's session list names it beside the framework. */
+	readonly vendorVersion?: string
 	readonly traceCount: number
 	readonly spanCount: number
 	readonly errorSpanCount: number
@@ -52,11 +57,13 @@ export interface AgentSessionRow {
 	readonly startTime: string
 	readonly endTime: string
 	readonly durationMs: number
+	/** Set once the row's details landed — its bounds are then the true extent. */
+	readonly hasDetails?: boolean
 }
 
-function absoluteTs(startTime: string): string {
+function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : new Date(parsed).toLocaleString()
+	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
@@ -119,6 +126,7 @@ export function AgentSessionsList({
 	loadingMore = false,
 	isCapped = false,
 }: AgentSessionsListProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	if (sessions.length === 0) {
 		return (
 			<Empty>
@@ -164,10 +172,10 @@ export function AgentSessionsList({
 						key={session.sessionId}
 						to="/agent-sessions/$sessionId"
 						params={{ sessionId: session.sessionId }}
-						// The session's own bounds, not the list's window: the list query
-						// aggregates each qualifying trace in full, so the detail page can
-						// read straight from these.
-						search={{ t: session.startTime, end: session.endTime }}
+						// The session's own bounds, not the list's window — its agent spans'
+						// extent until the row's details land, the true one after — so the
+						// detail page reads straight from these.
+						search={sessionLinkWindow(session)}
 						className="relative flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @2xl:gap-4"
 					>
 						{/* Errored sessions get a left accent so they can be picked out
@@ -195,9 +203,13 @@ export function AgentSessionsList({
 								    anchors the top-right corner of the stacked row. */}
 								<span
 									className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
-									title={absoluteTs(session.startTime)}
+									title={absoluteTs(session.startTime, effectiveTimezone)}
 								>
-									{formatRelativeTimeOrDate(session.startTime)}
+									{formatRelativeTimeOrDate(
+										session.startTime,
+										undefined,
+										effectiveTimezone,
+									)}
 								</span>
 							</div>
 							<div
@@ -286,9 +298,9 @@ export function AgentSessionsList({
 						<div className="hidden w-[4.5rem] shrink-0 items-center justify-end @2xl:flex">
 							<span
 								className="truncate text-right text-xs text-muted-foreground"
-								title={absoluteTs(session.startTime)}
+								title={absoluteTs(session.startTime, effectiveTimezone)}
 							>
-								{formatRelativeTimeOrDate(session.startTime)}
+								{formatRelativeTimeOrDate(session.startTime, undefined, effectiveTimezone)}
 							</span>
 						</div>
 					</Link>
@@ -350,10 +362,19 @@ function WorkCount({
  * index sums the reported figures as stamped, the buckets carve the cache back
  * out of an inclusive prompt figure, and the sort and filter read the index.
  */
+/** The share of the index's total the buckets must reach to be drawn — the
+ *  dedupe can leave the two a little apart, never this far. */
+const BUCKET_COVERAGE_MIN = 0.9
+
 function TokenBar({ session }: { session: AgentSessionRow }) {
 	const buckets = rowTokenBuckets(session)
 	const drawn = TOKEN_BUCKETS.filter((bucket) => buckets[bucket.key] > 0)
-	const bucketTotal = drawn.reduce((sum, bucket) => sum + buckets[bucket.key], 0)
+	const drawnTotal = drawn.reduce((sum, bucket) => sum + buckets[bucket.key], 0)
+	// Buckets well short of the index's total were not reported for every
+	// reporter — the index rows written before the buckets were materialized
+	// carry zeros, and a session that straddles that cut sums a slice — so the
+	// row falls back to the total rather than draw the slice as the whole.
+	const bucketTotal = drawnTotal >= session.totalTokens * BUCKET_COVERAGE_MIN ? drawnTotal : 0
 	const total = bucketTotal > 0 ? bucketTotal : session.totalTokens
 	const title = [
 		`${total.toLocaleString()} tokens`,

@@ -1,5 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react"
 
+import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
+
 import { ArrowRightIcon, ChevronRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Separator } from "@maple/ui/components/ui/separator"
@@ -24,6 +26,8 @@ import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
 import type { SessionToolResults } from "@/lib/agent-sessions/span-detail"
 import { useDetectedModels } from "@/hooks/use-detected-models"
+import type { SessionLoadProgress } from "@/hooks/use-session-spans"
+import { SessionLoadIndicator } from "./session-load-indicator"
 import { ModelLabel } from "../model-label"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
@@ -53,6 +57,8 @@ const SEVERITY_DOT = {
 export function SessionOverview({
 	turns,
 	summary,
+	progress,
+	totals,
 	selectedSpanId,
 	onSelectSpan,
 	spanTab,
@@ -62,6 +68,16 @@ export function SessionOverview({
 }: {
 	turns: readonly SessionTurn[]
 	summary: SessionSummary
+	/**
+	 * The background load of a session larger than one page. Everything on
+	 * this page is a statement about the whole session — a verdict, findings,
+	 * the tool ledger — so it waits for the agent's spans to all be in hand
+	 * rather than pronounce on half of them; the app's spans, which none of it
+	 * reads, may still be arriving behind it.
+	 */
+	progress?: SessionLoadProgress
+	/** The whole session's totals, for the wait's progress count. */
+	totals?: GetAiSessionSummaryResponse
 	/** The one span open in the popover (`?span=`). */
 	selectedSpanId: string | undefined
 	/** Raised with a span id to open it, `undefined` to close. */
@@ -81,6 +97,23 @@ export function SessionOverview({
 	)
 
 	const openSpan = (spanId: string) => onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
+
+	if (progress !== undefined && !progress.agentSpansComplete) {
+		return (
+			<div
+				data-testid="overview-waiting"
+				className="flex grow flex-col items-center justify-center gap-3 py-16 text-center"
+			>
+				<p className="text-sm text-muted-foreground">
+					The overview reads the whole session, and this one is still arriving.
+				</p>
+				<SessionLoadIndicator progress={progress} totals={totals} className="items-center" />
+				<p className="text-xs text-muted-foreground/70">
+					The Traces, Flow and Transcript views already show what has loaded.
+				</p>
+			</div>
+		)
+	}
 
 	return (
 		<div className="@container flex grow flex-col pt-5 pb-10">

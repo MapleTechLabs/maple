@@ -81,6 +81,8 @@ describe("API runtime graph boundaries", () => {
 			"IssueFixVerificationServiceLive",
 			"QueryEngineServiceLive",
 			"RecommendationIssueServiceLive",
+			// The agents' repository sandbox tools.
+			"RepoSandboxServiceLive",
 			"SetupAuditServiceLive",
 			"VcsSourceServiceLive",
 			"WarehouseQueryServiceLive",

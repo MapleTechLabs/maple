@@ -2,7 +2,6 @@ import * as React from "react"
 import { areaY, d3Curve, defineChart, lineY, rect, ruleY } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scaleTime } from "d3-scale"
 import { curveMonotoneX } from "d3-shape"
 
 import type {
@@ -13,6 +12,7 @@ import type {
 	AlertSignalType,
 } from "@maple/domain/http"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	clipToDomain,
 	GHOST_KEY,
@@ -30,6 +30,7 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import {
 	PlotFrame,
 	PlotTooltipBody,
+	bucketTimeScale,
 	createTooltipFocusStore,
 	cursorTooltip,
 	dashedGridY,
@@ -192,6 +193,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 	const hasSignal = chartData.length > 0
 
 	// Adaptive time-axis labels reuse the warehouse formatter via an ISO round-trip.
+	const { effectiveTimezone: timeZone } = useTimezonePreference()
 	const axisContext = React.useMemo(() => {
 		const rangeMs = domain.max - domain.min
 		const bucketSeconds =
@@ -200,8 +202,8 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 				: chartData.length >= 2
 					? (chartData[1]!.t - chartData[0]!.t) / 1000
 					: undefined
-		return { rangeMs, bucketSeconds }
-	}, [chartData, domain, preview])
+		return { rangeMs, bucketSeconds, timeZone }
+	}, [chartData, domain, preview, timeZone])
 
 	const formatTime = React.useCallback(
 		(value: number, mode: "tick" | "tooltip") =>
@@ -566,8 +568,8 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			scales: {
 				x: {
 					// A real time scale over the bucket instants, which is what Recharts'
-					// `type="number" scale="time"` was.
-					scale: scaleTime().domain([new Date(domain.min), new Date(domain.max)]),
+					// `type="number" scale="time"` was — ticking in the zone the labels print in.
+					scale: bucketTimeScale([new Date(domain.min), new Date(domain.max)], timeZone),
 					axis: {
 						line: false,
 						ticks: {
@@ -619,6 +621,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		signalGradientId,
 		chromeColors,
 		formatTime,
+		timeZone,
 		signalType,
 		focusStore,
 	])

@@ -20,6 +20,7 @@ import {
 } from "@maple/ui/components/plot"
 import { cn } from "@maple/ui/lib/utils"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
 import type { CloudflareZoneTimeseriesRow } from "@/api/warehouse/cloudflare-infra"
@@ -138,7 +139,14 @@ export function CloudflareZoneChart({
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
-	const axis = useMemo(() => makeBucketAxis(data.map((point) => point.bucket)), [data])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() => makeBucketAxis(
+			data.map((point) => point.bucket),
+			effectiveTimezone,
+		),
+		[data, effectiveTimezone],
+	)
 
 	const yDomain = useMemo<[number, number]>(
 		() => niceLinearDomain(linearYDomain({ rows: data, keys: series })),

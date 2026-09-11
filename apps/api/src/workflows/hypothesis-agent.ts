@@ -9,14 +9,18 @@
  * diagnosis would let any one of several rivals declare itself the answer before
  * the validator ran.
  */
-import { makeChatSessionId } from "@maple/domain/chat-session"
-import { AiTriageResult, LensCandidate } from "@maple/domain/http"
-import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { LanguageModel } from "@opencode-ai/ai"
+import type {
+	AiTriageResult,
+	InvestigationSubject,
+	InvestigationSubjectSnapshot,
+	LensCandidate,
+} from "@maple/domain/http"
+import type { ResolvedModel } from "@/platform/Llm"
 import { Effect, Option } from "effect"
 import { hypothesisAgent } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
+import { submitCandidate, submitDiagnosis } from "./submit-tools"
 import { buildIncidentContextMessage } from "./incident-context"
 import type { PlannedHypothesis } from "./plan-normalize"
 
@@ -27,7 +31,7 @@ export interface HypothesisAgentInput {
 	readonly scopeSummary: string
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
-	readonly model: LanguageModel
+	readonly model: ResolvedModel
 	readonly tenant: TenantContext
 	/** Wall-clock budget; the turn spends one last step submitting past it. */
 	readonly deadlineAtMs: number
@@ -44,12 +48,6 @@ export interface HypothesisAgentOutput {
 	readonly deadlineHit: boolean
 }
 
-const SUBMIT_DESCRIPTION =
-	"Record your candidate. Call it exactly once, after you have gathered evidence. If your " +
-	"hypothesis did not hold, still call it — say in `claim` what you checked, what you saw " +
-	"instead, and what would have convinced you. A lane that reports an honest negative is doing " +
-	"its job; one that reports nothing is indistinguishable from one that never looked."
-
 export const runHypothesisAgent = Effect.fn("investigation.hypothesis")(function* (
 	input: HypothesisAgentInput,
 ) {
@@ -61,8 +59,6 @@ export const runHypothesisAgent = Effect.fn("investigation.hypothesis")(function
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_${input.hypothesis.id}`,
-		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
-		workflowName: "investigation",
 		agent: hypothesisAgent(input.hypothesis),
 		tenant: input.tenant,
 		model: input.model,
@@ -77,15 +73,13 @@ export const runHypothesisAgent = Effect.fn("investigation.hypothesis")(function
 			input.subject,
 			input.snapshot,
 		),
-		submitToolName: "submit_candidate",
-		submitToolDescription: SUBMIT_DESCRIPTION,
-		schema: LensCandidate,
+		submit: submitCandidate,
 		deadlineAtMs: input.deadlineAtMs,
 	})
 
 	return {
 		candidate: pass.answer,
-		model: String(input.model.id),
+		model: input.model.name,
 		usage: {
 			input: pass.usage.input,
 			output: pass.usage.output,
@@ -116,11 +110,6 @@ export interface SoloHypothesisOutput {
 	readonly deadlineHit: boolean
 }
 
-const SOLO_SUBMIT_DESCRIPTION =
-	"Record the diagnosis. Call it exactly once, after you have gathered evidence. This is " +
-	"published as the investigation's report, so `ruledOut` is what tells the reader what else " +
-	"you considered — fill it even when you are confident, and especially when you are not."
-
 export const runSoloHypothesisAgent = Effect.fn("investigation.solo")(function* (
 	input: HypothesisAgentInput,
 ) {
@@ -133,8 +122,6 @@ export const runSoloHypothesisAgent = Effect.fn("investigation.solo")(function* 
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_${input.hypothesis.id}`,
-		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
-		workflowName: "investigation",
 		agent: hypothesisAgent(input.hypothesis),
 		tenant: input.tenant,
 		model: input.model,
@@ -151,15 +138,13 @@ export const runSoloHypothesisAgent = Effect.fn("investigation.solo")(function* 
 			input.subject,
 			input.snapshot,
 		),
-		submitToolName: "submit_diagnosis",
-		submitToolDescription: SOLO_SUBMIT_DESCRIPTION,
-		schema: AiTriageResult,
+		submit: submitDiagnosis,
 		deadlineAtMs: input.deadlineAtMs,
 	})
 
 	return {
 		report: pass.answer,
-		model: String(input.model.id),
+		model: input.model.name,
 		usage: {
 			input: pass.usage.input,
 			output: pass.usage.output,

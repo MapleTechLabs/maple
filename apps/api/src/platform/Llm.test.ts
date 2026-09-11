@@ -7,22 +7,21 @@
  * and the attribution headers exist together is the outgoing HTTP request — so the test swaps
  * `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
  *
- * The fake responds 400, which `@opencode-ai/ai` classifies as non-retryable. That keeps the run to a
- * single request with no backoff; the resulting failure is expected and ignored.
+ * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
+ * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { LLM, type LanguageModel } from "@opencode-ai/ai"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Stream } from "effect"
+import { LanguageModel } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import {
-	contextLimitOf,
 	layerLlm,
-	outputLimitOf,
 	resolveLensModel,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmEnv,
+	type ResolvedModel,
 } from "./Llm"
 
 interface CapturedRequest {
@@ -40,7 +39,7 @@ interface CapturedRequest {
 const captureRequest = (
 	env: LlmEnv,
 	tags?: LlmCallTags,
-	resolve: (env: LlmEnv, tags?: LlmCallTags) => LanguageModel = resolveTriageModel,
+	resolve: (env: LlmEnv, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -60,17 +59,15 @@ const captureRequest = (
 			return new Response(JSON.stringify({ error: "captured" }), { status: 400 })
 		}
 
-		const request = LLM.request({
-			model: resolve(env, tags),
-			system: "You are concise.",
-			prompt: "hi",
-		})
+		const model = resolve(env, tags)
 
-		yield* LLM.generate(request).pipe(
+		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
+			Effect.provide(model.layer),
 			Effect.ignore,
-			Effect.provide(
-				layerLlm(env).pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fakeFetch))),
-			),
+			Effect.provide(layerLlm(env)),
+			// `Fetch` is a context Reference read per request rather than a Layer requirement, so it
+			// has to reach the fiber running the call, not the layer that built the client.
+			Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 		)
 
 		if (captured === undefined) return yield* Effect.die("no request reached the transport")
@@ -123,6 +120,22 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 
 			expect(captured.body.session_id).toHaveLength(256)
 		}),
+	)
+
+	it.live("stamps the calling span's ids on the trace field so Broadcast nests under it", () =>
+		Effect.gen(function* () {
+			const span = yield* Effect.currentSpan
+			const captured = yield* captureRequest(openRouterEnv, tags)
+
+			// OpenRouter's exporter uses these verbatim as the W3C ids of the trace it emits.
+			expect(captured.body.trace).toMatchObject({ trace_name: "chat", trace_id: span.traceId })
+			// The parent is whichever span is innermost at the transport — the model's, not ours —
+			// but it must be a real 16-hex span id that lives in our trace.
+			expect((captured.body.trace as { parent_span_id: string }).parent_span_id).toMatch(
+				/^[0-9a-f]{16}$/,
+			)
+			expect(captured.body.usage).toEqual({ include: true })
+		}).pipe(Effect.withSpan("chat")),
 	)
 
 	it.live("keeps the headers and tags off the Workers AI path", () =>
@@ -227,8 +240,8 @@ describe("reasoning effort", () => {
 
 describe("resolveTriageModel — context limits", () => {
 	it("attaches the configured model's window, which upstream leaves unstated", () => {
-		// `@opencode-ai/ai` declares `ModelLimits` but no provider populates it, so before this every
-		// model reported `undefined` and nothing could tell when a transcript was near the wall.
+		// Providers do not report their context window, so without this table nothing could tell
+		// when a transcript was near the wall.
 		//
 		// The model is NAMED rather than left to the default: this asserts that a model in the table
 		// gets that table's window, which is a fact about the mechanism. Reading it off whatever
@@ -239,8 +252,8 @@ describe("resolveTriageModel — context limits", () => {
 			MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
 		})
 
-		expect(contextLimitOf(model)).toBe(1_050_000)
-		expect(outputLimitOf(model)).toBe(128_000)
+		expect(model.limits.context).toBe(1_050_000)
+		expect(model.limits.output).toBe(128_000)
 	})
 
 	it("attaches the default model's window without it having to be named", () => {
@@ -249,7 +262,7 @@ describe("resolveTriageModel — context limits", () => {
 		// takes DEFAULT_MODEL_LIMITS and compacts earlier than it needs to.
 		const model = resolveTriageModel(openRouterEnv)
 
-		expect(contextLimitOf(model)).not.toBe(DEFAULT_MODEL_LIMITS_CONTEXT)
+		expect(model.limits.context).not.toBe(DEFAULT_MODEL_LIMITS_CONTEXT)
 	})
 
 	it("falls back to a conservative window for a model it does not know", () => {
@@ -259,7 +272,7 @@ describe("resolveTriageModel — context limits", () => {
 			MAPLE_TRIAGE_MODEL_OPENROUTER: "some/model-shipped-after-this-table",
 		})
 
-		expect(contextLimitOf(model)).toBe(128_000)
+		expect(model.limits.context).toBe(128_000)
 	})
 
 	it("lets the environment override the table", () => {
@@ -269,8 +282,8 @@ describe("resolveTriageModel — context limits", () => {
 			MAPLE_TRIAGE_MODEL_OUTPUT: "4000",
 		})
 
-		expect(contextLimitOf(model)).toBe(64_000)
-		expect(outputLimitOf(model)).toBe(4_000)
+		expect(model.limits.context).toBe(64_000)
+		expect(model.limits.output).toBe(4_000)
 	})
 
 	it("ignores an unparseable or nonsensical override rather than trusting it", () => {
@@ -283,7 +296,117 @@ describe("resolveTriageModel — context limits", () => {
 				MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
 				MAPLE_TRIAGE_MODEL_CONTEXT: bad,
 			})
-			expect(contextLimitOf(model)).toBe(1_050_000)
+			expect(model.limits.context).toBe(1_050_000)
 		}
 	})
+})
+
+/**
+ * The usage block of a streamed completion, as an upstream that keeps reasoning tokens *outside*
+ * `completion_tokens` reports it. Numbers are from a real failing chat turn.
+ */
+const disjointReasoningUsage = {
+	prompt_tokens: 21_435,
+	completion_tokens: 293,
+	total_tokens: 21_728,
+	prompt_tokens_details: { cached_tokens: 16_128, cache_write_tokens: 0 },
+	completion_tokens_details: { reasoning_tokens: 321 },
+}
+
+const sseBody = (usage: Record<string, unknown>): string =>
+	[
+		`data: ${JSON.stringify({
+			id: "gen-1",
+			object: "chat.completion.chunk",
+			created: 1_789_056_870,
+			model: "z-ai/glm-5.3-flash",
+			choices: [{ index: 0, delta: { role: "assistant", content: "hi" } }],
+		})}`,
+		"",
+		`data: ${JSON.stringify({
+			id: "gen-1",
+			object: "chat.completion.chunk",
+			created: 1_789_056_870,
+			model: "z-ai/glm-5.3-flash",
+			choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+			usage,
+		})}`,
+		"",
+		"data: [DONE]",
+		"",
+	].join("\n")
+
+/** Stream one completion off a fake transport and return the run's `finish` part. */
+const streamFinishPart = (usage: Record<string, unknown>) =>
+	Effect.gen(function* () {
+		const fakeFetch: typeof globalThis.fetch = async () =>
+			new Response(sseBody(usage), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			})
+
+		const model = resolveTriageModel(openRouterEnv)
+		const parts = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+			Stream.runCollect,
+			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
+			// they go in as a single merged layer rather than two lifecycles stacked on each other.
+			Effect.provide(Layer.provide(model.layer, layerLlm(openRouterEnv))),
+			Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+		)
+
+		const finish = parts.find((part) => part.type === "finish")
+		if (finish === undefined) return yield* Effect.die("the stream carried no finish part")
+		return finish
+	})
+
+/**
+ * Guards the `@effect/ai-openrouter` patch in `patches/`.
+ *
+ * The package derives the output text component as `completion_tokens - reasoning_tokens`, which
+ * assumes reasoning tokens are counted inside the completion total. Some OpenRouter upstreams
+ * report them side by side, so the derived component goes negative and the agent engine — which
+ * decodes every usage field as a natural number — throws away a response the model already
+ * produced. The patch folds the two together when they are disjoint; this is what proves it is
+ * still applied, since a `bun install` that dropped it would leave the numbers below negative.
+ */
+describe("streamed usage — reasoning tokens reported outside the completion total", () => {
+	it.live("folds them back into the completion total", () =>
+		Effect.gen(function* () {
+			// Unpatched, this is what fails the turn: text would be 293 - 321.
+			const finish = yield* streamFinishPart(disjointReasoningUsage)
+
+			expect(finish.usage.outputTokens.text).toBe(293)
+			expect(finish.usage.outputTokens.reasoning).toBe(321)
+			expect(finish.usage.outputTokens.total).toBe(614)
+			// The input side is already coherent and must come through unchanged.
+			expect(finish.usage.inputTokens.total).toBe(21_435)
+			expect(finish.usage.inputTokens.cacheRead).toBe(16_128)
+		}),
+	)
+
+	it.live("does the same for cached tokens reported outside the prompt total", () =>
+		Effect.gen(function* () {
+			const finish = yield* streamFinishPart({
+				...disjointReasoningUsage,
+				prompt_tokens: 5_000,
+				prompt_tokens_details: { cached_tokens: 16_128, cache_write_tokens: 0 },
+			})
+
+			expect(finish.usage.inputTokens.total).toBe(21_128)
+			expect(finish.usage.inputTokens.uncached).toBe(5_000)
+		}),
+	)
+
+	it.live("leaves a provider that already nests reasoning inside the completion untouched", () =>
+		Effect.gen(function* () {
+			const finish = yield* streamFinishPart({
+				...disjointReasoningUsage,
+				completion_tokens: 614,
+				completion_tokens_details: { reasoning_tokens: 321 },
+			})
+
+			expect(finish.usage.outputTokens.total).toBe(614)
+			expect(finish.usage.outputTokens.text).toBe(293)
+		}),
+	)
 })

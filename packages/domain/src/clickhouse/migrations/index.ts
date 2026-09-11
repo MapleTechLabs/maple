@@ -29,6 +29,7 @@ import { migration_0027_audit_log } from "./0027_audit_log"
 import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
 import { migration_0029_ai_trace_index_usage_conventions } from "./0029_ai_trace_index_usage_conventions"
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
+import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -90,6 +91,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0028_product_events_from_traces,
 	migration_0029_ai_trace_index_usage_conventions,
 	migration_0030_error_events_attribute_fallback,
+	migration_0031_ai_trace_index_list_columns,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

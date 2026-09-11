@@ -11,6 +11,7 @@
 	"scripts": {
 		"build": "turbo build",
 		"dev": "bun run ./scripts/dev.ts",
+		"dev:signin": "bun run ./scripts/dev-signin.ts",
 		"prepare": "effect-tsgo unpatch --no-typescript --oxlint && effect-tsgo patch --no-typescript --oxlint",
 		"docker:build": "COMPOSE_PARALLEL_LIMIT=1 docker compose build",
 		"docker:up": "COMPOSE_PARALLEL_LIMIT=1 docker compose up --build",
@@ -88,6 +89,8 @@
 			"@tanstack/charts-scales": "0.16.0"
 		},
 		"effect": {
+			"@effect/ai-openai-compat": "4.0.0-rc.112",
+			"@effect/ai-openrouter": "4.0.0-rc.112",
 			"@effect/atom-react": "4.0.0-rc.112",
 			"@effect/language-service": "^0.87.2",
 			"@effect/platform-bun": "4.0.0-rc.112",
@@ -121,6 +124,7 @@
 		}
 	},
 	"patchedDependencies": {
+		"@effect/ai-openrouter@4.0.0-rc.112": "patches/@effect%2Fai-openrouter@4.0.0-rc.112.patch",
 		"@effect/vitest@4.0.0-rc.112": "patches/@effect%2Fvitest@4.0.0-rc.112.patch",
 		"effect@4.0.0-rc.112": "patches/effect@4.0.0-rc.112.patch"
 	}

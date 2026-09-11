@@ -37,6 +37,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
@@ -75,6 +76,7 @@ export type ContainersSearchParams = Schema.Schema.Type<typeof containersSearchS
 export const Route = createFileRoute("/infra/containers/")({
 	component: ContainersPage,
 	validateSearch: Schema.toStandardSchemaV1(containersSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const SCOPE_LABEL: Record<ContainerScope, string> = {

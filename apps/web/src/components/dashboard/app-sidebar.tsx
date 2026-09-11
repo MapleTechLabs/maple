@@ -80,6 +80,14 @@ const GROUP_LABEL = "h-6 text-muted-foreground"
 /** Beyond this the Pinned list stops being a shortcut and becomes a second list. */
 const MAX_PINNED = 5
 
+/**
+ * The collapsed rail forces every menu button to `size-8 p-2`, which leaves a
+ * 16px content box — narrower than the 24px avatar, so `overflow-hidden` sliced
+ * it into a tall sliver. Trimming the padding to 4px fits the avatar whole and
+ * centers it once the name is hidden.
+ */
+const COLLAPSED_AVATAR_ROW = "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-1!"
+
 function UserMenu() {
 	const { user } = useUser()
 	const { signOut } = useClerk()
@@ -94,13 +102,13 @@ function UserMenu() {
 			<DropdownMenuTrigger
 				render={
 					<SidebarMenuButton
-						className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+						className={`${COLLAPSED_AVATAR_ROW} data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground`}
 						tooltip={name}
 					/>
 				}
 			>
 				<UserAvatar imageUrl={imageUrl} initials={initials} name={name} />
-				<span className="truncate font-medium">{name}</span>
+				<span className="truncate font-medium group-data-[collapsible=icon]:hidden">{name}</span>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="min-w-56" side="top" sideOffset={4}>
 				<DropdownMenuGroup>
@@ -164,13 +172,13 @@ function GuestMenu() {
 			<DropdownMenuTrigger
 				render={
 					<SidebarMenuButton
-						className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+						className={`${COLLAPSED_AVATAR_ROW} data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground`}
 						tooltip="Root"
 					/>
 				}
 			>
 				<UserAvatar initials="RT" name="Root" />
-				<span className="truncate font-medium">Root</span>
+				<span className="truncate font-medium group-data-[collapsible=icon]:hidden">Root</span>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="min-w-56" side="top" sideOffset={4}>
 				<DropdownMenuGroup>

@@ -4,10 +4,10 @@ import type { TimeRange } from "@/components/dashboard-builder/types"
 import { formatTimeRangeDisplay, presetLabel } from "@/lib/time-utils"
 
 /** How an override reads in the widget header and in the settings rail. */
-export function widgetTimeRangeLabel(timeRange: TimeRange): string {
+export function widgetTimeRangeLabel(timeRange: TimeRange, timeZone?: string): string {
 	return timeRange.type === "relative"
 		? presetLabel(timeRange.value)
-		: formatTimeRangeDisplay(timeRange.startTime, timeRange.endTime)
+		: formatTimeRangeDisplay(timeRange.startTime, timeRange.endTime, timeZone)
 }
 
 const WidgetTimeRangeContext = createContext<TimeRange | null>(null)

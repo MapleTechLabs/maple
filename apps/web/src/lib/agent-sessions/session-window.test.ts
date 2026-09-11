@@ -4,6 +4,7 @@ import {
 	breadcrumbSessionId,
 	buildBackToSessionsHref,
 	resolveWindow,
+	sessionLinkWindow,
 	sessionRowId,
 } from "@/lib/agent-sessions/session-window"
 
@@ -11,6 +12,8 @@ describe("resolveWindow", () => {
 	it("pads a minute either side of the hints the list row carried", () => {
 		const window = resolveWindow("2026-08-19 12:00:00.000000000", "2026-08-19 12:30:00.000000000")
 
+		// The hints are the session's own bounds (`sessionLinkWindow` widens the
+		// agent-only ones before they get here); the pad covers rounding and skew.
 		expect(window).toEqual({ startTime: "2026-08-19 11:59:00", endTime: "2026-08-19 12:31:00" })
 	})
 
@@ -36,6 +39,18 @@ describe("resolveWindow", () => {
 
 	it("treats an unparseable start hint as no hint at all", () => {
 		expect(resolveWindow("not-a-timestamp", undefined)).toBeUndefined()
+	})
+})
+
+describe("sessionLinkWindow", () => {
+	const row = { startTime: "2026-08-19 12:00:00.000000000", endTime: "2026-08-19 12:30:00.000000000" }
+
+	it("widens agent-only bounds by the hour the fan-out reads with", () => {
+		expect(sessionLinkWindow(row)).toEqual({ t: "2026-08-19 11:00:00", end: "2026-08-19 13:30:00" })
+	})
+
+	it("passes the true extent through once the row's details landed", () => {
+		expect(sessionLinkWindow({ ...row, hasDetails: true })).toEqual({ t: row.startTime, end: row.endTime })
 	})
 })
 

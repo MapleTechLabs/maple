@@ -14,14 +14,14 @@
  * could not be checked, and the strongest remaining lead at low confidence. The
  * run lands on `status: "inconclusive"`, not `failed`.
  */
-import { makeChatSessionId } from "@maple/domain/chat-session"
 import { ValidatorVerdict } from "@maple/domain/http"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { LanguageModel } from "@opencode-ai/ai"
+import type { ResolvedModel } from "@/platform/Llm"
 import { Effect, Option, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { TenantContext } from "@/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
+import { submitVerdict } from "./submit-tools"
 import { buildIncidentContextMessage } from "./incident-context"
 
 /** What one lane handed the validator. `null` candidate = the lane found nothing. */
@@ -56,7 +56,7 @@ export interface ValidatorAgentInput {
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
 	readonly candidates: ReadonlyArray<ValidatorCandidateInput>
-	readonly model: LanguageModel
+	readonly model: ResolvedModel
 	readonly tenant: TenantContext
 	/**
 	 * Wall clock after which the pass stops at its next step boundary.
@@ -138,19 +138,11 @@ export const runValidatorAgent = Effect.fn("investigation.validator")(function* 
 
 	const pass = yield* runAgentPass({
 		id: `inv_${input.investigationId}_validator`,
-		sessionId: makeChatSessionId(input.tenant.orgId, `inv-${input.investigationId}`),
-		workflowName: "investigation",
 		agent,
 		tenant: input.tenant,
 		model: input.model,
 		prompt: buildValidatorPrompt(input),
-		submitToolName: "submit_verdict",
-		submitToolDescription:
-			"Record your ranking. Call it exactly once — this call IS your answer, and prose outside " +
-			"it is discarded. Promoting nothing is a legitimate outcome: leave promotedLensId null " +
-			"and still submit a `report` as a partial, saying what was ruled out, what could not be " +
-			"checked, and the strongest remaining lead at low confidence.",
-		schema: ValidatorVerdict,
+		submit: submitVerdict,
 		deadlineAtMs: input.deadlineAtMs,
 	})
 
@@ -184,7 +176,7 @@ export const runValidatorAgent = Effect.fn("investigation.validator")(function* 
 
 	return {
 		verdict: coherent,
-		model: String(input.model.id),
+		model: input.model.name,
 		usage: {
 			input: pass.usage.input,
 			output: pass.usage.output,

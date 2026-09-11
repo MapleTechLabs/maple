@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { Env } from "@/platform/Env"
 import { GithubAppClient } from "@/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubHttp, type GithubHttpApi } from "@/services/integrations/vcs/vendor/github/GithubHttp"
@@ -34,6 +34,66 @@ const jsonResponse = (body: unknown) =>
 	new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
 describe("GithubAppClient source access", () => {
+	it.effect("encodes a committish, so a ref cannot walk the token onto another repository", () => {
+		const requests: Array<{ url: string }> = []
+		const responses = [
+			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
+			jsonResponse({
+				sha: "a".repeat(40),
+				html_url: "https://github.com/octo/shop/commit/a",
+				commit: { message: "m", author: null },
+				author: null,
+			}),
+		]
+		let nextResponse = 0
+		const http = Layer.succeed(GithubHttp, {
+			fetch: async (url) => {
+				requests.push({ url })
+				return responses[nextResponse++]!
+			},
+		} satisfies GithubHttpApi)
+		const layer = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			yield* client.getCommit("42", "octo", "shop", "../../../../repos/evil/private/commits/main")
+			// URL parsing collapses an unencoded `..`; the encoded form stays inside
+			// the repository the org actually connected.
+			assert.include(requests[1]!.url, "/repos/octo/shop/commits/")
+			assert.notInclude(new URL(requests[1]!.url).pathname, "/repos/evil/")
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("mints a clone credential scoped to one repository, apart from the remote URL", () => {
+		const requests: Array<{ url: string; init?: RequestInit }> = []
+		const responses = [jsonResponse({ token: "ghs_scoped", expires_at: "2099-01-01T00:00:00Z" })]
+		let nextResponse = 0
+		const http = Layer.succeed(GithubHttp, {
+			fetch: async (url, init) => {
+				requests.push({ url, ...(init ? { init } : undefined) })
+				return responses[nextResponse++]!
+			},
+		} satisfies GithubHttpApi)
+		const layer = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const { remoteUrl, token } = yield* client.mintCloneCredentials("42", "octo", "shop")
+			assert.strictEqual(remoteUrl, "https://github.com/octo/shop.git")
+			assert.strictEqual(token, "ghs_scoped")
+			// The App JWT mints it, and the body narrows it to read-only contents on one repo.
+			assert.match(requests[0]!.url, /\/app\/installations\/42\/access_tokens$/)
+			const body = yield* Schema.decodeUnknownEffect(
+				Schema.Struct({
+					repositories: Schema.Array(Schema.String),
+					permissions: Schema.Record(Schema.String, Schema.String),
+				}),
+			)(JSON.parse(String(requests[0]!.init?.body)))
+			assert.deepStrictEqual([...body.repositories], ["shop"])
+			assert.deepStrictEqual({ ...body.permissions }, { contents: "read", metadata: "read" })
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("searches code and reads a file with the installation token", () => {
 		const requests: Array<{ url: string; init?: RequestInit }> = []
 		const responses = [

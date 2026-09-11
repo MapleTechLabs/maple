@@ -18,6 +18,7 @@ import {
 	useServiceHealthSummary,
 } from "@/components/services/use-service-health-summary"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
@@ -337,8 +338,9 @@ function ResolvedCommitMessages({ shasKey, children }: { shasKey: string; childr
  */
 function ResolvedDeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
 	const messages = React.useContext(CommitMessagesContext)
+	const { effectiveTimezone } = useTimezonePreference()
 	const shortSha = truncateCommitSha(sha)
-	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen) : ""
+	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen, undefined, effectiveTimezone) : ""
 	const message = messages.get(sha) ?? ""
 	return (
 		<>
@@ -351,10 +353,11 @@ function ResolvedDeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
 }
 
 function DeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	if (isResolvableSha(sha)) {
 		return <ResolvedDeployLines sha={sha} firstSeen={firstSeen} stateLine={stateLine} />
 	}
-	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen) : ""
+	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen, undefined, effectiveTimezone) : ""
 	return (
 		<>
 			<CommitShaHoverCard sha={sha} className="min-w-0 max-w-full truncate text-xs text-foreground">
@@ -366,13 +369,14 @@ function DeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
 }
 
 const DeployCell = React.memo(function DeployCell({ commits }: { commits: CommitBreakdown[] }) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const info = deriveDeployInfo(commits)
 	if (info === undefined) {
 		return <span className="text-xs text-muted-foreground">N/A</span>
 	}
 	const stateLine = info.errorsSince ? (
 		<span className="truncate text-[10px] text-severity-error">
-			{info.firstSeen !== "" ? `${formatRelativeTimeOrDate(info.firstSeen)} · ` : ""}errors ↑ since
+			{info.firstSeen !== "" ? `${formatRelativeTimeOrDate(info.firstSeen, undefined, effectiveTimezone)} · ` : ""}errors ↑ since
 		</span>
 	) : info.rollout !== undefined ? (
 		<Tooltip>

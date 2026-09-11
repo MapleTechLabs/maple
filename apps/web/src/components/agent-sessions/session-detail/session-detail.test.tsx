@@ -45,8 +45,9 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", async (importOriginal) => 
 	return { ...actual, getSpanDetailResultAtom: () => disabledResultAtom() }
 })
 
-import type { AiSessionSpan } from "@maple/domain/http"
+import type { AiSessionSpan, GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "@/lib/agent-sessions/span-test-support"
 import { buildSessionSummary, type SessionSummary } from "@/lib/agent-sessions/session-summary"
 import { buildSessionTurns, type SessionTurn } from "@/lib/agent-sessions/session-turns"
@@ -1123,7 +1124,14 @@ describe("SessionFlow", () => {
 
 describe("SessionViews", () => {
 	/** `view` is a search param on the real page; here it is local state. */
-	function Views(props: { turns?: readonly SessionTurn[]; summary?: SessionSummary; view?: SessionView }) {
+	function Views(props: {
+		turns?: readonly SessionTurn[]
+		summary?: SessionSummary
+		view?: SessionView
+		progress?: SessionLoadProgress
+		totals?: GetAiSessionSummaryResponse
+		initialQuery?: string
+	}) {
 		const [view, setView] = useState<SessionView>(props.view ?? "trace")
 		const [selectedSpanId, setSelectedSpanId] = useState<string | undefined>(undefined)
 		return (
@@ -1132,12 +1140,107 @@ describe("SessionViews", () => {
 				onViewChange={setView}
 				turns={props.turns ?? turns}
 				summary={props.summary ?? summary}
-				truncated={false}
+				progress={props.progress}
+				totals={props.totals}
 				selectedSpanId={selectedSpanId}
 				onSelectSpan={setSelectedSpanId}
+				initialQuery={props.initialQuery}
 			/>
 		)
 	}
+
+	// The `?tool=` a link out of `/agent-sessions/tools` carries: the reader
+	// arrived asking about one tool and must not have to type it again.
+	it("opens filtered to the tool the link carried, and lets the reader clear it", () => {
+		render(<Views initialQuery="grep_repo" />)
+
+		const filter = screen.getByPlaceholderText("Filter spans") as HTMLInputElement
+		expect(filter.value).toBe("grep_repo")
+		expect(screen.getByText("grep_repo")).toBeTruthy()
+		expect(screen.queryByText("run_tests")).toBeNull()
+
+		// A seed, not a controlled value — clearing it must not be undone by the
+		// URL it came from.
+		fireEvent.change(filter, { target: { value: "" } })
+		expect(screen.getByText("run_tests")).toBeTruthy()
+	})
+
+	const totals: GetAiSessionSummaryResponse = {
+		spanCount: 209_220,
+		aiSpanCount: 19_506,
+		traceCount: 1,
+		startTime: "2026-08-27 22:18:58.869000000",
+		endTime: "2026-08-27 23:56:55.809000000",
+		durationMs: 5_876_940,
+		llmCalls: 17_439,
+		toolCalls: 0,
+		errorSpanCount: 3,
+		tokens: { input: 1_000_000, output: 50_000, cacheRead: 0 },
+		tokenReporting: "per-call",
+		cost: 12.5,
+		models: ["gpt-5"],
+		agentNames: [],
+		turns: [],
+		turnsTruncated: false,
+	}
+
+	// A session larger than one page loads on its own. While the agent's spans
+	// are still arriving the Overview — a statement about the whole session —
+	// waits and says how far along the load is; the transcript shows what is
+	// in hand and marks that its end is not here yet. Nothing asks the reader
+	// to load anything.
+	it("waits for the agent's spans in the Overview and marks the transcript's open end while loading", () => {
+		const progress: SessionLoadProgress = { phase: "agent", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		render(<Views view="overview" progress={progress} totals={totals} />)
+
+		const waiting = screen.getByTestId("overview-waiting")
+		expect(within(waiting).getByText(/Loading 6 of 19,506 agent spans/)).toBeTruthy()
+		expect(screen.queryByRole("button", { name: /^load/i })).toBeNull()
+
+		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
+		expect(screen.getByText("Loading the rest of this session")).toBeTruthy()
+		expect(screen.queryByRole("button", { name: /^load/i })).toBeNull()
+	})
+
+	// Once every agent span is in, the Overview is the whole session's even
+	// while the app's spans are still filling in behind it, and the transcript
+	// has its end.
+	it("renders the Overview and a closed transcript once the agent's spans are all in", () => {
+		const progress: SessionLoadProgress = { phase: "app", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		render(<Views view="overview" progress={progress} totals={totals} />)
+		expect(screen.queryByTestId("overview-waiting")).toBeNull()
+		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
+		expect(screen.queryByText("Loading the rest of this session")).toBeNull()
+	})
+
+	// A page that did not come back is the one case with something to press.
+	it("offers a retry where an agent page failed", () => {
+		const retry = vi.fn()
+		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry }
+		render(<Views view="transcript" progress={progress} totals={totals} />)
+		expect(screen.getByText("The rest of this session didn't load")).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+		expect(retry).toHaveBeenCalledTimes(1)
+	})
+
+	// A failed APP page changes nothing for the views that read agent spans
+	// alone: the Overview stands and the transcript has its end. The header
+	// indicator is where that failure is reported.
+	it("keeps the Overview and a closed transcript when only an app page failed", () => {
+		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		render(<Views view="overview" progress={progress} totals={totals} />)
+		expect(screen.queryByTestId("overview-waiting")).toBeNull()
+		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
+		expect(screen.queryByText("The rest of this session didn't load")).toBeNull()
+		expect(screen.queryByText("Loading the rest of this session")).toBeNull()
+	})
+
+	it("shows neither for a session loaded whole", () => {
+		render(<Views view="overview" />)
+		expect(screen.queryByTestId("overview-waiting")).toBeNull()
+		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
+		expect(screen.queryByText("Loading the rest of this session")).toBeNull()
+	})
 
 	// Both debug views read the query and the span-kind toggle, so both controls
 	// stay mounted in both.

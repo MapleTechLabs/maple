@@ -7,7 +7,9 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { zonedDateParts } from "@maple/query-engine/datetime"
 import type { ErrorSignal, InvestigationSummary } from "@/lib/models/error-signal"
 import { densifySpark, surgeRatio } from "@/lib/models/error-signal"
 
@@ -22,7 +24,7 @@ import type { IssueMutations } from "./use-issue-mutations"
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
-function formatLastSeen(iso: string): string {
+function formatLastSeen(iso: string, timeZone: string): string {
 	const d = new Date(normalizeTimestampInput(iso))
 	if (Number.isNaN(d.getTime())) return iso
 	const diffMs = Date.now() - d.getTime()
@@ -30,8 +32,9 @@ function formatLastSeen(iso: string): string {
 	if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m`
 	if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h`
 	if (diffMs < WEEK_MS) return `${Math.floor(diffMs / 86_400_000)}d`
-	const sameYear = d.getFullYear() === new Date().getFullYear()
+	const sameYear = zonedDateParts(d.getTime(), timeZone).year === zonedDateParts(Date.now(), timeZone).year
 	return d.toLocaleDateString(undefined, {
+		timeZone,
 		month: "short",
 		day: "numeric",
 		year: sameYear ? undefined : "numeric",
@@ -252,6 +255,7 @@ export function ErrorSignalRow({
 }: ErrorSignalRowProps) {
 	const href = `/errors/issues/${signal.id}`
 	const rowRef = useRef<HTMLAnchorElement | null>(null)
+	const { effectiveTimezone } = useTimezonePreference()
 	const dense = densifySpark(signal.spark, sparkWindow)
 	const surge = surgeRatio(dense)
 	const isSurging = surge !== null && surge >= SURGE_THRESHOLD
@@ -381,9 +385,9 @@ export function ErrorSignalRow({
 
 				<span
 					className={cn(LANE.lastSeen, "text-right text-xs tabular-nums text-muted-foreground")}
-					title={`Last seen ${new Date(normalizeTimestampInput(signal.lastSeenAt)).toLocaleString()}`}
+					title={`Last seen ${formatTimestampInTimezone(signal.lastSeenAt, { timeZone: effectiveTimezone, withYear: true })}`}
 				>
-					{formatLastSeen(signal.lastSeenAt)}
+					{formatLastSeen(signal.lastSeenAt, effectiveTimezone)}
 				</span>
 			</Link>
 		</IssueContextMenu>

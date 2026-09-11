@@ -5,6 +5,7 @@ import { QueryBuilderLab } from "@/lab/query-builder-lab"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
@@ -15,6 +16,7 @@ const queryBuilderLabSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/lab/query-builder")({
 	component: QueryBuilderLabPage,
 	validateSearch: Schema.toStandardSchemaV1(queryBuilderLabSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function QueryBuilderLabPage() {

@@ -4,7 +4,7 @@ import type { BillingCustomer } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { maximumInvoiceCents, spendLimitFor, usageAlertFor } from "@/lib/billing/controls"
+import { maximumInvoiceCents, spendLimitFor } from "@/lib/billing/controls"
 import { formatCurrency } from "@/lib/billing/currency"
 import {
 	featureUnit,
@@ -53,8 +53,8 @@ export function BillingControlsCard({
 			<div className="border border-border/60 bg-card/40">
 				<div className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-4">
 					<p className="max-w-[70ch] text-xs leading-5 text-muted-foreground">
-						Each cap limits paid overage for one feature. Included usage is unaffected; Autumn
-						enforces the cap while recording usage.
+						Each cap limits paid overage for one feature. Included usage is unaffected; the cap is
+						enforced while usage keeps being recorded.
 					</p>
 					<p className="font-mono text-xs tabular-nums">
 						Maximum invoice:{" "}
@@ -66,14 +66,13 @@ export function BillingControlsCard({
 					{SPEND_FEATURES.map((featureId, index) => {
 						const feature = model?.features.find((entry) => entry.featureId === featureId)
 						const limit = spendLimitFor(customer, featureId)?.overageLimit
-						const alert = usageAlertFor(customer, featureId)
 						const stopAt =
 							limit === undefined || feature?.included == null ? null : feature.included + limit
 
 						return (
 							<div
 								key={featureId}
-								className={`grid gap-3 px-5 py-3 sm:grid-cols-[minmax(150px,1fr)_minmax(180px,1.3fr)_minmax(160px,1fr)_auto] sm:items-center ${index > 0 ? "border-t border-border/30" : ""}`}
+								className={`grid gap-3 px-5 py-3 sm:grid-cols-[minmax(150px,1fr)_minmax(180px,1.3fr)_auto] sm:items-center ${index > 0 ? "border-t border-border/30" : ""}`}
 							>
 								<div className="flex min-w-0 items-center gap-2">
 									<span
@@ -95,11 +94,6 @@ export function BillingControlsCard({
 											: `Stops at ${formatUnits(featureId, stopAt)} total usage`}
 									</p>
 								</div>
-								<p className="text-xs text-muted-foreground">
-									{alert?.thresholdType === "usage_percentage"
-										? `Webhook at ${alert.threshold}% of included`
-										: "No usage webhook"}
-								</p>
 								<Button
 									variant="outline"
 									size="sm"
@@ -117,8 +111,9 @@ export function BillingControlsCard({
 			{editing !== null && (
 				<BillingControlsDialog
 					key={editing}
-					customer={customer}
+					feature={model?.features.find((entry) => entry.featureId === editing) ?? null}
 					featureId={editing}
+					existingLimit={spendLimitFor(customer, editing)?.overageLimit}
 					open
 					onOpenChange={(next) => {
 						if (!next) setEditing(null)

@@ -1,4 +1,5 @@
 import { barY, defineChart } from "@tanstack/charts"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scalePoint } from "@tanstack/charts-scales/point"
 import * as React from "react"
@@ -75,8 +76,9 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 		[data],
 	)
 
+	const { effectiveTimezone: timeZone } = useTimezonePreference()
 	const axisContext = React.useMemo(() => {
-		if (sorted.length < 2) return { rangeMs: 0, bucketSeconds: undefined }
+		if (sorted.length < 2) return { rangeMs: 0, bucketSeconds: undefined, timeZone }
 		const firstMs = Date.parse(sorted[0]!.bucket)
 		const secondMs = Date.parse(sorted[1]!.bucket)
 		const lastMs = Date.parse(sorted[sorted.length - 1]!.bucket)
@@ -84,8 +86,9 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 		return {
 			rangeMs: lastMs - firstMs,
 			bucketSeconds: diffMs > 0 ? diffMs / 1000 : undefined,
+			timeZone,
 		}
-	}, [sorted])
+	}, [sorted, timeZone])
 
 	const tooltipSeries = React.useMemo<PlotTooltipSeries<TimeseriesPoint>[]>(
 		() => [

@@ -5,12 +5,8 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { MetricTypeBadge } from "./metric-type-badge"
 import type { MetricCatalogSummary } from "./metric-detail"
 import { getMetricAttributeKeysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
-
-function formatSeen(value: string): string {
-	const date = new Date(normalizeTimestampInput(value))
-	return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 interface MetricMetadataPanelProps {
 	summary: MetricCatalogSummary
@@ -19,6 +15,7 @@ interface MetricMetadataPanelProps {
 }
 
 export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetadataPanelProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const keysResult = useAtomValue(
 		getMetricAttributeKeysResultAtom({
 			data: {
@@ -58,11 +55,21 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 				</div>
 				<div className="flex items-center justify-between gap-2">
 					<dt className="text-muted-foreground">First seen</dt>
-					<dd className="font-mono">{formatSeen(summary.firstSeen)}</dd>
+					<dd className="font-mono">
+						{formatTimestampInTimezone(summary.firstSeen, {
+							timeZone: effectiveTimezone,
+							withYear: true,
+						})}
+					</dd>
 				</div>
 				<div className="flex items-center justify-between gap-2">
 					<dt className="text-muted-foreground">Last seen</dt>
-					<dd className="font-mono">{formatSeen(summary.lastSeen)}</dd>
+					<dd className="font-mono">
+						{formatTimestampInTimezone(summary.lastSeen, {
+							timeZone: effectiveTimezone,
+							withYear: true,
+						})}
+					</dd>
 				</div>
 			</dl>
 

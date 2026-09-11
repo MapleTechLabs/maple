@@ -1,8 +1,14 @@
 import { Clock, Effect, Schema } from "effect"
 import {
+	AI_SESSION_DETAILS_MAX_SESSIONS,
+	AI_SESSION_SPANS_MAX_TRACE_IDS,
 	AiSessionSortDir,
 	AiSessionSortKey,
+	AiSessionSpanCursor,
+	AiSessionSpanScope,
 	GetAiSessionSpansRequest,
+	GetAiSessionSummaryRequest,
+	ListAiSessionDetailsRequest,
 	ListAiSessionsFacetsRequest,
 	ListAiSessionsRequest,
 } from "@maple/domain/http"
@@ -71,6 +77,47 @@ export const listAiSessions = Effect.fn("AiSessions.listAiSessions")(function* (
 	return { data: result.data }
 })
 
+// List details (the facts of a page's other spans, read after the page renders)
+
+const AiSessionDetailsInput = Schema.Struct({
+	startTime: WarehouseDateTimeString,
+	endTime: WarehouseDateTimeString,
+	sessionIds: Schema.Array(Schema.String).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(AI_SESSION_DETAILS_MAX_SESSIONS),
+	),
+	vendorIds: Schema.optional(Schema.Array(Schema.String)),
+	serviceNames: Schema.optional(Schema.Array(Schema.String)),
+	deploymentEnvs: Schema.optional(Schema.Array(Schema.String)),
+	models: Schema.optional(Schema.Array(Schema.String)),
+	agentNames: Schema.optional(Schema.Array(Schema.String)),
+	toolNames: Schema.optional(Schema.Array(Schema.String)),
+	search: Schema.optional(Schema.String),
+})
+export type AiSessionDetailsInput = Schema.Schema.Type<typeof AiSessionDetailsInput>
+
+/**
+ * One page's details — see `ListAiSessionDetailsRequest`. Not an atom: it is
+ * fetched once per page the list has already rendered and merged into the
+ * rows, so nothing re-renders from a skeleton on its account.
+ */
+export const getAiSessionDetails = Effect.fn("AiSessions.aiSessionDetails")(function* ({
+	data,
+}: {
+	data: AiSessionDetailsInput
+}) {
+	const input = yield* decodeInput(AiSessionDetailsInput, data, "aiSessionDetails")
+	const result = yield* runWarehouseQuery("aiSessionDetails", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.details({
+				payload: new ListAiSessionDetailsRequest(input),
+			})
+		}),
+	)
+	return { data: result.data }
+})
+
 // List facets (filter sidebar option counts)
 
 const AiSessionsFacetsInput = Schema.Struct({
@@ -117,6 +164,13 @@ const AiSessionSpansInput = Schema.Struct({
 	// warehouse find the session by id across retention.
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
+	/** `all` when absent — the first page of a session. */
+	scope: Schema.optional(AiSessionSpanScope),
+	/** The previous page's `nextCursor`. */
+	after: Schema.optional(AiSessionSpanCursor),
+	/** A turn's traces, for its `app` spans — needs the window. */
+	traceIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(AI_SESSION_SPANS_MAX_TRACE_IDS))),
+	limit: Schema.optional(Schema.Number),
 })
 export type AiSessionSpansInput = Schema.Schema.Type<typeof AiSessionSpansInput>
 
@@ -138,9 +192,44 @@ export const getAiSessionSpans = Effect.fn("AiSessions.aiSessionSpans")(function
 					...(input.startTime !== undefined && input.endTime !== undefined
 						? { startTime: input.startTime, endTime: input.endTime }
 						: undefined),
+					...(input.scope !== undefined && { scope: input.scope }),
+					...(input.after !== undefined && { after: input.after }),
+					...(input.traceIds !== undefined && { traceIds: input.traceIds }),
+					...(input.limit !== undefined && { limit: input.limit }),
 				}),
 			})
 		}),
 	)
-	return { data: result.data, truncated: result.truncated }
+	return { data: result.data, nextCursor: result.nextCursor }
+})
+export type AiSessionSpansPage = Effect.Success<ReturnType<typeof getAiSessionSpans>>
+
+const AiSessionSummaryInput = Schema.Struct({
+	sessionId: Schema.String.check(Schema.isMinLength(1)),
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+})
+export type AiSessionSummaryInput = Schema.Schema.Type<typeof AiSessionSummaryInput>
+
+/** The whole session's totals, however many spans it has — see `GetAiSessionSummaryResponse`. */
+export const getAiSessionSummary = Effect.fn("AiSessions.aiSessionSummary")(function* ({
+	data,
+}: {
+	data: AiSessionSummaryInput
+}) {
+	const input = yield* decodeInput(AiSessionSummaryInput, data, "aiSessionSummary")
+	yield* Effect.annotateCurrentSpan("sessionId", input.sessionId)
+	return yield* runWarehouseQuery("aiSessionSummary", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.summary({
+				payload: new GetAiSessionSummaryRequest({
+					sessionId: input.sessionId,
+					...(input.startTime !== undefined && input.endTime !== undefined
+						? { startTime: input.startTime, endTime: input.endTime }
+						: undefined),
+				}),
+			})
+		}),
+	)
 })

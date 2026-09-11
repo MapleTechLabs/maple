@@ -7,6 +7,7 @@ import { LogsTable } from "@/components/logs/logs-table"
 import { LogsVolumeChart } from "@/components/logs/logs-volume-chart"
 import { LogsFilterSidebar } from "@/components/logs/logs-filter-sidebar"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
@@ -38,6 +39,7 @@ export type LogsSearchParams = Schema.Schema.Type<typeof logsSearchSchema>
 export const Route = createFileRoute("/logs/")({
 	component: LogsPage,
 	validateSearch: Schema.toStandardSchemaV1(logsSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function LogsPage() {

@@ -1,3 +1,4 @@
+import { stripContextPreamble } from "./context-preamble"
 import { parseDiagnosisMarker } from "./diagnosis-marker"
 import type { UIMessage } from "@/components/ai-elements/types"
 
@@ -29,7 +30,7 @@ export function deriveToolStatus(state: string): "running" | "completed" | "erro
 /**
  * A tool part that renders as its own card — a diagnosis report or an approval
  * prompt — rather than as a line in a tool group. These are content, not plumbing,
- * so they never disappear into a `Used N tools` header.
+ * so they never disappear into a tool group header.
  */
 function rendersOwnCard(part: ToolPart): boolean {
 	// A proposal has no output to inspect — the tool never ran — so the state IS the signal.
@@ -58,7 +59,7 @@ export type TranscriptRow =
  * Messages → transcript rows, merging each maximal run of **two or more** adjacent
  * tool-only assistant turns into one row. An agent loop emits one message per
  * round-trip, so without this a twelve-call run reads as six identical
- * `Used 2 tools` cards stacked down the page.
+ * `2 tools` groups stacked down the page.
  *
  * A run of one stays an ordinary message row — the single-call case is unchanged.
  * Anything that isn't a tool-only turn (a user turn, prose, a diagnosis or approval
@@ -97,3 +98,13 @@ export function buildTranscriptRows(messages: readonly UIMessage[]): TranscriptR
 export function toolPartsOf(row: Extract<TranscriptRow, { kind: "tool-run" }>): ToolPart[] {
 	return row.messages.flatMap((message) => message.parts.filter(isToolPart))
 }
+
+/**
+ * A user turn with nothing in it but a context preamble: the server seeded the
+ * conversation with its subject. The transcript draws it as a separator, and the
+ * turn rail skips it — there is no human message to navigate back to.
+ */
+export const isMachineTurn = (message: UIMessage): boolean =>
+	message.role === "user" &&
+	message.parts.length > 0 &&
+	message.parts.every((part) => part.type === "text" && stripContextPreamble(part.text).length === 0)

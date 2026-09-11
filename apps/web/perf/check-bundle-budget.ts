@@ -76,7 +76,13 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // documentation — cutting them to buy back a kilobyte of startup is the wrong
 // trade. Splitting the group out of the client is not available either: every
 // page's client is built from the whole `MapleApiV2` surface.
-const maxGzipBytes = 687 * 1024
+// 689 KB from #832 (2026-09-11): the agent Tools pages cost ~6.9 KB of startup
+// measured against main's 681.3 — five internal endpoints on the contract every
+// page's client carries, two route registrations whose search schemas pull in
+// the tool view-model constants and the session time-range middleware, and the
+// warehouse atoms for the new reads. Moving the one new query-engine helper
+// out of the barrel was tried and saved nothing.
+const maxGzipBytes = 689 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

@@ -2,8 +2,9 @@ import { useState } from "react"
 import { Calendar } from "@maple/ui/components/ui/calendar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
-import { format, parse, isValid, setHours, setMinutes } from "date-fns"
+import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import type { DateRange } from "react-day-picker"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
@@ -14,48 +15,85 @@ interface CustomRangePickerProps {
 	onCancel: () => void
 }
 
+const TIME_INPUT = /^(\d{2}):(\d{2})$/
+
+function parseTimeInput(input: string): { hours: number; minutes: number } | null {
+	const match = TIME_INPUT.exec(input)
+	if (!match) return null
+	const hours = Number(match[1])
+	const minutes = Number(match[2])
+	return hours < 24 && minutes < 60 ? { hours, minutes } : null
+}
+
+const pad = (n: number) => String(n).padStart(2, "0")
+
+/**
+ * The calendar and the time inputs speak the SELECTED zone's wall clock, not the
+ * browser's. `react-day-picker` only knows local `Date`s, so a calendar day is
+ * carried as a local-midnight `Date` built from the zone's calendar components
+ * (its `getFullYear/getMonth/getDate` are then the zone's day, whatever the
+ * browser's offset), and a picked day plus a typed time is turned back into an
+ * instant through the zone — never through `setHours`, which would read the
+ * typed hours as browser-local and shift the applied window by the difference.
+ */
 export function CustomRangePicker({ startTime, endTime, onApply, onCancel }: CustomRangePickerProps) {
+	const { effectiveTimezone: timeZone } = useTimezonePreference()
+
 	// Stored times are tz-less UTC warehouse strings; normalize to explicit UTC
-	// before constructing Dates or the value shifts by the local offset.
+	// before parsing or the value shifts by the local offset.
+	const wallClock = (value: string) => zonedDateParts(Date.parse(normalizeTimestampInput(value)), timeZone)
+	const calendarDay = (value: string) => {
+		const parts = wallClock(value)
+		return new Date(parts.year, parts.month - 1, parts.day)
+	}
+	const clock = (value: string) => {
+		const parts = wallClock(value)
+		return `${pad(parts.hour)}:${pad(parts.minute)}`
+	}
+
 	const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
-		const from = startTime ? new Date(normalizeTimestampInput(startTime)) : undefined
-		const to = endTime ? new Date(normalizeTimestampInput(endTime)) : undefined
+		const from = startTime ? calendarDay(startTime) : undefined
+		const to = endTime ? calendarDay(endTime) : undefined
 		return from || to ? { from, to } : undefined
 	})
 
-	const [startTimeInput, setStartTimeInput] = useState(() => {
-		return startTime ? format(new Date(normalizeTimestampInput(startTime)), "HH:mm") : "00:00"
-	})
-
-	const [endTimeInput, setEndTimeInput] = useState(() => {
-		return endTime ? format(new Date(normalizeTimestampInput(endTime)), "HH:mm") : "23:59"
-	})
+	const [startTimeInput, setStartTimeInput] = useState(() => (startTime ? clock(startTime) : "00:00"))
+	const [endTimeInput, setEndTimeInput] = useState(() => (endTime ? clock(endTime) : "23:59"))
 
 	const handleApply = () => {
 		if (!dateRange?.from || !dateRange?.to) return
+		const start = parseTimeInput(startTimeInput)
+		const end = parseTimeInput(endTimeInput)
+		if (!start || !end) return
 
-		const [startHour, startMin] = startTimeInput.split(":").map(Number)
-		const [endHour, endMin] = endTimeInput.split(":").map(Number)
-
-		let startDate = setHours(setMinutes(dateRange.from, startMin || 0), startHour || 0)
-		let endDate = setHours(setMinutes(dateRange.to, endMin || 0), endHour || 0)
+		const instant = (day: Date, time: { hours: number; minutes: number }) =>
+			zonedPartsToEpochMs(
+				{
+					year: day.getFullYear(),
+					month: day.getMonth() + 1,
+					day: day.getDate(),
+					hour: time.hours,
+					minute: time.minutes,
+					second: 0,
+				},
+				timeZone,
+			)
 
 		onApply({
-			startTime: formatForTinybird(startDate),
-			endTime: formatForTinybird(endDate),
+			startTime: formatForTinybird(new Date(instant(dateRange.from, start))),
+			endTime: formatForTinybird(new Date(instant(dateRange.to, end))),
 		})
-	}
-
-	const parseTimeInput = (input: string): { hours: number; minutes: number } | null => {
-		const parsed = parse(input, "HH:mm", new Date())
-		if (isValid(parsed)) {
-			return { hours: parsed.getHours(), minutes: parsed.getMinutes() }
-		}
-		return null
 	}
 
 	const isValidRange =
 		dateRange?.from && dateRange?.to && parseTimeInput(startTimeInput) && parseTimeInput(endTimeInput)
+
+	// "No future days" is judged on the zone's calendar too: a viewer whose
+	// selected zone is already on tomorrow must be able to pick it.
+	const today = (() => {
+		const parts = zonedDateParts(Date.now(), timeZone)
+		return new Date(parts.year, parts.month - 1, parts.day)
+	})()
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -65,7 +103,7 @@ export function CustomRangePicker({ startTime, endTime, onApply, onCancel }: Cus
 					selected={dateRange}
 					onSelect={setDateRange}
 					numberOfMonths={2}
-					disabled={{ after: new Date() }}
+					disabled={{ after: today }}
 				/>
 			</div>
 

@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -129,7 +130,14 @@ export function PlanetScaleChart({
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
-	const axis = useMemo(() => makeBucketAxis(buckets.map((row) => row.bucket)), [buckets])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() => makeBucketAxis(
+			buckets.map((row) => row.bucket),
+			effectiveTimezone,
+		),
+		[buckets, effectiveTimezone],
+	)
 
 	// Markers sit at their own instant on that axis; only the window is decided
 	// here — see chart-event-markers.

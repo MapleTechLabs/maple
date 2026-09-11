@@ -13,7 +13,10 @@ import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
+import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
+
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
+import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
 import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
 import { SessionFlow } from "./session-flow"
@@ -53,22 +56,36 @@ export function SessionViews({
 	onViewChange,
 	turns,
 	summary,
-	truncated,
+	progress,
+	totals,
 	selectedSpanId,
 	onSelectSpan,
+	initialQuery,
 }: {
 	view: SessionView
 	onViewChange: (view: SessionView) => void
 	turns: readonly SessionTurn[]
 	summary: SessionSummary
-	/** The response dropped the END of the session — the transcript says so. */
-	truncated: boolean
+	/**
+	 * How far a session larger than one page has loaded — present from the
+	 * first page of such a session on, `complete` once the whole session is in
+	 * hand. Absent for a session that fit one page.
+	 */
+	progress: SessionLoadProgress | undefined
+	/** The whole session's totals, for the progress of a session still loading. */
+	totals: GetAiSessionSummaryResponse | undefined
 	/** The span open in the inspection popover, in whichever view (`?span=`). */
 	selectedSpanId: string | undefined
 	/** Raised with a span id to open it, `undefined` to close. */
 	onSelectSpan: (spanId: string | undefined) => void
+	/**
+	 * What the span filter starts on — a tool name carried in by `?tool=` from
+	 * the tools page. A seed, not a controlled value: the filter belongs to the
+	 * reader from the first keystroke, and clearing it must not fight the URL.
+	 */
+	initialQuery?: string
 }) {
-	const [query, setQuery] = useState("")
+	const [query, setQuery] = useState(initialQuery ?? "")
 	const [agentSpansOnly, setAgentSpansOnly] = useState(true)
 	const [collapseIdle, setCollapseIdle] = useState(true)
 	const [mergeRepeats, setMergeRepeats] = useState(false)
@@ -264,6 +281,8 @@ export function SessionViews({
 					<SessionOverview
 						turns={turns}
 						summary={summary}
+						progress={progress}
+						totals={totals}
 						selectedSpanId={selectedSpanId}
 						onSelectSpan={selectSpan}
 						spanTab={spanTab}
@@ -318,7 +337,7 @@ export function SessionViews({
 						query={query}
 						showThinking={showThinking}
 						showPayloads={showPayloads}
-						truncated={truncated}
+						progress={progress}
 						collapsedTurns={collapsedTurns}
 						onToggleTurn={toggleTurn}
 						openRows={openRows}

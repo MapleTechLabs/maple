@@ -2,12 +2,13 @@ import { memo, useDeferredValue, useEffect, useMemo, useRef, type ReactNode } fr
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
+import { Button } from "@maple/ui/components/ui/button"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { formatBytes, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
-	AlertWarningIcon,
 	BranchForkIcon,
 	ChevronDownIcon,
 	ChevronRightIcon,
@@ -24,6 +25,7 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
+import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { callMetaLine, callMetaParts } from "@/lib/agent-sessions/session-summary"
 import { spanModel, type SessionTurn } from "@/lib/agent-sessions/session-turns"
@@ -90,7 +92,7 @@ export function SessionTranscript({
 	query,
 	showThinking,
 	showPayloads,
-	truncated,
+	progress,
 	collapsedTurns,
 	onToggleTurn,
 	openRows,
@@ -106,8 +108,9 @@ export function SessionTranscript({
 	showThinking: boolean
 	/** The toolbar's "Expand tool payloads" chip: arguments and results open by default. */
 	showPayloads: boolean
-	/** The response dropped the END of the session. */
-	truncated: boolean
+	/** Agent spans remain past the loaded pages: the END of the session is not here yet. */
+	/** The background load of a session larger than one page; absent for one that fit. */
+	progress: SessionLoadProgress | undefined
 	collapsedTurns: ReadonlySet<string>
 	onToggleTurn: (turnId: string) => void
 	/** Rows whose disclosure the reader has flipped away from its default — held
@@ -130,8 +133,14 @@ export function SessionTranscript({
 		[turns, toolResults, deferredQuery, showThinking],
 	)
 	const rows = useMemo(
-		() => assembleTranscript(prepared, { collapsedTurns, truncated }),
-		[prepared, collapsedTurns, truncated],
+		() =>
+			assembleTranscript(prepared, {
+				collapsedTurns,
+				// The end of the session is missing while the agent's pages are
+				// still arriving, or stopped arriving.
+				hasMore: progress !== undefined && !progress.agentSpansComplete,
+			}),
+		[prepared, collapsedTurns, progress],
 	)
 
 	const virtualizer = useVirtualizer({
@@ -204,6 +213,7 @@ export function SessionTranscript({
 								<TranscriptBlock
 									row={row}
 									timeZone={effectiveTimezone}
+									progress={progress}
 									showPayloads={showPayloads}
 									collapsed={row.kind === "turn" && collapsedTurns.has(row.turn.id)}
 									onToggleTurn={onToggleTurn}
@@ -222,6 +232,8 @@ export function SessionTranscript({
 }
 
 interface BlockProps {
+	/** For the terminal divider of a partly loaded session. */
+	progress: SessionLoadProgress | undefined
 	row: TranscriptRow
 	timeZone: string
 	showPayloads: boolean
@@ -1276,7 +1288,11 @@ function NoteBlock({ row }: { row: Extract<TranscriptRow, { kind: "note" }> }) {
 	)
 }
 
-function DividerBlock({ row, timeZone }: BlockProps & { row: Extract<TranscriptRow, { kind: "divider" }> }) {
+function DividerBlock({
+	row,
+	timeZone,
+	progress,
+}: BlockProps & { row: Extract<TranscriptRow, { kind: "divider" }> }) {
 	if (row.dividerKind === "compaction") {
 		return (
 			<Row
@@ -1299,21 +1315,33 @@ function DividerBlock({ row, timeZone }: BlockProps & { row: Extract<TranscriptR
 		)
 	}
 
-	// Truncation drops the END of the session. Never a synthetic conclusion: the
-	// divider says the reading stops here, not that the agent did. The wording
-	// matches the page's own banner, so the two read as one fact stated twice
-	// rather than as two different problems.
+	// The loaded pages end here, the session does not. Never a synthetic
+	// conclusion: the row says the reading stops here for now, not that the
+	// agent did. The rest is arriving on its own; the count is the header
+	// indicator's, so the two read as one fact stated twice.
 	return (
-		<div className="mt-8 flex flex-col items-center gap-3 border-input border-t border-dashed pt-6 pb-2">
-			<div className="flex items-center gap-2">
-				<AlertWarningIcon size={14} className="text-severity-warn" />
-				<span className={cn(LABEL, "text-severity-warn")}>Session truncated</span>
-			</div>
-			<p className="text-center text-[13px] text-muted-foreground">
-				This session has more spans than one response carries — later activity is not shown, and this
-				is not where the session ended.
-			</p>
-			<p className="text-muted-foreground text-xs">Narrow the time range to see the rest.</p>
+		<div
+			data-testid="transcript-more"
+			className="mt-8 flex flex-col items-center gap-2 border-input border-t border-dashed pt-6 pb-2"
+		>
+			{progress?.phase === "failed" ? (
+				<>
+					<span className={cn(LABEL, "text-severity-warn")}>The rest of this session didn't load</span>
+					<Button variant="outline" size="sm" onClick={progress.retry}>
+						Retry
+					</Button>
+				</>
+			) : (
+				<>
+					<div className="flex items-center gap-2">
+						<Spinner size={13} className="text-muted-foreground" aria-hidden />
+						<span className={cn(LABEL, "text-muted-foreground")}>Loading the rest of this session</span>
+					</div>
+					<p className="text-center text-[13px] text-muted-foreground">
+						The agent's later turns are still arriving — this is not where the session ended.
+					</p>
+				</>
+			)}
 		</div>
 	)
 }

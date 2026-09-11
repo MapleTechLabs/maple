@@ -821,6 +821,22 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						),
 					)
 
+			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
+				client.getCommit(installation.externalInstallationId, repo.owner, repo.name, ref).pipe(
+					Effect.map((commit) => Option.some(commit.sha)),
+					Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+						// 422 is GitHub's answer for a ref that parses but names nothing.
+						error.status === 404 || error.status === 422
+							? Effect.succeed(Option.none())
+							: Effect.fail(toVcsCommitError(error)),
+					),
+				)
+
+			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
+				client
+					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
+					.pipe(Effect.mapError(toVcsCommitError))
+
 			return {
 				id: PROVIDER,
 				webhookToJobs,
@@ -832,6 +848,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequest,
 				searchCode,
 				fetchSourceFile,
+				resolveRef,
+				fetchCloneCredentials,
 			} satisfies VcsProviderClient
 		}),
 	},

@@ -45,6 +45,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/loaders",
+		title: "Chat loaders",
+		description:
+			"Every dot-matrix loader in the chat's pool, inline at both sizes it is used at, against real text.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:
@@ -100,10 +108,34 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/agent-tools",
+		title: "Agent tools",
+		description:
+			"The `/agent-sessions/tools` page over a synthetic week: a dominant tool that never fails, one that fails half the time, a p95 thirty times its p50, and a tool that regresses through the back half of the window.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/chat",
+		title: "Chat transcript",
+		description:
+			"The chat transcript over a fixture thread: a merged tool run, prose carrying every inline reference card, an approval prompt, and two-character turns that expose the vertical rhythm.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/time-range",
+		title: "Time range picker",
+		description:
+			"The header time range picker over local state, with the timezone selector and a strip of timestamps that re-render in the chosen zone.",
 		kind: "lab",
 		session: "none",
 	},

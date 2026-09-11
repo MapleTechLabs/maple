@@ -19,6 +19,7 @@ import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { podDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 
@@ -32,6 +33,7 @@ const podDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/kubernetes/pods/$podName")({
 	component: PodDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(podDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const METRIC_OPTIONS = [

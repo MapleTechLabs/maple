@@ -111,6 +111,10 @@
 	padding-top: 24px;
 	padding-bottom: 0;
 }
+/* A bare 12px text link is a 12px-tall target: replay showed visitors aiming
+   at this row and landing on the field behind it. The padding (cancelled by an
+   equal negative margin, so the composition is unmoved) gives it a real hit
+   area, and the resting underline says it is a link before the pointer arrives. */
 .monument-announce {
 	position: relative;
 	z-index: 2;
@@ -118,9 +122,24 @@
 	align-self: flex-start;
 	align-items: center;
 	gap: 10px;
+	margin: -10px -14px;
+	padding: 10px 14px;
 	font-size: 12px;
 	line-height: 1;
 	color: var(--home-orange);
+	transition: background-color 150ms ease;
+}
+.monument-announce__text {
+	text-decoration: underline;
+	text-decoration-color: color-mix(in oklab, var(--home-orange) 35%, transparent);
+	text-underline-offset: 4px;
+}
+.monument-announce:hover {
+	background: color-mix(in oklab, var(--home-orange) 10%, transparent);
+}
+.monument-announce:focus-visible {
+	outline: 2px solid var(--home-orange);
+	outline-offset: 0;
 }
 .monument-announce__badge {
 	padding: 4px 6px;
@@ -140,8 +159,7 @@
 	transform: translateX(2px);
 }
 .monument-announce:hover .monument-announce__text {
-	text-decoration: underline;
-	text-underline-offset: 4px;
+	text-decoration-color: currentColor;
 }
 .monument-hero h1 {
 	position: relative;
@@ -376,6 +394,9 @@ html:not([lang="en"]) .monument-hero h1 {
 	.monument-announce {
 		font-size: 10px;
 		gap: 8px;
+		/* 10px type needs the most help to reach a thumb-sized target. */
+		margin: -13px -14px;
+		padding: 13px 14px;
 	}
 	.monument-hero h1 {
 		font-size: clamp(1.35rem, 5.8vw, 2.75rem);

@@ -114,6 +114,9 @@ export {
 	type ThresholdRulesOptions,
 } from "./threshold-rules"
 
+// The zone plots print their clock in.
+export { PlotTimeZoneProvider, usePlotTimeZone } from "./time-zone-context"
+
 // Scales and domains.
 export {
 	NICE_TICK_COUNT,
@@ -125,6 +128,7 @@ export {
 	logYScale,
 	minBarLength,
 	niceLinearDomain,
+	zonedTimeScale,
 	type DomainThreshold,
 	type LinearYDomainOptions,
 } from "./plot-scales"

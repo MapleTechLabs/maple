@@ -98,11 +98,18 @@ const RELATIVE_CUTOVER_MS = 7 * 24 * 60 * 60 * 1000
  * Relative inside the last week, an absolute locale date beyond it. Past a few
  * days "23d ago" stops being easier to read than the date itself.
  */
-export function formatRelativeTimeOrDate(input: TimeInput, nowMs: number = Date.now()): string {
+export function formatRelativeTimeOrDate(
+	input: TimeInput,
+	nowMs: number = Date.now(),
+	timeZone?: string,
+): string {
 	const epochMs = toEpochMs(input)
 	if (!Number.isFinite(epochMs)) return "—"
 	if (nowMs - epochMs >= RELATIVE_CUTOVER_MS) {
+		// The date branch is a wall-clock reading, so it takes the viewer's selected
+		// zone where the page has one; the relative branch is zone-free.
 		return new Date(epochMs).toLocaleDateString(undefined, {
+			timeZone,
 			month: "short",
 			day: "numeric",
 			year: "numeric",

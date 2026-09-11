@@ -7,11 +7,17 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { AgentSessionsList } from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsFilterSidebar } from "@/components/agent-sessions/agent-sessions-filter-sidebar"
 import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
+import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import {
 	agentSessionsFilterInputs,
 	sortOptionFor,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import { NotFoundError } from "@/components/route-error"
+import {
+	PageRefreshProvider,
+	usePageRefreshContext,
+} from "@/components/time-range-picker/page-refresh-context"
+import { ReloadControls } from "@/components/time-range-picker/reload-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
@@ -86,12 +92,14 @@ function AgentSessionsPage() {
 
 function AgentSessionsPageContent() {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Agent Sessions" }]} />
-			<DashboardLayout.Body>
-				<AgentSessionsBody />
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<PageRefreshProvider>
+			<DashboardLayout.Root>
+				<DashboardLayout.Breadcrumbs items={[{ label: "Agent Sessions" }]} />
+				<DashboardLayout.Body>
+					<AgentSessionsBody />
+				</DashboardLayout.Body>
+			</DashboardLayout.Root>
+		</PageRefreshProvider>
 	)
 }
 
@@ -103,14 +111,19 @@ function AgentSessionsBody() {
 	// back: the hook keys its accumulated pages on these inputs, and a fresh
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
+	const { refreshVersion } = usePageRefreshContext()
 	// The window rolls forward with every navigation — a filter or sort change
 	// re-resolves "the last week" against now, snapped to the cache grid so a
-	// change within the grid interval keeps its key. There is no picker and no
-	// reload button to advance it otherwise; a tab left open sees new sessions
-	// the next time it touches a control.
+	// change within the grid interval keeps its key — and with every Reload.
+	// Once Reload has been pressed the window stops snapping, as in
+	// `useEffectiveTimeRange`: a snapped end would keep the newest sessions out
+	// however many times it is clicked.
 	const { startTime, endTime } = useMemo(
-		() => resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW),
-		[searchKey],
+		() =>
+			resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, {
+				snap: refreshVersion === 0,
+			}),
+		[searchKey, refreshVersion],
 	)
 	const filterInputs = useMemo(
 		() => agentSessionsFilterInputs(search, { startTime, endTime }),
@@ -159,6 +172,7 @@ function AgentSessionsBody() {
 				})
 			}
 			waiting={firstPageResult.waiting}
+			actions={<ReloadControls />}
 		/>
 	)
 
@@ -168,7 +182,14 @@ function AgentSessionsBody() {
 				<AgentSessionsFilterSidebar facetsResult={facetsResult} />
 			</DashboardLayout.Filters>
 			<DashboardLayout.Content>
-				<DashboardLayout.Sticky>{toolbar}</DashboardLayout.Sticky>
+				<DashboardLayout.Sticky>
+					{/* The Tools tab reads the same spans across every session; this
+					    page reads one session at a time. Two routes, one strip. */}
+					<div className="space-y-2">
+						<AgentSessionsTabs active="sessions" />
+						{toolbar}
+					</div>
+				</DashboardLayout.Sticky>
 				<DashboardLayout.Scroll>
 					{Result.builder(firstPageResult)
 						.onInitial(() => (
