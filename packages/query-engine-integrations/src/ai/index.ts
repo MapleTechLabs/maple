@@ -41,6 +41,34 @@ export {
 } from "./ai-sessions"
 
 export {
+	aiToolErrorOccurrencesQuery,
+	aiToolErrorOccurrencesRowSchema,
+	aiToolErrorSessionsQuery,
+	aiToolErrorSessionsRowSchema,
+	aiToolErrorsQuery,
+	aiToolErrorsRowSchema,
+	aiToolsBreakdownsQuery,
+	aiToolsSeriesKind,
+	aiToolsSeriesQuery,
+	aiToolsTotalsQuery,
+	AI_TOOL_ERRORS_LIMIT,
+	AI_TOOL_ERROR_PAYLOAD_MAX,
+	AI_TOOL_OCCURRENCES_LIMIT,
+	AI_TOOLS_BREAKDOWN_LIMIT,
+	AI_TOOLS_SERIES_MAX_KEYS,
+	type AiToolErrorOccurrencesOutput,
+	type AiToolErrorSessionsOutput,
+	type AiToolErrorsOpts,
+	type AiToolErrorsOutput,
+	type AiToolsBreakdownsOutput,
+	type AiToolsFilterOpts,
+	type AiToolsPeriod,
+	type AiToolsSeriesKind,
+	type AiToolsTotalsOutput,
+	type AiToolsWindow,
+} from "./ai-tools"
+
+export {
 	aiFieldSourceKeys,
 	aiSpanAttributeKeys,
 	genAiIntegration,

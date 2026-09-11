@@ -206,6 +206,8 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 				: axis,
 		/** `[first, last]` epoch ms, absent when there is nothing to plot. */
 		domainMs,
+		/** The bucket width in ms — the smallest positive gap — absent under two buckets. */
+		stepMs,
 		/** The tooltip heading for a bucket: the full date, since the ticks stay terse. */
 		heading: (bucketIso: string) => formatBucketLabel(bucketIso, context, "tooltip"),
 	}

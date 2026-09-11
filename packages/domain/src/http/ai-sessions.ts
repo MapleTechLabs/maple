@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { AiAgentSpanSchema, AiGenAiValuesSchema } from "../gen-ai"
 import { TinybirdDateTime } from "../query-engine"
+import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
@@ -530,6 +531,287 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
 	},
 ) {}
 
+// ---------------------------------------------------------------------------
+// Agent Sessions › Tools
+// ---------------------------------------------------------------------------
+//
+// The tool analytics page, backed by `ai-tools.ts` in the query-engine
+// integrations layer. Same source as the sessions list — `ai_trace_index`,
+// filtered to `IsToolCall = 1` — and the same session key, so a row here links
+// straight to a session there.
+//
+// Four reads rather than one, because they answer four different `GROUP BY`s
+// over the same population and the page asks for them at different times: the
+// chart on every state change, the tiles beside it, the breakdown panels, and
+// the session list only once a tool is picked. Percentiles are what stops the
+// tiles being folded from the chart client-side — quantiles do not merge.
+
+/** The page's selection. `tool`, `model`, `service` and `env` are exact
+ *  matches on values the sessions page's facets produced; `search` and
+ *  `failingOnly` are the toolbar's own two predicates. */
+const aiToolsSelection = {
+	/** `gen_ai.tool.name`. Absent means "every tool", which is what makes the
+	 *  chart's series per-tool rather than per-model. */
+	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	/**
+	 * The model a tool call is ATTRIBUTED to — its parent model call's, else its
+	 * trace's. Tool spans carry no model of their own; see the query module's
+	 * header for how the two-step attribution works and what it misses.
+	 */
+	model: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	service: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	/** `deployment.environment(.name)` — the MV coalesces both spellings. */
+	env: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	/**
+	 * Tool-name substring, case-insensitive. The one field here that is not an
+	 * exact facet value, and it narrows the whole population rather than one
+	 * table — so the tiles cannot describe calls the chart is not drawing.
+	 */
+	search: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	/** Keep only calls whose span failed. */
+	failingOnly: Schema.optional(Schema.Boolean),
+}
+
+/** The measures every tools read reports, so a tile, a chart point and a
+ *  breakdown row are the same numbers under different groupings. */
+const aiToolsMeasures = {
+	calls: Schema.Number,
+	/** Distinct sessions, keyed exactly as the sessions list keys them. */
+	sessions: Schema.Number,
+	/** Tool calls whose span failed (`IsError = 1`). */
+	errors: Schema.Number,
+	// Nanoseconds, like every other AI read — the client formats them. Zero is
+	// a real duration here: several SDKs emit structured-output pseudo-tools
+	// that complete instantly, and they are counted.
+	p50: Schema.Number,
+	p90: Schema.Number,
+	p95: Schema.Number,
+}
+
+/**
+ * Which dimension the chart's series are keyed by. Derived from the selection
+ * unless the request names one: no tool selected compares tools, a tool without
+ * a model compares the models it ran under, and both selected is a single
+ * `tool` series. `none` is one series over the whole selection — every key
+ * merged INSIDE the query, so its quantiles and its session count are measured
+ * rather than averaged.
+ */
+export const AiToolsSeriesKind = Schema.Literals(["tool", "model", "none"])
+export type AiToolsSeriesKind = Schema.Schema.Type<typeof AiToolsSeriesKind>
+
+export class AiToolsSeriesRequest extends Schema.Class<AiToolsSeriesRequest>("AiToolsSeriesRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Whole seconds, greater than zero — it reaches `toStartOfInterval` as an
+	 *  `INTERVAL n SECOND` literal, so a fraction is a 400 and not a 500. */
+	bucketSeconds: BucketSeconds,
+	/**
+	 * What the series split by. Absent lets the server derive it from the
+	 * selection, which is what the overview wants; the tool detail page sends
+	 * `none` because it draws one tool and merging a per-model split client-side
+	 * would sum sessions across models and average their quantiles.
+	 */
+	split: Schema.optionalKey(AiToolsSeriesKind),
+	...aiToolsSelection,
+}) {}
+
+/**
+ * The key every series past the top few is folded into, so the chart's total
+ * still equals the totals tile. A tool genuinely named `other` merges with it —
+ * accepted, because the alternative is a synthesized key no legend can render.
+ */
+export const AI_TOOLS_OTHER_SERIES_KEY = "other"
+
+export const AiToolsSeriesPoint = Schema.Struct({
+	/** ISO-8601 with a literal `Z`, the shape every Maple timeseries emits. */
+	bucket: Schema.String,
+	/**
+	 * The tool or model this point measures, per the response's `seriesKind`.
+	 * `''` is a real key — a tool call whose model resolved to neither its
+	 * parent nor its trace — and `other` is the fold of every key past the top
+	 * few, which keeps the stacked total equal to the totals tile.
+	 */
+	seriesKey: Schema.String,
+	...aiToolsMeasures,
+})
+
+export class AiToolsSeriesResponse extends Schema.Class<AiToolsSeriesResponse>("AiToolsSeriesResponse")({
+	data: Schema.Array(AiToolsSeriesPoint),
+	/** What `seriesKey` names — the legend's title, and how the client labels
+	 *  a click on a series. */
+	seriesKind: AiToolsSeriesKind,
+}) {}
+
+export const AiToolsAggregate = Schema.Struct(aiToolsMeasures)
+export type AiToolsAggregate = Schema.Schema.Type<typeof AiToolsAggregate>
+
+export class AiToolsTotalsRequest extends Schema.Class<AiToolsTotalsRequest>("AiToolsTotalsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...aiToolsSelection,
+}) {}
+
+export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("AiToolsTotalsResponse")({
+	current: AiToolsAggregate,
+	/**
+	 * Every session of the window, before the selection and before the toolbar —
+	 * the denominator the Sessions tile states its share against, and the count
+	 * the tab strip shows. Unfiltered on purpose: a share against a denominator
+	 * that moves with the filters is not a share.
+	 */
+	allSessions: Schema.Number,
+	/** The first and last matched call, as warehouse datetime literals; `''`
+	 *  where nothing matched. Bounded by the window, so "first seen" is
+	 *  "first seen in this range". */
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+	/**
+	 * The window of equal length immediately before the caller's, measured by
+	 * the same query — the deltas the tiles show. Zeros where nothing ran then,
+	 * which the client renders as "no comparison" rather than a -100%.
+	 */
+	previous: AiToolsAggregate,
+}) {}
+
+/** Rows the Tools breakdown returns, busiest first — the same cap the query
+ *  applies and the footer states, so the page can say "the 50 busiest" rather
+ *  than "all 50". */
+export const AI_TOOLS_BREAKDOWN_MAX = 50
+
+export const AiToolsBreakdownItem = Schema.Struct({
+	/** The tool name or the model name, per which list this came from. */
+	key: Schema.String,
+	...aiToolsMeasures,
+	/** The latest tool call under this key, as a warehouse datetime literal. */
+	lastSeen: Schema.String,
+	/** The earliest one, same shape — what the table's `new` badge reads. */
+	firstSeen: Schema.String,
+})
+export type AiToolsBreakdownItem = Schema.Schema.Type<typeof AiToolsBreakdownItem>
+
+export class AiToolsBreakdownsRequest extends Schema.Class<AiToolsBreakdownsRequest>(
+	"AiToolsBreakdownsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...aiToolsSelection,
+}) {}
+
+export class AiToolsBreakdownsResponse extends Schema.Class<AiToolsBreakdownsResponse>(
+	"AiToolsBreakdownsResponse",
+)({
+	/**
+	 * Every tool, scoped to the rest of the selection but NOT to the selected
+	 * tool — the table exists to pick a different tool, so filtering by the
+	 * current one would return the single row already on screen.
+	 */
+	tools: Schema.Array(AiToolsBreakdownItem),
+}) {}
+
+/* -------------------------------------------------------------------------------------------------
+ * Tool detail — the failures of one tool
+ *
+ * Two reads, and both are keyed by a REQUIRED `tool`: they are the tool detail
+ * page's, and the whole-org version of either question is the overview's error
+ * rate column. Everything else about the selection is the same bag the four
+ * reads above take, so the page's toolbar narrows its failures exactly as it
+ * narrows its charts.
+ * -----------------------------------------------------------------------------------------------*/
+
+/** The selection with the tool required — the tool detail page's own scope. */
+const aiToolSelectionForTool = {
+	...aiToolsSelection,
+	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+}
+
+/** Error types one breakdown returns, and occurrences one modal opens with. */
+export const AI_TOOL_ERRORS_MAX = 100
+
+export const AiToolErrorItem = Schema.Struct({
+	/** `error.type` as the span reported it. `''` is a real group: a call that
+	 *  failed without naming a type, which the page labels `unknown`. */
+	errorType: Schema.String,
+	/** The most recent status message under this type, truncated by the read. */
+	message: Schema.String,
+	/** Failed calls with this type. */
+	calls: Schema.Number,
+	sessions: Schema.Number,
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+})
+export type AiToolErrorItem = Schema.Schema.Type<typeof AiToolErrorItem>
+
+export class AiToolErrorsRequest extends Schema.Class<AiToolErrorsRequest>("AiToolErrorsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...aiToolSelectionForTool,
+	limit: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
+	),
+}) {}
+
+export class AiToolErrorsResponse extends Schema.Class<AiToolErrorsResponse>("AiToolErrorsResponse")({
+	data: Schema.Array(AiToolErrorItem),
+}) {}
+
+/** One session that hit an error type, for the modal's left pane. */
+export const AiToolErrorSessionItem = Schema.Struct({
+	sessionId: Schema.String,
+	agentName: Schema.String,
+	model: Schema.String,
+	/** Occurrences of this error type in this session. */
+	hits: Schema.Number,
+	lastSeen: Schema.String,
+})
+export type AiToolErrorSessionItem = Schema.Schema.Type<typeof AiToolErrorSessionItem>
+
+/** One failed call, with what it was called with and what came back. */
+export const AiToolErrorOccurrence = Schema.Struct({
+	timestamp: Schema.String,
+	traceId: Schema.String,
+	spanId: Schema.String,
+	sessionId: Schema.String,
+	agentName: Schema.String,
+	model: Schema.String,
+	errorType: Schema.String,
+	message: Schema.String,
+	/** Nanoseconds, like every other AI duration. */
+	durationNs: Schema.Number,
+	statusCode: Schema.String,
+	/** Truncated by the read; `*Bytes` is the payload's true size, which is what
+	 *  the modal prints beside the block. */
+	arguments: Schema.String,
+	argumentsBytes: Schema.Number,
+	result: Schema.String,
+	resultBytes: Schema.Number,
+})
+export type AiToolErrorOccurrence = Schema.Schema.Type<typeof AiToolErrorOccurrence>
+
+export class AiToolErrorDetailRequest extends Schema.Class<AiToolErrorDetailRequest>(
+	"AiToolErrorDetailRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...aiToolSelectionForTool,
+	/** The error type the modal is open on. Present-but-empty selects the calls
+	 *  that named no type, which is the `unknown` row. */
+	errorType: Schema.String.check(Schema.isMaxLength(200)),
+	/** Narrow the occurrences to one session — the left pane's selection. */
+	session: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	limit: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
+	),
+}) {}
+
+export class AiToolErrorDetailResponse extends Schema.Class<AiToolErrorDetailResponse>(
+	"AiToolErrorDetailResponse",
+)({
+	/** Every session that hit this error type, busiest first — NOT narrowed by
+	 *  `session`, which is what makes the pane a way out of the one selected. */
+	sessions: Schema.Array(AiToolErrorSessionItem),
+	occurrences: Schema.Array(AiToolErrorOccurrence),
+}) {}
+
 export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInternal")
 	.add(
 		HttpApiEndpoint.post("list", "/list", {
@@ -563,6 +845,41 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		HttpApiEndpoint.post("summary", "/summary", {
 			payload: GetAiSessionSummaryRequest,
 			success: GetAiSessionSummaryResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolsSeries", "/tools/series", {
+			payload: AiToolsSeriesRequest,
+			success: AiToolsSeriesResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolsTotals", "/tools/totals", {
+			payload: AiToolsTotalsRequest,
+			success: AiToolsTotalsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolsBreakdowns", "/tools/breakdowns", {
+			payload: AiToolsBreakdownsRequest,
+			success: AiToolsBreakdownsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolErrors", "/tools/errors", {
+			payload: AiToolErrorsRequest,
+			success: AiToolErrorsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolErrorDetail", "/tools/error-detail", {
+			payload: AiToolErrorDetailRequest,
+			success: AiToolErrorDetailResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

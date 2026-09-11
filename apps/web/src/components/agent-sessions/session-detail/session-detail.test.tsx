@@ -1130,6 +1130,7 @@ describe("SessionViews", () => {
 		view?: SessionView
 		progress?: SessionLoadProgress
 		totals?: GetAiSessionSummaryResponse
+		initialQuery?: string
 	}) {
 		const [view, setView] = useState<SessionView>(props.view ?? "trace")
 		const [selectedSpanId, setSelectedSpanId] = useState<string | undefined>(undefined)
@@ -1143,9 +1144,26 @@ describe("SessionViews", () => {
 				totals={props.totals}
 				selectedSpanId={selectedSpanId}
 				onSelectSpan={setSelectedSpanId}
+				initialQuery={props.initialQuery}
 			/>
 		)
 	}
+
+	// The `?tool=` a link out of `/agent-sessions/tools` carries: the reader
+	// arrived asking about one tool and must not have to type it again.
+	it("opens filtered to the tool the link carried, and lets the reader clear it", () => {
+		render(<Views initialQuery="grep_repo" />)
+
+		const filter = screen.getByPlaceholderText("Filter spans") as HTMLInputElement
+		expect(filter.value).toBe("grep_repo")
+		expect(screen.getByText("grep_repo")).toBeTruthy()
+		expect(screen.queryByText("run_tests")).toBeNull()
+
+		// A seed, not a controlled value — clearing it must not be undone by the
+		// URL it came from.
+		fireEvent.change(filter, { target: { value: "" } })
+		expect(screen.getByText("run_tests")).toBeTruthy()
+	})
 
 	const totals: GetAiSessionSummaryResponse = {
 		spanCount: 209_220,

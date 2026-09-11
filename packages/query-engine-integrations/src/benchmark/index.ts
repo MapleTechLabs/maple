@@ -64,6 +64,36 @@ const traceWindow = {
  *  because the page was ranked inside it. */
 const AI_PAGE_SESSION_IDS = ["wrun_sql_catalog", `${MAPLE_AI_TRACE_SESSION_PREFIX}${AI_TRACE_ID}`]
 
+/** The tools page's selection, as its reads take it. Tool AND model, so
+ *  the baseline pins the shape where both filters land — the tool on the index
+ *  scan, the model on the join expression above it. The needle carries a `_`
+ *  so the baseline also pins the LIKE-wildcard escaping. */
+const AI_TOOLS_SELECTION = {
+	tool: "search_traces",
+	model: "claude-sonnet-5",
+	search: "search_",
+	failingOnly: true,
+}
+
+/** The tool detail page's selection: one tool, named by a param rather than by
+ *  the opts, so one compiled statement serves every tool. */
+const AI_TOOLS_ERROR_SELECTION = {
+	// The handler sends the tool in the opts as well as the param: the opts
+	// narrow the trace prefilter, the param the span read.
+	tool: "search_traces",
+	model: "claude-sonnet-5",
+	// The service lands twice — on the trace prefilter and on the span read —
+	// which is exactly what the baseline is here to pin.
+	service: "agent",
+	failingOnly: true,
+}
+
+/** The window plus the tool the error reads resolve from a param. */
+const toolWindow = { ...window, toolName: "search_traces" }
+
+/** The tiles' second window: equal length, ending where the caller's begins. */
+const aiToolsCompare = { ...bucketed, prevStartTime: "2025-12-30 06:45:00", prevEndTime: START_TIME }
+
 /** Stage two's whole param set — it never sees the caller's window: the
  *  page's bounds for the index levels, and one slice of the padded extent
  *  (`aiSessionDetailsSlices`) for the fan-out. */
@@ -189,6 +219,102 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiSessionFacetsQuery",
 		label: "default",
 		compile: () => compileUnionUnsafe(CH.aiSessionFacetsQuery(), window),
+	},
+	{
+		// Agent Sessions › Tools. The chart's series key is derived from the
+		// selection, so the unfiltered shape (per-tool series, with the long tail
+		// folded into `other`) and the tool-selected one (per-model series) are
+		// two different SQL shapes off one builder.
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiToolsSeriesQuery(), bucketed),
+	},
+	{
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "tool-selected",
+		compile: () => compileUnsafe(CH.aiToolsSeriesQuery({ tool: AI_TOOLS_SELECTION.tool }), bucketed),
+	},
+	{
+		// The tool detail page: one series over the whole selection, so the
+		// quantiles and the session count are the real ones rather than a
+		// client-side merge of per-model series.
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "split-none",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolsSeriesQuery({ tool: AI_TOOLS_SELECTION.tool, split: "none" }),
+				bucketed,
+			),
+	},
+	{
+		// The toolbar's two predicates, which scope the chart as well as the
+		// tables — including the top-N subquery, so the legend ranks the searched
+		// population and not the whole window.
+		module: "ai-tools",
+		name: "aiToolsSeriesQuery",
+		label: "searched",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolsSeriesQuery({ search: AI_TOOLS_SELECTION.search, failingOnly: true }),
+				bucketed,
+			),
+	},
+	{
+		// Two windows in one read, because quantiles do not merge — the previous
+		// branch is bounded by its own pair of params.
+		module: "ai-tools",
+		name: "aiToolsTotalsQuery",
+		label: "default",
+		compile: () => compileUnionUnsafe(CH.aiToolsTotalsQuery(AI_TOOLS_SELECTION), aiToolsCompare),
+	},
+	{
+		// The table drops the selection's OWN tool and keeps the rest — pinned
+		// here so a refactor that stops dropping it shows as a baseline diff.
+		module: "ai-tools",
+		name: "aiToolsBreakdownsQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiToolsBreakdownsQuery(AI_TOOLS_SELECTION), window),
+	},
+	{
+		// The tool detail page's failures. The only tools reads that touch
+		// `trace_detail_spans`, and the baseline is what proves the span scan
+		// stays inside the trace-id subquery the index answers.
+		module: "ai-tools",
+		name: "aiToolErrorsQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), toolWindow, {
+				rowSchema: CH.aiToolErrorsRowSchema,
+			}),
+	},
+	{
+		module: "ai-tools",
+		name: "aiToolErrorSessionsQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, errorType: "TimeoutError" }),
+				toolWindow,
+				{ rowSchema: CH.aiToolErrorSessionsRowSchema },
+			),
+	},
+	{
+		module: "ai-tools",
+		name: "aiToolErrorOccurrencesQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorOccurrencesQuery({
+					...AI_TOOLS_ERROR_SELECTION,
+					errorType: "TimeoutError",
+					session: "wrun_sql_catalog",
+				}),
+				toolWindow,
+				{ rowSchema: CH.aiToolErrorOccurrencesRowSchema },
+			),
 	},
 	{
 		module: "ai-sessions",

@@ -237,7 +237,7 @@ const orderTuple = (...parts: ReadonlyArray<unknown>): CH.Expr<unknown> =>
  * a session-bearing trace carry no session id themselves, and keying on that
  * would file each of them as its own sessionless trace.
  */
-const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH.Expr<string> =>
+export const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<string>): CH.Expr<string> =>
 	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
 
 /**

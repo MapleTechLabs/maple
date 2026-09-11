@@ -4,6 +4,7 @@ import {
 	AiSessionsInternalApiGroup,
 	AI_SESSION_SPANS_MAX_SPANS,
 	AI_SESSION_SUMMARY_MAX_TURNS,
+	AI_TOOL_ERRORS_MAX,
 	CurrentTenant,
 	V1SchemaErrors,
 	V1UnexpectedErrors,
@@ -1089,6 +1090,351 @@ describe("POST /internal/ai-sessions/summary", () => {
 			expect(response.status).toBe(200)
 			expect(response.body).toMatchObject({ spanCount: 0, turns: [], tokenReporting: "none" })
 			expect(response.body).not.toHaveProperty("startTime")
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+// ---------------------------------------------------------------------------
+// Agent Sessions › Tools
+// ---------------------------------------------------------------------------
+
+const TOOLS_WINDOW = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
+
+/** One row of the tools measures, in the wire shape the derived row schema decodes. */
+const toolsMeasures = { calls: 12, sessions: 3, errors: 1, p50: 1_500_000, p90: 9_000_000, p95: 12_000_000 }
+const NO_TOOLS_MEASURES = { calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 }
+
+/** The extent a totals/breakdown row reports beside its measures. */
+const toolsSeen = { firstSeen: "2026-08-19 09:04:00", lastSeen: "2026-08-19 10:59:00" }
+const NO_TOOLS_SEEN = { firstSeen: "", lastSeen: "" }
+
+describe("POST /internal/ai-sessions/tools/series", () => {
+	// The series key is derived from the selection on BOTH sides — the query
+	// picks the column, the handler reports which one. If the two ever disagree
+	// the chart's legend names a dimension its points are not keyed by, behind a
+	// 200 that looks perfectly healthy.
+	it("reports the series kind the query actually keyed on", async () => {
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled)
+					.decodeRows([{ bucket: "2026-08-19T09:00:00.000Z", seriesKey: "gpt-5", ...toolsMeasures }])
+					.pipe(Effect.orDie),
+		})
+
+		try {
+			const perTool = await harness.post("/internal/ai-sessions/tools/series", {
+				...TOOLS_WINDOW,
+				bucketSeconds: 300,
+			})
+			expect(perTool.status).toBe(200)
+			expect(perTool.body.seriesKind).toBe("tool")
+
+			// A tool picked and no model: the chart now compares the models that
+			// tool ran under.
+			const perModel = await harness.post("/internal/ai-sessions/tools/series", {
+				...TOOLS_WINDOW,
+				bucketSeconds: 300,
+				tool: "search_traces",
+			})
+			expect(perModel.body.seriesKind).toBe("model")
+			expect(perModel.body.data).toHaveLength(1)
+
+			// Both picked is one series, named by the tool.
+			const single = await harness.post("/internal/ai-sessions/tools/series", {
+				...TOOLS_WINDOW,
+				bucketSeconds: 300,
+				tool: "search_traces",
+				model: "gpt-5",
+			})
+			expect(single.body.seriesKind).toBe("tool")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a fractional bucket rather than failing in the builder", async () => {
+		const harness = makeHarness({})
+
+		try {
+			// `param.int` rejects a fraction while the query is still being built,
+			// which would surface as a 500. The schema makes it a 400.
+			const response = await harness.post("/internal/ai-sessions/tools/series", {
+				...TOOLS_WINDOW,
+				bucketSeconds: 1.5,
+			})
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/tools/totals", () => {
+	it("compares against the window of equal length that ends where this one starts", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled)
+					.decodeRows([
+						{ period: "current", ...toolsMeasures, ...toolsSeen },
+						{ period: "previous", ...toolsMeasures, calls: 4, ...toolsSeen },
+						{ period: "window", ...NO_TOOLS_MEASURES, sessions: 91, ...NO_TOOLS_SEEN },
+					])
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/totals", TOOLS_WINDOW)
+			expect(response.status).toBe(200)
+			// The two-hour window, shifted back two hours — computed here rather
+			// than asked for, so a delta cannot be taken against a different span.
+			expect(seen[0]).toContain("'2026-08-19 07:00:00'")
+			expect(seen[0]).toContain("'2026-08-19 09:00:00'")
+			expect(response.body.current).toEqual(toolsMeasures)
+			expect(response.body.previous).toEqual({ ...toolsMeasures, calls: 4 })
+			// The third branch is the window's whole session population, which the
+			// Sessions tile states its share against.
+			expect(response.body.allSessions).toBe(91)
+			expect(response.body.lastSeen).toBe(toolsSeen.lastSeen)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers zeros for a period the union returned no row for", async () => {
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled)
+					.decodeRows([{ period: "current", ...toolsMeasures, ...toolsSeen }])
+					.pipe(Effect.orDie),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/totals", TOOLS_WINDOW)
+			expect(response.body.previous).toEqual({ calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 })
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/tools/breakdowns", () => {
+	it("returns the Tools table's rows, ranked", async () => {
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled)
+					.decodeRows([
+						{ key: "search_traces", ...toolsMeasures, ...toolsSeen },
+						{ key: "run_sql", ...toolsMeasures, ...toolsSeen },
+					])
+					.pipe(Effect.orDie),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/breakdowns", TOOLS_WINDOW)
+			expect(response.status).toBe(200)
+			expect((response.body.tools as ReadonlyArray<{ key: string }>).map((row) => row.key)).toEqual([
+				"search_traces",
+				"run_sql",
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/tools/errors", () => {
+	// The tool is a compile PARAM, not an opts field, so one compiled statement
+	// serves every tool page. A handler that forgot to pass it would compile a
+	// statement whose tool predicate is unbound.
+	it("binds the tool as a param and returns its error types", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled)
+					.decodeRows([
+						{
+							errorType: "TimeoutError",
+							message: "Test run exceeded 120s",
+							calls: 186,
+							sessions: 64,
+							firstSeen: "2026-08-19 09:04:00",
+							lastSeen: "2026-08-19 10:59:00",
+						},
+					])
+					.pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/errors", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+			})
+			expect(response.status).toBe(200)
+			expect(seen[0]).toContain("'run_tests'")
+			// The span read is pruned by the trace ids the index answered — without
+			// that subquery it is a whole-window scan of every span in the org.
+			expect(seen[0]).toContain("trace_detail_spans.TraceId IN")
+			expect(
+				(response.body.data as ReadonlyArray<{ errorType: string }>)[0]?.errorType,
+			).toBe("TimeoutError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a request with no tool", async () => {
+		const harness = makeHarness({})
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/errors", TOOLS_WINDOW)
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	// The limit reaches the SQL as a LIMIT literal, so an out-of-range value has
+	// to be a 400 at the boundary rather than a query nobody bounded.
+	it("refuses a limit outside the contract's range", async () => {
+		const harness = makeHarness({})
+		try {
+			for (const limit of [0, AI_TOOL_ERRORS_MAX + 1]) {
+				const response = await harness.post("/internal/ai-sessions/tools/errors", {
+					...TOOLS_WINDOW,
+					tool: "run_tests",
+					limit,
+				})
+				expect(response.status, `limit ${limit}`).toBe(400)
+			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("POST /internal/ai-sessions/tools/error-detail", () => {
+	// Two reads, one modal, and only ONE of them takes the session filter: the
+	// sessions pane is how a reader picks a different session, so narrowing it
+	// to the one they already picked would strand them in it.
+	it("narrows the occurrences to the session and leaves the sessions pane whole", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				errorType: "TimeoutError",
+				session: "wrun_01M0",
+			})
+			expect(response.status).toBe(200)
+			const withSession = seen.filter((sql) => sql.includes("'wrun_01M0'"))
+			expect(withSession.length).toBe(1)
+			// Both reads are keyed on the error type the modal is open on.
+			expect(seen.every((sql) => sql.includes("'TimeoutError'"))).toBe(true)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	// `''` is a real error type; ABSENT is not. Without the field there is no
+	// group to open a modal on, so it is required rather than defaulted.
+	it("refuses a request with no error type", async () => {
+		const harness = makeHarness({})
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+			})
+			expect(response.status).toBe(400)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("keeps an empty error type as the group that named none", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/error-detail", {
+				...TOOLS_WINDOW,
+				tool: "run_tests",
+				errorType: "",
+			})
+			expect(response.status).toBe(200)
+			// An absent filter and a filter on `''` are different questions: the
+			// second is the `unknown` row, and it has to narrow.
+			expect(seen[0]).toContain("= ''")
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("the tools toolbar's two predicates", () => {
+	// `search` and `failingOnly` are the only tools fields that are not facet
+	// values, and the only ones a handler could plausibly drop on the way to the
+	// query. Dropped, every read would answer for a wider population than the
+	// toolbar says — a 200 whose tiles disagree with its own tables.
+	it("reaches the SQL of every read", async () => {
+		const seen: string[] = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				seen.push(compiledQueryOf(compiled).sql)
+				return compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)
+			},
+		})
+
+		const scope = { ...TOOLS_WINDOW, search: "run_sql", failingOnly: true }
+
+		try {
+			for (const [path, payload] of [
+				["/internal/ai-sessions/tools/series", { ...scope, bucketSeconds: 300 }],
+				["/internal/ai-sessions/tools/totals", scope],
+				["/internal/ai-sessions/tools/breakdowns", scope],
+			] as const) {
+				const response = await harness.post(path, payload)
+				expect(response.status, path).toBe(200)
+			}
+
+			expect(seen).toHaveLength(3)
+			for (const sql of seen) {
+				// The `_` is escaped, so the needle is a literal rather than a
+				// single-character wildcard.
+				expect(sql).toContain("ToolName ILIKE '%run\\\\_sql%'")
+				expect(sql).toContain("ai_trace_index.IsError = 1")
+			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses an empty needle rather than searching for everything", async () => {
+		const harness = makeHarness({})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/tools/breakdowns", {
+				...TOOLS_WINDOW,
+				search: "",
+			})
+			expect(response.status).toBe(400)
 		} finally {
 			await harness.dispose()
 		}

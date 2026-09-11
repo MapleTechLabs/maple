@@ -60,6 +60,7 @@ export function SessionViews({
 	totals,
 	selectedSpanId,
 	onSelectSpan,
+	initialQuery,
 }: {
 	view: SessionView
 	onViewChange: (view: SessionView) => void
@@ -77,8 +78,14 @@ export function SessionViews({
 	selectedSpanId: string | undefined
 	/** Raised with a span id to open it, `undefined` to close. */
 	onSelectSpan: (spanId: string | undefined) => void
+	/**
+	 * What the span filter starts on — a tool name carried in by `?tool=` from
+	 * the tools page. A seed, not a controlled value: the filter belongs to the
+	 * reader from the first keystroke, and clearing it must not fight the URL.
+	 */
+	initialQuery?: string
 }) {
-	const [query, setQuery] = useState("")
+	const [query, setQuery] = useState(initialQuery ?? "")
 	const [agentSpansOnly, setAgentSpansOnly] = useState(true)
 	const [collapseIdle, setCollapseIdle] = useState(true)
 	const [mergeRepeats, setMergeRepeats] = useState(false)

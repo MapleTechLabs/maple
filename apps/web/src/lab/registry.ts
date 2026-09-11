@@ -108,6 +108,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/agent-tools",
+		title: "Agent tools",
+		description:
+			"The `/agent-sessions/tools` page over a synthetic week: a dominant tool that never fails, one that fails half the time, a p95 thirty times its p50, and a tool that regresses through the back half of the window.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/chat",
 		title: "Chat transcript",
 		description:

@@ -926,6 +926,755 @@ SELECT
           AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
         FORMAT JSON
 
+-- builder:ai-tools:aiToolErrorOccurrencesQuery:default
+SELECT
+          toString(trace_detail_spans.Timestamp) AS timestamp,
+          trace_detail_spans.TraceId AS traceId,
+          trace_detail_spans.SpanId AS spanId,
+          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS sessionId,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agentName,
+          ifNull(trace.traceModel, '') AS model,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
+          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
+          trace_detail_spans.Duration AS durationNs,
+          trace_detail_spans.StatusCode AS statusCode,
+          leftUTF8(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.args'], ''), ''), 4000) AS arguments,
+          length(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.arguments'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.args'], ''), '')) AS argumentsBytes,
+          leftUTF8(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.result'], ''), ''), 4000) AS result,
+          length(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.call.result'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.result'], ''), '')) AS resultBytes
+        FROM trace_detail_spans
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        GROUP BY traceId, spanId)
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') = 'TimeoutError'
+          AND if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) = 'wrun_sql_catalog'
+        ORDER BY timestamp DESC, spanId ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorSessionsQuery:default
+SELECT
+          session AS sessionId,
+          anyIf(agent, agent != '') AS agentName,
+          anyIf(model, model != '') AS model,
+          count() AS hits,
+          toString(max(ts)) AS lastSeen
+        FROM (SELECT
+          trace_detail_spans.Timestamp AS ts,
+          trace_detail_spans.TraceId AS traceId,
+          trace_detail_spans.SpanId AS spanId,
+          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
+          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agent,
+          ifNull(trace.traceModel, '') AS model,
+          trace_detail_spans.ServiceName AS svc,
+          trace_detail_spans.Duration AS durationNs
+        FROM trace_detail_spans
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        GROUP BY traceId, spanId)
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
+        WHERE errorType = 'TimeoutError'
+        GROUP BY sessionId
+        ORDER BY hits DESC, sessionId ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolErrorsQuery:default
+SELECT
+          errorType AS errorType,
+          argMax(message, ts) AS message,
+          count() AS calls,
+          uniqExact(session) AS sessions,
+          toString(min(ts)) AS firstSeen,
+          toString(max(ts)) AS lastSeen
+        FROM (SELECT
+          trace_detail_spans.Timestamp AS ts,
+          trace_detail_spans.TraceId AS traceId,
+          trace_detail_spans.SpanId AS spanId,
+          if(ifNull(trace.rawSessionId, '') = '', concat('trace:', trace_detail_spans.TraceId), ifNull(trace.rawSessionId, '')) AS session,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') AS errorType,
+          leftUTF8(trace_detail_spans.StatusMessage, 400) AS message,
+          coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '') AS agent,
+          ifNull(trace.traceModel, '') AS model,
+          trace_detail_spans.ServiceName AS svc,
+          trace_detail_spans.Duration AS durationNs
+        FROM trace_detail_spans
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON trace_detail_spans.TraceId = trace.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND ai_trace_index.ServiceName = 'agent'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.IsError = 1) AS failing_tool_calls
+        GROUP BY traceId, spanId)
+          AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
+          AND (trace_detail_spans.StatusCode = 'Error' OR (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))) AS tool_error_spans
+        GROUP BY errorType
+        ORDER BY calls DESC, errorType ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsBreakdownsQuery:default
+SELECT
+          toolName AS key,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          toString(max(ts)) AS lastSeen,
+          toString(min(ts)) AS firstSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_breakdown
+        GROUP BY key
+        ORDER BY calls DESC, key ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:default
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          if(toolName IN (SELECT
+          rankKey AS topKey
+        FROM (SELECT
+          toolName AS rankKey,
+          count() AS rankCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1) AS series_ranking
+        GROUP BY rankKey
+        ORDER BY rankCalls DESC, rankKey ASC
+        LIMIT 8) AS top_series_keys), toolName, 'other') AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1) AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:searched
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          if(toolName IN (SELECT
+          rankKey AS topKey
+        FROM (SELECT
+          toolName AS rankKey,
+          count() AS rankCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS series_ranking
+        GROUP BY rankKey
+        ORDER BY rankCalls DESC, rankKey ASC
+        LIMIT 8) AS top_series_keys), toolName, 'other') AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:split-none
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          '' AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsSeriesQuery:tool-selected
+SELECT
+          formatDateTime(toStartOfInterval(ts, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          if(modelName IN (SELECT
+          rankKey AS topKey
+        FROM (SELECT
+          modelName AS rankKey,
+          count() AS rankCalls
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS series_ranking
+        GROUP BY rankKey
+        ORDER BY rankCalls DESC, rankKey ASC
+        LIMIT 8) AS top_series_keys), modelName, 'other') AS seriesKey,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces') AS tool_calls
+        GROUP BY bucket, seriesKey
+        ORDER BY bucket ASC, calls DESC, seriesKey ASC
+        FORMAT JSON
+
+-- builder:ai-tools:aiToolsTotalsQuery:default
+SELECT
+          'current' AS period,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          if(count() = 0, '', toString(min(ts))) AS firstSeen,
+          if(count() = 0, '', toString(max(ts))) AS lastSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_calls_current
+UNION ALL
+SELECT
+          'previous' AS period,
+          count() AS calls,
+          uniqExact(sessionKey) AS sessions,
+          sum(isError) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50,
+          ifNull(ifNotFinite(quantile(0.9)(durationNs), 0), 0) AS p90,
+          ifNull(ifNotFinite(quantile(0.95)(durationNs), 0), 0) AS p95,
+          if(count() = 0, '', toString(min(ts))) AS firstSeen,
+          if(count() = 0, '', toString(max(ts))) AS lastSeen
+        FROM (SELECT
+          ai_trace_index.Timestamp AS ts,
+          ai_trace_index.TraceId AS traceId,
+          ai_trace_index.SpanId AS spanId,
+          if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
+          ai_trace_index.ToolName AS toolName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
+          ai_trace_index.ServiceName AS svc,
+          ai_trace_index.AgentName AS agent,
+          ai_trace_index.IsError AS isError,
+          ai_trace_index.Duration AS durationNs
+        FROM ai_trace_index
+        LEFT JOIN (SELECT
+          TraceId AS TraceId,
+          SpanId AS SpanId,
+          anyIf(Model, Model != '') AS parentModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2025-12-30 06:45:00'
+          AND Timestamp <= '2026-01-01 10:30:00'
+          AND Model != ''
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2025-12-30 06:45:00'
+          AND Timestamp <= '2026-01-01 10:30:00'
+        GROUP BY TraceId) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2025-12-30 06:45:00'
+          AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
+          AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND ai_trace_index.ToolName ILIKE '%search\\_%'
+          AND ai_trace_index.IsError = 1) AS tool_calls_previous
+UNION ALL
+SELECT
+          'window' AS period,
+          0 AS calls,
+          uniqExact(if(rawSessionId = '', concat('trace:', TraceId), rawSessionId)) AS sessions,
+          0 AS errors,
+          0 AS p50,
+          0 AS p90,
+          0 AS p95,
+          '' AS firstSeen,
+          '' AS lastSeen
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          anyIf(Model, Model != '') AS traceModel
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS window_traces
+FORMAT JSON
+
 -- builder:billing-usage:dailyProductEventCountQuery:default
 SELECT
           toStartOfInterval(Timestamp, INTERVAL 86400 SECOND) AS day,

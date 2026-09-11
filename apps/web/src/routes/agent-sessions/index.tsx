@@ -7,6 +7,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { AgentSessionsList } from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsFilterSidebar } from "@/components/agent-sessions/agent-sessions-filter-sidebar"
 import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
+import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import {
 	agentSessionsFilterInputs,
 	sortOptionFor,
@@ -181,7 +182,14 @@ function AgentSessionsBody() {
 				<AgentSessionsFilterSidebar facetsResult={facetsResult} />
 			</DashboardLayout.Filters>
 			<DashboardLayout.Content>
-				<DashboardLayout.Sticky>{toolbar}</DashboardLayout.Sticky>
+				<DashboardLayout.Sticky>
+					{/* The Tools tab reads the same spans across every session; this
+					    page reads one session at a time. Two routes, one strip. */}
+					<div className="space-y-2">
+						<AgentSessionsTabs active="sessions" />
+						{toolbar}
+					</div>
+				</DashboardLayout.Sticky>
 				<DashboardLayout.Scroll>
 					{Result.builder(firstPageResult)
 						.onInitial(() => (

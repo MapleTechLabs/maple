@@ -116,6 +116,13 @@ import {
 } from "@/api/warehouse/replays"
 import { getAiSessionSpans, getAiSessionSummary, getAiSessionsFacets, listAiSessions } from "@/api/warehouse/ai-sessions"
 import {
+	getAiToolBreakdowns,
+	getAiToolErrorDetail,
+	getAiToolErrors,
+	getAiToolSeries,
+	getAiToolTotals,
+} from "@/api/warehouse/ai-session-tools"
+import {
 	getWebAnalyticsBreakdowns,
 	getWebAnalyticsEvents,
 	getWebAnalyticsLive,
@@ -348,6 +355,30 @@ export const aiSessionSpansResultAtom = makeQueryAtomFamily(getAiSessionSpans, {
 
 export const aiSessionSummaryResultAtom = makeQueryAtomFamily(getAiSessionSummary, {
 	staleTime: 60_000,
+})
+
+// Agent Sessions › Tools. Five reads over one selection, all 30s: the page is
+// a time-ranged analytics view whose numbers are watched while a rollout lands,
+// and one TTL keeps the strip, the chart and the breakdowns from refreshing
+// against each other.
+export const aiToolSeriesResultAtom = makeQueryAtomFamily(getAiToolSeries, {
+	staleTime: 30_000,
+})
+
+export const aiToolTotalsResultAtom = makeQueryAtomFamily(getAiToolTotals, {
+	staleTime: 30_000,
+})
+
+export const aiToolBreakdownsResultAtom = makeQueryAtomFamily(getAiToolBreakdowns, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorsResultAtom = makeQueryAtomFamily(getAiToolErrors, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorDetailResultAtom = makeQueryAtomFamily(getAiToolErrorDetail, {
+	staleTime: 30_000,
 })
 
 export const replaysFacetsResultAtom = makeQueryAtomFamily(getReplaysFacets, {

@@ -5,7 +5,8 @@
 // the format string has to match what the frontend parses.
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
+import { defineFn, param } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 /**
  * ISO-8601 with a literal `Z`. ClickHouse `DateTime` has no zone, so the suffix
@@ -37,3 +38,13 @@ export function avgWhere(value: CH.Expr<number>, cond: CH.Condition): CH.Expr<nu
 export function finiteOrZero(value: CH.Expr<number | null>): CH.Expr<number> {
 	return CH.ifNull(CH.ifNotFinite(value, 0), CH.lit(0))
 }
+
+/**
+ * `leftUTF8(value, n)` — the first `n` CHARACTERS of a string.
+ *
+ * `left` counts BYTES, so truncating a payload that holds any multi-byte
+ * codepoint can cut one in half and emit invalid UTF-8. Every user-visible
+ * truncation here (a status message, a tool call's arguments) should use this;
+ * `length()` stays byte-based where the number reported is a size.
+ */
+export const leftUTF8 = defineFn<[CH.Expr<string>, CH.Expr<number>], string>("leftUTF8", T.string)
