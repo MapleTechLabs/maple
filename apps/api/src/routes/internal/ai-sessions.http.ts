@@ -22,6 +22,7 @@ import {
 	type AiSessionTurnSummary,
 	type AiToolsAggregate,
 	type AiToolsBreakdownItem,
+	type AiToolsPeriod,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 import { Effect } from "effect"
@@ -733,7 +734,7 @@ const NO_TOOLS_AGGREGATE: AiToolsAggregate = {
  *  nothing at all, which an aggregate over an empty window does not do. */
 const aggregateOf = (
 	rows: ReadonlyArray<Integrations.AiToolsTotalsOutput>,
-	period: Integrations.AiToolsPeriod,
+	period: AiToolsPeriod,
 ): AiToolsAggregate => {
 	const row = rows.find((candidate) => candidate.period === period)
 	if (row === undefined) return NO_TOOLS_AGGREGATE

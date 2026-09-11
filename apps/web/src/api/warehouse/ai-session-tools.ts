@@ -18,6 +18,7 @@ import {
 	AiToolErrorDetailRequest,
 	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
+	AiToolsPeriod,
 	AiToolsSeriesRequest,
 	AiToolsTotalsRequest,
 	AI_TOOL_ERRORS_MAX,
@@ -172,7 +173,7 @@ export const getAiToolSeries = Effect.fn("AiSessionTools.series")(function* ({
  */
 const AiToolTotalsInput = Schema.Struct({
 	...AiToolsSelection.fields,
-	periods: Schema.optional(Schema.Array(Schema.Literals(["current", "previous", "window"]))),
+	periods: Schema.optional(Schema.Array(AiToolsPeriod)),
 })
 export type AiToolTotalsInput = Schema.Schema.Type<typeof AiToolTotalsInput>
 

@@ -75,7 +75,6 @@ export {
 	type AiToolErrorsOutput,
 	type AiToolsBreakdownsOutput,
 	type AiToolsFilterOpts,
-	type AiToolsPeriod,
 	type AiToolsSeriesKind,
 	type AiToolsTotalsOutput,
 	type AiToolsWindow,

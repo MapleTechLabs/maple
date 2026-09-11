@@ -232,26 +232,31 @@ export function genAiIsToolCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "
  *  `session-turns.ts`. */
 export const GENAI_FAILED_RESPONSE_STATUSES = ["failed", "error"] as const
 
+/** WHY the span failed, where it named a reason — plain OTel semconv, which is
+ *  why one key answers for every dialect today. `''` is a real answer: a call
+ *  that failed naming no type, which the tools page labels `unknown`. */
+export const GENAI_ERROR_TYPE_KEYS = ["error.type"] as const
+
+export function genAiErrorTypeExpr(spanAttributes: MapColumnLike): Expr<string> {
+	return firstNonEmptyAttr(spanAttributes, GENAI_ERROR_TYPE_KEYS)
+}
+
 /**
  * The span failed: by its own status, or by an attribute-declared failure —
  * frameworks record a failed model or tool call as a VALUE on an `Ok` span.
  * Scoped to GenAI spans by construction (every index row is one), which is
  * what keeps an HTTP span's `error.type` on an expected 4xx out of it.
+ *
+ * The type half is {@link genAiErrorTypeExpr} rather than the bare lookup, so a
+ * second source key added to the list cannot make `IsError` and `ErrorType`
+ * disagree — a row the page would file under a named type while counting it as
+ * a success.
  */
 export function genAiIsErrorCond($: Pick<GenAiSpanColumnsLike, "StatusCode" | "SpanAttributes">): Condition {
 	const attrs = $.SpanAttributes
 	return $.StatusCode.eq("Error")
-		.or(attrs.get("error.type").neq(""))
+		.or(genAiErrorTypeExpr(attrs).neq(""))
 		.or(CH.inList(attrs.get("gen_ai.response.status"), GENAI_FAILED_RESPONSE_STATUSES))
-}
-
-/** WHY the span failed, where it named a reason — plain OTel semconv, which is
- *  why one key answers for every dialect. `''` is a real answer: a call that
- *  failed naming no type, which the tools page labels `unknown`. */
-export const GENAI_ERROR_TYPE_KEYS = ["error.type"] as const
-
-export function genAiErrorTypeExpr(spanAttributes: MapColumnLike): Expr<string> {
-	return firstNonEmptyAttr(spanAttributes, GENAI_ERROR_TYPE_KEYS)
 }
 
 /**

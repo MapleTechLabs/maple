@@ -44,11 +44,13 @@
 // always belongs to a trace of the same window.
 //
 // `traceFacts` is in every read — the session key is. `parentModels` is not:
-// it only changes an answer where a model is being FILTERED on or SPLIT by, and
-// it cost ~15% of the detail page's totals read (114ms → 98ms warm over a week
-// of production) everywhere else. So each read says whether it needs the parent
-// (`parentModelNeeded`, `seriesParentModelNeeded`) and the level below takes the
-// trace's model alone when it does not.
+// it only changes an answer where a model is FILTERED on, SPLIT by, or SHOWN,
+// and it cost ~15% of the detail page's totals read (114ms → 98ms warm over a
+// week of production) everywhere else. So each read says whether it needs the
+// parent — `parentModelNeeded` and `seriesParentModelNeeded` derive it from the
+// selection, and the failure modal's two reads ask for it outright because they
+// print the model — and the level below takes the trace's model alone when it
+// does not.
 //
 // Percentiles are the reason `totals` is its own query rather than a client-side
 // fold of `series`: quantiles do not merge. The same reason keeps the previous
@@ -73,7 +75,11 @@ import {
 	unionAll,
 	type CHUnionQuery,
 } from "@maple-dev/effect-clickhouse"
-import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY } from "@maple/domain/http"
+import {
+	AI_TOOLS_BREAKDOWN_MAX,
+	AI_TOOLS_OTHER_SERIES_KEY,
+	type AiToolsPeriod,
+} from "@maple/domain/http"
 import type { AiGenAiField } from "@maple/domain/gen-ai"
 import { Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
@@ -258,8 +264,9 @@ const toolCallIndex = (window: AiToolsWindow) =>
  *  which is why the model reaches both as an argument. */
 type ToolCallSource = Parameters<Parameters<ReturnType<typeof toolCallIndex>["where"]>[0]>[0]
 
-/** Whether a read has to resolve each call's PARENT model, or can take its
- *  trace's alone: only a model FILTER needs the parent (see the file header). */
+/** Whether a read that neither shows nor splits by a model has to resolve each
+ *  call's PARENT model, or can take its trace's alone: only a model FILTER does
+ *  (see the file header). A read that SHOWS one passes `true` itself. */
 const parentModelNeeded = (opts: AiToolsFilterOpts): boolean => opts.model !== undefined
 
 /** The same for a bucketed read, which also needs it where the chart's series
@@ -442,10 +449,6 @@ export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 const emptyWhenNoRows = (value: CH.Expr<string>): CH.Expr<string> =>
 	CH.if_(CH.count().eq(0), CH.lit(""), CH.toString_(value))
 
-/** Which window a totals row measures. `window` is the third branch: the
- *  window's whole session population, before any of the page's filters. */
-export type AiToolsPeriod = "current" | "previous" | "window"
-
 export interface AiToolsTotalsOutput {
 	readonly period: string
 	readonly calls: number
@@ -461,7 +464,14 @@ export interface AiToolsTotalsOutput {
 	readonly lastSeen: string
 }
 
-/** Every period the tiles can ask for, which is what the overview asks for. */
+/**
+ * Every period the tiles can ask for, which is what the overview asks for, and
+ * the ORDER the union builds them in — a caller's own ordering never reaches
+ * the SQL, so two requests for the same periods compile to one statement.
+ *
+ * `AiToolsPeriod` is the request contract's, not a second spelling of it: a
+ * period the wire can name is one this union can build.
+ */
 export const AI_TOOLS_TOTALS_PERIODS: ReadonlyArray<AiToolsPeriod> = ["current", "previous", "window"]
 
 /**
@@ -609,9 +619,16 @@ const errorTypeFilter = (opts: AiToolErrorsOpts, errorType: CH.Expr<string>) =>
  * below aggregate. `IsError` is the index's own transcription of the rule the
  * sessions pages apply to a span (`genAiIsErrorCond`), so a failure counted
  * there is a failure here.
+ *
+ * `withParentModel` is the modal's, and it is `true` for the two reads that
+ * SHOW a model rather than filtering by one: without it the model a reader sees
+ * would be the trace's until they set a model filter and the parent-resolved
+ * one after, which is the same failure described two ways. Both are modal reads
+ * behind a click, so the join is off the page's critical path — the Errors
+ * table, which is on it and shows no model, keeps the default.
  */
-const failingToolCalls = (opts: AiToolErrorsOpts) =>
-	fromQuery(toolCalls({ ...opts, failingOnly: true }), "failing_tool_calls")
+const failingToolCalls = (opts: AiToolErrorsOpts, withParentModel?: boolean) =>
+	fromQuery(toolCalls({ ...opts, failingOnly: true }, "current", withParentModel), "failing_tool_calls")
 
 /**
  * The Errors table: every error type this tool failed with, worst first.
@@ -619,6 +636,11 @@ const failingToolCalls = (opts: AiToolErrorsOpts) =>
  * The message is the most RECENT one under the type, not an arbitrary one —
  * a type whose message carries a changing detail (a path, a worker count)
  * should read as the failure that is happening now.
+ *
+ * A failure materialized before migration 0032 reads `''` for both columns, so
+ * it groups under the `unknown` row with a blank message however it failed,
+ * until raw retention ages it out — the same fill-forward edge 0031 left on the
+ * sessions list.
  */
 export interface AiToolErrorsOutput {
 	readonly errorType: string
@@ -677,7 +699,7 @@ export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSes
 	})
 
 export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
-	return failingToolCalls(opts)
+	return failingToolCalls(opts, true)
 		.select(($) => ({
 			sessionId: $.sessionKey,
 			vendorId: CH.anyIf($.vendor, $.vendor.neq("")),
@@ -729,7 +751,7 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 	})
 
 export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
-	return failingToolCalls(opts)
+	return failingToolCalls(opts, true)
 		.select(($) => ({
 			timestamp: CH.toString_($.ts),
 			traceId: $.traceId,

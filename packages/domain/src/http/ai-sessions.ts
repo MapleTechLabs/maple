@@ -702,9 +702,22 @@ export class AiToolsTotalsRequest extends Schema.Class<AiToolsTotalsRequest>("Ai
 	 * The periods to measure. Absent is all three, which is what the overview
 	 * draws. The tool detail page asks for `current` alone: it has no delta tiles
 	 * and no all-sessions denominator, and each period is its own scan.
+	 *
+	 * `current` is not optional among them. The response's `current` is the only
+	 * required aggregate, so a list without it would have the handler answer a
+	 * zeroed window with no first or last call — a 200 stating that nothing ran.
+	 * Refused here instead. No upper bound: a list may repeat a period and the
+	 * query folds duplicates, so a length cap would be a bound on nothing.
 	 */
 	periods: Schema.optionalKey(
-		Schema.Array(AiToolsPeriod).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
+		Schema.Array(AiToolsPeriod).check(
+			Schema.isMinLength(1),
+			Schema.makeFilter(
+				(periods: ReadonlyArray<AiToolsPeriod>) =>
+					periods.includes("current") || "periods must include 'current'",
+				{ identifier: "PeriodsIncludeCurrent" },
+			),
+		),
 	),
 	...aiToolsSelection,
 }) {}

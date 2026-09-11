@@ -92,7 +92,9 @@ const AI_TOOL_ERROR_CALLS = [
 	{ timestamp: "2026-01-02 11:45:30.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d1" },
 ]
 
-/** The window plus the tool the error reads resolve from a param. */
+/** The window plus the tool `aiToolDescriptionQuery` resolves from a param —
+ *  the one read here that takes no opts, because a description is the tool's
+ *  and not the selection's. Every other tool read takes the tool in its opts. */
 const toolWindow = { ...window, toolName: "search_traces" }
 
 /** The tiles' second window: equal length, ending where the caller's begins. */
@@ -318,7 +320,7 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiToolErrorsQuery",
 		label: "default",
 		compile: () =>
-			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), toolWindow, {
+			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), window, {
 				rowSchema: CH.aiToolErrorsRowSchema,
 			}),
 	},
@@ -329,7 +331,7 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () =>
 			compileUnsafe(
 				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, errorType: "TimeoutError" }),
-				toolWindow,
+				window,
 				{ rowSchema: CH.aiToolErrorSessionsRowSchema },
 			),
 	},
@@ -344,7 +346,7 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 					errorType: "TimeoutError",
 					session: "wrun_sql_catalog",
 				}),
-				toolWindow,
+				window,
 				{ rowSchema: CH.aiToolErrorOccurrencesRowSchema },
 			),
 	},
