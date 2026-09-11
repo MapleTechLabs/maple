@@ -9,7 +9,6 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 import {
 	BellIcon,
 	CircleCheckIcon,
-	CodeIcon,
 	CreditCardIcon,
 	DatabaseIcon,
 	GearIcon,
@@ -27,32 +26,30 @@ import { SettingsNavShell } from "@/components/settings/settings-nav-shell"
 export const settingsTabValues = [
 	"organization",
 	"members",
+	"billing",
 	"audit-log",
-	"setup-audit",
 	"ingestion",
-	"api-keys",
-	"developer",
-	"mcp",
+	"data-platform",
+	"setup-audit",
 	"notifications",
 	"automation",
-	"billing",
-	"data-platform",
+	"api-keys",
+	"mcp",
 ] as const
 export type SettingsTab = (typeof settingsTabValues)[number]
 
 export const settingsTabLabels: Record<SettingsTab, string> = {
 	organization: "Organization",
 	members: "Members",
+	billing: "Billing",
 	"audit-log": "Audit Log",
-	"setup-audit": "Setup Audit",
 	ingestion: "Ingestion",
-	"api-keys": "API Keys",
-	developer: "API Reference",
-	mcp: "MCP",
+	"data-platform": "Data Platform",
+	"setup-audit": "Setup Audit",
 	notifications: "Notifications",
 	automation: "Automation",
-	billing: "Billing",
-	"data-platform": "Data Platform",
+	"api-keys": "API Keys",
+	mcp: "MCP",
 } satisfies Record<SettingsTab, string>
 
 interface NavItem {
@@ -98,12 +95,21 @@ interface NavLinkItem {
 }
 
 export interface SettingsNavSection {
-	id: "workspace" | "data" | "behavior" | "infra"
+	id: "workspace" | "connections" | "data" | "alerting"
 	title: string
-	items: NavItem[]
-	links?: NavLinkItem[]
+	/** Tabs and sibling-page links in one ordered list — nav position is declared, not derived. */
+	items: Array<NavItem | NavLinkItem>
 }
 
+/**
+ * Four groups, each earning its header: who can use the workspace and what it costs; what talks to
+ * Maple from outside; where telemetry comes from and where it lands; and what Maple does when
+ * something breaks.
+ *
+ * Group order does not decide the landing tab; `DEFAULT_SETTINGS_TAB_ORDER` does, on purpose.
+ *
+ * Within a group, rows run most-visited first rather than alphabetically.
+ */
 const navSections: SettingsNavSection[] = [
 	{
 		id: "workspace",
@@ -111,11 +117,19 @@ const navSections: SettingsNavSection[] = [
 		items: [
 			{ id: "organization", label: "Organization", icon: GearIcon },
 			{ id: "members", label: "Members", icon: UserIcon },
-			{ id: "audit-log", label: "Audit Log", icon: HistoryIcon },
-			// Spans alerting, ingestion and integrations, so it sits at workspace level rather than
-			// under any one of them.
-			{ id: "setup-audit", label: "Setup Audit", icon: CircleCheckIcon },
 			{ id: "billing", label: "Billing", icon: CreditCardIcon },
+			{ id: "audit-log", label: "Audit Log", icon: HistoryIcon },
+		],
+	},
+	{
+		id: "connections",
+		title: "Connections",
+		items: [
+			// A sibling page rather than a tab, and the most-visited row in the nav, so it leads its
+			// group. Nothing about it being a route should push it down the list.
+			{ id: "integrations", label: "Integrations", icon: GridIcon, to: "/integrations" },
+			{ id: "api-keys", label: "API Keys", icon: KeyIcon },
+			{ id: "mcp", label: "MCP", icon: SquareTerminalIcon },
 		],
 	},
 	{
@@ -123,26 +137,27 @@ const navSections: SettingsNavSection[] = [
 		title: "Data",
 		items: [
 			{ id: "ingestion", label: "Ingestion", icon: ServerIcon },
-			{ id: "api-keys", label: "API Keys", icon: KeyIcon },
-			{ id: "developer", label: "API Reference", icon: CodeIcon },
-			{ id: "mcp", label: "MCP", icon: SquareTerminalIcon },
+			{ id: "data-platform", label: "Data Platform", icon: DatabaseIcon },
+			// A diagnostic over everything that feeds Maple, so it closes the group it reports on.
+			{ id: "setup-audit", label: "Setup Audit", icon: CircleCheckIcon },
 		],
-		links: [{ id: "integrations", label: "Integrations", icon: GridIcon, to: "/integrations" }],
 	},
 	{
-		id: "behavior",
-		title: "Behavior",
+		id: "alerting",
+		title: "Alerting",
 		items: [
 			{ id: "notifications", label: "Notifications", icon: BellIcon },
 			{ id: "automation", label: "Automation", icon: ShieldIcon },
 		],
 	},
-	{
-		id: "infra",
-		title: "Infrastructure",
-		items: [{ id: "data-platform", label: "Data Platform", icon: DatabaseIcon }],
-	},
 ]
+
+/**
+ * The tab rows of a section list, dropping sibling-page links. `visibleItems` feeds tab resolution,
+ * and `/integrations` is a route rather than a tab — it must never surface as a fallback tab id.
+ */
+const tabItems = (sections: ReadonlyArray<SettingsNavSection>): ReadonlyArray<NavItem> =>
+	sections.flatMap((section) => section.items.filter((row): row is NavItem => !("to" in row)))
 
 /**
  * Permission-filtered settings nav sections, shared by /settings and the
@@ -176,12 +191,12 @@ export function useVisibleSettingsSections() {
 				return true
 			}),
 		}))
-		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
+		.filter((section) => section.items.length > 0)
 
 	if (!isClerkAuthEnabled) {
 		return {
 			visibleSections,
-			visibleItems: visibleSections.flatMap((s) => s.items),
+			visibleItems: tabItems(visibleSections),
 			isAdmin: true,
 			canAccessDataPlatform: true,
 			canAccessAi: true,
@@ -204,11 +219,11 @@ export function useVisibleSettingsSections() {
 				return true
 			}),
 		}))
-		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
+		.filter((section) => section.items.length > 0)
 
 	return {
 		visibleSections: dataSections,
-		visibleItems: dataSections.flatMap((s) => s.items),
+		visibleItems: tabItems(dataSections),
 		isAdmin,
 		canAccessDataPlatform,
 		canAccessAi,
