@@ -25,6 +25,20 @@
         "typescript": "catalog:tooling",
       },
     },
+    "apps/ai": {
+      "name": "@maple/ai",
+      "dependencies": {
+        "@maple/infra": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@effect/language-service": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "apps/alerting": {
       "name": "@maple/alerting",
       "dependencies": {
@@ -1415,6 +1429,8 @@
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 
     "@maple-examples/effect-todo": ["@maple-examples/effect-todo@workspace:examples/effect-todo"],
+
+    "@maple/ai": ["@maple/ai@workspace:apps/ai"],
 
     "@maple/ai-model-catalog": ["@maple/ai-model-catalog@workspace:lib/ai-model-catalog"],
 

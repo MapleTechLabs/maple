@@ -1,0 +1,20 @@
+{
+	"name": "@maple/ai",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@maple/infra": "workspace:*",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:alchemy",
+		"@effect/language-service": "catalog:effect",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

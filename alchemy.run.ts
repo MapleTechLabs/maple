@@ -38,6 +38,7 @@ import * as Acm from "@maple/infra/acm"
 import { optionalPlain, plainWithDefault } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
+import MapleAi from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
@@ -254,6 +255,12 @@ export default Alchemy.Stack(
 		const landing = isDevServer ? undefined : yield* Landing
 
 		const localUi = isDevServer ? undefined : yield* LocalUi
+
+		// Every agent surface — the MCP server and its tools, the chat agent, the
+		// investigation fan-out. Standalone for now: the api still serves `/mcp` and
+		// the chat routes, and starts forwarding them here once they move.
+		const ai = yield* MapleAi
+		yield* serveWorker("ai", ai)
 
 		const alerting = yield* Alerting
 		yield* serveWorker("alerting", alerting)
