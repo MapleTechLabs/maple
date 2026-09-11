@@ -41,9 +41,10 @@ export const AI_VENDOR_BRAND_COLORS = {
 	"x-ai": MONOCHROME,
 } satisfies Record<string, BrandColor>
 
-const byVendor: Readonly<Record<string, BrandColor>> = AI_VENDOR_BRAND_COLORS
+// `hasOwn`, not an `in` check: `constructor` is not a vendor.
+const isListedVendor = (vendorSlug: string): vendorSlug is keyof typeof AI_VENDOR_BRAND_COLORS =>
+	Object.hasOwn(AI_VENDOR_BRAND_COLORS, vendorSlug)
 
 /** The brand color for a detected model's `vendorSlug`, or `null` when none is listed. */
 export const aiVendorBrandColor = (vendorSlug: string | null): BrandColor | null =>
-	// `hasOwn`, not a bare read: `constructor` is not a vendor.
-	vendorSlug !== null && Object.hasOwn(byVendor, vendorSlug) ? (byVendor[vendorSlug] ?? null) : null
+	vendorSlug !== null && isListedVendor(vendorSlug) ? AI_VENDOR_BRAND_COLORS[vendorSlug] : null
