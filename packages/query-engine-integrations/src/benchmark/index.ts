@@ -91,11 +91,15 @@ const toolWindow = { ...window, toolName: "search_traces" }
 /** The tiles' second window: equal length, ending where the caller's begins. */
 const aiToolsCompare = { ...bucketed, prevStartTime: "2025-12-30 06:45:00", prevEndTime: START_TIME }
 
-/** Stage two's whole param set — it never sees the caller's window. */
+/** Stage two's whole param set — it never sees the caller's window: the
+ *  page's bounds for the index levels, and one slice of the padded extent
+ *  (`aiSessionDetailsSlices`) for the fan-out. */
 const aiPageBounds = {
 	orgId: ORG_ID,
 	fanOutStart: "2026-01-02 10:30:00",
 	fanOutEnd: "2026-01-02 12:30:00",
+	spansStart: "2026-01-02 09:30:00",
+	spansEnd: "2026-01-02 13:30:00",
 }
 
 export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [

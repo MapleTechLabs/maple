@@ -280,7 +280,6 @@
         "@maple/infra": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
-        "@maple/thinking-orbs": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/unitflow": "workspace:*",
         "@maple/widgets": "workspace:*",
@@ -488,17 +487,6 @@
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
-      },
-    },
-    "lib/thinking-orbs": {
-      "name": "@maple/thinking-orbs",
-      "devDependencies": {
-        "@types/react": "catalog:react",
-        "react": "catalog:react",
-        "typescript": "catalog:tooling",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
       },
     },
     "lib/unitflow": {
@@ -1481,8 +1469,6 @@
     "@maple/sandbox": ["@maple/sandbox@workspace:apps/sandbox"],
 
     "@maple/scraper": ["@maple/scraper@workspace:apps/scraper"],
-
-    "@maple/thinking-orbs": ["@maple/thinking-orbs@workspace:lib/thinking-orbs"],
 
     "@maple/ui": ["@maple/ui@workspace:packages/ui"],
 

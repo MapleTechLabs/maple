@@ -36,7 +36,23 @@ describe("durableStep", () => {
 				Effect.provideService(Cloudflare.WorkflowStep, recordingStep(recorded)),
 			)
 			assert.strictEqual(value, 42)
-			assert.deepStrictEqual(recorded, [{ name: "claim", retries: undefined, timeout: undefined }])
+			assert.deepStrictEqual(recorded, [
+				{ name: "claim", retries: undefined, timeout: "10 minutes" },
+			])
+		}),
+	)
+
+	// A step that only asks for retries must still carry a timeout: an explicit
+	// `undefined` reaches Cloudflare's engine, beats its default in the spread,
+	// and throws on the duration parse before the step can run.
+	it.effect("gives a retries-only step Cloudflare's default timeout", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedStep> = []
+			const retries = { limit: 3, delay: "2 seconds", backoff: "exponential" as const }
+			yield* durableStep("claim", Effect.void, { retries }).pipe(
+				Effect.provideService(Cloudflare.WorkflowStep, recordingStep(recorded)),
+			)
+			assert.deepStrictEqual(recorded, [{ name: "claim", retries, timeout: "10 minutes" }])
 		}),
 	)
 

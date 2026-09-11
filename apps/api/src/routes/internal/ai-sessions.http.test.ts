@@ -544,11 +544,11 @@ describe("POST /internal/ai-sessions/details", () => {
 	})
 
 	it("fans out over the page's own extent, padded, and its ids under the page's filters", async () => {
-		let detailsSql: string | undefined
+		const detailsSql: Array<string> = []
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled, options) => {
 				expect(options?.context).toBe("aiSessionsDetails")
-				detailsSql = compiledQueryOf(compiled).sql
+				detailsSql.push(compiledQueryOf(compiled).sql)
 				return compiledQueryOf(compiled)
 					.decodeRows(DETAILS_BODY.sessionIds.map(detailsRow))
 					.pipe(Effect.orDie)
@@ -558,18 +558,22 @@ describe("POST /internal/ai-sessions/details", () => {
 		try {
 			const response = await harness.post("/internal/ai-sessions/details", DETAILS_BODY)
 			expect(response.status).toBe(200)
-			// The fan-out reads `trace_detail_spans` over the page's extent, padded —
-			// the caller's window would be a week of partitions on the page the UI
-			// offers — and both `ai_trace_index` reads take the same bounds exactly.
-			expect(detailsSql).toContain("FROM trace_detail_spans")
-			expect(detailsSql).toContain("Timestamp >= '2026-08-19 09:50:00.000000000' - INTERVAL 3600 SECOND")
-			expect(detailsSql).toContain("Timestamp <= '2026-08-19 10:40:00.000000000' + INTERVAL 3600 SECOND")
-			expect(detailsSql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(4)
+			// The fan-out reads `trace_detail_spans` over the page's extent, padded
+			// by an hour — the caller's window would be a week of partitions on
+			// the page the UI offers — as one read, because the padded extent lies
+			// inside one day; both `ai_trace_index` reads take the page's bounds.
+			expect(detailsSql).toHaveLength(1)
+			const [sql] = detailsSql
+			expect(sql).toContain("FROM trace_detail_spans")
+			expect(sql).toContain("Timestamp >= '2026-08-19 08:50:00.000000000'")
+			expect(sql).toContain("Timestamp <= '2026-08-19 11:40:00.000000000'")
+			expect(sql).not.toContain("INTERVAL")
+			expect(sql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(3)
 			// Exactly the page's ids, and the page's counted filters, so a trace
 			// resolves to the session it was ranked into.
-			for (const sessionId of DETAILS_BODY.sessionIds) expect(detailsSql).toContain(`'${sessionId}'`)
-			expect(detailsSql).toContain("countIf(VendorId IN ('eve')) > 0")
-			expect(detailsSql).not.toContain("__PARAM_")
+			for (const sessionId of DETAILS_BODY.sessionIds) expect(sql).toContain(`'${sessionId}'`)
+			expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
+			expect(sql).not.toContain("__PARAM_")
 			// The rows as the fan-out returned them; the client merges by id.
 			expect(response.body).toEqual({
 				data: DETAILS_BODY.sessionIds.map((sessionId) => ({
@@ -581,6 +585,83 @@ describe("POST /internal/ai-sessions/details", () => {
 					endTime: "2026-08-19 10:45:00.000000000",
 					durationMs: 1_500_050,
 				})),
+			})
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reads a page that straddles midnight one partition at a time, and folds the rows", async () => {
+		const spansBounds: Array<[string, string]> = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) => {
+				const { sql } = compiledQueryOf(compiled)
+				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(sql)
+				spansBounds.push([start?.[1] ?? "", start?.[2] ?? ""])
+				// The first read (the earlier day) sees the session's first spans, the
+				// second its last; only one of them sees the `trace:` session at all.
+				const rows =
+					spansBounds.length === 1
+						? [
+								{
+									...detailsRow("wrun_beta"),
+									spanCount: "10",
+									errorSpanCount: "2",
+									serviceNames: ["agent-runner"],
+									startTime: "2026-08-19 23:59:58.000000000",
+									endTime: "2026-08-19 23:59:59.500000000",
+									durationMs: "1500",
+								},
+							]
+						: [
+								{
+									...detailsRow("wrun_beta"),
+									spanCount: "2",
+									errorSpanCount: "0",
+									serviceNames: ["web-service"],
+									startTime: "2026-08-20 00:00:00.250000000",
+									endTime: "2026-08-20 00:00:01.000000000",
+									durationMs: "750",
+								},
+								detailsRow(`trace:${TRACE_ID}`),
+							]
+				return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/details", {
+				...DETAILS_BODY,
+				startTime: "2026-08-19 23:30:00.000000000",
+				endTime: "2026-08-20 00:15:00.000000000",
+			})
+			expect(response.status).toBe(200)
+			// Two reads, cut at midnight, padded an hour on the outside only.
+			expect(spansBounds).toEqual([
+				["2026-08-19 22:30:00.000000000", "2026-08-19 23:59:59.999999999"],
+				["2026-08-20 00:00:00.000000000", "2026-08-20 01:15:00.000000000"],
+			])
+			expect(response.body).toEqual({
+				data: [
+					{
+						sessionId: "wrun_beta",
+						spanCount: 12,
+						errorSpanCount: 2,
+						serviceNames: ["agent-runner", "web-service"],
+						startTime: "2026-08-19 23:59:58.000000000",
+						endTime: "2026-08-20 00:00:01.000000000",
+						durationMs: 3_000,
+					},
+					{
+						sessionId: `trace:${TRACE_ID}`,
+						spanCount: 12,
+						errorSpanCount: 2,
+						serviceNames: ["agent-runner", "web-service"],
+						startTime: "2026-08-19 10:19:59.950000000",
+						endTime: "2026-08-19 10:45:00.000000000",
+						durationMs: 1_500_050,
+					},
+				],
 			})
 		} finally {
 			await harness.dispose()

@@ -220,6 +220,9 @@ export class ListAiSessionDetailsRequest extends Schema.Class<ListAiSessionDetai
 		Schema.makeFilter(
 			(request: { readonly startTime: string; readonly endTime: string }) => {
 				const extentMs = tinybirdDateTimeMs(request.endTime) - tinybirdDateTimeMs(request.startTime)
+				// The pattern admits `2026-13-45 99:99:99`, which parses to NaN and
+				// would slip past both comparisons below.
+				if (Number.isNaN(extentMs)) return "startTime and endTime must be valid datetimes"
 				if (extentMs < 0) return "startTime must not be after endTime"
 				if (extentMs > AI_SESSION_DETAILS_MAX_EXTENT_MS) return "the window is wider than any page's extent"
 				return true

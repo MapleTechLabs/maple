@@ -68,7 +68,7 @@ describe("buildDelegation", () => {
 	it("gives an agent that spawns nothing no delegation tool at all", () => {
 		// Opt-in per agent: a turn that cannot delegate carries no delegation tool, rather than one
 		// that is offered and refuses.
-		const agent = AGENTS["dashboard-builder"]!
+		const agent = AGENTS.alert!
 
 		assert.isEmpty(spawnableFor(agent))
 		assert.isUndefined(buildDelegation(agent, executor, TENANT, MODEL))

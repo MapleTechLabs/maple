@@ -549,6 +549,10 @@ const foldInto = (transcript: Transcript, event: ChatEvent, createdAt: number): 
 				id: event.callId,
 				name: event.name,
 				input: event.input,
+				// Where the prose stood when the model asked for this call. `ChatMessage` keeps text
+				// and calls in two flat fields, so this offset is the only record of how the turn
+				// actually unfolded — the client re-interleaves from it on a cold load.
+				textOffset: message.text.length,
 				...(event.proposed === true ? { proposed: true } : undefined),
 			} as ChatToolCall)
 			break

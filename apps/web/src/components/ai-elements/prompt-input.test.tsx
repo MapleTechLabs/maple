@@ -10,36 +10,44 @@ afterEach(() => {
 })
 
 /**
- * The status orb paints to a canvas, and jsdom's `getContext` is a stub that logs
- * "Not implemented" to stderr on every call. The component treats a null context as
- * "don't animate", so returning null is the honest answer and only silences noise.
+ * jsdom ships no `matchMedia`, and the dot-matrix loaders ask it whether motion is welcome.
+ * Answering "no preference" is the branch that actually animates, which is the one under test.
  */
-HTMLCanvasElement.prototype.getContext = () => null
+vi.stubGlobal("matchMedia", (query: string) => ({
+	matches: false,
+	media: query,
+	onchange: null,
+	addEventListener: () => {},
+	removeEventListener: () => {},
+	addListener: () => {},
+	removeListener: () => {},
+	dispatchEvent: () => false,
+}))
 
-const orb = () => document.querySelector("canvas")
+const loader = () => document.querySelector(".dmx-root")
 
 describe("PromptInputSubmit", () => {
 	it("shows a plain send affordance when idle", () => {
 		render(<PromptInputSubmit status="ready" />)
 
 		expect(screen.getByLabelText("Submit")).toBeTruthy()
-		expect(orb()).toBeNull()
+		expect(loader()).toBeNull()
 	})
 
-	it("swaps to the orb while a turn is in flight", () => {
+	it("swaps to the loader while a turn is in flight", () => {
 		render(<PromptInputSubmit status="streaming" />)
 
 		expect(screen.getByLabelText("Sending")).toBeTruthy()
-		expect(orb()).toBeTruthy()
+		expect(loader()).toBeTruthy()
 	})
 
-	it("keeps both the orb and the stop glyph mounted so the swap can't reflow the button", () => {
+	it("keeps both the loader and the stop glyph mounted so the swap can't reflow the button", () => {
 		render(<PromptInputSubmit status="streaming" onStop={() => {}} />)
 
 		const button = screen.getByLabelText("Stop generating")
 		// The crossfade is CSS over two stacked grid cells — if either layer were mounted
 		// conditionally, hovering would resize the button mid-turn.
-		expect(button.querySelector("canvas")).toBeTruthy()
+		expect(button.querySelector(".dmx-root")).toBeTruthy()
 		expect(button.querySelector("svg")).toBeTruthy()
 		expect(button.className).toContain("group/submit")
 	})

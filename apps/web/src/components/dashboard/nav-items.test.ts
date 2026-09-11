@@ -63,7 +63,7 @@ describe("isNavItemActive", () => {
 })
 
 describe("navGroups", () => {
-	it("renders ten top-level rows", () => {
+	it("renders nine top-level rows", () => {
 		const rows = navGroups().flatMap((group) => group.items)
 		expect(rows.map((item) => item.title)).toEqual([
 			"Overview",
@@ -73,7 +73,7 @@ describe("navGroups", () => {
 			"Explore",
 			"Web Analytics",
 			"Dashboards",
-			"Investigations",
+			// "Investigations" is commented out of navGroups until the surface is ready.
 			"Errors",
 			"Alerts",
 		])

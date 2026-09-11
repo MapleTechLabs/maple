@@ -40,8 +40,10 @@ const props = Effect.gen(function* () {
 				// `lite`/`dev` is 1/16 vCPU with 256 MiB and 2 GB of disk, which any
 				// real repository exhausts. Staging runs the same shape as production
 				// because a sandbox that only fails there tells us nothing.
+				// The tier carries its own disk (`standard-2` 1 vCPU/6 GiB/12 GB,
+				// `standard-1` 1/2 vCPU/4 GiB/8 GB) and Cloudflare rejects a request that
+				// also sets vcpu/memory/disk, so the named tier is the only dial we have.
 				instanceType: production ? ("standard-2" as const) : ("standard-1" as const),
-				disk: { size: production ? "20GB" : "10GB" },
 				// The cap is per application, and the key is one container per
 				// repository per organization, so this is how many distinct repositories
 				// can be under investigation at once before calls start being refused.

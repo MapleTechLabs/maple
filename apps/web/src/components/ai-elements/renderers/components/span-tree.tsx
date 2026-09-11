@@ -59,7 +59,12 @@ export function SpanTree({ props }: RendererComponentProps<SpanTreeProps>) {
 		<div className="space-y-1">
 			<div className="text-[10px] text-muted-foreground">
 				Trace{" "}
-				<a href={`/traces/${traceId}`} className="font-mono text-primary hover:underline">
+				<a
+					href={`/traces/${traceId}`}
+					target="_blank"
+					rel="noreferrer"
+					className="font-mono text-primary hover:underline"
+				>
 					{traceId.slice(0, 12)}
 				</a>
 			</div>

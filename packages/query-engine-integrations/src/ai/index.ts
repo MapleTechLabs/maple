@@ -8,9 +8,11 @@
 // the decoder read one list.
 
 export {
-	aiSessionFacetsQuery,
 	aiSessionDetailsQuery,
+	aiSessionDetailsSlices,
+	aiSessionFacetsQuery,
 	aiSessionPageQuery,
+	mergeAiSessionDetails,
 	aiSessionSpansQuery,
 	aiSessionSpansRowSchema,
 	aiSessionSummaryQuery,
@@ -28,6 +30,7 @@ export {
 	type AiSessionFilterOpts,
 	type AiSessionDetailsOpts,
 	type AiSessionDetailsOutput,
+	type AiSessionDetailsSlice,
 	type AiSessionPageOpts,
 	type AiSessionPageOutput,
 	type AiSessionSpansOpts,

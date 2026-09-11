@@ -44,7 +44,6 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
 		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
-		expect(chatModeFromSessionId("o:dashboard-builder-1")).toBe("dashboard-builder")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {

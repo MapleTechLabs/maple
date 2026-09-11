@@ -10,7 +10,7 @@
  * optional-omit rule, the PR-preview exclusions and the `derived` values the
  * environment must not override.
  */
-import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
+import { type MapleDomains, type MapleStage, stageDeploysSandbox } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
 	appUrlsEnv,
@@ -88,6 +88,11 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		// Billing details (company name, address, tax IDs) are written to the Stripe
 		// customer Autumn links; Autumn itself has no API for them.
 		optionalSecret("STRIPE_SECRET_KEY"),
+		// The api's half of the sandbox service binding's auth. Declared only on the
+		// stages that deploy a sandbox Worker, and required there: without it the
+		// binding is present but every call is refused, which reads to the agent as
+		// "no sandbox in this deployment" — the shape prd was in until 2026-09-11.
+		...(stageDeploysSandbox(stage) ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("HAZEL_API_BASE_URL"),

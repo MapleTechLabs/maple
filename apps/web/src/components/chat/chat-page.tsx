@@ -174,6 +174,7 @@ function ChatPageInner({
 							<ChatConversation
 								tabId={tab.id}
 								isActive={tab.id === activeTabId}
+								typeAnywhere="page"
 								onFirstMessage={(id, text) => renameTab(id, text)}
 								onLoadingChange={handleLoadingChange}
 								focusMessageId={tab.id === activeTabId ? focusMessageId : undefined}

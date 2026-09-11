@@ -48,8 +48,10 @@ import { Route as LabAgentSessionRouteImport } from './routes/lab/agent-session'
 import { Route as LabAgentSessionsRouteImport } from './routes/lab/agent-sessions'
 import { Route as LabAgentToolsRouteImport } from './routes/lab/agent-tools'
 import { Route as LabChartsRouteImport } from './routes/lab/charts'
+import { Route as LabChatRouteImport } from './routes/lab/chat'
 import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
+import { Route as LabLoadersRouteImport } from './routes/lab/loaders'
 import { Route as LabNodesRouteImport } from './routes/lab/nodes'
 import { Route as LabOnboardingRouteImport } from './routes/lab/onboarding'
 import { Route as LabQueryBuilderRouteImport } from './routes/lab/query-builder'
@@ -295,6 +297,11 @@ const LabChartsRoute = LabChartsRouteImport.update({
   path: '/charts',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabChatRoute = LabChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabErrorsRoute = LabErrorsRouteImport.update({
   id: '/errors',
   path: '/errors',
@@ -303,6 +310,11 @@ const LabErrorsRoute = LabErrorsRouteImport.update({
 const LabFlowRoute = LabFlowRouteImport.update({
   id: '/flow',
   path: '/flow',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabLoadersRoute = LabLoadersRouteImport.update({
+  id: '/loaders',
+  path: '/loaders',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabNodesRoute = LabNodesRouteImport.update({
@@ -595,8 +607,10 @@ export interface FileRoutesByFullPath {
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
+  '/lab/chat': typeof LabChatRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
+  '/lab/loaders': typeof LabLoadersRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -686,8 +700,10 @@ export interface FileRoutesByTo {
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
+  '/lab/chat': typeof LabChatRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
+  '/lab/loaders': typeof LabLoadersRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -779,8 +795,10 @@ export interface FileRoutesById {
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
+  '/lab/chat': typeof LabChatRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
+  '/lab/loaders': typeof LabLoadersRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -873,8 +891,10 @@ export interface FileRouteTypes {
     | '/lab/agent-sessions'
     | '/lab/agent-tools'
     | '/lab/charts'
+    | '/lab/chat'
     | '/lab/errors'
     | '/lab/flow'
+    | '/lab/loaders'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -964,8 +984,10 @@ export interface FileRouteTypes {
     | '/lab/agent-sessions'
     | '/lab/agent-tools'
     | '/lab/charts'
+    | '/lab/chat'
     | '/lab/errors'
     | '/lab/flow'
+    | '/lab/loaders'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1056,8 +1078,10 @@ export interface FileRouteTypes {
     | '/lab/agent-sessions'
     | '/lab/agent-tools'
     | '/lab/charts'
+    | '/lab/chat'
     | '/lab/errors'
     | '/lab/flow'
+    | '/lab/loaders'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1465,6 +1489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabChartsRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/chat': {
+      id: '/lab/chat'
+      path: '/chat'
+      fullPath: '/lab/chat'
+      preLoaderRoute: typeof LabChatRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/errors': {
       id: '/lab/errors'
       path: '/errors'
@@ -1477,6 +1508,13 @@ declare module '@tanstack/react-router' {
       path: '/flow'
       fullPath: '/lab/flow'
       preLoaderRoute: typeof LabFlowRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/loaders': {
+      id: '/lab/loaders'
+      path: '/loaders'
+      fullPath: '/lab/loaders'
+      preLoaderRoute: typeof LabLoadersRouteImport
       parentRoute: typeof LabRouteRoute
     }
     '/lab/nodes': {
@@ -1830,8 +1868,10 @@ interface LabRouteRouteChildren {
   LabAgentSessionsRoute: typeof LabAgentSessionsRoute
   LabAgentToolsRoute: typeof LabAgentToolsRoute
   LabChartsRoute: typeof LabChartsRoute
+  LabChatRoute: typeof LabChatRoute
   LabErrorsRoute: typeof LabErrorsRoute
   LabFlowRoute: typeof LabFlowRoute
+  LabLoadersRoute: typeof LabLoadersRoute
   LabNodesRoute: typeof LabNodesRoute
   LabOnboardingRoute: typeof LabOnboardingRoute
   LabQueryBuilderRoute: typeof LabQueryBuilderRoute
@@ -1854,8 +1894,10 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabAgentSessionsRoute: LabAgentSessionsRoute,
   LabAgentToolsRoute: LabAgentToolsRoute,
   LabChartsRoute: LabChartsRoute,
+  LabChatRoute: LabChatRoute,
   LabErrorsRoute: LabErrorsRoute,
   LabFlowRoute: LabFlowRoute,
+  LabLoadersRoute: LabLoadersRoute,
   LabNodesRoute: LabNodesRoute,
   LabOnboardingRoute: LabOnboardingRoute,
   LabQueryBuilderRoute: LabQueryBuilderRoute,

@@ -250,6 +250,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			surface: "chat",
 			orgId: tenant.orgId,
 			sessionId: input.sessionId,
+			turnId: input.messageId,
 		})
 
 		// The session recorded the user's message before the run started, so the transcript's tail is

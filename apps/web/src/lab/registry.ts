@@ -45,6 +45,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/loaders",
+		title: "Chat loaders",
+		description:
+			"Every dot-matrix loader in the chat's pool, inline at both sizes it is used at, against real text.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:
@@ -104,6 +112,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Agent tools",
 		description:
 			"The `/agent-sessions/tools` page over a synthetic week: a dominant tool that never fails, one that fails half the time, a p95 thirty times its p50, and a tool that regresses through the back half of the window.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/chat",
+		title: "Chat transcript",
+		description:
+			"The chat transcript over a fixture thread: a merged tool run, prose carrying every inline reference card, an approval prompt, and two-character turns that expose the vertical rhythm.",
 		kind: "lab",
 		session: "none",
 	},
