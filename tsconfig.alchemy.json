@@ -22,6 +22,9 @@
 		// them let the rest resolve through node_modules instead, so the root
 		// typecheck and turbo's disagreed about which sources they were checking.
 		"paths": {
+			// apps/ai's own source. Its `@/` is apps/api's, matching its own
+			// tsconfig — see the comment there for why the asymmetry is load-bearing.
+			"@ai/*": ["./apps/ai/src/*"],
 			"@maple/infra": ["./packages/infra/src/index.ts"],
 			"@maple/infra/acm": ["./packages/infra/src/aws/acm-dns-validation.ts"],
 			"@maple/infra/aws": ["./packages/infra/src/aws/index.ts"],

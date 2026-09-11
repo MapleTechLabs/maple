@@ -18,11 +18,16 @@ import {
 	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
 	MapleStack,
+	AiWorker,
 	SandboxWorker,
 	type MapleStage,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import {
+	INVESTIGATION_FANOUT_BINDING,
+	type InvestigationFanoutWorkflowPayload,
+} from "@maple/domain/investigation-fanout"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Context, Effect, Layer, Option } from "effect"
@@ -46,8 +51,23 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// for this resource. Deployed stages only: the gateway has no local emulation,
 	// so declaring it under `alchemy dev` diffs it against Cloudflare and demands
 	// an `alchemy login`; without the binding the Llm shim is a no-op.
-	...(stage.kind === "dev" ? undefined : { AI: Cloudflare.AI.Gateway("maple-api-ai") }),
 	...emailBinding(stage),
+	// The two classes maple-ai now hosts, bound cross-script under their CLASS
+	// names — which is what `chatSessionStub` and `INVESTIGATION_FANOUT_BINDING`
+	// read off `env`. `resolveWorkerName` rather than the yielded Worker's output
+	// on purpose: consuming the output would make api's deploy wait on ai's, and
+	// these are reference-only bindings that need no such ordering.
+	ChatSession: Cloudflare.DurableObject("ChatSession", {
+		className: "ChatSession",
+		scriptName: resolveWorkerName("ai", stage),
+	}),
+	[INVESTIGATION_FANOUT_BINDING]: Cloudflare.Workflow<InvestigationFanoutWorkflowPayload>(
+		INVESTIGATION_FANOUT_BINDING,
+		{
+			className: INVESTIGATION_FANOUT_BINDING,
+			scriptName: resolveWorkerName("ai", stage),
+		},
+	),
 })
 
 /**
@@ -63,6 +83,9 @@ const props = Effect.gen(function* () {
 	// the stages that do not deploy it, where `SandboxClient` reports the tools
 	// as unavailable rather than failing.
 	const sandbox = yield* Effect.serviceOption(SandboxWorker)
+	// maple-ai, which serves `/mcp` and the chat surface. api keeps the hostname
+	// and forwards, so the public address and the OAuth identity do not move.
+	const ai = yield* AiWorker
 	// Resolved before any resource is created, so a misconfigured deploy fails
 	// with the full list of missing vars rather than part-way through applying.
 	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
@@ -94,6 +117,7 @@ const props = Effect.gen(function* () {
 		env: {
 			...makeWorkerBindings({ stage }),
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
+			AI_WORKER: ai,
 			...configuredEnv,
 			...devEnv,
 		},

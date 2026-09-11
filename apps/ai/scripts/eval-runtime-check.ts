@@ -8,10 +8,10 @@
  * Exits non-zero on failure. Keep it as a dev utility — the LLM path
  * (execution.eval.ts) only adds tool *selection* on top of what this exercises.
  */
-import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
-import { makeEvalRuntime, runToolDirect } from "@/mcp/__evals__/eval-runtime"
-import { FIXTURES } from "@/mcp/__evals__/utils"
-import { LARGE_TRACE_SPAN_COUNT } from "@/mcp/__evals__/fixtures"
+import { installFakeWarehouse, restoreWarehouse } from "@ai/mcp/__evals__/fake-warehouse"
+import { makeEvalRuntime, runToolDirect } from "@ai/mcp/__evals__/eval-runtime"
+import { FIXTURES } from "@ai/mcp/__evals__/utils"
+import { LARGE_TRACE_SPAN_COUNT } from "@ai/mcp/__evals__/fixtures"
 
 const main = async () => {
 	installFakeWarehouse()

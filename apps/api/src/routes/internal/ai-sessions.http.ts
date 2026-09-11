@@ -172,7 +172,11 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									sortBy: payload.sortBy,
 									sortDir: payload.sortDir,
 								}),
-								{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+								{
+									orgId: tenant.orgId,
+									startTime: payload.startTime,
+									endTime: payload.endTime,
+								},
 							),
 							{ profile: "list", context: "aiSessionsPage" },
 						)
@@ -340,7 +344,10 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						const compiled =
 							payload.traceIds !== undefined
 								? CH.compile(
-										Integrations.aiTraceSpansQuery({ ...opts, traceIds: payload.traceIds }),
+										Integrations.aiTraceSpansQuery({
+											...opts,
+											traceIds: payload.traceIds,
+										}),
 										{ orgId: tenant.orgId, ...window },
 										rowSchema,
 									)
@@ -419,18 +426,24 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 								? Integrations.aiSessionSummaryQuery()
 								: Integrations.aiTraceSummaryQuery()
 						const totalsQuery =
-							traceId === undefined ? Integrations.aiSessionTotalsQuery() : Integrations.aiTraceTotalsQuery()
+							traceId === undefined
+								? Integrations.aiSessionTotalsQuery()
+								: Integrations.aiTraceTotalsQuery()
 						const kind = traceId === undefined ? "aiSession" : "aiTrace"
 						const [rows, totals] = yield* Effect.all(
 							[
 								warehouse.compiledQuery(
 									tenant,
-									CH.compile(turnsQuery, params, { rowSchema: Integrations.aiSessionSummaryRowSchema }),
+									CH.compile(turnsQuery, params, {
+										rowSchema: Integrations.aiSessionSummaryRowSchema,
+									}),
 									{ context: `${kind}Summary` },
 								),
 								warehouse.compiledQuery(
 									tenant,
-									CH.compile(totalsQuery, params, { rowSchema: Integrations.aiSessionTotalsRowSchema }),
+									CH.compile(totalsQuery, params, {
+										rowSchema: Integrations.aiSessionTotalsRowSchema,
+									}),
 									{ context: `${kind}Totals` },
 								),
 							],
@@ -481,12 +494,15 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							[
 								warehouse.compiledQuery(
 									tenant,
-									CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
-										orgId: tenant.orgId,
-										startTime: payload.startTime,
-										endTime: payload.endTime,
-										...previous,
-									}),
+									CH.compileUnion(
+										Integrations.aiToolsTotalsQuery(toolsSelection(payload)),
+										{
+											orgId: tenant.orgId,
+											startTime: payload.startTime,
+											endTime: payload.endTime,
+											...previous,
+										},
+									),
 									{ context: "aiToolsTotals" },
 								),
 								// The detail page's header names the tool, so only a selected
@@ -742,16 +758,18 @@ const emptySummary = () =>
  */
 const usageOf = (row: Integrations.AiSessionTotalsOutput | Integrations.AiSessionSummaryOutput) => {
 	const perCall = row.llmInputTokens + row.llmOutputTokens + row.llmCacheReadTokens > 0
-	const reporting: AiSessionTokenReporting =
-		perCall ? "per-call" : row.inputTokens + row.outputTokens + row.cacheReadTokens > 0 ? "roll-up" : "none"
+	const reporting: AiSessionTokenReporting = perCall
+		? "per-call"
+		: row.inputTokens + row.outputTokens + row.cacheReadTokens > 0
+			? "roll-up"
+			: "none"
 	const tokens: AiSessionTokenTotals = perCall
 		? { input: row.llmInputTokens, output: row.llmOutputTokens, cacheRead: row.llmCacheReadTokens }
 		: { input: row.inputTokens, output: row.outputTokens, cacheRead: row.cacheReadTokens }
 	// Cost follows the same rule, but only once something reported one: a
 	// per-call session whose calls carry no price still has a session cost if
 	// the wrapper stamped one.
-	const cost =
-		row.costReporters === 0 ? undefined : perCall && row.llmCost > 0 ? row.llmCost : row.cost
+	const cost = row.costReporters === 0 ? undefined : perCall && row.llmCost > 0 ? row.llmCost : row.cost
 	return { reporting, tokens, cost }
 }
 

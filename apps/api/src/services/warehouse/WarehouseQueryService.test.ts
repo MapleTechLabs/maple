@@ -319,10 +319,12 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	})
 
 	it.effect("preserves missing Tinybird signing configuration as its own tag", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [] }),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: () => Effect.void,
+			}),
+		)
 		const layer = buildLayer(createTestDb(trackedDbs), {}, false)
 
 		return Effect.gen(function* () {
@@ -370,8 +372,13 @@ describe("bounded Tinybird response body", () => {
 
 	it.effect("accepts an exact-boundary response and refuses one byte over", () =>
 		Effect.gen(function* () {
-			const exact = makeTinybirdTestClient(tbConfig, async () => new Response(bodyOf(MAX_RAW_SQL_RESULT_BYTES)))
-			const result = yield* exact.sql(parseStatement("SELECT 1 FORMAT JSON"), { responseLimits: limits })
+			const exact = makeTinybirdTestClient(
+				tbConfig,
+				async () => new Response(bodyOf(MAX_RAW_SQL_RESULT_BYTES)),
+			)
+			const result = yield* exact.sql(parseStatement("SELECT 1 FORMAT JSON"), {
+				responseLimits: limits,
+			})
 			assert.deepStrictEqual(result.data, [])
 
 			const over = makeTinybirdTestClient(
@@ -393,18 +400,20 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 	// delays, so the default TestClock would stall the retries.
 	it.live("recovers after two 503s on the third attempt", () => {
 		let attempts = 0
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () =>
-				Effect.try({
-					try: () => {
-						attempts++
-						if (attempts < 3) throw transient503()
-						return { data: [{ ok: 1 }] }
-					},
-					catch: warehouseDriverFailure,
-				}),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () =>
+					Effect.try({
+						try: () => {
+							attempts++
+							if (attempts < 3) throw transient503()
+							return { data: [{ ok: 1 }] }
+						},
+						catch: warehouseDriverFailure,
+					}),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -421,17 +430,19 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 
 	it.effect("does not retry non-transient errors (auth)", () => {
 		let attempts = 0
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () =>
-				Effect.try({
-					try: () => {
-						attempts++
-						throw new Error("HTTP status 401 authentication failed")
-					},
-					catch: warehouseDriverFailure,
-				}),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () =>
+					Effect.try({
+						try: () => {
+							attempts++
+							throw new Error("HTTP status 401 authentication failed")
+						},
+						catch: warehouseDriverFailure,
+					}),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -451,17 +462,19 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 	// Runs under it.live: exhausts the real backoff schedule before giving up.
 	it.live("gives up after the configured retry budget when all attempts fail", () => {
 		let attempts = 0
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () =>
-				Effect.try({
-					try: () => {
-						attempts++
-						throw transient503()
-					},
-					catch: warehouseDriverFailure,
-				}),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () =>
+					Effect.try({
+						try: () => {
+							attempts++
+							throw transient503()
+						},
+						catch: warehouseDriverFailure,
+					}),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -488,10 +501,12 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 	it.effect("executes compiled SQL and decodes rows with the compiled row schema", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [{ serviceName: "api", count: "42" }] }),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [{ serviceName: "api", count: "42" }] }),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -513,10 +528,12 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	})
 
 	it.effect("maps row decode failures to WarehouseResultDecodeError", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -540,10 +557,12 @@ describe("WarehouseQueryService.compiledQuery", () => {
 	})
 
 	it.effect("still enforces OrgId scoping for compiled SQL", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [{ count: 1 }] }),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [{ count: 1 }] }),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -579,16 +598,18 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 	it.effect("returns Some with the decoded first row", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () =>
-				Effect.succeed({
-					data: [
-						{ serviceName: "api", count: "42" },
-						{ serviceName: "worker", count: "9" },
-					],
-				}),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () =>
+					Effect.succeed({
+						data: [
+							{ serviceName: "api", count: "42" },
+							{ serviceName: "worker", count: "9" },
+						],
+					}),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -613,10 +634,12 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	})
 
 	it.effect("returns None when the compiled SQL returns no rows", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [] }),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -638,10 +661,12 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 	})
 
 	it.effect("maps first-row decode failures to WarehouseResultDecodeError", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
-			insert: () => Effect.void,
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [{ count: "not-a-number" }] }),
+				insert: () => Effect.void,
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -668,16 +693,18 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 	it.effect("forwards datasource + rows to the client's insert", () => {
 		const calls: Array<{ datasource: string; rows: ReadonlyArray<unknown> }> = []
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [] }),
-			insert: (datasource, rows) =>
-				Effect.try({
-					try: () => {
-						calls.push({ datasource, rows })
-					},
-					catch: WarehouseDriverError.fromUnknown,
-				}),
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: (datasource, rows) =>
+					Effect.try({
+						try: () => {
+							calls.push({ datasource, rows })
+						},
+						catch: WarehouseDriverError.fromUnknown,
+					}),
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -694,16 +721,18 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 	it.effect("short-circuits without calling insert when there are no rows", () => {
 		let inserts = 0
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [] }),
-			insert: () =>
-				Effect.try({
-					try: () => {
-						inserts++
-					},
-					catch: WarehouseDriverError.fromUnknown,
-				}),
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: () =>
+					Effect.try({
+						try: () => {
+							inserts++
+						},
+						catch: WarehouseDriverError.fromUnknown,
+					}),
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -718,16 +747,18 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 	// rows, not Maple's SQL, are what usually earned the rejection), so a
 	// syntax-shaped complaint takes the caller-authored invalid-SQL tag.
 	it.effect("maps a failed insert through the classifier", () => {
-		__testables.setClientFactory(() => Effect.succeed({
-			sql: () => Effect.succeed({ data: [] }),
-			insert: () =>
-				Effect.try({
-					try: () => {
-						throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
-					},
-					catch: WarehouseDriverError.fromUnknown,
-				}),
-		}))
+		__testables.setClientFactory(() =>
+			Effect.succeed({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: () =>
+					Effect.try({
+						try: () => {
+							throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
+						},
+						catch: WarehouseDriverError.fromUnknown,
+					}),
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
@@ -915,23 +946,24 @@ describe("ingest routes writes to the managed pipeline, not a per-org read overr
 		const used: Array<{ op: "sql" | "insert"; kind: string }> = []
 		const purposes: Array<string> = []
 		const executor = makeWarehouseExecutor({
-			createClient: (config) => Effect.succeed({
-				sql: () =>
-					Effect.try({
-						try: () => {
-							used.push({ op: "sql", kind: config.kind })
-							return { data: [] }
-						},
-						catch: warehouseDriverFailure,
-					}),
-				insert: () =>
-					Effect.try({
-						try: () => {
-							used.push({ op: "insert", kind: config.kind })
-						},
-						catch: WarehouseDriverError.fromUnknown,
-					}),
-			}),
+			createClient: (config) =>
+				Effect.succeed({
+					sql: () =>
+						Effect.try({
+							try: () => {
+								used.push({ op: "sql", kind: config.kind })
+								return { data: [] }
+							},
+							catch: warehouseDriverFailure,
+						}),
+					insert: () =>
+						Effect.try({
+							try: () => {
+								used.push({ op: "insert", kind: config.kind })
+							},
+							catch: WarehouseDriverError.fromUnknown,
+						}),
+				}),
 			resolveRoute: (_tenant, purpose) => {
 				purposes.push(purpose)
 				return Effect.succeed(
@@ -964,23 +996,25 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 	// resolver (which prefers ClickHouse) is what kept demo-seed onboarding broken.
 	it.effect("reads resolve to managed ClickHouse, but ingest resolves to Tinybird", () => {
 		const used: Array<{ op: "sql" | "insert"; kind: string }> = []
-		__testables.setClientFactory((config) => Effect.succeed({
-			sql: () =>
-				Effect.try({
-					try: () => {
-						used.push({ op: "sql", kind: config.kind })
-						return { data: [] }
-					},
-					catch: warehouseDriverFailure,
-				}),
-			insert: () =>
-				Effect.try({
-					try: () => {
-						used.push({ op: "insert", kind: config.kind })
-					},
-					catch: WarehouseDriverError.fromUnknown,
-				}),
-		}))
+		__testables.setClientFactory((config) =>
+			Effect.succeed({
+				sql: () =>
+					Effect.try({
+						try: () => {
+							used.push({ op: "sql", kind: config.kind })
+							return { data: [] }
+						},
+						catch: warehouseDriverFailure,
+					}),
+				insert: () =>
+					Effect.try({
+						try: () => {
+							used.push({ op: "insert", kind: config.kind })
+						},
+						catch: WarehouseDriverError.fromUnknown,
+					}),
+			}),
+		)
 
 		const layer = buildLayer(createTestDb(trackedDbs), {
 			CLICKHOUSE_URL: "https://readonly-ch.example.com",
@@ -1126,7 +1160,10 @@ describe("BYO ClickHouse redirect refusal", () => {
 		assert.match(driver.message, /redirect responses are not allowed \(307\)/)
 		// The Location is kept as context, so a refusal is diagnosable.
 		assert.instanceOf(driver.cause, ClickHouseHttp.ClickHouseRedirectError)
-		assert.strictEqual((driver.cause as ClickHouseHttp.ClickHouseRedirectError).location, "http://169.254.169.254/")
+		assert.strictEqual(
+			(driver.cause as ClickHouseHttp.ClickHouseRedirectError).location,
+			"http://169.254.169.254/",
+		)
 		// Exactly one request, and it opted out of automatic redirect following.
 		assert.strictEqual(seen.length, 1)
 		assert.strictEqual(seen[0]?.redirect, "manual")
@@ -1259,7 +1296,8 @@ describe("warehouse driver Effect boundaries", () => {
 	it.effect("ClickHouse reports a single oversized row as a row limit, not the total", () =>
 		Effect.gen(function* () {
 			// No response limits: the native client's 16 MiB per-row default applies.
-			const request: typeof fetch = async () => new Response(`{"value":"${"x".repeat(16 * 1024 * 1024)}"}\n`)
+			const request: typeof fetch = async () =>
+				new Response(`{"value":"${"x".repeat(16 * 1024 * 1024)}"}\n`)
 			const error = yield* Effect.flip(
 				makeClickHouseTestClient(chConfig, request).sql(parseStatement("SELECT 1 FORMAT JSON")),
 			)
@@ -1306,7 +1344,8 @@ it.effect("the executor's query budget aborts the adapter request without retryi
 			})
 		const config = { kind: "tinybird" as const, host: "https://api.tinybird.co", token: "token" }
 		const executor = makeWarehouseExecutor({
-			createClient: () => __testables.createTinybirdSqlClient(config).pipe(Effect.provide(httpWith(request))),
+			createClient: () =>
+				__testables.createTinybirdSqlClient(config).pipe(Effect.provide(httpWith(request))),
 			resolveRoute: () =>
 				Effect.succeed({ source: "managed" as const, config, clientCacheKey: "test" }),
 		})
@@ -1381,7 +1420,8 @@ const httpWith = (request: typeof fetch) =>
 const makeClickHouseTestClient = (
 	config: Parameters<typeof __testables.createClickHouseSqlClient>[0],
 	requestFetch: typeof fetch = fetch,
-) => Effect.runSync(__testables.createClickHouseSqlClient(config).pipe(Effect.provide(httpWith(requestFetch))))
+) =>
+	Effect.runSync(__testables.createClickHouseSqlClient(config).pipe(Effect.provide(httpWith(requestFetch))))
 
 const makeTinybirdTestClient = (
 	config: Parameters<typeof __testables.createTinybirdSqlClient>[0],

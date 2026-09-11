@@ -17,7 +17,7 @@
 import { readFileSync } from "node:fs"
 import { Schema } from "effect"
 import { DashboardWidgetSchema, WIDGET_TYPES, type PanelType } from "@maple/domain/http"
-import { validateWidgetRenderability } from "@/mcp/lib/validate-widget-renderability"
+import { validateWidgetRenderability } from "@ai/mcp/lib/validate-widget-renderability"
 import { TASKS } from "./widget-eval-tasks"
 
 const decodeWidget = Schema.decodeUnknownSync(DashboardWidgetSchema)

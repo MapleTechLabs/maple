@@ -539,12 +539,23 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// span's `5` on the same trace — its three traces, its seven agent spans
 		// (the plain child is not in the index), and the agent spans' services.
 		assert.deepStrictEqual(
-			[eve?.vendorId, eve?.vendorVersion, eve?.traceCount, eve?.spanCount, [...(eve?.serviceNames ?? [])].sort()],
+			[
+				eve?.vendorId,
+				eve?.vendorVersion,
+				eve?.traceCount,
+				eve?.spanCount,
+				[...(eve?.serviceNames ?? [])].sort(),
+			],
 			["eve", "1", 3, 7, ["agent-service", "openrouter"]],
 		)
 		const sessionless = page.find((row) => row.sessionId !== SESSION_ID)
 		assert.deepStrictEqual(
-			[sessionless?.vendorId, sessionless?.vendorVersion, sessionless?.traceCount, sessionless?.spanCount],
+			[
+				sessionless?.vendorId,
+				sessionless?.vendorVersion,
+				sessionless?.traceCount,
+				sessionless?.spanCount,
+			],
 			["vercel_ai_sdk", "", 1, 1],
 		)
 		// The buckets off the index, deepest reporter counted like the total and

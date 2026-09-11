@@ -30,15 +30,27 @@
 import {
 	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
-	MapleDb,
 	MapleStack,
 	type MapleStage,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
-import { appUrlsEnv, authEnv, merge, selfObservabilityEnv, tinybirdEnv } from "@maple/infra/env"
+import {
+	appUrlsEnv,
+	authEnv,
+	ingestKeyCryptoEnv,
+	merge,
+	optionalPlain,
+	optionalSecret,
+	selfObservabilityEnv,
+	tinybirdEnv,
+} from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
+import ChatSessionObject from "@ai/chat/ChatSession"
+import InvestigationFanoutWorkflow from "@ai/workflows/InvestigationFanoutWorkflow"
+import { aiPorts, AiBindingLayers, bindAiClients } from "@ai/worker/bindings"
+import { buildApp, makeFetch } from "@ai/worker/http"
 
 /**
  * The AI worker's resource bindings, split from the `Config`-sourced env so
@@ -49,7 +61,12 @@ import { Effect, Layer } from "effect"
  * them, and the two hosted classes are yielded in the init rather than declared
  * here.
  */
-const makeWorkerBindings = (_: { stage: MapleStage }) => ({})
+const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
+	// Workers AI, for the models the agents call. The GATEWAY NAME is api's,
+	// unchanged: renaming it mints a new gateway and abandons its logs and
+	// analytics. Only the alchemy logical id moved.
+	...(stage.kind === "dev" ? undefined : { AI: Cloudflare.AI.Gateway("maple-api-ai") }),
+})
 
 /**
  * The AI worker's runtime env, derived from the declaration above.
@@ -68,7 +85,26 @@ export type AiWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWork
  * arrive with `platform/Llm.ts`.
  */
 const configuredEnv = (stage: MapleStage) =>
-	merge(tinybirdEnv, authEnv, appUrlsEnv, selfObservabilityEnv(stage))
+	merge(
+		// The tools query the warehouse as the calling org, and resolve their own
+		// tenants, so this is largely the api's set.
+		tinybirdEnv,
+		authEnv,
+		appUrlsEnv,
+		selfObservabilityEnv(stage),
+		ingestKeyCryptoEnv,
+		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
+		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
+		// See `@ai/platform/Llm` for the provider-scoped model overrides.
+		optionalPlain("MAPLE_LLM_PROVIDER"),
+		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
+		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
+		optionalSecret("OPENROUTER_API_KEY"),
+		// The chat agent authenticates to `/mcp` as an internal caller.
+		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
+		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
+	)
 
 /**
  * Alchemy evaluates a Worker's props wherever the class is yielded — the
@@ -104,24 +140,27 @@ export default class MapleAi extends Cloudflare.Worker<MapleAi>()(
 	"ai",
 	props,
 	Effect.gen(function* () {
-		// `MAPLE_DB` in the stage's flavor. The agents read and write the same
-		// application database the api does — investigations, error issues, alert
-		// rules — so this is a connection budget of its own, not a share of api's.
-		yield* MapleDb("ai")
-		// The routes arrive here in the next phase, behind this import: the MCP
-		// transport and the chat routes both pull the service graph, which has no
-		// business in startup validation or in the deploy process.
-		const app = yield* cachedRecoverable(Effect.promise(() => import("./app")))
-		return { fetch: (yield* app).fetch }
+		// The classes this Worker hosts. Yielded here, which is what binds them,
+		// registers them at plan time and exports them from the generated entry —
+		// never a ref-form binding plus a hand-written class.
+		yield* ChatSessionObject
+		yield* InvestigationFanoutWorkflow
+		const clients = yield* bindAiClients
+		const env = yield* Cloudflare.WorkerEnvironment
+		const ports = aiPorts(clients, env)
+		// Captured before any event exists, so a graph built inside the first
+		// request cannot leak that request's context into every later one. See
+		// `forIsolate`.
+		const isolate = Context.omit(
+			Cloudflare.WorkerExecutionContext,
+			Layer.CurrentMemoMap,
+		)(yield* Effect.context())
+		const app = yield* cachedRecoverable(buildApp(isolate, ports))
+		return { fetch: makeFetch(app, ports) }
 	}).pipe(
 		// The Worker's init IS the entry point: the bridge builds telemetry into
 		// each event's scope and flushes it after.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				Cloudflare.Hyperdrive.ConnectBinding,
-				WorkerTelemetry({ serviceName: "maple-ai" }),
-			),
-		),
+		Effect.provide(Layer.mergeAll(AiBindingLayers, WorkerTelemetry({ serviceName: "maple-ai" }))),
 	),
 ) {}

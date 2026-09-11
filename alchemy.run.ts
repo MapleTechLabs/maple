@@ -24,6 +24,7 @@ import {
 } from "@maple/infra/aws"
 import {
 	ApiWorker,
+	AiWorker,
 	SandboxWorker,
 	stageDeploysSandbox,
 	formatMapleStage,
@@ -219,9 +220,14 @@ export default Alchemy.Stack(
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
 		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
-		const api = yield* sandbox === undefined
-			? MapleApi
-			: Effect.provideService(MapleApi, SandboxWorker, sandbox)
+		// Every agent surface — the MCP server and its tools, the chat agent, the
+		// investigation fan-out. Yielded before api because api binds it, and a
+		// `Worker.ref` cannot see a sibling this deploy creates.
+		const ai = yield* MapleAi
+		yield* serveWorker("ai", ai)
+		const api = yield* Effect.provideService(MapleApi, AiWorker, ai).pipe((withAi) =>
+			sandbox === undefined ? withAi : Effect.provideService(withAi, SandboxWorker, sandbox),
+		)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the
@@ -255,12 +261,6 @@ export default Alchemy.Stack(
 		const landing = isDevServer ? undefined : yield* Landing
 
 		const localUi = isDevServer ? undefined : yield* LocalUi
-
-		// Every agent surface — the MCP server and its tools, the chat agent, the
-		// investigation fan-out. Standalone for now: the api still serves `/mcp` and
-		// the chat routes, and starts forwarding them here once they move.
-		const ai = yield* MapleAi
-		yield* serveWorker("ai", ai)
 
 		const alerting = yield* Alerting
 		yield* serveWorker("alerting", alerting)

@@ -8,7 +8,7 @@
  */
 import { writeFileSync } from "node:fs"
 import { encode } from "gpt-tokenizer"
-import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
+import { mapleToolCatalog, toInputSchema } from "@ai/mcp/tools/registry"
 
 interface ToolTokens {
 	readonly name: string

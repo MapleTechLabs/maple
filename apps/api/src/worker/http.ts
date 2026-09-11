@@ -121,6 +121,16 @@ const bridgeHandler = <E, R>(
 	>,
 ): HttpEffect => handler as HttpEffect
 
+/**
+ * The paths maple-ai serves. `/mcp` is matched exactly rather than by prefix so
+ * a future `/mcp-something` on this origin is not silently swallowed.
+ */
+const forwardsToAi = (path: string): boolean =>
+	path === "/mcp" ||
+	path.startsWith("/mcp/") ||
+	path.startsWith("/api/chat/") ||
+	path.startsWith("/internal/chat/")
+
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
 	return query === -1 ? url : url.slice(0, query)
@@ -200,6 +210,31 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 			})
 		}
 		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
+
+		// The agent surfaces moved to maple-ai; this origin keeps serving them.
+		// Ahead of the route graph on purpose — that is the whole point of the
+		// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
+		//
+		// The forward must stay byte-transparent: the same method, the original
+		// `Host` (which is what keeps `/mcp`'s OAuth `resource_metadata` pointing
+		// at this origin's well-known), every header, and both bodies as streams.
+		// The chat tail is an open `text/event-stream`, so buffering either side
+		// would turn a live transcript into a hang.
+		if (forwardsToAi(path)) {
+			const aiWorker = (yield* Cloudflare.WorkerEnvironment).AI_WORKER
+			if (aiWorker === undefined) {
+				yield* Effect.logError("AI worker binding is missing").pipe(
+					Effect.annotateLogs({ method: request.method, path }),
+				)
+				return HttpServerResponse.text("maple-ai is unavailable", {
+					status: 503,
+					headers: API_CORS_RESPONSE_HEADERS,
+				})
+			}
+			return yield* Cloudflare.fromCloudflareFetcher(
+				aiWorker as Parameters<typeof Cloudflare.fromCloudflareFetcher>[0],
+			).fetch(request)
+		}
 
 		const startedAt = yield* Clock.currentTimeMillis
 		firstRequestAt ??= startedAt

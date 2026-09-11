@@ -455,7 +455,8 @@ describe("POST /internal/ai-sessions/list", () => {
 
 	it("carries the index's row through in the page's order, its agent-span extent as the bounds", async () => {
 		const harness = makeHarness({
-			compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie),
+			compiledQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie),
 		})
 
 		try {
@@ -596,7 +597,9 @@ describe("POST /internal/ai-sessions/details", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) => {
 				const { sql } = compiledQueryOf(compiled)
-				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(sql)
+				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(
+					sql,
+				)
 				spansBounds.push([start?.[1] ?? "", start?.[2] ?? ""])
 				// The first read (the earlier day) sees the session's first spans, the
 				// second its last; only one of them sees the `trace:` session at all.
@@ -940,7 +943,12 @@ describe("POST /internal/ai-sessions/summary", () => {
 
 	/** The session's own row, in the wire shape `aiSessionTotalsRowSchema` decodes. */
 	const totalsRow = (overrides: Record<string, unknown>) => {
-		const { turnKey: _turnKey, conversationId: _conversationId, traceIds: _traceIds, ...measures } = turnRow({})
+		const {
+			turnKey: _turnKey,
+			conversationId: _conversationId,
+			traceIds: _traceIds,
+			...measures
+		} = turnRow({})
 		return { traceCount: "1", ...measures, ...overrides }
 	}
 
@@ -965,7 +973,12 @@ describe("POST /internal/ai-sessions/summary", () => {
 	it("reports the session's own row as the totals, and the turn rows beside it", async () => {
 		const { harness, sqls } = summaryHarness(
 			[
-				turnRow({ inputTokens: "300", llmInputTokens: "150", outputTokens: "60", llmOutputTokens: "30" }),
+				turnRow({
+					inputTokens: "300",
+					llmInputTokens: "150",
+					outputTokens: "60",
+					llmOutputTokens: "30",
+				}),
 				turnRow({
 					turnKey: "turn_1",
 					conversationId: "turn_1",
@@ -1024,10 +1037,14 @@ describe("POST /internal/ai-sessions/summary", () => {
 			})
 			const turns = response.body.turns as Array<Record<string, unknown>>
 			expect(turns).toHaveLength(2)
-			expect(turns[1]).toMatchObject({ turnKey: "turn_1", tokens: { input: 100, output: 0, cacheRead: 0 } })
+			expect(turns[1]).toMatchObject({
+				turnKey: "turn_1",
+				tokens: { input: 100, output: 0, cacheRead: 0 },
+			})
 			expect(turns[1]).not.toHaveProperty("cost")
 			expect(sqls).toHaveLength(2)
-			for (const sql of sqls) expect(sql).toContain(`SpanAttributes['maple_ai.session.id'] = '${SESSION_ID}'`)
+			for (const sql of sqls)
+				expect(sql).toContain(`SpanAttributes['maple_ai.session.id'] = '${SESSION_ID}'`)
 		} finally {
 			await harness.dispose()
 		}
@@ -1045,7 +1062,10 @@ describe("POST /internal/ai-sessions/summary", () => {
 		)
 		try {
 			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
-			expect(response.body).toMatchObject({ tokens: { input: 300, output: 0, cacheRead: 0 }, tokenReporting: "per-call" })
+			expect(response.body).toMatchObject({
+				tokens: { input: 300, output: 0, cacheRead: 0 },
+				tokenReporting: "per-call",
+			})
 		} finally {
 			await harness.dispose()
 		}
@@ -1072,10 +1092,15 @@ describe("POST /internal/ai-sessions/summary", () => {
 		const rows = Array.from({ length: AI_SESSION_SUMMARY_MAX_TURNS + 1 }, (_, index) =>
 			turnRow({ turnKey: `turn_${index}`, conversationId: `turn_${index}`, spanCount: "1" }),
 		)
-		const { harness } = summaryHarness(rows, [totalsRow({ spanCount: String(AI_SESSION_SUMMARY_MAX_TURNS + 1) })])
+		const { harness } = summaryHarness(rows, [
+			totalsRow({ spanCount: String(AI_SESSION_SUMMARY_MAX_TURNS + 1) }),
+		])
 		try {
 			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
-			expect(response.body).toMatchObject({ spanCount: AI_SESSION_SUMMARY_MAX_TURNS + 1, turnsTruncated: true })
+			expect(response.body).toMatchObject({
+				spanCount: AI_SESSION_SUMMARY_MAX_TURNS + 1,
+				turnsTruncated: true,
+			})
 			expect(response.body.turns).toHaveLength(AI_SESSION_SUMMARY_MAX_TURNS)
 		} finally {
 			await harness.dispose()
@@ -1119,7 +1144,9 @@ describe("POST /internal/ai-sessions/tools/series", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) =>
 				compiledQueryOf(compiled)
-					.decodeRows([{ bucket: "2026-08-19T09:00:00.000Z", seriesKey: "gpt-5", ...toolsMeasures }])
+					.decodeRows([
+						{ bucket: "2026-08-19T09:00:00.000Z", seriesKey: "gpt-5", ...toolsMeasures },
+					])
 					.pipe(Effect.orDie),
 		})
 
@@ -1215,7 +1242,14 @@ describe("POST /internal/ai-sessions/tools/totals", () => {
 
 		try {
 			const response = await harness.post("/internal/ai-sessions/tools/totals", TOOLS_WINDOW)
-			expect(response.body.previous).toEqual({ calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 })
+			expect(response.body.previous).toEqual({
+				calls: 0,
+				sessions: 0,
+				errors: 0,
+				p50: 0,
+				p90: 0,
+				p95: 0,
+			})
 		} finally {
 			await harness.dispose()
 		}
@@ -1324,9 +1358,9 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 			// The span read is pruned by the (trace, span) ids the index answered —
 			// without that subquery it is a whole-window scan of every span in the org.
 			expect(seen[0]).toContain("(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN")
-			expect(
-				(response.body.data as ReadonlyArray<{ errorType: string }>)[0]?.errorType,
-			).toBe("TimeoutError")
+			expect((response.body.data as ReadonlyArray<{ errorType: string }>)[0]?.errorType).toBe(
+				"TimeoutError",
+			)
 		} finally {
 			await harness.dispose()
 		}

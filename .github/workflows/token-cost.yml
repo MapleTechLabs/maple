@@ -8,7 +8,7 @@ on:
     pull_request:
         branches: [main]
         paths:
-            - "apps/api/src/mcp/**"
+            - "apps/ai/src/mcp/**"
             - "packages/domain/src/**"
             - ".github/actions/bun-install/action.yml"
             - ".github/workflows/token-cost.yml"
@@ -36,7 +36,7 @@ jobs:
             # workspaces accounted for roughly half of this job's wall time.
             - uses: ./.github/actions/bun-install
               with:
-                  filters: "@maple/api @maple-dev/effect-sdk @maple-dev/browser"
+                  filters: "@maple/ai @maple-dev/effect-sdk @maple-dev/browser"
 
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -52,16 +52,16 @@ jobs:
               run: bun run alchemy:build-deps
 
             - name: Measure (PR head)
-              run: bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
+              run: bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
 
             # Re-measure against the base source (reusing the same node_modules) for a
             # best-effort delta. Source-only swap avoids a second install.
             - name: Measure (base)
               continue-on-error: true
               run: |
-                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/api/src packages/domain/src || true
-                  bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
-                  git checkout HEAD -- apps/api/src packages/domain/src || true
+                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/ai/src packages/domain/src || true
+                  bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
+                  git checkout HEAD -- apps/ai/src packages/domain/src || true
 
             - name: Summary
               run: |
