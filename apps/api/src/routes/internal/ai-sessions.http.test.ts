@@ -1278,9 +1278,9 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 			})
 			expect(response.status).toBe(200)
 			expect(seen[0]).toContain("'run_tests'")
-			// The span read is pruned by the trace ids the index answered — without
-			// that subquery it is a whole-window scan of every span in the org.
-			expect(seen[0]).toContain("trace_detail_spans.TraceId IN")
+			// The span read is pruned by the (trace, span) ids the index answered —
+			// without that subquery it is a whole-window scan of every span in the org.
+			expect(seen[0]).toContain("(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN")
 			expect(
 				(response.body.data as ReadonlyArray<{ errorType: string }>)[0]?.errorType,
 			).toBe("TimeoutError")
