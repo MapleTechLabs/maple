@@ -4,7 +4,6 @@ import {
 	EMPTY_OVERVIEW_MEASURES,
 	buildModelMix,
 	buildOverviewSeries,
-	shiftOverviewSeries,
 	type OverviewMeasurePoint,
 	type OverviewMeasures,
 	type OverviewModelMix,
@@ -46,16 +45,24 @@ describe("buildOverviewPlotSpec", () => {
 		const without = buildOverviewPlotSpec("sessions", input({ series }))
 		expect(without.marks.map((mark) => mark.kind)).toEqual(["line"])
 
-		const withGhost = buildOverviewPlotSpec(
-			"sessions",
-			input({ series, previousSeries: shiftOverviewSeries(series, -2 * HOUR) }),
-		)
+		// Already shifted onto this axis, which is what the ghost is matched by.
+		const withGhost = buildOverviewPlotSpec("sessions", input({ series, previousSeries: series }))
 		expect(withGhost.marks.map((mark) => mark.kind)).toEqual(["line", "ghost"])
 		expect(withGhost.legend.at(-1)?.label).toBe("prev")
 	})
 
-	it("tops the axis on a round number above the data, and at 1 for an empty window", () => {
-		expect(buildOverviewPlotSpec("sessions", input({ series })).yMax).toBe(20)
+	it("names no ghost when the previous points landed off this axis", () => {
+		// A previous series a bucket out has nothing to draw at any x the plot
+		// has, and a legend entry for it would promise a line that is not there.
+		const offAxis = buildOverviewSeries([point(-1, { sessions: 8 }), point(-2, { sessions: 6 })])
+		const spec = buildOverviewPlotSpec("sessions", input({ series, previousSeries: offAxis }))
+		expect(spec.marks.map((mark) => mark.kind)).toEqual(["line"])
+	})
+
+	it("tops the axis on the rung ABOVE the data, and at 1 for an empty window", () => {
+		// 20 sessions is itself a rung on the ladder, so the axis takes the next
+		// one: a flat line drawn along the top edge reads as clipped, not steady.
+		expect(buildOverviewPlotSpec("sessions", input({ series })).yMax).toBe(25)
 		expect(buildOverviewPlotSpec("toolCallsPerSession", input({ series })).yMax).toBe(1)
 		expect(buildOverviewPlotSpec("sessions", input({})).yMax).toBe(1)
 	})

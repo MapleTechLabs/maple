@@ -383,6 +383,9 @@ function topSessions(
  * -----------------------------------------------------------------------------------------------*/
 
 const HOUR_MS = 60 * 60_000
+const MINUTE_MS = 60_000
+/** The grid the time picker floors a preset's endpoint to at this width. */
+const SNAP_MS = 15 * MINUTE_MS
 
 /** The hour the investigating board's step happens, in UTC so a board looks the
  *  same wherever it is opened. */
@@ -391,7 +394,14 @@ export const OVERVIEW_REGRESSION_HOUR_UTC = 14
 interface ScenarioSpec {
 	readonly windowLabel: string
 	readonly bucketSeconds: number
-	readonly buckets: number
+	/**
+	 * The window's own length — deliberately NOT a whole number of buckets.
+	 *
+	 * That is what the page actually gets: "7d" is calendar-aligned, so it runs
+	 * from a midnight to a "now" floored to the quarter hour, and the ghost
+	 * series has to land on the bucket grid anyway.
+	 */
+	readonly windowMs: number
 	readonly current: SessionRates
 	readonly previous: SessionRates
 	/** True where the bucket is past the step. Healthy weeks have none. */
@@ -402,7 +412,7 @@ const SPECS = {
 	healthy7d: {
 		windowLabel: "7d",
 		bucketSeconds: 6 * 3_600,
-		buckets: 28,
+		windowMs: 6 * 24 * HOUR_MS + 14 * HOUR_MS + 15 * MINUTE_MS,
 		current: HEALTHY,
 		previous: { ...HEALTHY, sessions: 121, costPerSession: 0.276, errorRate: 0.027 },
 		regressedAt: (_bucketMs: number) => false,
@@ -410,7 +420,7 @@ const SPECS = {
 	regression24h: {
 		windowLabel: "24h",
 		bucketSeconds: 3_600,
-		buckets: 24,
+		windowMs: 23 * HOUR_MS + 45 * MINUTE_MS,
 		current: { ...HEALTHY, sessions: 52 },
 		previous: { ...HEALTHY, sessions: 51 },
 		regressedAt: (bucketMs: number) => new Date(bucketMs).getUTCHours() >= OVERVIEW_REGRESSION_HOUR_UTC,
@@ -420,18 +430,23 @@ const SPECS = {
 /**
  * One board's worth of data, from one frozen timestamp.
  *
- * The window ends on the hour so the regression scenario's buckets line up with
- * the step it is drawn around.
+ * The window ends where the picker would snap it and is a ragged number of
+ * buckets long, exactly as the page's own default is; both windows are then cut
+ * into epoch-aligned bucket starts, the way the warehouse cuts them, so the lab
+ * draws the ghost series the real alignment has to produce.
  */
 export function buildOverviewFixture(scenario: OverviewScenario, nowMs: number): OverviewFixture {
 	const spec = SPECS[scenario]
 	const bucketMs = spec.bucketSeconds * 1_000
-	const endMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
-	const startMs = endMs - spec.buckets * bucketMs
-	const windowMs = endMs - startMs
+	const endMs = Math.floor(nowMs / SNAP_MS) * SNAP_MS
+	const startMs = endMs - spec.windowMs
+	const bucketStart = (ms: number) => Math.floor(ms / bucketMs) * bucketMs
+	const firstBucket = bucketStart(startMs)
+	const previousFirstBucket = bucketStart(startMs - spec.windowMs)
+	const bucketCount = Math.ceil((endMs - firstBucket) / bucketMs)
 
-	const buckets = Array.from({ length: spec.buckets }, (_, index) => {
-		const bucket = startMs + index * bucketMs
+	const buckets = Array.from({ length: bucketCount }, (_, index) => {
+		const bucket = firstBucket + index * bucketMs
 		const regressed = spec.regressedAt(bucket)
 		return { bucket, index, regressed }
 	})
@@ -442,14 +457,14 @@ export function buildOverviewFixture(scenario: OverviewScenario, nowMs: number):
 			scaleRates(regressed ? { ...REGRESSED, sessions: spec.current.sessions } : spec.current, index),
 		),
 	}))
-	const previousSeries: ReadonlyArray<OverviewMeasurePoint> = buckets.map(({ bucket, index }) => ({
-		bucket: bucket - windowMs,
+	const previousSeries: ReadonlyArray<OverviewMeasurePoint> = buckets.map(({ index }) => ({
+		bucket: previousFirstBucket + index * bucketMs,
 		...measuresOf(scaleRates(spec.previous, index + 3)),
 	}))
 
 	// The regressed scenario's window mixes both shapes, so the tiles read the
 	// whole window while the grid shows where it turned.
-	const regressedShare = buckets.filter((b) => b.regressed).length / spec.buckets
+	const regressedShare = buckets.filter((b) => b.regressed).length / bucketCount
 	const blend = (healthy: number, bad: number) => healthy * (1 - regressedShare) + bad * regressedShare
 	const currentRates: SessionRates = {
 		...spec.current,

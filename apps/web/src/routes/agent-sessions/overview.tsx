@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
@@ -19,6 +19,7 @@ import {
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import { useDetectedModels } from "@/hooks/use-detected-models"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -32,7 +33,10 @@ import {
 	type AgentOverviewSearch,
 	type OverviewFacets,
 } from "@/lib/agent-sessions/overview-search"
-import { useAgentOverview } from "@/lib/agent-sessions/use-agent-overview"
+import {
+	useAgentOverview,
+	type OverviewTopSessionTab,
+} from "@/lib/agent-sessions/use-agent-overview"
 import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 const overviewSearchSchema = Schema.Struct({
@@ -50,7 +54,7 @@ export const Route = createFileRoute("/agent-sessions/overview")({
  * Behind the `agent_tracing` org rollout flag, gated exactly as the list and
  * detail pages are: in the component rather than `beforeLoad` (router context
  * carries no flags), `isLoaded` first so an entitled org gets no not-found
- * flash, and no route `loader` — a loader would fire eleven warehouse reads for
+ * flash, and no route `loader` — a loader would fire nine warehouse reads for
  * orgs that are not entitled to the page at all.
  */
 function AgentOverviewPage() {
@@ -117,7 +121,7 @@ function AgentOverviewPageContent() {
 }
 
 /**
- * The eleven reads, resolved.
+ * The nine reads, resolved.
  *
  * The **summary** is the one the page waits on: it is what the tiles, the chart
  * headlines and the empty state are made of. Everything else degrades to empty
@@ -135,7 +139,10 @@ function AgentOverviewBody({
 	onSearchChange: (patch: Partial<AgentOverviewSearch>) => void
 	headerControls: ReactNode
 }) {
-	const results = useAgentOverview(search, window)
+	// The Top sessions tab lives here rather than in the table: it decides which
+	// list read runs, and only the open one should.
+	const [topSessionTab, setTopSessionTab] = useState<OverviewTopSessionTab>("cost")
+	const results = useAgentOverview(search, window, topSessionTab)
 	const windowMs = useMemo(
 		() => ({ startMs: toEpochMs(window.startTime), endMs: toEpochMs(window.endTime) }),
 		[window.startTime, window.endTime],
@@ -169,25 +176,89 @@ function AgentOverviewBody({
 		}))
 		.orElse(() => EMPTY_OVERVIEW_FACETS)
 
-	const breakdowns = results.breakdowns.map((breakdown) => ({
-		dimension: breakdown.dimension,
-		...Result.builder(breakdown.result)
-			.onSuccess((value) => ({ entries: value.entries, totalKeys: value.totalKeys }))
-			.orElse(() => ({ entries: [], totalKeys: 0 })),
-	}))
-	const modelMix = Result.builder(results.modelMix)
-		.onSuccess((value) => value.rows)
-		.orElse(() => [])
-	const sessionsOf = (result: (typeof results.topSessions)["cost"]) =>
-		Result.builder(result)
-			.onSuccess((value) => value.data)
-			.orElse(() => [])
+	const breakdowns = useMemo(
+		() =>
+			results.breakdowns.map((breakdown) => ({
+				dimension: breakdown.dimension,
+				...Result.builder(breakdown.result)
+					.onSuccess((value) => ({ entries: value.entries, totalKeys: value.totalKeys }))
+					.orElse(() => ({ entries: [], totalKeys: 0 })),
+			})),
+		[results.breakdowns],
+	)
+	const modelMix = useMemo(
+		() =>
+			Result.builder(results.modelMix)
+				.onSuccess((value) => value.rows)
+				.orElse(() => []),
+		[results.modelMix],
+	)
+	const sessions = useMemo(
+		() =>
+			Result.builder(results.topSessions)
+				.onSuccess((value) => value.data)
+				.orElse(() => []),
+		[results.topSessions],
+	)
+	// One detection read for the whole table, exactly as the Sessions list does
+	// it — the models a row ran are resolved to their vendor and display name.
+	const sessionModels = useMemo(() => sessions.flatMap((session) => session.models), [sessions])
+	const detectModel = useDetectedModels(sessionModels)
+
+	// Built once per resolved read rather than once per render: the view model
+	// carries `series`, `previousSeries` and `modelMix`, and the trends grid
+	// memoises nine plot specs and a shared axis on their identity.
+	const resolved = Result.isSuccess(results.summary) ? results.summary : undefined
+	const summary = resolved?.value
+	const compare = compareEnabled(search)
+	const data = useMemo(
+		() =>
+			summary === undefined
+				? undefined
+				: buildAgentOverviewData({
+						current: summary.current,
+						previous: summary.previous,
+						series: summary.series,
+						previousSeries: summary.previousSeries,
+						modelMix,
+						breakdowns,
+						// The width the buckets were actually cut at, echoed back rather
+						// than re-derived for the axis.
+						bucketSeconds: summary.bucketSeconds,
+						windowMs,
+						windowLabel,
+						compare,
+					}),
+		[summary, modelMix, breakdowns, windowMs, windowLabel, compare],
+	)
+
+	if (data !== undefined) {
+		return (
+			<AgentOverviewView
+				search={search}
+				onSearchChange={onSearchChange}
+				data={data}
+				facets={facets}
+				topSessions={sessions}
+				topSessionTab={topSessionTab}
+				onTopSessionTabChange={setTopSessionTab}
+				detectModel={detectModel}
+				windowLabel={windowLabel}
+				timeRange={timeRange}
+				headerControls={headerControls}
+				waiting={resolved?.waiting}
+			/>
+		)
+	}
 
 	return (
 		Result.builder(results.summary)
+			.onError((error) => (
+				<QueryErrorState error={error} titleOverride="Failed to load the agent overview" />
+			))
 			// Shaped like what lands, so nothing reflows when it does: the strip keeps
 			// its seven tiles and the grid its nine cells.
-			.onInitial(() => (
+			.orElse(() => (
 				<div className="flex flex-col">
 					<div className="flex flex-col gap-2 px-6 pt-[22px] pb-4">
 						<Skeleton className="h-8 w-40" />
@@ -203,39 +274,5 @@ function AgentOverviewBody({
 					</div>
 				</div>
 			))
-			.onError((error) => (
-				<QueryErrorState error={error} titleOverride="Failed to load the agent overview" />
-			))
-			.onSuccess((summary, result) => (
-				<AgentOverviewView
-					search={search}
-					onSearchChange={onSearchChange}
-					data={buildAgentOverviewData({
-						current: summary.current,
-						previous: summary.previous,
-						series: summary.series,
-						previousSeries: summary.previousSeries,
-						modelMix,
-						breakdowns,
-						// The width the buckets were actually cut at, echoed back rather
-						// than re-derived for the axis.
-						bucketSeconds: summary.bucketSeconds,
-						windowMs,
-						windowLabel,
-						compare: compareEnabled(search),
-					})}
-					facets={facets}
-					topSessions={{
-						cost: sessionsOf(results.topSessions.cost),
-						duration: sessionsOf(results.topSessions.duration),
-						errored: sessionsOf(results.topSessions.errored),
-					}}
-					windowLabel={windowLabel}
-					timeRange={timeRange}
-					headerControls={headerControls}
-					waiting={result.waiting}
-				/>
-			))
-			.render()
 	)
 }

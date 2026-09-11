@@ -1,14 +1,16 @@
-import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { formatNumber } from "@maple/ui/lib/format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ExternalLinkIcon } from "@/components/icons"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
+import { ModelLabel } from "@/components/agent-sessions/model-label"
+import { unresolvedModel, type DetectedModel } from "@/hooks/use-detected-models"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatOverviewCount, formatOverviewDuration } from "@/lib/agent-sessions/overview-analytics"
+import { formatOverviewCount } from "@/lib/agent-sessions/overview-analytics"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { sessionLinkWindow } from "@/lib/agent-sessions/session-window"
 import type { AgentSessionsLinkSearch } from "@/lib/agent-sessions/overview-search"
@@ -38,32 +40,39 @@ const COLUMNS = [
 ] as const
 
 export interface OverviewTopSessionsProps {
-	sessions: Record<OverviewTopSessionTab, ReadonlyArray<AgentSessionRow>>
+	/** The active tab's rows — the only one of the three the page reads. */
+	sessions: ReadonlyArray<AgentSessionRow>
+	active: OverviewTopSessionTab
+	/** The tab lives with whoever issues the read, so switching it issues one. */
+	onActiveChange: (tab: OverviewTopSessionTab) => void
 	/** Sessions in the window that failed — what the Errored tab is a sample of. */
 	erroredCount: number
 	/** The board's filters, as the Sessions list takes them. */
 	sessionsSearch: AgentSessionsLinkSearch
+	/** The page's model detection, passed in because resolving a model is a read
+	 *  and this table is presentational. Absent, a model reads as its raw id. */
+	detectModel?: (model: string) => DetectedModel
 	waiting?: boolean
 }
 
 /**
  * The concrete examples behind the trends above.
  *
- * Six rows from the sessions list itself, under the board's own filters — the
- * same endpoint the list pages, so a row here and the same row there agree. The
- * link out carries the filters and drops the ranking: the list is where the
- * rest of them are.
+ * Six rows of the sessions list itself, under the board's own filters: the same
+ * read the list page makes, ranked and cut to six, so these rows ARE that
+ * list's rows. The link out carries the filters and drops the ranking: the list
+ * is where the rest of them are.
  */
 export function OverviewTopSessions({
-	sessions,
+	sessions: rows,
+	active,
+	onActiveChange,
 	erroredCount,
 	sessionsSearch,
+	detectModel = unresolvedModel,
 	waiting = false,
 }: OverviewTopSessionsProps) {
 	const { effectiveTimezone } = useTimezonePreference()
-	const [active, setActive] = useState<OverviewTopSessionTab>("cost")
-	const rows = sessions[active]
-
 	return (
 		<section className={cn("transition-opacity", waiting && "opacity-60")}>
 			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-6 pt-4 pb-3">
@@ -82,7 +91,7 @@ export function OverviewTopSessions({
 							key={tab}
 							type="button"
 							aria-pressed={tab === active}
-							onClick={() => setActive(tab)}
+							onClick={() => onActiveChange(tab)}
 							className={cn(
 								"inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11.5px] transition-colors",
 								tab === active
@@ -143,9 +152,15 @@ export function OverviewTopSessions({
 							<Cell className={COLUMNS[0].className} tone="text-foreground">
 								{row.firstAgentName || "—"}
 							</Cell>
-							<Cell className={COLUMNS[1].className}>{row.models[0] ?? "—"}</Cell>
-							<Cell className={COLUMNS[2].className} tone="text-muted-foreground/70">
-								{row.serviceNames[0] ?? "—"}
+							<Cell className={COLUMNS[1].className}>
+								<ModelCell models={row.models} detect={detectModel} />
+							</Cell>
+							<Cell
+								className={COLUMNS[2].className}
+								tone="text-muted-foreground/70"
+								title={row.serviceNames.join(", ")}
+							>
+								{row.serviceNames.join(" · ") || "—"}
 							</Cell>
 							<Cell className={COLUMNS[3].className} tone="text-foreground">
 								{formatCost(row.cost)}
@@ -164,7 +179,7 @@ export function OverviewTopSessions({
 								{formatOverviewCount(row.errorSpanCount)}
 							</Cell>
 							<Cell className={COLUMNS[8].className} tone="text-foreground">
-								{formatOverviewDuration(row.durationMs)}
+								{formatSessionDuration(row.durationMs)}
 							</Cell>
 							<Cell className={COLUMNS[9].className} tone="text-muted-foreground/70">
 								{/* The Sessions list's own reading: relative inside the week,
@@ -202,18 +217,42 @@ export function OverviewTopSessions({
 
 const HEAD = "font-mono text-[10.5px] leading-[14px] tracking-[0.06em] text-muted-foreground/60 uppercase"
 
+/** The lane the Sessions list draws: the first model by name and mark, the rest
+ *  as a count, and every raw id the row reported in the title. */
+function ModelCell({
+	models,
+	detect,
+}: {
+	models: ReadonlyArray<string>
+	detect: (model: string) => DetectedModel
+}) {
+	const first = models[0]
+	if (first === undefined) return <>—</>
+	return (
+		<ModelLabel
+			detected={detect(first)}
+			moreCount={models.length - 1}
+			size={12}
+			title={models.join(", ")}
+		/>
+	)
+}
+
 function Cell({
 	className,
 	tone = "text-muted-foreground",
+	title,
 	children,
 }: {
 	className: string
 	tone?: string
+	title?: string
 	children: React.ReactNode
 }) {
 	return (
 		<span
 			className={cn("shrink-0 truncate font-mono text-[12px] leading-4 tabular-nums", className, tone)}
+			title={title}
 		>
 			{children}
 		</span>

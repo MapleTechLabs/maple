@@ -11,6 +11,9 @@ import {
 export interface OverviewMoversRailProps {
 	movers: ReadonlyArray<OverviewMover>
 	coverage: OverviewCoverage
+	/** Off means there is no previous window to rank against — `movers` is empty
+	 *  then, and the rail says why rather than reading as "nothing moved". */
+	compare: boolean
 	/** Names the window the moves are measured against, e.g. `7d`. */
 	windowLabel: string
 	/** Applies that mover's dimension filter to the whole board. */
@@ -26,7 +29,13 @@ export interface OverviewMoversRailProps {
  * same reason: the ranking is the bar's whole message, and the delta beside it
  * already says whether the move was bad news.
  */
-export function OverviewMoversRail({ movers, coverage, windowLabel, onSelect }: OverviewMoversRailProps) {
+export function OverviewMoversRail({
+	movers,
+	coverage,
+	compare,
+	windowLabel,
+	onSelect,
+}: OverviewMoversRailProps) {
 	const worst = movers.reduce((max, mover) => Math.max(max, mover.score), 0)
 	return (
 		<aside className="flex flex-col">
@@ -34,10 +43,51 @@ export function OverviewMoversRail({ movers, coverage, windowLabel, onSelect }: 
 				<h3 className="font-mono text-[12.5px] leading-4 font-medium text-foreground">
 					What changed
 				</h3>
-				<span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
-					vs prev {windowLabel}
+				{compare ? (
+					<span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
+						vs prev {windowLabel}
+					</span>
+				) : null}
+			</div>
+
+			{!compare ? (
+				<p className="pt-1.5 font-mono text-[11.5px] leading-[15px] text-muted-foreground/70">
+					Turn on compare to rank what changed.
+				</p>
+			) : (
+				<MoverLines movers={movers} worst={worst} onSelect={onSelect} />
+			)}
+
+			<div className="mt-3 flex flex-col gap-1.5 rounded-md border border-border bg-card px-3 py-[11px]">
+				<span className="font-mono text-[10.5px] leading-[14px] tracking-[0.09em] text-muted-foreground uppercase">
+					Coverage
+				</span>
+				<span className="flex items-baseline justify-between gap-2 font-mono text-[10.5px] leading-[15px]">
+					<span className="truncate text-muted-foreground/70">{coverage.label}</span>
+					<span className="shrink-0 tabular-nums text-foreground">
+						{formatPercent(coverage.share)}
+					</span>
+				</span>
+				<span className="font-mono text-[10.5px] leading-[15px] text-muted-foreground/70">
+					Cost is a floor, not a total.
 				</span>
 			</div>
+		</aside>
+	)
+}
+
+/** The ranked lines themselves, and what the rail says when nothing ranks. */
+function MoverLines({
+	movers,
+	worst,
+	onSelect,
+}: {
+	movers: ReadonlyArray<OverviewMover>
+	worst: number
+	onSelect: (mover: OverviewMover) => void
+}) {
+	return (
+		<>
 			<p className="pt-1.5 font-mono text-[10.5px] leading-[15px] text-muted-foreground/70">
 				Biggest movers across every breakdown. Click a line to filter the page.
 			</p>
@@ -98,21 +148,6 @@ export function OverviewMoversRail({ movers, coverage, windowLabel, onSelect }: 
 				Ranked by deviation; groups under {OVERVIEW_MOVER_MIN_SESSIONS} sessions in either window are
 				excluded.
 			</p>
-
-			<div className="mt-3 flex flex-col gap-1.5 rounded-md border border-border bg-card px-3 py-[11px]">
-				<span className="font-mono text-[10.5px] leading-[14px] tracking-[0.09em] text-muted-foreground uppercase">
-					Coverage
-				</span>
-				<span className="flex items-baseline justify-between gap-2 font-mono text-[10.5px] leading-[15px]">
-					<span className="truncate text-muted-foreground/70">{coverage.label}</span>
-					<span className="shrink-0 tabular-nums text-foreground">
-						{formatPercent(coverage.share)}
-					</span>
-				</span>
-				<span className="font-mono text-[10.5px] leading-[15px] text-muted-foreground/70">
-					Cost is a floor, not a total.
-				</span>
-			</div>
-		</aside>
+		</>
 	)
 }

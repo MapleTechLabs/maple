@@ -7,13 +7,12 @@ import {
 	buildBreakdownRows,
 	buildModelMix,
 	buildMovers,
+	buildOverviewCharts,
 	buildOverviewSeries,
 	buildOverviewTiles,
-	bucketWidthLabel,
 	cacheHitRatio,
 	costPerSession,
 	formatOverviewCount,
-	formatOverviewDuration,
 	formatPerSession,
 	llmErrorRate,
 	overviewDelta,
@@ -24,8 +23,12 @@ import {
 	tokenBandValues,
 	toolErrorRate,
 	tokensPerSession,
+	type OverviewMeasurePoint,
 	type OverviewMeasures,
 } from "./overview-analytics"
+
+const HOUR = 3_600_000
+const MINUTE = 60_000
 
 const measures = (overrides: Partial<OverviewMeasures>): OverviewMeasures => ({
 	...EMPTY_OVERVIEW_MEASURES,
@@ -137,8 +140,8 @@ describe("overviewDelta", () => {
 		expect(delta?.percent).toBeCloseTo(1.3646, 3)
 	})
 
-	it("keeps a sub-minute move in seconds rather than rounding it to a clock", () => {
-		expect(overviewDelta(96_000, 150_580, { unit: "duration", riseIs: "bad" })?.text).toBe("+54.6s")
+	it("reads a duration move in the Sessions list's own clock units", () => {
+		expect(overviewDelta(96_000, 150_580, { unit: "duration", riseIs: "bad" })?.text).toBe("+55s")
 	})
 
 	it("signs a fall", () => {
@@ -157,21 +160,6 @@ describe("formatters", () => {
 		expect(formatPerSession(420)).toBe((420).toLocaleString())
 	})
 
-	it("reads a zero duration as nothing measured rather than as 0μs", () => {
-		expect(formatOverviewDuration(0)).toBe("—")
-	})
-
-	it("reads a duration in the clock units the Sessions list uses", () => {
-		expect(formatOverviewDuration(58_200)).toBe("58.2s")
-		expect(formatOverviewDuration(724_000)).toBe("12m 4s")
-		expect(formatOverviewDuration(5_400_000)).toBe("1h 30m")
-	})
-
-	it("names every width the grid's buckets are actually cut at", () => {
-		// The ladder `smallMultipleBucketSeconds` snaps to, one unit each.
-		const ladder = [300, 900, 1_800, 3_600, 10_800, 21_600, 43_200, 86_400]
-		expect(ladder.map(bucketWidthLabel)).toEqual(["5m", "15m", "30m", "1h", "3h", "6h", "12h", "1d"])
-	})
 })
 
 describe("buildOverviewTiles", () => {
@@ -206,6 +194,29 @@ describe("buildOverviewTiles", () => {
 	it("drops every delta when the comparison is off", () => {
 		const tiles = buildOverviewTiles(current, previous, { compare: false, windowLabel: "7d" })
 		expect(tiles.every((tile) => tile.delta === null)).toBe(true)
+	})
+
+	it("drops every delta when the previous window ran no sessions at all", () => {
+		// Not even the point-valued ones: 0% to 12% against an empty window is
+		// the first reading there is, not a 12-point rise.
+		const tiles = buildOverviewTiles(current, EMPTY_OVERVIEW_MEASURES, {
+			compare: true,
+			windowLabel: "7d",
+		})
+		expect(tiles.every((tile) => tile.delta === null)).toBe(true)
+		const charts = buildOverviewCharts(current, EMPTY_OVERVIEW_MEASURES, {
+			compare: true,
+			modelMix: { models: [], points: [] },
+		})
+		expect(charts.every((chart) => chart.delta === null)).toBe(true)
+	})
+
+	it("reads the error rate in points once there is a window to compare against", () => {
+		const tiles = buildOverviewTiles(current, measures({ sessions: 80, erroredSessions: 2 }), {
+			compare: true,
+			windowLabel: "7d",
+		})
+		expect(tiles.find((tile) => tile.id === "errorRate")?.delta?.text).toBe("+9.5pp")
 	})
 
 	it("grades cost per session but leaves the cost total neutral", () => {
@@ -254,17 +265,40 @@ describe("buildOverviewSeries", () => {
 		expect(busy.toolErrorRate).toBe(0.1)
 		expect(busy.cacheHitRatio).toBe(0.7)
 		expect(busy.sessionP95Ms).toBe(4_000)
-		expect(busy.tokenBandShares.cacheRead).toBe(0.7)
 		expect(busy.tokenBands.cacheRead).toBe(70)
-		expect(Object.values(quiet.tokenBandShares).every((share) => share === 0)).toBe(true)
+		expect(Object.values(quiet.tokenBands).every((value) => value === 0)).toBe(true)
 		expect(quiet.costPerSession).toBe(0)
 	})
 })
 
 describe("shiftOverviewSeries", () => {
+	const START = Date.UTC(2026, 8, 4, 0, 0, 0)
+
 	it("moves the previous period onto the current period's axis", () => {
-		const points = buildOverviewSeries([{ bucket: 100, ...EMPTY_OVERVIEW_MEASURES }])
-		expect(shiftOverviewSeries(points, 900)[0].bucket).toBe(1_000)
+		const windowMs = 7 * 24 * HOUR
+		const points = buildOverviewSeries([{ bucket: START - windowMs, ...EMPTY_OVERVIEW_MEASURES }])
+		const shifted = shiftOverviewSeries(points, { startMs: START, windowMs, bucketMs: 6 * HOUR })
+		expect(shifted[0].bucket).toBe(START)
+	})
+
+	it("lands on the bucket grid for a window that is not a whole number of buckets", () => {
+		// The page's own default: "7d" is calendar-aligned, so it runs from a
+		// midnight to a now floored to the quarter hour — 6d 14h 15m of 6h
+		// buckets. Shifted by that raw length, every ghost point would sit 2h 15m
+		// off an axis matched by equality.
+		const bucketMs = 6 * HOUR
+		const windowMs = 6 * 24 * HOUR + 14 * HOUR + 15 * MINUTE
+		const previousStart = Math.floor((START - windowMs) / bucketMs) * bucketMs
+		const previous = buildOverviewSeries(
+			Array.from({ length: 27 }, (_, index) => ({
+				bucket: previousStart + index * bucketMs,
+				...EMPTY_OVERVIEW_MEASURES,
+			})),
+		)
+		const shifted = shiftOverviewSeries(previous, { startMs: START, windowMs, bucketMs })
+		expect(shifted.map((point) => point.bucket)).toEqual(
+			Array.from({ length: 27 }, (_, index) => START + index * bucketMs),
+		)
 	})
 })
 
@@ -343,7 +377,9 @@ describe("buildBreakdownRows", () => {
 	it("reports the session error rate for a usage dimension", () => {
 		const rows = buildBreakdownRows("model", entries)
 		expect(rows[0].errorRate).toBe(0.1)
-		expect(rows[0].errorRateDeltaPp).toBeCloseTo(5, 5)
+		expect(rows[0].errorRateDelta?.pp).toBeCloseTo(5, 5)
+		expect(rows[0].errorRateDelta?.text).toBe("+5.0pp")
+		expect(rows[0].errorRateDelta?.tone).toBe("bad")
 	})
 
 	it("reports the CALL error rate for the tool dimension", () => {
@@ -355,11 +391,11 @@ describe("buildBreakdownRows", () => {
 			},
 		])
 		expect(rows[0].errorRate).toBe(0.28)
-		expect(rows[0].errorRateDeltaPp).toBeCloseTo(24, 5)
+		expect(rows[0].errorRateDelta?.pp).toBeCloseTo(24, 5)
 	})
 
 	it("has no move to show for a key the previous window never saw", () => {
-		expect(buildBreakdownRows("model", entries)[1].errorRateDeltaPp).toBeNull()
+		expect(buildBreakdownRows("model", entries)[1].errorRateDelta).toBeNull()
 	})
 })
 
@@ -436,6 +472,24 @@ describe("overviewScopeSummary", () => {
 })
 
 describe("buildAgentOverviewData", () => {
+	const BUCKET_MS = 6 * HOUR
+	// A ragged window over an epoch-aligned grid — the page's own default shape.
+	const START = Date.UTC(2026, 8, 4, 0, 0, 0)
+	const WINDOW_MS = 6 * 24 * HOUR + 14 * HOUR + 15 * MINUTE
+	const BUCKETS = 27
+	const previousStart = Math.floor((START - WINDOW_MS) / BUCKET_MS) * BUCKET_MS
+	const points = (first: number, sessions: number): ReadonlyArray<OverviewMeasurePoint> =>
+		Array.from({ length: BUCKETS }, (_, index) => ({
+			bucket: first + index * BUCKET_MS,
+			...measures({ sessions }),
+		}))
+
+	const moved = {
+		key: "opus",
+		current: measures({ sessions: 100, llmCallSpans: 1_000, erroredLlmCalls: 161 }),
+		previous: measures({ sessions: 100, llmCallSpans: 1_000, erroredLlmCalls: 19 }),
+	}
+
 	const input = {
 		current: measures({
 			sessions: 100,
@@ -445,22 +499,29 @@ describe("buildAgentOverviewData", () => {
 			pricedLlmCalls: 94,
 		}),
 		previous: measures({ sessions: 80, cost: 40 }),
-		series: [{ bucket: 2_000, ...measures({ sessions: 10 }) }],
-		previousSeries: [{ bucket: 1_000, ...measures({ sessions: 8 }) }],
-		modelMix: [{ bucket: 2_000, model: "opus", llmCallSpans: 10 }],
-		breakdowns: [{ dimension: "model" as const, entries: [], totalKeys: 3 }],
-		bucketSeconds: 3_600,
-		windowMs: { startMs: 2_000, endMs: 3_000 },
-		windowLabel: "24h",
+		series: points(START, 10),
+		previousSeries: points(previousStart, 8),
+		modelMix: [{ bucket: START, model: "opus", llmCallSpans: 10 }],
+		breakdowns: [{ dimension: "model" as const, entries: [moved], totalKeys: 3 }],
+		bucketSeconds: BUCKET_MS / 1_000,
+		windowMs: { startMs: START, endMs: START + WINDOW_MS },
+		windowLabel: "7d",
 	}
 
-	it("shifts the previous series onto the current window's axis", () => {
+	it("puts every previous bucket under the current bucket it is compared with", () => {
 		const data = buildAgentOverviewData({ ...input, compare: true })
-		expect(data.previousSeries[0].bucket).toBe(2_000)
+		expect(data.previousSeries.map((point) => point.bucket)).toEqual(
+			data.series.map((point) => point.bucket),
+		)
 	})
 
 	it("drops the previous series entirely when the comparison is off", () => {
 		expect(buildAgentOverviewData({ ...input, compare: false }).previousSeries).toEqual([])
+	})
+
+	it("ranks movers against the previous window, and nothing without one", () => {
+		expect(buildAgentOverviewData({ ...input, compare: true }).movers).toHaveLength(1)
+		expect(buildAgentOverviewData({ ...input, compare: false }).movers).toEqual([])
 	})
 
 	it("builds nine charts and the priced coverage line", () => {

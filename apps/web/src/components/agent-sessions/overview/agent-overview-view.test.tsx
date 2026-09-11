@@ -4,12 +4,17 @@
 // — which control writes which search param, which row links where, and what
 // the sections say about the data they are given.
 
+import { useState } from "react"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { buildOverviewFixture } from "@/lab/agent-overview-fixture"
-import { buildAgentOverviewData } from "@/lib/agent-sessions/overview-analytics"
+import { buildOverviewFixture, type OverviewFixture } from "@/lab/agent-overview-fixture"
+import {
+	buildAgentOverviewData,
+	type AgentOverviewData,
+} from "@/lib/agent-sessions/overview-analytics"
 import { compareEnabled, type AgentOverviewSearch } from "@/lib/agent-sessions/overview-search"
+import type { OverviewTopSessionTab } from "@/lib/agent-sessions/use-agent-overview"
 
 import { AgentOverviewView } from "./agent-overview-view"
 
@@ -36,6 +41,35 @@ vi.mock("@tanstack/react-router", () => ({
 
 const NOW = Date.UTC(2026, 8, 10, 12, 0, 0)
 
+/** The page's own shape: the Top sessions tab is the route's state, not the table's. */
+function Board({
+	search,
+	onSearchChange,
+	data,
+	fixture,
+	windowLabel,
+}: {
+	search: AgentOverviewSearch
+	onSearchChange: (patch: Partial<AgentOverviewSearch>) => void
+	data: AgentOverviewData
+	fixture: OverviewFixture
+	windowLabel: string
+}) {
+	const [tab, setTab] = useState<OverviewTopSessionTab>("cost")
+	return (
+		<AgentOverviewView
+			search={search}
+			onSearchChange={onSearchChange}
+			data={data}
+			facets={fixture.facets}
+			topSessions={fixture.topSessions[tab]}
+			topSessionTab={tab}
+			onTopSessionTabChange={setTab}
+			windowLabel={windowLabel}
+		/>
+	)
+}
+
 function renderView(
 	search: AgentOverviewSearch = {},
 	scenario: "healthy7d" | "regression24h" = "regression24h",
@@ -44,12 +78,11 @@ function renderView(
 	const data = buildAgentOverviewData({ ...fixture.input, compare: compareEnabled(search) })
 	const onSearchChange = vi.fn()
 	render(
-		<AgentOverviewView
+		<Board
 			search={search}
 			onSearchChange={onSearchChange}
 			data={data}
-			facets={fixture.facets}
-			topSessions={fixture.topSessions}
+			fixture={fixture}
 			windowLabel={fixture.windowLabel}
 		/>,
 	)
@@ -72,11 +105,23 @@ describe("AgentOverviewView", () => {
 	})
 
 	it("draws the previous-period ghost only while the comparison is on", () => {
+		// The fixture's window is a ragged number of buckets long, as the page's
+		// own default is, so this only passes while the ghost is shifted onto the
+		// bucket grid rather than by the window's raw length.
 		renderView({})
 		expect(screen.getAllByText("prev").length).toBeGreaterThan(0)
 		cleanup()
 		renderView({ compare: false })
 		expect(screen.queryByText("prev")).toBeNull()
+	})
+
+	it("ranks nothing on the rail while the comparison is off, and says why", () => {
+		const { data } = renderView({ compare: false })
+		expect(data.movers).toEqual([])
+		const rail = screen.getByRole("heading", { name: "What changed" }).closest("aside")!
+		expect(within(rail).getByText("Turn on compare to rank what changed.")).toBeTruthy()
+		// The coverage block is a reading of this window alone, so it stays.
+		expect(within(rail).getByText("LLM calls with a cost")).toBeTruthy()
 	})
 
 	it("turns the comparison off through the URL rather than through local state", () => {
@@ -135,6 +180,13 @@ describe("AgentOverviewView", () => {
 		expect(onSearchChange).toHaveBeenCalledWith({ [mover!.dimension]: mover!.key })
 	})
 
+	it("prints every service a top session touched, as the Sessions list does", () => {
+		const { fixture } = renderView({})
+		const first = fixture.topSessions.cost[0]
+		const row = screen.getByText(first.sessionId).closest("div")!
+		expect(within(row).getByText(first.serviceNames.join(" · "))).toBeTruthy()
+	})
+
 	it("links each top session to its own detail page, with the session's bounds", () => {
 		const { fixture } = renderView({})
 		const first = fixture.topSessions.cost[0]
@@ -168,12 +220,11 @@ describe("AgentOverviewView", () => {
 			compare: true,
 		})
 		render(
-			<AgentOverviewView
+			<Board
 				search={{ model: "claude-opus-5" }}
 				onSearchChange={vi.fn()}
 				data={data}
-				facets={fixture.facets}
-				topSessions={fixture.topSessions}
+				fixture={fixture}
 				windowLabel="7d"
 			/>,
 		)

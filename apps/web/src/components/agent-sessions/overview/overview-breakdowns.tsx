@@ -5,9 +5,11 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { ChevronRightIcon } from "@/components/icons"
 import {
+	deltaToneClass,
 	formatOverviewCount,
 	type OverviewBreakdown,
 	type OverviewBreakdownRow,
+	type OverviewDelta,
 	type OverviewModelMix,
 } from "@/lib/agent-sessions/overview-analytics"
 import { overviewModelMixColor } from "@/lib/agent-sessions/overview-chart-specs"
@@ -36,8 +38,14 @@ interface Column {
 	readonly className: string
 }
 
-/** The columns a dimension can actually attribute — see `AiOverviewBreakdownRow`. */
-const USAGE_COLUMNS: ReadonlyArray<Column> = [
+/**
+ * The columns a dimension can actually attribute — see `AiOverviewBreakdownRow`.
+ *
+ * A lane's width and shedding rule are written once and read by both the header
+ * and the cell, so a column cannot go missing from one at a width where the
+ * other still draws it.
+ */
+const USAGE_COLUMNS = [
 	{ label: "Share of cost", className: "w-[170px] @max-[900px]/table:hidden" },
 	{ label: "Sessions", className: "w-[84px] text-right" },
 	{ label: "LLM calls", className: "w-[92px] text-right @max-[700px]/table:hidden" },
@@ -46,16 +54,16 @@ const USAGE_COLUMNS: ReadonlyArray<Column> = [
 	{ label: "$ / sess", className: "w-[88px] text-right @max-[640px]/table:hidden" },
 	{ label: "Error rate", className: "w-[116px] text-right" },
 	{ label: "Δ prev", className: "w-[86px] text-right @max-[560px]/table:hidden" },
-]
+] as const satisfies ReadonlyArray<Column>
 
-const TOOL_COLUMNS: ReadonlyArray<Column> = [
+const TOOL_COLUMNS = [
 	{ label: "Share of calls", className: "w-[170px] @max-[900px]/table:hidden" },
 	{ label: "Sessions", className: "w-[84px] text-right" },
 	{ label: "Calls", className: "w-[92px] text-right" },
 	{ label: "Errors", className: "w-[92px] text-right @max-[700px]/table:hidden" },
 	{ label: "Error rate", className: "w-[116px] text-right" },
 	{ label: "Δ prev", className: "w-[86px] text-right @max-[560px]/table:hidden" },
-]
+] as const satisfies ReadonlyArray<Column>
 
 /**
  * The same window, grouped six ways.
@@ -75,7 +83,7 @@ export function OverviewBreakdowns({
 	const [active, setActive] = useState<OverviewDimension>("model")
 	const breakdown = breakdowns.find((item) => item.dimension === active)
 	const isTool = active === "tool"
-	const columns = isTool ? TOOL_COLUMNS : USAGE_COLUMNS
+	const columns: ReadonlyArray<Column> = isTool ? TOOL_COLUMNS : USAGE_COLUMNS
 	const selected = selectedDimensionValue(search, active)
 	const rows = breakdown?.rows ?? []
 	const worstRate = rows.reduce((max, row) => Math.max(max, row.errorRate), 0)
@@ -217,22 +225,24 @@ function Glyph({
 function UsageCells({ row, worstRate }: { row: OverviewBreakdownRow; worstRate: number }) {
 	return (
 		<>
-			<ShareCell share={row.shareOfCost} className="w-[170px] @max-[900px]/table:hidden" />
-			<span className={cn(NUM, "w-[84px] text-right text-foreground")}>
+			<ShareCell share={row.shareOfCost} className={USAGE_COLUMNS[0].className} />
+			<span className={cn(NUM, USAGE_COLUMNS[1].className, "text-foreground")}>
 				{formatOverviewCount(row.sessions)}
 			</span>
-			<span className={cn(NUM, "w-[92px] text-right text-foreground @max-[700px]/table:hidden")}>
+			<span className={cn(NUM, USAGE_COLUMNS[2].className, "text-foreground")}>
 				{formatOverviewCount(row.llmCalls)}
 			</span>
-			<span className={cn(NUM, "w-[92px] text-right text-muted-foreground @max-[820px]/table:hidden")}>
+			<span className={cn(NUM, USAGE_COLUMNS[3].className, "text-muted-foreground")}>
 				{formatNumber(row.tokensPerSession)}
 			</span>
-			<span className={cn(NUM, "w-[92px] text-right text-foreground")}>{formatCost(row.cost)}</span>
-			<span className={cn(NUM, "w-[88px] text-right text-muted-foreground @max-[640px]/table:hidden")}>
+			<span className={cn(NUM, USAGE_COLUMNS[4].className, "text-foreground")}>
+				{formatCost(row.cost)}
+			</span>
+			<span className={cn(NUM, USAGE_COLUMNS[5].className, "text-muted-foreground")}>
 				{formatCost(row.costPerSession)}
 			</span>
-			<RateCell rate={row.errorRate} worst={worstRate} />
-			<DeltaCell pp={row.errorRateDeltaPp} />
+			<RateCell rate={row.errorRate} worst={worstRate} className={USAGE_COLUMNS[6].className} />
+			<DeltaCell delta={row.errorRateDelta} className={USAGE_COLUMNS[7].className} />
 		</>
 	)
 }
@@ -240,18 +250,18 @@ function UsageCells({ row, worstRate }: { row: OverviewBreakdownRow; worstRate: 
 function ToolCells({ row, worstRate }: { row: OverviewBreakdownRow; worstRate: number }) {
 	return (
 		<>
-			<ShareCell share={row.shareOfCalls} className="w-[170px] @max-[900px]/table:hidden" />
-			<span className={cn(NUM, "w-[84px] text-right text-foreground")}>
+			<ShareCell share={row.shareOfCalls} className={TOOL_COLUMNS[0].className} />
+			<span className={cn(NUM, TOOL_COLUMNS[1].className, "text-foreground")}>
 				{formatOverviewCount(row.sessions)}
 			</span>
-			<span className={cn(NUM, "w-[92px] text-right text-foreground")}>
+			<span className={cn(NUM, TOOL_COLUMNS[2].className, "text-foreground")}>
 				{formatOverviewCount(row.toolCalls)}
 			</span>
-			<span className={cn(NUM, "w-[92px] text-right text-muted-foreground @max-[700px]/table:hidden")}>
+			<span className={cn(NUM, TOOL_COLUMNS[3].className, "text-muted-foreground")}>
 				{formatOverviewCount(row.toolErrors)}
 			</span>
-			<RateCell rate={row.errorRate} worst={worstRate} />
-			<DeltaCell pp={row.errorRateDeltaPp} />
+			<RateCell rate={row.errorRate} worst={worstRate} className={TOOL_COLUMNS[4].className} />
+			<DeltaCell delta={row.errorRateDelta} className={TOOL_COLUMNS[5].className} />
 		</>
 	)
 }
@@ -279,10 +289,10 @@ function ShareCell({ share, className }: { share: number; className: string }) {
  * slivers, and ranking these rows against each other is the column's whole job.
  * The tone is absolute, so the colour still says how bad 3% is.
  */
-function RateCell({ rate, worst }: { rate: number; worst: number }) {
+function RateCell({ rate, worst, className }: { rate: number; worst: number; className: string }) {
 	const tone = rate >= 0.1 ? "--severity-error" : rate >= 0.01 ? "--severity-warn" : "--severity-info"
 	return (
-		<span className="flex w-[116px] shrink-0 items-center justify-end gap-2">
+		<span className={cn("flex shrink-0 items-center justify-end gap-2", className)}>
 			<span className="h-[5px] w-[54px] shrink-0 overflow-hidden rounded-[2px] bg-muted @max-[760px]/table:hidden">
 				<span
 					className="block h-full rounded-[2px]"
@@ -298,32 +308,11 @@ function RateCell({ rate, worst }: { rate: number; worst: number }) {
 }
 
 /** A key with no previous window has no move to show, which is not a zero. */
-function DeltaCell({ pp }: { pp: number | null }) {
-	if (pp === null) {
-		return (
-			<span
-				className={cn(NUM, "w-[86px] text-right text-muted-foreground/50 @max-[560px]/table:hidden")}
-			>
-				—
-			</span>
-		)
+function DeltaCell({ delta, className }: { delta: OverviewDelta | null; className: string }) {
+	if (delta === null) {
+		return <span className={cn(NUM, className, "text-muted-foreground/50")}>—</span>
 	}
-	const flat = Math.abs(pp) < 0.05
-	return (
-		<span
-			className={cn(
-				NUM,
-				"w-[86px] text-right @max-[560px]/table:hidden",
-				flat
-					? "text-muted-foreground/70"
-					: pp > 0
-						? "text-[var(--severity-error)]"
-						: "text-[var(--severity-info)]",
-			)}
-		>
-			{flat ? "0.0pp" : `${pp < 0 ? "-" : "+"}${Math.abs(pp).toFixed(1)}pp`}
-		</span>
-	)
+	return <span className={cn(NUM, className, deltaToneClass(delta.tone))}>{delta.text}</span>
 }
 
 /** What the listed rows add up to, as the closing line states it. */

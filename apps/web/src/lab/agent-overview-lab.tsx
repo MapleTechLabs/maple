@@ -3,6 +3,7 @@ import { useMemo, useState } from "react"
 import { AgentOverviewView } from "@/components/agent-sessions/overview/agent-overview-view"
 import { buildAgentOverviewData } from "@/lib/agent-sessions/overview-analytics"
 import { compareEnabled, type AgentOverviewSearch } from "@/lib/agent-sessions/overview-search"
+import type { OverviewTopSessionTab } from "@/lib/agent-sessions/use-agent-overview"
 
 import { OVERVIEW_SCENARIOS, buildOverviewFixture, type OverviewScenario } from "./agent-overview-fixture"
 
@@ -38,6 +39,8 @@ export function AgentOverviewLab() {
 	const [scenario, setScenario] = useState<OverviewScenario>("healthy7d")
 	const [search, setSearch] = useState<AgentOverviewSearch>({})
 	const [width, setWidth] = useState<number | null>(null)
+	// The page's own shape: the tab belongs to whoever issues the list read.
+	const [topSessionTab, setTopSessionTab] = useState<OverviewTopSessionTab>("cost")
 
 	const fixture = useMemo(() => buildOverviewFixture(scenario, nowMs), [scenario, nowMs])
 	const data = useMemo(
@@ -96,7 +99,9 @@ export function AgentOverviewLab() {
 					onSearchChange={onSearchChange}
 					data={data}
 					facets={fixture.facets}
-					topSessions={fixture.topSessions}
+					topSessions={fixture.topSessions[topSessionTab]}
+					topSessionTab={topSessionTab}
+					onTopSessionTabChange={setTopSessionTab}
 					windowLabel={fixture.windowLabel}
 				/>
 			</div>

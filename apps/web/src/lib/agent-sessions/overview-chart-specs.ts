@@ -1,12 +1,12 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
 import {
 	OVERVIEW_MODEL_MIX_OTHER,
 	OVERVIEW_TOKEN_BANDS,
 	OVERVIEW_TOKEN_FALLBACK_BAND,
 	formatOverviewCount,
-	formatOverviewDuration,
 	formatPerSession,
 	type OverviewChartId,
 	type OverviewModelMix,
@@ -208,7 +208,10 @@ function lineSpec(
 		row(point.bucket, { value: read(point), prev: previous.get(point.bucket) ?? null }),
 	)
 	const marks: OverviewPlotMark[] = [{ key: "value", label, color: PRIMARY, kind: "line" }]
-	if (input.previousSeries.length > 0) {
+	// Having previous points is not the same as having one on THIS axis: the
+	// ghost is matched bucket for bucket, so a legend entry for a mark that
+	// landed nowhere would promise a line the plot cannot draw.
+	if (rows.some((plotRow) => plotRow.prev !== null)) {
 		marks.push({ key: "prev", label: "prev", color: GHOST, kind: "ghost" })
 	}
 	return spec(rows, marks, fixedMax ?? axisTop(rows, marks), format)
@@ -269,7 +272,7 @@ function durationSpec(input: OverviewPlotInput): OverviewPlotSpec {
 		{ key: "p95", base: "p95_base", label: "p50 – p95", color: PRIMARY, kind: "spread" },
 		{ key: "p50", label: "p50", color: PRIMARY, kind: "line" },
 	]
-	return spec(rows, marks, axisTop(rows, marks), formatOverviewDuration)
+	return spec(rows, marks, axisTop(rows, marks), formatSessionDuration)
 }
 
 /** Every bucket normalised to 1, so the question is share and not volume. */
@@ -362,11 +365,12 @@ const CEILING_STEPS = [1, 1.2, 1.5, 1.8, 2, 2.5, 3, 4, 5, 6, 8, 10]
 /**
  * The axis top: the next round number above the largest plotted value.
  *
- * Above, not equal to — a flat series at exactly the top rides the ceiling and
- * reads as clipped rather than as steady, which is the one thing these nine
- * charts exist to show. A stack's layers carry their cumulative top, so the
- * same maximum covers both shapes; an all-zero window still gets a `1` so the
- * scale has a domain, which draws the flat floor it should.
+ * Above, and never equal to — a flat series at exactly the top rides the
+ * ceiling and reads as clipped rather than as steady, which is the one thing
+ * these nine charts exist to show, so a maximum landing on a rung takes the
+ * rung after it. A stack's layers carry their cumulative top, so the same
+ * maximum covers both shapes; an all-zero window still gets a `1` so the scale
+ * has a domain, which draws the flat floor it should.
  */
 function axisTop(rows: ReadonlyArray<OverviewPlotRow>, marks: ReadonlyArray<OverviewPlotMark>): number {
 	let max = 0
@@ -379,6 +383,6 @@ function axisTop(rows: ReadonlyArray<OverviewPlotRow>, marks: ReadonlyArray<Over
 	if (max <= 0) return 1
 	const magnitude = 10 ** Math.floor(Math.log10(max))
 	const scaled = max / magnitude
-	const step = CEILING_STEPS.find((candidate) => scaled <= candidate * 1.000_001) ?? 10
+	const step = CEILING_STEPS.find((candidate) => candidate > scaled * 1.000_001) ?? 10
 	return step * magnitude
 }

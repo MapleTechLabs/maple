@@ -213,7 +213,9 @@ export interface OverviewDelta {
 
 const FLAT_POINTS = 0.05
 const FLAT_PERCENT = 0.001
-const FLAT_MS = 1
+/** Half the clock's own resolution: a move the duration formatter renders as
+ *  `0s` is flat, not a signed zero. */
+const FLAT_MS = 500
 
 const signed = (value: number, text: string): string => (value < 0 ? `-${text}` : `+${text}`)
 
@@ -276,7 +278,7 @@ export function overviewDelta(
 			percent,
 			pp: null,
 			direction,
-			text: direction === "flat" ? "0s" : signed(absolute, formatOverviewDuration(Math.abs(absolute))),
+			text: direction === "flat" ? "0s" : signed(absolute, formatSessionDuration(Math.abs(absolute))),
 			tone,
 		}
 	}
@@ -290,11 +292,22 @@ export function overviewDelta(
 	}
 }
 
-/** The bucket width, as the Trends note states it: `15m`, `6h`, `1d`. */
-export function bucketWidthLabel(seconds: number): string {
-	if (seconds >= 86_400) return `${Math.round(seconds / 86_400)}d`
-	if (seconds >= 3_600) return `${Math.round(seconds / 3_600)}h`
-	return `${Math.round(seconds / 60)}m`
+/**
+ * The delta helper a strip or a grid reads its moves with.
+ *
+ * `null` for every reading while the comparison is off, and equally while the
+ * previous window ran NO sessions: a rate that went from 0% to 26% against an
+ * empty window did not rise 26 points, it is the first measurement there is.
+ * That holds for the point-valued readings too, which is the case a raw
+ * subtraction gets wrong — the ratios already answer `null` on their own.
+ */
+function deltaReader(
+	previous: OverviewMeasures,
+	compare: boolean,
+): (before: number, after: number, unit: DeltaUnit, riseIs: DeltaTone) => OverviewDelta | null {
+	const hasBaseline = compare && previous.sessions > 0
+	return (before, after, unit, riseIs) =>
+		hasBaseline ? overviewDelta(before, after, { unit, riseIs }) : null
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -314,21 +327,6 @@ export function formatOverviewCount(value: number): string {
 export function formatPerSession(value: number): string {
 	if (!Number.isFinite(value)) return "—"
 	return value >= 100 ? formatOverviewCount(value) : value.toFixed(1)
-}
-
-/**
- * A duration a session took, in the clock units the Sessions list reads them
- * in — `2m 30s`, `1h 4m` — so a session's row there and its cell here are the
- * same string. Zero means "nothing measured".
- *
- * The shared formatter starts at whole seconds, which is a reading on a list
- * row and a rounding on a delta: `+55s` and `+54.6s` are the same move only
- * until you compare two of them. The tenth therefore survives until the minutes
- * arrive to carry the magnitude instead.
- */
-export function formatOverviewDuration(ms: number): string {
-	if (!Number.isFinite(ms) || ms <= 0) return "—"
-	return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : formatSessionDuration(ms)
 }
 
 /** `''` is a real breakdown key, shown as unattributed rather than hidden. */
@@ -390,8 +388,7 @@ export function buildOverviewTiles(
 	previous: OverviewMeasures,
 	options: { compare: boolean; windowLabel: string },
 ): ReadonlyArray<OverviewTile> {
-	const delta = (before: number, after: number, unit: DeltaUnit, riseIs: DeltaTone): OverviewDelta | null =>
-		options.compare ? overviewDelta(before, after, { unit, riseIs }) : null
+	const delta = deltaReader(previous, options.compare)
 
 	return [
 		{
@@ -444,9 +441,9 @@ export function buildOverviewTiles(
 		{
 			id: "durationP95",
 			label: "Duration p95",
-			value: formatOverviewDuration(current.sessionDurationP95Ms),
+			value: formatSessionDuration(current.sessionDurationP95Ms),
 			delta: delta(previous.sessionDurationP95Ms, current.sessionDurationP95Ms, "duration", "bad"),
-			sub: `p50 ${formatOverviewDuration(current.sessionDurationP50Ms)}`,
+			sub: `p50 ${formatSessionDuration(current.sessionDurationP50Ms)}`,
 		},
 	]
 }
@@ -463,8 +460,6 @@ export interface OverviewSeriesPoint {
 	readonly tokensPerSession: number
 	/** Tokens per session, split by band — the stacked chart's values. */
 	readonly tokenBands: Record<OverviewTokenBandKey, number>
-	/** Each band's share of the bucket's tokens, 0–1. */
-	readonly tokenBandShares: Record<OverviewTokenBandKey, number>
 	readonly toolCallsPerSession: number
 	readonly sessionErrorRate: number
 	readonly llmErrorRate: number
@@ -480,12 +475,9 @@ export function buildOverviewSeries(
 ): ReadonlyArray<OverviewSeriesPoint> {
 	return points.map((point) => {
 		const bands = tokenBandValues(point)
-		const total = OVERVIEW_TOKEN_BAND_KEYS.reduce((sum, key) => sum + bands[key], 0)
 		const perSession = emptyBands()
-		const shares = emptyBands()
 		for (const key of OVERVIEW_TOKEN_BAND_KEYS) {
 			perSession[key] = ratio(bands[key], point.sessions)
-			shares[key] = ratio(bands[key], total)
 		}
 		return {
 			bucket: point.bucket,
@@ -493,7 +485,6 @@ export function buildOverviewSeries(
 			costPerSession: costPerSession(point),
 			tokensPerSession: tokensPerSession(point),
 			tokenBands: perSession,
-			tokenBandShares: shares,
 			toolCallsPerSession: toolCallsPerSession(point),
 			sessionErrorRate: sessionErrorRate(point),
 			llmErrorRate: llmErrorRate(point),
@@ -506,17 +497,29 @@ export function buildOverviewSeries(
 	})
 }
 
+/** The bucket a moment falls in — `toStartOfInterval`, as the warehouse cuts it. */
+const bucketStart = (ms: number, bucketMs: number): number => Math.floor(ms / bucketMs) * bucketMs
+
 /**
  * The previous period's points moved onto the current period's x-axis.
  *
- * The comparison window is the equal-length one immediately before, so adding
- * the window's length puts each of its buckets under the current bucket it is
- * being compared with — which is what lets the ghost line share one axis.
+ * The shift is a WHOLE number of buckets and never the window's own length: both
+ * windows are cut into epoch-aligned bucket starts, so only a multiple of the
+ * bucket width lands one grid on the other, and the ghost is matched to the
+ * subject bucket for bucket, by equality. The multiple is the one that puts the
+ * previous window's first bucket under the current window's first, which for a
+ * window measuring a whole number of buckets is simply its length — and the
+ * default 7d window does not: it runs from a midnight to a "now" floored to the
+ * quarter hour, so shifting by its own length left every ghost point minutes off
+ * the axis and nothing matched at all.
  */
 export function shiftOverviewSeries(
 	points: ReadonlyArray<OverviewSeriesPoint>,
-	offsetMs: number,
+	window: { startMs: number; windowMs: number; bucketMs: number },
 ): ReadonlyArray<OverviewSeriesPoint> {
+	const offsetMs =
+		bucketStart(window.startMs, window.bucketMs) -
+		bucketStart(window.startMs - window.windowMs, window.bucketMs)
 	return points.map((point) => ({ ...point, bucket: point.bucket + offsetMs }))
 }
 
@@ -610,9 +613,9 @@ export interface OverviewBreakdownRow {
 	/** Tool calls that failed for the `tool` dimension, sessions that failed for
 	 *  every other — the failure the dimension can actually attribute. */
 	readonly errorRate: number
-	/** The same rate's move in percentage points; `null` where the key did not
+	/** The same rate's move, in percentage points; `null` where the key did not
 	 *  appear in the previous window. */
-	readonly errorRateDeltaPp: number | null
+	readonly errorRateDelta: OverviewDelta | null
 }
 
 export interface OverviewBreakdown {
@@ -657,8 +660,11 @@ export function buildBreakdownRows(
 			toolCalls: entry.current.toolCalls,
 			toolErrors: entry.current.erroredToolCalls,
 			errorRate: rate,
-			errorRateDeltaPp: hadPrevious
-				? (rate - dimensionErrorRate(dimension, entry.previous)) * 100
+			errorRateDelta: hadPrevious
+				? overviewDelta(dimensionErrorRate(dimension, entry.previous), rate, {
+						unit: "points",
+						riseIs: "bad",
+					})
 				: null,
 		}
 	})
@@ -764,7 +770,7 @@ const MOVER_METRICS: ReadonlyArray<MoverMetric> = [
 		unit: "percent",
 		riseIs: "bad",
 		value: (m) => m.sessionDurationP95Ms,
-		format: formatOverviewDuration,
+		format: formatSessionDuration,
 	},
 ]
 
@@ -883,8 +889,7 @@ export function buildOverviewCharts(
 	previous: OverviewMeasures,
 	options: { compare: boolean; modelMix: OverviewModelMix },
 ): ReadonlyArray<OverviewChartSummary> {
-	const delta = (before: number, after: number, unit: DeltaUnit, riseIs: DeltaTone): OverviewDelta | null =>
-		options.compare ? overviewDelta(before, after, { unit, riseIs }) : null
+	const delta = deltaReader(previous, options.compare)
 
 	const leadModel = options.modelMix.models[0]
 	const spansOf = (model: string) =>
@@ -932,7 +937,7 @@ export function buildOverviewCharts(
 			id: "sessionDuration",
 			title: "Session duration",
 			unit: "p50 with p50–p95 band",
-			value: formatOverviewDuration(current.sessionDurationP95Ms),
+			value: formatSessionDuration(current.sessionDurationP95Ms),
 			delta: delta(previous.sessionDurationP95Ms, current.sessionDurationP95Ms, "duration", "bad"),
 		},
 		{
@@ -1018,10 +1023,16 @@ export function buildAgentOverviewData(input: AgentOverviewInput): AgentOverview
 		}),
 		series: buildOverviewSeries(input.series),
 		previousSeries: input.compare
-			? shiftOverviewSeries(buildOverviewSeries(input.previousSeries), windowMs)
+			? shiftOverviewSeries(buildOverviewSeries(input.previousSeries), {
+					startMs: input.windowMs.startMs,
+					windowMs,
+					bucketMs: input.bucketSeconds * 1_000,
+				})
 			: [],
 		modelMix,
-		movers: buildMovers(input.breakdowns),
+		// Every line on the rail is a move against the previous window; with the
+		// comparison off there is nothing to rank, and the rail says so.
+		movers: input.compare ? buildMovers(input.breakdowns) : [],
 		coverage: overviewCoverage(input.current),
 		breakdowns: input.breakdowns.map((breakdown) => ({
 			dimension: breakdown.dimension,

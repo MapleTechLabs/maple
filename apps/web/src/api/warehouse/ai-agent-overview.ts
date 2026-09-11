@@ -8,8 +8,9 @@
 // takes milliseconds.
 //
 // The page's filters are single-valued — one model, one agent, one tool — and
-// the contract takes arrays. The widening happens in `selectionFields`, so a
-// dimension that later becomes multi-valued changes one function.
+// the contract takes arrays, so `selectionFields` widens them for all three of
+// these reads. The Top sessions table reads the sessions list instead, and
+// widens its own in `overviewSessionsInput`.
 
 import { Effect, Schema } from "effect"
 import {
@@ -230,7 +231,7 @@ export const getAiOverviewModelMix = Effect.fn("AiAgentOverview.modelMix")(funct
 			})
 		}),
 	)
-	return { bucketSeconds: result.bucketSeconds, rows: mapOverviewModelMix(result.rows) }
+	return { rows: mapOverviewModelMix(result.rows) }
 })
 
 export type AiOverviewSummaryData = Effect.Success<ReturnType<typeof getAiOverviewSummary>>

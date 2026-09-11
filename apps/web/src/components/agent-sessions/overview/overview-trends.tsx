@@ -8,6 +8,7 @@ import { useLinkedCursor } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	OVERVIEW_CHARTS,
+	type OverviewChartId,
 	type OverviewChartSummary,
 	type OverviewModelMix,
 	type OverviewSeriesPoint,
@@ -58,12 +59,11 @@ export function OverviewTrends({
 	const { effectiveTimezone } = useTimezonePreference()
 	const { containerProps } = useLinkedCursor(true)
 
+	// The axis is the CURRENT window's buckets and nothing else: the previous
+	// period is drawn shifted onto this same grid, and a union with its own
+	// buckets would stretch the domain past the window the page is reading.
 	const axis = useMemo(() => {
-		const buckets = new Set<number>()
-		for (const point of series) buckets.add(point.bucket)
-		for (const point of previousSeries) buckets.add(point.bucket)
-		for (const point of modelMix.points) buckets.add(point.bucket)
-		const sorted = [...buckets].sort((a, b) => a - b)
+		const sorted = series.map((point) => point.bucket).toSorted((a, b) => a - b)
 		const base = makeBucketAxis(
 			sorted.map((ms) => new Date(ms).toISOString()),
 			effectiveTimezone,
@@ -82,16 +82,18 @@ export function OverviewTrends({
 				},
 			},
 		}
-	}, [series, previousSeries, modelMix, effectiveTimezone])
+	}, [series, effectiveTimezone])
 
 	const specs = useMemo(() => {
 		const input = { series, previousSeries, modelMix }
-		return new Map(OVERVIEW_CHARTS.map((id) => [id, buildOverviewPlotSpec(id, input)]))
+		return Object.fromEntries(
+			OVERVIEW_CHARTS.map((id) => [id, buildOverviewPlotSpec(id, input)]),
+		) as Record<OverviewChartId, OverviewPlotSpec>
 	}, [series, previousSeries, modelMix])
 
 	// One gutter for all nine, so the plots line up column to column however wide
 	// this window's labels turn out to be.
-	const gutter = useMemo(() => overviewAxisGutter(specs.values()), [specs])
+	const gutter = useMemo(() => overviewAxisGutter(Object.values(specs)), [specs])
 
 	return (
 		<section className="border-b border-border">
@@ -119,7 +121,7 @@ export function OverviewTrends({
 						<ChartCell
 							key={chart.id}
 							chart={chart}
-							spec={specs.get(chart.id)}
+							spec={specs[chart.id]}
 							axis={axis}
 							gutter={gutter}
 						/>
@@ -182,7 +184,7 @@ function ChartCell({
 	gutter,
 }: {
 	chart: OverviewChartSummary
-	spec: OverviewPlotSpec | undefined
+	spec: OverviewPlotSpec
 	axis: ReturnType<typeof makeBucketAxis>
 	gutter: number
 }) {
@@ -205,29 +207,25 @@ function ChartCell({
 				</span>
 			</figcaption>
 
-			{spec === undefined ? null : (
-				<>
-					<div className="flex items-center gap-x-2 gap-y-1 overflow-hidden pt-[9px]">
-						{spec.legend.map((item) => (
-							<LegendItem key={item.label} item={item} />
-						))}
-						{spec.legendMore === 0 ? null : (
-							<span className="shrink-0 font-mono text-[10.5px] leading-3 text-muted-foreground/70">
-								+{spec.legendMore}
-							</span>
-						)}
-					</div>
-					<div className="pt-2">
-						<OverviewSmallMultiple
-							chartId={chart.id}
-							title={chart.title}
-							spec={spec}
-							axis={axis}
-							gutter={gutter}
-						/>
-					</div>
-				</>
-			)}
+			<div className="flex items-center gap-x-2 gap-y-1 overflow-hidden pt-[9px]">
+				{spec.legend.map((item) => (
+					<LegendItem key={item.label} item={item} />
+				))}
+				{spec.legendMore === 0 ? null : (
+					<span className="shrink-0 font-mono text-[10.5px] leading-3 text-muted-foreground/70">
+						+{spec.legendMore}
+					</span>
+				)}
+			</div>
+			<div className="pt-2">
+				<OverviewSmallMultiple
+					chartId={chart.id}
+					title={chart.title}
+					spec={spec}
+					axis={axis}
+					gutter={gutter}
+				/>
+			</div>
 		</figure>
 	)
 }

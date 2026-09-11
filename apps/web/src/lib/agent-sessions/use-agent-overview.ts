@@ -5,9 +5,11 @@
 // fixtures, and it keeps the wire shape confined to the mappers in
 // `api/warehouse/ai-agent-overview.ts`.
 //
-// Eleven reads, because the board is eleven questions: the summary, one
-// breakdown per dimension (the tabs are component state and the movers rail
-// reads all six anyway), the model mix, and three pages of six sessions.
+// Nine reads, because the board is nine questions: the summary, one breakdown
+// per dimension (those tabs are component state and the movers rail reads all
+// six anyway), the model mix, and ONE page of six sessions — the Top sessions
+// tab the reader is actually on. The other two are read when they are opened,
+// and the atom family holds them from then on.
 
 import { useMemo } from "react"
 
@@ -21,7 +23,6 @@ import type {
 	AiOverviewSummaryData,
 } from "@/api/warehouse/ai-agent-overview"
 import type { ListAiSessionsInput, listAiSessions } from "@/api/warehouse/ai-sessions"
-import { smallMultipleBucketSeconds } from "@/components/infra/chart-utils"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { Result } from "@/lib/effect-atom"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -32,6 +33,7 @@ import {
 	listAiSessionsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
+import { smallMultipleBucketSeconds } from "./overview-buckets"
 import { overviewApiDimension, type AgentOverviewSearch, type OverviewDimension } from "./overview-search"
 
 export interface AgentOverviewWindow {
@@ -46,6 +48,13 @@ export const OVERVIEW_TOP_SESSIONS_LIMIT = 6
 export const OVERVIEW_TOP_SESSION_TABS = ["cost", "duration", "errored"] as const
 export type OverviewTopSessionTab = (typeof OVERVIEW_TOP_SESSION_TABS)[number]
 
+/** How each tab asks the list for its six rows. */
+const TOP_SESSION_READS = {
+	cost: { sortBy: "cost" },
+	duration: { sortBy: "durationMs" },
+	errored: { sortBy: "errorSpanCount", hasErrors: true },
+} satisfies Record<OverviewTopSessionTab, { sortBy: AiSessionSortKey; hasErrors?: boolean }>
+
 /** The list read's own page shape — the rows the Top sessions table renders. */
 export type AgentOverviewSessionsPage = Effect.Success<ReturnType<typeof listAiSessions>>
 type SessionsResult = Result.Result<AgentOverviewSessionsPage, QueryAtomFailure>
@@ -58,8 +67,9 @@ export interface AgentOverviewResults {
 		readonly result: Result.Result<AiOverviewBreakdownData, QueryAtomFailure>
 	}>
 	readonly modelMix: Result.Result<AiOverviewModelMixData, QueryAtomFailure>
-	readonly topSessions: Record<OverviewTopSessionTab, SessionsResult>
-	readonly bucketSeconds: number
+	/** The active tab's page. The tab is the caller's state, so switching it is
+	 *  what issues the other reads. */
+	readonly topSessions: SessionsResult
 }
 
 /**
@@ -120,6 +130,7 @@ export function overviewSessionsInput(
 export function useAgentOverview(
 	search: AgentOverviewSearch,
 	window: AgentOverviewWindow,
+	topSessionTab: OverviewTopSessionTab,
 ): AgentOverviewResults {
 	const selection = useMemo(() => overviewSelection(search, window), [search, window])
 	// The grid is nine ~104px-tall plots rather than one wide chart, so the
@@ -153,35 +164,29 @@ export function useAgentOverview(
 		aiOverviewBreakdownResultAtom({ data: { ...selection, dimension: "tool" } }),
 	)
 
-	const byCost = useRefreshableAtomValue(
-		listAiSessionsResultAtom({ data: overviewSessionsInput(search, window, { sortBy: "cost" }) }),
-	)
-	const byDuration = useRefreshableAtomValue(
+	const topSessions = useRefreshableAtomValue(
 		listAiSessionsResultAtom({
-			data: overviewSessionsInput(search, window, { sortBy: "durationMs" }),
-		}),
-	)
-	const errored = useRefreshableAtomValue(
-		listAiSessionsResultAtom({
-			data: overviewSessionsInput(search, window, {
-				sortBy: "errorSpanCount",
-				hasErrors: true,
-			}),
+			data: overviewSessionsInput(search, window, TOP_SESSION_READS[topSessionTab]),
 		}),
 	)
 
-	return {
-		summary,
-		modelMix,
-		breakdowns: [
-			{ dimension: "model", result: model },
-			{ dimension: "agent", result: agent },
-			{ dimension: "service", result: service },
-			{ dimension: "framework", result: framework },
-			{ dimension: "environment", result: environment },
-			{ dimension: "tool", result: tool },
-		],
-		topSessions: { cost: byCost, duration: byDuration, errored },
-		bucketSeconds,
-	}
+	// Held across renders: the page builds its whole view model from these, and
+	// a fresh array of the same six results every render would rebuild it —
+	// along with every chart memo keyed on the series it produces.
+	return useMemo<AgentOverviewResults>(
+		() => ({
+			summary,
+			modelMix,
+			breakdowns: [
+				{ dimension: "model", result: model },
+				{ dimension: "agent", result: agent },
+				{ dimension: "service", result: service },
+				{ dimension: "framework", result: framework },
+				{ dimension: "environment", result: environment },
+				{ dimension: "tool", result: tool },
+			],
+			topSessions,
+		}),
+		[summary, modelMix, model, agent, service, framework, environment, tool, topSessions],
+	)
 }

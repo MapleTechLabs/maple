@@ -6,12 +6,13 @@ import { SquareSparkleIcon } from "@/components/icons"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
+import type { DetectedModel } from "@/hooks/use-detected-models"
 import {
-	bucketWidthLabel,
 	overviewScopeSummary,
 	type AgentOverviewData,
 	type OverviewMover,
 } from "@/lib/agent-sessions/overview-analytics"
+import { bucketWidthLabel } from "@/lib/agent-sessions/overview-buckets"
 import {
 	activeOverviewFilters,
 	clearOverviewFilters,
@@ -38,7 +39,14 @@ export interface AgentOverviewViewProps {
 	onSearchChange: (patch: Partial<AgentOverviewSearch>) => void
 	data: AgentOverviewData
 	facets: OverviewFacets
-	topSessions: Record<OverviewTopSessionTab, ReadonlyArray<AgentSessionRow>>
+	/** The active top-sessions tab's rows, and the tab itself — it lives with
+	 *  whoever issues that read rather than inside the table. */
+	topSessions: ReadonlyArray<AgentSessionRow>
+	topSessionTab: OverviewTopSessionTab
+	onTopSessionTabChange: (tab: OverviewTopSessionTab) => void
+	/** Resolves a model to its vendor and display name; a warehouse read, so the
+	 *  page's owner does it and this tree stays presentational. */
+	detectModel?: (model: string) => DetectedModel
 	/** Names the window and its comparison in the tiles, e.g. `7d`. */
 	windowLabel: string
 	/** The window, carried by the tab strip's link to the Sessions list. */
@@ -72,6 +80,9 @@ export function AgentOverviewView({
 	data,
 	facets,
 	topSessions,
+	topSessionTab,
+	onTopSessionTabChange,
+	detectModel,
 	windowLabel,
 	timeRange,
 	headerControls,
@@ -151,6 +162,7 @@ export function AgentOverviewView({
 							<OverviewMoversRail
 								movers={data.movers}
 								coverage={data.coverage}
+								compare={data.compare}
 								windowLabel={windowLabel}
 								onSelect={(mover: OverviewMover) =>
 									selectDimension(mover.dimension, mover.key)
@@ -169,8 +181,11 @@ export function AgentOverviewView({
 
 					<OverviewTopSessions
 						sessions={topSessions}
+						active={topSessionTab}
+						onActiveChange={onTopSessionTabChange}
 						erroredCount={data.current.erroredSessions}
 						sessionsSearch={sessionsLinkSearch(search)}
+						detectModel={detectModel}
 						waiting={waiting}
 					/>
 				</>
