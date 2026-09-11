@@ -259,8 +259,12 @@ export const agentSessionSpanAttributes = (
  * The session list reads a trace's session off any one of its spans, so the model-call span is enough
  * to file the tool and engine spans around it too.
  *
- * Built with `AiModel.make` exactly as the providers' own `model()` constructors are — `"openai"` is
- * the provider identity both of them declare — so the only difference is the wrapped service.
+ * Built with `AiModel.make` exactly as the providers' own `model()` constructors are, so the only
+ * difference is the wrapped service.
+ *
+ * The provider string passed to `AiModel.make` does not matter, on either path. It only fills
+ * `AiModel.ProviderName`, which nothing in Maple reads; effect-agent only copies it into usage
+ * summaries Maple never looks at. Span `gen_ai.provider.name` comes from `telemetry.providerName`.
  */
 const instrumentedModel = <R>(
 	name: string,
@@ -268,7 +272,7 @@ const instrumentedModel = <R>(
 	telemetry: ModelCallTelemetry,
 ): Layer.Layer<ModelServices, never, R> =>
 	AiModel.make(
-		"openai",
+		"openrouter",
 		name,
 		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry)),
 	)
