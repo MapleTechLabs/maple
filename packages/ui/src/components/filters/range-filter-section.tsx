@@ -341,6 +341,15 @@ function RangeHistogram({
 	const peak = Math.max(...buckets.map((b) => b.count), 1)
 	const total = buckets.reduce((sum, b) => sum + b.count, 0)
 
+	// A count is whole and the filter's bounds are inclusive, so a count bucket's
+	// last member is `to - 1` — the bound a selection writes and the readout names.
+	const lastOf = (bucket: RangeBucket): number => (unit === "count" ? bucket.to - 1 : bucket.to)
+	const describe = (bucket: RangeBucket): string => {
+		if (bucket.unbounded) return `≥ ${formatValue(bucket.from, unit)}`
+		if (lastOf(bucket) === bucket.from) return formatValue(bucket.from, unit)
+		return `${formatValue(bucket.from, unit)} – ${formatValue(lastOf(bucket), unit)}`
+	}
+
 	const indexAt = (clientX: number): number => {
 		const rect = barsRef.current?.getBoundingClientRect()
 		if (!rect || rect.width === 0) return 0
@@ -373,7 +382,7 @@ function RangeHistogram({
 			return
 		}
 		const top = buckets[hi] ?? last
-		onSelect(bottom.from, top.unbounded ? undefined : top.to)
+		onSelect(bottom.from, top.unbounded ? undefined : lastOf(top))
 	}
 
 	// While dragging, preview the pending selection instead of the applied one.
@@ -388,7 +397,7 @@ function RangeHistogram({
 		}
 		if (minValue === undefined && maxValue === undefined) return false
 		return (
-			(maxValue === undefined || bucket.from < maxValue) &&
+			(maxValue === undefined || bucket.from < (unit === "count" ? maxValue + 1 : maxValue)) &&
 			(minValue === undefined || bucket.to > minValue)
 		)
 	}
@@ -403,11 +412,7 @@ function RangeHistogram({
 			<div className="mb-1 flex h-4 items-center justify-between text-[10px] tabular-nums text-muted-foreground">
 				{hovered ? (
 					<>
-						<span>
-							{hovered.unbounded
-								? `≥ ${formatValue(hovered.from, unit)}`
-								: `${formatValue(hovered.from, unit)} – ${formatValue(hovered.to, unit)}`}
-						</span>
+						<span>{describe(hovered)}</span>
 						<span className="text-foreground">{hovered.count.toLocaleString()}</span>
 					</>
 				) : (
@@ -419,7 +424,7 @@ function RangeHistogram({
 			<div
 				ref={barsRef}
 				role="img"
-				aria-label={`${title} distribution across ${buckets.length} buckets, from ${formatValue(first.from, unit)} to ${last.unbounded ? `over ${formatValue(last.from, unit)}` : formatValue(last.to, unit)}`}
+				aria-label={`${title} distribution across ${buckets.length} buckets, from ${formatValue(first.from, unit)} to ${last.unbounded ? `over ${formatValue(last.from, unit)}` : formatValue(lastOf(last), unit)}`}
 				className="flex h-8 cursor-crosshair touch-none items-end gap-px"
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
@@ -456,7 +461,7 @@ function RangeHistogram({
 				<span>{formatValue(first.from, unit)}</span>
 				<span>{formatValue((buckets[Math.floor(buckets.length / 2)] ?? first).from, unit)}</span>
 				<span>
-					{last.unbounded ? `${formatValue(last.from, unit)}+` : formatValue(last.to, unit)}
+					{last.unbounded ? `${formatValue(last.from, unit)}+` : formatValue(lastOf(last), unit)}
 				</span>
 			</div>
 		</div>

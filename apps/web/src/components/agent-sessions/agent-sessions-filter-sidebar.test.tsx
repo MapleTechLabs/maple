@@ -30,6 +30,58 @@ const facets = Result.success({
 	tools: [{ name: "search_traces", count: 4 }],
 })
 
+const distributions = Result.success({
+	durationMs: {
+		buckets: [
+			{ floor: 1000, count: 3 },
+			{ floor: 22627.41699796952, count: 2 },
+		],
+		p50: 30_000,
+		p95: 30_000,
+	},
+	cost: {
+		buckets: [
+			{ floor: 2 ** -5.5, count: 1 },
+			{ floor: 1, count: 1 },
+		],
+		p50: 0.03,
+		p95: 1.234,
+	},
+	totalTokens: {
+		buckets: [
+			{ floor: 8, count: 1 },
+			{ floor: 128, count: 1 },
+		],
+		p50: 15,
+		p95: 150,
+	},
+	llmCalls: {
+		buckets: [
+			{ floor: 1, count: 2 },
+			{ floor: 4, count: 1 },
+		],
+		p50: 1,
+		p95: 4,
+	},
+	toolCalls: {
+		buckets: [
+			{ floor: 1, count: 1 },
+			{ floor: 8, count: 1 },
+		],
+		p50: 1,
+		p95: 8,
+	},
+})
+
+const Sidebar = (props: {
+	distributionsResult?: Parameters<typeof AgentSessionsFilterSidebar>[0]["distributionsResult"]
+}) => (
+	<AgentSessionsFilterSidebar
+		facetsResult={facets}
+		distributionsResult={props.distributionsResult ?? distributions}
+	/>
+)
+
 /** What the recorded navigate call would write, given the search it started from. */
 const nextSearch = (): Record<string, unknown> => {
 	const call = navigate.mock.calls.at(-1)?.[0] as {
@@ -46,7 +98,7 @@ describe("AgentSessionsFilterSidebar", () => {
 	afterEach(cleanup)
 
 	it("renders a section per counted dimension, hiding the ones with nothing to offer", () => {
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		for (const title of ["Framework", "Service", "Environment", "Model", "Tool"]) {
 			expect(screen.getByText(title)).toBeTruthy()
@@ -81,7 +133,7 @@ describe("AgentSessionsFilterSidebar", () => {
 
 	it("accumulates a second framework rather than replacing the first", () => {
 		search = { vendors: ["eve"] }
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		fireEvent.click(screen.getByText("Vercel AI SDK"))
 		expect(nextSearch().vendors).toEqual(["eve", "vercel_ai_sdk"])
@@ -89,26 +141,60 @@ describe("AgentSessionsFilterSidebar", () => {
 
 	it("keeps a selected value that the window no longer offers", () => {
 		search = { tools: ["send_email"] }
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		expect(screen.getByText("send_email")).toBeTruthy()
 	})
 
-	it("writes a preset as the range it names, and clears it on a second click", () => {
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+	it("writes a percentile preset as the range it names, and clears it on a second click", () => {
+		render(<Sidebar />)
 
-		fireEvent.click(screen.getByText("Cost"))
-		fireEvent.click(screen.getByText("Over $1"))
-		expect(nextSearch()).toMatchObject({ costMin: 1, costMax: undefined })
+		// p95 of $1.234, rounded to two significant figures.
+		fireEvent.click(screen.getByRole("button", { name: /^> p95\s?\$1\.20$/ }))
+		expect(nextSearch()).toMatchObject({ costMin: 1.2, costMax: undefined })
 
-		search = { costMin: 1 }
+		search = { costMin: 1.2 }
 		cleanup()
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
-		fireEvent.click(screen.getByText("Over $1"))
+		render(<Sidebar />)
+		fireEvent.click(screen.getByRole("button", { name: /^> p95\s?\$1\.20$/ }))
 		expect(nextSearch()).toMatchObject({
 			costMin: undefined,
 			costMax: undefined,
 		})
+	})
+
+	it("draws a histogram per range once the distributions land, and only the intents before", () => {
+		render(<Sidebar distributionsResult={Result.initial()} />)
+		expect(screen.queryByRole("img")).toBeNull()
+		expect(screen.getByRole("button", { name: /^No tools\s?0$/ })).toBeTruthy()
+		expect(screen.queryByRole("button", { name: /p50/ })).toBeNull()
+
+		cleanup()
+		render(<Sidebar />)
+		// Durations arrive in ms and are drawn in the URL's seconds.
+		expect(screen.getByRole("img", { name: /^Session length distribution .* from 1s to / })).toBeTruthy()
+		expect(screen.getByRole("button", { name: /^> p50\s?30s$/ })).toBeTruthy()
+		for (const title of ["Cost", "Tokens", "LLM calls", "Tool calls"]) {
+			expect(screen.getByRole("img", { name: new RegExp(`^${title} distribution`) })).toBeTruthy()
+		}
+	})
+
+	it("selects whole counts off a count histogram, its top bucket's last member inclusive", () => {
+		// jsdom lays nothing out and has no pointer capture; give the bars a width.
+		const rect = vi
+			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+			.mockReturnValue({ left: 0, width: 100 } as DOMRect)
+		HTMLElement.prototype.setPointerCapture = vi.fn()
+		render(<Sidebar />)
+
+		// Buckets [1,2) [2,4) [4,8) [8,16): a drag from the first bar to the third.
+		const bars = screen.getByRole("img", {
+			name: /^Tool calls distribution across 4 buckets, from 1 to 15$/,
+		})
+		fireEvent.pointerDown(bars, { clientX: 10, pointerId: 1 })
+		fireEvent.pointerUp(bars, { clientX: 60, pointerId: 1 })
+		expect(nextSearch()).toMatchObject({ toolCallsMin: 1, toolCallsMax: 7 })
+		rect.mockRestore()
 	})
 
 	it("clears every filter but leaves the window and the sort alone", () => {
@@ -121,7 +207,7 @@ describe("AgentSessionsFilterSidebar", () => {
 			sortBy: "cost",
 			sortDir: "desc",
 		}
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		fireEvent.click(screen.getByRole("button", { name: /clear all/i }))
 		const next = nextSearch()
@@ -137,7 +223,7 @@ describe("AgentSessionsFilterSidebar", () => {
 	})
 
 	it("toggles the single-trace filter on and writes nothing when it is off", () => {
-		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+		render(<Sidebar />)
 
 		fireEvent.click(screen.getByLabelText("Hide single-trace sessions"))
 		expect(nextSearch().grouped).toBe(true)

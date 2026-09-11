@@ -12,6 +12,7 @@ import {
 	GetAiSessionSpansResponse,
 	GetAiSessionSummaryResponse,
 	ListAiSessionDetailsResponse,
+	ListAiSessionsDistributionsResponse,
 	ListAiSessionsFacetsResponse,
 	ListAiSessionsResponse,
 	MapleInternalApi,
@@ -281,6 +282,42 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							models: pick("model"),
 							agents: pick("agent"),
 							tools: pick("tool"),
+						})
+					}),
+				)
+				.handle("distributions", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						// Nets every session in the window — the cost of a cost-sorted
+						// page — which is why it is its own request rather than a branch
+						// of the facets, whose index scan the Tools pages also wait on.
+						const rows = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(Integrations.aiSessionDistributionsQuery(), {
+								orgId: tenant.orgId,
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+							}),
+							{ profile: "list", context: "aiSessionsDistributions" },
+						)
+						const distribution = (measure: Integrations.AiSessionDistributionMeasure) => {
+							const row = rows.find((candidate) => candidate.measure === measure)
+							if (row === undefined) return { buckets: [], p50: 0, p95: 0 }
+							return {
+								buckets: Object.entries(row.buckets)
+									.map(([floor, count]) => ({ floor: Number(floor), count }))
+									.sort((a, b) => a.floor - b.floor),
+								p50: row.p50,
+								p95: row.p95,
+							}
+						}
+						return new ListAiSessionsDistributionsResponse({
+							durationMs: distribution("durationMs"),
+							cost: distribution("cost"),
+							totalTokens: distribution("totalTokens"),
+							llmCalls: distribution("llmCalls"),
+							toolCalls: distribution("toolCalls"),
 						})
 					}),
 				)

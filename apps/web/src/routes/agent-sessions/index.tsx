@@ -21,7 +21,10 @@ import { ReloadControls } from "@/components/time-range-picker/reload-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
-import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	aiSessionsDistributionsResultAtom,
+	aiSessionsFacetsResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteAiSessions } from "@/hooks/use-infinite-ai-sessions"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
@@ -136,6 +139,11 @@ function AgentSessionsBody() {
 	// the Reload subscription — the facets refetch when the window rolls, which
 	// is enough.
 	const facetsResult = useAtomValue(aiSessionsFacetsResultAtom({ data: { startTime, endTime } }))
+	// The ranges' histograms, over the same unfiltered window — a request of its
+	// own, because it nets every session's usage and the facets need not wait.
+	const distributionsResult = useAtomValue(
+		aiSessionsDistributionsResultAtom({ data: { startTime, endTime } }),
+	)
 	const sessions = allData
 	const sortOption = sortOptionFor(search.sortBy, search.sortDir)
 
@@ -179,7 +187,10 @@ function AgentSessionsBody() {
 	return (
 		<>
 			<DashboardLayout.Filters>
-				<AgentSessionsFilterSidebar facetsResult={facetsResult} />
+				<AgentSessionsFilterSidebar
+					facetsResult={facetsResult}
+					distributionsResult={distributionsResult}
+				/>
 			</DashboardLayout.Filters>
 			<DashboardLayout.Content>
 				<DashboardLayout.Sticky>
