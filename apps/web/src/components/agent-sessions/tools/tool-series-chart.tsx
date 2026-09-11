@@ -19,10 +19,10 @@ import { ChartEmpty } from "@maple/ui/components/charts"
 import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 import { cn } from "@maple/ui/lib/utils"
 
+import { QueryErrorState } from "@/components/common/query-error-state"
 import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/infra/chart-utils"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
-	aggregateByBucket,
 	formatToolMetric,
 	metricValue,
 	toolChartTitle,
@@ -69,7 +69,10 @@ interface ToolChartRow extends Record<string, string | number | Date | null> {
 }
 
 interface ToolSeriesChartProps {
+	/** One point per bucket — the selection merged inside the query. */
 	series: ReadonlyArray<ToolSeriesPoint>
+	/** The series read failed. */
+	failure?: unknown
 	metric: ToolMetric
 	percentile: ToolPercentile
 	tool: string | undefined
@@ -82,14 +85,14 @@ interface ToolSeriesChartProps {
 /**
  * The selected metric over the window, as one trend for the whole scope.
  *
- * The series arrive split by tool (the table's per-row sparks need them that
- * way) and are folded here per bucket: counts add, percentiles are
- * call-weighted — the same compromise `aggregateByBucket` documents. Duration
- * draws P50, P90 and P95 together, since "is the tail moving while the median
- * holds?" is the question the metric is picked for.
+ * The series arrives already merged by the warehouse (`split: "none"`), never
+ * folded here: a bucket's sessions do not add across tools and its percentiles
+ * do not average. Duration draws P50, P90 and P95 together, since "is the tail
+ * moving while the median holds?" is the question the metric is picked for.
  */
 export function ToolSeriesChart({
 	series,
+	failure,
 	metric,
 	percentile,
 	tool,
@@ -112,17 +115,19 @@ export function ToolSeriesChart({
 
 	const rows = useMemo<ReadonlyArray<ToolChartRow>>(
 		() =>
-			aggregateByBucket(series).map((bucket) => {
-				const iso = formatWarehouseDateTime(bucket.bucket)
-				return {
-					bucket: iso,
-					date: bucketDate(iso),
-					[metric]: metricValue(bucket, metric, percentile),
-					p50: bucket.p50,
-					p90: bucket.p90,
-					p95: bucket.p95,
-				}
-			}),
+			series
+				.toSorted((a, b) => a.bucket - b.bucket)
+				.map((point) => {
+					const iso = formatWarehouseDateTime(point.bucket)
+					return {
+						bucket: iso,
+						date: bucketDate(iso),
+						[metric]: metricValue(point, metric, percentile),
+						p50: point.p50,
+						p90: point.p90,
+						p95: point.p95,
+					}
+				}),
 		[series, metric, percentile],
 	)
 
@@ -209,7 +214,7 @@ export function ToolSeriesChart({
 	const scopeParts = [tool, model === undefined ? undefined : modelLabel(model)].filter(
 		(part): part is string => part !== undefined,
 	)
-	const bucketMs = rows.length > 1 ? rows[1]!.date.getTime() - rows[0]!.date.getTime() : null
+	const bucketMs = axis.stepMs ?? null
 
 	return (
 		<section
@@ -251,7 +256,9 @@ export function ToolSeriesChart({
 				</div>
 			) : null}
 
-			{rows.length === 0 ? (
+			{failure !== undefined ? (
+				<QueryErrorState error={failure} titleOverride={`Failed to load ${title}`} />
+			) : rows.length === 0 ? (
 				<ChartEmpty height={PLOT_HEIGHT}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 			) : (
 				<div className="w-full" style={{ height: PLOT_HEIGHT }}>

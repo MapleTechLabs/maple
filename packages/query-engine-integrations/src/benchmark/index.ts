@@ -78,6 +78,9 @@ const AI_TOOLS_SELECTION = {
 /** The tool detail page's selection: one tool, named by a param rather than by
  *  the opts, so one compiled statement serves every tool. */
 const AI_TOOLS_ERROR_SELECTION = {
+	// The handler sends the tool in the opts as well as the param: the opts
+	// narrow the trace prefilter, the param the span read.
+	tool: "search_traces",
 	model: "claude-sonnet-5",
 	// The service lands twice — on the trace prefilter and on the span read —
 	// which is exactly what the baseline is here to pin.

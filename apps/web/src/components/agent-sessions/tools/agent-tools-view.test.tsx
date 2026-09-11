@@ -149,6 +149,24 @@ describe("AgentToolsView", () => {
 		const { data } = renderView({})
 		expect(screen.getByText(`Showing all ${data.tools.length} tools`)).toBeTruthy()
 	})
+
+	it("renders a failed Tools read as a failure, not as an empty table", () => {
+		const data = buildToolAnalyticsFixture({}, NOW, cells)
+		render(
+			<AgentToolsView
+				search={{}}
+				onSearchChange={vi.fn()}
+				data={{ ...data, tools: [], toolsFailure: new Error("boom") }}
+				window={WINDOW}
+				serviceOptions={[]}
+				modelOptions={[]}
+				envOptions={[]}
+				windowLabel="7d"
+			/>,
+		)
+		expect(screen.queryByText(/No tool calls/)).toBeNull()
+		expect(screen.getByText(/Failed to load tools/)).toBeTruthy()
+	})
 })
 
 describe("the Tools table under a scope", () => {
@@ -304,6 +322,29 @@ describe("ToolErrorModal", () => {
 		const second = renderModal(detail.sessions[0]!.sessionId).onSelectSession
 		fireEvent.click(screen.getByText("All sessions"))
 		expect(second).toHaveBeenCalledWith(undefined)
+	})
+
+	it("totals a session's occurrences by that session's hits, not the error's", () => {
+		const selected = detail.sessions[0]!
+		renderModal(selected.sessionId)
+		expect(screen.getByText(`Showing ${detail.occurrences.length} of ${selected.hits}`)).toBeTruthy()
+		expect(screen.queryByText(`Showing ${detail.occurrences.length} of ${row.calls}`)).toBeNull()
+	})
+
+	it("says the occurrences are loading rather than that there are none", () => {
+		render(
+			<ToolErrorModal
+				tool="run_tests"
+				error={row}
+				data={{ sessions: [], occurrences: [] }}
+				toolFailures={row.calls}
+				session={undefined}
+				onSelectSession={vi.fn()}
+				onClose={vi.fn()}
+				loading
+			/>,
+		)
+		expect(screen.queryByText(/No occurrences/)).toBeNull()
 	})
 
 	it("opens with exactly the first occurrence expanded", () => {

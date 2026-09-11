@@ -108,13 +108,14 @@ function AgentToolsPageContent() {
 }
 
 /**
- * The three reads, resolved.
+ * The page's reads, resolved.
  *
- * The **totals** read is the one the page waits on: it is the smallest of the
- * three and it is what the strip — the page's selector — is made of. Everything
- * else degrades to empty rather than to a skeleton, so a slow breakdown query
- * leaves an empty table under a chart that is already drawn, not a page of grey
- * boxes.
+ * The **totals** read is the one the page waits on: it is the smallest and it
+ * is what the strip — the page's selector — is made of. The rest fill in under
+ * it rather than holding the page on a skeleton, but a failed read says so in
+ * its own panel, and the Tools table says when it has not answered: "no tool
+ * calls" is a finding. The split series only feeds the table's sparks, which go
+ * quiet without it.
  */
 function AgentToolsBody({
 	search,
@@ -160,11 +161,20 @@ function AgentToolsBody({
 	const breakdowns = Result.builder(results.breakdowns)
 		.onSuccess((value) => value)
 		.orElse(() => ({ tools: [] }))
+	const breakdownsFailure = Result.builder(results.breakdowns)
+		.onError((failure) => failure as unknown)
+		.orElse(() => undefined)
 	// `seriesKind` is the server's, derived from the same selection the query
 	// keyed on — the chart labels models as models without re-deriving it.
 	const series = Result.builder(results.series)
 		.onSuccess((value) => value)
 		.orElse(() => ({ data: [], seriesKind: "tool" }) as const)
+	const scopeSeries = Result.builder(results.scopeSeries)
+		.onSuccess((value) => value.data)
+		.orElse(() => [])
+	const scopeSeriesFailure = Result.builder(results.scopeSeries)
+		.onError((failure) => failure as unknown)
+		.orElse(() => undefined)
 
 	return Result.builder(results.totals)
 		.onInitial(() => (
@@ -186,6 +196,8 @@ function AgentToolsBody({
 				data={{
 					series: series.data,
 					seriesKind: series.seriesKind,
+					scopeSeries,
+					seriesFailure: scopeSeriesFailure,
 					totals: totals.current,
 					previousTotals: totals.previous,
 					allSessions: totals.allSessions,
@@ -196,6 +208,8 @@ function AgentToolsBody({
 					// than as a wrong ratio.
 					scopeCalls: breakdowns.tools.reduce((sum, row) => sum + row.calls, 0),
 					tools: breakdowns.tools,
+					toolsLoading: Result.isInitial(results.breakdowns),
+					toolsFailure: breakdownsFailure,
 				}}
 				serviceOptions={facets?.services ?? []}
 				modelOptions={facets?.models ?? []}

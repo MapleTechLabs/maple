@@ -298,7 +298,7 @@ function ErrorModal({
 		}),
 	)
 
-	const modal = (data: ToolErrorDetailData, waiting: boolean, failure?: unknown) => (
+	const modal = (data: ToolErrorDetailData, waiting: boolean, failure?: unknown, loading?: boolean) => (
 		<ToolErrorModal
 			tool={tool}
 			error={row}
@@ -309,6 +309,7 @@ function ErrorModal({
 			onSelectSession={onSelectSession}
 			onClose={onClose}
 			waiting={waiting}
+			loading={loading}
 		/>
 	)
 
@@ -319,7 +320,7 @@ function ErrorModal({
 	return Result.builder(detail)
 		.onError((failure) => modal(EMPTY_DETAIL, false, failure))
 		.onSuccess((value, result) => modal(value, result.waiting))
-		.orElse(() => modal(EMPTY_DETAIL, true))
+		.orElse(() => modal(EMPTY_DETAIL, true, undefined, true))
 }
 
 const EMPTY_DETAIL: ToolErrorDetailData = { sessions: [], occurrences: [] }

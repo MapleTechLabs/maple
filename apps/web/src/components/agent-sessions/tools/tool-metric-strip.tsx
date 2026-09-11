@@ -47,7 +47,7 @@ interface ToolMetricStripProps {
  * moves. The same mark the picked table rows use — it is the same gesture.
  */
 const TILE =
-	"relative flex min-w-0 flex-1 flex-col gap-[7px] border-l border-border py-4 pl-[22px] pr-5 text-left transition-colors first:border-l-0 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors focus-visible:outline-none"
+	"relative flex min-w-0 flex-1 flex-col gap-[7px] border-l border-border py-4 pl-[22px] pr-5 text-left transition-colors first:border-l-0 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 const TILE_SELECTED = "bg-primary/10 before:bg-primary"
 const TILE_IDLE = "before:bg-transparent hover:bg-muted/25"
 
@@ -193,7 +193,7 @@ function DurationTile({
 				aria-pressed={selected}
 				aria-label={toolMetricLabel("duration", percentile)}
 				onClick={() => onSelectMetric("duration")}
-				className="absolute inset-0 focus-visible:outline-none"
+				className="absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 			/>
 			<span className="pointer-events-none relative flex h-5 items-center justify-between gap-2">
 				<span className={cn(EYEBROW, selected ? "text-primary" : "text-muted-foreground/80")}>
@@ -212,7 +212,7 @@ function DurationTile({
 								aria-pressed={driving}
 								onClick={() => onSelectPercentile(candidate)}
 								className={cn(
-									"rounded-[3px] px-1.5 font-mono text-[10px] uppercase leading-4 tracking-[0.04em] transition-colors focus-visible:outline-none",
+									"rounded-[3px] px-1.5 font-mono text-[10px] uppercase leading-4 tracking-[0.04em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 									driving
 										? "bg-muted text-foreground"
 										: "text-muted-foreground/70 hover:text-foreground",

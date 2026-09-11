@@ -1,6 +1,6 @@
 // Every warehouse read `/agent-sessions/tools` makes, behind one hook.
 //
-// The page itself never touches an atom: it takes the three `Result`s this
+// The page itself never touches an atom: it takes the `Result`s this
 // returns and renders them. That is what lets the lab mount the same page shell
 // over fixtures, and it keeps the wire shape confined to the mappers in
 // `api/warehouse/ai-session-tools.ts`.
@@ -24,7 +24,15 @@ import type { ToolBreakdownRow, ToolSeriesPoint, ToolTotals } from "./tool-analy
 import type { ToolAnalyticsSearch } from "./tool-search"
 
 export interface ToolAnalyticsResults {
+	/** Split by tool (or model) — the Tools table's per-row sparks. */
 	readonly series: Result.Result<
+		{ data: ReadonlyArray<ToolSeriesPoint>; seriesKind: AiToolsSeriesKind },
+		QueryAtomFailure
+	>
+	/** The same selection merged inside the query (`split: "none"`) — what the
+	 *  chart and the tiles draw. Merging `series` here instead would add sessions
+	 *  across tools and average their percentiles. */
+	readonly scopeSeries: Result.Result<
 		{ data: ReadonlyArray<ToolSeriesPoint>; seriesKind: AiToolsSeriesKind },
 		QueryAtomFailure
 	>
@@ -89,7 +97,10 @@ export function useToolAnalytics(
 	const series = useRefreshableAtomValue(
 		aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds } }),
 	)
+	const scopeSeries = useRefreshableAtomValue(
+		aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds, split: "none" as const } }),
+	)
 	const totals = useRefreshableAtomValue(aiToolTotalsResultAtom({ data: selection }))
 	const breakdowns = useRefreshableAtomValue(aiToolBreakdownsResultAtom({ data: selection }))
-	return { series, totals, breakdowns }
+	return { series, scopeSeries, totals, breakdowns }
 }

@@ -27,7 +27,13 @@ import { ToolScopeRow, type ToolScopeChip } from "./tool-scope-row"
 import { ToolSeriesChart } from "./tool-series-chart"
 
 export interface AgentToolsViewData {
+	/** Split by `seriesKind` — the Tools table's per-row sparks and swatches. */
 	readonly series: ReadonlyArray<ToolSeriesPoint>
+	/** The whole selection merged inside the query, one point per bucket — what
+	 *  the chart and the tiles' sparks draw. */
+	readonly scopeSeries: ReadonlyArray<ToolSeriesPoint>
+	/** The scope series read failed — the chart says so instead of drawing nothing. */
+	readonly seriesFailure?: unknown
 	/** What `seriesKey` names, as the series read reported it — the server derives
 	 *  it from the selection, so the chart labels models as models. */
 	readonly seriesKind: AiToolsSeriesKind
@@ -39,6 +45,9 @@ export interface AgentToolsViewData {
 	/** Calls in the window before the tool/model scope, for the "of M" in the count sentence. */
 	readonly scopeCalls: number
 	readonly tools: ReadonlyArray<ToolBreakdownRow>
+	/** The Tools read's state, so an empty table is only ever a finding. */
+	readonly toolsLoading?: boolean
+	readonly toolsFailure?: unknown
 }
 
 export interface AgentToolsViewProps {
@@ -180,7 +189,7 @@ export function AgentToolsView({
 			<ToolMetricStrip
 				totals={data.totals}
 				previous={data.previousTotals}
-				series={data.series}
+				series={data.scopeSeries}
 				metric={metric}
 				percentile={percentile}
 				allSessions={data.allSessions}
@@ -194,7 +203,8 @@ export function AgentToolsView({
 			/>
 
 			<ToolSeriesChart
-				series={data.series}
+				series={data.scopeSeries}
+				failure={data.seriesFailure}
 				metric={metric}
 				percentile={percentile}
 				tool={search.tool}
@@ -211,6 +221,8 @@ export function AgentToolsView({
 				selected={search.tool}
 				sparkFor={(tool) => sparkByTool.get(tool) ?? []}
 				colorFor={(tool) => colorByTool.get(tool)}
+				loading={data.toolsLoading}
+				failure={data.toolsFailure}
 				waiting={waiting}
 			/>
 		</div>

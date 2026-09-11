@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
 	EMPTY_MEASURES,
-	aggregateByBucket,
 	OTHER_SERIES_KEY,
 	TOOL_SERIES_COLOR_TOKENS,
 	errorRate,
@@ -260,37 +259,22 @@ describe("scopeSummary", () => {
 	})
 })
 
-describe("aggregateByBucket", () => {
-	const points = [
-		point(2, "a", { calls: 10, sessions: 2, errors: 1, p90: 1e9 }),
-		point(1, "a", { calls: 30, sessions: 3, errors: 0, p90: 2e9 }),
-		point(1, "b", { calls: 10, sessions: 1, errors: 5, p90: 6e9 }),
-	]
-
-	it("returns one row per bucket, in bucket order", () => {
-		expect(aggregateByBucket(points).map((row) => row.bucket)).toEqual([1, 2])
-	})
-
-	it("adds the counts across series", () => {
-		const [first] = aggregateByBucket(points)
-		expect(first!.calls).toBe(40)
-		expect(first!.errors).toBe(5)
-	})
-
-	it("weights percentiles by calls", () => {
-		const [first] = aggregateByBucket(points)
-		// (2e9 * 30 + 6e9 * 10) / 40
-		expect(first!.p90).toBeCloseTo(3e9)
-	})
-})
-
 describe("metricSpark", () => {
-	it("reads the selected metric off each bucket", () => {
+	it("reads the selected metric off each bucket, in bucket order", () => {
 		const points = [
-			point(1, "a", { calls: 20, errors: 2 }),
 			point(2, "a", { calls: 10, errors: 5 }),
+			point(1, "a", { calls: 20, errors: 2 }),
 		]
 		expect(metricSpark(points, "calls", "p90")).toEqual([20, 10])
 		expect(metricSpark(points, "error_rate", "p90")).toEqual([0.1, 0.5])
+	})
+})
+
+describe("toolDelta on an unchanged duration", () => {
+	it("prints a flat zero rather than the no-reading dash", () => {
+		expect(toolDelta(measures({ p90: 5e6 }), measures({ p90: 5e6 }), "duration", "p90")).toMatchObject({
+			text: "0ms",
+			direction: "flat",
+		})
 	})
 })

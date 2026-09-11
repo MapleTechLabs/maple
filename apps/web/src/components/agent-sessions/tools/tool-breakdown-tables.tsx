@@ -2,8 +2,10 @@ import { useMemo, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
+import { QueryErrorState } from "@/components/common/query-error-state"
 import { useTableSort, type SortDir } from "@/components/infra/primitives/data-table"
 import { relativeRatio } from "@/components/infra/primitives/share-bar"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
@@ -269,6 +271,10 @@ interface ToolsTableProps {
 	sparkFor: (tool: string) => ReadonlyArray<number>
 	/** The colour the chart draws this tool in, or none when it is not a line there. */
 	colorFor: (tool: string) => string | undefined
+	/** The read has not answered yet — distinct from a window with no tool calls. */
+	loading?: boolean
+	/** The read failed — the same distinction, from the other side. */
+	failure?: unknown
 	waiting?: boolean
 }
 
@@ -289,6 +295,8 @@ export function ToolsTable({
 	selected,
 	sparkFor,
 	colorFor,
+	loading,
+	failure,
 	waiting,
 }: ToolsTableProps) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -419,7 +427,15 @@ export function ToolsTable({
 				</TableHead>
 
 				<TableBody waiting={waiting}>
-					{sorted.length === 0 ? (
+					{failure !== undefined ? (
+						<QueryErrorState error={failure} titleOverride="Failed to load tools" />
+					) : loading ? (
+						<div className="flex flex-col gap-1.5 px-2.5 py-3">
+							<Skeleton className="h-[38px]" />
+							<Skeleton className="h-[38px]" />
+							<Skeleton className="h-[38px]" />
+						</div>
+					) : sorted.length === 0 ? (
 						<TableEmpty>No tool calls in the selected window.</TableEmpty>
 					) : (
 						sorted.map((row) => {

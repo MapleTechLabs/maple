@@ -36,7 +36,7 @@ const errorParams = { ...params, toolName: "search_traces" }
 
 /** The two-step model attribution, as it compiles — the parent model call's
  *  model, else the trace's. A tool row never carries one itself. */
-const MODEL_EXPR = "if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel)"
+const MODEL_EXPR = "if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel)"
 
 /** The sessions list's key, resolved per trace — the same expression
  *  `aiSessionPageQuery` groups on, so a row here links to a row there. */
@@ -68,8 +68,11 @@ describe("tool call population", () => {
 		// span's parent. Left, because a tool span under a workflow node has no
 		// model-bearing parent and must still be counted.
 		expect(sql).toContain(
-			"LEFT JOIN (SELECT\n          TraceId AS TraceId,\n          SpanId AS SpanId,\n          Model AS Model",
+			"LEFT JOIN (SELECT\n          TraceId AS TraceId,\n          SpanId AS SpanId,\n          anyIf(Model, Model != '') AS parentModel",
 		)
+		// One parent row per span, whatever models it was indexed under — a second
+		// row would double the tool call the join matches.
+		expect(sql).toContain("GROUP BY TraceId, SpanId) AS parent")
 		expect(sql).toContain(
 			"ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)",
 		)

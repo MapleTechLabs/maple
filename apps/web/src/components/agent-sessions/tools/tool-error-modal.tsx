@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { Dialog, DialogPopup } from "@maple/ui/components/ui/dialog"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { formatBytes } from "@maple/ui/lib/format"
@@ -49,6 +50,7 @@ export function ToolErrorModal({
 	onSelectSession,
 	onClose,
 	waiting,
+	loading,
 }: {
 	tool: string
 	/** The row the modal was opened from — its totals are the header's. */
@@ -64,9 +66,17 @@ export function ToolErrorModal({
 	onSelectSession: (session: string | undefined) => void
 	onClose: () => void
 	waiting?: boolean
+	/** The occurrences read has not answered — the modal opens before it does. */
+	loading?: boolean
 }) {
 	const { effectiveTimezone } = useTimezonePreference()
 	const share = toolFailures > 0 ? Math.round((error.calls / toolFailures) * 100) : 0
+	// Narrowed to a session, the occurrences are that session's, so their total is
+	// its hits rather than the error's.
+	const occurrencesTotal =
+		session === undefined
+			? error.calls
+			: (data.sessions.find((row) => row.sessionId === session)?.hits ?? data.occurrences.length)
 
 	return (
 		<Dialog
@@ -165,7 +175,14 @@ export function ToolErrorModal({
 							selected={session}
 							onSelect={onSelectSession}
 						/>
-						<OccurrencesPane rows={data.occurrences} total={error.calls} />
+						{/* Keyed by session: a different session is a different list, and
+						    its first occurrence opens as the first one did. */}
+						<OccurrencesPane
+							key={session ?? ""}
+							rows={data.occurrences}
+							total={occurrencesTotal}
+							loading={loading}
+						/>
 					</div>
 					)}
 				</div>
@@ -297,9 +314,11 @@ function SessionsPane({
 function OccurrencesPane({
 	rows,
 	total,
+	loading,
 }: {
 	rows: ReadonlyArray<ToolErrorOccurrenceRow>
 	total: number
+	loading?: boolean
 }) {
 	// `null` until the reader touches a row: the pane is mounted before its rows
 	// arrive (the modal opens on the row behind it and fills in), so a set seeded
@@ -325,7 +344,13 @@ function OccurrencesPane({
 			</div>
 
 			<div className="min-h-0 grow overflow-y-auto overscroll-contain border-t border-border">
-				{rows.length === 0 ? (
+				{loading && rows.length === 0 ? (
+					<div className="flex flex-col gap-1.5 px-6 py-3">
+						<Skeleton className="h-10" />
+						<Skeleton className="h-10" />
+						<Skeleton className="h-10" />
+					</div>
+				) : rows.length === 0 ? (
 					<div className="px-6 py-12 text-center font-mono text-xs text-muted-foreground">
 						No occurrences in the selected window.
 					</div>
@@ -374,7 +399,7 @@ function Occurrence({
 					type="button"
 					aria-expanded={open}
 					onClick={onToggle}
-					className="flex min-w-0 grow items-center gap-3.5 text-left focus-visible:outline-none"
+					className="flex min-w-0 grow items-center gap-3.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 				>
 					<Chevron size={12} className="shrink-0 text-muted-foreground" aria-hidden />
 					<span className="shrink-0 text-[12.5px] text-foreground">

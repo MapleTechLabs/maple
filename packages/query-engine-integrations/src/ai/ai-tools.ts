@@ -132,7 +132,13 @@ export const AI_TOOLS_BREAKDOWN_LIMIT = AI_TOOLS_BREAKDOWN_MAX
  */
 const parentModels = (window: AiToolsWindow) =>
 	from(AiTraceIndex)
-		.select(($) => ({ TraceId: $.TraceId, SpanId: $.SpanId, Model: $.Model }))
+		.select(($) => ({
+			TraceId: $.TraceId,
+			SpanId: $.SpanId,
+			// Not aliased `Model`: an aggregate named after its own input column
+			// would be what the WHERE below resolves `Model` to.
+			parentModel: CH.anyIf($.Model, $.Model.neq("")),
+		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(startParam(window)),
@@ -142,10 +148,11 @@ const parentModels = (window: AiToolsWindow) =>
 			// where the trace fallback would have answered.
 			$.Model.neq(""),
 		])
-		// A DISTINCT, not an aggregation: the right side of a LEFT JOIN multiplies
-		// its matches, so one duplicated index row (a replayed insert into an MV
-		// that does not de-duplicate) would double the tool call it joins to.
-		.groupBy("TraceId", "SpanId", "Model")
+		// One row per span, not per (span, model): the right side of a LEFT JOIN
+		// multiplies its matches, so a duplicated index row (a replayed insert into
+		// an MV that does not de-duplicate) or one span indexed under two model
+		// values would double the tool call it joins to.
+		.groupBy("TraceId", "SpanId")
 
 /**
  * One row per trace: the session it is filed under, and the model it ran on.
@@ -209,7 +216,7 @@ const toolCalls = (opts: AiToolsFilterOpts, window: AiToolsWindow = "current") =
 			traceId: $.TraceId,
 			sessionKey: sessionKey($.trace.rawSessionId, $.TraceId),
 			toolName: $.ToolName,
-			modelName: resolvedModel($.parent.Model, $.trace.traceModel),
+			modelName: resolvedModel($.parent.parentModel, $.trace.traceModel),
 			svc: $.ServiceName,
 			agent: $.AgentName,
 			isError: $.IsError,
@@ -226,7 +233,7 @@ const toolCalls = (opts: AiToolsFilterOpts, window: AiToolsWindow = "current") =
 			CH.when(opts.tool, (tool) => $.ToolName.eq(tool)),
 			CH.when(opts.service, (service) => $.ServiceName.eq(service)),
 			CH.when(opts.env, (env) => $.DeploymentEnv.eq(env)),
-			CH.when(opts.model, (model) => resolvedModel($.parent.Model, $.trace.traceModel).eq(model)),
+			CH.when(opts.model, (model) => resolvedModel($.parent.parentModel, $.trace.traceModel).eq(model)),
 			CH.when(opts.search, (search) => $.ToolName.ilike(`%${likeLiteral(search)}%`)),
 			CH.whenTrue(opts.failingOnly, () => $.IsError.eq(1)),
 		])

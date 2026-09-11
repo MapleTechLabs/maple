@@ -330,60 +330,21 @@ export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject
  * -----------------------------------------------------------------------------------------------*/
 
 /**
- * The whole scope per bucket, whatever it is split into — every series added
- * back together.
+ * A sparkline: the selected metric over the window, in bucket order.
  *
- * Counts add; percentiles are call-weighted for the same reason `foldSeries`
- * weights them, and with the same caveat. A tile's sparkline is a shape, not a
- * readout: it says "this rose through Tuesday", and the number above it is the
- * measured one.
+ * Takes ONE series — one point per bucket: the scope read with `split: "none"`,
+ * or one tool's own points. Series are never merged here, because a bucket's
+ * sessions do not add across tools and its percentiles do not average; the
+ * merge is the warehouse's.
  */
-export function aggregateByBucket(
-	points: ReadonlyArray<ToolSeriesPoint>,
-): ReadonlyArray<{ bucket: number } & ToolMeasures> {
-	const byBucket = new Map<number, { measures: ToolMeasures; weighted: { p50: number; p90: number; p95: number } }>()
-	for (const point of points) {
-		const entry = byBucket.get(point.bucket) ?? {
-			measures: { ...EMPTY_MEASURES },
-			weighted: { p50: 0, p90: 0, p95: 0 },
-		}
-		byBucket.set(point.bucket, {
-			measures: {
-				calls: entry.measures.calls + point.calls,
-				sessions: entry.measures.sessions + point.sessions,
-				errors: entry.measures.errors + point.errors,
-				p50: 0,
-				p90: 0,
-				p95: 0,
-			},
-			weighted: {
-				p50: entry.weighted.p50 + point.p50 * point.calls,
-				p90: entry.weighted.p90 + point.p90 * point.calls,
-				p95: entry.weighted.p95 + point.p95 * point.calls,
-			},
-		})
-	}
-	return [...byBucket.entries()]
-		.sort((a, b) => a[0] - b[0])
-		.map(([bucket, entry]) => {
-			const weight = entry.measures.calls
-			return {
-				bucket,
-				...entry.measures,
-				p50: weight > 0 ? entry.weighted.p50 / weight : 0,
-				p90: weight > 0 ? entry.weighted.p90 / weight : 0,
-				p95: weight > 0 ? entry.weighted.p95 / weight : 0,
-			}
-		})
-}
-
-/** A tile's sparkline: the selected metric over the window, in bucket order. */
 export function metricSpark(
 	points: ReadonlyArray<ToolSeriesPoint>,
 	metric: ToolMetric,
 	percentile: ToolPercentile,
 ): ReadonlyArray<number> {
-	return aggregateByBucket(points).map((bucket) => metricValue(bucket, metric, percentile))
+	return points
+		.toSorted((a, b) => a.bucket - b.bucket)
+		.map((point) => metricValue(point, metric, percentile))
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -429,7 +390,8 @@ export function toolDelta(
 	if (metric === "duration") {
 		const change = after - before
 		return {
-			text: formatDurationNs(Math.abs(change)),
+			// `formatDurationNs` prints zero as "—", which reads as "no reading".
+			text: change === 0 ? "0ms" : formatDurationNs(Math.abs(change)),
 			// A tenth of a millisecond is not a latency change anyone is reading.
 			direction: direction(change, 100_000),
 			good,

@@ -962,7 +962,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -971,13 +971,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -991,8 +991,9 @@ SELECT
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
           AND ai_trace_index.ServiceName = 'agent'
-          AND if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
         GROUP BY traceId)
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
@@ -1042,7 +1043,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1051,13 +1052,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1071,8 +1072,9 @@ SELECT
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
           AND ai_trace_index.ServiceName = 'agent'
-          AND if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
         GROUP BY traceId)
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
@@ -1123,7 +1125,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1132,13 +1134,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1152,8 +1154,9 @@ SELECT
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsToolCall = 1
+          AND ai_trace_index.ToolName = 'search_traces'
           AND ai_trace_index.ServiceName = 'agent'
-          AND if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.IsError = 1) AS failing_tool_calls
         GROUP BY traceId)
           AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = 'search_traces'
@@ -1180,7 +1183,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1189,13 +1192,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1209,7 +1212,7 @@ SELECT
           AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsToolCall = 1
-          AND if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.ToolName ILIKE '%search\\_%'
           AND ai_trace_index.IsError = 1) AS tool_breakdown
         GROUP BY key
@@ -1230,7 +1233,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1239,13 +1242,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1273,7 +1276,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1282,13 +1285,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1319,7 +1322,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1328,13 +1331,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1364,7 +1367,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1373,13 +1376,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1414,7 +1417,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1423,13 +1426,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1461,7 +1464,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1470,13 +1473,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1505,7 +1508,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1514,13 +1517,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1555,7 +1558,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1564,13 +1567,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1585,7 +1588,7 @@ SELECT
           AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
           AND ai_trace_index.IsToolCall = 1
           AND ai_trace_index.ToolName = 'search_traces'
-          AND if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.ToolName ILIKE '%search\\_%'
           AND ai_trace_index.IsError = 1) AS tool_calls_current
 UNION ALL
@@ -1604,7 +1607,7 @@ SELECT
           ai_trace_index.TraceId AS traceId,
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionKey,
           ai_trace_index.ToolName AS toolName,
-          if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) AS modelName,
+          if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) AS modelName,
           ai_trace_index.ServiceName AS svc,
           ai_trace_index.AgentName AS agent,
           ai_trace_index.IsError AS isError,
@@ -1613,13 +1616,13 @@ SELECT
         LEFT JOIN (SELECT
           TraceId AS TraceId,
           SpanId AS SpanId,
-          Model AS Model
+          anyIf(Model, Model != '') AS parentModel
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2025-12-30 06:45:00'
           AND Timestamp <= '2026-01-01 10:30:00'
           AND Model != ''
-        GROUP BY TraceId, SpanId, Model) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
+        GROUP BY TraceId, SpanId) AS parent ON (ai_trace_index.TraceId = parent.TraceId AND ai_trace_index.ParentSpanId = parent.SpanId)
         INNER JOIN (SELECT
           TraceId AS TraceId,
           max(SessionId) AS rawSessionId,
@@ -1634,7 +1637,7 @@ SELECT
           AND ai_trace_index.Timestamp <= '2026-01-01 10:30:00'
           AND ai_trace_index.IsToolCall = 1
           AND ai_trace_index.ToolName = 'search_traces'
-          AND if(ifNull(parent.Model, '') != '', ifNull(parent.Model, ''), trace.traceModel) = 'claude-sonnet-5'
+          AND if(ifNull(parent.parentModel, '') != '', ifNull(parent.parentModel, ''), trace.traceModel) = 'claude-sonnet-5'
           AND ai_trace_index.ToolName ILIKE '%search\\_%'
           AND ai_trace_index.IsError = 1) AS tool_calls_previous
 UNION ALL

@@ -274,9 +274,9 @@ const SESSION_SEEDS = [
 ] as const
 
 /**
- * Roll cells up by a key, adding the counts and call-weighting the percentiles —
- * the same compromise `aggregateByBucket` documents, and for the same reason: there is
- * no way to combine two p90s into the p90 of their union.
+ * Roll cells up by a key, adding the counts and call-weighting the percentiles.
+ * A fixture's shortcut only: two p90s do not combine into the p90 of their
+ * union, which is why the real reads merge inside the query.
  */
 function rollup(
 	cells: ReadonlyArray<ToolFixtureCell>,
@@ -360,6 +360,11 @@ export function buildToolAnalyticsFixture(
 		return { bucket: Number(bucket), seriesKey: seriesKey!, ...value }
 	})
 
+	// The chart's read: the same scope, one series (`split: "none"`).
+	const scopeSeries: ToolSeriesPoint[] = [...rollup(scoped, (cell) => `${cell.bucket}`).entries()].map(
+		([bucket, value]) => ({ bucket: Number(bucket), seriesKey: "", ...value }),
+	)
+
 	const totals: ToolTotals = rollup(scoped, () => "all").get("all") ?? EMPTY_MEASURES
 
 	// The comparison window. The fixture holds no earlier data, so it is modelled
@@ -403,17 +408,21 @@ export function buildToolAnalyticsFixture(
 			.sort((a, b) => b.calls - a.calls)
 	}
 
+	const tools = breakdown(
+		filtered.filter((cell) => search.model === undefined || cell.model === search.model),
+		(cell) => cell.tool,
+	)
+
 	return {
 		series,
 		seriesKind,
+		scopeSeries,
 		totals,
 		previousTotals,
-		// The denominator: the window under the toolbar filters, before the chips.
-		scopeCalls: filtered.reduce((sum, cell) => sum + cell.calls, 0),
-		tools: breakdown(
-			filtered.filter((cell) => search.model === undefined || cell.model === search.model),
-			(cell) => cell.tool,
-		),
+		// The denominator, derived as the route derives it: the model-scoped Tools
+		// breakdown, before the tool chip.
+		scopeCalls: tools.reduce((sum, row) => sum + row.calls, 0),
+		tools,
 		// The window's whole session population — the real one counts every agent
 		// session, including the ones that called no tool at all, so the fixture's
 		// is deliberately larger than any tool total.
@@ -533,6 +542,7 @@ export function buildToolErrorsFixture(
 	failures: number,
 	nowMs: number,
 ): ReadonlyArray<ToolErrorRow> {
+	if (failures === 0) return []
 	return errorProfilesFor(tool)
 		.map((profile, index) => ({
 			errorType: profile.errorType,
@@ -607,7 +617,7 @@ export function buildToolDetailFixture(
 		scopeCalls: cells
 			.filter((cell) => cell.tool === tool)
 			.reduce((sum, cell) => sum + cell.calls, 0),
-		firstSeen: scoped.reduce((min, cell) => Math.min(min, cell.bucket), nowMs),
+		firstSeen: scoped.reduce((min, cell) => (min === 0 ? cell.bucket : Math.min(min, cell.bucket)), 0),
 		lastSeen: scoped.reduce((max, cell) => Math.max(max, cell.bucket), 0),
 		errors: buildToolErrorsFixture(tool, totals.errors, nowMs),
 		errorsLoading: false,
