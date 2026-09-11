@@ -82,7 +82,15 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // the tool view-model constants and the session time-range middleware, and the
 // warehouse atoms for the new reads. Moving the one new query-engine helper
 // out of the barrel was tried and saved nothing.
-const maxGzipBytes = 689 * 1024
+// 691 KB on merging the two above (2026-09-11): they stack, so neither branch's
+// own ceiling covers the pair. Measured on the merged tree by the same
+// register/unregister of `V2GoogleAnalyticsIntegrationsApiGroup` — 690.7 with it,
+// 689.1 without — so the GA contract still costs the 1.6 KB it did in isolation.
+// Note the 689.1: the baseline had already reached #832's ceiling before the GA
+// group was added back, so the headroom under 689 was gone independently of this
+// branch. 691 leaves ~0.3 KB, which is thin; the next startup addition of any
+// size will need its own raise and its own measurement.
+const maxGzipBytes = 691 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
