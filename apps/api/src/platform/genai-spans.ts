@@ -110,11 +110,11 @@ const systemInstructionsJson = (prompt: Prompt.Prompt): string | undefined => {
 }
 
 /**
- * The finish reason in the convention's underscore form. Effect AI hyphenates; the read side matches
- * `content_filter` as a refusal and normalises `tool_calls`.
+ * The finish reason in the convention's form. Effect AI hyphenates and pluralises tool calls; the
+ * convention's enum is `tool_call`, and the read side matches `content_filter` as a refusal.
  */
 export const semconvFinishReason = (reason: string): string =>
-	reason === "tool-calls" ? "tool_calls" : reason === "content-filter" ? "content_filter" : reason
+	reason === "tool-calls" ? "tool_call" : reason === "content-filter" ? "content_filter" : reason
 
 type ResponseParts = Parameters<Telemetry.SpanTransformer>[0]["response"]
 
@@ -362,30 +362,39 @@ export const instrumentLanguageModel = <R>(
 	)
 
 /**
+ * `wrap` of the longest prefix of `text` that holds the tool budget once encoded.
+ *
+ * Encoding expands a character up to six-fold (a quote or backslash two-fold), so the prefix is re-cut
+ * by half the measured excess until it fits: exact for quotes and backslashes, converging otherwise,
+ * and never cutting to nothing because the text happened to be escape-heavy.
+ */
+const withinToolBudget = (text: string, wrap: (prefix: string) => string): string => {
+	let prefix = text.slice(0, TOOL_JSON_BUDGET)
+	let out = wrap(prefix)
+	while (out.length > TOOL_JSON_BUDGET) {
+		prefix = prefix.slice(0, prefix.length - Math.ceil((out.length - TOOL_JSON_BUDGET) / 2))
+		out = wrap(prefix)
+	}
+	return out
+}
+
+/** `{result: text}`, truncated so an oversized string still reads as its text, not an escaped prefix. */
+const resultJson = (text: string): string =>
+	withinToolBudget(text, (prefix) =>
+		JSON.stringify({ result: prefix.length < text.length ? prefix + TRUNCATION_MARKER : prefix }),
+	)
+
+/**
  * Bounded JSON for tool arguments and results; always an object or array, because the read side's
  * `json` decoder drops scalars and Maple's own tool results are strings. Exported for tests.
  */
 export const toolCallJson = (value: unknown): string => {
-	// A scalar is truncated before it is wrapped, so an oversized string result still reads as its text
-	// rather than as an escaped JSON prefix.
-	if (!Predicate.isObject(value)) {
-		return JSON.stringify({
-			result: Predicate.isString(value) ? truncated(value, TOOL_JSON_BUDGET) : value,
-		})
-	}
+	if (Predicate.isString(value)) return resultJson(value)
+	if (!Predicate.isObjectOrArray(value)) return JSON.stringify({ result: value })
 	const json = stringify(value)
-	if (json === undefined) return JSON.stringify({ result: truncated(String(value), TOOL_JSON_BUDGET) })
+	if (json === undefined) return resultJson(String(value))
 	if (json.length <= TOOL_JSON_BUDGET) return json
-	let prefix = json.slice(0, TOOL_JSON_BUDGET)
-	let out = JSON.stringify({ truncated: true, prefix })
-	if (out.length > TOOL_JSON_BUDGET) {
-		// Re-encoding escapes quotes and backslashes, expanding the prefix; one corrective re-slice by
-		// the measured excess holds the cap, since every removed input character removes at least one
-		// output character.
-		prefix = prefix.slice(0, Math.max(0, prefix.length - (out.length - TOOL_JSON_BUDGET)))
-		out = JSON.stringify({ truncated: true, prefix })
-	}
-	return out
+	return withinToolBudget(json, (prefix) => JSON.stringify({ truncated: true, prefix }))
 }
 
 /**

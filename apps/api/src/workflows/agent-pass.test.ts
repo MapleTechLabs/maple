@@ -13,7 +13,7 @@
  */
 import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
-import { Effect, Layer, Option, Schema, Tracer } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { Model, Tool, Toolkit } from "effect/unstable/ai"
 import { MapleToolFailure } from "@/mcp/tools/llm-tools"
 import {
@@ -28,6 +28,7 @@ import type { AgentDefinition } from "@/chat/agents"
 import { McpToolExecutor } from "@/mcp/dispatcher"
 import type { ResolvedModel } from "@/platform/Llm"
 import type { TenantContext } from "@/services/auth/tenant-context"
+import { makeRecordingTracer } from "@/testing/recording-tracer"
 import { runAgentPass } from "./agent-pass"
 
 const TENANT: TenantContext = {
@@ -145,19 +146,6 @@ const run = (turns: ReadonlyArray<ScriptedTurnInput>, deadlineAtMs?: number) =>
 		...(deadlineAtMs === undefined ? undefined : { deadlineAtMs }),
 	}).pipe(Effect.provide(Layer.merge(ToolExecutorStubLayer, IdGenerator.layer)))
 
-/** A tracer that keeps every span it opened; a native span keeps its attributes after it ends. */
-const recordSpans = () => {
-	const spans: Array<Tracer.NativeSpan> = []
-	const tracer = Tracer.make({
-		span: (options) => {
-			const span = new Tracer.NativeSpan(options)
-			spans.push(span)
-			return span
-		},
-	})
-	return { spans, tracer }
-}
-
 describe("runAgentPass", () => {
 	it.effect("reports the answer when the agent submits", () =>
 		Effect.gen(function* () {
@@ -228,7 +216,7 @@ describe("runAgentPass", () => {
 
 	it.effect("describes the agent on its pass span and each tool call on its own span", () =>
 		Effect.gen(function* () {
-			const { spans, tracer } = recordSpans()
+			const { spans, tracer } = makeRecordingTracer()
 
 			yield* run([
 				turn(call("c1", "query_data", { sql: "select 1" })),
@@ -261,7 +249,7 @@ describe("runAgentPass", () => {
 
 	it.effect("records a failed tool call's message as its result", () =>
 		Effect.gen(function* () {
-			const { spans, tracer } = recordSpans()
+			const { spans, tracer } = makeRecordingTracer()
 			const failingExecutor = Layer.succeed(McpToolExecutor, {
 				execute: () =>
 					Effect.succeed({

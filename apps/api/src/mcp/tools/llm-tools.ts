@@ -61,6 +61,10 @@ export const APPROVAL_NOTE =
 	"\n\nThis is an approval-gated action. Calling it proposes the change for the user to approve; " +
 	"it does NOT take effect until they do. Call it once with the intended arguments and stop."
 
+/** The description the model sees, which is also the one its tool span records. */
+const describe = (definition: { readonly description: string }, gated: boolean): string =>
+	gated ? `${definition.description}${APPROVAL_NOTE}` : definition.description
+
 export interface BuildMapleToolsOptions {
 	/** Which registry tools to expose. Defaults to all of them. */
 	readonly include?: (name: string) => boolean
@@ -137,7 +141,7 @@ export const buildMapleToolkit = (
 	const tools = definitions.map((definition) => {
 		const gated = options.gate?.(definition.name) ?? false
 		return Tool.dynamic(definition.name, {
-			description: gated ? `${definition.description}${APPROVAL_NOTE}` : definition.description,
+			description: describe(definition, gated),
 			parameters: toInputSchema(definition.schema),
 			success: Schema.String,
 			failure: MapleToolFailure,
@@ -174,7 +178,10 @@ export const buildMapleToolkit = (
 			return [
 				definition.name,
 				(params: unknown) =>
-					withToolCallContent(handle(params), { description: definition.description, params }),
+					withToolCallContent(
+						Effect.suspend(() => handle(params)),
+						{ description: describe(definition, gated), params },
+					),
 			]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.

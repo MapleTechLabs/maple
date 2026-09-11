@@ -160,12 +160,13 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 		// database spans by their nearest tagged ancestor, and concurrent lanes would otherwise be
 		// partitioned by start time alone. The model-call spans carry the same keys via the model. It
 		// is also the pass's `invoke_agent` span, which is where the agent and its tools are described.
+		const threadId = decodeThreadId(input.id)
 		yield* Effect.annotateCurrentSpan({
 			...agentSessionSpanAttributes(input.model.tags),
 			...invokeAgentAttributes({
 				agentName: input.agent.name,
 				agentDescription: input.agent.description,
-				conversationId: input.id,
+				conversationId: threadId,
 				providerName: genAiProviderName(input.model.provider),
 				model: input.model.name,
 				tools: Object.values(toolkit.tools),
@@ -193,7 +194,7 @@ export const runAgentPass = <S extends AnswerSchema, Tools extends Record<string
 		)
 
 		yield* AgentRuntime.stream(definition, input.prompt, {
-			threadId: decodeThreadId(input.id),
+			threadId,
 			// The run event stream carries no token counts, so without this hook every pass reports
 			// zero and the investigation rows record no cost.
 			budget: accumulateUsage(usage),

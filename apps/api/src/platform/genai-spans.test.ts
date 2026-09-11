@@ -68,8 +68,31 @@ describe("toolCallJson", () => {
 		assert.isTrue(result.endsWith(TRUNCATION_MARKER))
 	})
 
+	it("holds a string result to the budget once escaped", () => {
+		// Maple's tool results are JSON and tables: quotes and newlines double in length when wrapped.
+		const json = toolCallJson('{"row":"a"}\n'.repeat(2_000))
+
+		assert.isAtMost(json.length, 8_000)
+		assert.isTrue(String(JSON.parse(json).result).endsWith(TRUNCATION_MARKER))
+	})
+
 	it("holds an oversized object to the budget as a truncated prefix", () => {
 		const json = toolCallJson({ rows: '"quoted"'.repeat(5_000) })
+
+		assert.isAtMost(json.length, 8_000)
+		assert.strictEqual(JSON.parse(json).truncated, true)
+		assert.isAbove(JSON.parse(json).prefix.length, 4_000)
+	})
+
+	it("cuts an escape-heavy object by what its encoding costs, not to nothing", () => {
+		const json = toolCallJson({ rows: '\\"'.repeat(6_000) })
+
+		assert.isAtMost(json.length, 8_000)
+		assert.isAbove(JSON.parse(json).prefix.length, 3_000)
+	})
+
+	it("holds an oversized array to the budget too", () => {
+		const json = toolCallJson(Array.from({ length: 3_000 }, (_, index) => ({ index })))
 
 		assert.isAtMost(json.length, 8_000)
 		assert.strictEqual(JSON.parse(json).truncated, true)

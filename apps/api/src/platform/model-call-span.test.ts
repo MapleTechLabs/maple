@@ -235,8 +235,9 @@ describe("the model-call span", () => {
 			assert.strictEqual(attributes?.get("gen_ai.usage.cache_read.input_tokens"), 30)
 			assert.strictEqual(attributes?.get("gen_ai.usage.reasoning.output_tokens"), 5)
 			assert.strictEqual(attributes?.get("gen_ai.usage.cost"), 0.0042)
-			assert.isAtLeast(Number(attributes?.get("gen_ai.response.time_to_first_chunk")), 0)
-			assert.isAtLeast(Number(attributes?.get("maple_ai.model_duration_ms")), 0)
+			const firstChunkMs = Math.round(Number(attributes?.get("gen_ai.response.time_to_first_chunk")) * 1000)
+			assert.isAtLeast(firstChunkMs, 0)
+			assert.isAtMost(firstChunkMs, Number(attributes?.get("maple_ai.model_duration_ms")))
 		}),
 	)
 
@@ -297,10 +298,10 @@ describe("the model-call span", () => {
 				{
 					role: "assistant",
 					parts: [{ type: "text", content: "Checking the database." }],
-					finish_reason: "tool_calls",
+					finish_reason: "tool_call",
 				},
 			])
-			assert.deepStrictEqual(attributes.get("gen_ai.response.finish_reasons"), ["tool_calls"])
+			assert.deepStrictEqual(attributes.get("gen_ai.response.finish_reasons"), ["tool_call"])
 		}),
 	)
 
@@ -329,6 +330,10 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
+			assert.isTrue(
+				recorder.spans.some((span) => span.attributes.get("gen_ai.operation.name") === "chat"),
+				"no model-call span was opened",
+			)
 			assert.isFalse(recorder.spans.some((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)))
 		}),
 	)
