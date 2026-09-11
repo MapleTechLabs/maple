@@ -11,7 +11,7 @@
 // The one exception is the failure modal's payloads — the arguments a call was
 // made with and the result it came back with, which are the only facts on this
 // page that are not the tool span's own narrow columns. That read is bounded by
-// the fifty occurrences it is for, and by their own first and last timestamps
+// the page of samples it is for, and by their own first and last timestamps
 // rather than the caller's window; see {@link aiToolErrorPayloadsQuery}.
 //
 // Two facts about tool rows shape every query in this file.
@@ -244,10 +244,15 @@ interface ToolCallColumns {
 	readonly vendor: CH.Expr<string>
 	readonly agent: CH.Expr<string>
 	readonly isError: CH.Expr<number>
-	/** `error.type`, and the span's status message cut at insert — the two facts
-	 *  the Errors table groups and labels by (migration 0032). */
+	readonly service: CH.Expr<string>
+	/** `error.type` — the Errors table's label for a group (migration 0032). */
 	readonly errorType: CH.Expr<string>
-	readonly message: CH.Expr<string>
+	/** What a failure says: its failed tool call's result, else its status
+	 *  message — the text `ErrorFingerprint` hashes, before the redactions. */
+	readonly failureMessage: CH.Expr<string>
+	/** `ErrorFingerprint` as a decimal string: a UInt64 past 2^53 does not
+	 *  survive as a JSON number. `'0'` on every call that did not fail. */
+	readonly fingerprint: CH.Expr<string>
 	readonly durationNs: CH.Expr<number>
 }
 
@@ -300,8 +305,10 @@ const toolCalls = (
 		vendor: $.trace.traceVendorId,
 		agent: $.trace.traceAgentName,
 		isError: $.IsError,
+		service: $.ServiceName,
 		errorType: $.ErrorType,
-		message: $.StatusMessage,
+		failureMessage: CH.coalesce(CH.nullIf($.FailedToolCallResult, ""), $.StatusMessage),
+		fingerprint: CH.toString_($.ErrorFingerprint),
 		durationNs: $.Duration,
 	})
 	const filters = ($: ToolCallSource, model: CH.Expr<string>) => [
@@ -571,21 +578,25 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
 /* -------------------------------------------------------------------------------------------------
  * Tool detail — the failures of one tool
  *
- * The Errors table and the modal's session pane are `ai_trace_index` like
- * everything else on this page. They were not, until migration 0032: the index
- * carried `IsError` and nothing about WHY, so both read `trace_detail_spans`
- * for an error type and a status message, inside the traces the index had
- * named. That prefilter was a primary-key seek and still cost 3.4s at the
- * median and 30s at the ceiling over a week, because a seek on that table costs
- * by the PARTITIONS it opens and a week of failures is spread over all of them.
- * Both facts are the tool span's own, so both are columns now.
+ * Grouped by `ErrorFingerprint` (migration 0032): a hash of what the failure
+ * SAYS — the failed call's result, else its status message — after the
+ * redactions `error_events` fingerprints messages with. `error.type` is not the
+ * key, because a vendor that reports every failure as `tool_error` would fold
+ * dozens of distinct bugs into one row; it is a label on the group instead.
  *
- * What is still only on the span is the modal's payloads — what a call was
- * made with and what came back. {@link aiToolErrorPayloadsQuery} reads them for
- * the fifty occurrences {@link aiToolErrorOccurrencesQuery} already ranked,
- * bounded by a `(TraceId, SpanId)` tuple `IN` of those fifty and by their own
- * first and last timestamps rather than the caller's window — so it opens the
- * partitions those calls actually landed in and no others.
+ * Every read here is `ai_trace_index`, like the rest of the page. What is only
+ * on the span is the modal's payloads — what a call was made with and what came
+ * back. {@link aiToolErrorPayloadsQuery} reads them for one page of samples
+ * {@link aiToolErrorOccurrencesQuery} already ranked, bounded by a
+ * `(TraceId, SpanId)` tuple `IN` of that page and by its own first and last
+ * timestamps rather than the caller's window — so it opens the partitions those
+ * calls actually landed in and no others.
+ *
+ * A failure materialized before 0032 carries fingerprint `0` and an empty
+ * result and message. Those are one group of their own, `'0'`, which the page
+ * names for what it is rather than merging into a group it may not belong to —
+ * the same fill-forward edge 0031 left on the sessions list, until raw
+ * retention ages it out.
  */
 
 /** How much of an argument or result payload one occurrence carries. Vendors put
@@ -593,97 +604,139 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
  *  reports the true size beside it. */
 export const AI_TOOL_ERROR_PAYLOAD_MAX = 4_000
 
-/** Error types one breakdown returns, worst first. */
+/** Error groups one breakdown returns, most failed calls first. */
 export const AI_TOOL_ERRORS_LIMIT = 50
 
-/** Occurrences (and their sessions) one modal opens with. */
-export const AI_TOOL_OCCURRENCES_LIMIT = 50
+/** Samples one page of a group's detail holds — "Load 25 more". */
+export const AI_TOOL_OCCURRENCES_LIMIT = 25
+
+/** Sessions one group's detail lists, by hits. */
+export const AI_TOOL_ERROR_SESSIONS_LIMIT = 50
+
+/** Raw messages one group's variants list holds, by calls. */
+export const AI_TOOL_ERROR_VARIANTS_LIMIT = 20
+
+/** `(model, service)` pairs the where-it-happens breakdown folds. */
+export const AI_TOOL_ERROR_BREAKDOWN_LIMIT = 100
 
 export interface AiToolErrorsOpts extends AiToolsFilterOpts {
-	/** The error type a modal is open on. `''` selects the failures that named
-	 *  none, which is a real group and the one the page labels `unknown`. */
-	readonly errorType?: string
-	/** One session's occurrences — the modal's left pane, as a filter on its right. */
+	/** The group a detail read is for: `ErrorFingerprint` as a decimal string. */
+	readonly fingerprint?: string
+	/** One session's samples — the modal's sessions list, as a filter on its samples. */
 	readonly session?: string
+	/** One raw message's samples. `''` is a real message — a failure that said nothing. */
+	readonly variant?: string
+	/** Samples strictly older than this position, in the order the pages are read. */
+	readonly before?: { readonly timestamp: string; readonly spanId: string }
 	readonly limit?: number
 }
 
-/** `''` is a real error type — a span that failed without naming one. Passing
- *  it has to narrow, so the predicate is on presence of the OPT, not on truth
- *  of the value. */
-const errorTypeFilter = (opts: AiToolErrorsOpts, errorType: CH.Expr<string>) =>
-	opts.errorType === undefined ? undefined : errorType.eq(opts.errorType)
+/** A read narrowed to one group, where the opts name one. */
+const groupFilter = (opts: AiToolErrorsOpts, $: Pick<ToolCallColumns, "fingerprint">) =>
+	opts.fingerprint === undefined ? undefined : $.fingerprint.eq(opts.fingerprint)
 
 /**
- * One row per failed tool call of the selection — the level all three reads
- * below aggregate. `IsError` is the index's own transcription of the rule the
- * sessions pages apply to a span (`genAiIsErrorCond`), so a failure counted
- * there is a failure here.
+ * One row per failed tool call of the selection — the level every read below
+ * but the table's aggregates. `IsError` is the index's own transcription of the
+ * rule the sessions pages apply to a span (`genAiIsErrorCond`), so a failure
+ * counted there is a failure here.
  *
- * `withParentModel` is the modal's, and it is `true` for the two reads that
- * SHOW a model rather than filtering by one: without it the model a reader sees
- * would be the trace's until they set a model filter and the parent-resolved
- * one after, which is the same failure described two ways. Both are modal reads
- * behind a click, so the join is off the page's critical path — the Errors
- * table, which is on it and shows no model, keeps the default.
+ * `withParentModel` is `true` for the read that SHOWS a model rather than
+ * filtering by one: without it the model a reader sees would be the trace's
+ * until they set a model filter and the parent-resolved one after, which is the
+ * same failure described two ways. It is a modal read behind a click, so the
+ * join is off the page's critical path.
  */
 const failingToolCalls = (opts: AiToolErrorsOpts, withParentModel?: boolean) =>
 	fromQuery(toolCalls({ ...opts, failingOnly: true }, "current", withParentModel), "failing_tool_calls")
 
 /**
- * The Errors table: every error type this tool failed with, worst first.
+ * The Errors table: every group this tool failed with, most failed calls first.
  *
- * The message is the most RECENT one under the type, not an arbitrary one —
- * a type whose message carries a changing detail (a path, a worker count)
- * should read as the failure that is happening now.
+ * The message and the type are the group's most RECENT, not an arbitrary
+ * one's — a group's raw texts differ by exactly what the redactions masked (an
+ * array index, a number), and the latest is the one a reader is about to go and
+ * look at. `variants` is how many raw texts the group folded.
  *
- * A failure materialized before migration 0032 reads `''` for both columns, so
- * it groups under the `unknown` row with a blank message however it failed,
- * until raw retention ages it out — the same fill-forward edge 0031 left on the
- * sessions list.
+ * `callsSince` is what "stopped" is measured against: the calls of the selection
+ * newer than the group's latest failure, failed or not. It is why the scan is
+ * every call of the tool rather than its failures alone — each call is numbered
+ * from the newest (`row_number`), and a group's count is the number of its own
+ * newest failure. The toolbar's failing-only switch is dropped for the same
+ * reason: it would leave nothing to count.
+ *
+ * `trend` is the group's failures per `bucketSeconds`, keyed by the same ISO
+ * bucket the chart reads; a bucket with none is absent.
  */
 export interface AiToolErrorsOutput {
+	readonly fingerprint: string
 	readonly errorType: string
 	readonly message: string
 	readonly calls: number
 	readonly sessions: number
+	readonly variants: number
 	readonly firstSeen: string
 	readonly lastSeen: string
+	readonly callsSince: number
+	readonly trend: Readonly<Record<string, number>>
 }
 
 /** Counts are `CHNumber`: a gateway that refuses
  *  `output_format_json_quote_64bit_integers=0` sends them quoted. */
 export const aiToolErrorsRowSchema: CompiledQueryRowSchema<AiToolErrorsOutput> = Schema.Struct({
+	fingerprint: Schema.String,
 	errorType: Schema.String,
 	message: Schema.String,
 	calls: CHNumber,
 	sessions: CHNumber,
+	variants: CHNumber,
 	firstSeen: Schema.String,
 	lastSeen: Schema.String,
+	callsSince: CHNumber,
+	trend: Schema.Record(Schema.String, CHNumber),
 })
 
 export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
-	return failingToolCalls(opts)
+	// Column names differ from the aliases below (`callErrorType`, `failureMessage`):
+	// an aggregate aliased to its own input's name would read itself.
+	const numbered = fromQuery(toolCalls({ ...opts, failingOnly: undefined }), "tool_calls").select(($) => ({
+		ts: $.ts,
+		bucket: isoBucket($.ts),
+		sessionKey: $.sessionKey,
+		isError: $.isError,
+		callErrorType: $.errorType,
+		failureMessage: $.failureMessage,
+		fingerprint: $.fingerprint,
+		newerCalls: CH.rawExpr("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1", T.uint64),
+	}))
+	return fromQuery(numbered, "numbered_tool_calls")
 		.select(($) => ({
-			errorType: $.errorType,
-			message: CH.argMax($.message, $.ts),
+			fingerprint: $.fingerprint,
+			errorType: CH.argMax($.callErrorType, $.ts),
+			message: CH.argMax($.failureMessage, $.ts),
 			calls: CH.count(),
 			sessions: CH.uniqExact($.sessionKey),
+			variants: CH.uniqExact($.failureMessage),
 			firstSeen: CH.toString_(CH.min_($.ts)),
 			lastSeen: CH.toString_(CH.max_($.ts)),
+			callsSince: CH.min_($.newerCalls),
+			trend: CH.rawExpr("sumMap(map(bucket, toUInt64(1)))", T.map(T.string, T.uint64)),
 		}))
-		.groupBy("errorType")
-		.orderBy(["calls", "desc"], ["errorType", "asc"])
+		// Above the numbering, never inside it: a failure is numbered among every
+		// call of the tool, and filtering first would number it among failures.
+		.where(($) => [$.isError.eq(1)])
+		.groupBy("fingerprint")
+		.orderBy(["calls", "desc"], ["fingerprint", "asc"])
 		.limit(opts.limit ?? AI_TOOL_ERRORS_LIMIT)
 		.format("JSON")
 }
 
-/** The modal's left pane: which sessions hit this error type, and how often. */
+/** The modal's sessions list: which sessions hit this group, and how often. */
 export interface AiToolErrorSessionsOutput {
 	readonly sessionId: string
 	readonly vendorId: string
 	readonly agentName: string
-	readonly model: string
+	readonly service: string
 	readonly hits: number
 	readonly lastSeen: string
 }
@@ -693,35 +746,95 @@ export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSes
 		sessionId: Schema.String,
 		vendorId: Schema.String,
 		agentName: Schema.String,
-		model: Schema.String,
+		service: Schema.String,
 		hits: CHNumber,
 		lastSeen: Schema.String,
 	})
 
 export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
-	return failingToolCalls(opts, true)
+	return failingToolCalls(opts)
 		.select(($) => ({
 			sessionId: $.sessionKey,
 			vendorId: CH.anyIf($.vendor, $.vendor.neq("")),
 			agentName: CH.anyIf($.agent, $.agent.neq("")),
-			model: CH.anyIf($.modelName, $.modelName.neq("")),
+			service: CH.anyIf($.service, $.service.neq("")),
 			hits: CH.count(),
 			lastSeen: CH.toString_(CH.max_($.ts)),
 		}))
-		.where(($) => [errorTypeFilter(opts, $.errorType)])
+		.where(($) => [groupFilter(opts, $)])
 		.groupBy("sessionId")
 		.orderBy(["hits", "desc"], ["sessionId", "asc"])
-		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
+		.limit(opts.limit ?? AI_TOOL_ERROR_SESSIONS_LIMIT)
+		.format("JSON")
+}
+
+/** The raw messages one group folded — `[0]`, `[1]` and `[2]` of one missing key. */
+export interface AiToolErrorVariantsOutput {
+	readonly message: string
+	readonly calls: number
+	readonly lastSeen: string
+}
+
+export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> =
+	Schema.Struct({
+		message: Schema.String,
+		calls: CHNumber,
+		lastSeen: Schema.String,
+	})
+
+export function aiToolErrorVariantsQuery(opts: AiToolErrorsOpts = {}) {
+	return failingToolCalls(opts)
+		.select(($) => ({
+			message: $.failureMessage,
+			calls: CH.count(),
+			lastSeen: CH.toString_(CH.max_($.ts)),
+		}))
+		.where(($) => [groupFilter(opts, $)])
+		.groupBy("message")
+		.orderBy(["calls", "desc"], ["message", "asc"])
+		.limit(AI_TOOL_ERROR_VARIANTS_LIMIT)
 		.format("JSON")
 }
 
 /**
- * The modal's right pane, step one: the individual failed calls, newest first.
+ * Where a group happens: its failed calls per model and service, as pairs. The
+ * page folds them into one list per dimension — counts add, so the fold is
+ * exact — which is one scan where two groupings would be two.
+ */
+export interface AiToolErrorBreakdownOutput {
+	readonly model: string
+	readonly service: string
+	readonly calls: number
+}
+
+export const aiToolErrorBreakdownRowSchema: CompiledQueryRowSchema<AiToolErrorBreakdownOutput> =
+	Schema.Struct({
+		model: Schema.String,
+		service: Schema.String,
+		calls: CHNumber,
+	})
+
+export function aiToolErrorBreakdownQuery(opts: AiToolErrorsOpts = {}) {
+	return failingToolCalls(opts, true)
+		.select(($) => ({
+			model: $.modelName,
+			service: $.service,
+			calls: CH.count(),
+		}))
+		.where(($) => [groupFilter(opts, $)])
+		.groupBy("model", "service")
+		.orderBy(["calls", "desc"], ["model", "asc"], ["service", "asc"])
+		.limit(AI_TOOL_ERROR_BREAKDOWN_LIMIT)
+		.format("JSON")
+}
+
+/**
+ * The modal's samples, step one: one page of a group's failed calls, newest
+ * first.
  *
  * Everything the row states about the failure and its session is here; what it
  * was called with and what came back is {@link aiToolErrorPayloadsQuery}, which
- * this read's rows bound. A modal that opens on zero occurrences therefore runs
- * no span read at all.
+ * this page's rows bound. A page of zero samples therefore runs no span read.
  */
 export interface AiToolErrorOccurrencesOutput {
 	readonly timestamp: string
@@ -731,6 +844,7 @@ export interface AiToolErrorOccurrencesOutput {
 	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
+	readonly service: string
 	readonly errorType: string
 	readonly message: string
 	readonly durationNs: number
@@ -745,12 +859,14 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 		vendorId: Schema.String,
 		agentName: Schema.String,
 		model: Schema.String,
+		service: Schema.String,
 		errorType: Schema.String,
 		message: Schema.String,
 		durationNs: CHNumber,
 	})
 
 export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
+	const before = opts.before
 	return failingToolCalls(opts, true)
 		.select(($) => ({
 			timestamp: CH.toString_($.ts),
@@ -760,18 +876,24 @@ export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 			vendorId: $.vendor,
 			agentName: $.agent,
 			model: $.modelName,
+			service: $.service,
 			errorType: $.errorType,
-			message: $.message,
+			message: $.failureMessage,
 			durationNs: $.durationNs,
 		}))
 		.where(($) => [
-			errorTypeFilter(opts, $.errorType),
-			// The left pane's selection: one session's occurrences of this error.
+			groupFilter(opts, $),
 			CH.when(opts.session, (session) => $.sessionKey.eq(session)),
+			opts.variant === undefined ? undefined : $.failureMessage.eq(opts.variant),
+			// The previous page's last row. The timestamp is the warehouse literal at
+			// nanosecond precision, which with the span id makes the position unique.
+			before === undefined
+				? undefined
+				: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
 		])
 		// Newest first: a modal opened from a failing tool is asking what is
 		// happening now, and `spanId` breaks the ties agent spans routinely have.
-		.orderBy(["timestamp", "desc"], ["spanId", "asc"])
+		.orderBy(["timestamp", "desc"], ["spanId", "desc"])
 		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
 		.format("JSON")
 }

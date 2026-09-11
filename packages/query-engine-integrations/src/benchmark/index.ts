@@ -85,6 +85,10 @@ const AI_TOOLS_ERROR_SELECTION = {
 	failingOnly: true,
 }
 
+/** One error group, as the page names it: `ErrorFingerprint` in decimal, past
+ *  2^53 like most of them. */
+const AI_TOOL_ERROR_FINGERPRINT = "12345678901234567890"
+
 /** Two failing calls of one tool, as the occurrences read hands them to the
  *  payload read: its whole prefilter, and its bounds. */
 const AI_TOOL_ERROR_CALLS = [
@@ -313,14 +317,15 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 			}),
 	},
 	{
-		// The tool detail page's failures. The only tools reads that touch
-		// `trace_detail_spans`, and the baseline is what proves the span scan
-		// stays inside the trace-id subquery the index answers.
+		// The tool detail page's failures, grouped by fingerprint. Every call of
+		// the selection is numbered from the newest before the failures are kept,
+		// which is what a group's "calls since" reads — the baseline pins that
+		// order, since the other one type-checks and counts failures instead.
 		module: "ai-tools",
 		name: "aiToolErrorsQuery",
 		label: "default",
 		compile: () =>
-			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), window, {
+			compileUnsafe(CH.aiToolErrorsQuery(AI_TOOLS_ERROR_SELECTION), bucketed, {
 				rowSchema: CH.aiToolErrorsRowSchema,
 			}),
 	},
@@ -330,12 +335,37 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () =>
 			compileUnsafe(
-				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, errorType: "TimeoutError" }),
+				CH.aiToolErrorSessionsQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
 				window,
 				{ rowSchema: CH.aiToolErrorSessionsRowSchema },
 			),
 	},
 	{
+		module: "ai-tools",
+		name: "aiToolErrorVariantsQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorVariantsQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				window,
+				{ rowSchema: CH.aiToolErrorVariantsRowSchema },
+			),
+	},
+	{
+		// Pairs rather than two groupings: one scan, and the page folds the counts.
+		module: "ai-tools",
+		name: "aiToolErrorBreakdownQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorBreakdownQuery({ ...AI_TOOLS_ERROR_SELECTION, fingerprint: AI_TOOL_ERROR_FINGERPRINT }),
+				window,
+				{ rowSchema: CH.aiToolErrorBreakdownRowSchema },
+			),
+	},
+	{
+		// A second page of one session's samples of one variant: every narrowing
+		// the modal can send at once, including the keyset position.
 		module: "ai-tools",
 		name: "aiToolErrorOccurrencesQuery",
 		label: "default",
@@ -343,8 +373,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 			compileUnsafe(
 				CH.aiToolErrorOccurrencesQuery({
 					...AI_TOOLS_ERROR_SELECTION,
-					errorType: "TimeoutError",
+					fingerprint: AI_TOOL_ERROR_FINGERPRINT,
 					session: "wrun_sql_catalog",
+					variant: '{"result":"Invalid tool input: Missing key\\n  at [\\"claim\\"]"}',
+					before: { timestamp: AI_TOOL_ERROR_CALLS[1].timestamp, spanId: AI_TOOL_ERROR_CALLS[1].spanId },
 				}),
 				window,
 				{ rowSchema: CH.aiToolErrorOccurrencesRowSchema },
