@@ -44,8 +44,8 @@ export interface ToolDetailViewData {
  *
  * The overview ranks tools against each other; this page stops comparing. Four
  * charts of one tool, then the two things a reader came for once a tool is
- * suspect: how it fails, and which sessions it failed in. The toolbar and the
- * scope band are the overview's, unchanged — the window and the filters travel
+ * suspect: how it fails, and which sessions it failed in. The toolbar (minus the
+ * tool-name search) and the scope band are the overview's — the window and the filters travel
  * with the reader, and the scope band states the tool as the denominator it now
  * is ("1,942 of 3,908 run_tests calls match").
  */
@@ -107,8 +107,6 @@ export function ToolDetailView({
 			</header>
 
 			<ToolFilterToolbar
-				query={search.q ?? ""}
-				onSearch={(value) => onSearchChange({ q: value === "" ? undefined : value })}
 				service={search.service}
 				serviceOptions={serviceOptions}
 				onServiceChange={(value) => onSearchChange({ service: value })}

@@ -12,7 +12,6 @@ import {
 	buildToolCells,
 	buildToolDetailFixture,
 	buildToolErrorDetailFixture,
-	toolFixtureWindow,
 } from "@/lab/agent-tools-fixture"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
@@ -50,7 +49,6 @@ vi.mock("./tool-detail-charts", () => ({
 
 const NOW = Date.UTC(2026, 8, 10, 12, 0, 0)
 const cells = buildToolCells(NOW)
-const WINDOW = toolFixtureWindow(NOW)
 
 function renderView(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
 	const data = buildToolAnalyticsFixture(search, NOW, cells)
@@ -59,7 +57,6 @@ function renderView(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
 			search={search}
 			onSearchChange={onSearchChange}
 			data={data}
-			window={WINDOW}
 			serviceOptions={[]}
 			modelOptions={[]}
 			envOptions={[]}
@@ -157,7 +154,6 @@ describe("AgentToolsView", () => {
 				search={{}}
 				onSearchChange={vi.fn()}
 				data={{ ...data, tools: [], toolsFailure: new Error("boom") }}
-				window={WINDOW}
 				serviceOptions={[]}
 				modelOptions={[]}
 				envOptions={[]}
@@ -212,6 +208,11 @@ describe("ToolDetailView", () => {
 		expect(
 			screen.getAllByText(new RegExp(`${data.totals.sessions} sessions`)).length,
 		).toBeGreaterThan(0)
+	})
+
+	it("has no tool-name search — the page is one tool", () => {
+		renderDetail({})
+		expect(screen.queryByPlaceholderText("Tool name…")).toBeNull()
 	})
 
 	it("names the tool in the scope band's denominator", () => {
