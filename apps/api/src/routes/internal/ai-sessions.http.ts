@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	AiSessionTooLargeError,
 	AiToolErrorDetailResponse,
+	AiToolErrorSamplesResponse,
 	AiToolErrorsResponse,
 	AiToolsBreakdownsResponse,
 	AiToolsSeriesResponse,
@@ -570,12 +571,22 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									orgId: tenant.orgId,
 									startTime: payload.startTime,
 									endTime: payload.endTime,
+									bucketSeconds: payload.bucketSeconds,
 								},
 								{ rowSchema: Integrations.aiToolErrorsRowSchema },
 							),
 							{ context: "aiToolsErrors" },
 						)
-						return new AiToolErrorsResponse({ data: rows })
+						return new AiToolErrorsResponse({
+							data: rows.map((row) => ({
+								...row,
+								// A map on the wire, a series on the page: the ISO buckets
+								// are fixed width, so they sort as the instants do.
+								trend: Object.entries(row.trend)
+									.map(([bucket, calls]) => ({ bucket, calls }))
+									.sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0)),
+							})),
+						})
 					}),
 				)
 				.handle("toolErrorDetail", ({ payload }) =>
@@ -584,27 +595,18 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
 							"maple.ai.tools.tool": payload.tool,
-							"maple.ai.tools.errorType": payload.errorType,
+							"maple.ai.tools.fingerprint": payload.fingerprint,
 						})
-						if (payload.session !== undefined) {
-							yield* Effect.annotateCurrentSpan({
-								"maple.ai.tools.session": payload.session,
-							})
-						}
 						const params = {
 							orgId: tenant.orgId,
 							startTime: payload.startTime,
 							endTime: payload.endTime,
 						}
-						const selection = {
-							...toolsSelection(payload),
-							errorType: payload.errorType,
-							limit: payload.limit,
-						}
-						// Two reads, one modal: the sessions pane is NOT narrowed by the
-						// session the reader picked — it is how they pick a different one.
-						// Both are `ai_trace_index` since migration 0032.
-						const [sessions, occurrences] = yield* Effect.all(
+						const selection = { ...toolsSelection(payload), fingerprint: payload.fingerprint }
+						// The group's facts, side by side — every one of them the index.
+						// The samples page separately (`toolErrorSamples`), so loading
+						// more of them never re-reads these.
+						const [sessions, variants, breakdown] = yield* Effect.all(
 							[
 								warehouse.compiledQuery(
 									tenant,
@@ -615,24 +617,68 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 								),
 								warehouse.compiledQuery(
 									tenant,
-									CH.compile(
-										Integrations.aiToolErrorOccurrencesQuery({
-											...selection,
-											session: payload.session,
-										}),
-										params,
-										{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
-									),
-									{ profile: "list", context: "aiToolsErrorOccurrences" },
+									CH.compile(Integrations.aiToolErrorVariantsQuery(selection), params, {
+										rowSchema: Integrations.aiToolErrorVariantsRowSchema,
+									}),
+									{ profile: "list", context: "aiToolsErrorVariants" },
+								),
+								warehouse.compiledQuery(
+									tenant,
+									CH.compile(Integrations.aiToolErrorBreakdownQuery(selection), params, {
+										rowSchema: Integrations.aiToolErrorBreakdownRowSchema,
+									}),
+									{ profile: "list", context: "aiToolsErrorBreakdown" },
 								),
 							],
-							{ concurrency: 2 },
+							{ concurrency: 3 },
 						)
+						return new AiToolErrorDetailResponse({ sessions, variants, breakdown })
+					}),
+				)
+				.handle("toolErrorSamples", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.tools.tool": payload.tool,
+							"maple.ai.tools.fingerprint": payload.fingerprint,
+							"maple.ai.tools.paged": payload.before !== undefined,
+						})
+						if (payload.session !== undefined) {
+							yield* Effect.annotateCurrentSpan({
+								"maple.ai.tools.session": payload.session,
+							})
+						}
+						const limit = payload.limit ?? Integrations.AI_TOOL_OCCURRENCES_LIMIT
+						// One row past the page: the extra row is what tells a group that
+						// exactly fills the page from one with a page after it.
+						const ranked = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(
+								Integrations.aiToolErrorOccurrencesQuery({
+									...toolsSelection(payload),
+									fingerprint: payload.fingerprint,
+									session: payload.session,
+									variant: payload.variant,
+									before: payload.before,
+									limit: limit + 1,
+								}),
+								{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+								{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+							),
+							{ profile: "list", context: "aiToolsErrorOccurrences" },
+						)
+						const occurrences = ranked.slice(0, limit)
+						const last = occurrences[occurrences.length - 1]
+						const nextCursor =
+							ranked.length > limit && last !== undefined
+								? { timestamp: last.timestamp, spanId: last.spanId }
+								: undefined
 						// The payloads are the only fact the modal shows that the index
-						// does not carry, so they are read for exactly the calls above —
-						// bounded by their `(TraceId, SpanId)` and by their own extent,
-						// which is the partitions those calls landed in and no others. A
-						// modal that opened on nothing reads no spans at all.
+						// does not carry, so they are read for exactly this page — bounded
+						// by its `(TraceId, SpanId)` and by its own extent, which is the
+						// partitions those calls landed in and no others. A page of
+						// nothing reads no spans at all.
 						const payloads =
 							!Arr.isReadonlyArrayNonEmpty(occurrences)
 								? []
@@ -651,8 +697,8 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						const payloadBySpan = new Map(
 							payloads.map((row) => [`${row.traceId}:${row.spanId}`, row] as const),
 						)
-						return new AiToolErrorDetailResponse({
-							sessions,
+						return new AiToolErrorSamplesResponse({
+							...(nextCursor !== undefined && { nextCursor }),
 							occurrences: occurrences.map((row) => {
 								// A call whose span the payload read did not return — raw
 								// retention is shorter than nothing here, but a span that

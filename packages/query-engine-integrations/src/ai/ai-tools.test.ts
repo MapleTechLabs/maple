@@ -4,6 +4,8 @@ import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-de
 import {
 	aiToolDescriptionQuery,
 	aiToolDescriptionRowSchema,
+	aiToolErrorBreakdownQuery,
+	aiToolErrorBreakdownRowSchema,
 	aiToolErrorOccurrencesQuery,
 	aiToolErrorOccurrencesRowSchema,
 	aiToolErrorPayloadSlice,
@@ -11,6 +13,8 @@ import {
 	aiToolErrorPayloadsRowSchema,
 	aiToolErrorSessionsQuery,
 	aiToolErrorSessionsRowSchema,
+	aiToolErrorVariantsQuery,
+	aiToolErrorVariantsRowSchema,
 	aiToolErrorsQuery,
 	aiToolErrorsRowSchema,
 	aiToolsBreakdownsQuery,
@@ -162,15 +166,21 @@ describe("tool call population", () => {
 		// reader sets a model filter and the parent-resolved one after — the same
 		// failure described two ways. Both are behind a click, so the join is off
 		// the page's critical path; the Errors table, which is on it and prints no
-		// model, is the read above that keeps the default.
+		// model, keeps the default, as do the modal's sessions and variants.
 		for (const sql of [
-			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql,
+			compileUnsafe(aiToolErrorBreakdownQuery(errorSelection), params).sql,
 			compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params).sql,
 		]) {
 			expect(sql).toContain("LEFT JOIN")
 			expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
 		}
-		expect(compileUnsafe(aiToolErrorsQuery(errorSelection), params).sql).not.toContain("parentModel")
+		for (const sql of [
+			compileUnsafe(aiToolErrorsQuery(errorSelection), params).sql,
+			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql,
+			compileUnsafe(aiToolErrorVariantsQuery(errorSelection), params).sql,
+		]) {
+			expect(sql).not.toContain("parentModel")
+		}
 	})
 
 	it("applies the selection where each half of it can be applied", () => {
@@ -411,62 +421,104 @@ describe("aiToolsTotalsQuery empty window", () => {
 })
 
 describe("the tool detail reads", () => {
-	it("reads the index alone — the failure's type and message are columns", () => {
+	/** A fingerprint past 2^53, which is why every read carries it as a string. */
+	const FINGERPRINT = "12345678901234567890"
+	const group = { ...errorSelection, fingerprint: FINGERPRINT } as const
+
+	it("reads the index alone — the failure's text and fingerprint are columns", () => {
 		for (const sql of [
 			compileUnsafe(aiToolErrorsQuery({ ...errorSelection, model: "gpt-5", service: "agent" }), params)
 				.sql,
-			compileUnsafe(
-				aiToolErrorOccurrencesQuery({ ...errorSelection, model: "gpt-5", service: "agent" }),
-				params,
-			).sql,
-			compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql,
+			compileUnsafe(aiToolErrorOccurrencesQuery({ ...group, model: "gpt-5", service: "agent" }), params)
+				.sql,
+			compileUnsafe(aiToolErrorSessionsQuery(group), params).sql,
+			compileUnsafe(aiToolErrorVariantsQuery(group), params).sql,
+			compileUnsafe(aiToolErrorBreakdownQuery(group), params).sql,
 		]) {
-			// Migration 0032. Before it these three seeked `trace_detail_spans`
+			// Migration 0032. Before it the failure reads seeked `trace_detail_spans`
 			// inside the traces the index named, which costs by the partitions the
 			// window spreads over — seconds to tens of seconds on a week.
 			expect(sql).not.toContain("trace_detail_spans")
 			expect(sql).not.toContain("SpanAttributes")
-			expect(sql).toContain("ai_trace_index.IsError = 1")
 			expect(sql).toContain("ai_trace_index.ToolName = 'search_traces'")
+			// Selected through `toString`: a UInt64 past 2^53 is not a JSON number.
+			expect(sql).toContain("toString(ai_trace_index.ErrorFingerprint) AS fingerprint")
 		}
 		expect(
 			compileUnsafe(aiToolErrorsQuery({ ...errorSelection, env: "production" }), params).sql,
 		).toContain("ai_trace_index.DeploymentEnv = 'production'")
 	})
 
-	it("groups the failures by type and labels each with its latest message", () => {
+	it("groups the failures by fingerprint and labels each with its latest type and text", () => {
 		const { sql } = compileUnsafe(aiToolErrorsQuery(errorSelection), params)
 
-		expect(sql).toContain("argMax(message, ts) AS message")
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
-		expect(sql).toContain("GROUP BY errorType")
-		expect(sql).toContain("ORDER BY calls DESC, errorType ASC")
-	})
-
-	it("narrows on an error type only when one was passed", () => {
-		// `''` is a real group — the failures that named no type — so the
-		// predicate is on presence of the opt, not on truth of the value.
-		expect(compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params).sql).not.toContain(
-			"errorType =",
+		// The text a fingerprint hashes: the failed call's result, else its status.
+		expect(sql).toContain(
+			"coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage",
 		)
-		expect(
-			compileUnsafe(aiToolErrorSessionsQuery({ ...errorSelection, errorType: "" }), params).sql,
-		).toContain("errorType = ''")
-		expect(
-			compileUnsafe(aiToolErrorSessionsQuery({ ...errorSelection, errorType: "Timeout" }), params)
-				.sql,
-		).toContain("errorType = 'Timeout'")
+		// Aggregates are never aliased to their own input's name.
+		expect(sql).toContain("argMax(callErrorType, ts) AS errorType")
+		expect(sql).toContain("argMax(failureMessage, ts) AS message")
+		expect(sql).toContain("uniqExact(failureMessage) AS variants")
+		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+		expect(sql).toContain("GROUP BY fingerprint")
+		expect(sql).toContain("ORDER BY calls DESC, fingerprint ASC")
 	})
 
-	it("narrows the occurrences to one session, and orders them newest first", () => {
+	it("numbers every call of the selection, then keeps the failures", () => {
+		// The toolbar's failing-only is dropped: `callsSince` counts the calls
+		// newer than a group's latest failure, and the successes are most of them.
+		const { sql } = compileUnsafe(aiToolErrorsQuery({ ...errorSelection, failingOnly: true }), params)
+
+		expect(sql).not.toContain("ai_trace_index.IsError = 1")
+		expect(sql).toContain("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1 AS newerCalls")
+		expect(sql).toContain("min(newerCalls) AS callsSince")
+		// The failure filter is the outer level's, above the numbering.
+		expect(sql).toContain("WHERE isError = 1")
+		expect(sql.indexOf("WHERE isError = 1")).toBeGreaterThan(sql.indexOf("row_number()"))
+	})
+
+	it("counts each group's failures per bucket of the caller's interval", () => {
+		const { sql } = compileUnsafe(aiToolErrorsQuery(errorSelection), params)
+
+		expect(sql).toContain("toStartOfInterval(ts, INTERVAL 300 SECOND)")
+		expect(sql).toContain("sumMap(map(bucket, toUInt64(1))) AS trend")
+	})
+
+	it("narrows every detail read to the group, and only the samples to a session or a variant", () => {
+		const narrowed = { ...group, session: "sess_1", variant: "" }
+		for (const sql of [
+			compileUnsafe(aiToolErrorSessionsQuery(narrowed), params).sql,
+			compileUnsafe(aiToolErrorVariantsQuery(narrowed), params).sql,
+			compileUnsafe(aiToolErrorBreakdownQuery(narrowed), params).sql,
+		]) {
+			expect(sql).toContain(`fingerprint = '${FINGERPRINT}'`)
+			// The lists a reader picks a session or a variant FROM stay whole.
+			expect(sql).not.toContain("'sess_1'")
+			expect(sql).not.toContain("failureMessage = ''")
+		}
+
+		const { sql } = compileUnsafe(aiToolErrorOccurrencesQuery(narrowed), params)
+		expect(sql).toContain(`fingerprint = '${FINGERPRINT}'`)
+		expect(sql).toContain("sessionKey = 'sess_1'")
+		// `''` is a real raw text — a failure that said nothing — so it narrows.
+		expect(sql).toContain("failureMessage = ''")
+		expect(sql).toContain("ORDER BY timestamp DESC, spanId DESC")
+		expect(sql).toContain(`LIMIT ${AI_TOOL_OCCURRENCES_LIMIT}`)
+	})
+
+	it("pages the samples strictly past the previous page's last row", () => {
 		const { sql } = compileUnsafe(
-			aiToolErrorOccurrencesQuery({ ...errorSelection, errorType: "Timeout", session: "sess_1" }),
+			aiToolErrorOccurrencesQuery({
+				...group,
+				before: { timestamp: "2026-08-18 01:00:00.000000000", spanId: "s9" },
+			}),
 			params,
 		)
 
-		expect(sql).toContain("sessionKey = 'sess_1'")
-		expect(sql).toContain("ORDER BY timestamp DESC, spanId ASC")
-		expect(sql).toContain(`LIMIT ${AI_TOOL_OCCURRENCES_LIMIT}`)
+		expect(sql).toContain(
+			"(ts < '2026-08-18 01:00:00.000000000' OR (ts = '2026-08-18 01:00:00.000000000' AND spanId < 's9'))",
+		)
 	})
 
 	it("decodes each read through its declared row schema", () => {
@@ -476,17 +528,27 @@ describe("the tool detail reads", () => {
 		expect(
 			decodeRows(errors, [
 				{
-					errorType: "TimeoutError",
-					message: "timed out",
+					fingerprint: FINGERPRINT,
+					errorType: "tool_error",
+					message: '{"result":"Invalid tool input: Missing key\\n  at [\\"claim\\"]"}',
 					calls: 4,
 					sessions: 2,
+					variants: 1,
 					firstSeen: "2026-08-18 00:00:00",
 					lastSeen: "2026-08-18 01:00:00",
+					callsSince: "281",
+					// Quoted on a gateway that refuses the 64-bit setting, which is
+					// why every count here is `CHNumber` and not `Schema.Number`.
+					trend: { "2026-08-18T00:00:00.000Z": "3", "2026-08-18T00:05:00.000Z": 1 },
 				},
 			])[0],
-		).toMatchObject({ calls: 4, sessions: 2 })
+		).toMatchObject({
+			calls: 4,
+			callsSince: 281,
+			trend: { "2026-08-18T00:00:00.000Z": 3, "2026-08-18T00:05:00.000Z": 1 },
+		})
 
-		const sessions = compileUnsafe(aiToolErrorSessionsQuery(errorSelection), params, {
+		const sessions = compileUnsafe(aiToolErrorSessionsQuery(group), params, {
 			rowSchema: aiToolErrorSessionsRowSchema,
 		})
 		expect(
@@ -495,16 +557,28 @@ describe("the tool detail reads", () => {
 					sessionId: "s1",
 					vendorId: "eve",
 					agentName: "agent",
-					model: "gpt-5",
-					// Quoted on a gateway that refuses the 64-bit setting, which is
-					// why every count here is `CHNumber` and not `Schema.Number`.
+					service: "maple-investigations",
 					hits: "7",
 					lastSeen: "2026-08-18 01:00:00",
 				},
 			])[0],
 		).toMatchObject({ hits: 7 })
 
-		const occurrences = compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params, {
+		const variants = compileUnsafe(aiToolErrorVariantsQuery(group), params, {
+			rowSchema: aiToolErrorVariantsRowSchema,
+		})
+		expect(
+			decodeRows(variants, [{ message: "at [0]", calls: "4", lastSeen: "2026-08-18 01:00:00" }])[0],
+		).toMatchObject({ calls: 4 })
+
+		const breakdown = compileUnsafe(aiToolErrorBreakdownQuery(group), params, {
+			rowSchema: aiToolErrorBreakdownRowSchema,
+		})
+		expect(decodeRows(breakdown, [{ model: "gpt-5", service: "agent", calls: "8" }])[0]).toMatchObject({
+			calls: 8,
+		})
+
+		const occurrences = compileUnsafe(aiToolErrorOccurrencesQuery(group), params, {
 			rowSchema: aiToolErrorOccurrencesRowSchema,
 		})
 		expect(
@@ -517,6 +591,7 @@ describe("the tool detail reads", () => {
 					vendorId: "eve",
 					agentName: "agent",
 					model: "gpt-5",
+					service: "agent",
 					errorType: "TimeoutError",
 					message: "timed out",
 					durationNs: "1500000",
