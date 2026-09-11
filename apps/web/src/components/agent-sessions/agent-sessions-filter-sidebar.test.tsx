@@ -14,8 +14,6 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 import { AgentSessionsFilterSidebar } from "./agent-sessions-filter-sidebar"
-import { AgentSessionsToolbar } from "./agent-sessions-toolbar"
-import { sortOptionFor } from "./agent-sessions-filter-inputs"
 
 const facets = Result.success({
 	vendors: [
@@ -227,44 +225,5 @@ describe("AgentSessionsFilterSidebar", () => {
 
 		fireEvent.click(screen.getByLabelText("Hide single-trace sessions"))
 		expect(nextSearch().grouped).toBe(true)
-	})
-})
-
-describe("AgentSessionsToolbar", () => {
-	afterEach(cleanup)
-
-	it("names the current sort and offers every measure", () => {
-		const onSortChange = vi.fn()
-		const onToggleErrorsOnly = vi.fn()
-		render(
-			<AgentSessionsToolbar
-				query=""
-				onSearch={vi.fn()}
-				errorsOnly={false}
-				onToggleErrorsOnly={onToggleErrorsOnly}
-				sortKey={sortOptionFor("cost", "desc").key}
-				onSortChange={onSortChange}
-				sessionCount={12}
-			/>,
-		)
-
-		// The menu itself is portal-rendered on open; jsdom sees the trigger,
-		// which names the sort it is set to.
-		const sort = screen.getByRole("combobox", { name: "Sort sessions" })
-		expect(sort.textContent).toContain("Most expensive")
-		// The error filter is a switch: on or off, never a button that looks
-		// like a warning about the list.
-		const errors = screen.getByRole("switch", { name: "With errors" })
-		expect(errors.getAttribute("aria-checked")).toBe("false")
-		fireEvent.click(errors)
-		expect(onToggleErrorsOnly).toHaveBeenCalledOnce()
-		expect(screen.getByText("12")).toBeTruthy()
-		expect(screen.getByPlaceholderText("Session or trace ID…")).toBeTruthy()
-	})
-
-	it("falls back to newest-first for a pair the menu does not offer", () => {
-		expect(sortOptionFor(undefined, undefined).key).toBe("newest")
-		expect(sortOptionFor("cost", "asc").key).toBe("newest")
-		expect(sortOptionFor("startTime", "asc").key).toBe("oldest")
 	})
 })

@@ -102,7 +102,22 @@ const TRACE_SESSION_ID_CHARS = 12
  * URL.
  */
 export function sessionRowId(sessionId: string): string {
+	const { kind, short } = sessionRowIdParts(sessionId)
+	return kind === "trace" ? `${MAPLE_AI_TRACE_SESSION_PREFIX}${short}` : short
+}
+
+/**
+ * `sessionRowId` for a row with room to say what kind of id it shows: the
+ * session key a framework reported, or — for a framework with no session key —
+ * the one trace the session is. `id` is the whole of it, for a tooltip; `short`
+ * is what the row prints, without the `trace:` prefix the label replaces.
+ */
+export function sessionRowIdParts(sessionId: string): {
+	kind: "session" | "trace"
+	id: string
+	short: string
+} {
 	const traceId = traceSessionTraceId(sessionId)
-	if (traceId === undefined) return sessionId
-	return `${MAPLE_AI_TRACE_SESSION_PREFIX}${traceId.slice(0, TRACE_SESSION_ID_CHARS)}…`
+	if (traceId === undefined) return { kind: "session", id: sessionId, short: sessionId }
+	return { kind: "trace", id: traceId, short: `${traceId.slice(0, TRACE_SESSION_ID_CHARS)}…` }
 }
