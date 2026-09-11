@@ -47,6 +47,13 @@ const BASE_MS = Math.floor((Date.now() - 2 * HOUR_MS) / 1000) * 1000
 /** The second bucket, half an hour on — what proves the series buckets at all. */
 const LATER_MS = BASE_MS + 1_800_000
 
+/** One tool's two failures, a day apart by the calendar and both well before the
+ *  window the rest of this suite reads. `trace_detail_spans` and
+ *  `ai_trace_index` partition by `toDate(Timestamp)`, so these sit in different
+ *  partitions — which is the shape the failure reads had to stop paying for. */
+const FLAKY_RECENT_MS = BASE_MS - 26 * HOUR_MS
+const FLAKY_OLDER_MS = BASE_MS - 50 * HOUR_MS
+
 const SESSION_ID = `${ORG_ID}:inv-tools-1`
 /** Parent-model attribution: the tool hangs off the chat span. */
 const TRACE_PARENT = "aitoolse2e0000000000000000000001"
@@ -55,6 +62,9 @@ const TRACE_FALLBACK = "aitoolse2e0000000000000000000002"
 /** Neither: a trace with no model-bearing span at all. */
 const TRACE_UNATTRIBUTED = "aitoolse2e0000000000000000000003"
 const TRACE_FOREIGN = "aitoolse2e0000000000000000000004"
+/** One tool that fails on two calendar days, for the failure reads. */
+const TRACE_FLAKY_TODAY = "aitoolse2e0000000000000000000005"
+const TRACE_FLAKY_YESTERDAY = "aitoolse2e0000000000000000000006"
 
 const GPT = "gpt-5"
 const CLAUDE = "claude-sonnet-5"
@@ -67,6 +77,9 @@ interface SeedSpan {
 	readonly ms: number
 	readonly durationNs: number
 	readonly status: string
+	/** The index carries it truncated since migration 0032, so the failure reads
+	 *  can label a group without touching the span. */
+	readonly statusMessage?: string
 	readonly attrs: Readonly<Record<string, string>>
 }
 
@@ -156,6 +169,43 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.tool.description": "Search traces by attribute.",
 		}),
 	},
+	// TRACE_FLAKY_* — one tool, two failures, one per calendar day, both outside
+	// the window every other test here reads. The older one names no error type,
+	// which is the page's `unknown` group; both carry a status message and the
+	// call's payloads.
+	{
+		traceId: TRACE_FLAKY_TODAY,
+		spanId: "tools-flaky-1",
+		name: "execute_tool flaky_tool",
+		ms: FLAKY_RECENT_MS,
+		durationNs: 2_000_000,
+		status: "Error",
+		statusMessage: "upstream timed out after 30s",
+		attrs: agentSpan({
+			[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "flaky_tool",
+			"gen_ai.tool.description": "Calls the flaky upstream.",
+			"error.type": "TimeoutError",
+			"gen_ai.tool.call.arguments": '{"retries":3}',
+			"gen_ai.tool.call.result": "",
+		}),
+	},
+	{
+		traceId: TRACE_FLAKY_YESTERDAY,
+		spanId: "tools-flaky-2",
+		name: "execute_tool flaky_tool",
+		ms: FLAKY_OLDER_MS,
+		durationNs: 8_000_000,
+		status: "Error",
+		statusMessage: "upstream returned 503",
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "flaky_tool",
+			"gen_ai.tool.call.arguments": '{"retries":1}',
+			"gen_ai.tool.call.result": '{"error":"503"}',
+		}),
+	},
 	// TRACE_UNATTRIBUTED — a tool call with no model anywhere in its trace, at a
 	// zero duration (the structured-output pseudo-tool shape). It is a call: it
 	// keys under '' and it counts.
@@ -199,13 +249,13 @@ const seed = async (): Promise<void> => {
 	]
 		.map(
 			([orgId, span]) =>
-				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name)}, 'Internal', 'agent-service', ${span.durationNs}, ${quote(span.status)}, 1, ${chMap(span.attrs)}, ${chMap({ "deployment.environment.name": "production" })})`,
+				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name)}, 'Internal', 'agent-service', ${span.durationNs}, ${quote(span.status)}, ${quote(span.statusMessage ?? "")}, 1, ${chMap(span.attrs)}, ${chMap({ "deployment.environment.name": "production" })})`,
 		)
 		.join("\n,")
 
 	await clickhouseExec(
 		`INSERT INTO traces
-		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SampleRate, SpanAttributes, ResourceAttributes)
+		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
 		 VALUES\n${rows}`,
 		database,
 	)
@@ -224,6 +274,14 @@ const window = {
 	orgId: ORG_ID,
 	startTime: chDateTime(BASE_MS - HOUR_MS),
 	endTime: chDateTime(BASE_MS + HOUR_MS),
+}
+
+/** Wide enough to hold both of `flaky_tool`'s failures, which is two calendar
+ *  days and therefore two partitions of every table involved. */
+const flakyWindow = {
+	orgId: ORG_ID,
+	startTime: chDateTime(FLAKY_OLDER_MS - HOUR_MS),
+	endTime: chDateTime(FLAKY_RECENT_MS + HOUR_MS),
 }
 
 /** The comparison window the totals route computes: equal length, ending where
@@ -383,6 +441,92 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			[
 				{ key: "run_sql", calls: 1 },
 				{ key: "search_traces", calls: 1 },
+			],
+		)
+	})
+
+	it("groups a tool's failures by type across two partitions, off the index", async () => {
+		const compiled = compileUnsafe(
+			Integrations.aiToolErrorsQuery({ tool: "flaky_tool" }),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorsRowSchema },
+		)
+		// The failures are a calendar day apart, which is what used to make this
+		// read a multi-partition seek on `trace_detail_spans`.
+		assert.isFalse(compiled.sql.includes("trace_detail_spans"))
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+
+		// One call named a type, the other named none — and `''` is a real group,
+		// the one the page labels `unknown`, not a row to drop.
+		assert.deepStrictEqual(
+			rows.map((row) => ({ errorType: row.errorType, calls: row.calls, message: row.message })),
+			[
+				{ errorType: "", calls: 1, message: "upstream returned 503" },
+				{ errorType: "TimeoutError", calls: 1, message: "upstream timed out after 30s" },
+			],
+		)
+	})
+
+	it("lists the sessions and the occurrences of one error type, then their payloads", async () => {
+		const selection = { tool: "flaky_tool", errorType: "TimeoutError" } as const
+
+		const sessions = compileUnsafe(
+			Integrations.aiToolErrorSessionsQuery(selection),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorSessionsRowSchema },
+		)
+		assert.deepStrictEqual(
+			Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))).map((row) => ({
+				sessionId: row.sessionId,
+				vendorId: row.vendorId,
+				hits: row.hits,
+			})),
+			[{ sessionId: SESSION_ID, vendorId: "eve", hits: 1 }],
+		)
+
+		const occurrences = compileUnsafe(
+			Integrations.aiToolErrorOccurrencesQuery(selection),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+		)
+		const calls = Effect.runSync(occurrences.decodeRows(await runJson(occurrences.sql)))
+		assert.deepStrictEqual(
+			calls.map((row) => ({ spanId: row.spanId, errorType: row.errorType, message: row.message })),
+			[
+				{
+					spanId: "tools-flaky-1",
+					errorType: "TimeoutError",
+					message: "upstream timed out after 30s",
+				},
+			],
+		)
+
+		// Step two: the one fact the index does not carry, read for exactly those
+		// calls and bounded by their own timestamps rather than the window.
+		const slice = Integrations.aiToolErrorPayloadSlice(calls)
+		assert.strictEqual(slice.sliceStart, slice.sliceEnd)
+		const payloads = compileUnsafe(
+			Integrations.aiToolErrorPayloadsQuery(calls),
+			{ orgId: ORG_ID, ...slice },
+			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
+		)
+		assert.isFalse(payloads.sql.includes(flakyWindow.startTime))
+		assert.deepStrictEqual(
+			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map((row) => ({
+				spanId: row.spanId,
+				statusCode: row.statusCode,
+				arguments: row.arguments,
+				argumentsBytes: row.argumentsBytes,
+				resultBytes: row.resultBytes,
+			})),
+			[
+				{
+					spanId: "tools-flaky-1",
+					statusCode: "Error",
+					arguments: '{"retries":3}',
+					argumentsBytes: 13,
+					resultBytes: 0,
+				},
 			],
 		)
 	})

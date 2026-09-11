@@ -77,6 +77,8 @@ interface SeedSpan {
 	readonly ms: number
 	readonly service: string
 	readonly status: string
+	/** Carried onto the index truncated since migration 0032. */
+	readonly statusMessage?: string
 	readonly attrs: Readonly<Record<string, string>>
 	readonly resource?: Readonly<Record<string, string>>
 }
@@ -187,7 +189,9 @@ const MIRROR_ATTEMPT_SPAN: SeedSpan = {
 }
 
 // A tool call under the turn span that failed by status: the index row that
-// carries the tool, and the session's one failed agent span.
+// carries the tool, and the session's one failed agent span. It is also the one
+// span here with everything migration 0032 extracts — a failure type, a status
+// message, and the description the tool gave the model.
 const AGENT_TOOL_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-tool-1",
@@ -196,10 +200,13 @@ const AGENT_TOOL_SPAN: SeedSpan = {
 	ms: BASE_MS + 2_000,
 	service: "agent-service",
 	status: "Error",
+	statusMessage: "search timed out",
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "search_traces",
+		"error.type": "TimeoutError",
+		"gen_ai.tool.description": "Search traces by attribute.",
 	},
 	resource: PRODUCTION,
 }
@@ -341,13 +348,13 @@ const seed = async (): Promise<void> => {
 	]
 		.map(
 			([orgId, span]) =>
-				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name ?? "agent turn")}, 'Internal', ${quote(span.service)}, 1000000, ${quote(span.status)}, 1, ${chMap(span.attrs)}, ${chMap(span.resource ?? {})})`,
+				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name ?? "agent turn")}, 'Internal', ${quote(span.service)}, 1000000, ${quote(span.status)}, ${quote(span.statusMessage ?? "")}, 1, ${chMap(span.attrs)}, ${chMap(span.resource ?? {})})`,
 		)
 		.join("\n,")
 
 	await clickhouseExec(
 		`INSERT INTO traces
-		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SampleRate, SpanAttributes, ResourceAttributes)
+		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
 		 VALUES\n${rows}`,
 		database,
 	)
@@ -380,7 +387,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			`SELECT OrgId, toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName,
 			        DeploymentEnv, Model, AgentName, ToolName, SpanId, ParentSpanId, Duration,
 			        IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId,
-			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens
+			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
+			        ErrorType, StatusMessage, ToolDescription
 			 FROM ai_trace_index ORDER BY Timestamp ASC`,
 		)
 
@@ -402,6 +410,9 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				ResponseId: string
 				/** The five 0031 buckets, in order — the disjoint split `Tokens` sums. */
 				buckets: readonly [number, number, number, number, number]
+				/** 0032: why the span failed, and what the tool documents itself as. */
+				ErrorType: string
+				ToolDescription: string
 			}> = {},
 		) => {
 			const { buckets = [0, 0, 0, 0, 0], ...columns } = expect
@@ -431,6 +442,9 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				CacheWriteTokens: buckets[2],
 				OutputTokens: buckets[3],
 				ReasoningTokens: buckets[4],
+				ErrorType: "",
+				StatusMessage: span.statusMessage ?? "",
+				ToolDescription: "",
 				...columns,
 			}
 		}
@@ -479,6 +493,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				ToolName: "search_traces",
 				IsToolCall: 1,
 				IsError: 1,
+				// Migration 0032: the tool detail page's Errors table and header
+				// read all three here rather than seeking the raw span.
+				ErrorType: "TimeoutError",
+				ToolDescription: "Search traces by attribute.",
 			}),
 			// "agent turn" by name, no model, no usage: an agent span, not a call.
 			indexRow(ORG_ID, AGENT_SDK_SPAN),
