@@ -118,18 +118,15 @@ function AgentSessionsBody() {
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
 	const { refreshVersion } = usePageRefreshContext()
-	// The window rolls forward with every navigation — a filter or sort change
-	// re-resolves "the last week" against now, snapped to the cache grid so a
-	// change within the grid interval keeps its key — and with every Reload.
-	// Once Reload has been pressed the window stops snapping, as in
-	// `useEffectiveTimeRange`: a snapped end would keep the newest sessions out
-	// however many times it is clicked.
+	// "The last week" resolves against now once per mount and once per Reload,
+	// never snapped: the list is newest-first, and an end floored to the cache
+	// grid hid up to a grid interval of the newest sessions on every page load.
+	// A filter or sort change keeps the window rather than re-resolving it, which
+	// is what holds the unfiltered facets' and distributions' keys steady — the
+	// job the snap used to do.
 	const { startTime, endTime } = useMemo(
-		() =>
-			resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, {
-				snap: refreshVersion === 0,
-			}),
-		[searchKey, refreshVersion],
+		() => resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, { snap: false }),
+		[refreshVersion],
 	)
 	const filterInputs = useMemo(
 		() => agentSessionsFilterInputs(search, { startTime, endTime }),
