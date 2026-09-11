@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { vendorColor } from "./vendor-color"
+import { modelVendorColor, vendorColor } from "./vendor-color"
 
 describe("vendorColor", () => {
 	it("gives a framework its publisher's brand, shared with that publisher's models", () => {
@@ -20,5 +20,15 @@ describe("vendorColor", () => {
 		expect(vendorColor("unknown:genai")).toBe("var(--muted-foreground)")
 		expect(vendorColor("")).toBe("var(--muted-foreground)")
 		expect(vendorColor("constructor")).toBe("var(--muted-foreground)")
+	})
+})
+
+describe("modelVendorColor", () => {
+	it("builds a detected brand the way a framework's is built, and leaves an unbranded model uncolored", () => {
+		expect(modelVendorColor({ brandColor: { light: "#4285F4", dark: "#4285F4" } })).toBe("#4285F4")
+		expect(modelVendorColor({ brandColor: { light: "#000000", dark: "#FFFFFF" } })).toBe(
+			"light-dark(#000000, #FFFFFF)",
+		)
+		expect(modelVendorColor({ brandColor: null })).toBeUndefined()
 	})
 })

@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 
 import type { DetectedModel } from "@/hooks/use-detected-models"
 import { modelVendorIcon } from "@/lib/agent-sessions/model-vendor-icon"
+import { modelVendorColor } from "@/lib/agent-sessions/vendor-color"
 
 /**
  * A model as a reader should see it: the vendor's mark and the model's name,
@@ -12,7 +13,8 @@ import { modelVendorIcon } from "@/lib/agent-sessions/model-vendor-icon"
  * pass, or to their own tooltip when they pass `title={null}`. Nothing here
  * waits on detection: an unresolved model renders its last
  * path segment beside the generic mark, at the same size, so the row does not
- * reflow when the batch lands.
+ * reflow when the batch lands. The mark takes the vendor's brand color once
+ * detection names one, and the text's color until then.
  *
  * `moreCount` is the "+2" a lane too narrow for a list falls back to. It sits
  * outside the truncating name so it survives a long first model.
@@ -37,7 +39,12 @@ export function ModelLabel({
 			className={cn("flex min-w-0 items-center gap-1.5", className)}
 			title={title === undefined ? modelTitle(detected) : (title ?? undefined)}
 		>
-			<Icon size={size} className="shrink-0" aria-hidden />
+			<Icon
+				size={size}
+				className="shrink-0"
+				style={{ color: modelVendorColor(detected) }}
+				aria-hidden
+			/>
 			<span className="min-w-0 truncate">{detected.displayName}</span>
 			{moreCount > 0 && <span className="shrink-0 tabular-nums">+{moreCount}</span>}
 		</span>

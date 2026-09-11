@@ -31,6 +31,7 @@ import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
+import { vendorColor } from "@/lib/agent-sessions/vendor-color"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { sessionLinkWindow, sessionRowIdParts } from "@/lib/agent-sessions/session-window"
 import { TOKEN_BUCKETS, type TokenBucketKey } from "@/lib/agent-sessions/token-buckets"
@@ -608,9 +609,9 @@ function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone
 						render={<span />}
 						role="img"
 						aria-label={vendor}
-						className="flex shrink-0 items-center text-muted-foreground"
+						className="flex shrink-0 items-center"
 					>
-						<VendorIcon size={15} aria-hidden />
+						<VendorIcon size={15} style={{ color: vendorColor(session.vendorId) }} aria-hidden />
 					</TooltipTrigger>
 					<TooltipContent>{vendor}</TooltipContent>
 				</Tooltip>

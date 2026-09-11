@@ -26,7 +26,7 @@ import { Separator } from "@maple/ui/components/ui/separator"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { modelVendorIcon } from "@/lib/agent-sessions/model-vendor-icon"
 import { useDetectedModels } from "@/hooks/use-detected-models"
-import { vendorColor } from "@/lib/agent-sessions/vendor-color"
+import { modelVendorColor, vendorColor } from "@/lib/agent-sessions/vendor-color"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import {
@@ -225,9 +225,9 @@ export function AgentSessionsFilterSidebar({
 							options={value.vendors}
 							selected={search.vendors ?? []}
 							onChange={(vals) => setList("vendors", vals)}
-							colorMap={swatches(value.vendors, search.vendors, vendorColor)}
 							getOptionLabel={vendorLabel}
 							getOptionIcon={vendorIcon}
+							getOptionIconColor={vendorColor}
 						/>
 
 						<SearchableFilterSection
@@ -238,6 +238,7 @@ export function AgentSessionsFilterSidebar({
 							onChange={(vals) => setList("models", vals)}
 							getOptionLabel={(name) => detectModel(name).displayName}
 							getOptionIcon={(name) => modelVendorIcon(detectModel(name))}
+							getOptionIconColor={(name) => modelVendorColor(detectModel(name))}
 						/>
 
 						<FilterSection

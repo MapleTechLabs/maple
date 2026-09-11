@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 
+import { vendorColor } from "@/lib/agent-sessions/vendor-color"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import { sessionIdentity } from "./session-detail/session-header"
@@ -34,8 +35,8 @@ export function SessionName({
 	const heading = sessionHeading(agentName, vendorId)
 	return (
 		<span className={cn("flex min-w-0 items-center gap-2", className)}>
-			<span className="flex shrink-0 items-center text-muted-foreground" title={vendorLabel(vendorId)}>
-				<VendorIcon size={iconSize} aria-hidden />
+			<span className="flex shrink-0 items-center" title={vendorLabel(vendorId)}>
+				<VendorIcon size={iconSize} style={{ color: vendorColor(vendorId) }} aria-hidden />
 			</span>
 			<span className="min-w-0 truncate" title={heading}>
 				{heading}
