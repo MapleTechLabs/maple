@@ -48,7 +48,7 @@ export function AgentSessionsTabs({
 			</TabLink>
 			<TabLink
 				to="/agent-sessions/tools"
-				search={window}
+				search={{ ...window }}
 				active={active === "tools"}
 				icon={<GearIcon size={13} aria-hidden />}
 				count={counts?.tools}

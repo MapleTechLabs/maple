@@ -11,7 +11,11 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { NotFoundError } from "@/components/route-error"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import {
+	TimeRangeSearchFields,
+	applyTimeRangeSearch,
+	type TimeRangeSearch,
+} from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -124,7 +128,7 @@ function AgentToolsBody({
 	onSearchChange,
 	headerControls,
 }: {
-	search: ToolAnalyticsSearch
+	search: ToolAnalyticsSearch & TimeRangeSearch
 	window: { startTime: string; endTime: string }
 	preset: string
 	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void

@@ -100,12 +100,11 @@ function ToolDetailPageContent() {
 											search.timePreset ??
 											(search.startTime ? undefined : TOOL_ANALYTICS_DEFAULT_PRESET)
 										}
-										onTimeChange={(range, options) =>
+										onTimeChange={(range) => {
 											navigate({
-												replace: options?.replace,
 												search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
 											})
-										}
+										}}
 									/>
 								}
 							/>

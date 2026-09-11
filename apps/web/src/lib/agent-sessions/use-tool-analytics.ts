@@ -50,7 +50,7 @@ export interface ToolAnalyticsResults {
 		QueryAtomFailure
 	>
 	readonly breakdowns: Result.Result<
-		{ tools: ReadonlyArray<ToolBreakdownRow>; models: ReadonlyArray<ToolBreakdownRow> },
+		{ tools: ReadonlyArray<ToolBreakdownRow> },
 		QueryAtomFailure
 	>
 }
