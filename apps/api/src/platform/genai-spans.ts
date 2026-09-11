@@ -165,9 +165,13 @@ const summarizeResponse = (response: ResponseParts) => {
 	return { message, finish, failed: errored || finish?.reason === "error" }
 }
 
-/** The payload's JSON prefix when it outweighs `cap`, or nothing when it fits unchanged. */
+/**
+ * The payload's JSON prefix when it outweighs `cap`, or nothing when it fits unchanged. A payload
+ * JSON cannot encode is always replaced — left in place, it would throw in `encodeMessage`.
+ */
 const oversizedPayloadPrefix = (value: unknown, cap: number): string | undefined => {
-	const json = stringify(value) ?? String(value)
+	const json = stringify(value)
+	if (json === undefined) return truncated(String(value), cap)
 	return json.length > cap ? json.slice(0, cap) + TRUNCATION_MARKER : undefined
 }
 
@@ -242,7 +246,7 @@ const reportedCost = (metadata: unknown): number | undefined => {
 		return undefined
 	}
 	const cost = openrouter.usage.cost
-	return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined
+	return Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0 ? cost : undefined
 }
 
 export interface ModelCallTelemetry {
@@ -261,8 +265,9 @@ interface CallTiming {
 	finishedMs: number | undefined
 }
 
+/** `timing` is absent for a non-streaming call, which has neither a first chunk nor a stream. */
 const modelCallTransformer =
-	(telemetry: ModelCallTelemetry, timing: CallTiming): Telemetry.SpanTransformer =>
+	(telemetry: ModelCallTelemetry, timing: CallTiming | undefined): Telemetry.SpanTransformer =>
 	({ span, prompt, responseFormat, response }) => {
 		const input = messagesJson(inputMessages(prompt), INPUT_MESSAGES_BUDGET)
 		const system = systemInstructionsJson(prompt)
@@ -270,7 +275,7 @@ const modelCallTransformer =
 		const cost = finish === undefined ? undefined : reportedCost(finish.metadata)
 		const attributes = {
 			"gen_ai.provider.name": telemetry.providerName,
-			"gen_ai.request.stream": true,
+			"gen_ai.request.stream": timing !== undefined,
 			...(telemetry.reasoningLevel === undefined
 				? undefined
 				: { "gen_ai.request.reasoning.level": telemetry.reasoningLevel }),
@@ -289,8 +294,7 @@ const modelCallTransformer =
 						"gen_ai.usage.input_tokens": finish.usage.inputTokens.total,
 						"gen_ai.usage.output_tokens": finish.usage.outputTokens.total,
 						"gen_ai.usage.cache_read.input_tokens": finish.usage.inputTokens.cacheRead,
-						// The registry spelling; the read side decodes it as an alias of `cache_creation`.
-						"gen_ai.usage.cache_write.input_tokens": finish.usage.inputTokens.cacheWrite,
+						"gen_ai.usage.cache_creation.input_tokens": finish.usage.inputTokens.cacheWrite,
 						"gen_ai.usage.reasoning.output_tokens": finish.usage.outputTokens.reasoning,
 						...(cost === undefined ? undefined : { "gen_ai.usage.cost": cost }),
 					}),
@@ -298,11 +302,12 @@ const modelCallTransformer =
 			// green — these are the record of it, and what the session view's failure counting reads.
 			...(failed ? { "error.type": "provider_error", "gen_ai.response.status": "failed" } : undefined),
 			// Seconds by convention. The span's own clock covers the whole stream lifetime, including
-			// the consumer draining it, so these two are the model's honest numbers.
-			...(timing.firstChunkMs === undefined
+			// the consumer draining it, so these two are stamped as parts pass through instead — as each
+			// is pulled, which is as close to the model as this side of the stream gets.
+			...(timing?.firstChunkMs === undefined
 				? undefined
 				: { "gen_ai.response.time_to_first_chunk": (timing.firstChunkMs - timing.startedMs) / 1000 }),
-			...(timing.finishedMs === undefined
+			...(timing?.finishedMs === undefined
 				? undefined
 				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: timing.finishedMs - timing.startedMs }),
 			...telemetry.sessionAttributes,
@@ -313,47 +318,62 @@ const modelCallTransformer =
 	}
 
 /**
- * The language model, with every `streamText` call annotating its own span.
+ * Build a provider's language model so that every call annotates its own span.
  *
- * The transformer is provided per call rather than once on the layer because two of its numbers are
- * per call: the first chunk and the finish are timed as they pass through, and the transformer reads
- * them when Effect AI applies it — as the stream ends, including when it fails. `streamText` is the
- * only call Maple makes; the other methods pass through unannotated.
+ * The transformer goes in twice. Once at construction, where Effect AI captures it as the default
+ * every method falls back to, so `generateText` and `generateObject` spans carry the content and the
+ * session too. And once per `streamText` call — the only call Maple makes — because two of its
+ * numbers are per call: the first chunk and the finish are timed as they pass through, and the
+ * transformer reads them when Effect AI applies it, as the stream ends, including when it fails.
  */
-export const withModelCallTelemetry = (
-	service: LanguageModel.Service,
+export const instrumentLanguageModel = <R>(
+	make: Effect.Effect<LanguageModel.Service, never, R>,
 	telemetry: ModelCallTelemetry,
-): LanguageModel.Service => ({
-	...service,
-	streamText: ((options) =>
-		Stream.unwrap(
-			Effect.map(Clock.currentTimeMillis, (startedMs) => {
-				const timing: CallTiming = { startedMs, firstChunkMs: undefined, finishedMs: undefined }
-				return service.streamText(options).pipe(
-					Stream.tap((part) =>
-						timing.firstChunkMs === undefined || part.type === "finish"
-							? Effect.map(Clock.currentTimeMillis, (now) => {
-									timing.firstChunkMs ??= now
-									if (part.type === "finish") timing.finishedMs = now
-								})
-							: Effect.void,
-					),
-					Stream.provideService(
-						Telemetry.CurrentSpanTransformer,
-						modelCallTransformer(telemetry, timing),
-					),
-				)
-			}),
-		)) as LanguageModel.Service["streamText"],
-})
+): Effect.Effect<LanguageModel.Service, never, R> =>
+	make.pipe(
+		Effect.provideService(Telemetry.CurrentSpanTransformer, modelCallTransformer(telemetry, undefined)),
+		Effect.map((service) => ({
+			...service,
+			streamText: ((options: Parameters<LanguageModel.Service["streamText"]>[0]) =>
+				Stream.unwrap(
+					Effect.map(Clock.currentTimeMillis, (startedMs) => {
+						const timing: CallTiming = {
+							startedMs,
+							firstChunkMs: undefined,
+							finishedMs: undefined,
+						}
+						return service.streamText(options).pipe(
+							Stream.tap((part) =>
+								timing.firstChunkMs === undefined || part.type === "finish"
+									? Effect.map(Clock.currentTimeMillis, (now) => {
+											timing.firstChunkMs ??= now
+											if (part.type === "finish") timing.finishedMs = now
+										})
+									: Effect.void,
+							),
+							Stream.provideService(
+								Telemetry.CurrentSpanTransformer,
+								modelCallTransformer(telemetry, timing),
+							),
+						)
+					}),
+				)) as LanguageModel.Service["streamText"],
+		})),
+	)
 
 /**
  * Bounded JSON for tool arguments and results; always an object or array, because the read side's
  * `json` decoder drops scalars and Maple's own tool results are strings. Exported for tests.
  */
 export const toolCallJson = (value: unknown): string => {
-	const wrapped = typeof value === "object" && value !== null ? value : { result: value }
-	const json = stringify(wrapped)
+	// A scalar is truncated before it is wrapped, so an oversized string result still reads as its text
+	// rather than as an escaped JSON prefix.
+	if (!Predicate.isObject(value)) {
+		return JSON.stringify({
+			result: Predicate.isString(value) ? truncated(value, TOOL_JSON_BUDGET) : value,
+		})
+	}
+	const json = stringify(value)
 	if (json === undefined) return JSON.stringify({ result: truncated(String(value), TOOL_JSON_BUDGET) })
 	if (json.length <= TOOL_JSON_BUDGET) return json
 	let prefix = json.slice(0, TOOL_JSON_BUDGET)
@@ -437,25 +457,23 @@ const EXECUTE_TOOL_SPAN_PREFIX = "execute_tool "
  * name, not the engine's internal one, so a handler that already runs directly under the tool span
  * works the same.
  */
-const executeToolSpan = (span: Tracer.AnySpan): Tracer.Span | undefined => {
-	if (span._tag !== "Span") return undefined
-	if (span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)) return span
-	return Option.match(span.parent, {
-		onNone: () => undefined,
-		onSome: (parent) =>
-			parent._tag === "Span" && parent.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX) ? parent : undefined,
-	})
-}
+const isExecuteToolSpan = (span: Tracer.AnySpan): span is Tracer.Span =>
+	span._tag === "Span" && span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
 
-const annotateExecuteToolSpan = (attributes: Readonly<Record<string, string>>): Effect.Effect<void> =>
-	Effect.currentSpan.pipe(
-		Effect.map((current) => {
-			const span = executeToolSpan(current)
-			if (span === undefined) return
-			for (const [key, value] of Object.entries(attributes)) span.attribute(key, value)
-		}),
-		Effect.ignore,
-	)
+const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
+	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
+		? Option.some(span)
+		: Option.filter(span.parent, isExecuteToolSpan)
+
+/**
+ * Untraced on purpose: a span of its own would become the current span, one level further from the
+ * `execute_tool` span this looks for.
+ */
+const annotateExecuteToolSpan = Effect.fnUntraced(function* (attributes: Readonly<Record<string, string>>) {
+	const span = Option.flatMap(yield* Effect.option(Effect.currentSpan), executeToolSpan)
+	if (Option.isNone(span)) return
+	for (const [key, value] of Object.entries(attributes)) span.value.attribute(key, value)
+})
 
 /** Record a tool call's description, arguments and result — or failure — on its `execute_tool` span. */
 export const withToolCallContent = <A, E extends { readonly message: string }, R>(

@@ -17,7 +17,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import * as AiModel from "effect/unstable/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { type ModelCallTelemetry, withModelCallTelemetry } from "./genai-spans"
+import { type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
 import { layerWorkersAi } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
@@ -72,8 +72,12 @@ export const DEFAULT_LLM_PROVIDER: LlmProvider = "openrouter"
  * `gen_ai.provider.name` for a provider path. Cloudflare has no well-known value in the convention,
  * so it takes the convention's `vendor.product` shape (`aws.bedrock`, `gcp.vertex_ai`).
  */
-export const genAiProviderName = (provider: LlmProvider): string =>
-	provider === "workers-ai" ? "cloudflare.workers_ai" : "openrouter"
+export const genAiProviderName = (provider: LlmProvider): string => GEN_AI_PROVIDER_NAMES[provider]
+
+const GEN_AI_PROVIDER_NAMES = {
+	openrouter: "openrouter",
+	"workers-ai": "cloudflare.workers_ai",
+} as const satisfies Record<LlmProvider, string>
 
 /**
  * Workers AI has no per-request API key when reached through the `AI` binding, but the client still
@@ -266,10 +270,7 @@ const instrumentedModel = <R>(
 	AiModel.make(
 		"openai",
 		name,
-		Layer.effect(
-			LanguageModel.LanguageModel,
-			Effect.map(make, (service) => withModelCallTelemetry(service, telemetry)),
-		),
+		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry)),
 	)
 
 const openRouterModel = (

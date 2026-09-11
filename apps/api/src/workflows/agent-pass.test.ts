@@ -145,6 +145,19 @@ const run = (turns: ReadonlyArray<ScriptedTurnInput>, deadlineAtMs?: number) =>
 		...(deadlineAtMs === undefined ? undefined : { deadlineAtMs }),
 	}).pipe(Effect.provide(Layer.merge(ToolExecutorStubLayer, IdGenerator.layer)))
 
+/** A tracer that keeps every span it opened; a native span keeps its attributes after it ends. */
+const recordSpans = () => {
+	const spans: Array<Tracer.NativeSpan> = []
+	const tracer = Tracer.make({
+		span: (options) => {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
+	return { spans, tracer }
+}
+
 describe("runAgentPass", () => {
 	it.effect("reports the answer when the agent submits", () =>
 		Effect.gen(function* () {
@@ -215,14 +228,7 @@ describe("runAgentPass", () => {
 
 	it.effect("describes the agent on its pass span and each tool call on its own span", () =>
 		Effect.gen(function* () {
-			const spans: Array<Tracer.NativeSpan> = []
-			const tracer = Tracer.make({
-				span: (options) => {
-					const span = new Tracer.NativeSpan(options)
-					spans.push(span)
-					return span
-				},
-			})
+			const { spans, tracer } = recordSpans()
 
 			yield* run([
 				turn(call("c1", "query_data", { sql: "select 1" })),
@@ -250,6 +256,39 @@ describe("runAgentPass", () => {
 				result: "query_data completed",
 			})
 			assert.isNotEmpty(tool?.get("gen_ai.tool.description"))
+		}),
+	)
+
+	it.effect("records a failed tool call's message as its result", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = recordSpans()
+			const failingExecutor = Layer.succeed(McpToolExecutor, {
+				execute: () =>
+					Effect.succeed({
+						content: [{ type: "text" as const, text: "table not found" }],
+						isError: true,
+					}),
+			})
+
+			yield* runAgentPass({
+				id: "pass-1",
+				agent: AGENT,
+				tenant: TENANT,
+				model: scripted([
+					turn(call("c1", "query_data", { sql: "select 1" })),
+					turn(call("c2", "submit_candidate", { claim: "found it" })),
+				]),
+				prompt: "Is the pool exhausted?",
+				submit: SUBMIT,
+			}).pipe(
+				Effect.provide(Layer.merge(failingExecutor, IdGenerator.layer)),
+				Effect.withSpan("investigation.test"),
+				Effect.withTracer(tracer),
+			)
+
+			const tool = spans.find((span) => span.name === "execute_tool query_data")?.attributes
+			// The failure message as the model received it, prefix and all.
+			assert.include(JSON.parse(String(tool?.get("gen_ai.tool.call.result"))).result, "table not found")
 		}),
 	)
 
