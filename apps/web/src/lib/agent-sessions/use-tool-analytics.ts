@@ -39,11 +39,15 @@ export interface ToolAnalyticsResults {
 	>
 	/** Both windows in one read — `previous` is what the strip's deltas measure
 	 *  against — plus the window's whole session population, which is the
-	 *  Sessions tile's denominator, and the selection's extent. */
+	 *  Sessions tile's denominator, and the selection's extent.
+	 *
+	 *  `previous` is absent where the caller asked for `current` alone, which the
+	 *  tool detail page does; the deltas drop and nothing else does. This hook
+	 *  always asks for all three. */
 	readonly totals: Result.Result<
 		{
 			current: ToolTotals
-			previous: ToolTotals
+			previous: ToolTotals | undefined
 			allSessions: number
 			firstSeen: number
 			lastSeen: number

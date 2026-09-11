@@ -687,9 +687,38 @@ export class AiToolsSeriesResponse extends Schema.Class<AiToolsSeriesResponse>("
 export const AiToolsAggregate = Schema.Struct(aiToolsMeasures)
 export type AiToolsAggregate = Schema.Schema.Type<typeof AiToolsAggregate>
 
+/**
+ * Which windows a totals read measures. `current` is the caller's; `previous` is
+ * the equal-length window before it, for the tiles' deltas; `window` is the
+ * whole session population, which is the Sessions tile's denominator.
+ */
+export const AiToolsPeriod = Schema.Literals(["current", "previous", "window"])
+export type AiToolsPeriod = Schema.Schema.Type<typeof AiToolsPeriod>
+
 export class AiToolsTotalsRequest extends Schema.Class<AiToolsTotalsRequest>("AiToolsTotalsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
+	/**
+	 * The periods to measure. Absent is all three, which is what the overview
+	 * draws. The tool detail page asks for `current` alone: it has no delta tiles
+	 * and no all-sessions denominator, and each period is its own scan.
+	 *
+	 * `current` is not optional among them. The response's `current` is the only
+	 * required aggregate, so a list without it would have the handler answer a
+	 * zeroed window with no first or last call — a 200 stating that nothing ran.
+	 * Refused here instead. No upper bound: a list may repeat a period and the
+	 * query folds duplicates, so a length cap would be a bound on nothing.
+	 */
+	periods: Schema.optionalKey(
+		Schema.Array(AiToolsPeriod).check(
+			Schema.isMinLength(1),
+			Schema.makeFilter(
+				(periods: ReadonlyArray<AiToolsPeriod>) =>
+					periods.includes("current") || "periods must include 'current'",
+				{ identifier: "PeriodsIncludeCurrent" },
+			),
+		),
+	),
 	...aiToolsSelection,
 }) {}
 
@@ -699,9 +728,10 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	 * Every session of the window, before the selection and before the toolbar —
 	 * the denominator the Sessions tile states its share against, and the count
 	 * the tab strip shows. Unfiltered on purpose: a share against a denominator
-	 * that moves with the filters is not a share.
+	 * that moves with the filters is not a share. Absent where `window` was not
+	 * among the requested periods.
 	 */
-	allSessions: Schema.Number,
+	allSessions: Schema.optionalKey(Schema.Number),
 	/** The first and last matched call, as warehouse datetime literals; `''`
 	 *  where nothing matched. Bounded by the window, so "first seen" is
 	 *  "first seen in this range". */
@@ -710,9 +740,10 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	/**
 	 * The window of equal length immediately before the caller's, measured by
 	 * the same query — the deltas the tiles show. Zeros where nothing ran then,
-	 * which the client renders as "no comparison" rather than a -100%.
+	 * which the client renders as "no comparison" rather than a -100%. Absent
+	 * where `previous` was not among the requested periods.
 	 */
-	previous: AiToolsAggregate,
+	previous: Schema.optionalKey(AiToolsAggregate),
 	/** The selected tool's latest non-empty `gen_ai.tool.description` in the
 	 *  window. Absent when no tool is selected or no call stamped one. */
 	description: Schema.optionalKey(Schema.String),

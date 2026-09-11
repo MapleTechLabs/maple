@@ -18,6 +18,7 @@ import {
 	AiToolErrorDetailRequest,
 	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
+	AiToolsPeriod,
 	AiToolsSeriesRequest,
 	AiToolsTotalsRequest,
 	AI_TOOL_ERRORS_MAX,
@@ -163,13 +164,25 @@ export const getAiToolSeries = Effect.fn("AiSessionTools.series")(function* ({
 	return { data: mapToolSeries(result), seriesKind: result.seriesKind }
 })
 
-/** Both windows in one read — the current one and the equal-length one before it. */
+/**
+ * The window's totals, and by default the two the overview compares them
+ * against: the equal-length window before it, and every session in it.
+ *
+ * `periods` is which of the three to measure — each is its own scan, so a page
+ * that draws no deltas asks for `current` alone.
+ */
+const AiToolTotalsInput = Schema.Struct({
+	...AiToolsSelection.fields,
+	periods: Schema.optional(Schema.Array(AiToolsPeriod)),
+})
+export type AiToolTotalsInput = Schema.Schema.Type<typeof AiToolTotalsInput>
+
 export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 	data,
 }: {
-	data: AiToolsSelection
+	data: AiToolTotalsInput
 }) {
-	const input = yield* decodeInput(AiToolsSelection, data, "aiToolTotals")
+	const input = yield* decodeInput(AiToolTotalsInput, data, "aiToolTotals")
 	const result = yield* runWarehouseQuery("aiToolTotals", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalAtomClient
@@ -177,6 +190,7 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 				payload: new AiToolsTotalsRequest({
 					startTime: input.startTime,
 					endTime: input.endTime,
+					...(input.periods !== undefined && { periods: input.periods }),
 					...selectionFields(input),
 				}),
 			})
@@ -185,9 +199,12 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 	return {
 		current: measuresOf(result.current),
 		// Nothing ran in the comparison window reads as "no comparison", not as
-		// -100%: `toolDelta` refuses to divide by a previous window of zero.
-		previous: measuresOf(result.previous),
-		allSessions: result.allSessions,
+		// -100%: `toolDelta` refuses to divide by a previous window of zero. A
+		// caller that did not ask for the window reads the same way.
+		previous: result.previous === undefined ? undefined : measuresOf(result.previous),
+		// Zero rather than absent: the tile that states a share against it is the
+		// overview's, and the overview always asks for the period.
+		allSessions: result.allSessions ?? 0,
 		// `''` where nothing matched, which `toEpochMs` reads as NaN — the header
 		// drops the clause rather than printing an Invalid Date.
 		firstSeen: toEpochMs(result.firstSeen),

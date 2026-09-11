@@ -45,6 +45,9 @@ const toolDetailSearchSchema = Schema.Struct({
 /** Sessions the detail page lists — the most recent, not the busiest. */
 const SESSIONS_LIMIT = 50
 
+/** The only period this page's header states. See the totals atom below. */
+const TOOL_DETAIL_TOTALS_PERIODS = ["current"] as const
+
 export const Route = createFileRoute("/agent-sessions/tools/$toolName")({
 	component: ToolDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(toolDetailSearchSchema),
@@ -157,7 +160,12 @@ function ToolDetailBody({
 	const series = useRefreshableAtomValue(
 		aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds, split: "none" as const } }),
 	)
-	const totals = useRefreshableAtomValue(aiToolTotalsResultAtom({ data: selection }))
+	// `periods: ["current"]` — this page's header states the window and nothing
+	// else. It draws no delta tiles and no all-sessions share, and each period the
+	// totals read measures is its own scan of the window.
+	const totals = useRefreshableAtomValue(
+		aiToolTotalsResultAtom({ data: { ...selection, periods: TOOL_DETAIL_TOTALS_PERIODS } }),
+	)
 	const errors = useRefreshableAtomValue(aiToolErrorsResultAtom({ data: selection }))
 	// The sessions that ran this tool, from the list read the sessions page uses
 	// — the row's framework, extent and span counts are the list's answers, and
