@@ -673,8 +673,30 @@ export const activateChatSession = Effect.map(
 	([state, env]) => Effect.sync(() => chatSessionRpc(new ChatSession(state.raw, env))),
 )
 
-/** The Durable Object: one per `"<orgId>:<tabId>"`, SQLite-backed, bound to the api Worker as `ChatSession`. */
-export default class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject>()(
-	"ChatSession",
-	activateChatSession,
-) {}
+/**
+ * The Durable Object: one per `"<orgId>:<tabId>"`, SQLite-backed, hosted by this Worker and bound
+ * as `ChatSession` — the name `chatSessionStub` reads off `env` on both sides.
+ *
+ * `transferredFrom` names apps/api, which hosted this class until the agent surfaces moved here.
+ * Alchemy turns that into a data-preserving `transferred_classes` migration, so live transcripts
+ * follow the class rather than being stranded in a namespace nothing binds any more. Without it
+ * the api's own deploy fails with `DurableObjectTransferRequired`, because dropping a locally
+ * hosted class while keeping a cross-script reference to it is exactly the shape that silently
+ * destroys a namespace, and alchemy refuses it before any upload.
+ *
+ * It is inert once every stage has transferred — a fresh stage creates the class outright — so it
+ * stays here rather than being cleaned up later and breaking whichever stage lagged behind.
+ *
+ * The props-carrying class form is what makes room for that: the single-argument overload takes an
+ * implementation and no props, so the implementation moves to `ChatSessionLive` below.
+ */
+export class ChatSessionObject extends Cloudflare.DurableObject<
+	ChatSessionObject,
+	EffectRpc<ChatSessionStub>
+>()("ChatSession", { transferredFrom: "api" }) {}
+
+/** The activation, as the layer the host Worker provides. */
+// `<never>` pinned: the activation's requirements are all `DurableObjectServices`,
+// which `.make` already discharges, but inference otherwise widens them into the
+// layer's own requirements and they surface all the way up in `alchemy.run.ts`.
+export const ChatSessionLive = ChatSessionObject.make<never>(activateChatSession)

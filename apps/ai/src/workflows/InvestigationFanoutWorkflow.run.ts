@@ -49,7 +49,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { randomUUID } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
 import { Cause, Clock, type Context, Effect, Exit, Layer, Option, Schema, type Scope } from "effect"
-import type ChatSessionObject from "@ai/chat/ChatSession"
+import type { ChatSessionObject } from "@ai/chat/ChatSession"
 import type { McpToolExecutor } from "@ai/mcp/dispatcher"
 import { Database } from "@/platform/DatabaseLive"
 import {

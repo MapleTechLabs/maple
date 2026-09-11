@@ -5,7 +5,7 @@
  * agents run in parallel, then one validator promotes a single cause and
  * records why each rival lost.
  */
-import ChatSessionObject from "@ai/chat/ChatSession"
+import { ChatSessionObject } from "@ai/chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@ai/mcp/expected-failures"
 import { layerPg } from "@/platform/DatabasePgLive"
 import { withPgConnectionScope } from "@/platform/pg-connection-scope"

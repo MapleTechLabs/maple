@@ -47,7 +47,7 @@ import {
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Context, Effect, Layer } from "effect"
-import ChatSessionObject from "@ai/chat/ChatSession"
+import { ChatSessionLive, ChatSessionObject } from "@ai/chat/ChatSession"
 import InvestigationFanoutWorkflow from "@ai/workflows/InvestigationFanoutWorkflow"
 import { aiPorts, AiBindingLayers, bindAiClients } from "@ai/worker/bindings"
 import { buildApp, makeFetch } from "@ai/worker/http"
@@ -136,8 +136,9 @@ const props = Effect.gen(function* () {
 	}
 })
 
-export default class MapleAi extends Cloudflare.Worker<MapleAi>()(
-	"ai",
+export class MapleAi extends Cloudflare.Worker<MapleAi, Cloudflare.WorkerShape, ChatSessionObject>()("ai") {}
+
+export default MapleAi.make(
 	props,
 	Effect.gen(function* () {
 		// The classes this Worker hosts. Yielded here, which is what binds them,
@@ -161,6 +162,15 @@ export default class MapleAi extends Cloudflare.Worker<MapleAi>()(
 		// The Worker's init IS the entry point: the bridge builds telemetry into
 		// each event's scope and flushes it after.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(AiBindingLayers, WorkerTelemetry({ serviceName: "maple-ai" }))),
+		Effect.provide(
+			Layer.mergeAll(
+				AiBindingLayers,
+				// The host Worker's layer also provides the Durable Object's
+				// implementation; yielding the class above is what forces this to run,
+				// so the class reaches the generated entry's exports.
+				ChatSessionLive,
+				WorkerTelemetry({ serviceName: "maple-ai" }),
+			),
+		),
 	),
-) {}
+)
