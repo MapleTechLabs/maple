@@ -255,7 +255,6 @@ export function AgentSessionsFilterSidebar({
 							onRangeChange={setRange("durationMin", "durationMax")}
 							histogram={duration.histogram}
 							presets={duration.presets}
-							defaultOpen={false}
 						/>
 
 						<RangeFilterSection
@@ -268,7 +267,6 @@ export function AgentSessionsFilterSidebar({
 							histogram={cost.histogram}
 							histogramUnitLabel="priced sessions"
 							presets={cost.presets}
-							defaultOpen={false}
 						/>
 
 						<RangeFilterSection
@@ -279,7 +277,6 @@ export function AgentSessionsFilterSidebar({
 							onRangeChange={setRange("tokensMin", "tokensMax")}
 							histogram={tokens.histogram}
 							presets={tokens.presets}
-							defaultOpen={false}
 						/>
 
 						<RangeFilterSection
@@ -290,7 +287,6 @@ export function AgentSessionsFilterSidebar({
 							onRangeChange={setRange("llmCallsMin", "llmCallsMax")}
 							histogram={llmCalls.histogram}
 							presets={llmCalls.presets}
-							defaultOpen={false}
 						/>
 
 						<RangeFilterSection
@@ -302,7 +298,6 @@ export function AgentSessionsFilterSidebar({
 							histogram={toolCalls.histogram}
 							histogramUnitLabel="sessions with tools"
 							presets={toolCalls.presets}
-							defaultOpen={false}
 						/>
 
 						<Separator className="my-2" />

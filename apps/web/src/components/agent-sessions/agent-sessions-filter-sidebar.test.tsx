@@ -93,9 +93,6 @@ describe("AgentSessionsFilterSidebar", () => {
 	beforeEach(() => {
 		navigate.mockReset()
 		search = {}
-		// A section toggled open is remembered where storage exists, and a click in
-		// the next test would shut it.
-		globalThis.localStorage?.clear()
 	})
 	afterEach(cleanup)
 
@@ -134,7 +131,6 @@ describe("AgentSessionsFilterSidebar", () => {
 	it("writes a percentile preset as the range it names, and clears it on a second click", () => {
 		render(<Sidebar />)
 
-		fireEvent.click(screen.getByText("Cost"))
 		// p95 of $1.234, rounded to two significant figures.
 		fireEvent.click(screen.getByRole("button", { name: /^> p95\s?\$1\.20$/ }))
 		expect(nextSearch()).toMatchObject({ costMin: 1.2, costMax: undefined })
@@ -152,15 +148,11 @@ describe("AgentSessionsFilterSidebar", () => {
 	it("draws a histogram per range once the distributions land, and only the intents before", () => {
 		render(<Sidebar distributionsResult={Result.initial()} />)
 		expect(screen.queryByRole("img")).toBeNull()
-		fireEvent.click(screen.getByText("Tool calls"))
 		expect(screen.getByRole("button", { name: /^No tools\s?0$/ })).toBeTruthy()
 		expect(screen.queryByRole("button", { name: /p50/ })).toBeNull()
 
 		cleanup()
 		render(<Sidebar />)
-		for (const title of ["Session length", "Cost", "Tokens", "LLM calls", "Tool calls"]) {
-			fireEvent.click(screen.getByText(title))
-		}
 		// Durations arrive in ms and are drawn in the URL's seconds.
 		expect(screen.getByRole("img", { name: /^Session length distribution .* from 1s to / })).toBeTruthy()
 		expect(screen.getByRole("button", { name: /^> p50\s?30s$/ })).toBeTruthy()
@@ -176,7 +168,6 @@ describe("AgentSessionsFilterSidebar", () => {
 			.mockReturnValue({ left: 0, width: 100 } as DOMRect)
 		HTMLElement.prototype.setPointerCapture = vi.fn()
 		render(<Sidebar />)
-		fireEvent.click(screen.getByText("Tool calls"))
 
 		// Buckets [1,2) [2,4) [4,8) [8,16): a drag from the first bar to the third.
 		const bars = screen.getByRole("img", {
