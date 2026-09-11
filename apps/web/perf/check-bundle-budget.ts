@@ -96,7 +96,14 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // group was added back, so the headroom under 689 was gone independently of this
 // branch. 691 leaves ~0.3 KB, which is thin; the next startup addition of any
 // size will need its own raise and its own measurement.
-const maxGzipBytes = 691 * 1024
+// 693 KB on merging #865 with the above (2026-09-12): the same stacking again —
+// #865 measured 690 against a baseline without the GA contract, so neither
+// ceiling covers the pair. Merged measures 692.1, and the same
+// register/unregister puts the GA group at 690.5 without it: 1.6 KB, the third
+// time that number has held. The pattern is now the point — a startup addition
+// merged alongside another one needs its ceiling re-measured on the merge, not
+// taken as the larger of the two.
+const maxGzipBytes = 693 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
