@@ -154,7 +154,7 @@ export type OverviewTokenBandKey = OverviewTokenBand | typeof OVERVIEW_TOKEN_FAL
 
 export const OVERVIEW_TOKEN_BAND_KEYS = [...OVERVIEW_TOKEN_BANDS, OVERVIEW_TOKEN_FALLBACK_BAND] as const
 
-export const OVERVIEW_TOKEN_BAND_LABEL = {
+const OVERVIEW_TOKEN_BAND_LABEL = {
 	input: "input",
 	cacheRead: "cache read",
 	cacheWrite: "cache write",
