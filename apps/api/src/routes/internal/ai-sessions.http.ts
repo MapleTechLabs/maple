@@ -475,18 +475,24 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 						// The comparison window is the caller's, shifted back by its own
 						// length: `previous` ends where `current` begins, so the two
-						// never overlap and the delta is over equal spans.
+						// never overlap and the delta is over equal spans. Compiled in
+						// whether or not the previous branch is asked for — a param the
+						// statement does not mention costs nothing.
 						const previous = previousWindow(payload.startTime, payload.endTime)
+						const periods = payload.periods ?? Integrations.AI_TOOLS_TOTALS_PERIODS
 						const [rows, descriptionRows] = yield* Effect.all(
 							[
 								warehouse.compiledQuery(
 									tenant,
-									CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
-										orgId: tenant.orgId,
-										startTime: payload.startTime,
-										endTime: payload.endTime,
-										...previous,
-									}),
+									CH.compileUnion(
+										Integrations.aiToolsTotalsQuery(toolsSelection(payload), periods),
+										{
+											orgId: tenant.orgId,
+											startTime: payload.startTime,
+											endTime: payload.endTime,
+											...previous,
+										},
+									),
 									{ context: "aiToolsTotals" },
 								),
 								// The detail page's header names the tool, so only a selected
@@ -514,13 +520,15 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						// An aggregate over no rows still yields one row per branch, so a
 						// missing period is a shape failure rather than an empty window.
 						// The query already reports `''` for a period that matched
-						// nothing, so these two carry that contract unchanged.
+						// nothing, so these two carry that contract unchanged. A period
+						// the caller did not ask for has no branch and no row, and is
+						// absent from the response rather than zeroed.
 						const current = rows.find((row) => row.period === "current")
+						const allSessions = rows.find((row) => row.period === "window")?.sessions
 						return new AiToolsTotalsResponse({
 							current: aggregateOf(rows, "current"),
-							previous: aggregateOf(rows, "previous"),
-							// The third branch: the window's whole session population.
-							allSessions: rows.find((row) => row.period === "window")?.sessions ?? 0,
+							...(periods.includes("previous") && { previous: aggregateOf(rows, "previous") }),
+							...(allSessions !== undefined && { allSessions }),
 							firstSeen: current?.firstSeen ?? "",
 							lastSeen: current?.lastSeen ?? "",
 							...(description !== "" && { description }),
@@ -561,9 +569,6 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									orgId: tenant.orgId,
 									startTime: payload.startTime,
 									endTime: payload.endTime,
-									// The tool is a param, not an opts field, so one compiled
-									// statement serves every tool detail page.
-									toolName: payload.tool,
 								},
 								{ rowSchema: Integrations.aiToolErrorsRowSchema },
 							),
@@ -589,7 +594,6 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							orgId: tenant.orgId,
 							startTime: payload.startTime,
 							endTime: payload.endTime,
-							toolName: payload.tool,
 						}
 						const selection = {
 							...toolsSelection(payload),
@@ -598,6 +602,7 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						}
 						// Two reads, one modal: the sessions pane is NOT narrowed by the
 						// session the reader picked — it is how they pick a different one.
+						// Both are `ai_trace_index` since migration 0032.
 						const [sessions, occurrences] = yield* Effect.all(
 							[
 								warehouse.compiledQuery(
@@ -622,7 +627,48 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							],
 							{ concurrency: 2 },
 						)
-						return new AiToolErrorDetailResponse({ sessions, occurrences })
+						// The payloads are the only fact the modal shows that the index
+						// does not carry, so they are read for exactly the calls above —
+						// bounded by their `(TraceId, SpanId)` and by their own extent,
+						// which is the partitions those calls landed in and no others. A
+						// modal that opened on nothing reads no spans at all.
+						const payloads =
+							occurrences.length === 0
+								? []
+								: yield* warehouse.compiledQuery(
+										tenant,
+										CH.compile(
+											Integrations.aiToolErrorPayloadsQuery(occurrences),
+											{
+												orgId: tenant.orgId,
+												...Integrations.aiToolErrorPayloadSlice(occurrences),
+											},
+											{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
+										),
+										{ profile: "list", context: "aiToolsErrorPayloads" },
+									)
+						const payloadBySpan = new Map(
+							payloads.map((row) => [`${row.traceId}:${row.spanId}`, row] as const),
+						)
+						return new AiToolErrorDetailResponse({
+							sessions,
+							occurrences: occurrences.map((row) => {
+								// A call whose span the payload read did not return — raw
+								// retention is shorter than nothing here, but a span that
+								// was never exported is real — still belongs on the list:
+								// everything the row states about the failure came from the
+								// index, and the block below it is empty.
+								const payload = payloadBySpan.get(`${row.traceId}:${row.spanId}`)
+								return {
+									...row,
+									statusCode: payload?.statusCode ?? "",
+									arguments: payload?.arguments ?? "",
+									argumentsBytes: payload?.argumentsBytes ?? 0,
+									result: payload?.result ?? "",
+									resultBytes: payload?.resultBytes ?? 0,
+								}
+							}),
+						})
 					}),
 				)
 		}),

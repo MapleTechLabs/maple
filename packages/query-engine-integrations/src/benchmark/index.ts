@@ -75,18 +75,22 @@ const AI_TOOLS_SELECTION = {
 	failingOnly: true,
 }
 
-/** The tool detail page's selection: one tool, named by a param rather than by
- *  the opts, so one compiled statement serves every tool. */
+/** The tool detail page's selection: one tool, plus the toolbar's. The model is
+ *  what keeps the parent-model join in these baselines — every one of these
+ *  reads drops it when nothing filters or splits by a model. */
 const AI_TOOLS_ERROR_SELECTION = {
-	// The handler sends the tool in the opts as well as the param: the opts
-	// narrow the trace prefilter, the param the span read.
 	tool: "search_traces",
 	model: "claude-sonnet-5",
-	// The service lands twice — on the trace prefilter and on the span read —
-	// which is exactly what the baseline is here to pin.
 	service: "agent",
 	failingOnly: true,
 }
+
+/** Two failing calls of one tool, as the occurrences read hands them to the
+ *  payload read: its whole prefilter, and its bounds. */
+const AI_TOOL_ERROR_CALLS = [
+	{ timestamp: "2026-01-02 11:15:00.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d0" },
+	{ timestamp: "2026-01-02 11:45:30.000000000", traceId: AI_TRACE_ID, spanId: "00000000000007d1" },
+]
 
 /** The window plus the tool the error reads resolve from a param. */
 const toolWindow = { ...window, toolName: "search_traces" }
@@ -279,6 +283,15 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnionUnsafe(CH.aiToolsTotalsQuery(AI_TOOLS_SELECTION), aiToolsCompare),
 	},
 	{
+		// The detail page's own totals: one period, and no parent-model join —
+		// what that page's header actually waits on.
+		module: "ai-tools",
+		name: "aiToolsTotalsQuery",
+		label: "current-only",
+		compile: () =>
+			compileUnionUnsafe(CH.aiToolsTotalsQuery({ tool: AI_TOOLS_SELECTION.tool }, ["current"]), window),
+	},
+	{
 		// The table drops the selection's OWN tool and keeps the rest — pinned
 		// here so a refactor that stops dropping it shows as a baseline diff.
 		module: "ai-tools",
@@ -333,6 +346,20 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 				}),
 				toolWindow,
 				{ rowSchema: CH.aiToolErrorOccurrencesRowSchema },
+			),
+	},
+	{
+		// The one read on the tool detail page that is not the index: the
+		// payloads of the occurrences the modal already has. The baseline is what
+		// proves it is a tuple seek over their own extent and never the window.
+		module: "ai-tools",
+		name: "aiToolErrorPayloadsQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.aiToolErrorPayloadsQuery(AI_TOOL_ERROR_CALLS),
+				{ orgId: ORG_ID, ...CH.aiToolErrorPayloadSlice(AI_TOOL_ERROR_CALLS) },
+				{ rowSchema: CH.aiToolErrorPayloadsRowSchema },
 			),
 	},
 	{
