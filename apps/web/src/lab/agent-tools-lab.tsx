@@ -11,7 +11,6 @@ import {
 	buildToolDetailFixture,
 	buildToolErrorDetailFixture,
 	toolFixtureFacets,
-	toolFixtureWindow,
 } from "./agent-tools-fixture"
 
 /**
@@ -50,7 +49,6 @@ export function AgentToolsLab() {
 	const [nowMs] = useState(() => Date.now())
 	const cells = useMemo(() => buildToolCells(nowMs), [nowMs])
 	const facets = useMemo(() => toolFixtureFacets(cells), [cells])
-	const window = useMemo(() => toolFixtureWindow(nowMs), [nowMs])
 
 	// Stands in for the URL. Same shape, same defaults-stay-absent rule.
 	const [search, setSearch] = useState<ToolAnalyticsSearch>({})
@@ -125,7 +123,6 @@ export function AgentToolsLab() {
 						search={search}
 						onSearchChange={onSearchChange}
 						data={overview}
-						window={window}
 						serviceOptions={facets.services}
 						modelOptions={facets.models}
 						envOptions={facets.environments}
