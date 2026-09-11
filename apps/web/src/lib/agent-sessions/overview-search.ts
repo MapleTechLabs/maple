@@ -9,7 +9,6 @@
 import { Schema } from "effect"
 
 import type { AiOverviewDimension } from "@maple/domain/http"
-import type { AgentSessionsSearchState } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { BooleanFromStringParam } from "@/lib/search-params"
 
@@ -182,6 +181,23 @@ export function overviewFilterPatch(
 }
 
 /**
+ * The Sessions list's own search params, as a link into it has to spell them.
+ *
+ * Mutable arrays rather than the readonly ones the list reads its state
+ * through: the route declares its array params with `Schema.mutable`, and a
+ * `<Link search>` is checked against the route's search input.
+ */
+export interface AgentSessionsLinkSearch {
+	vendors?: string[]
+	services?: string[]
+	environments?: string[]
+	models?: string[]
+	agents?: string[]
+	tools?: string[]
+	hasErrors?: boolean
+}
+
+/**
  * What travels from this page into the Sessions list.
  *
  * The list filters by the same six dimensions under array-valued keys, so a
@@ -192,7 +208,7 @@ export function overviewFilterPatch(
 export function sessionsLinkSearch(
 	search: AgentOverviewSearch,
 	options?: { hasErrors?: boolean },
-): AgentSessionsSearchState {
+): AgentSessionsLinkSearch {
 	const one = (value: string | undefined) => (value === undefined ? undefined : [value])
 	const errors = options?.hasErrors ?? search.hasErrors === true
 	return {

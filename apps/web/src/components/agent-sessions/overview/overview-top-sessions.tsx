@@ -6,12 +6,12 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ExternalLinkIcon } from "@/components/icons"
-import type { AgentSessionsSearchState } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatOverviewCount, formatOverviewDuration } from "@/lib/agent-sessions/overview-analytics"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { sessionLinkWindow } from "@/lib/agent-sessions/session-window"
+import type { AgentSessionsLinkSearch } from "@/lib/agent-sessions/overview-search"
 import {
 	OVERVIEW_TOP_SESSION_TABS,
 	type OverviewTopSessionTab,
@@ -42,7 +42,7 @@ export interface OverviewTopSessionsProps {
 	/** Sessions in the window that failed — what the Errored tab is a sample of. */
 	erroredCount: number
 	/** The board's filters, as the Sessions list takes them. */
-	sessionsSearch: AgentSessionsSearchState
+	sessionsSearch: AgentSessionsLinkSearch
 	waiting?: boolean
 }
 

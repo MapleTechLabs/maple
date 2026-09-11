@@ -65,7 +65,8 @@ function TabLink({
 	children,
 }: {
 	to: "/agent-sessions" | "/agent-sessions/overview"
-	search: Record<string, unknown>
+	/** Only the window travels; the Sessions list simply drops what it does not validate. */
+	search: TimeRangeSearch
 	active: boolean
 	icon: React.ReactNode
 	children: React.ReactNode

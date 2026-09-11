@@ -59,7 +59,6 @@
 // Durations stay in NANOSECONDS, like every other AI read — `Duration` is what
 // the index stores and the client formats.
 
-import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
@@ -130,9 +129,13 @@ const endParam = (window: AiOverviewWindow) =>
  * the caller's begins, so its upper bound is EXCLUSIVE and a row sitting
  * exactly on the boundary belongs to the current window alone rather than to
  * both.
+ *
+ * The bound is an `Expr<string>` because Maple warehouse timestamps stay the
+ * strings ClickHouse sends (`tables.ts`), which is what `param.dateTimeString`
+ * compares against.
  */
 const withinWindow = (
-	timestamp: CH.Expr<DateTime.Utc>,
+	timestamp: CH.Expr<string>,
 	window: AiOverviewWindow,
 ): ReadonlyArray<CH.Condition> => [
 	timestamp.gte(startParam(window)),

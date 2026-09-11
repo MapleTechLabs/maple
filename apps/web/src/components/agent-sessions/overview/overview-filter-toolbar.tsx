@@ -121,7 +121,9 @@ function FacetSelect({
 	return (
 		<Select
 			value={value ?? ALL}
-			onValueChange={(next) => onChange(next === ALL ? undefined : next)}
+			// Base UI reports a cleared selection as `null`, which means what the
+			// `ALL` row means: no filter.
+			onValueChange={(next) => onChange(next === ALL ? undefined : (next ?? undefined))}
 			// A dimension the window reported nothing for cannot be chosen from,
 			// and a select that opens onto one row reads as broken.
 			disabled={options.length === 0}
