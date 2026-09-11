@@ -279,6 +279,17 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.aiToolsBreakdownsQuery(AI_TOOLS_SELECTION), window),
 	},
 	{
+		// The tool detail header's description: a span read inside the tool's
+		// most recent calls, which the baseline pins as a bounded subquery.
+		module: "ai-tools",
+		name: "aiToolDescriptionQuery",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.aiToolDescriptionQuery(), toolWindow, {
+				rowSchema: CH.aiToolDescriptionRowSchema,
+			}),
+	},
+	{
 		// The tool detail page's failures. The only tools reads that touch
 		// `trace_detail_spans`, and the baseline is what proves the span scan
 		// stays inside the trace-id subquery the index answers.

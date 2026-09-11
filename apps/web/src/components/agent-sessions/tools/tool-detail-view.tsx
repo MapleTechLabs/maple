@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
@@ -28,6 +29,8 @@ export interface ToolDetailViewData {
 	/** Epoch ms of the tool's first and last call in the window; 0 where it never ran. */
 	readonly firstSeen: number
 	readonly lastSeen: number
+	/** The tool's latest `gen_ai.tool.description`; absent where no call stamped one. */
+	readonly description?: string
 	readonly errors: ReadonlyArray<ToolErrorRow>
 	/** The Errors read's state, so an empty table is only ever a finding. */
 	readonly errorsLoading: boolean
@@ -93,10 +96,25 @@ export function ToolDetailView({
 	return (
 		<div className="flex flex-col">
 			<header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-[22px] pb-4">
-				<div className="flex min-w-0 flex-col gap-1.5">
-					<h1 className="truncate font-mono text-[26px] font-semibold leading-8 tracking-[-0.01em] text-foreground">
-						{tool}
-					</h1>
+				<div className="flex min-w-0 flex-1 flex-col gap-1.5">
+					<div className="flex min-w-0 items-baseline gap-3">
+						<h1 className="truncate font-mono text-[26px] font-semibold leading-8 tracking-[-0.01em] text-foreground">
+							{tool}
+						</h1>
+						{data.description !== undefined && (
+							<Tooltip>
+								{/* `w-0 flex-1`: fills the row beside the name without its own
+								    width pushing the header controls onto the next line. */}
+								<TooltipTrigger
+									render={<span />}
+									className="w-0 min-w-0 flex-1 cursor-default truncate text-[13px] leading-[18px] text-muted-foreground"
+								>
+									{data.description}
+								</TooltipTrigger>
+								<TooltipContent className="max-w-md">{data.description}</TooltipContent>
+							</Tooltip>
+						)}
+					</div>
 					<p className="font-mono text-[13px] leading-[18px] text-muted-foreground">
 						{subtitle.join(" · ")}
 					</p>

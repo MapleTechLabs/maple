@@ -631,6 +631,7 @@ export function buildToolDetailFixture(
 			.reduce((sum, cell) => sum + cell.calls, 0),
 		firstSeen: scoped.reduce((min, cell) => (min === 0 ? cell.bucket : Math.min(min, cell.bucket)), 0),
 		lastSeen: scoped.reduce((max, cell) => Math.max(max, cell.bucket), 0),
+		description: `Runs ${tool} in the agent's workspace and returns its output, truncated to the last 4,000 characters.`,
 		errors: buildToolErrorsFixture(tool, totals.errors, nowMs),
 		errorsLoading: false,
 		errorsFailure: undefined,

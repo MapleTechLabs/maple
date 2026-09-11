@@ -233,6 +233,7 @@ function ToolDetailBody({
 					scopeCalls: resolved.current.calls,
 					firstSeen: resolved.firstSeen,
 					lastSeen: resolved.lastSeen,
+					description: resolved.description,
 					errors: errorRows,
 					errorsLoading: Result.isInitial(errors),
 					errorsFailure,

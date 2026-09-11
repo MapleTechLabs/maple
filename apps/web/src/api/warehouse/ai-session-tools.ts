@@ -192,6 +192,7 @@ export const getAiToolTotals = Effect.fn("AiSessionTools.totals")(function* ({
 		// drops the clause rather than printing an Invalid Date.
 		firstSeen: toEpochMs(result.firstSeen),
 		lastSeen: toEpochMs(result.lastSeen),
+		description: result.description,
 	}
 })
 

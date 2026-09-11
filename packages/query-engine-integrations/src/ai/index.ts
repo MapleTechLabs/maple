@@ -41,6 +41,8 @@ export {
 } from "./ai-sessions"
 
 export {
+	aiToolDescriptionQuery,
+	aiToolDescriptionRowSchema,
 	aiToolErrorOccurrencesQuery,
 	aiToolErrorOccurrencesRowSchema,
 	aiToolErrorSessionsQuery,
@@ -56,6 +58,7 @@ export {
 	AI_TOOL_OCCURRENCES_LIMIT,
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
+	type AiToolDescriptionOutput,
 	type AiToolErrorOccurrencesOutput,
 	type AiToolErrorSessionsOutput,
 	type AiToolErrorsOpts,

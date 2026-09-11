@@ -440,16 +440,40 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						// length: `previous` ends where `current` begins, so the two
 						// never overlap and the delta is over equal spans.
 						const previous = previousWindow(payload.startTime, payload.endTime)
-						const rows = yield* warehouse.compiledQuery(
-							tenant,
-							CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
-								orgId: tenant.orgId,
-								startTime: payload.startTime,
-								endTime: payload.endTime,
-								...previous,
-							}),
-							{ context: "aiToolsTotals" },
+						const [rows, descriptionRows] = yield* Effect.all(
+							[
+								warehouse.compiledQuery(
+									tenant,
+									CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
+										orgId: tenant.orgId,
+										startTime: payload.startTime,
+										endTime: payload.endTime,
+										...previous,
+									}),
+									{ context: "aiToolsTotals" },
+								),
+								// The detail page's header names the tool, so only a selected
+								// tool has a description to look up.
+								payload.tool === undefined
+									? Effect.succeed([])
+									: warehouse.compiledQuery(
+											tenant,
+											CH.compile(
+												Integrations.aiToolDescriptionQuery(),
+												{
+													orgId: tenant.orgId,
+													startTime: payload.startTime,
+													endTime: payload.endTime,
+													toolName: payload.tool,
+												},
+												{ rowSchema: Integrations.aiToolDescriptionRowSchema },
+											),
+											{ profile: "list", context: "aiToolDescription" },
+										),
+							],
+							{ concurrency: 2 },
 						)
+						const description = descriptionRows[0]?.description ?? ""
 						// An aggregate over no rows still yields one row per branch, so a
 						// missing period is a shape failure rather than an empty window.
 						// The query already reports `''` for a period that matched
@@ -462,6 +486,7 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 							allSessions: rows.find((row) => row.period === "window")?.sessions ?? 0,
 							firstSeen: current?.firstSeen ?? "",
 							lastSeen: current?.lastSeen ?? "",
+							...(description !== "" && { description }),
 						})
 					}),
 				)

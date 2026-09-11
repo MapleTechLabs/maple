@@ -926,6 +926,31 @@ SELECT
           AND TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
         FORMAT JSON
 
+-- builder:ai-tools:aiToolDescriptionQuery:default
+SELECT
+          argMax(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), nullIf(SpanAttributes['tool.description'], ''), ''), Timestamp) AS description
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT
+          traceId AS traceId,
+          spanId AS spanId
+        FROM (SELECT
+          TraceId AS traceId,
+          SpanId AS spanId,
+          Timestamp AS ts
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND IsToolCall = 1
+          AND ToolName = 'search_traces'
+        ORDER BY ts DESC
+        LIMIT 100) AS recent_tool_calls)
+          AND coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), nullIf(SpanAttributes['tool.description'], ''), '') != ''
+        FORMAT JSON
+
 -- builder:ai-tools:aiToolErrorOccurrencesQuery:default
 SELECT
           toString(trace_detail_spans.Timestamp) AS timestamp,

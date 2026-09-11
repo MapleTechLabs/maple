@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
 import {
+	aiToolDescriptionQuery,
+	aiToolDescriptionRowSchema,
 	aiToolErrorOccurrencesQuery,
 	aiToolErrorOccurrencesRowSchema,
 	aiToolErrorSessionsQuery,
@@ -12,6 +14,7 @@ import {
 	aiToolsSeriesKind,
 	aiToolsSeriesQuery,
 	aiToolsTotalsQuery,
+	AI_TOOL_DESCRIPTION_CALLS,
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
 } from "./ai-tools"
@@ -429,5 +432,29 @@ describe("the tool detail reads", () => {
 				},
 			])[0],
 		).toMatchObject({ durationNs: 1_500_000, argumentsBytes: 2, resultBytes: 0 })
+	})
+})
+
+describe("aiToolDescriptionQuery", () => {
+	const compiled = compileUnsafe(aiToolDescriptionQuery(), errorParams, {
+		rowSchema: aiToolDescriptionRowSchema,
+	})
+
+	it("reads spans inside the tool's most recent calls only", () => {
+		expect(compiled.tenantScope).toBe("single-tenant")
+		expect(orgPredicateCount(compiled.sql)).toBe(2)
+		expect(compiled.sql).toContain("(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (SELECT")
+		expect(compiled.sql).toContain("ToolName = 'search_traces'")
+		// Bounded however busy the tool is — the span read is a seek per call.
+		expect(compiled.sql).toContain(`LIMIT ${AI_TOOL_DESCRIPTION_CALLS}`)
+	})
+
+	it("keeps the latest non-empty description, across the vendor dialects", () => {
+		expect(compiled.sql).toContain("argMax(")
+		expect(compiled.sql).toContain("'gen_ai.tool.description'")
+		expect(compiled.sql).toContain("'tool.description'")
+		expect(decodeRows(compiled, [{ description: "Search traces." }])).toEqual([
+			{ description: "Search traces." },
+		])
 	})
 })

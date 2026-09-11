@@ -671,6 +671,9 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	 * which the client renders as "no comparison" rather than a -100%.
 	 */
 	previous: AiToolsAggregate,
+	/** The selected tool's latest non-empty `gen_ai.tool.description` in the
+	 *  window. Absent when no tool is selected or no call stamped one. */
+	description: Schema.optionalKey(Schema.String),
 }) {}
 
 /** Rows the Tools breakdown returns, busiest first — the same cap the query
