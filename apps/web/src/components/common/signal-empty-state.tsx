@@ -11,6 +11,7 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import {
+	ExternalLinkIcon,
 	ChartLineIcon,
 	ClockIcon,
 	ConnectionIcon,
@@ -47,40 +48,73 @@ interface SignalCopy {
 	readonly source: string
 	/** Action label for the setup CTA. */
 	readonly action: string
+	/**
+	 * Docs page for this signal, as a path under maple.dev. Kept as a path rather than a full URL so
+	 * `signal-empty-state.test.tsx` can check each one against the landing content collection — a
+	 * renamed doc then fails in the PR that renames it, instead of rotting into a 404.
+	 */
+	readonly docs: string
 }
 
-const SIGNAL_COPY = {
+/** Exported for the docs-link test, which resolves each path against the landing content. */
+export const SIGNAL_COPY = {
 	traces: {
 		noun: "traces",
 		icon: NetworkNodesIcon,
 		source: "Traces come from an OpenTelemetry SDK in your app, exporting to Maple's endpoint.",
 		action: "Set up tracing",
+		docs: "/docs/instrumentation",
 	},
 	logs: {
 		noun: "logs",
 		icon: FileIcon,
 		source: "Logs come from an OTLP log bridge under your existing logger. Logging to stdout alone never reaches Maple.",
 		action: "Set up logging",
+		docs: "/docs/instrumentation",
 	},
 	metrics: {
 		noun: "metrics",
 		icon: ChartLineIcon,
 		source: "Metrics come from an OpenTelemetry metric reader exporting to Maple's endpoint.",
 		action: "Set up metrics",
+		docs: "/docs/instrumentation",
 	},
 	sessions: {
 		noun: "sessions",
 		icon: EyeIcon,
 		source: "Sessions come from the browser SDK — install @maple-dev/browser and call MapleBrowser.init().",
 		action: "Set up session replay",
+		docs: "/docs/session-replay/browser-sdk",
 	},
 	product_events: {
 		noun: "events",
 		icon: ConnectionIcon,
 		source: "Product events come from track() calls in the browser SDK.",
 		action: "Set up product analytics",
+		docs: "/docs/session-replay/product-events-api",
 	},
 } satisfies Record<TelemetrySignalKind, SignalCopy>
+
+const DOCS_ORIGIN = "https://maple.dev"
+
+/**
+ * Docs escape hatch. The in-app snippet is the fast path, but it is one framework's worth of
+ * instructions — anyone on a language or setup it does not cover needs somewhere to go that is not
+ * "open a support chat".
+ */
+function DocsLink({ signal }: { readonly signal: TelemetrySignalKind }): React.ReactElement {
+	return (
+		<a
+			href={`${DOCS_ORIGIN}${SIGNAL_COPY[signal].docs}`}
+			target="_blank"
+			rel="noopener noreferrer"
+			className="inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
+		>
+			Read the docs
+			<ExternalLinkIcon size={12} />
+		</a>
+	)
+}
 
 export interface SignalEmptyStateProps {
 	/** Which signal this view is built on. Drives every piece of copy. */
@@ -158,14 +192,17 @@ export function SignalEmptyStateView({
 				</EmptyHeader>
 				<EmptyContent>
 					{detail}
-					<Button
-						size="sm"
-						className="gap-2"
-						render={<Link to="/settings" search={{ tab: "ingestion" }} />}
-					>
-						<ConnectionIcon size={14} />
-						{copy.action}
-					</Button>
+					<div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+						<Button
+							size="sm"
+							className="gap-2"
+							render={<Link to="/settings" search={{ tab: "ingestion" }} />}
+						>
+							<ConnectionIcon size={14} />
+							{copy.action}
+						</Button>
+						<DocsLink signal={signal} />
+					</div>
 				</EmptyContent>
 			</Empty>
 		)
