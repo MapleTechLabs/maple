@@ -93,12 +93,14 @@ const agentSpan = (attrs: Readonly<Record<string, string>>) => ({
 })
 
 /** Tokens and a price, under the canonical semconv keys. */
-const usage = (input: number, output: number, cost: number, responseId?: string) => ({
-	"gen_ai.usage.input_tokens": String(input),
-	"gen_ai.usage.output_tokens": String(output),
-	"gen_ai.usage.cost": String(cost),
-	...(responseId === undefined ? {} : { "gen_ai.response.id": responseId }),
-})
+const usage = (input: number, output: number, cost: number, responseId?: string) => {
+	const base = {
+		"gen_ai.usage.input_tokens": String(input),
+		"gen_ai.usage.output_tokens": String(output),
+		"gen_ai.usage.cost": String(cost),
+	}
+	return responseId === undefined ? base : { ...base, "gen_ai.response.id": responseId }
+}
 
 const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	// The turn span carries the session id AND its children's usage summed onto
