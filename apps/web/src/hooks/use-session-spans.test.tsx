@@ -2,12 +2,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { AiSessionSpan } from "@maple/domain/http"
+import { AiSessionTooLargeError, type AiSessionSpan } from "@maple/domain/http"
 import type { AiSessionSpansPage } from "@/api/warehouse/ai-sessions"
 import { Atom, Result } from "@/lib/effect-atom"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import { agentSpan, llmSpan, makeSpan } from "@/lib/agent-sessions/span-test-support"
-import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
 
 import { useSessionSpans, type SessionSpansReads } from "./use-session-spans"
 
@@ -56,113 +55,110 @@ describe("useSessionSpans", () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: undefined }
 		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
 
-		expect(result.current.partial).toBe(false)
-		expect(result.current.hasMore).toBe(false)
+		expect(result.current.progress).toBeUndefined()
 		expect(result.current.spans.map((span) => span.spanId)).toEqual(["agent-1", "llm-1", "http-1"])
+		expect(fetchPage).not.toHaveBeenCalled()
 	})
 
-	it("continues past the first page with the agent's spans alone, after the cursor", async () => {
+	// Nothing is asked of the reader: the agent's pages drain first, then the
+	// app's, both continuing from the first page's cursor.
+	it("drains the agent's pages and then the app's on its own, after the first page's cursor", async () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
-		fetchPage.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: undefined })
-		const { result } = renderHook(() =>
-			useSessionSpans("s1", { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }, reads),
-		)
+		const appSpan = makeSpan({ spanId: "http-2", parentSpanId: "agent-2", startMs: 62 * SECOND, durationMs: 100, spanName: "GET /y", isAiSpan: false })
+		const AI_CURSOR = { timestamp: "2026-08-19 10:01:00.000000000", spanId: "llm-2" }
+		fetchPage
+			.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: AI_CURSOR })
+			.mockResolvedValueOnce({ data: [agentSpan({ spanId: "agent-3", startMs: 120 * SECOND, durationMs: SECOND })], nextCursor: undefined })
+			.mockResolvedValueOnce({ data: [appSpan], nextCursor: undefined })
+		const window = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
+		const { result } = renderHook(() => useSessionSpans("s1", window, reads))
 
-		expect(result.current.partial).toBe(true)
-		expect(result.current.hasMore).toBe(true)
-		act(() => result.current.loadMore())
-		await waitFor(() => expect(result.current.hasMore).toBe(false))
+		expect(result.current.progress?.phase).toBe("agent")
+		await waitFor(() => expect(result.current.progress?.phase).toBe("complete"))
 
-		expect(fetchPage).toHaveBeenCalledWith({
-			sessionId: "s1",
-			startTime: "2026-08-19 09:00:00",
-			endTime: "2026-08-19 11:00:00",
-			scope: "ai",
-			after: CURSOR,
-			limit: 2000,
-		})
-		expect(result.current.spans.map((span) => span.spanId)).toEqual(["agent-1", "llm-1", "http-1", "agent-2", "llm-2"])
-		// The session stays partial: the later turns hold agent spans alone.
-		expect(result.current.partial).toBe(true)
+		expect(fetchPage.mock.calls.map((call) => call[0])).toEqual([
+			{ sessionId: "s1", ...window, scope: "ai", after: CURSOR, limit: 2000 },
+			{ sessionId: "s1", ...window, scope: "ai", after: AI_CURSOR, limit: 2000 },
+			{ sessionId: "s1", ...window, scope: "app", after: CURSOR, limit: 2000 },
+		])
+		expect(result.current.spans.map((span) => span.spanId)).toEqual([
+			"agent-1", "llm-1", "http-1", "agent-2", "llm-2", "agent-3", "http-2",
+		])
+		expect(result.current.progress).toMatchObject({ loadedSpans: 7, loadedAgentSpans: 5 })
 	})
 
-	it("loads a turn's app spans by its traces and bounds, and drops repeats", async () => {
+	it("reports the app phase once every agent span is in", async () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
-		const appSpan = makeSpan({ spanId: "http-2", parentSpanId: "agent-1", startMs: 3 * SECOND, durationMs: 100, spanName: "GET /y", isAiSpan: false })
-		// `http-1` comes back too — the first page already had it.
-		fetchPage.mockResolvedValueOnce({ data: [firstPageSpans[2]!, appSpan], nextCursor: undefined })
+		let resolveApp: (page: AiSessionSpansPage) => void = () => undefined
+		fetchPage
+			.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: undefined })
+			.mockImplementationOnce(() => new Promise((resolve) => { resolveApp = resolve }))
 		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
-		const turn = buildSessionTurns(firstPageSpans)[0]!
 
-		expect(result.current.appSpans.of(turn)).toBeUndefined()
-		act(() => result.current.appSpans.load(turn))
-		expect(result.current.appSpans.of(turn)?.loading).toBe(true)
-		await waitFor(() => expect(result.current.appSpans.of(turn)?.complete).toBe(true))
-
-		const call = fetchPage.mock.calls[0]![0]
-		expect(call).toMatchObject({ sessionId: "s1", scope: "app", traceIds: turn.traceIds, limit: 2000 })
-		// A minute either side: the trace's opening span, parent of the turn's
-		// root, started before the turn's first agent span.
-		expect(call.startTime).toBe("2026-08-19 09:59:00")
-		expect(call.endTime).toBe("2026-08-19 10:01:30")
-		expect(result.current.appSpans.of(turn)?.loaded).toBe(2)
-		expect(result.current.spans.map((span) => span.spanId)).toEqual(["agent-1", "llm-1", "http-1", "http-2"])
+		await waitFor(() => expect(result.current.progress?.phase).toBe("app"))
+		expect(result.current.spans).toHaveLength(5)
+		await act(async () => resolveApp({ data: [], nextCursor: undefined }))
+		expect(result.current.progress?.phase).toBe("complete")
 	})
 
-	it("reads a turn of more traces than one request names by its bounds alone", async () => {
+	// A 413 is the byte cap, not the row cap: the same read with fewer rows.
+	it("halves the page when the byte cap ends one, and keeps going", async () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
-		fetchPage.mockResolvedValueOnce({ data: [], nextCursor: undefined })
+		fetchPage
+			.mockRejectedValueOnce(new AiSessionTooLargeError({ sessionId: "s1", message: "too large" }))
+			.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: undefined })
+			.mockResolvedValueOnce({ data: [], nextCursor: undefined })
 		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
-		const wide = {
-			...buildSessionTurns(firstPageSpans)[0]!,
-			traceIds: Array.from({ length: 101 }, (_, i) => i.toString(16).padStart(32, "0")),
-		}
 
-		act(() => result.current.appSpans.load(wide))
-		await waitFor(() => expect(result.current.appSpans.of(wide)?.complete).toBe(true))
-
-		const call = fetchPage.mock.calls[0]![0]
-		expect(call).toMatchObject({ sessionId: "s1", scope: "app", limit: 2000 })
-		expect(call).not.toHaveProperty("traceIds")
-		expect(call.startTime).toBe("2026-08-19 09:59:00")
-		expect(call.endTime).toBe("2026-08-19 10:01:30")
+		await waitFor(() => expect(result.current.progress?.phase).toBe("complete"))
+		expect(fetchPage.mock.calls[0]![0].limit).toBe(2000)
+		expect(fetchPage.mock.calls[1]![0].limit).toBe(1000)
+		expect(result.current.spans).toHaveLength(5)
 	})
 
-	it("keeps a turn loadable when a page of its app spans failed", async () => {
+	it("keeps what loaded when a page fails, and resumes from there on retry", async () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
-		fetchPage.mockRejectedValueOnce(new Error("boom"))
+		const AI_CURSOR = { timestamp: "2026-08-19 10:01:00.000000000", spanId: "llm-2" }
+		fetchPage
+			.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: AI_CURSOR })
+			.mockRejectedValueOnce(new Error("boom"))
+			.mockResolvedValueOnce({ data: [agentSpan({ spanId: "agent-3", startMs: 120 * SECOND, durationMs: SECOND })], nextCursor: undefined })
+			.mockResolvedValueOnce({ data: [], nextCursor: undefined })
 		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
-		const turn = buildSessionTurns(firstPageSpans)[0]!
 
-		act(() => result.current.appSpans.load(turn))
-		await waitFor(() => expect(result.current.appSpans.of(turn)?.failed).toBe(true))
-		expect(result.current.appSpans.of(turn)?.loading).toBe(false)
+		await waitFor(() => expect(result.current.progress?.phase).toBe("failed"))
+		expect(result.current.spans).toHaveLength(5)
+
+		act(() => result.current.progress?.retry())
+		await waitFor(() => expect(result.current.progress?.phase).toBe("complete"))
+		// Resumed after the last page that landed, not from the start.
+		expect(fetchPage.mock.calls[2]![0]).toMatchObject({ scope: "ai", after: AI_CURSOR })
+		expect(result.current.spans.map((span) => span.spanId)).toContain("agent-3")
 	})
 
 	it("drops the pages of a read the window moved on from, and a response landing late", async () => {
 		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
-		let resolveLate: (page: { data: readonly AiSessionSpan[]; nextCursor: undefined }) => void = () => undefined
+		let resolveLate: (page: AiSessionSpansPage) => void = () => undefined
 		fetchPage
 			.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: CURSOR })
 			.mockImplementationOnce(() => new Promise((resolve) => { resolveLate = resolve }))
+			// The new window's own drain.
+			.mockImplementation(() => new Promise(() => undefined))
 		const early = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
 		const { result, rerender } = renderHook(({ window }) => useSessionSpans("s1", window, reads), {
 			initialProps: { window: early },
 		})
 
-		act(() => result.current.loadMore())
 		await waitFor(() => expect(result.current.spans).toHaveLength(5))
 		// A second page is in flight when the window changes.
-		act(() => result.current.loadMore())
-		expect(result.current.loadingMore).toBe(true)
 		rerender({ window: { startTime: "2026-08-19 08:00:00", endTime: "2026-08-19 12:00:00" } })
 
 		expect(result.current.spans).toHaveLength(3)
-		expect(result.current.loadingMore).toBe(false)
+		expect(result.current.progress?.phase).toBe("agent")
 		await act(async () => {
 			resolveLate({ data: [agentSpan({ spanId: "late", startMs: 0, durationMs: SECOND })], nextCursor: undefined })
 		})
 		expect(result.current.spans.map((span) => span.spanId)).not.toContain("late")
-		expect(result.current.hasMore).toBe(true)
+		expect(result.current.spans).toHaveLength(3)
 	})
 })
