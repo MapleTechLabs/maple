@@ -1,5 +1,12 @@
 import { OPENROUTER_MODELS, OPENROUTER_VENDORS } from "./generated/openrouter-catalog"
-import { BEDROCK_VENDORS, FAMILY_RULES, VENDOR_NAME_OVERRIDES, VENDOR_PREFIX_RULES } from "./vendors"
+import {
+	BEDROCK_VENDORS,
+	type BrandColor,
+	FAMILY_RULES,
+	VENDOR_BRAND_COLORS,
+	VENDOR_NAME_OVERRIDES,
+	VENDOR_PREFIX_RULES,
+} from "./vendors"
 
 /** What a model string resolved to. Every field but `model` and `slug` is a best effort. */
 export interface DetectedAiModel {
@@ -29,6 +36,8 @@ export interface DetectedAiModel {
 	readonly vendorSlug: string | null
 	/** `Z.ai` */
 	readonly vendorName: string | null
+	/** The vendor's brand color on each canvas, when the catalog lists one. */
+	readonly brandColor: BrandColor | null
 	/** A product family with a mark of its own (`claude`, `gemini`, `grok`, `kimi`), else `null`. */
 	readonly family: string | null
 	/** How the vendor was found. `unknown` means only `slug` and `displayName` are meaningful. */
@@ -148,6 +157,8 @@ const titleCase = (slug: string): string =>
 const vendorNameOf = (vendorSlug: string): string =>
 	own(VENDOR_NAME_OVERRIDES, vendorSlug) ?? own(OPENROUTER_VENDORS, vendorSlug) ?? titleCase(vendorSlug)
 
+const brandColorOf = (vendorSlug: string): BrandColor | null => own(VENDOR_BRAND_COLORS, vendorSlug) ?? null
+
 const isKnownVendor = (slug: string): boolean =>
 	Object.hasOwn(OPENROUTER_VENDORS, slug) || Object.hasOwn(VENDOR_NAME_OVERRIDES, slug)
 
@@ -241,6 +252,7 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 			displayName: withVariant(displayNameOf(entry.name), variant),
 			vendorSlug: entry.vendorSlug,
 			vendorName: vendorNameOf(entry.vendorSlug),
+			brandColor: brandColorOf(entry.vendorSlug),
 			family: familyOf(entry.modelSlug),
 			source: "openrouter",
 		}
@@ -260,6 +272,7 @@ export const detectAiModel = (input: string): DetectedAiModel => {
 		displayName: titled === "" ? model : withVariant(titled, variant),
 		vendorSlug,
 		vendorName: vendorSlug === null ? null : vendorNameOf(vendorSlug),
+		brandColor: vendorSlug === null ? null : brandColorOf(vendorSlug),
 		family: familyOf(normalizedSlug),
 		source: vendorSlug === null ? "unknown" : "heuristic",
 	}

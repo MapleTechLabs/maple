@@ -11,7 +11,6 @@ import {
 	metricValue,
 	rankSeriesKeys,
 	scopeSummary,
-	toolBadges,
 	toolChartTitle,
 	toolDelta,
 	toolMetricLabel,
@@ -125,47 +124,6 @@ describe("toolDelta", () => {
 	it("has no percentage against a window of zero, and none without one at all", () => {
 		expect(toolDelta(measures({ calls: 150 }), measures({ calls: 0 }), "calls", "p90")).toBeNull()
 		expect(toolDelta(measures({ calls: 150 }), undefined, "calls", "p90")).toBeNull()
-	})
-})
-
-describe("toolBadges", () => {
-	const window = { startMs: 0, endMs: 1000 }
-	const row = (over: Partial<ToolBreakdownRow>): ToolBreakdownRow => ({
-		key: "k",
-		...EMPTY_MEASURES,
-		lastSeen: 0,
-		firstSeen: 0,
-		...over,
-	})
-
-	it("calls the slowest only among rows carrying real volume", () => {
-		// A tool called nine times in a week has the worst p90 in most windows
-		// and is never what the badge is for.
-		const badges = toolBadges(
-			[
-				row({ key: "busy", calls: 1000, p90: 5 }),
-				row({ key: "rare", calls: 1, p90: 5000 }),
-			],
-			window,
-		)
-		expect(badges.get("busy")).toBe("slowest")
-		expect(badges.get("rare")).toBeUndefined()
-	})
-
-	it("names no slowest when nothing has a measured p90", () => {
-		expect(toolBadges([row({ key: "a", calls: 100, p90: 0 })], window).get("a")).toBeUndefined()
-	})
-
-	it("calls a tool new when its first call lands well after the window opened", () => {
-		const badges = toolBadges(
-			[
-				row({ key: "old", calls: 10, firstSeen: 50 }),
-				row({ key: "fresh", calls: 10, firstSeen: 900 }),
-			],
-			window,
-		)
-		expect(badges.get("fresh")).toBe("new")
-		expect(badges.get("old")).toBeUndefined()
 	})
 })
 

@@ -5,12 +5,19 @@ import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import { sessionIdentity } from "./session-detail/session-header"
 
 /**
- * A session by what it is rather than what it is keyed by: the framework's mark
- * beside the agent it ran, or the framework where no agent was named. Shared so
- * every surface that names a session calls it what the Sessions list does.
+ * What a session is called wherever it is listed: the agent it ran, or the
+ * framework where no agent was named.
  *
  * `agentName` is ONE name the warehouse resolved in span order, never an
  * unordered set — `sessionIdentity` reads the first name it is handed.
+ */
+export const sessionHeading = (agentName: string, vendorId: string): string =>
+	sessionIdentity({ agentNames: agentName === "" ? [] : [agentName], vendorIds: [vendorId] }).heading
+
+/**
+ * A session by what it is rather than what it is keyed by: the framework's mark
+ * beside {@link sessionHeading}. For surfaces that name a session in a line of
+ * their own; the Sessions list builds its cell from the heading alone.
  */
 export function SessionName({
 	agentName,
@@ -24,10 +31,7 @@ export function SessionName({
 	className?: string
 }) {
 	const VendorIcon = vendorIcon(vendorId)
-	const { heading } = sessionIdentity({
-		agentNames: agentName === "" ? [] : [agentName],
-		vendorIds: [vendorId],
-	})
+	const heading = sessionHeading(agentName, vendorId)
 	return (
 		<span className={cn("flex min-w-0 items-center gap-2", className)}>
 			<span className="flex shrink-0 items-center text-muted-foreground" title={vendorLabel(vendorId)}>

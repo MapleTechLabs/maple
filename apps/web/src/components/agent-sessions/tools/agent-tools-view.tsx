@@ -56,8 +56,6 @@ export interface AgentToolsViewProps {
 	/** Applied to the URL by the route. Keys set to `undefined` are cleared. */
 	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
 	data: AgentToolsViewData
-	/** The resolved window in epoch ms — what the table's `new` badge is measured against. */
-	window: { startMs: number; endMs: number }
 	serviceOptions: ReadonlyArray<ToolFilterOption>
 	modelOptions: ReadonlyArray<ToolFilterOption>
 	envOptions: ReadonlyArray<ToolFilterOption>
@@ -93,7 +91,6 @@ export function AgentToolsView({
 	search,
 	onSearchChange,
 	data,
-	window,
 	serviceOptions,
 	modelOptions,
 	envOptions,
@@ -162,8 +159,10 @@ export function AgentToolsView({
 			/>
 
 			<ToolFilterToolbar
-				query={search.q ?? ""}
-				onSearch={(value) => onSearchChange({ q: value === "" ? undefined : value })}
+				nameSearch={{
+					query: search.q ?? "",
+					onSearch: (value) => onSearchChange({ q: value === "" ? undefined : value }),
+				}}
 				service={search.service}
 				serviceOptions={serviceOptions}
 				onServiceChange={(value) => onSearchChange({ service: value })}
@@ -218,7 +217,6 @@ export function AgentToolsView({
 			<ToolsTable
 				rows={data.tools}
 				percentile={percentile}
-				window={window}
 				detailSearch={detailSearch}
 				selected={search.tool}
 				sparkFor={(tool) => sparkByTool.get(tool) ?? []}

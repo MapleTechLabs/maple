@@ -221,6 +221,14 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnionUnsafe(CH.aiSessionFacetsQuery(), window),
 	},
 	{
+		// The netting over every session in the window, unnested per measure:
+		// the tuple array only type-checks when every element agrees.
+		module: "ai-sessions",
+		name: "aiSessionDistributionsQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiSessionDistributionsQuery(), window),
+	},
+	{
 		// Agent Sessions › Tools. The chart's series key is derived from the
 		// selection, so the unfiltered shape (per-tool series, with the long tail
 		// folded into `other`) and the tool-selected one (per-model series) are

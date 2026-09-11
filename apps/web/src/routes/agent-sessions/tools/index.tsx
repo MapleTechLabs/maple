@@ -3,7 +3,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
@@ -135,13 +134,7 @@ function AgentToolsBody({
 	headerControls: ReactNode
 }) {
 	const results = useToolAnalytics(search, window)
-	// A fresh object literal per render would defeat the `new`-badge memo in the
-	// Tools table, which keys on this identity.
-	const windowMs = useMemo(
-		() => ({ startMs: toEpochMs(window.startTime), endMs: toEpochMs(window.endTime) }),
-		[window.startTime, window.endTime],
-	)
-	// Same reason: it is memo input for the detail links the table builds.
+	// Memoized: it is memo input for the detail links the table builds.
 	const timeRange = useMemo(
 		() => ({
 			startTime: search.startTime,
@@ -196,7 +189,6 @@ function AgentToolsBody({
 			<AgentToolsView
 				search={search}
 				onSearchChange={onSearchChange}
-				window={windowMs}
 				data={{
 					series: series.data,
 					seriesKind: series.seriesKind,

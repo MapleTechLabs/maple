@@ -430,11 +430,6 @@ export function buildToolAnalyticsFixture(
 	}
 }
 
-/** The window the fixture covers, which the `new` badge is measured against. */
-export function toolFixtureWindow(nowMs: number): { startMs: number; endMs: number } {
-	return { startMs: nowMs - BUCKETS * BUCKET_MS, endMs: nowMs }
-}
-
 /** The service / model / env options the toolbar's selects offer, counted like
  *  the real facets. */
 export function toolFixtureFacets(cells: ReadonlyArray<ToolFixtureCell>) {

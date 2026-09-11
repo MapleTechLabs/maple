@@ -1,16 +1,20 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { AgentSessionsList } from "@/components/agent-sessions/agent-sessions-list"
+import {
+	AgentSessionsList,
+	AgentSessionsListSkeleton,
+} from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsFilterSidebar } from "@/components/agent-sessions/agent-sessions-filter-sidebar"
 import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import {
 	agentSessionsFilterInputs,
-	sortOptionFor,
+	agentSessionsSort,
+	agentSessionsSortPatch,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import { NotFoundError } from "@/components/route-error"
 import {
@@ -21,11 +25,13 @@ import { ReloadControls } from "@/components/time-range-picker/reload-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
-import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	aiSessionsDistributionsResultAtom,
+	aiSessionsFacetsResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteAiSessions } from "@/hooks/use-infinite-ai-sessions"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 /**
  * The list's window. There is no picker: sessions are read newest-first over
@@ -136,12 +142,24 @@ function AgentSessionsBody() {
 	// the Reload subscription — the facets refetch when the window rolls, which
 	// is enough.
 	const facetsResult = useAtomValue(aiSessionsFacetsResultAtom({ data: { startTime, endTime } }))
+	// The ranges' histograms, over the same unfiltered window — a request of its
+	// own, because it nets every session's usage and the facets need not wait.
+	const distributionsResult = useAtomValue(
+		aiSessionsDistributionsResultAtom({ data: { startTime, endTime } }),
+	)
 	const sessions = allData
-	const sortOption = sortOptionFor(search.sortBy, search.sortDir)
+	const { sortBy, sortDir } = agentSessionsSort(search)
+	const onSortChange = useCallback(
+		(key: AiSessionSortKey) =>
+			navigate({ search: (prev) => ({ ...prev, ...agentSessionsSortPatch(prev, key) }) }),
+		[navigate],
+	)
 
 	const toolbar = (
 		<AgentSessionsToolbar
-			sessionCount={sessions.length}
+			// Held back until the first page lands, so the count never reads zero
+			// above a list that is about to fill.
+			sessionCount={Result.isSuccess(firstPageResult) ? sessions.length : undefined}
 			query={search.q ?? ""}
 			onSearch={(value) => navigate({ search: (prev) => ({ ...prev, q: value }) })}
 			errorsOnly={search.hasErrors === true}
@@ -153,24 +171,6 @@ function AgentSessionsBody() {
 					}),
 				})
 			}
-			sortKey={sortOption.key}
-			// The default sort leaves the URL clean, so a shared link only carries
-			// a sort when one was chosen.
-			onSortChange={(option) =>
-				navigate({
-					search: (prev) => ({
-						...prev,
-						sortBy:
-							option.sortBy === "startTime" && option.sortDir === "desc"
-								? undefined
-								: option.sortBy,
-						sortDir:
-							option.sortBy === "startTime" && option.sortDir === "desc"
-								? undefined
-								: option.sortDir,
-					}),
-				})
-			}
 			waiting={firstPageResult.waiting}
 			actions={<ReloadControls />}
 		/>
@@ -179,7 +179,10 @@ function AgentSessionsBody() {
 	return (
 		<>
 			<DashboardLayout.Filters>
-				<AgentSessionsFilterSidebar facetsResult={facetsResult} />
+				<AgentSessionsFilterSidebar
+					facetsResult={facetsResult}
+					distributionsResult={distributionsResult}
+				/>
 			</DashboardLayout.Filters>
 			<DashboardLayout.Content>
 				<DashboardLayout.Sticky>
@@ -192,25 +195,16 @@ function AgentSessionsBody() {
 				</DashboardLayout.Sticky>
 				<DashboardLayout.Scroll>
 					{Result.builder(firstPageResult)
-						.onInitial(() => (
-							<div className="divide-y divide-border">
-								{Array.from({ length: 8 }).map((_, i) => (
-									<div key={i} className="flex items-center gap-3 py-3">
-										<div className="flex-1 space-y-1.5">
-											<Skeleton className="h-3.5 w-64" />
-											<Skeleton className="h-3 w-28" />
-										</div>
-										<Skeleton className="hidden h-3.5 w-40 sm:block" />
-									</div>
-								))}
-							</div>
-						))
+						.onInitial(() => <AgentSessionsListSkeleton />)
 						.onError((error) => (
 							<QueryErrorState error={error} titleOverride="Failed to load agent sessions" />
 						))
 						.onSuccess(() => (
 							<AgentSessionsList
 								sessions={allData}
+								sortBy={sortBy}
+								sortDir={sortDir}
+								onSortChange={onSortChange}
 								hasMore={hasNextPage}
 								isCapped={isCapped}
 								loadingMore={isFetchingNextPage}

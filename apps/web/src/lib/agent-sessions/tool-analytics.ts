@@ -407,54 +407,6 @@ export function toolDelta(
 }
 
 /* -------------------------------------------------------------------------------------------------
- * Table badges
- * -----------------------------------------------------------------------------------------------*/
-
-export type ToolBadge = "slowest" | "new"
-
-/** Volume floor a row must clear to be called the slowest, as a share of the
- *  busiest row. A tool called nine times in a week has the slowest p90 in most
- *  windows and is never what the badge is for. */
-const SLOWEST_MIN_VOLUME_SHARE = 0.1
-
-/** How far into the window a tool's first call has to land before it reads as
- *  new. Bounded by the window, so this is "new in this range". */
-const NEW_AFTER_WINDOW_SHARE = 0.2
-
-/**
- * The one-word annotations the Tools table puts beside a name.
- *
- * `slowest` is the worst P90 among the rows that carry real volume, not the
- * worst P90 outright. `new` is a tool whose first call in the window lands well
- * after the window opened — the honest version of "new" available without a
- * lookback read.
- */
-export function toolBadges(
-	rows: ReadonlyArray<ToolBreakdownRow>,
-	window: { readonly startMs: number; readonly endMs: number },
-): ReadonlyMap<string, ToolBadge> {
-	const out = new Map<string, ToolBadge>()
-	if (rows.length === 0) return out
-
-	const busiest = rows.reduce((max, row) => Math.max(max, row.calls), 0)
-	const contenders = rows.filter((row) => row.calls >= busiest * SLOWEST_MIN_VOLUME_SHARE)
-	const slowest = contenders.reduce<ToolBreakdownRow | undefined>(
-		(worst, row) => (worst === undefined || row.p90 > worst.p90 ? row : worst),
-		undefined,
-	)
-	if (slowest !== undefined && slowest.p90 > 0) out.set(slowest.key, "slowest")
-
-	const span = window.endMs - window.startMs
-	if (span > 0) {
-		const cutoff = window.startMs + span * NEW_AFTER_WINDOW_SHARE
-		for (const row of rows) {
-			if (row.firstSeen > cutoff && !out.has(row.key)) out.set(row.key, "new")
-		}
-	}
-	return out
-}
-
-/* -------------------------------------------------------------------------------------------------
  * Footers
  * -----------------------------------------------------------------------------------------------*/
 

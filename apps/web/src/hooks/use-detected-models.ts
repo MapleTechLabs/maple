@@ -16,6 +16,8 @@ export interface DetectedModel {
 	readonly displayName: string
 	readonly vendorSlug: string | null
 	readonly vendorName: string | null
+	/** The vendor's brand color from the catalog, a light/dark pair. */
+	readonly brandColor: DetectAiModelResponse["brandColor"]
 	readonly family: string | null
 }
 
@@ -24,6 +26,7 @@ const unresolved = (model: string): DetectedModel => ({
 	displayName: shortTarget(model),
 	vendorSlug: null,
 	vendorName: null,
+	brandColor: null,
 	family: null,
 })
 

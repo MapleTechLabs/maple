@@ -10,6 +10,7 @@
 export {
 	aiSessionDetailsQuery,
 	aiSessionDetailsSlices,
+	aiSessionDistributionsQuery,
 	aiSessionFacetsQuery,
 	aiSessionPageQuery,
 	mergeAiSessionDetails,
@@ -25,6 +26,8 @@ export {
 	aiTraceTotalsQuery,
 	aiTraceWindowQuery,
 	idSearchPattern,
+	type AiSessionDistributionMeasure,
+	type AiSessionDistributionsOutput,
 	type AiSessionFacetType,
 	type AiSessionFacetsOutput,
 	type AiSessionFilterOpts,
