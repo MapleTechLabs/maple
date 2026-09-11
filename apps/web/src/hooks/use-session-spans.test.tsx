@@ -84,7 +84,7 @@ describe("useSessionSpans", () => {
 		expect(result.current.spans.map((span) => span.spanId)).toEqual([
 			"agent-1", "llm-1", "http-1", "agent-2", "llm-2", "agent-3", "http-2",
 		])
-		expect(result.current.progress).toMatchObject({ loadedSpans: 7, loadedAgentSpans: 5 })
+		expect(result.current.progress).toMatchObject({ agentSpansComplete: true, loadedSpans: 7, loadedAgentSpans: 5 })
 	})
 
 	it("reports the app phase once every agent span is in", async () => {
@@ -96,6 +96,7 @@ describe("useSessionSpans", () => {
 		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
 
 		await waitFor(() => expect(result.current.progress?.phase).toBe("app"))
+		expect(result.current.progress?.agentSpansComplete).toBe(true)
 		expect(result.current.spans).toHaveLength(5)
 		await act(async () => resolveApp({ data: [], nextCursor: undefined }))
 		expect(result.current.progress?.phase).toBe("complete")
@@ -127,6 +128,7 @@ describe("useSessionSpans", () => {
 		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
 
 		await waitFor(() => expect(result.current.progress?.phase).toBe("failed"))
+		expect(result.current.progress?.agentSpansComplete).toBe(false)
 		expect(result.current.spans).toHaveLength(5)
 
 		act(() => result.current.progress?.retry())
@@ -134,6 +136,19 @@ describe("useSessionSpans", () => {
 		// Resumed after the last page that landed, not from the start.
 		expect(fetchPage.mock.calls[2]![0]).toMatchObject({ scope: "ai", after: AI_CURSOR })
 		expect(result.current.spans.map((span) => span.spanId)).toContain("agent-3")
+	})
+
+	// An app page failing leaves every agent span in hand, and says so.
+	it("reports a failed app page as failed with the agent's spans complete", async () => {
+		mocks.firstPage = { data: firstPageSpans, nextCursor: CURSOR }
+		fetchPage
+			.mockResolvedValueOnce({ data: secondPageSpans, nextCursor: undefined })
+			.mockRejectedValueOnce(new Error("boom"))
+		const { result } = renderHook(() => useSessionSpans("s1", undefined, reads))
+
+		await waitFor(() => expect(result.current.progress?.phase).toBe("failed"))
+		expect(result.current.progress?.agentSpansComplete).toBe(true)
+		expect(result.current.spans).toHaveLength(5)
 	})
 
 	it("drops the pages of a read the window moved on from, and a response landing late", async () => {

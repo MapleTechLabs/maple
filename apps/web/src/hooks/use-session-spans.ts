@@ -21,10 +21,14 @@ import { aiSessionSpansResultAtom, type QueryAtomFailure } from "@/lib/services/
  * so the END of the session is not in hand yet. `app`: every agent span is
  * loaded and the app's HTTP/DB spans are filling in behind them. `complete`:
  * the whole session is here. `failed`: a page did not come back; what was
- * loaded stays, and `retry` picks up where it stopped.
+ * loaded stays, and `retry` picks up where it stopped. `agentSpansComplete`
+ * is what a view that reads the agent's spans alone should look at: a page of
+ * the app's spans failing does not make the transcript's end go missing.
  */
 export interface SessionLoadProgress {
 	readonly phase: "agent" | "app" | "complete" | "failed"
+	/** Every agent span is in hand, whatever the app's pages are doing. */
+	readonly agentSpansComplete: boolean
 	/** Every span in hand, both kinds. */
 	readonly loadedSpans: number
 	/** Agent spans in hand. */
@@ -239,7 +243,7 @@ export function useSessionSpans(
 						: "agent"
 		let loadedAgentSpans = 0
 		for (const span of spans) if (span.isAiSpan) loadedAgentSpans += 1
-		return { phase, loadedSpans: spans.length, loadedAgentSpans, retry }
+		return { phase, agentSpansComplete: agentDone, loadedSpans: spans.length, loadedAgentSpans, retry }
 	}, [firstCursor, loaded.status, loaded.pages, spans, retry])
 
 	return { firstPage, spans, progress }

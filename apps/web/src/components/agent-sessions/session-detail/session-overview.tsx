@@ -98,7 +98,7 @@ export function SessionOverview({
 
 	const openSpan = (spanId: string) => onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
 
-	if (progress !== undefined && (progress.phase === "agent" || progress.phase === "failed")) {
+	if (progress !== undefined && !progress.agentSpansComplete) {
 		return (
 			<div
 				data-testid="overview-waiting"

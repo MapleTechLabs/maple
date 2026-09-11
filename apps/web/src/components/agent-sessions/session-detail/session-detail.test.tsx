@@ -1172,7 +1172,7 @@ describe("SessionViews", () => {
 	// in hand and marks that its end is not here yet. Nothing asks the reader
 	// to load anything.
 	it("waits for the agent's spans in the Overview and marks the transcript's open end while loading", () => {
-		const progress: SessionLoadProgress = { phase: "agent", loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = { phase: "agent", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
 		render(<Views view="overview" progress={progress} totals={totals} />)
 
 		const waiting = screen.getByTestId("overview-waiting")
@@ -1188,7 +1188,7 @@ describe("SessionViews", () => {
 	// while the app's spans are still filling in behind it, and the transcript
 	// has its end.
 	it("renders the Overview and a closed transcript once the agent's spans are all in", () => {
-		const progress: SessionLoadProgress = { phase: "app", loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = { phase: "app", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
 		render(<Views view="overview" progress={progress} totals={totals} />)
 		expect(screen.queryByTestId("overview-waiting")).toBeNull()
 		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
@@ -1196,13 +1196,25 @@ describe("SessionViews", () => {
 	})
 
 	// A page that did not come back is the one case with something to press.
-	it("offers a retry where a page failed", () => {
+	it("offers a retry where an agent page failed", () => {
 		const retry = vi.fn()
-		const progress: SessionLoadProgress = { phase: "failed", loadedSpans: 8, loadedAgentSpans: 6, retry }
+		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry }
 		render(<Views view="transcript" progress={progress} totals={totals} />)
 		expect(screen.getByText("The rest of this session didn't load")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }))
 		expect(retry).toHaveBeenCalledTimes(1)
+	})
+
+	// A failed APP page changes nothing for the views that read agent spans
+	// alone: the Overview stands and the transcript has its end. The header
+	// indicator is where that failure is reported.
+	it("keeps the Overview and a closed transcript when only an app page failed", () => {
+		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		render(<Views view="overview" progress={progress} totals={totals} />)
+		expect(screen.queryByTestId("overview-waiting")).toBeNull()
+		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
+		expect(screen.queryByText("The rest of this session didn't load")).toBeNull()
+		expect(screen.queryByText("Loading the rest of this session")).toBeNull()
 	})
 
 	it("shows neither for a session loaded whole", () => {

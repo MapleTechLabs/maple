@@ -138,7 +138,7 @@ export function SessionTranscript({
 				collapsedTurns,
 				// The end of the session is missing while the agent's pages are
 				// still arriving, or stopped arriving.
-				hasMore: progress !== undefined && (progress.phase === "agent" || progress.phase === "failed"),
+				hasMore: progress !== undefined && !progress.agentSpansComplete,
 			}),
 		[prepared, collapsedTurns, progress],
 	)
