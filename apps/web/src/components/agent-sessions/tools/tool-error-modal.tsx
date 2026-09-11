@@ -142,7 +142,7 @@ export function ToolErrorModal({
 	onClose: () => void
 }) {
 	const { effectiveTimezone } = useTimezonePreference()
-	const [copied, setCopied] = useState(false)
+	const [linkCopy, setLinkCopy] = useState<"idle" | "copied" | "failed">("idle")
 	const text = unwrapToolErrorText(group.message).text
 	const tokens = useMemo(() => errorTextTokens(text), [text])
 	const bucket = errorTrendBucket(range.startMs, range.endMs)
@@ -256,12 +256,17 @@ export function ToolErrorModal({
 									<ChevronDownIcon size={12} aria-hidden />
 								</IconButton>
 								<IconButton
-									label={copied ? "Link copied" : "Copy link"}
+									label={
+										linkCopy === "failed" ? "Copy failed" : linkCopy === "copied" ? "Link copied" : "Copy link"
+									}
 									onClick={() => {
-										void navigator.clipboard.writeText(window.location.href).then(() => setCopied(true))
+										void navigator.clipboard.writeText(window.location.href).then(
+											() => setLinkCopy("copied"),
+											() => setLinkCopy("failed"),
+										)
 									}}
 								>
-									{copied ? <CheckIcon size={12} aria-hidden /> : <LinkIcon size={12} aria-hidden />}
+									{linkCopy === "copied" ? <CheckIcon size={12} aria-hidden /> : <LinkIcon size={12} aria-hidden />}
 								</IconButton>
 								<Link
 									to="/agent-sessions"
@@ -978,6 +983,9 @@ const utf8Length = (text: string) => new TextEncoder().encode(text).length
  */
 function ArgumentsBlock({ row, message, args }: { row: ToolErrorOccurrenceRow; message: string; args: unknown }) {
 	const [full, setFull] = useState(false)
+	// `writeText` rejects outside a secure context or without the clipboard
+	// permission; the button says so rather than staying silent.
+	const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle")
 	const lines = useMemo(() => (args === undefined ? undefined : payloadLines(args, message)), [args, message])
 	if (row.arguments === "") {
 		return (
@@ -997,10 +1005,15 @@ function ArgumentsBlock({ row, message, args }: { row: ToolErrorOccurrenceRow; m
 				action={
 					<button
 						type="button"
-						onClick={() => void navigator.clipboard.writeText(row.arguments)}
+						onClick={() =>
+							void navigator.clipboard.writeText(row.arguments).then(
+								() => setCopy("copied"),
+								() => setCopy("failed"),
+							)
+						}
 						className="font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
 					>
-						Copy
+						{copy === "failed" ? "Copy failed" : copy === "copied" ? "Copied" : "Copy"}
 					</button>
 				}
 			/>
