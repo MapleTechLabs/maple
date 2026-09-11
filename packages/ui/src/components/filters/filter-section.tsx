@@ -107,6 +107,12 @@ interface FilterSectionBaseProps {
 	/** Option-name → icon, rendered before the label (like colorMap's swatch). */
 	getOptionIcon?: (name: string) => IconComponent | undefined
 	/**
+	 * Option-name → CSS color for its `getOptionIcon` mark, for brand marks that
+	 * carry their brand's color. The mark itself is the color, never a swatch
+	 * beside it; `undefined` leaves it in the label's color.
+	 */
+	getOptionIconColor?: (name: string) => string | undefined
+	/**
 	 * Option-name → an already-rendered icon node, in the same slot as
 	 * `getOptionIcon`. Separate from it rather than a widening of it, because
 	 * `IconComponent` is `ComponentType<SVGProps<SVGSVGElement>>` and the icons
@@ -155,6 +161,7 @@ function FilterSectionBase({
 	searchable,
 	colorMap,
 	getOptionIcon,
+	getOptionIconColor,
 	renderOptionIcon,
 	getOptionLabel,
 	excluded = EMPTY,
@@ -382,6 +389,7 @@ function FilterSectionBase({
 													"size-3.5 shrink-0",
 													isExcluded && "opacity-40",
 												)}
+												style={{ color: getOptionIconColor?.(option.name) }}
 											/>
 										) : (
 											renderOptionIcon?.(option.name)

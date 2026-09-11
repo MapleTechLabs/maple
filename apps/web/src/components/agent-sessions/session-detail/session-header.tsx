@@ -10,6 +10,7 @@ import { CopyableValue } from "@/components/attributes"
 import { CopyIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
+import { vendorColor } from "@/lib/agent-sessions/vendor-color"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 
@@ -34,7 +35,12 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
 			<div className="flex min-w-0 items-center gap-2">
-				<VendorIcon size={18} className="shrink-0 text-muted-foreground" aria-hidden />
+				<VendorIcon
+					size={18}
+					className="shrink-0"
+					style={{ color: vendorColor(summary.vendorIds[0] ?? "") }}
+					aria-hidden
+				/>
 				<DashboardLayout.Title title={identity.heading}>{identity.heading}</DashboardLayout.Title>
 				{summary.failed && <Badge variant="error">Failed</Badge>}
 			</div>

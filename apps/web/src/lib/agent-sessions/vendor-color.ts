@@ -48,12 +48,24 @@ const isListedVendor = (vendorId: string): vendorId is keyof typeof VENDOR_COLOR
 	Object.hasOwn(VENDOR_COLORS, vendorId)
 
 /**
- * The CSS color for `vendorLabel(vendorId)`'s brand — a `light-dark()` pair
- * where the canvases differ, which resolves against the `color-scheme` the
- * theme pins. Tint with `color-mix()`, never hex-alpha concatenation.
+ * A brand as one CSS color — a `light-dark()` pair where the canvases differ,
+ * which resolves against the `color-scheme` the theme pins. Tint with
+ * `color-mix()`, never hex-alpha concatenation.
  */
+const brandColorCss = (brand: BrandColor): string =>
+	brand.light === brand.dark ? brand.light : `light-dark(${brand.light}, ${brand.dark})`
+
+/** The CSS color for `vendorLabel(vendorId)`'s brand; see `brandColorCss`. */
 export function vendorColor(vendorId: string): string {
-	if (!isListedVendor(vendorId)) return NEUTRAL
-	const brand: BrandColor = VENDOR_COLORS[vendorId]
-	return brand.light === brand.dark ? brand.light : `light-dark(${brand.light}, ${brand.dark})`
+	return isListedVendor(vendorId) ? brandColorCss(VENDOR_COLORS[vendorId]) : NEUTRAL
+}
+
+/**
+ * The CSS color for `modelVendorIcon(detected)`'s mark, from the brand the
+ * detect endpoint returns — the catalog holds those pairs to the same 3:1 on
+ * both canvases. `undefined` where it lists none, not the neutral: an unbranded
+ * model mark keeps the color of the text it labels.
+ */
+export function modelVendorColor(detected: { readonly brandColor: BrandColor | null }): string | undefined {
+	return detected.brandColor === null ? undefined : brandColorCss(detected.brandColor)
 }

@@ -28,18 +28,19 @@ const unresolved: DetectedModel = {
 }
 
 describe("ModelLabel", () => {
-	it("names the model and draws a mark beside it", () => {
+	it("names the model and draws a mark beside it, in the vendor's brand color", () => {
 		const { container } = render(<ModelLabel detected={resolved} />)
 
 		expect(screen.getByText("Claude Sonnet 4.5")).toBeTruthy()
-		expect(container.querySelector("svg")).toBeTruthy()
+		expect(container.querySelector("svg")?.style.color).toBe("rgb(217, 119, 87)")
 	})
 
 	it("draws the same shape for a model nothing resolved, so the row does not reflow", () => {
 		const { container } = render(<ModelLabel detected={unresolved} />)
 
 		expect(screen.getByText("my-deployment")).toBeTruthy()
-		expect(container.querySelector("svg")).toBeTruthy()
+		// No brand, so the mark keeps the color of the text it labels.
+		expect(container.querySelector("svg")?.style.color).toBe("")
 	})
 
 	it("counts the models a lane has no room for, outside the truncating name", () => {
