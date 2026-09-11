@@ -70,9 +70,18 @@ const TRACE_PRE_BUCKETS = "aioverve2e00000000000000000000004"
 /** The comparison window's only session. */
 const TRACE_EARLIER = "aioverve2e00000000000000000000005"
 const TRACE_FOREIGN = "aioverve2e00000000000000000000006"
+/** More models than the mix plots bands for, half an hour PAST the window
+ *  every other read here takes — so the fold has a population to fold and no
+ *  other assertion has to account for it. */
+const TRACE_MODEL_TAIL = "aioverve2e00000000000000000000007"
 
 const GPT = "gpt-5"
 const CLAUDE = "claude-sonnet-5"
+/** One span each, so the ranking falls to the tie-break and the bands are
+ *  `tail-model-1` … `tail-model-5` with the last two under `other`. */
+const TAIL_MODELS = [1, 2, 3, 4, 5, 6, 7].map((n) => `tail-model-${n}`)
+/** Half an hour past the window's end. */
+const TAIL_MS = BASE_MS + HOUR_MS + 1_800_000
 /** The response id the app's SDK and the gateway both report for one call. */
 const SHARED_RESPONSE_ID = "resp-shared-1"
 
@@ -209,6 +218,21 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			...usage(10, 5, 0.01, "resp-earlier-1"),
 		}),
 	},
+	// Seven models in one bucket, outside every other read's window: the mix
+	// plots five bands and counts the rest under `other`.
+	...TAIL_MODELS.map((model, index) => ({
+		traceId: TRACE_MODEL_TAIL,
+		spanId: `overview-chat-tail-${index}`,
+		name: `chat ${model}`,
+		ms: TAIL_MS + index,
+		durationNs: 1_000_000,
+		status: "Ok",
+		attrs: agentSpan({
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.model": model,
+			...usage(1, 1, 0.001, `resp-tail-${index}`),
+		}),
+	})),
 ]
 
 /** Another org's session, in the same window — the reads must never see it. */
@@ -417,7 +441,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent overview reads", () => {
 		assert.strictEqual(failing.current?.erroredSessions, 2)
 	})
 
-	it("measures the session's extent and the model call's own duration", async () => {
+	it("measures the session's extent, first agent span to last", async () => {
 		const { current } = await totals()
 		const list = await listRows()
 
@@ -429,11 +453,6 @@ describe.skipIf(!clickhouseE2eEnabled)("agent overview reads", () => {
 		assert.strictEqual(current?.sessionDurationP50Ns, extents[1]! * 1_000_000)
 		assert.isAbove(current!.sessionDurationP95Ns, extents[1]! * 1_000_000)
 		assert.isAtMost(current!.sessionDurationP95Ns, extents[2]! * 1_000_000)
-		// The model calls took 2, 3, 4, 5 and 6ms: a span-level quantile, taken
-		// at a level whose rows are sessions.
-		assert.strictEqual(current?.llmDurationP50Ns, 4_000_000)
-		assert.isAbove(current!.llmDurationP95Ns, 5_000_000)
-		assert.isAtMost(current!.llmDurationP95Ns, 6_000_000)
 	})
 
 	it("measures the window before the caller's in the same read", async () => {
@@ -620,6 +639,32 @@ describe.skipIf(!clickhouseE2eEnabled)("agent overview reads", () => {
 			],
 		)
 		assert.strictEqual(gptOnly[0]!.bucket, rows[0]!.bucket)
+	})
+
+	it("counts every model past the busiest five under one band", async () => {
+		// The tail trace's own window: seven models, one span each, in a single
+		// bucket. Folded client-side this is seven rows a bucket and the row cap
+		// would one day cut the newest bucket off the chart.
+		const compiled = compileUnsafe(Integrations.aiOverviewModelMixQuery(), {
+			orgId: ORG_ID,
+			startTime: chDateTime(TAIL_MS - 60_000),
+			endTime: chDateTime(TAIL_MS + 60_000),
+			bucketSeconds: 300,
+		})
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+
+		// Six rows and not seven: the five bands the ranking kept — ties broken by
+		// name, so the bands are stable between loads — and `other` for the rest.
+		assert.strictEqual(rows.length, 6)
+		assert.deepStrictEqual(
+			[...rows].map((row) => row.model).sort(),
+			[...TAIL_MODELS.slice(0, 5), "other"].sort(),
+		)
+		assert.strictEqual(rows.find((row) => row.model === "other")?.llmCallSpans, 2)
+		assert.strictEqual(
+			sumOf(rows, (row) => row.llmCallSpans),
+			TAIL_MODELS.length,
+		)
 	})
 
 	it("selects sessions the way the list selects them, by any span of the trace", async () => {

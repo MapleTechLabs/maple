@@ -558,7 +558,13 @@ export function buildModelMix(rows: ReadonlyArray<OverviewModelMixRow>): Overvie
 		.map(([model]) => model)
 	const top = ranked.slice(0, OVERVIEW_MODEL_MIX_LIMIT)
 	const kept = new Set(top)
-	const models = ranked.length > top.length ? [...top, OVERVIEW_MODEL_MIX_OTHER] : top
+	// The read folds its own tail, so `other` arrives as a band of its own and
+	// can rank inside the top: appending it again would plot it twice and
+	// double it in the bucket's total.
+	const models =
+		ranked.length > top.length && !kept.has(OVERVIEW_MODEL_MIX_OTHER)
+			? [...top, OVERVIEW_MODEL_MIX_OTHER]
+			: top
 
 	const byBucket = new Map<number, Record<string, number>>()
 	for (const row of rows) {

@@ -28,9 +28,9 @@
 //      whatever the org's roll-up rate is.
 //   4. A SESSION BELONGS TO ONE BUCKET — the one its first span started in —
 //      so the series sums to the totals instead of counting a long session in
-//      every bucket it touched. Quantiles are the exception: they do not
-//      merge, which is why the totals are their own un-bucketed read rather
-//      than a client-side fold of the series.
+//      every bucket it touched. The session-duration quantiles are the
+//      exception: they do not merge, which is why the totals are their own
+//      un-bucketed read rather than a client-side fold of the series.
 //
 // The breakdown adds a fifth. A key is the value the SPAN ITSELF carries, and
 // the netting runs per (session, key): a session that used two models is a
@@ -56,12 +56,15 @@
 // `llmCalls`, a mirrored call that failed on both observations is two failures
 // of one call and the rate passes 100%.
 //
+// The MODEL MIX is the one read that is a plain GROUP BY over the index, and
+// the one that folds its own tail: the models past the busiest few are counted
+// under `other` in SQL, so a bucket answers a bounded number of rows however
+// many models the org routes across.
+//
 // Durations stay in NANOSECONDS, like every other AI read — `Duration` is what
 // the index stores and the client formats.
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
 import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { AI_OVERVIEW_BREAKDOWN_MAX, type AiOverviewDimension } from "@maple/domain/http"
 import { AiTraceIndex } from "@maple/query-engine/ch/tables"
@@ -69,7 +72,6 @@ import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { sessionFilterConditions, sessionKey } from "./ai-sessions"
 import {
 	childClaimsExpr,
-	MAX_USAGE_REPORTERS_PER_TRACE,
 	nettedReportersExpr,
 	reportingSpanIdsExpr,
 	sessionLlmCalls,
@@ -248,26 +250,6 @@ interface DimensionColumns {
 	readonly ToolName: CH.Expr<string>
 }
 
-/** One session's model-call durations, for the quantiles two levels up. Raw
- *  SQL because the cap is a parameter of the aggregate (`groupArrayIf(N)(…)`),
- *  a shape the builder's function-call helper does not render. */
-const llmDurationsExpr = ($: {
-	readonly Duration: CH.Expr<number>
-	readonly IsLlmCall: CH.Expr<number>
-}): CH.Expr<unknown> =>
-	CH.untypedExpr(
-		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(${compile($.Duration.toFragment())}, ${compile(
-			$.IsLlmCall.eq(1).toFragment(),
-		)})`,
-	)
-
-/** A quantile over every element of an array column — ClickHouse's `-Array`
- *  combinator, which reads the arrays as if they had been `arrayJoin`ed.
- *  The only way to take a SPAN-level quantile at a level whose rows are
- *  sessions, and not in the builder's function set. */
-const quantileOfArrays = (level: number, column: string): CH.Expr<number | null> =>
-	CH.rawExpr(`quantileArray(${level})(${column})`, T.float64)
-
 /**
  * One row per session (or per session and key), with everything the index
  * carries about it: the measures summed over its spans, and its usage still as
@@ -315,7 +297,6 @@ const sessionRows = (
 			// call there and two failures above — so an error rate taken against
 			// it can exceed 100%.
 			llmCallSpans: CH.sum($.IsLlmCall),
-			llmDurations: llmDurationsExpr($),
 			// Usage AND model calls travel as reporters: both are counted above,
 			// where every span of the session is in hand — see `ai-span-columns`.
 			// The two lookups the netting makes are taken off the reporters here,
@@ -345,7 +326,6 @@ const nettedRows = (opts: AiOverviewFilterOpts, window: AiOverviewWindow, dimens
 		erroredToolCalls: $.erroredToolCalls,
 		erroredLlmCalls: $.erroredLlmCalls,
 		llmCallSpans: $.llmCallSpans,
-		llmDurations: $.llmDurations,
 		netted: nettedReportersExpr("reporters", "childClaims", "reportingIds"),
 	}))
 
@@ -392,8 +372,6 @@ const measures = ($: SessionColumns) => ({
 	// A quantile over an empty group is NULL, which the row schema refuses.
 	sessionDurationP50Ns: finiteOrZero(CH.quantile(0.5)($.sessionDurationNs)),
 	sessionDurationP95Ns: finiteOrZero(CH.quantile(0.95)($.sessionDurationNs)),
-	llmDurationP50Ns: finiteOrZero(quantileOfArrays(0.5, "llmDurations")),
-	llmDurationP95Ns: finiteOrZero(quantileOfArrays(0.95, "llmDurations")),
 })
 
 /** Every measure at zero — the shape a branch that measures something else
@@ -416,8 +394,6 @@ const noMeasures = () => ({
 	reasoningTokens: CH.lit(0),
 	sessionDurationP50Ns: CH.lit(0),
 	sessionDurationP95Ns: CH.lit(0),
-	llmDurationP50Ns: CH.lit(0),
-	llmDurationP95Ns: CH.lit(0),
 })
 
 export interface AiOverviewMeasuresOutput {
@@ -438,8 +414,6 @@ export interface AiOverviewMeasuresOutput {
 	readonly reasoningTokens: number
 	readonly sessionDurationP50Ns: number
 	readonly sessionDurationP95Ns: number
-	readonly llmDurationP50Ns: number
-	readonly llmDurationP95Ns: number
 }
 
 export interface AiOverviewTotalsOutput extends AiOverviewMeasuresOutput {
@@ -575,18 +549,49 @@ export function aiOverviewBreakdownQuery(
 	return unionAll(branch("current"), branch("previous"), keyCount).format("JSON")
 }
 
+/** Models the mix plots as bands of their own. Everything past them is one
+ *  `other` band, which is what bounds the response. */
+const AI_OVERVIEW_MODEL_MIX_BANDS = 5
+
+/** The band every model outside the top {@link AI_OVERVIEW_MODEL_MIX_BANDS} is
+ *  counted under — the key the client folds its own tail into. */
+const AI_OVERVIEW_MODEL_MIX_OTHER = "other"
+
 /**
- * Rows one model mix returns, across every bucket and model together.
+ * Rows one model mix returns, across every bucket and band together.
  *
- * Not a top-N: the client folds the minor models into an "other" band and
- * needs every model of every bucket to do it. The cap is there so a month at a
- * one-minute bucket, in an org that routes across a long model list, cannot
- * answer with a response nothing can render.
+ * A guard the page cannot reach rather than a cut: the tail is folded in SQL,
+ * so a bucket answers at most six rows and a year of daily buckets is still
+ * well inside this.
  */
 export const AI_OVERVIEW_MODEL_MIX_MAX_ROWS = 4000
 
 /**
- * The model mix: the window's model-call SPANS, split by model, bucket by
+ * The busiest models of the window, as a one-column subquery for `IN`.
+ *
+ * Ranked over the population the mix counts — model-call SPANS naming a model,
+ * among the selected sessions — so the bands are the ones a full answer would
+ * have shown. The name breaks ties, so two models with the same count cannot
+ * swap bands between loads.
+ */
+const topModels = (opts: AiOverviewFilterOpts) => {
+	const ranked = from(AiTraceIndex)
+		.innerJoinQuery(traceKeys(opts, "current"), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
+		.select(($) => ({ rankModel: CH.toString_($.Model), rankSpans: CH.count() }))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			...withinWindow($.Timestamp, "current"),
+			$.IsLlmCall.eq(1),
+			$.Model.neq(""),
+		])
+		.groupBy("rankModel")
+		.orderBy(["rankSpans", "desc"], ["rankModel", "asc"])
+		.limit(AI_OVERVIEW_MODEL_MIX_BANDS)
+	return fromQuery(ranked, "top_models").select(($) => ({ topModel: $.rankModel }))
+}
+
+/**
+ * The model mix: the window's model-call SPANS, split by band, bucket by
  * bucket.
  *
  * The share of model SPANS and not of netted calls — this is a plain GROUP BY
@@ -595,6 +600,12 @@ export const AI_OVERVIEW_MODEL_MIX_MAX_ROWS = 4000
  * the same population the summary counts as `llmCallSpans`, less the calls
  * whose instrumentation named no model: those carry no share of a model mix,
  * so the two totals differ by exactly them.
+ *
+ * The TAIL IS FOLDED HERE. Ordered by bucket and cut at a row cap, the cap
+ * drops the newest buckets — the end of the chart — in exactly the org that
+ * needs the chart most. Ranking the window's models once and counting the rest
+ * under `other` bounds a bucket at six rows instead, and it is the band the
+ * client would have folded anyway.
  *
  * A span is filed under the bucket ITS OWN timestamp falls in, where the
  * summary's series files a whole session under the bucket it started in. The
@@ -606,6 +617,7 @@ export const AI_OVERVIEW_MODEL_MIX_MAX_ROWS = 4000
  * no comparison band.
  */
 export function aiOverviewModelMixQuery(opts: AiOverviewFilterOpts = {}) {
+	const bands = topModels(opts)
 	return from(AiTraceIndex)
 		.innerJoinQuery(traceKeys(opts, "current"), "trace", (row, trace) => row.TraceId.eq(trace.TraceId))
 		.select(($) => ({
@@ -613,7 +625,11 @@ export function aiOverviewModelMixQuery(opts: AiOverviewFilterOpts = {}) {
 			// `toString` for the reason the breakdown's key takes it: `Model` is
 			// `LowCardinality(String)` in the index, and a model key is a plain
 			// `String` everywhere else the page reads one.
-			model: CH.toString_($.Model),
+			model: CH.if_(
+				inSubquery(CH.toString_($.Model), bands),
+				CH.toString_($.Model),
+				CH.lit(AI_OVERVIEW_MODEL_MIX_OTHER),
+			),
 			llmCallSpans: CH.count(),
 		}))
 		.where(($) => [

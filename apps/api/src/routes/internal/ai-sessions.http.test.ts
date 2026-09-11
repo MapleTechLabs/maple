@@ -1122,8 +1122,6 @@ const OVERVIEW_MEASURES = {
 	reasoningTokens: 400,
 	sessionDurationP50Ns: 600_000_000,
 	sessionDurationP95Ns: 900_000_000,
-	llmDurationP50Ns: 4_000_000,
-	llmDurationP95Ns: 8_000_000,
 }
 
 /** One row of the totals or series union, in the wire shape it decodes from. */
@@ -1237,7 +1235,7 @@ describe("POST /internal/ai-sessions/overview/summary", () => {
 			const response = await harness.post("/internal/ai-sessions/overview/summary", SUMMARY_BODY)
 			expect(response.status).toBe(200)
 			expect(response.body).toMatchObject({
-				current: { sessions: 0, cost: 0, llmDurationP95Ns: 0 },
+				current: { sessions: 0, cost: 0, sessionDurationP95Ns: 0 },
 				previous: { sessions: 0 },
 				series: [],
 				previousSeries: [],

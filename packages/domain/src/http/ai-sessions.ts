@@ -625,10 +625,6 @@ const aiOverviewMeasures = {
 	/** Quantiles of the session's extent, first agent span to last. */
 	sessionDurationP50Ns: Schema.Number,
 	sessionDurationP95Ns: Schema.Number,
-	/** Quantiles of one model call's duration, over the calls of the sessions
-	 *  this row measures. */
-	llmDurationP50Ns: Schema.Number,
-	llmDurationP95Ns: Schema.Number,
 }
 
 export const AiOverviewMeasures = Schema.Struct(aiOverviewMeasures)
@@ -724,13 +720,13 @@ export const AI_OVERVIEW_BREAKDOWN_MAX = 12
  * spans that can carry the key — model calls and tool calls respectively:
  *
  * - `model`: `toolCalls` and `erroredToolCalls` are structurally 0 (a model
- *   call is not a tool call), and the usage, call and model-latency measures
- *   are the row's subject.
- * - `tool`: `llmCalls`, `llmCallSpans`, `erroredLlmCalls` and
- *   `llmDurationP*Ns` are structurally 0 (a tool call is not a model call),
- *   and `cost`, `tokens` and `pricedLlmCalls` are 0 for every tool span that
- *   reports no usage, which is all of them in practice. `toolCalls` and
- *   `erroredToolCalls` are the row's subject.
+ *   call is not a tool call), and the usage and call measures are the row's
+ *   subject.
+ * - `tool`: `llmCalls`, `llmCallSpans` and `erroredLlmCalls` are structurally
+ *   0 (a tool call is not a model call), and `cost`, `tokens` and
+ *   `pricedLlmCalls` are 0 for every tool span that reports no usage, which is
+ *   all of them in practice. `toolCalls` and `erroredToolCalls` are the row's
+ *   subject.
  * - `agent`, `service`, `environment`, `vendor`: every agent span carries the
  *   key, so every measure is meaningful.
  *
@@ -792,8 +788,12 @@ export class AiOverviewBreakdownResponse extends Schema.Class<AiOverviewBreakdow
 export const AiOverviewModelMixPoint = Schema.Struct({
 	/** ISO-8601 with a literal `Z`, the shape every Maple timeseries emits. */
 	bucket: Schema.String,
-	/** The model the spans named. Never `''` — a call that named no model has no
-	 *  share of a model mix, and the read leaves it out. */
+	/**
+	 * The model the spans named, or `other` — the band the read folds every
+	 * model past the busiest few into, so a bucket answers a bounded number of
+	 * rows. Never `''`: a call that named no model has no share of a model mix,
+	 * and the read leaves it out.
+	 */
 	model: Schema.String,
 	/** Model-call SPANS, counted raw. See {@link AiOverviewModelMixResponse}. */
 	llmCallSpans: Schema.Number,

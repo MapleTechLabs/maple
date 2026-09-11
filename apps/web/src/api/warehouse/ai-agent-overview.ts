@@ -5,8 +5,7 @@
 // a literal `Z`; `toEpochMs` reads them as UTC, where `new Date(value)` would
 // read a bare warehouse datetime as local time. Durations arrive in
 // nanoseconds and leave in milliseconds, because every formatter downstream
-// takes milliseconds — the per-call quantiles are dropped here rather than
-// converted, since nothing on the board reads them.
+// takes milliseconds.
 //
 // The page's filters are single-valued — one model, one agent, one tool — and
 // the contract takes arrays. The widening happens in `selectionFields`, so a

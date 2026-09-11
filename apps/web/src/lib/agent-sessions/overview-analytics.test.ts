@@ -294,6 +294,23 @@ describe("buildModelMix", () => {
 		expect(buildModelMix([{ bucket: 0, model: "solo", llmCallSpans: 4 }]).models).toEqual(["solo"])
 	})
 
+	it("plots the read's own other band once, however busy it is", () => {
+		// The warehouse folds its tail under the same key, so `other` can be the
+		// busiest band on the chart and still be one band.
+		const withServerOther = [
+			{ bucket: 0, model: "other", llmCallSpans: 900 },
+			...[1, 2, 3, 4, 5, 6].map((rank) => ({
+				bucket: 0,
+				model: `model-${rank}`,
+				llmCallSpans: 100 - rank * 10,
+			})),
+		]
+		const mix = buildModelMix(withServerOther)
+		expect(mix.models.filter((model) => model === "other")).toEqual(["other"])
+		const total = mix.models.reduce((sum, model) => sum + mix.points[0].shares[model], 0)
+		expect(total).toBeCloseTo(1, 10)
+	})
+
 	it("has no points and no models for a window that ran nothing", () => {
 		expect(buildModelMix([])).toEqual({ models: [], points: [] })
 	})

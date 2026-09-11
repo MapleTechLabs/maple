@@ -30,7 +30,6 @@ const SESSION_KEY =
  *  `hasErrors` test is applied. */
 const ROLLUP_SESSION_KEY = "if(rawSessionId = '', concat('trace:', TraceId), rawSessionId)"
 
-
 /** `OrgId = 'x'` on every level that reads a table — a subquery contributes
  *  nothing to the outer query's scope. */
 const orgPredicateCount = (sql: string) => sql.split("OrgId = 'org_1'").length - 1
@@ -184,19 +183,15 @@ describe("the measures every grouping reports", () => {
 		const sql = totalsSql()
 
 		// A quantile over no rows is NULL, which the row schema refuses.
-		for (const measure of [
-			"sessionDurationP50Ns",
-			"sessionDurationP95Ns",
-			"llmDurationP50Ns",
-			"llmDurationP95Ns",
-		]) {
+		for (const measure of ["sessionDurationP50Ns", "sessionDurationP95Ns"]) {
 			expect(sql).toContain(`AS ${measure}`)
 		}
 		expect(sql).toContain("ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0)")
-		// The model-call latency is a SPAN quantile taken at a level whose rows
-		// are sessions, which is what the array carries it up for.
-		expect(sql).toContain("quantileArray(0.5)(llmDurations)")
-		expect(sql).toContain("groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1)")
+		// The session's extent is the only quantile the page reads: nothing
+		// renders a per-call latency, and collecting one was an array of every
+		// model call of every session.
+		expect(sql).not.toContain("quantileArray")
+		expect(sql).not.toContain("llmDurations")
 	})
 
 	it("measures the extent of the session, not the start of its last span", () => {
@@ -275,7 +270,7 @@ describe("the model mix", () => {
 	const modelMixSql = (opts: Parameters<typeof aiOverviewModelMixQuery>[0] = {}) =>
 		compileUnsafe(aiOverviewModelMixQuery(opts), seriesParams).sql
 
-	it("counts the model-call spans that name a model, per bucket and model", () => {
+	it("counts the model-call spans that name a model, per bucket and band", () => {
 		const sql = modelMixSql()
 
 		expect(sql).toContain("FROM ai_trace_index")
@@ -287,9 +282,22 @@ describe("the model mix", () => {
 		expect(sql).toContain("AND ai_trace_index.IsLlmCall = 1")
 		expect(sql).toContain("AND ai_trace_index.Model != ''")
 		expect(sql).toContain("count() AS llmCallSpans")
-		expect(sql).toContain("toString(ai_trace_index.Model) AS model")
 		expect(sql).toContain("GROUP BY bucket, model")
 		expect(sql).not.toContain("AS netted")
+	})
+
+	it("folds every model past the busiest five into one band, in SQL", () => {
+		const sql = modelMixSql()
+
+		// Ranked once over the window, then read as a band per row: a bucket
+		// answers at most six rows however many models the org routes across.
+		expect(sql).toContain("count() AS rankSpans")
+		expect(sql).toContain("ORDER BY rankSpans DESC, rankModel ASC")
+		expect(sql).toContain("LIMIT 5) AS top_models")
+		expect(sql).toContain(
+			"if(toString(ai_trace_index.Model) IN (SELECT\n          rankModel AS topModel",
+		)
+		expect(sql).toContain("'other') AS model")
 	})
 
 	it("buckets the span's own timestamp, at the width the caller asked for", () => {
@@ -299,8 +307,8 @@ describe("the model mix", () => {
 		// so there is no session to keep inside one bucket.
 		expect(sql).toContain("toStartOfInterval(ai_trace_index.Timestamp, INTERVAL 300 SECOND)")
 		expect(sql).toContain("ORDER BY bucket ASC, llmCallSpans DESC")
-		// A guard and not a top-N — the client folds the minor models into
-		// "other" and needs every model of every bucket to do it.
+		// A guard the page cannot reach, now that the tail is folded: ordered by
+		// bucket, a row cap would have cut the NEWEST buckets off the chart.
 		expect(sql).toContain(`LIMIT ${AI_OVERVIEW_MODEL_MIX_MAX_ROWS}`)
 	})
 
@@ -312,8 +320,9 @@ describe("the model mix", () => {
 		// The chart has no comparison band, so the previous window's params are
 		// never resolved.
 		expect(sql).not.toContain(params.prevStartTime)
-		// The trace keys and the spans themselves.
-		expect(orgPredicateCount(sql)).toBe(2)
+		// The trace rollup and the spans themselves, once for the mix and once
+		// for the ranking that picks its bands.
+		expect(orgPredicateCount(sql)).toBe(4)
 		expect(compileUnsafe(aiOverviewModelMixQuery(), seriesParams).tenantScope).toBe("single-tenant")
 	})
 
@@ -332,7 +341,7 @@ describe("the model mix", () => {
 		expect(sql).toContain("countIf(Model IN ('gpt-5.5')) > 0")
 		expect(sql).toContain("countIf(ToolName IN ('send_email')) > 0")
 		expect(sql).toContain(`${ROLLUP_SESSION_KEY} IN (SELECT`)
-		expect(orgPredicateCount(sql)).toBe(3)
+		expect(orgPredicateCount(sql)).toBe(6)
 
 		const unfiltered = modelMixSql()
 		expect(unfiltered).not.toContain("HAVING")

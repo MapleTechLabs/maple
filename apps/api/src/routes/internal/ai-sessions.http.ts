@@ -599,8 +599,6 @@ const NO_OVERVIEW_MEASURES: AiOverviewMeasures = {
 	reasoningTokens: 0,
 	sessionDurationP50Ns: 0,
 	sessionDurationP95Ns: 0,
-	llmDurationP50Ns: 0,
-	llmDurationP95Ns: 0,
 }
 
 /** One row's measures, or zeros for a period or a key that has no row. */
@@ -626,8 +624,6 @@ const overviewMeasures = (
 		reasoningTokens: row.reasoningTokens,
 		sessionDurationP50Ns: row.sessionDurationP50Ns,
 		sessionDurationP95Ns: row.sessionDurationP95Ns,
-		llmDurationP50Ns: row.llmDurationP50Ns,
-		llmDurationP95Ns: row.llmDurationP95Ns,
 	}
 }
 

@@ -27,8 +27,6 @@ const wire = (overrides: Partial<AiOverviewMeasures> = {}): AiOverviewMeasures =
 	reasoningTokens: 41_000,
 	sessionDurationP50Ns: 42_000_000_000,
 	sessionDurationP95Ns: 96_000_000_000,
-	llmDurationP50Ns: 1_900_000_000,
-	llmDurationP95Ns: 7_400_000_000,
 	...overrides,
 })
 
@@ -37,12 +35,6 @@ describe("mapOverviewMeasures", () => {
 		const row = mapOverviewMeasures(wire())
 		expect(row.sessionDurationP50Ms).toBe(42_000)
 		expect(row.sessionDurationP95Ms).toBe(96_000)
-	})
-
-	it("drops the per-call quantiles, which nothing on the board reads", () => {
-		const row = mapOverviewMeasures(wire())
-		expect(row).not.toHaveProperty("llmDurationP50Ms")
-		expect(row).not.toHaveProperty("llmDurationP95Ms")
 	})
 
 	it("carries the raw span population separately from the netted volume", () => {
@@ -69,12 +61,16 @@ describe("mapOverviewBreakdown", () => {
 })
 
 describe("mapOverviewModelMix", () => {
-	it("reads the bucket as UTC and leaves the model alone", () => {
-		const [row] = mapOverviewModelMix([
+	it("reads the bucket as UTC and leaves the band alone", () => {
+		// `other` is a band the read itself folds, and reaches the chart as the
+		// key the client folds its own tail into.
+		const rows = mapOverviewModelMix([
 			{ bucket: "2026-09-10T18:00:00.000Z", model: "claude-opus-5", llmCallSpans: 42 },
+			{ bucket: "2026-09-10T18:00:00.000Z", model: "other", llmCallSpans: 7 },
 		])
-		expect(row.bucket).toBe(Date.UTC(2026, 8, 10, 18, 0, 0))
-		expect(row.model).toBe("claude-opus-5")
-		expect(row.llmCallSpans).toBe(42)
+		expect(rows[0].bucket).toBe(Date.UTC(2026, 8, 10, 18, 0, 0))
+		expect(rows[0].model).toBe("claude-opus-5")
+		expect(rows[0].llmCallSpans).toBe(42)
+		expect(rows[1].model).toBe("other")
 	})
 })

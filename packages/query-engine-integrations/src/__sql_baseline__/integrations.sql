@@ -19,9 +19,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -31,7 +29,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -43,7 +40,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -112,9 +108,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -124,7 +118,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -136,7 +129,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -205,9 +197,7 @@ SELECT
           0 AS outputTokens,
           0 AS reasoningTokens,
           0 AS sessionDurationP50Ns,
-          0 AS sessionDurationP95Ns,
-          0 AS llmDurationP50Ns,
-          0 AS llmDurationP95Ns
+          0 AS sessionDurationP95Ns
         FROM (SELECT
           toString(ai_trace_index.Model) AS rankKey,
           uniqExact(if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)) AS rankSessions
@@ -252,9 +242,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -264,7 +252,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -276,7 +263,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -369,9 +355,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -381,7 +365,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -393,7 +376,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -486,9 +468,7 @@ SELECT
           0 AS outputTokens,
           0 AS reasoningTokens,
           0 AS sessionDurationP50Ns,
-          0 AS sessionDurationP95Ns,
-          0 AS llmDurationP50Ns,
-          0 AS llmDurationP95Ns
+          0 AS sessionDurationP95Ns
         FROM (SELECT
           toString(ai_trace_index.ServiceName) AS rankKey,
           uniqExact(if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)) AS rankSessions
@@ -545,9 +525,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -557,7 +535,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -569,7 +546,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -638,9 +614,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -650,7 +624,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -662,7 +635,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -731,9 +703,7 @@ SELECT
           0 AS outputTokens,
           0 AS reasoningTokens,
           0 AS sessionDurationP50Ns,
-          0 AS sessionDurationP95Ns,
-          0 AS llmDurationP50Ns,
-          0 AS llmDurationP95Ns
+          0 AS sessionDurationP95Ns
         FROM (SELECT
           toString(ai_trace_index.ToolName) AS rankKey,
           uniqExact(if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId)) AS rankSessions
@@ -760,7 +730,32 @@ FORMAT JSON
 -- builder:ai-overview:aiOverviewModelMixQuery:default
 SELECT
           formatDateTime(toStartOfInterval(ai_trace_index.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
-          toString(ai_trace_index.Model) AS model,
+          if(toString(ai_trace_index.Model) IN (SELECT
+          rankModel AS topModel
+        FROM (SELECT
+          toString(ai_trace_index.Model) AS rankModel,
+          count() AS rankSpans
+        FROM ai_trace_index
+        INNER JOIN (SELECT
+          TraceId AS TraceId,
+          rawSessionId AS rawSessionId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(SessionId) AS rawSessionId,
+          sum(IsError) AS errorSpans
+        FROM ai_trace_index
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS selected_traces) AS trace ON ai_trace_index.TraceId = trace.TraceId
+        WHERE ai_trace_index.OrgId = 'org_sql_catalog'
+          AND ai_trace_index.Timestamp >= '2026-01-01 10:30:00'
+          AND ai_trace_index.Timestamp <= '2026-01-03 14:15:00'
+          AND ai_trace_index.IsLlmCall = 1
+          AND ai_trace_index.Model != ''
+        GROUP BY rankModel
+        ORDER BY rankSpans DESC, rankModel ASC
+        LIMIT 5) AS top_models), toString(ai_trace_index.Model), 'other') AS model,
           count() AS llmCallSpans
         FROM ai_trace_index
         INNER JOIN (SELECT
@@ -806,9 +801,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -818,7 +811,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -830,7 +822,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -872,9 +863,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -884,7 +873,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -896,7 +884,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -941,9 +928,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -953,7 +938,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -965,7 +949,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -1005,9 +988,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -1017,7 +998,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -1029,7 +1009,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -1071,9 +1050,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -1083,7 +1060,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -1095,7 +1071,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
@@ -1160,9 +1135,7 @@ SELECT
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 8)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.8), arrayFilter(n -> n.1 != '', netted)))))) AS outputTokens,
           sum(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 9)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.9), arrayFilter(n -> n.1 != '', netted)))))) AS reasoningTokens,
           ifNull(ifNotFinite(quantile(0.5)(sessionDurationNs), 0), 0) AS sessionDurationP50Ns,
-          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns,
-          ifNull(ifNotFinite(quantileArray(0.5)(llmDurations), 0), 0) AS llmDurationP50Ns,
-          ifNull(ifNotFinite(quantileArray(0.95)(llmDurations), 0), 0) AS llmDurationP95Ns
+          ifNull(ifNotFinite(quantile(0.95)(sessionDurationNs), 0), 0) AS sessionDurationP95Ns
         FROM (SELECT
           key AS key,
           sessionStart AS sessionStart,
@@ -1172,7 +1145,6 @@ SELECT
           erroredToolCalls AS erroredToolCalls,
           erroredLlmCalls AS erroredLlmCalls,
           llmCallSpans AS llmCallSpans,
-          llmDurations AS llmDurations,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
           if(trace.rawSessionId = '', concat('trace:', ai_trace_index.TraceId), trace.rawSessionId) AS sessionId,
@@ -1184,7 +1156,6 @@ SELECT
           sumIf(ai_trace_index.IsError, ai_trace_index.IsToolCall = 1) AS erroredToolCalls,
           sumIf(ai_trace_index.IsError, ai_trace_index.IsLlmCall = 1) AS erroredLlmCalls,
           sum(ai_trace_index.IsLlmCall) AS llmCallSpans,
-          groupArrayIf(2000)(ai_trace_index.Duration, ai_trace_index.IsLlmCall = 1) AS llmDurations,
           groupArrayIf(2000)(tuple(ai_trace_index.SpanId, ai_trace_index.ParentSpanId, ai_trace_index.Tokens, ai_trace_index.Cost, ai_trace_index.ResponseId, ai_trace_index.IsLlmCall, ai_trace_index.InputTokens, ai_trace_index.CacheReadTokens, ai_trace_index.CacheWriteTokens, ai_trace_index.OutputTokens, ai_trace_index.ReasoningTokens), ((ai_trace_index.Tokens > 0 OR ai_trace_index.Cost > 0) OR ai_trace_index.IsLlmCall = 1)) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
           tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds
