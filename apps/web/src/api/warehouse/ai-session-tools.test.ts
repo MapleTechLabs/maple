@@ -54,16 +54,21 @@ describe("mapToolErrors", () => {
 	it("reads the bare warehouse datetimes as UTC and keeps `''` as a real type", () => {
 		const [row] = mapToolErrors([
 			{
+				fingerprint: "0",
 				errorType: "",
 				message: "",
 				calls: 2,
 				sessions: 1,
+				variants: 1,
 				firstSeen: "2026-09-03 08:15:00",
 				lastSeen: "2026-09-10 11:59:00",
+				callsSince: 0,
+				trend: [{ bucket: "2026-09-10T00:00:00.000Z", calls: 2 }],
 			},
 		])
 		expect(row?.errorType).toBe("")
 		expect(row?.firstSeen).toBe(Date.UTC(2026, 8, 3, 8, 15, 0))
 		expect(row?.lastSeen).toBe(Date.UTC(2026, 8, 10, 11, 59, 0))
+		expect(row?.trend[0]?.bucket).toBe(Date.UTC(2026, 8, 10, 0, 0, 0))
 	})
 })

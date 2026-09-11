@@ -390,7 +390,7 @@ describe("ToolErrorModal", () => {
 		} = {},
 	) => {
 		const { data, prepared, index, group } = openGroup(tool, match)
-		const built = buildToolErrorDetailFixture(tool, group, NOW, {
+		const built = buildToolErrorDetailFixture(tool, group, {
 			session: props.session,
 			variant: props.variant,
 			pages: 1,

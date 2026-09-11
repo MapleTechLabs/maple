@@ -97,12 +97,12 @@ export function AgentToolsLab() {
 		() =>
 			openGroup === undefined
 				? undefined
-				: buildToolErrorDetailFixture(detailTool, openGroup, nowMs, {
+				: buildToolErrorDetailFixture(detailTool, openGroup, {
 						session: search.session,
 						variant: search.variant,
 						pages,
 					}),
-		[detailTool, openGroup, nowMs, search.session, search.variant, pages],
+		[detailTool, openGroup, search.session, search.variant, pages],
 	)
 
 	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) => {

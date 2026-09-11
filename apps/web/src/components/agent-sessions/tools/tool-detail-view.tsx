@@ -17,7 +17,7 @@ import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import { ToolDetailCharts } from "./tool-detail-charts"
 import { ToolDetailSessions } from "./tool-detail-sessions"
-import { ToolErrorsTable } from "./tool-errors-table"
+import { ToolErrorsTable, type ToolErrorsWindow } from "./tool-errors-table"
 import { ToolFilterToolbar, type ToolFilterOption } from "./tool-filter-toolbar"
 import { ToolScopeRow, type ToolScopeChip } from "./tool-scope-row"
 

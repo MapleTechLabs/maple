@@ -871,7 +871,6 @@ const SAMPLE_SESSION_IDS = [
 export function buildToolErrorDetailFixture(
 	tool: string,
 	row: ToolErrorRow,
-	nowMs: number,
 	options: { readonly session?: string; readonly variant?: string; readonly pages: number },
 ): { readonly detail: ToolErrorDetailData; readonly occurrences: ReadonlyArray<ToolErrorOccurrenceRow>; readonly hasMore: boolean } {
 	const spec = (ERROR_GROUPS.get(tool) ?? []).find((candidate, index) => fingerprintOf(candidate.message, index) === row.fingerprint)
