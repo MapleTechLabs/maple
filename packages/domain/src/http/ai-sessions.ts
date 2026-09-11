@@ -684,8 +684,8 @@ export const isAiOverviewWindow = (startTime: string, endTime: string): true | s
 	const extentMs = tinybirdDateTimeMs(endTime) - tinybirdDateTimeMs(startTime)
 	if (Number.isNaN(extentMs)) return "startTime and endTime must be valid datetimes"
 	if (extentMs < 0) return "startTime must not be after endTime"
-	// The same retention bound the details read takes, for the same reason.
-	if (extentMs > AI_SESSION_DETAILS_MAX_EXTENT_MS) return "the window is wider than the index keeps"
+	// No extent cap: every overview read is an index range read, and the index's
+	// retention already bounds how much a wide window can cost.
 	return true
 }
 
