@@ -4,6 +4,7 @@
 // pages' own wiring — which control writes which search param, which row links
 // where, and what the tables say about the rows they are given.
 
+import type { ComponentProps } from "react"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -13,11 +14,14 @@ import {
 	buildToolDetailFixture,
 	buildToolErrorDetailFixture,
 } from "@/lab/agent-tools-fixture"
+import { sessionRowId } from "@/lib/agent-sessions/session-window"
+import type { ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import { AgentToolsView, type AgentToolsViewProps } from "./agent-tools-view"
 import { ToolDetailView } from "./tool-detail-view"
 import { ToolErrorModal } from "./tool-error-modal"
+import { prepareToolErrors } from "./tool-errors-table"
 
 vi.mock("@tanstack/react-router", () => ({
 	Link: ({
@@ -215,11 +219,11 @@ describe("the Tools table under a scope", () => {
 	})
 })
 
-function renderDetail(search: ToolAnalyticsSearch, onSearchChange = vi.fn()) {
-	const data = buildToolDetailFixture("run_tests", search, NOW, cells)
+function renderDetail(search: ToolAnalyticsSearch, tool = "run_tests", onSearchChange = vi.fn()) {
+	const data = buildToolDetailFixture(tool, search, NOW, cells)
 	render(
 		<ToolDetailView
-			tool="run_tests"
+			tool={tool}
 			search={search}
 			onSearchChange={onSearchChange}
 			data={data}
@@ -270,18 +274,49 @@ describe("ToolDetailView", () => {
 
 	it("names the tool in the scope band's denominator", () => {
 		renderDetail({ model: "claude-opus-5" })
-		expect(screen.getByText(/run_tests calls/)).toBeTruthy()
+		expect(screen.getByText(/of [\d,]+ run_tests calls match/)).toBeTruthy()
 	})
 
-	it("opens an error row by writing its type to the URL, clearing the last session", () => {
-		// A `?session=` left over from a previous error would narrow the new
-		// modal's occurrences to a session that error never happened in.
-		const { onSearchChange } = renderDetail({ session: "sess_1" })
-		fireEvent.click(screen.getByTitle("TimeoutError"))
+	it("opens an error group by writing its fingerprint to the URL, clearing the last narrowing", () => {
+		// A `?session=` or `?variant=` left over from a previous group would narrow
+		// the new modal's samples to calls that group never made.
+		const { onSearchChange, data } = renderDetail({ session: "sess_1", variant: "x" }, "submit_candidate")
+		const group = data.errors.find((row) => row.message.includes("Expected array"))!
+		fireEvent.click(screen.getByTitle(/^Expected array\s+at \["evidence"\]$/))
 		expect(onSearchChange).toHaveBeenCalledWith({
-			error: "TimeoutError",
+			error: group.fingerprint,
 			session: undefined,
+			variant: undefined,
 		})
+	})
+
+	it("hoists what every group shares into the column head, and titles rows by what differs", () => {
+		renderDetail({}, "submit_candidate")
+		expect(screen.getByText("all start “Invalid tool input:” · error.type tool_error")).toBeTruthy()
+		// The index a group folded is a placeholder, and the row says how many texts it holds.
+		expect(screen.getAllByText("[*]").length).toBeGreaterThan(0)
+		expect(screen.getByText("3 variants")).toBeTruthy()
+		// 281 successes since the last of 545 failures: stopped, and said so.
+		expect(screen.getByText(/^No failures since/)).toBeTruthy()
+		expect(screen.getByText("· 281 calls since")).toBeTruthy()
+	})
+
+	it("folds a long tail behind one line, and names a failure recorded before grouping", () => {
+		const { data } = renderDetail({}, "query_data")
+		expect(data.errors.length).toBe(17)
+		const more = screen.getByRole("button", { name: /Show 7 more errors/ })
+		expect(within(more).getByText("7 failed calls, 1 each")).toBeTruthy()
+		expect(screen.queryByText("Failures recorded before error grouping")).toBeNull()
+		fireEvent.click(more)
+		expect(screen.getByText("Failures recorded before error grouping")).toBeTruthy()
+		// Still failing, at a rate the header states.
+		expect(screen.getByText(/^Last failure/)).toBeTruthy()
+	})
+
+	it("states a window with no failures as the finding it is", () => {
+		renderDetail({}, "grep")
+		expect(screen.getByText(/^No failed calls between/)).toBeTruthy()
+		expect(screen.getByText(/^All [\d,]+ grep calls in this range succeeded\.$/)).toBeTruthy()
 	})
 
 	it("says a read is still running rather than that the tool never failed", () => {
@@ -297,7 +332,7 @@ describe("ToolDetailView", () => {
 				envOptions={[]}
 			/>,
 		)
-		expect(screen.queryByText(/No failed run_tests calls/)).toBeNull()
+		expect(screen.queryByText(/No failed calls/)).toBeNull()
 	})
 
 	it("renders a failed Errors read as a failure, not as an empty table", () => {
@@ -313,7 +348,7 @@ describe("ToolDetailView", () => {
 				envOptions={[]}
 			/>,
 		)
-		expect(screen.queryByText(/No failed run_tests calls/)).toBeNull()
+		expect(screen.queryByText(/No failed calls/)).toBeNull()
 		expect(screen.getByText(/Failed to load run_tests errors/)).toBeTruthy()
 	})
 
@@ -326,12 +361,6 @@ describe("ToolDetailView", () => {
 		})
 	})
 
-	it("draws a failure that named no type as unknown, without routing on it", () => {
-		renderDetail({})
-		expect(screen.getByTitle("unknown")).toBeTruthy()
-		expect(screen.getByText(/span failed without an error.type/)).toBeTruthy()
-	})
-
 	it("lists the sessions that ran the tool with their framework and extent", () => {
 		const { data } = renderDetail({})
 		expect(data.sessions.length).toBeGreaterThan(0)
@@ -340,110 +369,155 @@ describe("ToolDetailView", () => {
 })
 
 describe("ToolErrorModal", () => {
-	const errors = buildToolDetailFixture("run_tests", {}, NOW, cells).errors
-	const row = errors.find((candidate) => candidate.errorType === "TimeoutError")!
-	const detail = buildToolErrorDetailFixture("run_tests", "TimeoutError", errors, NOW)
+	// j/k scroll the opened sample into view; jsdom lays nothing out and has no
+	// `scrollIntoView` to call.
+	Element.prototype.scrollIntoView = vi.fn()
 
-	const renderModal = (session?: string, onSelectSession = vi.fn(), failure?: unknown) => {
-		const onClose = vi.fn()
-		render(
-			<ToolErrorModal
-				tool="run_tests"
-				error={row}
-				data={failure === undefined ? detail : { sessions: [], occurrences: [] }}
-				failure={failure}
-				toolFailures={errors.reduce((sum, candidate) => sum + candidate.calls, 0)}
-				session={session}
-				onSelectSession={onSelectSession}
-				onClose={onClose}
-			/>,
-		)
-		return { onSelectSession, onClose }
+	const openGroup = (tool: string, match: (row: ToolErrorRow) => boolean) => {
+		const data = buildToolDetailFixture(tool, {}, NOW, cells)
+		const prepared = prepareToolErrors(data.errors, data.range)
+		const index = prepared.rows.findIndex(match)
+		return { data, prepared, index, group: prepared.rows[index]! }
 	}
 
-	it("states the error's share of the tool's failures", () => {
-		renderModal()
-		expect(screen.getByRole("heading", { name: "TimeoutError" })).toBeTruthy()
-		expect(screen.getByText(/% of run_tests failures/)).toBeTruthy()
-	})
-
-	it("narrows the occurrences to a session, and back out again", () => {
-		const { onSelectSession } = renderModal()
-		fireEvent.click(
-			screen.getByRole("button", { name: `Show occurrences in ${detail.sessions[0]!.sessionId}` }),
-		)
-		expect(onSelectSession).toHaveBeenCalledWith(detail.sessions[0]!.sessionId)
-
-		cleanup()
-		const second = renderModal(detail.sessions[0]!.sessionId).onSelectSession
-		fireEvent.click(screen.getByText("All sessions"))
-		expect(second).toHaveBeenCalledWith(undefined)
-	})
-
-	it("names each session as the Sessions list does, and links to it on the trace view", () => {
-		renderModal()
-		const named = detail.sessions.find((candidate) => candidate.agentName === "planner")!
-		const link = screen
-			.getAllByText("planner")
-			.map((element) => element.closest("a"))
-			.find((anchor) => JSON.parse(anchor?.getAttribute("data-search") ?? "{}").span === undefined)
-		expect(link?.getAttribute("data-to")).toBe("/agent-sessions/$sessionId")
-		expect(JSON.parse(link?.getAttribute("data-params") ?? "{}")).toEqual({ sessionId: named.sessionId })
-		// No window: the failures' extent is not the session's, and the detail page
-		// would read it as the session's.
-		expect(JSON.parse(link?.getAttribute("data-search") ?? "{}")).toEqual({
-			tool: "run_tests",
-			view: "trace",
+	const renderModal = (
+		{
+			tool = "submit_candidate",
+			match = (row: ToolErrorRow) => row.message.includes("traceIds"),
+			...props
+		}: Partial<ComponentProps<typeof ToolErrorModal>> & {
+			match?: (row: ToolErrorRow) => boolean
+		} = {},
+	) => {
+		const { data, prepared, index, group } = openGroup(tool, match)
+		const built = buildToolErrorDetailFixture(tool, group, NOW, {
+			session: props.session,
+			variant: props.variant,
+			pages: 1,
 		})
-		// A session with no agent name is headed by its framework, not left blank
-		// and never titled by its raw id.
-		const unnamed = detail.sessions.find((candidate) => candidate.agentName === "")!
-		expect(unnamed.vendorId).toBe("eve")
-		const unnamedRow = screen.getByRole("button", {
-			name: `Show occurrences in ${unnamed.sessionId}`,
-		}).parentElement!
-		expect(within(unnamedRow).getByText("eve session")).toBeTruthy()
-	})
-
-	it("links an occurrence to its span inside the session", () => {
-		renderModal()
-		const first = detail.occurrences[0]!
-		// The mocked `Link` renders no `href`, so its anchors carry no link role.
-		const spans = Array.from(document.querySelectorAll("a"))
-			.map((anchor) => JSON.parse(anchor.getAttribute("data-search") ?? "{}"))
-			.filter((search) => search.span !== undefined)
-		expect(spans[0]).toMatchObject({ span: first.spanId, tool: "run_tests", view: "trace" })
-	})
-
-	it("totals a session's occurrences by that session's hits, not the error's", () => {
-		const selected = detail.sessions[0]!
-		renderModal(selected.sessionId)
-		expect(screen.getByText(`Showing ${detail.occurrences.length} of ${selected.hits}`)).toBeTruthy()
-		expect(screen.queryByText(`Showing ${detail.occurrences.length} of ${row.calls}`)).toBeNull()
-	})
-
-	it("says the occurrences are loading rather than that there are none", () => {
+		const handlers = {
+			onSelectSession: vi.fn(),
+			onSelectVariant: vi.fn(),
+			onStep: vi.fn(),
+			onClose: vi.fn(),
+		}
 		render(
 			<ToolErrorModal
-				tool="run_tests"
-				error={row}
-				data={{ sessions: [], occurrences: [] }}
-				toolFailures={row.calls}
+				tool={tool}
+				group={group}
+				position={{ index, total: prepared.rows.length }}
+				detail={built.detail}
+				samples={{ occurrences: built.occurrences, loading: false, paging: "end", onLoadMore: vi.fn() }}
+				toolFailures={data.errors.reduce((sum, row) => sum + row.calls, 0)}
+				toolCalls={data.totals.calls}
+				range={data.range}
 				session={undefined}
-				onSelectSession={vi.fn()}
-				onClose={vi.fn()}
-				loading
+				variant={undefined}
+				{...handlers}
+				{...props}
 			/>,
 		)
-		expect(screen.queryByText(/No occurrences/)).toBeNull()
+		return { ...handlers, built, group, index }
+	}
+
+	it("heads the modal with the group's message, its path, and its share of the tool's failures", () => {
+		renderModal()
+		const heading = screen.getByRole("heading")
+		expect(heading.textContent).toContain("Invalid tool input: Missing key")
+		expect(heading.textContent).toContain('["evidence"][*]["traceIds"]')
+		expect(screen.getByText(/^\d+% of failures$/)).toBeTruthy()
+		expect(screen.getByText("error.type tool_error")).toBeTruthy()
 	})
 
-	it("opens with exactly the first occurrence expanded", () => {
+	it("lists the variants a group folded, and filters the samples by one", () => {
+		const { onSelectVariant, built } = renderModal()
+		expect(screen.getByText("Variants")).toBeTruthy()
+		const second = built.detail.variants[1]!
+		fireEvent.click(screen.getByRole("button", { name: /\[1\]/ }))
+		expect(onSelectVariant).toHaveBeenCalledWith(second.message)
+
+		cleanup()
+		// One raw text: nothing to pick between, so no list.
+		renderModal({ match: (row) => row.message.includes("Expected array") && row.message.includes('\\"evidence\\"]') })
+		expect(screen.queryByText("Variants")).toBeNull()
+	})
+
+	it("narrows the samples to a session, and back out again", () => {
+		const { onSelectSession, built } = renderModal()
+		const first = built.detail.sessions[0]!
+		fireEvent.click(screen.getByRole("button", { name: `Show samples in ${sessionRowId(first.sessionId)}` }))
+		expect(onSelectSession).toHaveBeenCalledWith(first.sessionId)
+
+		cleanup()
+		const second = renderModal({ session: first.sessionId })
+		fireEvent.click(screen.getByText("All sessions"))
+		expect(second.onSelectSession).toHaveBeenCalledWith(undefined)
+		// Narrowed to a session, the samples are counted against its hits.
+		expect(screen.getByText(`Showing ${second.built.occurrences.length} of ${first.hits}`)).toBeTruthy()
+	})
+
+	it("links a session to its trace view without a window, and a sample to its span", () => {
+		const { built } = renderModal()
+		const searches = Array.from(document.querySelectorAll("a"))
+			.filter((anchor) => anchor.getAttribute("data-to") === "/agent-sessions/$sessionId")
+			.map((anchor) => JSON.parse(anchor.getAttribute("data-search") ?? "{}"))
+		// No window: the failures' extent is not the session's, and the detail page
+		// would read it as the session's.
+		expect(searches).toContainEqual({ tool: "submit_candidate", view: "trace" })
+		expect(searches).toContainEqual({ tool: "submit_candidate", view: "trace", span: built.occurrences[0]!.spanId })
+	})
+
+	it("opens the first sample, with the error path explained where the arguments confirm it", () => {
 		renderModal()
-		// The rows arrive after the modal mounts, so the default open set is
-		// derived from them rather than seeded once at mount.
 		expect(screen.getAllByText("Arguments").length).toBe(1)
-		expect(screen.getAllByText(/gen_ai.tool.call.result/).length).toBe(1)
+		expect(screen.getByText("What's wrong")).toBeTruthy()
+		expect(screen.getByText(/has no traceIds key/)).toBeTruthy()
+		expect(screen.getByText(/missing, required/)).toBeTruthy()
+		expect(screen.getByText("Error message read from result.result")).toBeTruthy()
+	})
+
+	it("steps between groups with ↑/↓ and between samples with j/k", () => {
+		const { onStep } = renderModal()
+		fireEvent.keyDown(window, { key: "ArrowDown" })
+		expect(onStep).toHaveBeenCalledWith(1)
+		fireEvent.keyDown(window, { key: "ArrowUp" })
+		expect(onStep).toHaveBeenCalledWith(-1)
+
+		const samples = () => screen.getAllByRole("button", { name: /^Sample at / })
+		expect(samples()[0]!.getAttribute("aria-expanded")).toBe("true")
+		fireEvent.keyDown(window, { key: "j" })
+		expect(samples()[0]!.getAttribute("aria-expanded")).toBe("false")
+		expect(samples()[1]!.getAttribute("aria-expanded")).toBe("true")
+		fireEvent.keyDown(window, { key: "k" })
+		expect(samples()[0]!.getAttribute("aria-expanded")).toBe("true")
+	})
+
+	it("offers the next page of samples, and says the first is loading rather than empty", () => {
+		const onLoadMore = vi.fn()
+		const { built } = renderModal({ match: (row) => row.message.includes("Expected array") && row.calls > 100 })
+		cleanup()
+		renderModal({
+			match: (row) => row.message.includes("Expected array") && row.calls > 100,
+			samples: { occurrences: built.occurrences, loading: false, paging: "more", onLoadMore },
+		})
+		fireEvent.click(screen.getByRole("button", { name: "Load 25 more" }))
+		expect(onLoadMore).toHaveBeenCalled()
+
+		cleanup()
+		renderModal({ samples: { occurrences: [], loading: true, paging: "end", onLoadMore } })
+		expect(screen.queryByText(/No samples/)).toBeNull()
+	})
+
+	it("names a group recorded before error grouping for what it is", () => {
+		renderModal({ tool: "query_data", match: (row) => row.fingerprint === "0" })
+		expect(screen.getByRole("heading", { name: "Failures recorded before error grouping" })).toBeTruthy()
+	})
+
+	it("says plainly when a call recorded no detail", () => {
+		renderModal({ tool: "sandbox_exec", match: () => true })
+		expect(screen.getByText("The tool reported no error detail")).toBeTruthy()
+		expect(screen.getAllByText("Not recorded").length).toBe(2)
+		expect(screen.queryByText("What's wrong")).toBeNull()
 	})
 
 	it("leads to the sessions list on the list's own `tools` param", () => {
@@ -451,22 +525,21 @@ describe("ToolErrorModal", () => {
 		const link = screen.getByText("Open in Sessions").closest("a")
 		expect(link?.getAttribute("data-to")).toBe("/agent-sessions")
 		expect(JSON.parse(link?.getAttribute("data-search") ?? "{}")).toEqual({
-			tools: ["run_tests"],
+			tools: ["submit_candidate"],
 			hasErrors: true,
 		})
 	})
 
-	it("closes to a URL with neither the error nor the session on it", () => {
-		const { onClose } = renderModal("sess_1")
+	it("closes", () => {
+		const { onClose } = renderModal({ session: "sess_1" })
 		fireEvent.click(screen.getByLabelText("Close"))
 		expect(onClose).toHaveBeenCalled()
 	})
 
-	it("renders a failed occurrences read as a failure, not as an empty modal", () => {
-		renderModal(undefined, vi.fn(), new Error("boom"))
-		// The header still stands: it came from the row the reader clicked.
-		expect(screen.getByRole("heading", { name: "TimeoutError" })).toBeTruthy()
+	it("renders a failed facts read as a failure, keeping the header it came with", () => {
+		renderModal({ detailFailure: new Error("boom") })
+		expect(screen.getByRole("heading").textContent).toContain("Missing key")
 		expect(screen.queryByText("All sessions")).toBeNull()
-		expect(screen.getByText(/Failed to load TimeoutError occurrences/)).toBeTruthy()
+		expect(screen.getByText(/Failed to load this error's details/)).toBeTruthy()
 	})
 })

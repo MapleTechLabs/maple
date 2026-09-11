@@ -3,11 +3,13 @@ import { useMemo, useState } from "react"
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolDetailView } from "@/components/agent-sessions/tools/tool-detail-view"
 import { ToolErrorModal } from "@/components/agent-sessions/tools/tool-error-modal"
+import { prepareToolErrors } from "@/components/agent-sessions/tools/tool-errors-table"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import {
+	DETAIL_TOOLS,
 	buildToolAnalyticsFixture,
 	buildToolCells,
 	buildToolDetailFixture,
@@ -22,7 +24,13 @@ import {
  * of synthetic tool calls. The URL is stood in for by local state, so every
  * control works: the metric tiles take over the chart, the percentile columns
  * re-key the duration column, the toolbar's selects narrow every reading, and
- * an Errors row opens the modal over its own occurrences.
+ * an Errors row opens the modal over its own samples.
+ *
+ * The detail view opens on the tools whose failures are taken from production
+ * shapes: `submit_candidate` (one dominant group, groups that fold array
+ * indices), `query_data` (a long tail, and a failure recorded before grouping),
+ * `sandbox_exec` (a tool that records nothing about why it failed) and `grep`
+ * (no failures at all).
  *
  * It exists because `ai_trace_index` is absent from the local Tinybird
  * container, so the real pages have nothing to draw locally — this is where a
@@ -41,9 +49,12 @@ const WIDTHS = [
 
 const VIEWS = ["overview", "detail"] as const
 type LabView = (typeof VIEWS)[number]
+type DetailTool = (typeof DETAIL_TOOLS)[number]
 
-/** The tool the detail view opens on — the one the fixture regresses. */
-const DETAIL_TOOL = "run_tests"
+const toggleClass = (active: boolean) =>
+	active
+		? "rounded border border-border bg-accent px-2 py-1 text-xs"
+		: "rounded border border-border px-2 py-1 text-xs text-muted-foreground"
 
 export function AgentToolsLab() {
 	// One timestamp for the life of the mount: "3m ago" ticking while you look at
@@ -56,6 +67,10 @@ export function AgentToolsLab() {
 	const [search, setSearch] = useState<ToolAnalyticsSearch>({})
 	const [width, setWidth] = useState<number | null>(null)
 	const [view, setView] = useState<LabView>("overview")
+	const [detailTool, setDetailTool] = useState<DetailTool>("submit_candidate")
+	const [errorsLoading, setErrorsLoading] = useState(false)
+	// "Load 25 more" clicks on the open group's samples.
+	const [pages, setPages] = useState(1)
 	// The fixture is a fixed week: the picker is here for its place at the end of
 	// the toolbar, not to re-window the data.
 	const [preset, setPreset] = useState("7d")
@@ -72,35 +87,35 @@ export function AgentToolsLab() {
 		[search, nowMs, cells],
 	)
 	const detail = useMemo(
-		() => buildToolDetailFixture(DETAIL_TOOL, search, nowMs, cells),
-		[search, nowMs, cells],
+		() => buildToolDetailFixture(detailTool, search, nowMs, cells),
+		[detailTool, search, nowMs, cells],
 	)
+	const prepared = useMemo(() => prepareToolErrors(detail.errors, detail.range), [detail])
+	const openIndex = prepared.rows.findIndex((row) => row.fingerprint === search.error)
+	const openGroup = prepared.rows[openIndex]
 	const errorDetail = useMemo(
 		() =>
-			search.error === undefined
+			openGroup === undefined
 				? undefined
-				: buildToolErrorDetailFixture(DETAIL_TOOL, search.error, detail.errors, nowMs),
-		[search.error, detail.errors, nowMs],
+				: buildToolErrorDetailFixture(detailTool, openGroup, nowMs, {
+						session: search.session,
+						variant: search.variant,
+						pages,
+					}),
+		[detailTool, openGroup, nowMs, search.session, search.variant, pages],
 	)
-	const openError = detail.errors.find((row) => row.errorType === search.error)
 
-	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) =>
+	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) => {
+		// A different group, session or variant is a different list of samples.
+		if ("error" in patch || "session" in patch || "variant" in patch) setPages(1)
 		setSearch((previous) => ({ ...previous, ...patch }))
+	}
 
 	return (
 		<div className="flex flex-col gap-4 p-6">
 			<div className="flex flex-wrap items-center gap-2">
 				{VIEWS.map((option) => (
-					<button
-						key={option}
-						type="button"
-						onClick={() => setView(option)}
-						className={
-							view === option
-								? "rounded border border-border bg-accent px-2 py-1 text-xs"
-								: "rounded border border-border px-2 py-1 text-xs text-muted-foreground"
-						}
-					>
+					<button key={option} type="button" onClick={() => setView(option)} className={toggleClass(view === option)}>
 						{option}
 					</button>
 				))}
@@ -110,15 +125,36 @@ export function AgentToolsLab() {
 						key={option.label}
 						type="button"
 						onClick={() => setWidth(option.value)}
-						className={
-							width === option.value
-								? "rounded border border-border bg-accent px-2 py-1 text-xs"
-								: "rounded border border-border px-2 py-1 text-xs text-muted-foreground"
-						}
+						className={toggleClass(width === option.value)}
 					>
 						{option.label}
 					</button>
 				))}
+				{view === "detail" ? (
+					<>
+						<span className="w-4" />
+						{DETAIL_TOOLS.map((tool) => (
+							<button
+								key={tool}
+								type="button"
+								onClick={() => {
+									setDetailTool(tool)
+									onSearchChange({ error: undefined, session: undefined, variant: undefined })
+								}}
+								className={toggleClass(detailTool === tool)}
+							>
+								{tool}
+							</button>
+						))}
+						<button
+							type="button"
+							onClick={() => setErrorsLoading((loading) => !loading)}
+							className={toggleClass(errorsLoading)}
+						>
+							errors loading
+						</button>
+					</>
+				) : null}
 				<span className="ml-2 font-mono text-[11px] text-muted-foreground">
 					{JSON.stringify(search)}
 				</span>
@@ -151,23 +187,40 @@ export function AgentToolsLab() {
 					/>
 				) : (
 					<ToolDetailView
-						tool={DETAIL_TOOL}
+						tool={detailTool}
 						search={search}
 						onSearchChange={onSearchChange}
-						data={detail}
+						data={errorsLoading ? { ...detail, errors: [], errorsLoading: true } : detail}
 						serviceOptions={facets.services}
 						modelOptions={facets.models}
 						envOptions={facets.environments}
 						modal={
-							openError === undefined || errorDetail === undefined ? null : (
+							openGroup === undefined || errorDetail === undefined ? null : (
 								<ToolErrorModal
-									tool={DETAIL_TOOL}
-									error={openError}
-									data={errorDetail}
+									tool={detailTool}
+									group={openGroup}
+									position={{ index: openIndex, total: prepared.rows.length }}
+									detail={errorDetail.detail}
+									samples={{
+										occurrences: errorDetail.occurrences,
+										loading: false,
+										paging: errorDetail.hasMore ? "more" : "end",
+										onLoadMore: () => setPages((count) => count + 1),
+									}}
 									toolFailures={detail.errors.reduce((sum, row) => sum + row.calls, 0)}
+									toolCalls={detail.totals.calls}
+									range={detail.range}
 									session={search.session}
 									onSelectSession={(session) => onSearchChange({ session })}
-									onClose={() => onSearchChange({ error: undefined, session: undefined })}
+									variant={search.variant}
+									onSelectVariant={(variant) => onSearchChange({ variant })}
+									onStep={(offset) => {
+										const next = prepared.rows[openIndex + offset]
+										if (next !== undefined) {
+											onSearchChange({ error: next.fingerprint, session: undefined, variant: undefined })
+										}
+									}}
+									onClose={() => onSearchChange({ error: undefined, session: undefined, variant: undefined })}
 								/>
 							)
 						}

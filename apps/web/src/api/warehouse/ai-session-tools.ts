@@ -16,6 +16,9 @@ import { Effect, Schema } from "effect"
 import {
 	AI_TOOLS_OTHER_SERIES_KEY,
 	AiToolErrorDetailRequest,
+	AiToolErrorFingerprint,
+	AiToolErrorSampleCursor,
+	AiToolErrorSamplesRequest,
 	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
 	AiToolsPeriod,
@@ -27,6 +30,7 @@ import {
 	type AiToolErrorItem,
 	type AiToolErrorOccurrence,
 	type AiToolErrorSessionItem,
+	type AiToolErrorVariantItem,
 	type AiToolsSeriesResponse,
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -35,9 +39,11 @@ import {
 	OTHER_SERIES_KEY,
 	breakdownKeyLabel,
 	type ToolBreakdownRow,
+	type ToolErrorBreakdownRow,
 	type ToolErrorOccurrenceRow,
 	type ToolErrorRow,
 	type ToolErrorSessionRow,
+	type ToolErrorVariantRow,
 	type ToolSeriesPoint,
 	type ToolTotals,
 } from "@/lib/agent-sessions/tool-analytics"
@@ -253,10 +259,16 @@ export const getAiToolBreakdowns = Effect.fn("AiSessionTools.breakdowns")(functi
  * only the constructor refuses would therefore crash the page rather than fail
  * the read.
  */
-const AiToolErrorsInput = Schema.Struct({
+const AiToolErrorsSelection = Schema.Struct({
 	...AiToolsSelection.fields,
 	/** Required here: these reads are one tool's. */
 	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+})
+
+const AiToolErrorsInput = Schema.Struct({
+	...AiToolErrorsSelection.fields,
+	/** The trend's bucket, in whole seconds. */
+	bucketSeconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
 	),
@@ -264,21 +276,32 @@ const AiToolErrorsInput = Schema.Struct({
 export type AiToolErrorsInput = Schema.Schema.Type<typeof AiToolErrorsInput>
 
 const AiToolErrorDetailInput = Schema.Struct({
-	...AiToolErrorsInput.fields,
-	/** `''` is the group of failures that named no type — the `unknown` row. */
-	errorType: Schema.String.check(Schema.isMaxLength(200)),
-	session: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	...AiToolErrorsSelection.fields,
+	fingerprint: AiToolErrorFingerprint,
 })
 export type AiToolErrorDetailInput = Schema.Schema.Type<typeof AiToolErrorDetailInput>
 
+const AiToolErrorSamplesInput = Schema.Struct({
+	...AiToolErrorDetailInput.fields,
+	session: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	variant: Schema.optional(Schema.String.check(Schema.isMaxLength(2_000))),
+	/** The previous page's cursor, exactly as the read handed it back. */
+	before: Schema.optional(AiToolErrorSampleCursor),
+})
+export type AiToolErrorSamplesInput = Schema.Schema.Type<typeof AiToolErrorSamplesInput>
+
 export function mapToolErrors(rows: ReadonlyArray<AiToolErrorItem>): ReadonlyArray<ToolErrorRow> {
 	return rows.map((row) => ({
+		fingerprint: row.fingerprint,
 		errorType: row.errorType,
 		message: row.message,
 		calls: row.calls,
 		sessions: row.sessions,
+		variants: row.variants,
 		firstSeen: toEpochMs(row.firstSeen),
 		lastSeen: toEpochMs(row.lastSeen),
+		callsSince: row.callsSince,
+		trend: row.trend.map((point) => ({ bucket: toEpochMs(point.bucket), calls: point.calls })),
 	}))
 }
 
@@ -289,10 +312,13 @@ const mapErrorSessions = (
 		sessionId: row.sessionId,
 		vendorId: row.vendorId,
 		agentName: row.agentName,
-		model: row.model,
+		service: row.service,
 		hits: row.hits,
 		lastSeen: toEpochMs(row.lastSeen),
 	}))
+
+const mapVariants = (rows: ReadonlyArray<AiToolErrorVariantItem>): ReadonlyArray<ToolErrorVariantRow> =>
+	rows.map((row) => ({ message: row.message, calls: row.calls, lastSeen: toEpochMs(row.lastSeen) }))
 
 const mapOccurrences = (
 	rows: ReadonlyArray<AiToolErrorOccurrence>,
@@ -305,6 +331,7 @@ const mapOccurrences = (
 		vendorId: row.vendorId,
 		agentName: row.agentName,
 		model: row.model,
+		service: row.service,
 		errorType: row.errorType,
 		message: row.message,
 		durationNs: row.durationNs,
@@ -315,7 +342,7 @@ const mapOccurrences = (
 		resultBytes: row.resultBytes,
 	}))
 
-/** Every error type one tool failed with, worst first. */
+/** Every error group one tool failed with, most failed calls first. */
 export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 	data,
 }: {
@@ -329,6 +356,7 @@ export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 				payload: new AiToolErrorsRequest({
 					startTime: input.startTime,
 					endTime: input.endTime,
+					bucketSeconds: input.bucketSeconds,
 					...selectionFields(input),
 					tool: input.tool,
 					...(input.limit !== undefined && { limit: input.limit }),
@@ -339,7 +367,8 @@ export const getAiToolErrors = Effect.fn("AiSessionTools.errors")(function* ({
 	return { data: mapToolErrors(result.data) }
 })
 
-/** One error type: the sessions that hit it, and the calls themselves. */
+/** One error group's facts: the sessions it hit, the raw texts it folded, and
+ *  where it happens. */
 export const getAiToolErrorDetail = Effect.fn("AiSessionTools.errorDetail")(function* ({
 	data,
 }: {
@@ -355,15 +384,41 @@ export const getAiToolErrorDetail = Effect.fn("AiSessionTools.errorDetail")(func
 					endTime: input.endTime,
 					...selectionFields(input),
 					tool: input.tool,
-					errorType: input.errorType,
-					...(input.session !== undefined && { session: input.session }),
-					...(input.limit !== undefined && { limit: input.limit }),
+					fingerprint: input.fingerprint,
 				}),
 			})
 		}),
 	)
 	return {
 		sessions: mapErrorSessions(result.sessions),
-		occurrences: mapOccurrences(result.occurrences),
+		variants: mapVariants(result.variants),
+		breakdown: result.breakdown satisfies ReadonlyArray<ToolErrorBreakdownRow>,
 	}
+})
+
+/** One page of an error group's failed calls, newest first, with their payloads. */
+export const getAiToolErrorSamples = Effect.fn("AiSessionTools.errorSamples")(function* ({
+	data,
+}: {
+	data: AiToolErrorSamplesInput
+}) {
+	const input = yield* decodeInput(AiToolErrorSamplesInput, data, "aiToolsErrorSamples")
+	const result = yield* runWarehouseQuery("aiToolsErrorSamples", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.aiSessionsInternal.toolErrorSamples({
+				payload: new AiToolErrorSamplesRequest({
+					startTime: input.startTime,
+					endTime: input.endTime,
+					...selectionFields(input),
+					tool: input.tool,
+					fingerprint: input.fingerprint,
+					...(input.session !== undefined && { session: input.session }),
+					...(input.variant !== undefined && { variant: input.variant }),
+					...(input.before !== undefined && { before: input.before }),
+				}),
+			})
+		}),
+	)
+	return { occurrences: mapOccurrences(result.occurrences), nextCursor: result.nextCursor }
 })

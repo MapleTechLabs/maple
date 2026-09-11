@@ -55,28 +55,60 @@ export interface ToolBreakdownRow extends ToolMeasures {
  * The tool detail page's failures
  * -----------------------------------------------------------------------------------------------*/
 
-/** One error type a tool failed with. */
+/** One error group a tool failed with. */
 export interface ToolErrorRow {
-	/** `''` is a real group: a call that failed naming no type. */
+	/** `ErrorFingerprint` in decimal. {@link UNGROUPED_FINGERPRINT} is a real group. */
+	readonly fingerprint: string
+	/** `error.type` of the group's latest failure — a label, not the key. */
 	readonly errorType: string
+	/** The group's latest raw text; `''` where the failure said nothing. */
 	readonly message: string
-	/** Failed calls with this type. */
+	/** Failed calls in this group. */
 	readonly calls: number
 	readonly sessions: number
+	/** Raw texts the group folded. */
+	readonly variants: number
 	/** Epoch ms. */
 	readonly firstSeen: number
 	readonly lastSeen: number
+	/** The selection's calls, failed or not, newer than the group's latest failure. */
+	readonly callsSince: number
+	/** Failed calls per trend bucket, epoch ms, oldest first; empty buckets absent. */
+	readonly trend: ReadonlyArray<{ readonly bucket: number; readonly calls: number }>
 }
 
-/** One session that hit an error type — the modal's left pane. */
+/**
+ * The fingerprint of a failure recorded before error grouping existed. Those
+ * failures carry no text either, so they are one group the page names for
+ * what it is rather than a message it does not have.
+ */
+export const UNGROUPED_FINGERPRINT = "0"
+
+/** One session that hit an error group. */
 export interface ToolErrorSessionRow {
 	readonly sessionId: string
 	readonly vendorId: string
 	readonly agentName: string
-	readonly model: string
+	readonly service: string
 	readonly hits: number
 	/** Epoch ms. */
 	readonly lastSeen: number
+}
+
+/** One raw text an error group folded. */
+export interface ToolErrorVariantRow {
+	readonly message: string
+	readonly calls: number
+	/** Epoch ms. */
+	readonly lastSeen: number
+}
+
+/** A group's failed calls under one model and one service. */
+export interface ToolErrorBreakdownRow {
+	/** `''` where no model resolved. */
+	readonly model: string
+	readonly service: string
+	readonly calls: number
 }
 
 /** One failed call, with what it was called with and what came back. */
@@ -89,7 +121,9 @@ export interface ToolErrorOccurrenceRow {
 	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
+	readonly service: string
 	readonly errorType: string
+	/** This call's raw text — the variant it is. */
 	readonly message: string
 	readonly durationNs: number
 	readonly statusCode: string
@@ -99,11 +133,6 @@ export interface ToolErrorOccurrenceRow {
 	readonly result: string
 	readonly resultBytes: number
 }
-
-/** `''` is the failures that named no error type. */
-export const UNKNOWN_ERROR_TYPE_LABEL = "unknown"
-export const errorTypeLabel = (errorType: string): string =>
-	errorType === "" ? UNKNOWN_ERROR_TYPE_LABEL : errorType
 
 export const EMPTY_MEASURES: ToolMeasures = { calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 }
 
