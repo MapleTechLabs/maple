@@ -21,6 +21,7 @@ const facets = Result.success({
 	vendors: [
 		{ name: "eve", count: 12 },
 		{ name: "vercel_ai_sdk", count: 3 },
+		{ name: "claude_agent_sdk", count: 2 },
 	],
 	services: [{ name: "agent-runner", count: 15 }],
 	environments: [{ name: "production", count: 15 }],
@@ -59,6 +60,23 @@ describe("AgentSessionsFilterSidebar", () => {
 			expect(screen.getByText(title)).toBeTruthy()
 		}
 		expect(screen.getByText("Hide single-trace sessions")).toBeTruthy()
+	})
+
+	it("paints services and frameworks in their colors, and explains the sections named for a concept", () => {
+		search = { services: ["billing-worker"] }
+		render(<AgentSessionsFilterSidebar facetsResult={facets} />)
+
+		const swatchBeside = (label: string) =>
+			screen.getByText(label).parentElement?.querySelector<HTMLElement>("span[style]")
+		expect(swatchBeside("Claude Agent SDK")?.style.backgroundColor).toBe("rgb(217, 119, 87)")
+		expect(swatchBeside("agent-runner")).toBeTruthy()
+		// A selected service the window no longer offers keeps its swatch.
+		expect(swatchBeside("billing-worker")).toBeTruthy()
+
+		for (const title of ["Framework", "Model", "Tool", "Hide single-trace sessions"]) {
+			expect(screen.getByLabelText(`About ${title}`)).toBeTruthy()
+		}
+		expect(screen.queryByLabelText("About Service")).toBeNull()
 	})
 
 	it("accumulates a second framework rather than replacing the first", () => {

@@ -17,8 +17,10 @@ import {
 } from "@/components/filters/filter-sidebar"
 import { RangeFilterSection, type RangePreset } from "@maple/ui/components/filters/range-filter-section"
 import { Separator } from "@maple/ui/components/ui/separator"
+import { getServiceColor } from "@maple/ui/lib/colors"
 import { modelVendorIcon } from "@/lib/agent-sessions/model-vendor-icon"
 import { useDetectedModels } from "@/hooks/use-detected-models"
+import { vendorColor } from "@/lib/agent-sessions/vendor-color"
 import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 import {
@@ -29,13 +31,19 @@ import {
 
 const routeApi = getRouteApi("/agent-sessions/")
 
-/** Selected values absent from the current window stay checkable (count 0). */
-function withSelected(
+/**
+ * Option-name → swatch color for every row a section can paint: the window's
+ * options, plus the selected values the section re-adds at count 0 once the
+ * window stops offering them.
+ */
+function swatches(
 	options: ReadonlyArray<FilterOption>,
-	selected: ReadonlyArray<string> = [],
-): FilterOption[] {
-	const missing = selected.filter((value) => !options.some((option) => option.name === value))
-	return [...missing.map((name) => ({ name, count: 0 })), ...options]
+	selected: ReadonlyArray<string> | undefined,
+	colorOf: (name: string) => string,
+): Record<string, string> {
+	return Object.fromEntries(
+		[...options.map((option) => option.name), ...(selected ?? [])].map((name) => [name, colorOf(name)]),
+	)
 }
 
 // No distribution behind these — a histogram would need the fan-out for every
@@ -101,13 +109,17 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 	const search: AgentSessionsSearchState = routeApi.useSearch()
 
 	// Detection is a hook, so the model names have to be read out of the result
-	// here rather than inside the success branch below.
+	// here rather than inside the success branch below. A selected model the
+	// window no longer offers still renders, so it is detected too.
 	const modelNames = useMemo(
 		() =>
 			Result.builder(facetsResult)
-				.onSuccess((value) => value.models.map((option) => option.name))
+				.onSuccess((value) => [
+					...value.models.map((option) => option.name),
+					...(search.models ?? []),
+				])
 				.orElse(() => [] as ReadonlyArray<string>),
-		[facetsResult],
+		[facetsResult, search.models],
 	)
 	const detectModel = useDetectedModels(modelNames)
 
@@ -134,13 +146,6 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 		.onInitial(() => <FilterSidebarLoading sectionCount={4} />)
 		.onError((error) => <FilterSidebarError error={error} />)
 		.onSuccess((value, result) => {
-			const vendors = withSelected(value.vendors, search.vendors)
-			const services = withSelected(value.services, search.services)
-			const environments = withSelected(value.environments, search.environments)
-			const models = withSelected(value.models, search.models)
-			const agents = withSelected(value.agents, search.agents)
-			const tools = withSelected(value.tools, search.tools)
-
 			return (
 				<FilterSidebarFrame waiting={result.waiting}>
 					<FilterSidebarHeader
@@ -153,62 +158,62 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 						    toggle. "With errors" is deliberately absent: the toolbar chip is
 						    that filter, and two controls for one boolean read as a question
 						    about whether they agree. */}
-						{/* Sections with nothing to offer hide themselves: most orgs never
-						    set an environment, and a framework that names no agents or tools
-						    would leave an empty list that reads as broken. */}
-						{agents.length > 0 && (
-							<SearchableFilterSection
-								title="Agent"
-								options={agents}
-								selected={search.agents ?? []}
-								onChange={(vals) => setList("agents", vals)}
-							/>
-						)}
+						{/* Sections with nothing to offer hide themselves, and a selected
+						    value the window no longer offers stays checkable at count 0 —
+						    both the shared section's doing. Most orgs never set an
+						    environment, and a framework that names no agents or tools would
+						    leave an empty list that reads as broken. */}
+						<SearchableFilterSection
+							title="Agent"
+							description="Sessions where any agent span carries this agent name."
+							options={value.agents}
+							selected={search.agents ?? []}
+							onChange={(vals) => setList("agents", vals)}
+						/>
 
-						{tools.length > 0 && (
-							<SearchableFilterSection
-								title="Tool"
-								options={tools}
-								selected={search.tools ?? []}
-								onChange={(vals) => setList("tools", vals)}
-							/>
-						)}
+						<SearchableFilterSection
+							title="Tool"
+							description="Sessions that called this tool at least once."
+							options={value.tools}
+							selected={search.tools ?? []}
+							onChange={(vals) => setList("tools", vals)}
+						/>
 
 						<SearchableFilterSection
 							title="Service"
-							options={services}
+							options={value.services}
 							selected={search.services ?? []}
 							onChange={(vals) => setList("services", vals)}
+							colorMap={swatches(value.services, search.services, getServiceColor)}
 						/>
 
 						<FilterSection
 							title="Framework"
-							options={vendors}
+							description="The agent framework that ran the session, recognised at ingest from the attributes its instrumentation writes. Unidentified is AI telemetry no known framework matched."
+							options={value.vendors}
 							selected={search.vendors ?? []}
 							onChange={(vals) => setList("vendors", vals)}
+							colorMap={swatches(value.vendors, search.vendors, vendorColor)}
 							getOptionLabel={vendorLabel}
 							getOptionIcon={vendorIcon}
 						/>
 
-						{models.length > 0 && (
-							<SearchableFilterSection
-								title="Model"
-								options={models}
-								selected={search.models ?? []}
-								onChange={(vals) => setList("models", vals)}
-								getOptionLabel={(name) => detectModel(name).displayName}
-								getOptionIcon={(name) => modelVendorIcon(detectModel(name))}
-							/>
-						)}
+						<SearchableFilterSection
+							title="Model"
+							description="Sessions where any agent span ran on this model."
+							options={value.models}
+							selected={search.models ?? []}
+							onChange={(vals) => setList("models", vals)}
+							getOptionLabel={(name) => detectModel(name).displayName}
+							getOptionIcon={(name) => modelVendorIcon(detectModel(name))}
+						/>
 
-						{environments.length > 0 && (
-							<FilterSection
-								title="Environment"
-								options={environments}
-								selected={search.environments ?? []}
-								onChange={(vals) => setList("environments", vals)}
-							/>
-						)}
+						<FilterSection
+							title="Environment"
+							options={value.environments}
+							selected={search.environments ?? []}
+							onChange={(vals) => setList("environments", vals)}
+						/>
 
 						<Separator className="my-2" />
 
@@ -270,13 +275,14 @@ export function AgentSessionsFilterSidebar({ facetsResult }: AgentSessionsFilter
 						    between a list of conversations and a list of requests. */}
 						<SingleCheckboxFilter
 							title="Hide single-trace sessions"
+							description="A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans."
 							checked={search.grouped === true}
 							onChange={(checked) =>
 								navigate({ search: (prev) => ({ ...prev, grouped: checked || undefined }) })
 							}
 						/>
 
-						{vendors.length === 0 && services.length === 0 && (
+						{value.vendors.length === 0 && value.services.length === 0 && (
 							<p className="py-4 text-sm text-muted-foreground">
 								No sessions in the last 7 days
 							</p>
