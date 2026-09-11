@@ -82,6 +82,12 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // the tool view-model constants and the session time-range middleware, and the
 // warehouse atoms for the new reads. Moving the one new query-engine helper
 // out of the barrel was tried and saved nothing.
+// 690 KB from the tool error groups (2026-09-11): ~3.3 KB of startup measured
+// against main's 686.3 — a sixth tools endpoint and the fingerprint, variant and
+// sample-cursor schemas on the contract every page's client carries, the atoms
+// for the new reads, and the detail route's `variant` search param. The display
+// rules, the redaction list they read and the modal's parts stay in the route
+// chunk; none of them is in the startup graph.
 // 691 KB on merging the two above (2026-09-11): they stack, so neither branch's
 // own ceiling covers the pair. Measured on the merged tree by the same
 // register/unregister of `V2GoogleAnalyticsIntegrationsApiGroup` — 690.7 with it,

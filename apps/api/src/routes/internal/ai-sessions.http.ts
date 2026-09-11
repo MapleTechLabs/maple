@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	AiSessionTooLargeError,
 	AiToolErrorDetailResponse,
+	AiToolErrorSamplesResponse,
 	AiToolErrorsResponse,
 	AiToolsBreakdownsResponse,
 	AiToolsSeriesResponse,
@@ -22,9 +23,10 @@ import {
 	type AiSessionTurnSummary,
 	type AiToolsAggregate,
 	type AiToolsBreakdownItem,
+	type AiToolsPeriod,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
-import { Effect } from "effect"
+import { Array as Arr, Effect } from "effect"
 import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
@@ -475,18 +477,24 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 						// The comparison window is the caller's, shifted back by its own
 						// length: `previous` ends where `current` begins, so the two
-						// never overlap and the delta is over equal spans.
+						// never overlap and the delta is over equal spans. Compiled in
+						// whether or not the previous branch is asked for — a param the
+						// statement does not mention costs nothing.
 						const previous = previousWindow(payload.startTime, payload.endTime)
+						const periods = payload.periods ?? Integrations.AI_TOOLS_TOTALS_PERIODS
 						const [rows, descriptionRows] = yield* Effect.all(
 							[
 								warehouse.compiledQuery(
 									tenant,
-									CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload)), {
-										orgId: tenant.orgId,
-										startTime: payload.startTime,
-										endTime: payload.endTime,
-										...previous,
-									}),
+									CH.compileUnion(
+										Integrations.aiToolsTotalsQuery(toolsSelection(payload), periods),
+										{
+											orgId: tenant.orgId,
+											startTime: payload.startTime,
+											endTime: payload.endTime,
+											...previous,
+										},
+									),
 									{ context: "aiToolsTotals" },
 								),
 								// The detail page's header names the tool, so only a selected
@@ -514,13 +522,15 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						// An aggregate over no rows still yields one row per branch, so a
 						// missing period is a shape failure rather than an empty window.
 						// The query already reports `''` for a period that matched
-						// nothing, so these two carry that contract unchanged.
+						// nothing, so these two carry that contract unchanged. A period
+						// the caller did not ask for has no branch and no row, and is
+						// absent from the response rather than zeroed.
 						const current = rows.find((row) => row.period === "current")
+						const allSessions = rows.find((row) => row.period === "window")?.sessions
 						return new AiToolsTotalsResponse({
 							current: aggregateOf(rows, "current"),
-							previous: aggregateOf(rows, "previous"),
-							// The third branch: the window's whole session population.
-							allSessions: rows.find((row) => row.period === "window")?.sessions ?? 0,
+							...(periods.includes("previous") && { previous: aggregateOf(rows, "previous") }),
+							...(allSessions !== undefined && { allSessions }),
 							firstSeen: current?.firstSeen ?? "",
 							lastSeen: current?.lastSeen ?? "",
 							...(description !== "" && { description }),
@@ -561,15 +571,22 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 									orgId: tenant.orgId,
 									startTime: payload.startTime,
 									endTime: payload.endTime,
-									// The tool is a param, not an opts field, so one compiled
-									// statement serves every tool detail page.
-									toolName: payload.tool,
+									bucketSeconds: payload.bucketSeconds,
 								},
 								{ rowSchema: Integrations.aiToolErrorsRowSchema },
 							),
 							{ context: "aiToolsErrors" },
 						)
-						return new AiToolErrorsResponse({ data: rows })
+						return new AiToolErrorsResponse({
+							data: rows.map((row) => ({
+								...row,
+								// A map on the wire, a series on the page: the ISO buckets
+								// are fixed width, so they sort as the instants do.
+								trend: Object.entries(row.trend)
+									.map(([bucket, calls]) => ({ bucket, calls }))
+									.sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0)),
+							})),
+						})
 					}),
 				)
 				.handle("toolErrorDetail", ({ payload }) =>
@@ -578,27 +595,18 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
 							"maple.ai.tools.tool": payload.tool,
-							"maple.ai.tools.errorType": payload.errorType,
+							"maple.ai.tools.fingerprint": payload.fingerprint,
 						})
-						if (payload.session !== undefined) {
-							yield* Effect.annotateCurrentSpan({
-								"maple.ai.tools.session": payload.session,
-							})
-						}
 						const params = {
 							orgId: tenant.orgId,
 							startTime: payload.startTime,
 							endTime: payload.endTime,
-							toolName: payload.tool,
 						}
-						const selection = {
-							...toolsSelection(payload),
-							errorType: payload.errorType,
-							limit: payload.limit,
-						}
-						// Two reads, one modal: the sessions pane is NOT narrowed by the
-						// session the reader picked — it is how they pick a different one.
-						const [sessions, occurrences] = yield* Effect.all(
+						const selection = { ...toolsSelection(payload), fingerprint: payload.fingerprint }
+						// The group's facts, side by side — every one of them the index.
+						// The samples page separately (`toolErrorSamples`), so loading
+						// more of them never re-reads these.
+						const [sessions, variants, breakdown] = yield* Effect.all(
 							[
 								warehouse.compiledQuery(
 									tenant,
@@ -609,20 +617,105 @@ export const HttpAiSessionsInternalLive = HttpApiBuilder.group(
 								),
 								warehouse.compiledQuery(
 									tenant,
-									CH.compile(
-										Integrations.aiToolErrorOccurrencesQuery({
-											...selection,
-											session: payload.session,
-										}),
-										params,
-										{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
-									),
-									{ profile: "list", context: "aiToolsErrorOccurrences" },
+									CH.compile(Integrations.aiToolErrorVariantsQuery(selection), params, {
+										rowSchema: Integrations.aiToolErrorVariantsRowSchema,
+									}),
+									{ profile: "list", context: "aiToolsErrorVariants" },
+								),
+								warehouse.compiledQuery(
+									tenant,
+									CH.compile(Integrations.aiToolErrorBreakdownQuery(selection), params, {
+										rowSchema: Integrations.aiToolErrorBreakdownRowSchema,
+									}),
+									{ profile: "list", context: "aiToolsErrorBreakdown" },
 								),
 							],
-							{ concurrency: 2 },
+							{ concurrency: 3 },
 						)
-						return new AiToolErrorDetailResponse({ sessions, occurrences })
+						return new AiToolErrorDetailResponse({ sessions, variants, breakdown })
+					}),
+				)
+				.handle("toolErrorSamples", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.ai.tools.tool": payload.tool,
+							"maple.ai.tools.fingerprint": payload.fingerprint,
+							"maple.ai.tools.paged": payload.before !== undefined,
+						})
+						if (payload.session !== undefined) {
+							yield* Effect.annotateCurrentSpan({
+								"maple.ai.tools.session": payload.session,
+							})
+						}
+						const limit = payload.limit ?? Integrations.AI_TOOL_OCCURRENCES_LIMIT
+						// One row past the page: the extra row is what tells a group that
+						// exactly fills the page from one with a page after it.
+						const ranked = yield* warehouse.compiledQuery(
+							tenant,
+							CH.compile(
+								Integrations.aiToolErrorOccurrencesQuery({
+									...toolsSelection(payload),
+									fingerprint: payload.fingerprint,
+									session: payload.session,
+									variant: payload.variant,
+									before: payload.before,
+									limit: limit + 1,
+								}),
+								{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+								{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+							),
+							{ profile: "list", context: "aiToolsErrorOccurrences" },
+						)
+						const occurrences = ranked.slice(0, limit)
+						const last = occurrences[occurrences.length - 1]
+						const nextCursor =
+							ranked.length > limit && last !== undefined
+								? { timestamp: last.timestamp, spanId: last.spanId }
+								: undefined
+						// The payloads are the only fact the modal shows that the index
+						// does not carry, so they are read for exactly this page — bounded
+						// by its `(TraceId, SpanId)` and by its own extent, which is the
+						// partitions those calls landed in and no others. A page of
+						// nothing reads no spans at all.
+						const payloads =
+							!Arr.isReadonlyArrayNonEmpty(occurrences)
+								? []
+								: yield* warehouse.compiledQuery(
+										tenant,
+										CH.compile(
+											Integrations.aiToolErrorPayloadsQuery(occurrences),
+											{
+												orgId: tenant.orgId,
+												...Integrations.aiToolErrorPayloadSlice(occurrences),
+											},
+											{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
+										),
+										{ profile: "list", context: "aiToolsErrorPayloads" },
+									)
+						const payloadBySpan = new Map(
+							payloads.map((row) => [`${row.traceId}:${row.spanId}`, row] as const),
+						)
+						return new AiToolErrorSamplesResponse({
+							...(nextCursor !== undefined && { nextCursor }),
+							occurrences: occurrences.map((row) => {
+								// A call whose span the payload read did not return — raw
+								// retention is shorter than nothing here, but a span that
+								// was never exported is real — still belongs on the list:
+								// everything the row states about the failure came from the
+								// index, and the block below it is empty.
+								const payload = payloadBySpan.get(`${row.traceId}:${row.spanId}`)
+								return {
+									...row,
+									statusCode: payload?.statusCode ?? "",
+									arguments: payload?.arguments ?? "",
+									argumentsBytes: payload?.argumentsBytes ?? 0,
+									result: payload?.result ?? "",
+									resultBytes: payload?.resultBytes ?? 0,
+								}
+							}),
+						})
 					}),
 				)
 		}),
@@ -687,7 +780,7 @@ const NO_TOOLS_AGGREGATE: AiToolsAggregate = {
  *  nothing at all, which an aggregate over an empty window does not do. */
 const aggregateOf = (
 	rows: ReadonlyArray<Integrations.AiToolsTotalsOutput>,
-	period: Integrations.AiToolsPeriod,
+	period: AiToolsPeriod,
 ): AiToolsAggregate => {
 	const row = rows.find((candidate) => candidate.period === period)
 	if (row === undefined) return NO_TOOLS_AGGREGATE

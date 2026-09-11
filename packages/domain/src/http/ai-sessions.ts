@@ -687,9 +687,38 @@ export class AiToolsSeriesResponse extends Schema.Class<AiToolsSeriesResponse>("
 export const AiToolsAggregate = Schema.Struct(aiToolsMeasures)
 export type AiToolsAggregate = Schema.Schema.Type<typeof AiToolsAggregate>
 
+/**
+ * Which windows a totals read measures. `current` is the caller's; `previous` is
+ * the equal-length window before it, for the tiles' deltas; `window` is the
+ * whole session population, which is the Sessions tile's denominator.
+ */
+export const AiToolsPeriod = Schema.Literals(["current", "previous", "window"])
+export type AiToolsPeriod = Schema.Schema.Type<typeof AiToolsPeriod>
+
 export class AiToolsTotalsRequest extends Schema.Class<AiToolsTotalsRequest>("AiToolsTotalsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
+	/**
+	 * The periods to measure. Absent is all three, which is what the overview
+	 * draws. The tool detail page asks for `current` alone: it has no delta tiles
+	 * and no all-sessions denominator, and each period is its own scan.
+	 *
+	 * `current` is not optional among them. The response's `current` is the only
+	 * required aggregate, so a list without it would have the handler answer a
+	 * zeroed window with no first or last call — a 200 stating that nothing ran.
+	 * Refused here instead. No upper bound: a list may repeat a period and the
+	 * query folds duplicates, so a length cap would be a bound on nothing.
+	 */
+	periods: Schema.optionalKey(
+		Schema.Array(AiToolsPeriod).check(
+			Schema.isMinLength(1),
+			Schema.makeFilter(
+				(periods: ReadonlyArray<AiToolsPeriod>) =>
+					periods.includes("current") || "periods must include 'current'",
+				{ identifier: "PeriodsIncludeCurrent" },
+			),
+		),
+	),
 	...aiToolsSelection,
 }) {}
 
@@ -699,9 +728,10 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	 * Every session of the window, before the selection and before the toolbar —
 	 * the denominator the Sessions tile states its share against, and the count
 	 * the tab strip shows. Unfiltered on purpose: a share against a denominator
-	 * that moves with the filters is not a share.
+	 * that moves with the filters is not a share. Absent where `window` was not
+	 * among the requested periods.
 	 */
-	allSessions: Schema.Number,
+	allSessions: Schema.optionalKey(Schema.Number),
 	/** The first and last matched call, as warehouse datetime literals; `''`
 	 *  where nothing matched. Bounded by the window, so "first seen" is
 	 *  "first seen in this range". */
@@ -710,9 +740,10 @@ export class AiToolsTotalsResponse extends Schema.Class<AiToolsTotalsResponse>("
 	/**
 	 * The window of equal length immediately before the caller's, measured by
 	 * the same query — the deltas the tiles show. Zeros where nothing ran then,
-	 * which the client renders as "no comparison" rather than a -100%.
+	 * which the client renders as "no comparison" rather than a -100%. Absent
+	 * where `previous` was not among the requested periods.
 	 */
-	previous: AiToolsAggregate,
+	previous: Schema.optionalKey(AiToolsAggregate),
 	/** The selected tool's latest non-empty `gen_ai.tool.description` in the
 	 *  window. Absent when no tool is selected or no call stamped one. */
 	description: Schema.optionalKey(Schema.String),
@@ -769,26 +800,63 @@ const aiToolSelectionForTool = {
 	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
 }
 
-/** Error types one breakdown returns, and occurrences one modal opens with. */
+/** Error groups one breakdown returns, and samples one page holds. */
 export const AI_TOOL_ERRORS_MAX = 100
 
+const UINT64_MAX = 18_446_744_073_709_551_615n
+
+/**
+ * An error group's key: `ErrorFingerprint` as the decimal string the reads
+ * select it as. It reaches a column comparison, so anything that is not a
+ * UInt64 is refused here as a 400. `'0'` is a real group — the failures
+ * materialized before the fingerprint existed.
+ */
+export const AiToolErrorFingerprint = Schema.String.check(
+	Schema.makeFilter(
+		(value: string) =>
+			(/^(0|[1-9][0-9]{0,19})$/.test(value) && BigInt(value) <= UINT64_MAX) ||
+			"fingerprint must be a decimal UInt64",
+		{ identifier: "AiToolErrorFingerprint" },
+	),
+)
+
+export const AiToolErrorTrendPoint = Schema.Struct({
+	/** ISO-8601 with a literal `Z`, like every Maple timeseries bucket. */
+	bucket: Schema.String,
+	calls: Schema.Number,
+})
+
 export const AiToolErrorItem = Schema.Struct({
-	/** `error.type` as the span reported it. `''` is a real group: a call that
-	 *  failed without naming a type, which the page labels `unknown`. */
+	/** The group: `ErrorFingerprint`, a hash of the failure's redacted text. */
+	fingerprint: Schema.String,
+	/** `error.type` of the group's latest failure — a label, not the key. `''`
+	 *  where the span named none. */
 	errorType: Schema.String,
-	/** The most recent status message under this type, truncated by the read. */
+	/** The group's latest raw text: the failed call's result, else the span's
+	 *  status message, truncated by the index. `''` where it said neither. */
 	message: Schema.String,
-	/** Failed calls with this type. */
+	/** Failed calls in this group. */
 	calls: Schema.Number,
 	sessions: Schema.Number,
+	/** Distinct raw texts the group folded — they differ only where the
+	 *  redactions masked something. */
+	variants: Schema.Number,
 	firstSeen: Schema.String,
 	lastSeen: Schema.String,
+	/** Calls of the selection, failed or not, newer than the group's latest
+	 *  failure — what a group that stopped is measured against. */
+	callsSince: Schema.Number,
+	/** Failed calls per `bucketSeconds`, oldest first. Empty buckets are absent. */
+	trend: Schema.Array(AiToolErrorTrendPoint),
 })
 export type AiToolErrorItem = Schema.Schema.Type<typeof AiToolErrorItem>
 
 export class AiToolErrorsRequest extends Schema.Class<AiToolErrorsRequest>("AiToolErrorsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
+	/** The trend's bucket. Whole seconds, like the chart's — it reaches
+	 *  `toStartOfInterval` as an `INTERVAL n SECOND` literal. */
+	bucketSeconds: BucketSeconds,
 	...aiToolSelectionForTool,
 	limit: Schema.optionalKey(
 		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
@@ -799,18 +867,35 @@ export class AiToolErrorsResponse extends Schema.Class<AiToolErrorsResponse>("Ai
 	data: Schema.Array(AiToolErrorItem),
 }) {}
 
-/** One session that hit an error type, for the modal's left pane. */
+/** One session that hit an error group. */
 export const AiToolErrorSessionItem = Schema.Struct({
 	sessionId: Schema.String,
 	/** The framework, derived per trace as the sessions list derives it. */
 	vendorId: Schema.String,
 	agentName: Schema.String,
-	model: Schema.String,
-	/** Occurrences of this error type in this session. */
+	service: Schema.String,
+	/** Failed calls of this group in this session. */
 	hits: Schema.Number,
 	lastSeen: Schema.String,
 })
 export type AiToolErrorSessionItem = Schema.Schema.Type<typeof AiToolErrorSessionItem>
+
+/** One raw text an error group folded. */
+export const AiToolErrorVariantItem = Schema.Struct({
+	message: Schema.String,
+	calls: Schema.Number,
+	lastSeen: Schema.String,
+})
+export type AiToolErrorVariantItem = Schema.Schema.Type<typeof AiToolErrorVariantItem>
+
+/** A group's failed calls under one model and one service. */
+export const AiToolErrorBreakdownItem = Schema.Struct({
+	/** The model the call is attributed to; `''` where none resolved. */
+	model: Schema.String,
+	service: Schema.String,
+	calls: Schema.Number,
+})
+export type AiToolErrorBreakdownItem = Schema.Schema.Type<typeof AiToolErrorBreakdownItem>
 
 /** One failed call, with what it was called with and what came back. */
 export const AiToolErrorOccurrence = Schema.Struct({
@@ -821,7 +906,9 @@ export const AiToolErrorOccurrence = Schema.Struct({
 	vendorId: Schema.String,
 	agentName: Schema.String,
 	model: Schema.String,
+	service: Schema.String,
 	errorType: Schema.String,
+	/** This call's raw text — the variant it is. */
 	message: Schema.String,
 	/** Nanoseconds, like every other AI duration. */
 	durationNs: Schema.Number,
@@ -841,23 +928,56 @@ export class AiToolErrorDetailRequest extends Schema.Class<AiToolErrorDetailRequ
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	...aiToolSelectionForTool,
-	/** The error type the modal is open on. Present-but-empty selects the calls
-	 *  that named no type, which is the `unknown` row. */
-	errorType: Schema.String.check(Schema.isMaxLength(200)),
-	/** Narrow the occurrences to one session — the left pane's selection. */
-	session: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
-	limit: Schema.optionalKey(
-		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
-	),
+	/** The group the modal is open on. */
+	fingerprint: AiToolErrorFingerprint,
 }) {}
 
 export class AiToolErrorDetailResponse extends Schema.Class<AiToolErrorDetailResponse>(
 	"AiToolErrorDetailResponse",
 )({
-	/** Every session that hit this error type, busiest first — NOT narrowed by
-	 *  `session`, which is what makes the pane a way out of the one selected. */
+	/** Every session that hit this group, busiest first. */
 	sessions: Schema.Array(AiToolErrorSessionItem),
+	/** The raw texts the group folded, most calls first. */
+	variants: Schema.Array(AiToolErrorVariantItem),
+	/** Failed calls per `(model, service)`, most first. */
+	breakdown: Schema.Array(AiToolErrorBreakdownItem),
+}) {}
+
+/**
+ * Keyset position in a group's samples (newest first): the previous page's
+ * last row. The timestamp is the warehouse literal at nanosecond precision,
+ * which with the span id makes the position unique.
+ */
+export const AiToolErrorSampleCursor = Schema.Struct({
+	timestamp: TinybirdDateTime,
+	spanId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+})
+export type AiToolErrorSampleCursor = Schema.Schema.Type<typeof AiToolErrorSampleCursor>
+
+export class AiToolErrorSamplesRequest extends Schema.Class<AiToolErrorSamplesRequest>(
+	"AiToolErrorSamplesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	...aiToolSelectionForTool,
+	fingerprint: AiToolErrorFingerprint,
+	/** One session's samples — the sessions list's selection. */
+	session: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	/** One raw text's samples — the variants list's selection. Bounded by what
+	 *  the index keeps of a result, with room for UTF-16. */
+	variant: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+	before: Schema.optionalKey(AiToolErrorSampleCursor),
+	limit: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_TOOL_ERRORS_MAX })),
+	),
+}) {}
+
+export class AiToolErrorSamplesResponse extends Schema.Class<AiToolErrorSamplesResponse>(
+	"AiToolErrorSamplesResponse",
+)({
 	occurrences: Schema.Array(AiToolErrorOccurrence),
+	/** Where the next page starts; absent when this page ended the group. */
+	nextCursor: Schema.optionalKey(AiToolErrorSampleCursor),
 }) {}
 
 export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInternal")
@@ -935,6 +1055,13 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		HttpApiEndpoint.post("toolErrorDetail", "/tools/error-detail", {
 			payload: AiToolErrorDetailRequest,
 			success: AiToolErrorDetailResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("toolErrorSamples", "/tools/error-samples", {
+			payload: AiToolErrorSamplesRequest,
+			success: AiToolErrorSamplesResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

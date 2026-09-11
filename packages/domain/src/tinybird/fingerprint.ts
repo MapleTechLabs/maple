@@ -191,7 +191,7 @@ export const chRedactChain = (expr: string, redactions: Redactions): string =>
  * Apply a redaction list in TypeScript. The replacement is passed as a function
  * so JS never reinterprets `$&` and friends — ClickHouse would not.
  */
-const applyRedactions = (value: string, redactions: Redactions): string =>
+export const applyRedactions = (value: string, redactions: Redactions): string =>
 	redactions.reduce(
 		(acc, [pattern, replacement]) => acc.replace(new RegExp(pattern, "g"), () => replacement),
 		value,

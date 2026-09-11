@@ -9,6 +9,8 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -34,17 +36,21 @@ import {
 	EmptyMedia,
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {
 	AlertWarningIcon,
 	ArrowPathIcon,
+	CodeIcon,
 	DotsVerticalIcon,
 	KeyIcon,
 	PlusIcon,
 	SquareTerminalIcon,
 	TrashIcon,
 } from "@/components/icons"
+import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { displayError } from "@/lib/error-messages"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -66,9 +72,53 @@ function formatDate(timestamp: string | null): string {
 	}
 }
 
+/**
+ * A key has exactly one status, and the list is grouped by it. "Expiring" is not a separate bucket —
+ * the key still works, so it belongs with the active ones — but it carries a badge and sorts to the
+ * top, because an expiry nobody noticed is this page's most common failure.
+ */
+export type ApiKeyStatus = "active" | "expiring" | "expired" | "revoked"
+type ApiKeyView = "active" | "expired" | "revoked"
+
+const EXPIRING_WINDOW_MS = 7 * 86_400_000
+
+/** `now` is passed in so every row in a render agrees on where the expiry boundary falls. */
+export function apiKeyStatus(apiKey: ApiKey, now: number): ApiKeyStatus {
+	if (apiKey.revoked) return "revoked"
+	const expiresAt = apiKey.expires_at === null ? null : Date.parse(apiKey.expires_at)
+	if (expiresAt === null || !Number.isFinite(expiresAt)) return "active"
+	if (expiresAt <= now) return "expired"
+	return expiresAt - now < EXPIRING_WINDOW_MS ? "expiring" : "active"
+}
+
+/**
+ * Whether any key's status can still change on the wall clock alone — it has an expiry ahead of it,
+ * so it will cross into the last-week window or past the expiry itself while the page is open. When
+ * nothing can, the live clock never schedules a timer.
+ */
+function hasPendingStatusBoundary(keys: ReadonlyArray<ApiKey>, now: number): boolean {
+	return keys.some((apiKey) => {
+		if (apiKey.revoked || apiKey.expires_at === null) return false
+		const expiresAt = Date.parse(apiKey.expires_at)
+		return Number.isFinite(expiresAt) && expiresAt > now
+	})
+}
+
+function matchesSearch(apiKey: ApiKey, needle: string): boolean {
+	const haystack = [apiKey.name, apiKey.description ?? "", apiKey.key_prefix].join(" ").toLowerCase()
+	return haystack.includes(needle)
+}
+
+const VIEW_LABELS = {
+	active: "Active",
+	expired: "Expired",
+	revoked: "Revoked",
+} satisfies Record<ApiKeyView, string>
+
 export function ApiKeysSection() {
 	const isAdmin = useIsOrgAdmin()
-	const [view, setView] = useState<"active" | "revoked">("active")
+	const [view, setView] = useState<ApiKeyView>("active")
+	const [search, setSearch] = useState("")
 	const [createOpen, setCreateOpen] = useState(false)
 	const [revokeOpen, setRevokeOpen] = useState(false)
 	const [revokingKey, setRevokingKey] = useState<ApiKey | null>(null)
@@ -110,13 +160,39 @@ export function ApiKeysSection() {
 		// fallback while the close animation plays; the next open overwrites it.
 	}
 
-	const activeKeys = keys.filter((k) => !k.revoked)
-	const revokedKeys = keys.filter((k) => k.revoked)
-	const mcpCount = activeKeys.filter((k) => k.kind === "mcp").length
-	const standardCount = activeKeys.length - mcpCount
+	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind
+	// a badge that only appeared on wide viewports, so the tab counts told you a key still worked
+	// when it did not.
+	//
+	// The clock has to advance, not just be read once: the key collection only emits when its rows
+	// change, so a key that expires while this page is open would otherwise sit in Active behind a
+	// status frozen at the last render. The timer stops itself once no key has an expiry left.
+	const now = useLiveClock({ enabled: hasPendingStatusBoundary(keys, Date.now()) })
+	const statuses = new Map(keys.map((k) => [k.id, apiKeyStatus(k, now)] as const))
+	const statusOf = (k: ApiKey): ApiKeyStatus => statuses.get(k.id) ?? "active"
 
-	const showRevokedSection = view === "active" && revokedKeys.length > 0
-	const visibleActive = view === "active" ? activeKeys : []
+	const buckets = {
+		active: keys.filter((k) => statusOf(k) === "active" || statusOf(k) === "expiring"),
+		expired: keys.filter((k) => statusOf(k) === "expired"),
+		revoked: keys.filter((k) => statusOf(k) === "revoked"),
+	} satisfies Record<ApiKeyView, ReadonlyArray<ApiKey>>
+
+	// A tab can empty out under you — revoking the last expired key, say. Fall back rather than
+	// leaving the page on a tab that no longer exists.
+	const activeView: ApiKeyView = buckets[view].length > 0 ? view : "active"
+
+	const mcpCount = buckets.active.filter((k) => k.kind === "mcp").length
+	const standardCount = buckets.active.length - mcpCount
+
+	const needle = search.trim().toLowerCase()
+	const visibleKeys = [...buckets[activeView]]
+		.filter((k) => needle.length === 0 || matchesSearch(k, needle))
+		// Keys about to stop working lead the list; everything else keeps collection order.
+		.sort((a, b) => Number(statusOf(b) === "expiring") - Number(statusOf(a) === "expiring"))
+
+	// A filter that is applied must stay clearable. Switching from a big bucket to a small one used
+	// to hide the input while its text kept filtering, stranding the list on "No keys match".
+	const showSearch = buckets[activeView].length > 5 || needle.length > 0
 
 	return (
 		<div className="space-y-6">
@@ -125,14 +201,21 @@ export function ApiKeysSection() {
 					{keys.length > 0 && (
 						<>
 							<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
-								<FilterTab active={view === "active"} onClick={() => setView("active")}>
-									Active · {activeKeys.length}
-								</FilterTab>
-								<FilterTab active={view === "revoked"} onClick={() => setView("revoked")}>
-									Revoked · {revokedKeys.length}
-								</FilterTab>
+								{(["active", "expired", "revoked"] as const).map((tab) =>
+									// A tab for an empty bucket is a dead end. Active always shows, so
+									// there is something to fall back to.
+									tab === "active" || buckets[tab].length > 0 ? (
+										<FilterTab
+											key={tab}
+											active={activeView === tab}
+											onClick={() => setView(tab)}
+										>
+											{VIEW_LABELS[tab]} · {buckets[tab].length}
+										</FilterTab>
+									) : null,
+								)}
 							</div>
-							{activeKeys.length > 0 && (
+							{buckets.active.length > 0 && (
 								<span className="text-muted-foreground font-mono text-[11px]">
 									<span className="text-success-foreground">{standardCount} standard</span>
 									<span className="text-muted-foreground/40"> · </span>
@@ -142,14 +225,14 @@ export function ApiKeysSection() {
 						</>
 					)}
 					<div className="flex-1" />
-					<a
-						href="https://maple.dev/docs/api"
-						target="_blank"
-						rel="noopener noreferrer"
-						className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-					>
-						View API docs ↗
-					</a>
+					{showSearch && (
+						<SearchInput
+							value={search}
+							onValueChange={setSearch}
+							placeholder="Filter by name or prefix"
+							className="w-56"
+						/>
+					)}
 					<Button onClick={() => setCreateOpen(true)} size="sm" disabled={!isAdmin}>
 						<PlusIcon data-icon="inline-start" size={14} />
 						Create key
@@ -193,14 +276,22 @@ export function ApiKeysSection() {
 								</Button>
 							</EmptyContent>
 						</Empty>
-					) : view === "revoked" && revokedKeys.length === 0 ? (
+					) : visibleKeys.length === 0 ? (
 						<Empty className="py-8">
 							<EmptyHeader>
 								<EmptyMedia variant="icon">
 									<KeyIcon size={16} />
 								</EmptyMedia>
-								<EmptyTitle>No revoked keys</EmptyTitle>
-								<EmptyDescription>Revoked keys will show up here.</EmptyDescription>
+								<EmptyTitle>
+									{needle.length > 0
+										? "No keys match"
+										: `No ${VIEW_LABELS[activeView].toLowerCase()} keys`}
+								</EmptyTitle>
+								<EmptyDescription>
+									{needle.length > 0
+										? `Nothing in ${VIEW_LABELS[activeView]} matches "${search.trim()}".`
+										: "Keys show up here once they reach this state."}
+								</EmptyDescription>
 							</EmptyHeader>
 						</Empty>
 					) : (
@@ -213,23 +304,16 @@ export function ApiKeysSection() {
 								<span className={cn(COL_HEADER, COL.expires)}>Expires</span>
 								<span className={cn(COL.menu)} />
 							</div>
-							{visibleActive.map((key) => (
+							{visibleKeys.map((key) => (
 								<ApiKeyRow
 									key={key.id}
 									apiKey={key}
-									onRoll={() => openRollDialog(key)}
-									onRevoke={() => openRevokeDialog(key)}
+									status={statusOf(key)}
+									now={now}
+									onRoll={key.revoked ? undefined : () => openRollDialog(key)}
+									onRevoke={key.revoked ? undefined : () => openRevokeDialog(key)}
 								/>
 							))}
-							{showRevokedSection && (
-								<div className="bg-muted/20 px-4 py-1.5">
-									<span className="text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.15em]">
-										Revoked · {revokedKeys.length}
-									</span>
-								</div>
-							)}
-							{(showRevokedSection || view === "revoked") &&
-								revokedKeys.map((key) => <ApiKeyRow key={key.id} apiKey={key} />)}
 						</div>
 					)}
 				</div>
@@ -247,6 +331,8 @@ export function ApiKeysSection() {
 					page — you can create one of those yourself.
 				</p>
 			) : null}
+
+			<ApiReference />
 
 			<CreateApiKeyDialog open={createOpen} onOpenChange={setCreateOpen} />
 
@@ -282,6 +368,156 @@ export function ApiKeysSection() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
+		</div>
+	)
+}
+
+/**
+ * Keep in sync with `SCOPE_FAMILIES` in create-api-key-dialog.tsx — one row per
+ * shipped v2 resource family.
+ */
+const SCOPE_FAMILY_ROWS = [
+	{ id: "api_keys", label: "API keys", description: "Create, roll, and revoke API keys" },
+	{ id: "dashboards", label: "Dashboards", description: "Dashboards, templates, and version history" },
+	{
+		id: "alerts",
+		label: "Alerts",
+		description: "Alert rules (incl. test/preview/checks), destinations, and incidents",
+	},
+	{ id: "ingest_keys", label: "Ingest keys", description: "View and roll telemetry ingest keys" },
+	{
+		id: "attribute_mappings",
+		label: "Attribute mappings",
+		description: "Ingest-time attribute rewrite rules",
+	},
+	{
+		id: "scrape_targets",
+		label: "Scrape targets",
+		description: "Prometheus/PlanetScale scrape targets, probes, and checks",
+	},
+	{ id: "instrumentation", label: "Recommendations", description: "Instrumentation recommendations" },
+	{
+		id: "investigations",
+		label: "Investigations",
+		description: "AI investigation war-rooms — list, open, and update status",
+	},
+	{
+		id: "anomalies",
+		label: "Anomalies",
+		description: "Anomaly incidents (incl. timeseries/resolve/link-issue) and detector settings",
+	},
+	{
+		id: "session_replays",
+		label: "Session replays",
+		description: "Search sessions, retrieve detail, events, and transcripts",
+	},
+	{ id: "traces", label: "Traces", description: "Search traces and retrieve spans" },
+	{ id: "logs", label: "Logs", description: "Search and retrieve log records" },
+	{ id: "metrics", label: "Metrics", description: "Metric catalog and timeseries reads" },
+	{ id: "services", label: "Services", description: "Service catalog and health summaries" },
+	{ id: "service_map", label: "Service map", description: "Service-to-service topology" },
+	{ id: "query", label: "Query", description: "Structured telemetry queries" },
+	{ id: "organization", label: "Organization", description: "Read the organization's identity" },
+] as const
+
+const docsUrl = `${apiBaseUrl}/v2/docs`
+
+const curlExample = `curl ${apiBaseUrl}/v2/alerts/rules \\
+  -H "Authorization: Bearer maple_ak_..."`
+
+/**
+ * The reference for the keys listed above: where to point them, and what each scope in the create
+ * dialog actually grants. It used to be its own "API Reference" nav item, which split one job across
+ * two tabs — you cannot read the scope table and pick scopes at the same time.
+ */
+function ApiReference() {
+	return (
+		<div className="space-y-6">
+			<Card>
+				<CardHeader>
+					<div className="flex items-start justify-between gap-4">
+						<div className="space-y-1">
+							<CardTitle>API Reference</CardTitle>
+							<CardDescription>
+								The Maple v2 API is a resource-oriented REST interface — snake_case JSON,
+								prefixed object IDs, cursor-paginated lists, and scoped API keys.
+							</CardDescription>
+						</div>
+						<Button
+							size="sm"
+							render={
+								<a
+									href={docsUrl}
+									target="_blank"
+									rel="noopener noreferrer"
+									aria-label="Open API reference"
+								/>
+							}
+						>
+							<CodeIcon data-icon="inline-start" size={14} />
+							Open API reference
+						</Button>
+					</div>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					<div className="space-y-1.5">
+						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+							Base URL
+						</div>
+						<div className="bg-muted/50 flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+							<code className="font-mono text-sm">{apiBaseUrl}/v2</code>
+							<CopyButton value={`${apiBaseUrl}/v2`} label="Base URL" size="icon-sm" />
+						</div>
+					</div>
+					<div className="space-y-1.5">
+						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+							Quick start
+						</div>
+						<div className="bg-muted/50 flex items-start justify-between gap-2 rounded-md border px-3 py-2">
+							<pre className="overflow-x-auto font-mono text-sm leading-6">{curlExample}</pre>
+							<CopyButton value={curlExample} label="curl example" size="icon-sm" />
+						</div>
+					</div>
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>Scopes</CardTitle>
+					<CardDescription>
+						Restricted keys grant <code className="font-mono text-xs">read</code> or{" "}
+						<code className="font-mono text-xs">write</code> access per resource family (
+						<code className="font-mono text-xs">write</code> implies{" "}
+						<code className="font-mono text-xs">read</code>). A key without scopes has full
+						access.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<div className="divide-y rounded-md border">
+						{SCOPE_FAMILY_ROWS.map((family) => (
+							<div
+								key={family.id}
+								className="flex items-center justify-between gap-4 px-3 py-2.5"
+							>
+								<div className="min-w-0 space-y-0.5">
+									<div className="text-sm font-medium">{family.label}</div>
+									<div className="text-muted-foreground truncate text-xs">
+										{family.description}
+									</div>
+								</div>
+								<div className="flex shrink-0 items-center gap-1.5">
+									<Badge variant="outline" className="font-mono text-[11px]">
+										{family.id}:read
+									</Badge>
+									<Badge variant="outline" className="font-mono text-[11px]">
+										{family.id}:write
+									</Badge>
+								</div>
+							</div>
+						))}
+					</div>
+				</CardContent>
+			</Card>
 		</div>
 	)
 }
@@ -322,12 +558,24 @@ function FilterTab({
 	)
 }
 
+/** "in 3 days" / "today" — the urgency, not the date. The Expires column carries the date. */
+function expiresInLabel(expiresAt: number, now: number): string {
+	const days = Math.floor((expiresAt - now) / 86_400_000)
+	if (days < 1) return "Expires today"
+	return `Expires in ${days} ${days === 1 ? "day" : "days"}`
+}
+
 function ApiKeyRow({
 	apiKey,
+	status,
+	now,
 	onRoll,
 	onRevoke,
 }: {
 	apiKey: ApiKey
+	status: ApiKeyStatus
+	/** The same clock the status was derived from, so the badge cannot disagree with the bucket. */
+	now: number
 	onRoll?: () => void
 	onRevoke?: () => void
 }) {
@@ -335,20 +583,17 @@ function ApiKeyRow({
 	const Icon = isMcp ? SquareTerminalIcon : KeyIcon
 	const relativeLastUsed = apiKey.last_used_at ? formatRelativeTime(apiKey.last_used_at) : null
 	const expiresAt = apiKey.expires_at === null ? null : Date.parse(apiKey.expires_at)
-	const expiresInPast = expiresAt !== null && Number.isFinite(expiresAt) && expiresAt < Date.now()
-	const expiresSoon =
-		expiresAt !== null &&
-		Number.isFinite(expiresAt) &&
-		!expiresInPast &&
-		expiresAt - Date.now() < 7 * 86_400_000
+	const expiresInPast = status === "expired"
+	const expiresSoon = status === "expiring"
 
 	// Type-coded icon tile: emerald for standard keys (live credential), blue for MCP
-	// (agent/machine type). Revoked keys desaturate to neutral so dead keys read as dead.
-	const tileClass = apiKey.revoked
-		? "bg-muted/40 text-muted-foreground"
-		: isMcp
-			? "bg-info/10 text-info"
-			: "bg-success/10 text-success"
+	// (agent/machine type). Dead keys — revoked or expired — desaturate to neutral.
+	const tileClass =
+		status === "revoked" || status === "expired"
+			? "bg-muted/40 text-muted-foreground"
+			: isMcp
+				? "bg-info/10 text-info"
+				: "bg-success/10 text-success"
 
 	const createdMeta = [
 		apiKey.description,
@@ -361,7 +606,7 @@ function ApiKeyRow({
 		<div
 			className={cn(
 				"flex items-center gap-3 px-4 py-3 transition-colors",
-				apiKey.revoked ? "opacity-60" : "hover:bg-muted/20",
+				status === "revoked" || status === "expired" ? "opacity-60" : "hover:bg-muted/20",
 			)}
 		>
 			<div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -378,14 +623,21 @@ function ApiKeyRow({
 								MCP
 							</Badge>
 						)}
-						{apiKey.revoked && (
+						{status === "revoked" && (
 							<Badge variant="error" size="sm">
 								Revoked
 							</Badge>
 						)}
-						{expiresInPast && !apiKey.revoked && (
+						{expiresInPast && (
 							<Badge variant="outline" size="sm">
 								Expired
+							</Badge>
+						)}
+						{/* The Expires column is hidden below `md`, so the one state that silently
+						    breaks a running integration rides in the name row instead. */}
+						{expiresSoon && expiresAt !== null && (
+							<Badge variant="warning" size="sm">
+								{expiresInLabel(expiresAt, now)}
 							</Badge>
 						)}
 					</div>
@@ -423,7 +675,7 @@ function ApiKeyRow({
 			</span>
 
 			<div className={cn(COL.menu, "flex items-center justify-end")}>
-				{!apiKey.revoked && onRevoke && (
+				{onRevoke && (
 					<DropdownMenu>
 						<DropdownMenuTrigger
 							render={<Button variant="ghost" size="icon" className="size-7" />}

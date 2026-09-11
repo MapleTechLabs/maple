@@ -8,6 +8,12 @@
 // production at 60–130ms each, which is why none of them is cached or split in
 // two the way the sessions list had to be.
 //
+// The one exception is the failure modal's payloads — the arguments a call was
+// made with and the result it came back with, which are the only facts on this
+// page that are not the tool span's own narrow columns. That read is bounded by
+// the page of samples it is for, and by their own first and last timestamps
+// rather than the caller's window; see {@link aiToolErrorPayloadsQuery}.
+//
 // Two facts about tool rows shape every query in this file.
 //
 //   1. A tool row NEVER carries `Model`. The three GenAI identity columns are
@@ -31,16 +37,28 @@
 //      key under `trace:<TraceId>`. Sharing that helper is the point — a
 //      second derivation would count sessions the list page never showed.
 //
-// Both facts are answered by the same two derived tables, joined into every
-// read: `parentModels` (the model-bearing index rows, keyed by span) and
-// `traceFacts` (one row per trace: its session key and its model). They are
-// LEFT and INNER respectively, because a tool call may have no model-bearing
-// parent but always belongs to a trace of the same window.
+// Both facts are answered by the same two derived tables: `parentModels` (the
+// model-bearing index rows, keyed by span) and `traceFacts` (one row per trace:
+// its session key, its model, its vendor and its agent). They are LEFT and
+// INNER respectively, because a tool call may have no model-bearing parent but
+// always belongs to a trace of the same window.
+//
+// `traceFacts` is in every read — the session key is. `parentModels` is not:
+// it only changes an answer where a model is FILTERED on, SPLIT by, or SHOWN,
+// and it cost ~15% of the detail page's totals read (114ms → 98ms warm over a
+// week of production) everywhere else. So each read says whether it needs the
+// parent — `parentModelNeeded` and `seriesParentModelNeeded` derive it from the
+// selection, and the failure modal's two reads ask for it outright because they
+// print the model — and the level below takes the trace's model alone when it
+// does not.
 //
 // Percentiles are the reason `totals` is its own query rather than a client-side
 // fold of `series`: quantiles do not merge. The same reason keeps the previous
 // window inside the totals read (a `UNION ALL` branch over `prevStartTime`/
-// `prevEndTime`) instead of making it a second request.
+// `prevEndTime`) instead of making it a second request — for the OVERVIEW,
+// which is what draws the deltas and the all-sessions denominator. The detail
+// page asks for `current` alone (`periods`), and the two branches it does not
+// draw were half that read.
 //
 // Durations stay in NANOSECONDS, like every other AI read — `Duration` is what
 // the index stores and the client formats. Zero-duration tool spans are real
@@ -57,9 +75,13 @@ import {
 	unionAll,
 	type CHUnionQuery,
 } from "@maple-dev/effect-clickhouse"
-import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY } from "@maple/domain/http"
+import {
+	AI_TOOLS_BREAKDOWN_MAX,
+	AI_TOOLS_OTHER_SERIES_KEY,
+	type AiToolsPeriod,
+} from "@maple/domain/http"
 import type { AiGenAiField } from "@maple/domain/gen-ai"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
@@ -171,8 +193,8 @@ const parentModels = (window: AiToolsWindow) =>
  * `traceVendorId` and `traceAgentName` name the session the way the sessions
  * list does — the same `argMin` orderings as `aiSessionsListQuery`'s per-trace
  * level — for the failure modal, which links each failure to its session. The
- * aggregates below never select them, and ClickHouse prunes unselected columns
- * of a derived table.
+ * overview's aggregates never select them, and ClickHouse prunes unselected
+ * columns of a derived table.
  */
 const traceFacts = (window: AiToolsWindow) =>
 	from(AiTraceIndex)
@@ -209,51 +231,6 @@ const resolvedModel = (parentModel: CH.Expr<string | null>, traceModel: CH.Expr<
 	return CH.if_(parent.neq(""), parent, traceModel)
 }
 
-/**
- * One row per tool call in the window, with its model and session resolved —
- * the level every read below aggregates. Every filter the page carries is applied
- * here, including `model`, which is an expression rather than a column and so
- * cannot be pushed any lower.
- *
- * Column names are deliberately NOT the names the outer aggregates select
- * (`ts` vs `bucket`, `svc` vs `serviceName`): an outer alias shadows a derived
- * column of the same name, and an aggregate over the shadowed name becomes a
- * cyclic alias rather than the aggregate the author meant.
- */
-const toolCalls = (opts: AiToolsFilterOpts, window: AiToolsWindow = "current") =>
-	from(AiTraceIndex)
-		.leftJoinQuery(parentModels(window), "parent", (call, parent) =>
-			call.TraceId.eq(parent.TraceId).and(call.ParentSpanId.eq(parent.SpanId)),
-		)
-		.innerJoinQuery(traceFacts(window), "trace", (call, trace) => call.TraceId.eq(trace.TraceId))
-		.select(($) => ({
-			ts: $.Timestamp,
-			traceId: $.TraceId,
-			spanId: $.SpanId,
-			sessionKey: sessionKey($.trace.rawSessionId, $.TraceId),
-			toolName: $.ToolName,
-			modelName: resolvedModel($.parent.parentModel, $.trace.traceModel),
-			svc: $.ServiceName,
-			agent: $.AgentName,
-			isError: $.IsError,
-			durationNs: $.Duration,
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(startParam(window)),
-			$.Timestamp.lte(endParam(window)),
-			// The whole population, and the only predicate that is not a filter:
-			// `IsToolCall` is what the MV stamped on a span the vendor mapper
-			// classified as a tool call.
-			$.IsToolCall.eq(1),
-			CH.when(opts.tool, (tool) => $.ToolName.eq(tool)),
-			CH.when(opts.service, (service) => $.ServiceName.eq(service)),
-			CH.when(opts.env, (env) => $.DeploymentEnv.eq(env)),
-			CH.when(opts.model, (model) => resolvedModel($.parent.parentModel, $.trace.traceModel).eq(model)),
-			CH.when(opts.search, (search) => $.ToolName.ilike(`%${likeLiteral(search)}%`)),
-			CH.whenTrue(opts.failingOnly, () => $.IsError.eq(1)),
-		])
-
 /** The accessor shape every aggregate below reads off {@link toolCalls}. */
 interface ToolCallColumns {
 	readonly ts: CH.Expr<string>
@@ -262,10 +239,105 @@ interface ToolCallColumns {
 	readonly sessionKey: CH.Expr<string>
 	readonly toolName: CH.Expr<string>
 	readonly modelName: CH.Expr<string>
-	readonly svc: CH.Expr<string>
+	/** The trace's framework and agent, as the sessions list names them — what
+	 *  the failure modal links a failure to. */
+	readonly vendor: CH.Expr<string>
 	readonly agent: CH.Expr<string>
 	readonly isError: CH.Expr<number>
+	readonly service: CH.Expr<string>
+	/** `error.type` — the Errors table's label for a group (migration 0032). */
+	readonly errorType: CH.Expr<string>
+	/** What a failure says: its failed tool call's result, else its status
+	 *  message — the text `ErrorFingerprint` hashes, before the redactions. */
+	readonly failureMessage: CH.Expr<string>
+	/** `ErrorFingerprint` as a decimal string: a UInt64 past 2^53 does not
+	 *  survive as a JSON number. `'0'` on every call that did not fail. */
+	readonly fingerprint: CH.Expr<string>
 	readonly durationNs: CH.Expr<number>
+}
+
+/** The index rows of the window with their trace's facts beside them — the half
+ *  of {@link toolCalls} both its shapes share. */
+const toolCallIndex = (window: AiToolsWindow) =>
+	from(AiTraceIndex).innerJoinQuery(traceFacts(window), "trace", (call, trace) =>
+		call.TraceId.eq(trace.TraceId),
+	)
+
+/** The accessor {@link toolCalls}' projection and predicates read. Extracted
+ *  from the builder rather than restated, so neither can name a column the index
+ *  does not have. The shape that also joins `parentModels` carries one key more,
+ *  which is why the model reaches both as an argument. */
+type ToolCallSource = Parameters<Parameters<ReturnType<typeof toolCallIndex>["where"]>[0]>[0]
+
+/** Whether a read that neither shows nor splits by a model has to resolve each
+ *  call's PARENT model, or can take its trace's alone: only a model FILTER does
+ *  (see the file header). A read that SHOWS one passes `true` itself. */
+const parentModelNeeded = (opts: AiToolsFilterOpts): boolean => opts.model !== undefined
+
+/** The same for a bucketed read, which also needs it where the chart's series
+ *  are keyed by model. */
+const seriesParentModelNeeded = (opts: AiToolsFilterOpts): boolean =>
+	parentModelNeeded(opts) || aiToolsSeriesKind(opts) === "model"
+
+/**
+ * One row per tool call in the window, with its model and session resolved —
+ * the level every read below aggregates. Every filter the page carries is applied
+ * here, including `model`, which is an expression rather than a column and so
+ * cannot be pushed any lower.
+ *
+ * Column names are deliberately NOT the names the outer aggregates select
+ * (`ts` vs `bucket`, `sessionKey` vs `sessionId`): an outer alias shadows a
+ * derived column of the same name, and an aggregate over the shadowed name
+ * becomes a cyclic alias rather than the aggregate the author meant.
+ */
+const toolCalls = (
+	opts: AiToolsFilterOpts,
+	window: AiToolsWindow = "current",
+	withParentModel: boolean = parentModelNeeded(opts),
+) => {
+	const columns = ($: ToolCallSource, model: CH.Expr<string>) => ({
+		ts: $.Timestamp,
+		traceId: $.TraceId,
+		spanId: $.SpanId,
+		sessionKey: sessionKey($.trace.rawSessionId, $.TraceId),
+		toolName: $.ToolName,
+		modelName: model,
+		vendor: $.trace.traceVendorId,
+		agent: $.trace.traceAgentName,
+		isError: $.IsError,
+		service: $.ServiceName,
+		errorType: $.ErrorType,
+		failureMessage: CH.coalesce(CH.nullIf($.FailedToolCallResult, ""), $.StatusMessage),
+		fingerprint: CH.toString_($.ErrorFingerprint),
+		durationNs: $.Duration,
+	})
+	const filters = ($: ToolCallSource, model: CH.Expr<string>) => [
+		$.OrgId.eq(param.string("orgId")),
+		$.Timestamp.gte(startParam(window)),
+		$.Timestamp.lte(endParam(window)),
+		// The whole population, and the only predicate that is not a filter:
+		// `IsToolCall` is what the MV stamped on a span the vendor mapper
+		// classified as a tool call.
+		$.IsToolCall.eq(1),
+		CH.when(opts.tool, (tool) => $.ToolName.eq(tool)),
+		CH.when(opts.service, (service) => $.ServiceName.eq(service)),
+		CH.when(opts.env, (env) => $.DeploymentEnv.eq(env)),
+		CH.when(opts.model, (selected) => model.eq(selected)),
+		CH.when(opts.search, (search) => $.ToolName.ilike(`%${likeLiteral(search)}%`)),
+		CH.whenTrue(opts.failingOnly, () => $.IsError.eq(1)),
+	]
+	if (!withParentModel) {
+		return toolCallIndex(window)
+			.select(($) => columns($, $.trace.traceModel))
+			.where(($) => filters($, $.trace.traceModel))
+	}
+	return from(AiTraceIndex)
+		.leftJoinQuery(parentModels(window), "parent", (call, parent) =>
+			call.TraceId.eq(parent.TraceId).and(call.ParentSpanId.eq(parent.SpanId)),
+		)
+		.innerJoinQuery(traceFacts(window), "trace", (call, trace) => call.TraceId.eq(trace.TraceId))
+		.select(($) => columns($, resolvedModel($.parent.parentModel, $.trace.traceModel)))
+		.where(($) => filters($, resolvedModel($.parent.parentModel, $.trace.traceModel)))
 }
 
 /**
@@ -327,7 +399,7 @@ const seriesKeyColumn = (opts: AiToolsFilterOpts) => {
  * two reads land either side of an insert).
  */
 const topSeriesKeys = (opts: AiToolsFilterOpts, key: ($: ToolCallColumns) => CH.Expr<string>) => {
-	const ranked = fromQuery(toolCalls(opts), "series_ranking")
+	const ranked = fromQuery(toolCalls(opts, "current", seriesParentModelNeeded(opts)), "series_ranking")
 		.select(($) => ({ rankKey: key($), rankCalls: CH.count() }))
 		.groupBy("rankKey")
 		// The key breaks ties, so two keys with the same call count cannot swap
@@ -355,7 +427,7 @@ const topSeriesKeys = (opts: AiToolsFilterOpts, key: ($: ToolCallColumns) => CH.
  */
 export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 	const key = seriesKeyColumn(opts)
-	return fromQuery(toolCalls(opts), "tool_calls")
+	return fromQuery(toolCalls(opts, "current", seriesParentModelNeeded(opts)), "tool_calls")
 		.select(($) => ({
 			bucket: isoBucket($.ts),
 			// `none` still projects the column, so the response shape does not
@@ -384,10 +456,6 @@ export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 const emptyWhenNoRows = (value: CH.Expr<string>): CH.Expr<string> =>
 	CH.if_(CH.count().eq(0), CH.lit(""), CH.toString_(value))
 
-/** Which window a totals row measures. `window` is the third branch: the
- *  window's whole session population, before any of the page's filters. */
-export type AiToolsPeriod = "current" | "previous" | "window"
-
 export interface AiToolsTotalsOutput {
 	readonly period: string
 	readonly calls: number
@@ -404,17 +472,36 @@ export interface AiToolsTotalsOutput {
 }
 
 /**
- * The KPI tiles: the same measures un-bucketed, for the caller's window and for
- * the window of equal length immediately before it.
+ * Every period the tiles can ask for, which is what the overview asks for, and
+ * the ORDER the union builds them in — a caller's own ordering never reaches
+ * the SQL, so two requests for the same periods compile to one statement.
  *
- * One query rather than two requests, and not folded from `series` either:
+ * `AiToolsPeriod` is the request contract's, not a second spelling of it: a
+ * period the wire can name is one this union can build.
+ */
+export const AI_TOOLS_TOTALS_PERIODS: ReadonlyArray<AiToolsPeriod> = ["current", "previous", "window"]
+
+/**
+ * The KPI tiles: the same measures un-bucketed, for the caller's window, for the
+ * window of equal length immediately before it, and for the window's whole
+ * session population.
+ *
+ * One query rather than three requests, and not folded from `series` either:
  * quantiles cannot be merged after the fact, so a p95 for the window is only
  * available from a read that grouped the window. The previous branch is bounded
  * by its own pair of params (`prevStartTime`/`prevEndTime`), which the caller
  * computes — the query has no opinion about what "previous" means beyond
  * reading a second window.
+ *
+ * `periods` is which of the three the caller draws. The overview draws all
+ * three; the tool detail page draws `current` alone — it has no delta tiles and
+ * no all-sessions denominator — and the two branches it does not draw were
+ * roughly half of that read (214ms → 114ms warm over a week of production).
  */
-export function aiToolsTotalsQuery(opts: AiToolsFilterOpts = {}): CHUnionQuery<AiToolsTotalsOutput> {
+export function aiToolsTotalsQuery(
+	opts: AiToolsFilterOpts = {},
+	periods: ReadonlyArray<AiToolsPeriod> = AI_TOOLS_TOTALS_PERIODS,
+): CHUnionQuery<AiToolsTotalsOutput> {
 	const branch = (window: AiToolsWindow, period: AiToolsPeriod) =>
 		fromQuery(toolCalls(opts, window), `tool_calls_${period}`).select(($) => ({
 			period: CH.lit(period),
@@ -443,9 +530,10 @@ export function aiToolsTotalsQuery(opts: AiToolsFilterOpts = {}): CHUnionQuery<A
 		firstSeen: CH.lit(""),
 		lastSeen: CH.lit(""),
 	}))
-	return unionAll(branch("current", "current"), branch("previous", "previous"), allSessions).format(
-		"JSON",
+	const branches = AI_TOOLS_TOTALS_PERIODS.filter((period) => periods.includes(period)).map((period) =>
+		period === "window" ? allSessions : branch(period, period),
 	)
+	return unionAll(...branches).format("JSON")
 }
 
 export interface AiToolsBreakdownsOutput {
@@ -490,174 +578,165 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
 /* -------------------------------------------------------------------------------------------------
  * Tool detail — the failures of one tool
  *
- * These three are the only reads on this page that are NOT `ai_trace_index`.
- * The index carries `IsError` and nothing about WHY: an error type, a status
- * message and a call's arguments and result live on the span, in
- * `trace_detail_spans`. So the shape is always the same — the index names the
- * traces (cheap, and it is where the page's selection is expressible), and the
- * span table is read only inside those traces:
+ * Grouped by `ErrorFingerprint` (migration 0032): a hash of what the failure
+ * SAYS — the failed call's result, else its status message — after the
+ * redactions `error_events` fingerprints messages with. `error.type` is not the
+ * key, because a vendor that reports every failure as `tool_error` would fold
+ * dozens of distinct bugs into one row; it is a label on the group instead.
  *
- *   TraceId IN (traces of this tool's failing calls) AND <this span is one>
+ * Every read here is `ai_trace_index`, like the rest of the page. What is only
+ * on the span is the modal's payloads — what a call was made with and what came
+ * back. {@link aiToolErrorPayloadsQuery} reads them for one page of samples
+ * {@link aiToolErrorOccurrencesQuery} already ranked, bounded by a
+ * `(TraceId, SpanId)` tuple `IN` of that page and by its own first and last
+ * timestamps rather than the caller's window — so it opens the partitions those
+ * calls actually landed in and no others.
  *
- * Without that subquery the span read is a whole-window scan of every span the
- * org emitted, which at this table's per-partition seek cost is seconds.
- *
- * The prefilter names SPANS, not just traces: `(TraceId, SpanId)` of the failing
- * calls the selection matched. Model is only expressible there (it is the
- * parent-model attribution, not a span column), so a trace-only prefilter would
- * let a trace that failed the tool under two models contribute both. The tuple
- * is still a primary-key seek — `trace_detail_spans` is ordered by
- * `(OrgId, TraceId, SpanId)` — and it costs no second index scan.
+ * A failure materialized before 0032 carries fingerprint `0` and an empty
+ * result and message. Those are one group of their own, `'0'`, which the page
+ * names for what it is rather than merging into a group it may not belong to —
+ * the same fill-forward edge 0031 left on the sessions list, until raw
+ * retention ages it out.
  */
-
-/** The failing calls of the selection, as `(traceId, spanId)` — the span reads' prefilter. */
-const failingToolSpans = (opts: AiToolsFilterOpts) =>
-	fromQuery(toolCalls({ ...opts, failingOnly: true }), "failing_tool_calls")
-		.select(($) => ({ traceId: $.traceId, spanId: $.spanId }))
-		.groupBy("traceId", "spanId")
-
-/** A span row's `(TraceId, SpanId)`, for that prefilter's tuple `IN`. Raw because
- *  the DSL has no tuple; qualified because both reads join a table that also
- *  has a `TraceId`. */
-const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
-
-const RESPONSE_STATUS_ATTR = "gen_ai.response.status"
-/** `gen_ai.response.status` values that mean the call failed — semconv's
- *  `failed` plus the pre-enum `error` dialect. The same list the sessions
- *  reads use, so a failure counted there is a failure here. */
-const FAILED_RESPONSE_STATUSES = ["failed", "error"]
-
-/** How much of a status message a breakdown row carries. The table clamps it to
- *  one line anyway, and a stack trace in a `GROUP BY` key is not free. */
-export const AI_TOOL_ERROR_MESSAGE_MAX = 400
 
 /** How much of an argument or result payload one occurrence carries. Vendors put
  *  whole files in these; the modal shows a code block, not a file viewer, and
  *  reports the true size beside it. */
 export const AI_TOOL_ERROR_PAYLOAD_MAX = 4_000
 
-/** Error types one breakdown returns, worst first. */
+/** Error groups one breakdown returns, most failed calls first. */
 export const AI_TOOL_ERRORS_LIMIT = 50
 
-/** Occurrences (and their sessions) one modal opens with. */
-export const AI_TOOL_OCCURRENCES_LIMIT = 50
+/** Samples one page of a group's detail holds — "Load 25 more". */
+export const AI_TOOL_OCCURRENCES_LIMIT = 25
 
-type SpanAccessor = {
-	readonly SpanAttributes: CH.Expr<Record<string, string>>
-	readonly StatusCode: CH.Expr<string>
-}
+/** Sessions one group's detail lists, by hits. */
+export const AI_TOOL_ERROR_SESSIONS_LIMIT = 50
 
-/** `coalesce(nullIf(a, ''), …, '')` — the first source key of a field that has
- *  a value, across every vendor dialect the integrations declare. */
-const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
-	CH.coalesce(
-		...aiFieldSourceKeys(field).map((key) => CH.nullIf(CH.mapGet($.SpanAttributes, key), "")),
-		CH.lit(""),
-	)
+/** Raw messages one group's variants list holds, by calls. */
+export const AI_TOOL_ERROR_VARIANTS_LIMIT = 20
 
-/** The span failed, by the sessions pages' rule. */
-const spanFailed = ($: SpanAccessor) =>
-	$.StatusCode.eq("Error").or(
-		spanField($, "errorType")
-			.neq("")
-			.or(CH.inList(CH.mapGet($.SpanAttributes, RESPONSE_STATUS_ATTR), FAILED_RESPONSE_STATUSES)),
-	)
+/** `(model, service)` pairs the where-it-happens breakdown folds. */
+export const AI_TOOL_ERROR_BREAKDOWN_LIMIT = 100
 
 export interface AiToolErrorsOpts extends AiToolsFilterOpts {
-	/** The error type a modal is open on. `''` selects the failures that named
-	 *  none, which is a real group and the one the page labels `unknown`. */
-	readonly errorType?: string
-	/** One session's occurrences — the modal's left pane, as a filter on its right. */
+	/** The group a detail read is for: `ErrorFingerprint` as a decimal string. */
+	readonly fingerprint?: string
+	/** One session's samples — the modal's sessions list, as a filter on its samples. */
 	readonly session?: string
+	/** One raw message's samples. `''` is a real message — a failure that said nothing. */
+	readonly variant?: string
+	/** Samples strictly older than this position, in the order the pages are read. */
+	readonly before?: { readonly timestamp: string; readonly spanId: string }
 	readonly limit?: number
 }
 
-/** `''` is a real error type — a span that failed without naming one. Passing
- *  it has to narrow, so the predicate is on presence of the OPT, not on truth
- *  of the value. */
-const errorTypeFilter = (opts: AiToolErrorsOpts, errorType: CH.Expr<string>) =>
-	opts.errorType === undefined ? undefined : errorType.eq(opts.errorType)
+/** A read narrowed to one group, where the opts name one. */
+const groupFilter = (opts: AiToolErrorsOpts, $: Pick<ToolCallColumns, "fingerprint">) =>
+	opts.fingerprint === undefined ? undefined : $.fingerprint.eq(opts.fingerprint)
 
 /**
- * One row per failed tool call of the selection: what failed, in which session,
- * and when. The level all three reads below aggregate.
- */
-const toolErrorSpans = (opts: AiToolErrorsOpts) =>
-	from(TraceDetailSpans)
-		.leftJoinQuery(traceFacts("current"), "trace", (span, trace) => span.TraceId.eq(trace.TraceId))
-		.select(($) => ({
-			ts: $.Timestamp,
-			traceId: $.TraceId,
-			spanId: $.SpanId,
-			session: sessionKey(CH.ifNull($.trace.rawSessionId, CH.lit("")), $.TraceId),
-			errorType: spanField($, "errorType"),
-			// A status message and nothing else is what most failures carry, so the
-			// message is the identity of the group as often as the type is.
-			message: leftUTF8($.StatusMessage, CH.lit(AI_TOOL_ERROR_MESSAGE_MAX)),
-			vendor: CH.ifNull($.trace.traceVendorId, CH.lit("")),
-			agent: CH.ifNull($.trace.traceAgentName, CH.lit("")),
-			model: CH.ifNull($.trace.traceModel, CH.lit("")),
-			svc: $.ServiceName,
-			durationNs: $.Duration,
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
-			inSubquery(traceSpanKey, failingToolSpans(opts)),
-			spanField($, "toolName").eq(param.string("toolName")),
-			spanFailed($),
-		])
-
-/**
- * The Errors table: every error type this tool failed with, worst first.
+ * One row per failed tool call of the selection — the level every read below
+ * but the table's aggregates. `IsError` is the index's own transcription of the
+ * rule the sessions pages apply to a span (`genAiIsErrorCond`), so a failure
+ * counted there is a failure here.
  *
- * The message is the most RECENT one under the type, not an arbitrary one —
- * a type whose message carries a changing detail (a path, a worker count)
- * should read as the failure that is happening now.
+ * `withParentModel` is `true` for the read that SHOWS a model rather than
+ * filtering by one: without it the model a reader sees would be the trace's
+ * until they set a model filter and the parent-resolved one after, which is the
+ * same failure described two ways. It is a modal read behind a click, so the
+ * join is off the page's critical path.
+ */
+const failingToolCalls = (opts: AiToolErrorsOpts, withParentModel?: boolean) =>
+	fromQuery(toolCalls({ ...opts, failingOnly: true }, "current", withParentModel), "failing_tool_calls")
+
+/**
+ * The Errors table: every group this tool failed with, most failed calls first.
+ *
+ * The message and the type are the group's most RECENT, not an arbitrary
+ * one's — a group's raw texts differ by exactly what the redactions masked (an
+ * array index, a number), and the latest is the one a reader is about to go and
+ * look at. `variants` is how many raw texts the group folded.
+ *
+ * `callsSince` is what "stopped" is measured against: the calls of the selection
+ * newer than the group's latest failure, failed or not. It is why the scan is
+ * every call of the tool rather than its failures alone — each call is numbered
+ * from the newest (`row_number`), and a group's count is the number of its own
+ * newest failure. The toolbar's failing-only switch is dropped for the same
+ * reason: it would leave nothing to count.
+ *
+ * `trend` is the group's failures per `bucketSeconds`, keyed by the same ISO
+ * bucket the chart reads; a bucket with none is absent.
  */
 export interface AiToolErrorsOutput {
+	readonly fingerprint: string
 	readonly errorType: string
 	readonly message: string
 	readonly calls: number
 	readonly sessions: number
+	readonly variants: number
 	readonly firstSeen: string
 	readonly lastSeen: string
+	readonly callsSince: number
+	readonly trend: Readonly<Record<string, number>>
 }
 
 /** Counts are `CHNumber`: a gateway that refuses
  *  `output_format_json_quote_64bit_integers=0` sends them quoted. */
 export const aiToolErrorsRowSchema: CompiledQueryRowSchema<AiToolErrorsOutput> = Schema.Struct({
+	fingerprint: Schema.String,
 	errorType: Schema.String,
 	message: Schema.String,
 	calls: CHNumber,
 	sessions: CHNumber,
+	variants: CHNumber,
 	firstSeen: Schema.String,
 	lastSeen: Schema.String,
+	callsSince: CHNumber,
+	trend: Schema.Record(Schema.String, CHNumber),
 })
 
 export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
-	return fromQuery(toolErrorSpans(opts), "tool_error_spans")
+	// Column names differ from the aliases below (`callErrorType`, `failureMessage`):
+	// an aggregate aliased to its own input's name would read itself.
+	const numbered = fromQuery(toolCalls({ ...opts, failingOnly: undefined }), "tool_calls").select(($) => ({
+		ts: $.ts,
+		bucket: isoBucket($.ts),
+		sessionKey: $.sessionKey,
+		isError: $.isError,
+		callErrorType: $.errorType,
+		failureMessage: $.failureMessage,
+		fingerprint: $.fingerprint,
+		newerCalls: CH.rawExpr("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1", T.uint64),
+	}))
+	return fromQuery(numbered, "numbered_tool_calls")
 		.select(($) => ({
-			errorType: $.errorType,
-			message: CH.argMax($.message, $.ts),
+			fingerprint: $.fingerprint,
+			errorType: CH.argMax($.callErrorType, $.ts),
+			message: CH.argMax($.failureMessage, $.ts),
 			calls: CH.count(),
-			sessions: CH.uniqExact($.session),
+			sessions: CH.uniqExact($.sessionKey),
+			variants: CH.uniqExact($.failureMessage),
 			firstSeen: CH.toString_(CH.min_($.ts)),
 			lastSeen: CH.toString_(CH.max_($.ts)),
+			callsSince: CH.min_($.newerCalls),
+			trend: CH.rawExpr("sumMap(map(bucket, toUInt64(1)))", T.map(T.string, T.uint64)),
 		}))
-		.groupBy("errorType")
-		.orderBy(["calls", "desc"], ["errorType", "asc"])
+		// Above the numbering, never inside it: a failure is numbered among every
+		// call of the tool, and filtering first would number it among failures.
+		.where(($) => [$.isError.eq(1)])
+		.groupBy("fingerprint")
+		.orderBy(["calls", "desc"], ["fingerprint", "asc"])
 		.limit(opts.limit ?? AI_TOOL_ERRORS_LIMIT)
 		.format("JSON")
 }
 
-/** The modal's left pane: which sessions hit this error type, and how often. */
+/** The modal's sessions list: which sessions hit this group, and how often. */
 export interface AiToolErrorSessionsOutput {
 	readonly sessionId: string
 	readonly vendorId: string
 	readonly agentName: string
-	readonly model: string
+	readonly service: string
 	readonly hits: number
 	readonly lastSeen: string
 }
@@ -667,35 +746,95 @@ export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSes
 		sessionId: Schema.String,
 		vendorId: Schema.String,
 		agentName: Schema.String,
-		model: Schema.String,
+		service: Schema.String,
 		hits: CHNumber,
 		lastSeen: Schema.String,
 	})
 
 export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
-	return fromQuery(toolErrorSpans(opts), "tool_error_spans")
+	return failingToolCalls(opts)
 		.select(($) => ({
-			sessionId: $.session,
+			sessionId: $.sessionKey,
 			vendorId: CH.anyIf($.vendor, $.vendor.neq("")),
 			agentName: CH.anyIf($.agent, $.agent.neq("")),
-			model: CH.anyIf($.model, $.model.neq("")),
+			service: CH.anyIf($.service, $.service.neq("")),
 			hits: CH.count(),
 			lastSeen: CH.toString_(CH.max_($.ts)),
 		}))
-		.where(($) => [errorTypeFilter(opts, $.errorType)])
+		.where(($) => [groupFilter(opts, $)])
 		.groupBy("sessionId")
 		.orderBy(["hits", "desc"], ["sessionId", "asc"])
-		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
+		.limit(opts.limit ?? AI_TOOL_ERROR_SESSIONS_LIMIT)
+		.format("JSON")
+}
+
+/** The raw messages one group folded — `[0]`, `[1]` and `[2]` of one missing key. */
+export interface AiToolErrorVariantsOutput {
+	readonly message: string
+	readonly calls: number
+	readonly lastSeen: string
+}
+
+export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> =
+	Schema.Struct({
+		message: Schema.String,
+		calls: CHNumber,
+		lastSeen: Schema.String,
+	})
+
+export function aiToolErrorVariantsQuery(opts: AiToolErrorsOpts = {}) {
+	return failingToolCalls(opts)
+		.select(($) => ({
+			message: $.failureMessage,
+			calls: CH.count(),
+			lastSeen: CH.toString_(CH.max_($.ts)),
+		}))
+		.where(($) => [groupFilter(opts, $)])
+		.groupBy("message")
+		.orderBy(["calls", "desc"], ["message", "asc"])
+		.limit(AI_TOOL_ERROR_VARIANTS_LIMIT)
 		.format("JSON")
 }
 
 /**
- * The modal's right pane: the individual failed calls, newest first, each with
- * what it was called with and what came back.
+ * Where a group happens: its failed calls per model and service, as pairs. The
+ * page folds them into one list per dimension — counts add, so the fold is
+ * exact — which is one scan where two groupings would be two.
+ */
+export interface AiToolErrorBreakdownOutput {
+	readonly model: string
+	readonly service: string
+	readonly calls: number
+}
+
+export const aiToolErrorBreakdownRowSchema: CompiledQueryRowSchema<AiToolErrorBreakdownOutput> =
+	Schema.Struct({
+		model: Schema.String,
+		service: Schema.String,
+		calls: CHNumber,
+	})
+
+export function aiToolErrorBreakdownQuery(opts: AiToolErrorsOpts = {}) {
+	return failingToolCalls(opts, true)
+		.select(($) => ({
+			model: $.modelName,
+			service: $.service,
+			calls: CH.count(),
+		}))
+		.where(($) => [groupFilter(opts, $)])
+		.groupBy("model", "service")
+		.orderBy(["calls", "desc"], ["model", "asc"], ["service", "asc"])
+		.limit(AI_TOOL_ERROR_BREAKDOWN_LIMIT)
+		.format("JSON")
+}
+
+/**
+ * The modal's samples, step one: one page of a group's failed calls, newest
+ * first.
  *
- * Its own read of `trace_detail_spans` rather than a projection of
- * {@link toolErrorSpans}, because the two payload columns are the expensive
- * half of the row and no aggregate above wants them.
+ * Everything the row states about the failure and its session is here; what it
+ * was called with and what came back is {@link aiToolErrorPayloadsQuery}, which
+ * this page's rows bound. A page of zero samples therefore runs no span read.
  */
 export interface AiToolErrorOccurrencesOutput {
 	readonly timestamp: string
@@ -705,15 +844,10 @@ export interface AiToolErrorOccurrencesOutput {
 	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
+	readonly service: string
 	readonly errorType: string
 	readonly message: string
 	readonly durationNs: number
-	readonly statusCode: string
-	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
-	readonly arguments: string
-	readonly argumentsBytes: number
-	readonly result: string
-	readonly resultBytes: number
 }
 
 export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolErrorOccurrencesOutput> =
@@ -725,9 +859,68 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 		vendorId: Schema.String,
 		agentName: Schema.String,
 		model: Schema.String,
+		service: Schema.String,
 		errorType: Schema.String,
 		message: Schema.String,
 		durationNs: CHNumber,
+	})
+
+export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
+	const before = opts.before
+	return failingToolCalls(opts, true)
+		.select(($) => ({
+			timestamp: CH.toString_($.ts),
+			traceId: $.traceId,
+			spanId: $.spanId,
+			sessionId: $.sessionKey,
+			vendorId: $.vendor,
+			agentName: $.agent,
+			model: $.modelName,
+			service: $.service,
+			errorType: $.errorType,
+			message: $.failureMessage,
+			durationNs: $.durationNs,
+		}))
+		.where(($) => [
+			groupFilter(opts, $),
+			CH.when(opts.session, (session) => $.sessionKey.eq(session)),
+			opts.variant === undefined ? undefined : $.failureMessage.eq(opts.variant),
+			// The previous page's last row. The timestamp is the warehouse literal at
+			// nanosecond precision, which with the span id makes the position unique.
+			before === undefined
+				? undefined
+				: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
+		])
+		// Newest first: a modal opened from a failing tool is asking what is
+		// happening now, and `spanId` breaks the ties agent spans routinely have.
+		.orderBy(["timestamp", "desc"], ["spanId", "desc"])
+		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
+		.format("JSON")
+}
+
+/** One call {@link aiToolErrorPayloadsQuery} reads the payloads of, as
+ *  {@link aiToolErrorOccurrencesQuery} returned it. */
+export interface AiToolErrorCallKey {
+	readonly timestamp: string
+	readonly traceId: string
+	readonly spanId: string
+}
+
+export interface AiToolErrorPayloadsOutput {
+	readonly traceId: string
+	readonly spanId: string
+	readonly statusCode: string
+	/** Truncated to {@link AI_TOOL_ERROR_PAYLOAD_MAX}; `*Bytes` is the true size. */
+	readonly arguments: string
+	readonly argumentsBytes: number
+	readonly result: string
+	readonly resultBytes: number
+}
+
+export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsOutput> =
+	Schema.Struct({
+		traceId: Schema.String,
+		spanId: Schema.String,
 		statusCode: Schema.String,
 		arguments: Schema.String,
 		argumentsBytes: CHNumber,
@@ -735,23 +928,43 @@ export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolError
 		resultBytes: CHNumber,
 	})
 
-export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
+/** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
+ *  because the DSL has no tuple; qualified because the occurrences' own keys are
+ *  literals of the same shape. */
+const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
+
+type SpanAccessor = {
+	readonly SpanAttributes: CH.Expr<Record<string, string>>
+}
+
+/** `coalesce(nullIf(a, ''), …, '')` — the first source key of a field that has
+ *  a value, across every vendor dialect the integrations declare. */
+const spanField = ($: SpanAccessor, field: AiGenAiField): CH.Expr<string> =>
+	CH.coalesce(
+		...aiFieldSourceKeys(field).map((key) => CH.nullIf(CH.mapGet($.SpanAttributes, key), "")),
+		CH.lit(""),
+	)
+
+/**
+ * The modal's right pane, step two: what each of those calls was called with and
+ * what came back — the only facts on this page that live on the raw span.
+ *
+ * `calls` are the occurrences step one ranked, so the read is bounded twice and
+ * by nothing else: `(TraceId, SpanId) IN (<their literal tuples>)`, a
+ * primary-key seek on `trace_detail_spans`' `(OrgId, TraceId, SpanId)` order,
+ * and `sliceStart`/`sliceEnd` = their own first and last timestamps. The bounds
+ * are exact and unpadded: the index copies `Timestamp` from the span verbatim,
+ * so the call is inside its own bounds by construction, and a pad would only buy
+ * partitions.
+ */
+export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
 	return from(TraceDetailSpans)
-		.leftJoinQuery(traceFacts("current"), "trace", (span, trace) => span.TraceId.eq(trace.TraceId))
 		.select(($) => {
 			const args = spanField($, "toolCallArguments")
 			const result = spanField($, "toolCallResult")
 			return {
-				timestamp: CH.toString_($.Timestamp),
 				traceId: $.TraceId,
 				spanId: $.SpanId,
-				sessionId: sessionKey(CH.ifNull($.trace.rawSessionId, CH.lit("")), $.TraceId),
-				vendorId: CH.ifNull($.trace.traceVendorId, CH.lit("")),
-				agentName: CH.ifNull($.trace.traceAgentName, CH.lit("")),
-				model: CH.ifNull($.trace.traceModel, CH.lit("")),
-				errorType: spanField($, "errorType"),
-				message: leftUTF8($.StatusMessage, CH.lit(AI_TOOL_ERROR_MESSAGE_MAX)),
-				durationNs: $.Duration,
 				statusCode: $.StatusCode,
 				// Characters, not bytes: `left` cuts mid-codepoint on any payload
 				// holding one. `length` stays byte-based — it reports a size.
@@ -763,36 +976,42 @@ export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 		})
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
-			inSubquery(traceSpanKey, failingToolSpans(opts)),
-			spanField($, "toolName").eq(param.string("toolName")),
-			spanFailed($),
-			errorTypeFilter(opts, spanField($, "errorType")),
-			// The left pane's selection: one session's occurrences of this error.
-			CH.when(opts.session, (session) =>
-				sessionKey(CH.ifNull($.trace.rawSessionId, CH.lit("")), $.TraceId).eq(session),
+			$.Timestamp.gte(param.dateTimeString("sliceStart")),
+			$.Timestamp.lte(param.dateTimeString("sliceEnd")),
+			CH.inExprList(
+				traceSpanKey,
+				calls.map((call) =>
+					CH.compileFnCall<string>("tuple", CH.lit(call.traceId), CH.lit(call.spanId)),
+				),
 			),
 		])
-		// Newest first: a modal opened from a failing tool is asking what is
-		// happening now, and `spanId` breaks the ties agent spans routinely have.
-		.orderBy(["timestamp", "desc"], ["spanId", "asc"])
-		.limit(opts.limit ?? AI_TOOL_OCCURRENCES_LIMIT)
 		.format("JSON")
+}
+
+/** The bounds one {@link aiToolErrorPayloadsQuery} is read over: the earliest
+ *  and latest of the occurrences it is for, exactly as the index reported them.
+ *  No occurrences have no extent, which is why both take a non-empty list. */
+export interface AiToolErrorPayloadSlice {
+	readonly sliceStart: string
+	readonly sliceEnd: string
+}
+
+export function aiToolErrorPayloadSlice(
+	calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>,
+): AiToolErrorPayloadSlice {
+	const timestamps = calls.map((call) => call.timestamp)
+	return {
+		sliceStart: timestamps.reduce((min, ts) => (ts < min ? ts : min)),
+		sliceEnd: timestamps.reduce((max, ts) => (ts > max ? ts : max)),
+	}
 }
 
 /* -------------------------------------------------------------------------------------------------
  * Tool detail — the header's description
  * -----------------------------------------------------------------------------------------------*/
 
-/** The tool's most recent calls the description read looks at. A tool that
- *  stamps a description stamps it on every call, so the latest few answer, and
- *  the bound keeps the span read to that many primary-key seeks however busy the
- *  tool is. */
-export const AI_TOOL_DESCRIPTION_CALLS = 100
-
 export interface AiToolDescriptionOutput {
-	/** `''` where none of those calls stamped one. */
+	/** `''` where no call of the window stamped one. */
 	readonly description: string
 }
 
@@ -801,38 +1020,33 @@ export const aiToolDescriptionRowSchema: CompiledQueryRowSchema<AiToolDescriptio
 })
 
 /**
- * The latest non-empty `gen_ai.tool.description` (or a dialect's equivalent) on
- * one tool's recent calls in the window. The tool is a param, like the error
- * reads'; the toolbar does not narrow it, because a description is the tool's
- * and not the selection's.
+ * The latest non-empty description one tool stamped in the window.
+ *
+ * This read was the page's render gate — it ranked the tool's hundred most
+ * recent calls on the index and then seeked `trace_detail_spans` for each, 7.7s
+ * at the median and 15.8s at the profile's ceiling over a week of production.
+ * `ToolDescription` is the same coalesce, evaluated at insert (migration 0032),
+ * so the ranking and the seek are both gone and the answer is one `argMax` over
+ * the tool's index rows.
+ *
+ * The tool is a param rather than an opts field, so one compiled statement
+ * serves every tool detail page; the toolbar does not narrow it either, because
+ * a description is the tool's and not the selection's.
  */
 export function aiToolDescriptionQuery() {
-	const recentCalls = from(AiTraceIndex)
-		.select(($) => ({ traceId: $.TraceId, spanId: $.SpanId, ts: $.Timestamp }))
+	return from(AiTraceIndex)
+		.select(($) => ({ description: CH.argMax($.ToolDescription, $.Timestamp) }))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.IsToolCall.eq(1),
 			$.ToolName.eq(param.string("toolName")),
-		])
-		.orderBy(["ts", "desc"])
-		.limit(AI_TOOL_DESCRIPTION_CALLS)
-
-	return from(TraceDetailSpans)
-		.select(($) => ({ description: CH.argMax(spanField($, "toolDescription"), $.Timestamp) }))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
-			inSubquery(
-				traceSpanKey,
-				fromQuery(recentCalls, "recent_tool_calls").select(($) => ({
-					traceId: $.traceId,
-					spanId: $.spanId,
-				})),
-			),
-			spanField($, "toolDescription").neq(""),
+			// Rows materialized before 0032 carry '', and so does a call whose
+			// framework stamps no description. Excluding them here is what makes
+			// the `argMax` "the latest call that answered" rather than "the latest
+			// call", which on a tool instrumented last week would answer ''.
+			$.ToolDescription.neq(""),
 		])
 		.format("JSON")
 }

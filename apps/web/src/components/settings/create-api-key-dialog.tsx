@@ -8,6 +8,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Label } from "@maple/ui/components/ui/label"
 import {
 	Dialog,
@@ -76,6 +77,9 @@ type AccessMode = "full" | "restricted"
 const defaultScopeLevels = (): Record<string, ScopeLevel> =>
 	Object.fromEntries(SCOPE_FAMILIES.map((f) => [f.id, "none"]))
 
+const allScopeLevels = (level: ScopeLevel): Record<string, ScopeLevel> =>
+	Object.fromEntries(SCOPE_FAMILIES.map((f) => [f.id, level]))
+
 const scopesFromLevels = (levels: Record<string, ScopeLevel>): Array<V2Scope> =>
 	SCOPE_FAMILIES.flatMap((f) => {
 		const level = levels[f.id]
@@ -90,6 +94,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 	const [expiration, setExpiration] = useState<ExpirationValue>("never")
 	const [accessMode, setAccessMode] = useState<AccessMode>("full")
 	const [scopeLevels, setScopeLevels] = useState<Record<string, ScopeLevel>>(defaultScopeLevels)
+	const [scopeFilter, setScopeFilter] = useState("")
 	const [isCreating, setIsCreating] = useState(false)
 	const [createdKey, setCreatedKey] = useState<V2ApiKeyWithSecret | null>(null)
 
@@ -98,9 +103,24 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 		mode: "promiseExit",
 	})
 
+	const selectedFamilyCount = SCOPE_FAMILIES.filter((f) => (scopeLevels[f.id] ?? "none") !== "none").length
+	const familyNeedle = scopeFilter.trim().toLowerCase()
+	// Filtering hides rows, never their levels: a family scoped then filtered out still ships.
+	const visibleFamilies = SCOPE_FAMILIES.filter(
+		(f) => familyNeedle.length === 0 || f.label.toLowerCase().includes(familyNeedle),
+	)
+
 	const restrictedScopes = !isMcp && accessMode === "restricted" ? scopesFromLevels(scopeLevels) : undefined
 	const missingScopes = !isMcp && accessMode === "restricted" && restrictedScopes?.length === 0
 	const canCreate = newName.trim().length > 0 && !missingScopes && !isCreating
+
+	// A disabled primary button with no stated reason is a dead end — say which field is missing.
+	const blockedReason =
+		newName.trim().length === 0
+			? "Name the key so you can tell it apart later."
+			: missingScopes
+				? "Give at least one resource family read or write access."
+				: null
 
 	async function handleCreate() {
 		if (!canCreate) return
@@ -135,6 +155,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 		setExpiration("never")
 		setAccessMode("full")
 		setScopeLevels(defaultScopeLevels())
+		setScopeFilter("")
 		setCreatedKey(null)
 	}
 
@@ -247,7 +268,51 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 									</ToggleGroup>
 									{accessMode === "restricted" ? (
 										<div className="space-y-2 pt-1">
-											{SCOPE_FAMILIES.map((family) => {
+											{/* Seventeen families times three levels is fifty-one clicks to
+											    express "read-only", which is the common case. */}
+											<div className="flex flex-wrap items-center gap-2">
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													onClick={() => setScopeLevels(allScopeLevels("read"))}
+												>
+													All read
+												</Button>
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													onClick={() => setScopeLevels(allScopeLevels("write"))}
+												>
+													All write
+												</Button>
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													disabled={selectedFamilyCount === 0}
+													onClick={() => setScopeLevels(defaultScopeLevels())}
+												>
+													Clear
+												</Button>
+												<span className="text-muted-foreground text-xs">
+													{selectedFamilyCount} of {SCOPE_FAMILIES.length} selected
+												</span>
+											</div>
+											{SCOPE_FAMILIES.length > 8 && (
+												<SearchInput
+													value={scopeFilter}
+													onValueChange={setScopeFilter}
+													placeholder="Filter resource families"
+												/>
+											)}
+											{visibleFamilies.length === 0 && (
+												<p className="text-muted-foreground py-2 text-xs">
+													No resource family matches "{scopeFilter.trim()}".
+												</p>
+											)}
+											{visibleFamilies.map((family) => {
 												const familyLabelId = `${accessLabelId}-${family.id}`
 												return (
 													<div
@@ -306,6 +371,9 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 							)}
 						</DialogPanel>
 						<DialogFooter>
+							{blockedReason !== null && (
+								<span className="text-muted-foreground mr-auto text-xs">{blockedReason}</span>
+							)}
 							<Button variant="outline" onClick={() => handleClose(false)}>
 								Cancel
 							</Button>

@@ -16,13 +16,19 @@
 //     every tool call becomes its own `trace:` session and every session count
 //     on the page is wrong by an order of magnitude, behind a healthy 200.
 //
+// The Errors table adds a third: its groups are `ErrorFingerprint`, a hash the
+// view computes at insert after redacting the failure's text. Whether two
+// failures that differ only by an array index really land in one group — and
+// whether a group's calls-since survives the numbering its read does above the
+// failures — only real rows through the real view can say.
+//
 // So this suite seeds spans into `traces`, lets the real migration chain's
 // `ai_trace_index_mv` materialize them, and runs the real compiled builders
 // over the result — one trace per attribution path, and one foreign org to
 // prove the scope.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Array as Arr, Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "@maple/domain/gen-ai"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -47,7 +53,19 @@ const BASE_MS = Math.floor((Date.now() - 2 * HOUR_MS) / 1000) * 1000
 /** The second bucket, half an hour on — what proves the series buckets at all. */
 const LATER_MS = BASE_MS + 1_800_000
 
+/** One tool's two failures, a day apart by the calendar and both well before the
+ *  window the rest of this suite reads. `trace_detail_spans` and
+ *  `ai_trace_index` partition by `toDate(Timestamp)`, so these sit in different
+ *  partitions — which is the shape the failure reads had to stop paying for. */
+const FLAKY_RECENT_MS = BASE_MS - 26 * HOUR_MS
+const FLAKY_OLDER_MS = BASE_MS - 50 * HOUR_MS
+
+/** An hour of `submit_candidate` failures of their own, clear of every other
+ *  window here, so the groups it forms move no count the other tests assert. */
+const GROUPS_MS = BASE_MS - 5 * HOUR_MS
+
 const SESSION_ID = `${ORG_ID}:inv-tools-1`
+const GROUPS_SESSION_ID = `${ORG_ID}:inv-groups-1`
 /** Parent-model attribution: the tool hangs off the chat span. */
 const TRACE_PARENT = "aitoolse2e0000000000000000000001"
 /** Trace-model fallback: the tool hangs off the turn span, which has no model. */
@@ -55,9 +73,27 @@ const TRACE_FALLBACK = "aitoolse2e0000000000000000000002"
 /** Neither: a trace with no model-bearing span at all. */
 const TRACE_UNATTRIBUTED = "aitoolse2e0000000000000000000003"
 const TRACE_FOREIGN = "aitoolse2e0000000000000000000004"
+/** One tool that fails on two calendar days, for the failure reads. */
+const TRACE_FLAKY_TODAY = "aitoolse2e0000000000000000000005"
+const TRACE_FLAKY_YESTERDAY = "aitoolse2e0000000000000000000006"
+/** The error groups: four failures and a success after them. */
+const TRACE_GROUPS = "aitoolse2e0000000000000000000007"
+/** A failure indexed before migration 0032, inserted into the index directly. */
+const TRACE_PRE_GROUPING = "aitoolse2e0000000000000000000008"
 
 const GPT = "gpt-5"
 const CLAUDE = "claude-sonnet-5"
+
+/** A schema decoder's failure as the maple vendor records it: the message in a
+ *  `{"result": …}` envelope on the tool call's result. */
+const missingKey = (path: string) => JSON.stringify({ result: `Invalid tool input: Missing key\n  at ${path}` })
+/** One bug at two array indices — one group. */
+const TRACE_IDS_AT_0 = missingKey('["evidence"][0]["traceIds"]')
+const TRACE_IDS_AT_1 = missingKey('["evidence"][1]["traceIds"]')
+/** A different path — a different group. */
+const LOG_PATTERNS_AT_0 = missingKey('["evidence"][0]["logPatterns"]')
+/** A failure that says why in its status message alone. */
+const REFUSED = "sandbox refused the command"
 
 interface SeedSpan {
 	readonly traceId: string
@@ -67,12 +103,37 @@ interface SeedSpan {
 	readonly ms: number
 	readonly durationNs: number
 	readonly status: string
+	/** The index carries it truncated since migration 0032, so the failure reads
+	 *  can label a group without touching the span. */
+	readonly statusMessage?: string
 	readonly attrs: Readonly<Record<string, string>>
 }
 
 const agentSpan = (attrs: Readonly<Record<string, string>>) => ({
 	[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 	...attrs,
+})
+
+const submitCandidate = (
+	spanId: string,
+	offsetMs: number,
+	status: string,
+	attrs: Readonly<Record<string, string>>,
+	statusMessage?: string,
+): SeedSpan => ({
+	traceId: TRACE_GROUPS,
+	spanId,
+	name: "execute_tool submit_candidate",
+	ms: GROUPS_MS + offsetMs,
+	durationNs: 1_000_000,
+	status,
+	...(statusMessage !== undefined && { statusMessage }),
+	attrs: agentSpan({
+		"gen_ai.operation.name": "execute_tool",
+		"gen_ai.tool.name": "submit_candidate",
+		"gen_ai.tool.call.arguments": "{}",
+		...attrs,
+	}),
 })
 
 const SEED_SPANS: ReadonlyArray<SeedSpan> = [
@@ -156,6 +217,61 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.tool.description": "Search traces by attribute.",
 		}),
 	},
+	// TRACE_FLAKY_* — one tool, two failures, one per calendar day, both outside
+	// the window every other test here reads. The older one names no error type
+	// and carries a result, which is the text its group is keyed and titled by;
+	// the newer one carries a status message alone.
+	{
+		traceId: TRACE_FLAKY_TODAY,
+		spanId: "tools-flaky-1",
+		name: "execute_tool flaky_tool",
+		ms: FLAKY_RECENT_MS,
+		durationNs: 2_000_000,
+		status: "Error",
+		statusMessage: "upstream timed out after 30s",
+		attrs: agentSpan({
+			[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "flaky_tool",
+			"gen_ai.tool.description": "Calls the flaky upstream.",
+			"error.type": "TimeoutError",
+			"gen_ai.tool.call.arguments": '{"retries":3}',
+			"gen_ai.tool.call.result": "",
+		}),
+	},
+	{
+		traceId: TRACE_FLAKY_YESTERDAY,
+		spanId: "tools-flaky-2",
+		name: "execute_tool flaky_tool",
+		ms: FLAKY_OLDER_MS,
+		durationNs: 8_000_000,
+		status: "Error",
+		statusMessage: "upstream returned 503",
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "flaky_tool",
+			"gen_ai.tool.call.arguments": '{"retries":1}',
+			"gen_ai.tool.call.result": '{"error":"503"}',
+		}),
+	},
+	// TRACE_GROUPS — `[0]` and `[1]` of one missing key, a missing key at another
+	// path, a failure with a status message and no result, and one success after
+	// all four: what every group's calls-since is counted against.
+	submitCandidate("tools-groups-1", 0, "Error", {
+		[MAPLE_AI_SESSION_ID_ATTR]: GROUPS_SESSION_ID,
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": TRACE_IDS_AT_0,
+	}),
+	submitCandidate("tools-groups-2", 60_000, "Error", {
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": TRACE_IDS_AT_1,
+	}),
+	submitCandidate("tools-groups-3", 120_000, "Error", {
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": LOG_PATTERNS_AT_0,
+	}),
+	submitCandidate("tools-groups-4", 180_000, "Error", { "error.type": "ToolCallFailed" }, REFUSED),
+	submitCandidate("tools-groups-5", 240_000, "Ok", { "gen_ai.tool.call.result": '{"accepted":true}' }),
 	// TRACE_UNATTRIBUTED — a tool call with no model anywhere in its trace, at a
 	// zero duration (the structured-output pseudo-tool shape). It is a call: it
 	// keys under '' and it counts.
@@ -185,7 +301,7 @@ const FOREIGN_SPAN: SeedSpan = {
 	}),
 }
 
-const quote = (value: string): string => `'${value.replaceAll("'", "\\'")}'`
+const quote = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
 const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 23)
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
@@ -199,14 +315,22 @@ const seed = async (): Promise<void> => {
 	]
 		.map(
 			([orgId, span]) =>
-				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name)}, 'Internal', 'agent-service', ${span.durationNs}, ${quote(span.status)}, 1, ${chMap(span.attrs)}, ${chMap({ "deployment.environment.name": "production" })})`,
+				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name)}, 'Internal', 'agent-service', ${span.durationNs}, ${quote(span.status)}, ${quote(span.statusMessage ?? "")}, 1, ${chMap(span.attrs)}, ${chMap({ "deployment.environment.name": "production" })})`,
 		)
 		.join("\n,")
 
 	await clickhouseExec(
 		`INSERT INTO traces
-		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SampleRate, SpanAttributes, ResourceAttributes)
+		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
 		 VALUES\n${rows}`,
+		database,
+	)
+	// What the view wrote for a failed tool call before migration 0032: the
+	// failure and nothing about it — no text, and so no fingerprint.
+	await clickhouseExec(
+		`INSERT INTO ai_trace_index
+		 (OrgId, Timestamp, TraceId, SpanId, VendorId, ServiceName, DeploymentEnv, ToolName, Duration, IsError, IsToolCall)
+		 VALUES (${quote(ORG_ID)}, ${quote(chDateTime(GROUPS_MS + 30_000))}, ${quote(TRACE_PRE_GROUPING)}, 'tools-pre-grouping', 'eve', 'agent-service', 'production', 'submit_candidate', 4000000, 1, 1)`,
 		database,
 	)
 }
@@ -226,12 +350,43 @@ const window = {
 	endTime: chDateTime(BASE_MS + HOUR_MS),
 }
 
+/** Wide enough to hold both of `flaky_tool`'s failures, which is two calendar
+ *  days and therefore two partitions of every table involved. */
+const flakyWindow = {
+	orgId: ORG_ID,
+	startTime: chDateTime(FLAKY_OLDER_MS - HOUR_MS),
+	endTime: chDateTime(FLAKY_RECENT_MS + HOUR_MS),
+}
+
+/** The hour `submit_candidate` failed in, and nothing else. */
+const groupsWindow = {
+	orgId: ORG_ID,
+	startTime: chDateTime(GROUPS_MS - HOUR_MS),
+	endTime: chDateTime(GROUPS_MS + HOUR_MS),
+}
+
 /** The comparison window the totals route computes: equal length, ending where
  *  the caller's begins. Nothing was seeded into it. */
 const compareWindow = {
 	...window,
 	prevStartTime: chDateTime(BASE_MS - 3 * HOUR_MS),
 	prevEndTime: chDateTime(BASE_MS - HOUR_MS),
+}
+
+/** A tool's error groups, as the Errors table reads them. */
+const readErrorGroups = async (
+	opts: Integrations.AiToolErrorsOpts,
+	params: { readonly orgId: string; readonly startTime: string; readonly endTime: string },
+	bucketSeconds = 3_600,
+) => {
+	const compiled = compileUnsafe(
+		Integrations.aiToolErrorsQuery(opts),
+		{ ...params, bucketSeconds },
+		{ rowSchema: Integrations.aiToolErrorsRowSchema },
+	)
+	// The table reads the index alone, however many partitions its window opens.
+	assert.isFalse(compiled.sql.includes("trace_detail_spans"))
+	return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 }
 
 describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
@@ -383,6 +538,258 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			[
 				{ key: "run_sql", calls: 1 },
 				{ key: "search_traces", calls: 1 },
+			],
+		)
+	})
+
+	it("groups failures that differ only by an array index, and splits the ones that differ by path", async () => {
+		const rows = await readErrorGroups({ tool: "submit_candidate" }, groupsWindow)
+		const group = (predicate: (row: (typeof rows)[number]) => boolean) => {
+			const row = rows.find(predicate)
+			return row === undefined
+				? undefined
+				: {
+						errorType: row.errorType,
+						message: row.message,
+						calls: row.calls,
+						sessions: row.sessions,
+						variants: row.variants,
+						callsSince: row.callsSince,
+						trendCalls: Object.values(row.trend).reduce((sum, calls) => sum + calls, 0),
+					}
+		}
+
+		// Four groups, each keyed by a decimal UInt64 the JSON wire cannot corrupt.
+		assert.strictEqual(rows.length, 4)
+		assert.strictEqual(new Set(rows.map((row) => row.fingerprint)).size, 4)
+		for (const row of rows) assert.match(row.fingerprint, /^\d+$/)
+
+		// `[0]` and `[1]` of one missing key: one group, titled by its latest text,
+		// and numbered behind the three calls that came after it — the other
+		// groups' two failures and the success.
+		assert.deepStrictEqual(
+			group((row) => row.message === TRACE_IDS_AT_1),
+			{
+				errorType: "tool_error",
+				message: TRACE_IDS_AT_1,
+				calls: 2,
+				sessions: 1,
+				variants: 2,
+				callsSince: 3,
+				trendCalls: 2,
+			},
+		)
+		assert.isUndefined(rows.find((row) => row.message === TRACE_IDS_AT_0))
+		// The same missing key at another path is another bug.
+		assert.deepInclude(group((row) => row.message === LOG_PATTERNS_AT_0), { calls: 1, callsSince: 2 })
+		// No result: the status message is the text, and `error.type` its label.
+		assert.deepInclude(group((row) => row.message === REFUSED), {
+			errorType: "ToolCallFailed",
+			calls: 1,
+			callsSince: 1,
+		})
+		// Indexed before 0032: its own group, keyed `0`, saying nothing — never
+		// folded into a group it may not belong to.
+		assert.deepStrictEqual(
+			group((row) => row.fingerprint === "0"),
+			{ errorType: "", message: "", calls: 1, sessions: 1, variants: 1, callsSince: 4, trendCalls: 1 },
+		)
+
+		// The toolbar's failing-only does not change what "since" counts: the
+		// numbering is over every call of the selection.
+		const failingOnly = await readErrorGroups({ tool: "submit_candidate", failingOnly: true }, groupsWindow)
+		assert.strictEqual(failingOnly.find((row) => row.message === TRACE_IDS_AT_1)?.callsSince, 3)
+	})
+
+	it("reads one group's sessions, variants and breakdown, and its samples a page at a time", async () => {
+		const groups = await readErrorGroups({ tool: "submit_candidate" }, groupsWindow)
+		const fingerprint = groups.find((row) => row.message === TRACE_IDS_AT_1)!.fingerprint
+		const selection = { tool: "submit_candidate", fingerprint }
+
+		const sessions = compileUnsafe(Integrations.aiToolErrorSessionsQuery(selection), groupsWindow, {
+			rowSchema: Integrations.aiToolErrorSessionsRowSchema,
+		})
+		assert.deepStrictEqual(
+			Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))).map((row) => ({
+				sessionId: row.sessionId,
+				service: row.service,
+				hits: row.hits,
+			})),
+			[{ sessionId: GROUPS_SESSION_ID, service: "agent-service", hits: 2 }],
+		)
+
+		const variants = compileUnsafe(Integrations.aiToolErrorVariantsQuery(selection), groupsWindow, {
+			rowSchema: Integrations.aiToolErrorVariantsRowSchema,
+		})
+		assert.deepStrictEqual(
+			Effect.runSync(variants.decodeRows(await runJson(variants.sql))).map((row) => [row.message, row.calls]),
+			[
+				[TRACE_IDS_AT_0, 1],
+				[TRACE_IDS_AT_1, 1],
+			],
+		)
+
+		// No model anywhere in the trace: the pair keys under `''`, and still counts.
+		const breakdown = compileUnsafe(Integrations.aiToolErrorBreakdownQuery(selection), groupsWindow, {
+			rowSchema: Integrations.aiToolErrorBreakdownRowSchema,
+		})
+		assert.deepStrictEqual(Effect.runSync(breakdown.decodeRows(await runJson(breakdown.sql))), [
+			{ model: "", service: "agent-service", calls: 2 },
+		])
+
+		const page = async (opts: Partial<Integrations.AiToolErrorsOpts>) => {
+			const compiled = compileUnsafe(
+				Integrations.aiToolErrorOccurrencesQuery({ ...selection, ...opts }),
+				groupsWindow,
+				{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+			)
+			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		}
+		// Newest first, one row a page, each page strictly past the last one's row.
+		const first = await page({ limit: 1 })
+		assert.deepStrictEqual(first.map((row) => row.spanId), ["tools-groups-2"])
+		const second = await page({ limit: 1, before: { timestamp: first[0]!.timestamp, spanId: first[0]!.spanId } })
+		assert.deepStrictEqual(second.map((row) => row.spanId), ["tools-groups-1"])
+		assert.deepStrictEqual(
+			await page({ limit: 1, before: { timestamp: second[0]!.timestamp, spanId: second[0]!.spanId } }),
+			[],
+		)
+		// A variant narrows the samples to the calls that said exactly that.
+		assert.deepStrictEqual(
+			(await page({ variant: TRACE_IDS_AT_0 })).map((row) => row.spanId),
+			["tools-groups-1"],
+		)
+		// The pre-0032 group opens like any other.
+		const ungrouped = compileUnsafe(
+			Integrations.aiToolErrorOccurrencesQuery({ tool: "submit_candidate", fingerprint: "0" }),
+			groupsWindow,
+			{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+		)
+		assert.deepStrictEqual(
+			Effect.runSync(ungrouped.decodeRows(await runJson(ungrouped.sql))).map((row) => row.spanId),
+			["tools-pre-grouping"],
+		)
+	})
+
+	it("groups a tool's failures across two partitions, off the index", async () => {
+		const rows = await readErrorGroups({ tool: "flaky_tool" }, flakyWindow, 86_400)
+
+		// The older call's result is its text, whatever its status said; the newer
+		// one carried a status message alone. Two texts, two groups.
+		assert.deepStrictEqual(
+			rows
+				.map((row) => ({ errorType: row.errorType, calls: row.calls, message: row.message }))
+				.sort((a, b) => a.message.localeCompare(b.message)),
+			[
+				{ errorType: "", calls: 1, message: '{"error":"503"}' },
+				{ errorType: "TimeoutError", calls: 1, message: "upstream timed out after 30s" },
+			],
+		)
+		// A calendar day apart: two different day buckets.
+		assert.strictEqual(new Set(rows.flatMap((row) => Object.keys(row.trend))).size, 2)
+	})
+
+	it("lists the sessions and the samples of one group, then their payloads", async () => {
+		const groups = await readErrorGroups({ tool: "flaky_tool" }, flakyWindow, 86_400)
+		const fingerprint = groups.find((row) => row.errorType === "TimeoutError")!.fingerprint
+		const selection = { tool: "flaky_tool", fingerprint }
+
+		const sessions = compileUnsafe(
+			Integrations.aiToolErrorSessionsQuery(selection),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorSessionsRowSchema },
+		)
+		assert.deepStrictEqual(
+			Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))).map((row) => ({
+				sessionId: row.sessionId,
+				vendorId: row.vendorId,
+				hits: row.hits,
+			})),
+			[{ sessionId: SESSION_ID, vendorId: "eve", hits: 1 }],
+		)
+
+		const occurrences = compileUnsafe(
+			Integrations.aiToolErrorOccurrencesQuery(selection),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+		)
+		const calls = Effect.runSync(occurrences.decodeRows(await runJson(occurrences.sql)))
+		assert.deepStrictEqual(
+			calls.map((row) => ({ spanId: row.spanId, errorType: row.errorType, message: row.message })),
+			[
+				{
+					spanId: "tools-flaky-1",
+					errorType: "TimeoutError",
+					message: "upstream timed out after 30s",
+				},
+			],
+		)
+
+		// Step two: the one fact the index does not carry, read for exactly those
+		// calls and bounded by their own timestamps rather than the window.
+		if (!Arr.isReadonlyArrayNonEmpty(calls)) return assert.fail("expected an occurrence")
+		const slice = Integrations.aiToolErrorPayloadSlice(calls)
+		assert.strictEqual(slice.sliceStart, slice.sliceEnd)
+		const payloads = compileUnsafe(
+			Integrations.aiToolErrorPayloadsQuery(calls),
+			{ orgId: ORG_ID, ...slice },
+			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
+		)
+		assert.isFalse(payloads.sql.includes(flakyWindow.startTime))
+		assert.deepStrictEqual(
+			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map((row) => ({
+				spanId: row.spanId,
+				statusCode: row.statusCode,
+				arguments: row.arguments,
+				argumentsBytes: row.argumentsBytes,
+				resultBytes: row.resultBytes,
+			})),
+			[
+				{
+					spanId: "tools-flaky-1",
+					statusCode: "Error",
+					arguments: '{"retries":3}',
+					argumentsBytes: 13,
+					resultBytes: 0,
+				},
+			],
+		)
+	})
+
+	it("bounds the payload read by an extent that spans both partitions", async () => {
+		// The whole tool, not one group: both failures, a calendar day apart. A
+		// slice that collapsed to one instant — which one occurrence gives it —
+		// would never show whether the bound actually reaches the older partition.
+		const occurrences = compileUnsafe(
+			Integrations.aiToolErrorOccurrencesQuery({ tool: "flaky_tool" }),
+			flakyWindow,
+			{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
+		)
+		const calls = Effect.runSync(occurrences.decodeRows(await runJson(occurrences.sql)))
+		// Newest first.
+		assert.deepStrictEqual(
+			calls.map((row) => row.spanId),
+			["tools-flaky-1", "tools-flaky-2"],
+		)
+
+		if (!Arr.isReadonlyArrayNonEmpty(calls)) return assert.fail("expected occurrences")
+		const slice = Integrations.aiToolErrorPayloadSlice(calls)
+		const partitionOf = (literal: string) => literal.slice(0, 10)
+		assert.notStrictEqual(partitionOf(slice.sliceStart), partitionOf(slice.sliceEnd))
+
+		const payloads = compileUnsafe(
+			Integrations.aiToolErrorPayloadsQuery(calls),
+			{ orgId: ORG_ID, ...slice },
+			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
+		)
+		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+		assert.deepStrictEqual(
+			[...rows]
+				.sort((a, b) => a.spanId.localeCompare(b.spanId))
+				.map((row) => ({ spanId: row.spanId, arguments: row.arguments, result: row.result })),
+			[
+				{ spanId: "tools-flaky-1", arguments: '{"retries":3}', result: "" },
+				{ spanId: "tools-flaky-2", arguments: '{"retries":1}', result: '{"error":"503"}' },
 			],
 		)
 	})
