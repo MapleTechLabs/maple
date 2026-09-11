@@ -32,11 +32,7 @@ import {
 	listAiSessionsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
-import {
-	overviewApiDimension,
-	type AgentOverviewSearch,
-	type OverviewDimension,
-} from "./overview-search"
+import { overviewApiDimension, type AgentOverviewSearch, type OverviewDimension } from "./overview-search"
 
 export interface AgentOverviewWindow {
 	readonly startTime: string

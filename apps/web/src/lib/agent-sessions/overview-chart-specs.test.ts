@@ -9,7 +9,14 @@ import {
 	type OverviewMeasures,
 	type OverviewModelMix,
 } from "./overview-analytics"
-import { buildOverviewPlotSpec, type OverviewPlotInput } from "./overview-chart-specs"
+import {
+	OVERVIEW_TICK_PADDING,
+	buildOverviewPlotSpec,
+	overviewAxisGutter,
+	overviewAxisTick,
+	type OverviewPlotInput,
+	type OverviewPlotSpec,
+} from "./overview-chart-specs"
 
 const HOUR = 3_600_000
 const START = Date.UTC(2026, 8, 10, 0, 0, 0)
@@ -104,5 +111,36 @@ describe("buildOverviewPlotSpec", () => {
 		expect(spec.marks.map((mark) => mark.kind)).toEqual(["spread", "line"])
 		expect(spec.rows[0]?.p95_base).toBe(1_000)
 		expect(spec.rows[0]?.p95).toBe(4_000)
+	})
+})
+
+describe("overviewAxisGutter", () => {
+	const axis = (yMax: number, format: (value: number) => string): OverviewPlotSpec =>
+		({ yMax, format }) as OverviewPlotSpec
+
+	it("prints the floor as a digit and the top through the chart's formatter", () => {
+		const spec = axis(0.5, (value) => `$${value.toFixed(2)}`)
+		expect(overviewAxisTick(spec, 0)).toBe("0")
+		expect(overviewAxisTick(spec, spec.yMax)).toBe("$0.50")
+	})
+
+	it("holds the design's width for the labels it was drawn around", () => {
+		expect(overviewAxisGutter([axis(1, () => "100%"), axis(8, () => "8.0")])).toBe(32)
+	})
+
+	it("widens to the widest label in the grid, and gives every plot the same one", () => {
+		const narrow = axis(1, () => "100%")
+		const wide = axis(150_000, () => "150.0K")
+		expect(overviewAxisGutter([narrow])).toBe(32)
+		expect(overviewAxisGutter([narrow, wide])).toBe(overviewAxisGutter([wide]))
+		expect(overviewAxisGutter([narrow, wide])).toBeGreaterThan(overviewAxisGutter([narrow]))
+	})
+
+	it("leaves every label room to sit right-aligned off the plot", () => {
+		// 6.02px per character at the 10px mono tick size, plus the tick padding.
+		for (const label of ["$0.50", "80.0K", "10.0%", "2m 30s", "100%"]) {
+			const gutter = overviewAxisGutter([axis(1, () => label)])
+			expect(gutter - OVERVIEW_TICK_PADDING).toBeGreaterThanOrEqual(label.length * 6.02)
+		}
 	})
 })

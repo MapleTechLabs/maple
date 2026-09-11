@@ -413,8 +413,7 @@ const SPECS = {
 		buckets: 24,
 		current: { ...HEALTHY, sessions: 52 },
 		previous: { ...HEALTHY, sessions: 51 },
-		regressedAt: (bucketMs: number) =>
-			new Date(bucketMs).getUTCHours() >= OVERVIEW_REGRESSION_HOUR_UTC,
+		regressedAt: (bucketMs: number) => new Date(bucketMs).getUTCHours() >= OVERVIEW_REGRESSION_HOUR_UTC,
 	},
 } satisfies Record<OverviewScenario, ScenarioSpec>
 
@@ -437,29 +436,21 @@ export function buildOverviewFixture(scenario: OverviewScenario, nowMs: number):
 		return { bucket, index, regressed }
 	})
 
-	const series: ReadonlyArray<OverviewMeasurePoint> = buckets.map(
-		({ bucket, index, regressed }) => ({
-			bucket,
-			...measuresOf(
-				scaleRates(
-					regressed ? { ...REGRESSED, sessions: spec.current.sessions } : spec.current,
-					index,
-				),
-			),
-		}),
-	)
-	const previousSeries: ReadonlyArray<OverviewMeasurePoint> = buckets.map(
-		({ bucket, index }) => ({
-			bucket: bucket - windowMs,
-			...measuresOf(scaleRates(spec.previous, index + 3)),
-		}),
-	)
+	const series: ReadonlyArray<OverviewMeasurePoint> = buckets.map(({ bucket, index, regressed }) => ({
+		bucket,
+		...measuresOf(
+			scaleRates(regressed ? { ...REGRESSED, sessions: spec.current.sessions } : spec.current, index),
+		),
+	}))
+	const previousSeries: ReadonlyArray<OverviewMeasurePoint> = buckets.map(({ bucket, index }) => ({
+		bucket: bucket - windowMs,
+		...measuresOf(scaleRates(spec.previous, index + 3)),
+	}))
 
 	// The regressed scenario's window mixes both shapes, so the tiles read the
 	// whole window while the grid shows where it turned.
 	const regressedShare = buckets.filter((b) => b.regressed).length / spec.buckets
-	const blend = (healthy: number, bad: number) =>
-		healthy * (1 - regressedShare) + bad * regressedShare
+	const blend = (healthy: number, bad: number) => healthy * (1 - regressedShare) + bad * regressedShare
 	const currentRates: SessionRates = {
 		...spec.current,
 		errorRate: blend(spec.current.errorRate, REGRESSED.errorRate),
@@ -485,12 +476,7 @@ export function buildOverviewFixture(scenario: OverviewScenario, nowMs: number):
 	const breakdownCurrent: SessionRates = { ...currentRates, sessions: current.sessions }
 	const breakdownPrevious: SessionRates = { ...spec.previous, sessions: previous.sessions }
 	const breakdowns = OVERVIEW_DIMENSIONS.map((dimension) => {
-		const entries = breakdownEntries(
-			dimension,
-			breakdownCurrent,
-			breakdownPrevious,
-			regressedShare > 0,
-		)
+		const entries = breakdownEntries(dimension, breakdownCurrent, breakdownPrevious, regressedShare > 0)
 		return { dimension, entries, totalKeys: entries.length + (dimension === "tool" ? 9 : 4) }
 	})
 

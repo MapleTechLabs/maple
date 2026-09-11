@@ -24,14 +24,7 @@ const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromSt
  * the same string on purpose; {@link overviewApiDimension} is the one place
  * the rename happens.
  */
-export const OVERVIEW_DIMENSIONS = [
-	"model",
-	"agent",
-	"service",
-	"framework",
-	"environment",
-	"tool",
-] as const
+export const OVERVIEW_DIMENSIONS = ["model", "agent", "service", "framework", "environment", "tool"] as const
 export type OverviewDimension = (typeof OVERVIEW_DIMENSIONS)[number]
 
 /** The dimension as the breakdown endpoint spells it. */
@@ -126,9 +119,7 @@ export interface OverviewFilterChip {
 }
 
 /** The active dimension filters, in the dimensions' own order — the scope row. */
-export function activeOverviewFilters(
-	search: AgentOverviewSearch,
-): ReadonlyArray<OverviewFilterChip> {
+export function activeOverviewFilters(search: AgentOverviewSearch): ReadonlyArray<OverviewFilterChip> {
 	return OVERVIEW_DIMENSIONS.flatMap((dimension) => {
 		const value = search[dimension]
 		return value === undefined ? [] : [{ dimension, value }]
@@ -160,10 +151,7 @@ export function toggleOverviewFilter(
 	dimension: OverviewDimension,
 	key: string,
 ): Partial<AgentOverviewSearch> {
-	return overviewFilterPatch(
-		dimension,
-		key === "" || search[dimension] === key ? undefined : key,
-	)
+	return overviewFilterPatch(dimension, key === "" || search[dimension] === key ? undefined : key)
 }
 
 /**

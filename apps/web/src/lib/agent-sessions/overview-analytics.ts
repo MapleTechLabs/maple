@@ -18,7 +18,8 @@
 // percentage POINTS — 2% to 26% is "up 24 points", not "up 1200%" — a ratio
 // moves in percent, and a duration moves by a duration.
 
-import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
 import { formatCost } from "./session-summary"
 import { OVERVIEW_DIMENSIONS, type OverviewDimension } from "./overview-search"
@@ -108,16 +109,13 @@ export interface OverviewModelMixRow {
 const ratio = (numerator: number, denominator: number): number =>
 	denominator > 0 ? numerator / denominator : 0
 
-export const sessionErrorRate = (m: OverviewMeasures): number =>
-	ratio(m.erroredSessions, m.sessions)
+export const sessionErrorRate = (m: OverviewMeasures): number => ratio(m.erroredSessions, m.sessions)
 
 /** `erroredLlmCalls / llmCallSpans` and never `/ llmCalls`: the two populations
  *  differ by every mirror and wrapper the netting collapses. */
-export const llmErrorRate = (m: OverviewMeasures): number =>
-	ratio(m.erroredLlmCalls, m.llmCallSpans)
+export const llmErrorRate = (m: OverviewMeasures): number => ratio(m.erroredLlmCalls, m.llmCallSpans)
 
-export const toolErrorRate = (m: OverviewMeasures): number =>
-	ratio(m.erroredToolCalls, m.toolCalls)
+export const toolErrorRate = (m: OverviewMeasures): number => ratio(m.erroredToolCalls, m.toolCalls)
 
 export const costPerSession = (m: OverviewMeasures): number => ratio(m.cost, m.sessions)
 export const tokensPerSession = (m: OverviewMeasures): number => ratio(m.tokens, m.sessions)
@@ -143,13 +141,7 @@ export const pricedShare = (m: OverviewMeasures): number => ratio(m.pricedLlmCal
  * Token bands
  * -----------------------------------------------------------------------------------------------*/
 
-export const OVERVIEW_TOKEN_BANDS = [
-	"input",
-	"cacheRead",
-	"cacheWrite",
-	"output",
-	"reasoning",
-] as const
+export const OVERVIEW_TOKEN_BANDS = ["input", "cacheRead", "cacheWrite", "output", "reasoning"] as const
 export type OverviewTokenBand = (typeof OVERVIEW_TOKEN_BANDS)[number]
 
 /**
@@ -160,10 +152,7 @@ export type OverviewTokenBand = (typeof OVERVIEW_TOKEN_BANDS)[number]
 export const OVERVIEW_TOKEN_FALLBACK_BAND = "total"
 export type OverviewTokenBandKey = OverviewTokenBand | typeof OVERVIEW_TOKEN_FALLBACK_BAND
 
-export const OVERVIEW_TOKEN_BAND_KEYS = [
-	...OVERVIEW_TOKEN_BANDS,
-	OVERVIEW_TOKEN_FALLBACK_BAND,
-] as const
+export const OVERVIEW_TOKEN_BAND_KEYS = [...OVERVIEW_TOKEN_BANDS, OVERVIEW_TOKEN_FALLBACK_BAND] as const
 
 export const OVERVIEW_TOKEN_BAND_LABEL = {
 	input: "input",
@@ -186,8 +175,7 @@ const emptyBands = (): Record<OverviewTokenBandKey, number> => ({
 /** Raw token counts per band, with the fallback applied. */
 export function tokenBandValues(m: OverviewMeasures): Record<OverviewTokenBandKey, number> {
 	const bands = emptyBands()
-	const split =
-		m.inputTokens + m.cacheReadTokens + m.cacheWriteTokens + m.outputTokens + m.reasoningTokens
+	const split = m.inputTokens + m.cacheReadTokens + m.cacheWriteTokens + m.outputTokens + m.reasoningTokens
 	if (split === 0) {
 		bands.total = m.tokens
 		return bands
@@ -251,8 +239,7 @@ export function overviewDelta(
 ): OverviewDelta | null {
 	if (!Number.isFinite(before) || !Number.isFinite(after)) return null
 	const absolute = after - before
-	const flatAt =
-		options.unit === "points" ? FLAT_POINTS / 100 : options.unit === "duration" ? FLAT_MS : 0
+	const flatAt = options.unit === "points" ? FLAT_POINTS / 100 : options.unit === "duration" ? FLAT_MS : 0
 	const percent = before === 0 ? null : absolute / before
 
 	if (options.unit === "percent" && percent === null) return null
@@ -298,7 +285,7 @@ export function overviewDelta(
 			percent,
 			pp: null,
 			direction,
-			text: direction === "flat" ? "0s" : signed(absolute, formatLatency(Math.abs(absolute))),
+			text: direction === "flat" ? "0s" : signed(absolute, formatOverviewDuration(Math.abs(absolute))),
 			tone,
 		}
 	}
@@ -338,10 +325,19 @@ export function formatPerSession(value: number): string {
 	return value >= 100 ? formatOverviewCount(value) : value.toFixed(1)
 }
 
-/** A duration a session or a call took. Zero means "nothing measured". */
+/**
+ * A duration a session took, in the clock units the Sessions list reads them
+ * in — `2m 30s`, `1h 4m` — so a session's row there and its cell here are the
+ * same string. Zero means "nothing measured".
+ *
+ * The shared formatter starts at whole seconds, which is a reading on a list
+ * row and a rounding on a delta: `+55s` and `+54.6s` are the same move only
+ * until you compare two of them. The tenth therefore survives until the minutes
+ * arrive to carry the magnitude instead.
+ */
 export function formatOverviewDuration(ms: number): string {
 	if (!Number.isFinite(ms) || ms <= 0) return "—"
-	return formatLatency(ms)
+	return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : formatSessionDuration(ms)
 }
 
 /** `''` is a real breakdown key, shown as unattributed rather than hidden. */
@@ -403,12 +399,7 @@ export function buildOverviewTiles(
 	previous: OverviewMeasures,
 	options: { compare: boolean; windowLabel: string },
 ): ReadonlyArray<OverviewTile> {
-	const delta = (
-		before: number,
-		after: number,
-		unit: DeltaUnit,
-		riseIs: DeltaTone,
-	): OverviewDelta | null =>
+	const delta = (before: number, after: number, unit: DeltaUnit, riseIs: DeltaTone): OverviewDelta | null =>
 		options.compare ? overviewDelta(before, after, { unit, riseIs }) : null
 
 	return [
@@ -456,24 +447,14 @@ export function buildOverviewTiles(
 			id: "toolCallsPerSession",
 			label: "Tool calls / sess",
 			value: formatPerSession(toolCallsPerSession(current)),
-			delta: delta(
-				toolCallsPerSession(previous),
-				toolCallsPerSession(current),
-				"percent",
-				"bad",
-			),
+			delta: delta(toolCallsPerSession(previous), toolCallsPerSession(current), "percent", "bad"),
 			sub: `${formatOverviewCount(current.toolCalls)} calls`,
 		},
 		{
 			id: "durationP95",
 			label: "Duration p95",
 			value: formatOverviewDuration(current.sessionDurationP95Ms),
-			delta: delta(
-				previous.sessionDurationP95Ms,
-				current.sessionDurationP95Ms,
-				"duration",
-				"bad",
-			),
+			delta: delta(previous.sessionDurationP95Ms, current.sessionDurationP95Ms, "duration", "bad"),
 			sub: `p50 ${formatOverviewDuration(current.sessionDurationP50Ms)}`,
 		},
 	]
@@ -905,12 +886,7 @@ export function buildOverviewCharts(
 	previous: OverviewMeasures,
 	options: { compare: boolean; modelMix: OverviewModelMix },
 ): ReadonlyArray<OverviewChartSummary> {
-	const delta = (
-		before: number,
-		after: number,
-		unit: DeltaUnit,
-		riseIs: DeltaTone,
-	): OverviewDelta | null =>
+	const delta = (before: number, after: number, unit: DeltaUnit, riseIs: DeltaTone): OverviewDelta | null =>
 		options.compare ? overviewDelta(before, after, { unit, riseIs }) : null
 
 	const leadModel = options.modelMix.models[0]
@@ -946,12 +922,7 @@ export function buildOverviewCharts(
 			title: "Tool calls per session",
 			unit: "calls / session",
 			value: formatPerSession(toolCallsPerSession(current)),
-			delta: delta(
-				toolCallsPerSession(previous),
-				toolCallsPerSession(current),
-				"percent",
-				"bad",
-			),
+			delta: delta(toolCallsPerSession(previous), toolCallsPerSession(current), "percent", "bad"),
 		},
 		{
 			id: "errorRate",
@@ -965,24 +936,14 @@ export function buildOverviewCharts(
 			title: "Session duration",
 			unit: "p50 with p50–p95 band",
 			value: formatOverviewDuration(current.sessionDurationP95Ms),
-			delta: delta(
-				previous.sessionDurationP95Ms,
-				current.sessionDurationP95Ms,
-				"duration",
-				"bad",
-			),
+			delta: delta(previous.sessionDurationP95Ms, current.sessionDurationP95Ms, "duration", "bad"),
 		},
 		{
 			id: "llmCallsPerSession",
 			title: "LLM calls per session",
 			unit: "calls / session",
 			value: formatPerSession(llmCallsPerSession(current)),
-			delta: delta(
-				llmCallsPerSession(previous),
-				llmCallsPerSession(current),
-				"percent",
-				"neutral",
-			),
+			delta: delta(llmCallsPerSession(previous), llmCallsPerSession(current), "percent", "neutral"),
 		},
 		{
 			id: "modelMix",

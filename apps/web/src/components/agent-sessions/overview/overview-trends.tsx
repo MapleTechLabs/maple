@@ -14,6 +14,7 @@ import {
 } from "@/lib/agent-sessions/overview-analytics"
 import {
 	buildOverviewPlotSpec,
+	overviewAxisGutter,
 	type OverviewPlotLegendItem,
 	type OverviewPlotSpec,
 } from "@/lib/agent-sessions/overview-chart-specs"
@@ -88,6 +89,10 @@ export function OverviewTrends({
 		return new Map(OVERVIEW_CHARTS.map((id) => [id, buildOverviewPlotSpec(id, input)]))
 	}, [series, previousSeries, modelMix])
 
+	// One gutter for all nine, so the plots line up column to column however wide
+	// this window's labels turn out to be.
+	const gutter = useMemo(() => overviewAxisGutter(specs.values()), [specs])
+
 	return (
 		<section className="border-b border-border">
 			<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-6 pt-4 pb-3">
@@ -111,7 +116,13 @@ export function OverviewTrends({
 			>
 				<div className={cn("min-w-0 flex-1 pl-2", CHART_GRID)}>
 					{charts.map((chart) => (
-						<ChartCell key={chart.id} chart={chart} spec={specs.get(chart.id)} axis={axis} />
+						<ChartCell
+							key={chart.id}
+							chart={chart}
+							spec={specs.get(chart.id)}
+							axis={axis}
+							gutter={gutter}
+						/>
 					))}
 				</div>
 				<div className="shrink-0 px-6 py-4 @max-[1100px]/page:max-w-[560px] @min-[1100px]/page:w-[320px] @min-[1100px]/page:border-l @min-[1100px]/page:border-border @min-[1100px]/page:pt-0">
@@ -168,10 +179,12 @@ function ChartCell({
 	chart,
 	spec,
 	axis,
+	gutter,
 }: {
 	chart: OverviewChartSummary
 	spec: OverviewPlotSpec | undefined
 	axis: ReturnType<typeof makeBucketAxis>
+	gutter: number
 }) {
 	return (
 		<figure className="flex min-w-0 flex-col px-4 pt-3.5 pb-3" data-chart={chart.id}>
@@ -210,6 +223,7 @@ function ChartCell({
 							title={chart.title}
 							spec={spec}
 							axis={axis}
+							gutter={gutter}
 						/>
 					</div>
 				</>

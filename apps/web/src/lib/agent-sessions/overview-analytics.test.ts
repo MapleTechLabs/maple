@@ -61,9 +61,7 @@ describe("derivations", () => {
 	it("divides the priced share by the netted volume the server priced", () => {
 		// 47 of 50 netted calls carried a price. The 59 spans behind them did not
 		// each need one, and dividing by those would read as 80% coverage.
-		expect(pricedShare(measures({ llmCalls: 50, llmCallSpans: 59, pricedLlmCalls: 47 }))).toBe(
-			0.94,
-		)
+		expect(pricedShare(measures({ llmCalls: 50, llmCallSpans: 59, pricedLlmCalls: 47 }))).toBe(0.94)
 	})
 })
 
@@ -135,8 +133,12 @@ describe("overviewDelta", () => {
 	it("moves a duration by a duration and still reports its percent", () => {
 		const delta = overviewDelta(96_000, 227_000, { unit: "duration", riseIs: "bad" })
 		expect(delta?.absolute).toBe(131_000)
-		expect(delta?.text).toBe("+2.2min")
+		expect(delta?.text).toBe("+2m 11s")
 		expect(delta?.percent).toBeCloseTo(1.3646, 3)
+	})
+
+	it("keeps a sub-minute move in seconds rather than rounding it to a clock", () => {
+		expect(overviewDelta(96_000, 150_580, { unit: "duration", riseIs: "bad" })?.text).toBe("+54.6s")
 	})
 
 	it("signs a fall", () => {
@@ -159,19 +161,16 @@ describe("formatters", () => {
 		expect(formatOverviewDuration(0)).toBe("—")
 	})
 
+	it("reads a duration in the clock units the Sessions list uses", () => {
+		expect(formatOverviewDuration(58_200)).toBe("58.2s")
+		expect(formatOverviewDuration(724_000)).toBe("12m 4s")
+		expect(formatOverviewDuration(5_400_000)).toBe("1h 30m")
+	})
+
 	it("names every width the grid's buckets are actually cut at", () => {
 		// The ladder `smallMultipleBucketSeconds` snaps to, one unit each.
 		const ladder = [300, 900, 1_800, 3_600, 10_800, 21_600, 43_200, 86_400]
-		expect(ladder.map(bucketWidthLabel)).toEqual([
-			"5m",
-			"15m",
-			"30m",
-			"1h",
-			"3h",
-			"6h",
-			"12h",
-			"1d",
-		])
+		expect(ladder.map(bucketWidthLabel)).toEqual(["5m", "15m", "30m", "1h", "3h", "6h", "12h", "1d"])
 	})
 })
 
@@ -191,7 +190,9 @@ describe("buildOverviewTiles", () => {
 	const previous = measures({ sessions: 80, erroredSessions: 4, cost: 40, tokens: 800 })
 
 	it("builds seven tiles in the strip's order", () => {
-		expect(buildOverviewTiles(current, previous, { compare: true, windowLabel: "7d" }).map((t) => t.id)).toEqual([
+		expect(
+			buildOverviewTiles(current, previous, { compare: true, windowLabel: "7d" }).map((t) => t.id),
+		).toEqual([
 			"sessions",
 			"cost",
 			"costPerSession",
@@ -278,14 +279,7 @@ describe("buildModelMix", () => {
 
 	it("keeps the five busiest models and folds the tail into one grey band", () => {
 		const mix = buildModelMix(rows)
-		expect(mix.models).toEqual([
-			"model-1",
-			"model-2",
-			"model-3",
-			"model-4",
-			"model-5",
-			"other",
-		])
+		expect(mix.models).toEqual(["model-1", "model-2", "model-3", "model-4", "model-5", "other"])
 	})
 
 	it("stacks each bucket to one", () => {
@@ -418,9 +412,7 @@ describe("buildMovers", () => {
 
 describe("overviewScopeSummary", () => {
 	it("names the three populations the rest of the board divides by", () => {
-		expect(
-			overviewScopeSummary(measures({ sessions: 1_284, llmCalls: 10_842, toolCalls: 8_101 })),
-		).toBe(
+		expect(overviewScopeSummary(measures({ sessions: 1_284, llmCalls: 10_842, toolCalls: 8_101 }))).toBe(
 			`${(1284).toLocaleString()} sessions · ${(10842).toLocaleString()} LLM calls · ${(8101).toLocaleString()} tool calls`,
 		)
 	})

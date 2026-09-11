@@ -68,6 +68,47 @@ export interface OverviewPlotInput {
 }
 
 /* -------------------------------------------------------------------------------------------------
+ * The y axis's two ticks, and the gutter they need
+ * -----------------------------------------------------------------------------------------------*/
+
+/** The gap a tick label keeps from the plot it labels. */
+export const OVERVIEW_TICK_PADDING = 6
+/** One character of the 10px mono tick label, rounded up from the 0.6em advance
+ *  the face actually uses — the axis is painted onto a canvas, so the gutter has
+ *  to be decided before there is anything to measure. */
+const TICK_CHAR_WIDTH = 6.2
+/** Four characters — `100%`, `4.0%`, `10.0` — and the width the design drew. */
+const MIN_GUTTER = 32
+
+/**
+ * A tick as the axis prints it. A duration or a cost renders zero as an em
+ * dash, which is right for a headline and wrong for an axis floor.
+ */
+export const overviewAxisTick = (spec: OverviewPlotSpec, value: number): string =>
+	value === 0 ? "0" : spec.format(value)
+
+/**
+ * The left gutter the nine plots share, wide enough for the widest label any of
+ * them will print.
+ *
+ * A fixed gutter only ever fits the formatter it was written for: `100%` and
+ * `150.0K` are the same axis and not the same width, and a label that does not
+ * fit is drawn straight off the canvas's left edge. Right-aligned text overflows
+ * leftwards, so what is lost is the leading character — the one carrying the
+ * magnitude, which leaves `$0.50` reading as `0.50`.
+ *
+ * One width for the whole grid rather than one per chart: the board is read
+ * across as much as down, and a plot starting further right than the one beside
+ * it reads as a different instrument. Only the top tick is measured; the floor
+ * is always `0`.
+ */
+export function overviewAxisGutter(specs: Iterable<OverviewPlotSpec>): number {
+	let widest = 0
+	for (const spec of specs) widest = Math.max(widest, overviewAxisTick(spec, spec.yMax).length)
+	return Math.max(MIN_GUTTER, Math.ceil(widest * TICK_CHAR_WIDTH) + OVERVIEW_TICK_PADDING)
+}
+
+/* -------------------------------------------------------------------------------------------------
  * Colours
  * -----------------------------------------------------------------------------------------------*/
 

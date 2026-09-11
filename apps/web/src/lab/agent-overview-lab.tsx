@@ -4,11 +4,7 @@ import { AgentOverviewView } from "@/components/agent-sessions/overview/agent-ov
 import { buildAgentOverviewData } from "@/lib/agent-sessions/overview-analytics"
 import { compareEnabled, type AgentOverviewSearch } from "@/lib/agent-sessions/overview-search"
 
-import {
-	OVERVIEW_SCENARIOS,
-	buildOverviewFixture,
-	type OverviewScenario,
-} from "./agent-overview-fixture"
+import { OVERVIEW_SCENARIOS, buildOverviewFixture, type OverviewScenario } from "./agent-overview-fixture"
 
 /**
  * The overview board without a warehouse behind it.

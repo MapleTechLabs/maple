@@ -2,12 +2,13 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeShort } from "@maple/ui/lib/time-format"
+import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ExternalLinkIcon } from "@/components/icons"
 import type { AgentSessionsSearchState } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatOverviewCount, formatOverviewDuration } from "@/lib/agent-sessions/overview-analytics"
 import { formatCost } from "@/lib/agent-sessions/session-summary"
 import { sessionLinkWindow } from "@/lib/agent-sessions/session-window"
@@ -59,6 +60,7 @@ export function OverviewTopSessions({
 	sessionsSearch,
 	waiting = false,
 }: OverviewTopSessionsProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const [active, setActive] = useState<OverviewTopSessionTab>("cost")
 	const rows = sessions[active]
 
@@ -165,7 +167,9 @@ export function OverviewTopSessions({
 								{formatOverviewDuration(row.durationMs)}
 							</Cell>
 							<Cell className={COLUMNS[9].className} tone="text-muted-foreground/70">
-								{formatRelativeShort(row.startTime)}
+								{/* The Sessions list's own reading: relative inside the week,
+								    an absolute date once "23d ago" stops being the easier one. */}
+								{formatRelativeTimeOrDate(row.startTime, undefined, effectiveTimezone)}
 							</Cell>
 							<span className="flex w-[40px] shrink-0 justify-end">
 								<ExternalLinkIcon

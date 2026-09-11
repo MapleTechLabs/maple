@@ -19,12 +19,15 @@ import {
 
 import type { makeBucketAxis } from "@/components/infra/chart-utils"
 import { LinkedCursorOverlay, linkedCursorChartProps } from "@/hooks/use-linked-cursor"
-import type { OverviewPlotRow, OverviewPlotSpec } from "@/lib/agent-sessions/overview-chart-specs"
+import {
+	OVERVIEW_TICK_PADDING,
+	overviewAxisTick,
+	type OverviewPlotRow,
+	type OverviewPlotSpec,
+} from "@/lib/agent-sessions/overview-chart-specs"
 
 /** The plot box, x-axis labels included — the design's 86px svg over its ticks. */
 export const OVERVIEW_PLOT_HEIGHT = 104
-/** Wide enough for `100%` and `$0.40`, narrow enough to leave the plot room. */
-const Y_AXIS_WIDTH = 32
 const STROKE_WIDTH = 1.5
 const GHOST_STROKE_WIDTH = 1.2
 /** A stack layer is read by its area, so it is nearly opaque. */
@@ -39,6 +42,9 @@ export interface OverviewSmallMultipleProps {
 	spec: OverviewPlotSpec
 	/** Built once for the whole grid, so all nine agree on where an instant sits. */
 	axis: ReturnType<typeof makeBucketAxis>
+	/** The y-axis gutter, sized by `overviewAxisGutter` over every spec in the
+	 *  grid rather than this one alone, so the nine plots line up. */
+	gutter: number
 }
 
 /**
@@ -48,7 +54,7 @@ export interface OverviewSmallMultipleProps {
  * differ (lines, a stack, a spread) but the chrome must not, because the grid is
  * read across as much as down.
  */
-export function OverviewSmallMultiple({ chartId, title, spec, axis }: OverviewSmallMultipleProps) {
+export function OverviewSmallMultiple({ chartId, title, spec, axis, gutter }: OverviewSmallMultipleProps) {
 	const chromeColors = usePlotChromeColors()
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 
@@ -121,25 +127,23 @@ export function OverviewSmallMultiple({ chartId, title, spec, axis }: OverviewSm
 						line: false,
 						ticks: {
 							size: 0,
-							padding: 6,
+							padding: OVERVIEW_TICK_PADDING,
 							// Two labels, the extremes — nine charts of laddered ticks is a
 							// wall of digits, and the question here is shape.
 							values: [0, spec.yMax],
-							// A duration or a cost renders zero as an em dash, which is right
-							// for a headline and wrong for an axis floor.
-							format: (value: number) => (value === 0 ? "0" : spec.format(value)),
+							format: (value: number) => overviewAxisTick(spec, value),
 						},
 					},
 				},
 			},
 			// The top tick sits on the highest plotted value, so the margin is what
 			// keeps its label — and the peak under it — inside the frame.
-			margin: { left: Y_AXIS_WIDTH, right: 6, top: 8 },
+			margin: { left: gutter, right: 6, top: 8 },
 			focus: "group-x",
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [spec, axis, chromeColors, focusStore])
+	}, [spec, axis, chromeColors, focusStore, gutter])
 
 	if (spec.rows.length === 0) {
 		return <ChartEmpty height={OVERVIEW_PLOT_HEIGHT}>No data in this range.</ChartEmpty>

@@ -61,9 +61,7 @@ describe("mapOverviewSeries", () => {
 
 describe("mapOverviewBreakdown", () => {
 	it("keeps both windows per key, and `''` as a real key", () => {
-		const [row] = mapOverviewBreakdown([
-			{ key: "", current: wire(), previous: wire({ sessions: 4 }) },
-		])
+		const [row] = mapOverviewBreakdown([{ key: "", current: wire(), previous: wire({ sessions: 4 }) }])
 		expect(row.key).toBe("")
 		expect(row.current.sessions).toBe(10)
 		expect(row.previous.sessions).toBe(4)
