@@ -9,6 +9,8 @@ import {
 	GENAI_PROVIDER_LEGACY_VALUES,
 	GENAI_PROVIDER_NAME_KEYS,
 	GENAI_RESPONSE_ID_KEYS,
+	GENAI_ERROR_TYPE_KEYS,
+	GENAI_TOOL_DESCRIPTION_KEYS,
 	GENAI_TOOL_NAME_KEYS,
 	GENAI_USAGE_KEYS,
 	OPENINFERENCE_KIND_OPERATIONS,
@@ -69,6 +71,15 @@ describe("GenAI column key lists match the integration layer", () => {
 		for (const key of GENAI_TOOL_NAME_KEYS) expect(decodedKeys("toolName")).toContain(key)
 		for (const key of GENAI_RESPONSE_ID_KEYS) expect(decodedKeys("responseId")).toContain(key)
 		for (const key of decodedKeys("responseId")) expect(GENAI_RESPONSE_ID_KEYS).toContain(key)
+	})
+
+	// Both directions, in both lists: the tool detail page groups its failures by
+	// the index's `ErrorType` and renders the index's `ToolDescription`, so a key
+	// only one side reads is a failure the page files under `unknown` or a
+	// description it never shows.
+	it("the failure's type and the tool's description, exactly", () => {
+		expect([...GENAI_ERROR_TYPE_KEYS]).toEqual([...decodedKeys("errorType")])
+		expect([...GENAI_TOOL_DESCRIPTION_KEYS]).toEqual([...decodedKeys("toolDescription")])
 	})
 
 	it("every usage bucket and the cost, bucket for bucket", () => {
