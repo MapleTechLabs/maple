@@ -11,7 +11,8 @@ import { Effect, Result, Schema } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
 import type { TenantContext } from "@/services/auth/tenant-context"
-import { buildMapleToolkit } from "./llm-tools"
+import { makeRecordingTracer } from "@/testing/recording-tracer"
+import { APPROVAL_NOTE, buildMapleToolkit } from "./llm-tools"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -39,6 +40,22 @@ const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 }
 
 describe("buildMapleToolkit", () => {
+	it("records a gated tool's description on its span as the model saw it", async () => {
+		const { executor } = countingExecutor()
+		const handler = buildMapleToolkit(executor, TENANT, { gate: () => true }).handlers.list_services
+		assert.isDefined(handler, "no handler for list_services")
+		const { spans, tracer } = makeRecordingTracer()
+
+		await Effect.runPromise(
+			Effect.result(handler!({ limit: 10 }, {} as never)).pipe(
+				Effect.withSpan("execute_tool list_services"),
+				Effect.withTracer(tracer),
+			),
+		)
+
+		assert.isTrue(String(spans[0]?.attributes.get("gen_ai.tool.description")).endsWith(APPROVAL_NOTE))
+	})
+
 	it("refuses the identical call once it has run three times", async () => {
 		const { executor, dispatched } = countingExecutor()
 		const handler = handlerFor(executor, "list_services")

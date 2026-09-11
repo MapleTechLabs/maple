@@ -22,12 +22,14 @@ import {
 	type ScriptedTurnInput,
 } from "@effect-agent/testing/ScriptedModel"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
+import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PermissionRule } from "@maple/domain/permission"
 import { OrgId, UserId } from "@maple/domain"
 import type { AgentDefinition } from "@/chat/agents"
 import { McpToolExecutor } from "@/mcp/dispatcher"
 import type { ResolvedModel } from "@/platform/Llm"
 import type { TenantContext } from "@/services/auth/tenant-context"
+import { makeRecordingTracer } from "@/testing/recording-tracer"
 import { runAgentPass } from "./agent-pass"
 
 const TENANT: TenantContext = {
@@ -129,6 +131,7 @@ const scripted = (turns: ReadonlyArray<ScriptedTurnInput>): ResolvedModel => ({
 	provider: "openrouter",
 	name: "scripted/test-model",
 	limits: { context: 128_000, output: 8_000 },
+	tags: { surface: "investigation-lens", orgId: "org_test", sessionId: "org_test:inv-1", turnId: "pass-1" },
 	// `Model.make` supplies the provider and model identity services alongside the language model;
 	// the scripted layer alone provides only the model itself.
 	layer: Model.make("scripted", "test-model", ScriptedModel.layer(turns)),
@@ -210,6 +213,78 @@ describe("runAgentPass", () => {
 
 			assert.isTrue(result.deadlineHit)
 			assert.isTrue(Option.isNone(result.answer))
+		}),
+	)
+
+	it.effect("describes the agent on its pass span and each tool call on its own span", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+
+			yield* run([
+				turn(call("c1", "query_data", { sql: "select 1" })),
+				turn(call("c2", "submit_candidate", { claim: "found it" })),
+			]).pipe(Effect.withSpan("investigation.test"), Effect.withTracer(tracer))
+
+			const pass = spans.find((span) => span.name === "invoke_agent hypothesis-test")?.attributes
+			assert.strictEqual(pass?.get("gen_ai.operation.name"), "invoke_agent")
+			// The pass span roots the turn, so it carries the session; the caller's span does not.
+			assert.strictEqual(pass?.get(MAPLE_NATIVE_SESSION_ID_ATTR), "org_test:inv-1")
+			assert.strictEqual(pass?.get(MAPLE_NATIVE_TURN_ID_ATTR), "pass-1")
+			assert.isFalse(
+				spans.some((span) => span.name === "investigation.test" && span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)),
+			)
+			assert.strictEqual(pass?.get("gen_ai.agent.name"), "hypothesis-test")
+			assert.strictEqual(pass?.get("gen_ai.agent.description"), "test lane")
+			assert.strictEqual(pass?.get("gen_ai.conversation.id"), "pass-1")
+			assert.strictEqual(pass?.get("gen_ai.provider.name"), "openrouter")
+			assert.strictEqual(pass?.get("gen_ai.request.model"), "scripted/test-model")
+			const definitions = JSON.parse(String(pass?.get("gen_ai.tool.definitions")))
+			assert.includeMembers(
+				definitions.map((tool: { readonly name: string }) => tool.name),
+				["query_data", "submit_candidate"],
+			)
+
+			const tool = spans.find((span) => span.name === "execute_tool query_data")?.attributes
+			assert.deepStrictEqual(JSON.parse(String(tool?.get("gen_ai.tool.call.arguments"))), {
+				sql: "select 1",
+			})
+			assert.deepStrictEqual(JSON.parse(String(tool?.get("gen_ai.tool.call.result"))), {
+				result: "query_data completed",
+			})
+			assert.isNotEmpty(tool?.get("gen_ai.tool.description"))
+		}),
+	)
+
+	it.effect("records a failed tool call's message as its result", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const failingExecutor = Layer.succeed(McpToolExecutor, {
+				execute: () =>
+					Effect.succeed({
+						content: [{ type: "text" as const, text: "table not found" }],
+						isError: true,
+					}),
+			})
+
+			yield* runAgentPass({
+				id: "pass-1",
+				agent: AGENT,
+				tenant: TENANT,
+				model: scripted([
+					turn(call("c1", "query_data", { sql: "select 1" })),
+					turn(call("c2", "submit_candidate", { claim: "found it" })),
+				]),
+				prompt: "Is the pool exhausted?",
+				submit: SUBMIT,
+			}).pipe(
+				Effect.provide(Layer.merge(failingExecutor, IdGenerator.layer)),
+				Effect.withSpan("investigation.test"),
+				Effect.withTracer(tracer),
+			)
+
+			const tool = spans.find((span) => span.name === "execute_tool query_data")?.attributes
+			// The failure message as the model received it, prefix and all.
+			assert.include(JSON.parse(String(tool?.get("gen_ai.tool.call.result"))).result, "table not found")
 		}),
 	)
 
