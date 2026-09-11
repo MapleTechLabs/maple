@@ -7,6 +7,12 @@ import {
 	type AgentSessionsSearchState,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import { AgentSessionsList, type AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
+import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
+import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import { ReloadControls } from "@/components/time-range-picker/reload-controls"
+
+import { buildToolAnalyticsFixture, buildToolCells } from "./agent-tools-fixture"
 
 /**
  * `/agent-sessions` without a warehouse behind it.
@@ -20,6 +26,10 @@ import { AgentSessionsList, type AgentSessionRow } from "@/components/agent-sess
  *
  * `ai_trace_index` does not exist in the local Tinybird container, so the live
  * page renders empty here; this is where a row change gets looked at.
+ *
+ * It sits under the route's tab strip and toolbar, with the route's spacing, so
+ * the pair can be lined up against `/lab/agent-tools`: switching tabs moves
+ * neither. The tab counts are the tools lab's, as the two routes share them.
  */
 
 /** Widths worth checking, because the columns are container queries against
@@ -198,6 +208,12 @@ export function AgentSessionsListLab() {
 	// No server to re-rank the rows: the headers only mark the order they would ask for.
 	const [sortSearch, setSortSearch] = useState<Pick<AgentSessionsSearchState, "sortBy" | "sortDir">>({})
 	const { sortBy, sortDir } = agentSessionsSort(sortSearch)
+	const [query, setQuery] = useState("")
+	const [errorsOnly, setErrorsOnly] = useState(false)
+	const tabCounts = useMemo(() => {
+		const all = buildToolAnalyticsFixture({}, nowMs, buildToolCells(nowMs))
+		return { sessions: all.allSessions, tools: all.tools.length }
+	}, [nowMs])
 
 	return (
 		<div className="flex h-svh flex-col gap-4 p-6">
@@ -220,18 +236,39 @@ export function AgentSessionsListLab() {
 			{/* The route's own layout primitives: the list virtualizes against the
 			    page's scroll area, and without one it renders no rows at all. */}
 			<div className="flex min-h-0 flex-1 flex-col" style={width === null ? undefined : { width }}>
-				<PageLayout.Root>
-					<PageLayout.Content>
-						<PageLayout.ScrollArea>
-							<AgentSessionsList
-								sessions={rows}
-								sortBy={sortBy}
-								sortDir={sortDir}
-								onSortChange={(key) => setSortSearch((prev) => agentSessionsSortPatch(prev, key))}
-							/>
-						</PageLayout.ScrollArea>
-					</PageLayout.Content>
-				</PageLayout.Root>
+				<PageRefreshProvider>
+					<PageLayout.Root>
+						<PageLayout.Content>
+							<PageLayout.StickyArea className="pb-3">
+								<div className="space-y-3">
+									<AgentSessionsTabs
+										active="sessions"
+										counts={tabCounts}
+										className="border-b border-border"
+									/>
+									<AgentSessionsToolbar
+										query={query}
+										onSearch={(value) => setQuery(value ?? "")}
+										errorsOnly={errorsOnly}
+										onToggleErrorsOnly={() => setErrorsOnly((on) => !on)}
+										sessionCount={rows.length}
+										actions={<ReloadControls />}
+									/>
+								</div>
+							</PageLayout.StickyArea>
+							<PageLayout.ScrollArea className="pt-0">
+								<AgentSessionsList
+									sessions={rows}
+									sortBy={sortBy}
+									sortDir={sortDir}
+									onSortChange={(key) =>
+										setSortSearch((prev) => agentSessionsSortPatch(prev, key))
+									}
+								/>
+							</PageLayout.ScrollArea>
+						</PageLayout.Content>
+					</PageLayout.Root>
+				</PageRefreshProvider>
 			</div>
 		</div>
 	)

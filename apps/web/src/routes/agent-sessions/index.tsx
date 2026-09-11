@@ -29,9 +29,11 @@ import {
 	aiSessionsDistributionsResultAtom,
 	aiSessionsFacetsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { resolveEffectiveTimeRange, useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteAiSessions } from "@/hooks/use-infinite-ai-sessions"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { useAgentSessionsTabCounts } from "@/lib/agent-sessions/use-tool-analytics"
 
 /**
  * The list's window. There is no picker: sessions are read newest-first over
@@ -118,6 +120,9 @@ function AgentSessionsBody() {
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
 	const { refreshVersion } = usePageRefreshContext()
+	// Resolved in the selected zone, as `useEffectiveTimeRange` does on the Tools
+	// tab: `7d` starts at that zone's midnight.
+	const { effectiveTimezone } = useTimezonePreference()
 	// "The last week" resolves against now once per mount and once per Reload,
 	// never snapped: the list is newest-first, and an end floored to the cache
 	// grid hid up to a grid interval of the newest sessions on every page load.
@@ -125,8 +130,12 @@ function AgentSessionsBody() {
 	// is what holds the unfiltered facets' and distributions' keys steady — the
 	// job the snap used to do.
 	const { startTime, endTime } = useMemo(
-		() => resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, { snap: false }),
-		[refreshVersion],
+		() =>
+			resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, {
+				snap: false,
+				timeZone: effectiveTimezone,
+			}),
+		[refreshVersion, effectiveTimezone],
 	)
 	const filterInputs = useMemo(
 		() => agentSessionsFilterInputs(search, { startTime, endTime }),
@@ -145,6 +154,11 @@ function AgentSessionsBody() {
 		aiSessionsDistributionsResultAtom({ data: { startTime, endTime } }),
 	)
 	const sessions = allData
+	// Both tabs' counts over this week, unfiltered — over the Tools tab's own
+	// resolution of its default window (snapped, unlike the list's), so the reads
+	// are the ones it makes: the numbers match there and survive the switch.
+	const tabCountsWindow = useEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW)
+	const tabCounts = useAgentSessionsTabCounts(tabCountsWindow)
 	const { sortBy, sortDir } = agentSessionsSort(search)
 	const onSortChange = useCallback(
 		(key: AiSessionSortKey) =>
@@ -182,15 +196,23 @@ function AgentSessionsBody() {
 				/>
 			</DashboardLayout.Filters>
 			<DashboardLayout.Content>
-				<DashboardLayout.Sticky>
+				{/* `pb-3` over an unpadded scroll area: the layout's `p-4` on both
+				    stacked 32px between the toolbar and the table. */}
+				<DashboardLayout.Sticky className="pb-3">
 					{/* The Tools tab reads the same spans across every session; this
-					    page reads one session at a time. Two routes, one strip. */}
-					<div className="space-y-2">
-						<AgentSessionsTabs active="sessions" />
+					    page reads one session at a time. Two routes, one strip — with
+					    the Tools page's hairline and 12px gap, so the strip and the
+					    toolbar sit at the same height on both. */}
+					<div className="space-y-3">
+						<AgentSessionsTabs
+							active="sessions"
+							counts={tabCounts}
+							className="border-b border-border"
+						/>
 						{toolbar}
 					</div>
 				</DashboardLayout.Sticky>
-				<DashboardLayout.Scroll>
+				<DashboardLayout.Scroll className="pt-0">
 					{Result.builder(firstPageResult)
 						.onInitial(() => <AgentSessionsListSkeleton />)
 						.onError((error) => (
