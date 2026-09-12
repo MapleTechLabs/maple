@@ -158,10 +158,9 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 				ApiBindingLayers,
 				Cloudflare.Workers.CronEventSourceLive,
 				Cloudflare.Queues.EventSourceLive,
-				WorkerTelemetry({
-					serviceName: "maple-api",
-					dropSpanNames: ["McpServer/Notifications."],
-				}),
+				// No `dropSpanNames`: the MCP server's notification spans are maple-ai's
+				// to drop now, and its telemetry config is where that option lives.
+				WorkerTelemetry({ serviceName: "maple-api" }),
 				// The references the bridge's `HttpMiddleware.tracer` reads, built into
 				// every event beside the SDK; they cannot live in the app graph.
 				AlchemyTelemetry.layer(ApiObservabilityLive),
