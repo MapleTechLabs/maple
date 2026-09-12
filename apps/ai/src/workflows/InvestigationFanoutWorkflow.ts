@@ -1,9 +1,12 @@
 /**
- * The investigation fan-out Workflow, in alchemy's form: yielded from the api
+ * The investigation fan-out Workflow, in alchemy's form: yielded from the AI
  * Worker's init, which binds it as `InvestigationFanoutWorkflow`, registers the
  * physical workflow and exports the class from the generated entry. N lens
  * agents run in parallel, then one validator promotes a single cause and
  * records why each rival lost.
+ *
+ * The api and alerting Workers bind the same physical workflow cross-script
+ * under this class name — see `@maple/domain/investigation-fanout`.
  */
 import { ChatSessionObject } from "@ai/chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@ai/mcp/expected-failures"
@@ -34,7 +37,11 @@ export default class InvestigationFanoutWorkflow extends Cloudflare.Workflow<Inv
 		// here so the run gets the typed stubs of the class the Worker hosts, and
 		// the application database, bound to the host Worker under `MAPLE_DB`.
 		const chatSessions = yield* ChatSessionObject
-		yield* MapleDb("api")
+		// `"ai"` is the HOST this workflow runs on, which is what picks the
+		// Hyperdrive config `MAPLE_DB` binds on this script. Naming api's here
+		// bound a second, differently-resolved `MAPLE_DB` on maple-ai — harmless
+		// only while both consumers resolve to the same config.
+		yield* MapleDb("ai")
 		return Effect.fn("InvestigationFanoutWorkflow")(function* (
 			payload: InvestigationFanoutWorkflowPayload,
 		) {
