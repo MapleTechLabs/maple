@@ -20,6 +20,8 @@ const EMPTY_SESSION_ID = "wrun_01KZEMPTY"
 /** A session whose first page fills the read — the truncation path. */
 const BIG_SESSION_ID = "wrun_01KZBIG"
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
+/** A trace whose spans fill a trace-pinned read: the page is its beginning. */
+const PARTIAL_TRACE_ID = "0123456789abcdef0123456789abcdef"
 const WINDOW = { start_time: "2026-08-19 09:00:00", end_time: "2026-08-19 12:00:00" }
 
 /* -------------------------------------------------------------------------- */
@@ -355,6 +357,21 @@ const bigSessionSpanRows = [
 /** The cursor the first page ends on — the second page's SQL names it. */
 const BIG_PAGE_CURSOR_SPAN_ID = bigSpanId(AI_SESSION_SPANS_MAX_SPANS - 1)
 
+/** One row past the trace-pinned read's limit: the extra row is what makes the
+ *  page report a cursor, and the cursor is what makes the read partial. */
+const partialTraceSpanRows = Array.from({ length: AI_SESSION_SPANS_MAX_SPANS + 1 }, (_, index) => ({
+	...spanRow(
+		bigSpanId(index),
+		index === 0 ? "" : bigSpanId(0),
+		"chat gpt-5",
+		`2026-08-19 10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000000000`,
+		10,
+		"Unset",
+		{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5" },
+	),
+	traceId: PARTIAL_TRACE_ID,
+}))
+
 // First match wins: the reads over `trace_detail_spans` are told apart by the
 // derived tables and aggregates their SQL names.
 const fixtures: FixtureRule[] = [
@@ -365,6 +382,7 @@ const fixtures: FixtureRule[] = [
 	// row without it. Only a truncated session asks for them.
 	{ match: (sql) => sql.includes("GROUP BY turnKey"), rows: [] },
 	{ match: (sql) => sql.includes("aiSpanCount") && sql.includes("trace_detail_spans"), rows: [totalsRow] },
+	{ match: (sql) => sql.includes(PARTIAL_TRACE_ID), rows: partialTraceSpanRows },
 	{ match: (sql) => sql.includes(BIG_SESSION_ID), rows: bigSessionSpanRows },
 	{ match: (sql) => sql.includes("trace_detail_spans"), rows: sessionSpanRows },
 	{
@@ -458,6 +476,16 @@ describe("list_agent_sessions rendering", () => {
 		// The end bound is rounded up to the whole second: truncating it would cut
 		// the session's last spans out of the follow-up read.
 		expect(output).toContain('start_time="2026-08-19 10:00:00" end_time="2026-08-19 10:00:05"')
+	})
+
+	// A bare `offset=` would page a DIFFERENT list: the default 24h window, 25
+	// rows at a time.
+	it("carries the window and the page size into the next-page hint", async () => {
+		const output = await rendered("list_agent_sessions", { ...WINDOW, limit: 1 })
+		expect(output).toContain(
+			`list_agent_sessions start_time="${WINDOW.start_time}" end_time="${WINDOW.end_time}" limit=1 offset=1`,
+		)
+		expect(output).toContain("re-pass the same filters")
 	})
 
 	// An LLM sends `""` for "no filter" and a fractional count for a whole one;
@@ -592,6 +620,20 @@ describe("inspect_agent_session_span rendering", () => {
 			...WINDOW,
 		})
 		expect(output).toContain("is not in trace")
+	})
+
+	// A trace bigger than the read is the one case where "not in trace" would be
+	// a lie: only its beginning was read, and the span may be past the cursor.
+	it("says the trace was only partly read rather than that the span is absent", async () => {
+		const output = await rendered("inspect_agent_session_span", {
+			session_id: SESSION_ID,
+			trace_id: PARTIAL_TRACE_ID,
+			span_id: "9999999999999999",
+			...WINDOW,
+		})
+		expect(output).toContain(`Only the first ${AI_SESSION_SPANS_MAX_SPANS} spans of trace`)
+		expect(output).not.toContain("is not in trace")
+		expect(output).toContain("list_agent_session_spans")
 	})
 })
 

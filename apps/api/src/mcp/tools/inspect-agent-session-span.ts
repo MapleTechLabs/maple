@@ -154,11 +154,16 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan("result.traceSpanCount", traceSpans.length)
 			const span = traceSpans.find((candidate) => candidate.spanId === spanId)
 			if (span === undefined) {
+				// A page that ended on a cursor read only the FIRST spans of the
+				// trace, so absence from it is not absence from the trace.
+				const partial = page.nextCursor !== undefined
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Span ${spanId} is not in trace ${traceId} (${traceSpans.length} spans read). List the session's spans with \`list_agent_session_spans session_id="${sessionId}"\`.`,
+							text: partial
+								? `Only the first ${traceSpans.length} spans of trace ${traceId} were read, and span ${spanId} is not among them. ${TRACE_TOO_LARGE}`
+								: `Span ${spanId} is not in trace ${traceId} (${traceSpans.length} spans read). List the session's spans with \`list_agent_session_spans session_id="${sessionId}"\`.`,
 						},
 					],
 				}

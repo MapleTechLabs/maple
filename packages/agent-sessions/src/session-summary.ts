@@ -666,9 +666,11 @@ export function countTurnTokens(turn: SessionTurn, turns: readonly SessionTurn[]
 	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
 	const { bySpan } = countableUsageSpans(turn.spans, byId)
 	// Walked spans-first rather than over `bySpan`: the session-level test needs the
-	// span, and the usage map holds only ids.
+	// span, and the usage map holds only ids. Over the deduplicated map's values,
+	// not `turn.spans` — a page-overlapping read repeats a row, and a repeated
+	// reporter would be summed once per copy while the session total counts it once.
 	return sumTokens(
-		turn.spans.flatMap((span) => {
+		[...byId.values()].flatMap((span) => {
 			const tokens = bySpan.get(span.spanId)
 			return tokens === undefined || isSessionLevelReporter(span, turns) ? [] : [tokens]
 		}),

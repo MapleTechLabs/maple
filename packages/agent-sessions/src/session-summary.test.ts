@@ -653,6 +653,18 @@ describe("countTurnTokens", () => {
 		expect(summarize(perCall).tokens.total).toBe(330)
 	})
 
+	it("counts a duplicated span row once, as the session total does", () => {
+		// A page-overlapping read repeats a row (`session-transcript.ts` dedupes by
+		// id for the same reason). The summary's maps are keyed by span id, so the
+		// session counts it once — a turn that walked its rows counted it twice.
+		const duplicated = [...perCall, { ...perCall[1]! }]
+		const turns = buildSessionTurns(duplicated)
+		const total = turns.reduce((sum, turn) => sum + countTurnTokens(turn, turns).total, 0)
+
+		expect(total).toBe(summarize(duplicated).tokens.total)
+		expect(total).toBe(330)
+	})
+
 	it("credits no turn with a reporter that spans several of them", () => {
 		// Regression: time-partitioned assignment put the whole session's 5,500
 		// tokens on turn 1 and left turn 2 reading zero.

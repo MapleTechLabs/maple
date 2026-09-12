@@ -169,6 +169,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 							current: aggregateData(current),
 							...(previous !== undefined && { previous: aggregateData(previous) }),
 							...(totals.allSessions !== undefined && { allSessions: totals.allSessions }),
+							...(totals.description !== undefined && { description: totals.description }),
 							firstSeen: totals.firstSeen,
 							lastSeen: totals.lastSeen,
 							breakdown: [],

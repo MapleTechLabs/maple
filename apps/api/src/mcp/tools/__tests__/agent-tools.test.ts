@@ -433,12 +433,25 @@ describe("list_agent_tool_errors rendering", () => {
 		expect(rendered).toContain(`\`get_agent_tool_error tool="search_docs" fingerprint="${FINGERPRINT}"\``)
 	})
 
-	it("bounds the trend grid at 24 buckets however narrow the bucket", async () => {
-		const rendered = markdown(
-			await call(ERROR_LIST, { ...WINDOW, tool: "search_docs", bucket_seconds: 1 }),
-		)
+	it("says so when the trend covers the whole window", async () => {
+		const result = await call(ERROR_LIST, { ...WINDOW, tool: "search_docs" })
+		expect(markdown(result)).not.toContain("covers only the last")
+		expect(structured(result).trendClipped).toBe(false)
+	})
+
+	it("bounds the trend grid at 24 buckets however narrow the bucket, and says where it starts", async () => {
+		const result = await call(ERROR_LIST, { ...WINDOW, tool: "search_docs", bucket_seconds: 1 })
+		const rendered = markdown(result)
 		const cells = rowCells(rendered, FINGERPRINT)
 		expect(cells[cells.length - 1]?.split(",")).toHaveLength(24)
+		// 24 one-second buckets of a 12h window are its LAST 24 seconds — every
+		// failure above is older than the grid, so it renders as 24 zeros and the
+		// note is the only thing that says the trend is not the window.
+		expect(cells[cells.length - 1]).toBe(Array.from<number>({ length: 24 }).fill(0).join(","))
+		expect(rendered).toContain("covers only the last 24 buckets of the window")
+		expect(rendered).toContain("from 2026-09-12 11:59:36")
+		expect(structured(result).trendClipped).toBe(true)
+		expect(structured(result).trendStart).toBe("2026-09-12 11:59:36")
 	})
 
 	it("answers a tool with no failures", async () => {

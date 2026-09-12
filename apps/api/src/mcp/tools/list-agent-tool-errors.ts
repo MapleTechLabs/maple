@@ -96,10 +96,13 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 				}),
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_tool_errors")))
 
-			const groups = errors.data.map((group) => ({
-				...group,
-				trend: compactTrend(group.trend, { startMs, endMs, bucketSeconds }),
-			}))
+			const groups = errors.data.map((group) => {
+				const grid = compactTrend(group.trend, { startMs, endMs, bucketSeconds })
+				return { ...group, trend: grid.buckets, trendFrom: grid.clippedFrom }
+			})
+			// The clip is a property of the window and the bucket, so every group
+			// shares it; the first one is as good as any.
+			const trendFrom = groups[0]?.trendFrom
 			yield* Effect.annotateCurrentSpan({ "result.rowCount": groups.length })
 
 			const lines: string[] = [
@@ -131,7 +134,11 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 			}
 
 			lines.push(
-				`${groups.length} group${groups.length === 1 ? "" : "s"}, most failed calls first. Trend is failed calls per ${bucketSeconds}s bucket, oldest first.`,
+				`${groups.length} group${groups.length === 1 ? "" : "s"}, most failed calls first. Trend is failed calls per ${bucketSeconds}s bucket, oldest first.${
+					trendFrom === undefined
+						? ""
+						: ` It covers only the last ${TREND_BUCKETS} buckets of the window — from ${trendFrom} to ${et} — not the whole range above.`
+				}`,
 				``,
 				formatTable(
 					[
@@ -186,6 +193,8 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 						timeRange: { start: st, end: et },
 						selection: agentToolSelectionData(tool, params),
 						bucketSeconds,
+						trendClipped: trendFrom !== undefined,
+						...(trendFrom !== undefined && { trendStart: trendFrom }),
 						groups: groups.map((group) => ({
 							fingerprint: group.fingerprint,
 							errorType: group.errorType,

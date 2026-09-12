@@ -203,8 +203,11 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				),
 			)
 			if (sessions.length === limit) {
+				// The window and the limit travel with the offset: a bare `offset=`
+				// would page a DIFFERENT list — the default 24h window, 25 at a
+				// time — and the filters are the caller's to re-pass.
 				nextSteps.push(
-					`\`list_agent_sessions offset=${offset + limit}\` — next page of ${limit} sessions`,
+					`\`list_agent_sessions start_time="${st}" end_time="${et}" limit=${limit} offset=${offset + limit}\` — next page of ${limit} sessions; re-pass the same filters`,
 				)
 			}
 			lines.push(formatNextSteps(nextSteps))

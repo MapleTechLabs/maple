@@ -4,6 +4,10 @@
 // MCP text and must not pull React in. The implementations below are copied verbatim from
 // `@maple/ui/lib/format`, `@maple/ui/lib/replay-format` and `apps/web/src/lib/billing/currency`
 // so the strings stay byte-identical to what the page renders.
+//
+// `apps/web/src/lib/agent-sessions/format-parity.test.ts` pins the copies to their
+// originals — web can import both sides, and it runs a fixed input table through each.
+// Edit one of these four functions and that test is where the drift shows up.
 
 /**
  * Format a duration in milliseconds to a human-readable string.

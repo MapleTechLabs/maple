@@ -146,6 +146,18 @@ export const formatSeen = (value: string): string =>
 /** Buckets a default trend is cut into, and the most any trend renders. */
 export const TREND_BUCKETS = 24
 
+export interface TrendGrid {
+	/** Calls per bucket, oldest first. */
+	readonly buckets: ReadonlyArray<number>
+	/**
+	 * Where the grid starts when the window spans more than `TREND_BUCKETS` —
+	 * the rendered trend is then the window's TAIL, and a reader told only
+	 * "oldest first" would date every point wrong. `undefined` where the grid
+	 * covers the whole window.
+	 */
+	readonly clippedFrom: string | undefined
+}
+
 /**
  * A trend's calls per bucket as a fixed-width grid, oldest first.
  *
@@ -158,11 +170,13 @@ export const TREND_BUCKETS = 24
  * the window's end is exclusive (a window a whole number of buckets wide spans
  * exactly that many, not one more, so its first bucket survives the cut), and
  * `bucket_seconds=1` over a week is 24 slots per group rather than 604 801.
+ * A clipped grid reports where it starts, because 24 zeros beside a group with
+ * failures is a narrow bucket and not a quiet window.
  */
 export const compactTrend = (
 	points: ReadonlyArray<{ readonly bucket: string; readonly calls: number }>,
 	opts: { readonly startMs: number; readonly endMs: number; readonly bucketSeconds: number },
-): ReadonlyArray<number> => {
+): TrendGrid => {
 	const width = opts.bucketSeconds * 1000
 	// Aligned to the lattice `toStartOfInterval` snaps the query's buckets to,
 	// which is what lets a point be binned by its instant. The grid is
@@ -170,7 +184,7 @@ export const compactTrend = (
 	// `Array.from` as a length.
 	const firstBucket = Math.floor(opts.startMs / width) * width
 	const spanned = Math.ceil((opts.endMs - firstBucket) / width)
-	if (!Number.isFinite(spanned) || spanned < 1) return []
+	if (!Number.isFinite(spanned) || spanned < 1) return { buckets: [], clippedFrom: undefined }
 	const length = Math.min(spanned, TREND_BUCKETS)
 	const gridStart = firstBucket + (spanned - length) * width
 	const buckets = Array.from<number>({ length }).fill(0)
@@ -178,5 +192,8 @@ export const compactTrend = (
 		const index = Math.floor((Date.parse(point.bucket) - gridStart) / width)
 		if (index >= 0 && index < length) buckets[index] = point.calls
 	}
-	return buckets
+	return {
+		buckets,
+		clippedFrom: length < spanned ? formatSeen(new Date(gridStart).toISOString()) : undefined,
+	}
 }

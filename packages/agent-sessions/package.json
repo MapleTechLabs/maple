@@ -3,7 +3,8 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./format": "./src/format.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
