@@ -11,9 +11,9 @@ import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
+	catchSessionTooLarge,
 	offsetLabel,
-	SESSION_TOO_LARGE,
-	sessionTooLargeResult,
+	requiredIdOf,
 	sessionWindowOf,
 	sessionWindowParams,
 	spanCategoryLabel,
@@ -25,8 +25,10 @@ import { spanModel, spanStartMs, spanTokenBuckets, spanFailed } from "@maple/age
 import { readAiSessionSpans } from "@/services/ai-sessions/ai-session-reads"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
-const decodeScope = Schema.decodeUnknownOption(AiSessionSpanScope)
 const decodeCursor = Schema.decodeUnknownOption(AiSessionSpanCursor)
+
+/** What to do about a page the read cannot carry. */
+const PAGE_TOO_LARGE = "Pass a smaller `limit`."
 
 export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 	server.tool(
@@ -35,9 +37,10 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 		Schema.Struct({
 			session_id: requiredStringParam("The agent session id, from `list_agent_sessions`"),
 			...sessionWindowParams,
-			scope: optionalStringParam(
-				"Which spans: all (default), ai (the agent's own), or app (the service's own work in the same traces)",
-			),
+			scope: Schema.optional(AiSessionSpanScope).annotate({
+				description:
+					"Which spans: all (default), ai (the agent's own), or app (the service's own work in the same traces)",
+			}),
 			after_timestamp: optionalStringParam(
 				"Keyset cursor: the `timestamp` from a previous page's nextCursor (pass with after_span_id)",
 			),
@@ -49,11 +52,13 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 		Effect.fn("McpTool.listAgentSessionSpans")(function* (params) {
 			const windowInput = sessionWindowOf(params)
 			if (windowInput._tag === "invalid") return windowInput.result
+			const idInput = requiredIdOf(params.session_id, "session_id", 'session_id="wrun_01KZ…"')
+			if (idInput._tag === "invalid") return idInput.result
+			const sessionId = idInput.id
 
-			const scope = params.scope === undefined ? Option.some("all" as const) : decodeScope(params.scope)
-			if (Option.isNone(scope)) {
-				return validationError(`Invalid scope: ${params.scope}. Must be one of: all, ai, app.`)
-			}
+			// Published as an enum, so an unknown scope is a parameter error the
+			// model is told how to fix rather than a branch here.
+			const scope = params.scope ?? "all"
 
 			const hasCursorHalf = params.after_timestamp !== undefined || params.after_span_id !== undefined
 			const cursor =
@@ -70,27 +75,21 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sessionId: params.session_id,
-				scope: scope.value,
+				sessionId,
+				scope,
 				limit,
 			})
 
 			const page = yield* readAiSessionSpans(
 				tenant,
 				new GetAiSessionSpansRequest({
-					sessionId: params.session_id,
-					scope: scope.value,
+					sessionId,
+					scope,
 					limit,
 					...(windowInput.window !== undefined && windowInput.window),
 					...(Option.isSome(cursor) && { after: cursor.value }),
 				}),
-			).pipe(
-				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
-					Effect.succeed(SESSION_TOO_LARGE),
-				),
-				Effect.catchTags(warehouseReadToMcpHandlers("list_agent_session_spans")),
-			)
-			if (page === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_session_spans")))
 
 			const spans = page.data
 			yield* Effect.annotateCurrentSpan("result.rowCount", spans.length)
@@ -99,7 +98,7 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 					content: [
 						{
 							type: "text" as const,
-							text: `No ${scope.value === "all" ? "" : `${scope.value} `}spans for AI agent session ${params.session_id}${
+							text: `No ${scope === "all" ? "" : `${scope} `}spans for AI agent session ${sessionId}${
 								windowInput.window === undefined ? "" : " in the given window"
 							}. Check the id with \`list_agent_sessions\`.`,
 						},
@@ -128,7 +127,7 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 			})
 
 			const lines: string[] = [
-				`## AI agent session ${params.session_id} — ${spans.length} spans (scope ${scope.value})`,
+				`## AI agent session ${sessionId} — ${spans.length} spans (scope ${scope})`,
 				`Oldest first; offsets are from the first span on this page.`,
 				``,
 				formatTable(
@@ -153,12 +152,12 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 			const nextSteps: string[] = []
 			if (page.nextCursor !== undefined) {
 				nextSteps.push(
-					`\`list_agent_session_spans session_id="${params.session_id}"${hint} scope="${scope.value}" after_timestamp="${page.nextCursor.timestamp}" after_span_id="${page.nextCursor.spanId}"\` — next page`,
+					`\`list_agent_session_spans session_id="${sessionId}"${hint} scope="${scope}" after_timestamp="${page.nextCursor.timestamp}" after_span_id="${page.nextCursor.spanId}"\` — next page`,
 				)
 			}
 			const interesting = spans.find(spanFailed) ?? spans[0]
 			nextSteps.push(
-				`\`inspect_agent_session_span session_id="${params.session_id}" trace_id="${interesting.traceId}" span_id="${interesting.spanId}"${hint}\` — messages and tool calls on ${
+				`\`inspect_agent_session_span session_id="${sessionId}" trace_id="${interesting.traceId}" span_id="${interesting.spanId}"${hint}\` — messages and tool calls on ${
 					spanFailed(interesting) ? "the first failed span" : "a span"
 				}`,
 			)
@@ -168,8 +167,8 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 				content: createDualContent(lines.join("\n"), {
 					tool: "list_agent_session_spans",
 					data: {
-						sessionId: params.session_id,
-						scope: scope.value,
+						sessionId,
+						scope,
 						spans: spans.map((span) => {
 							const tokens = spanTokenBuckets(span)
 							return {
@@ -195,6 +194,6 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 					},
 				}),
 			}
-		}),
+		}, catchSessionTooLarge(PAGE_TOO_LARGE)),
 	)
 }

@@ -36,7 +36,7 @@ import {
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 import { Array as Arr, Effect } from "effect"
-import { CH } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 // The warehouse's own tenant type, which both callers satisfy: the HTTP
 // group's `CurrentTenant.Context` and the MCP's `CurrentMcpTenant` (whose
@@ -48,8 +48,10 @@ import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryServic
  * The AI agent session warehouse reads, one per request shape.
  *
  * They take the tenant rather than resolving it, so the dashboard's HTTP group
- * and the MCP tools run the same read against the same warehouse queries. The
- * span annotations live here for that reason: both callers get them.
+ * and the MCP tools run the same read against the same warehouse queries. Each
+ * read opens its own span for that reason: both callers get the annotations,
+ * and reads a caller runs side by side (or in a paging loop) no longer write
+ * over one another on the caller's span.
  */
 
 /**
@@ -96,8 +98,16 @@ const DETAILS_SLICE_CONCURRENCY = 6
  * bounds: every read has to be partition-pruned on both levels rather than fan
  * out unpruned — see `aiSessionSpansQuery`.
  */
-export const resolveAiSessionWindow = Effect.fn(function* (tenant: TenantContext, sessionId: string) {
+export const resolveAiSessionWindow = Effect.fn("aiSessions.resolveWindow")(function* (
+	tenant: TenantContext,
+	sessionId: string,
+) {
 	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({
+		orgId: tenant.orgId,
+		"maple.ai.session.id": sessionId,
+		"maple.ai.window_source": "resolved",
+	})
 	const traceId = traceSessionTraceId(sessionId)
 	const resolved =
 		traceId === undefined
@@ -135,7 +145,7 @@ export const resolveAiSessionWindow = Effect.fn(function* (tenant: TenantContext
  * are resolved from the id first. One extra round trip, and only on the
  * deep-link path; `window_source` is how often that runs gets watched.
  */
-const resolveRead = Effect.fn("aiSessions.resolveRead")(function* (
+const resolveRead = Effect.fn(function* (
 	tenant: TenantContext,
 	payload: {
 		readonly sessionId: string
@@ -158,7 +168,10 @@ const resolveRead = Effect.fn("aiSessions.resolveRead")(function* (
 	return yield* resolveAiSessionWindow(tenant, payload.sessionId)
 })
 
-export const listAiSessions = Effect.fn(function* (tenant: TenantContext, payload: ListAiSessionsRequest) {
+export const listAiSessions = Effect.fn("aiSessions.list")(function* (
+	tenant: TenantContext,
+	payload: ListAiSessionsRequest,
+) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	// One read, off `ai_trace_index` alone: the page is ranked over the
@@ -193,10 +206,12 @@ export const listAiSessions = Effect.fn(function* (tenant: TenantContext, payloa
 		),
 		{ profile: "list", context: "aiSessionsPage" },
 	)
+	// Rows returned, not rows asked for — annotated before the empty answer
+	// leaves, so a window that ranks nothing is visible as such.
+	yield* Effect.annotateCurrentSpan({ "maple.ai.page_size": page.length })
 	if (page.length === 0) {
 		return new ListAiSessionsResponse({ data: [] })
 	}
-	yield* Effect.annotateCurrentSpan({ "maple.ai.page_size": page.length })
 	// The page's order is the order shown. The row's bounds are the
 	// agent spans' extent, which the details replace with the true one.
 	return new ListAiSessionsResponse({
@@ -230,7 +245,7 @@ export const listAiSessions = Effect.fn(function* (tenant: TenantContext, payloa
 	})
 })
 
-export const readAiSessionDetails = Effect.fn(function* (
+export const readAiSessionDetails = Effect.fn("aiSessions.details")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionDetailsRequest,
 ) {
@@ -245,7 +260,7 @@ export const readAiSessionDetails = Effect.fn(function* (
 	const slices = Integrations.aiSessionDetailsSlices(payload.startTime, payload.endTime)
 	yield* Effect.annotateCurrentSpan({
 		orgId: tenant.orgId,
-		"maple.ai.page_size": payload.sessionIds.length,
+		"maple.ai.requested_sessions": payload.sessionIds.length,
 		"maple.ai.details_slices": slices.length,
 	})
 	const query = Integrations.aiSessionDetailsQuery({
@@ -276,7 +291,7 @@ export const readAiSessionDetails = Effect.fn(function* (
 	return new ListAiSessionDetailsResponse({ data: rows })
 })
 
-export const readAiSessionFacets = Effect.fn(function* (
+export const readAiSessionFacets = Effect.fn("aiSessions.facets")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsFacetsRequest,
 ) {
@@ -304,7 +319,7 @@ export const readAiSessionFacets = Effect.fn(function* (
 	})
 })
 
-export const readAiSessionDistributions = Effect.fn(function* (
+export const readAiSessionDistributions = Effect.fn("aiSessions.distributions")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsDistributionsRequest,
 ) {
@@ -342,7 +357,7 @@ export const readAiSessionDistributions = Effect.fn(function* (
 	})
 })
 
-export const readAiSessionSpans = Effect.fn(function* (
+export const readAiSessionSpans = Effect.fn("aiSessions.spans")(function* (
 	tenant: TenantContext,
 	payload: GetAiSessionSpansRequest,
 ) {
@@ -350,6 +365,7 @@ export const readAiSessionSpans = Effect.fn(function* (
 	// Annotated before the read: a 413 never reaches the code below.
 	const { traceId, window } = yield* resolveRead(tenant, payload)
 	if (window === undefined) {
+		yield* Effect.annotateCurrentSpan("maple.ai.found", false)
 		return new GetAiSessionSpansResponse({ data: [] })
 	}
 	const limit = payload.limit ?? AI_SESSION_SPANS_MAX_SPANS
@@ -361,6 +377,12 @@ export const readAiSessionSpans = Effect.fn(function* (
 		after: payload.after,
 	}
 	const rowSchema = { rowSchema: Integrations.aiSessionSpansRowSchema }
+	const context =
+		payload.traceIds !== undefined
+			? "aiTracesSpans"
+			: traceId === undefined
+				? "aiSessionSpans"
+				: "aiTraceSpans"
 	const compiled =
 		payload.traceIds !== undefined
 			? CH.compile(
@@ -382,12 +404,7 @@ export const readAiSessionSpans = Effect.fn(function* (
 	const rows = yield* warehouse
 		.compiledQueryBounded(tenant, compiled, {
 			profile: "list",
-			context:
-				payload.traceIds !== undefined
-					? "aiTracesSpans"
-					: traceId === undefined
-						? "aiSessionSpans"
-						: "aiTraceSpans",
+			context,
 			responseLimits: {
 				maxRows: limit + 1,
 				maxBytes: MAX_AI_SESSION_SPANS_RESPONSE_BYTES,
@@ -411,6 +428,9 @@ export const readAiSessionSpans = Effect.fn(function* (
 			: undefined
 	yield* Effect.annotateCurrentSpan({
 		"maple.ai.span_count": page.length,
+		// Which of the three reads ran: a trace-pinned read is keyed on the
+		// traces it was handed, not on the session the scope describes.
+		"maple.ai.read": context,
 		"maple.ai.scope": payload.scope ?? "all",
 		"maple.ai.has_more": nextCursor !== undefined,
 	})
@@ -422,13 +442,14 @@ export const readAiSessionSpans = Effect.fn(function* (
 	})
 })
 
-export const readAiSessionSummary = Effect.fn(function* (
+export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
 	tenant: TenantContext,
 	payload: GetAiSessionSummaryRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
 	const { traceId, window } = yield* resolveRead(tenant, payload)
 	if (window === undefined) {
+		yield* Effect.annotateCurrentSpan("maple.ai.found", false)
 		return emptySummary()
 	}
 	// Two reads over the same spans, side by side: the turn rows are
@@ -467,7 +488,10 @@ export const readAiSessionSummary = Effect.fn(function* (
 	return summary
 })
 
-export const readAiToolsSeries = Effect.fn(function* (tenant: TenantContext, payload: AiToolsSeriesRequest) {
+export const readAiToolsSeries = Effect.fn("aiSessions.toolsSeries")(function* (
+	tenant: TenantContext,
+	payload: AiToolsSeriesRequest,
+) {
 	const warehouse = yield* WarehouseQueryService
 	const selection = { ...toolsSelection(payload), split: payload.split }
 	// The series key is the request's where it named one, else derived
@@ -491,7 +515,10 @@ export const readAiToolsSeries = Effect.fn(function* (tenant: TenantContext, pay
 	return new AiToolsSeriesResponse({ data: rows, seriesKind })
 })
 
-export const readAiToolsTotals = Effect.fn(function* (tenant: TenantContext, payload: AiToolsTotalsRequest) {
+export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
+	tenant: TenantContext,
+	payload: AiToolsTotalsRequest,
+) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	// The comparison window is the caller's, shifted back by its own
@@ -553,7 +580,7 @@ export const readAiToolsTotals = Effect.fn(function* (tenant: TenantContext, pay
 	})
 })
 
-export const readAiToolsBreakdowns = Effect.fn(function* (
+export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(function* (
 	tenant: TenantContext,
 	payload: AiToolsBreakdownsRequest,
 ) {
@@ -571,7 +598,10 @@ export const readAiToolsBreakdowns = Effect.fn(function* (
 	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
 })
 
-export const readAiToolErrors = Effect.fn(function* (tenant: TenantContext, payload: AiToolErrorsRequest) {
+export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
+	tenant: TenantContext,
+	payload: AiToolErrorsRequest,
+) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({
 		orgId: tenant.orgId,
@@ -606,7 +636,7 @@ export const readAiToolErrors = Effect.fn(function* (tenant: TenantContext, payl
 	})
 })
 
-export const readAiToolErrorDetail = Effect.fn(function* (
+export const readAiToolErrorDetail = Effect.fn("aiSessions.toolErrorDetail")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorDetailRequest,
 ) {
@@ -654,7 +684,7 @@ export const readAiToolErrorDetail = Effect.fn(function* (
 	return new AiToolErrorDetailResponse({ sessions, variants, breakdown })
 })
 
-export const readAiToolErrorSamples = Effect.fn(function* (
+export const readAiToolErrorSamples = Effect.fn("aiSessions.toolErrorSamples")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorSamplesRequest,
 ) {
@@ -762,23 +792,17 @@ const toolsSelection = (payload: {
 	failingOnly: payload.failingOnly,
 })
 
-/** `TinybirdDateTime` is UTC without a zone marker. */
-const warehouseDateTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
-
-/** Back to warehouse shape, seconds precision — what the params take. */
-const warehouseDateTime = (ms: number): string => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
-
 /**
  * The window of equal length ending where the caller's begins — the tiles'
  * comparison. Computed here rather than asked for, so the delta cannot be
  * quietly taken against a window of a different size.
  */
 const previousWindow = (startTime: string, endTime: string) => {
-	const start = warehouseDateTimeMs(startTime)
-	const span = warehouseDateTimeMs(endTime) - start
+	const start = parseWarehouseDateTime(startTime)
+	const span = parseWarehouseDateTime(endTime) - start
 	return {
-		prevStartTime: warehouseDateTime(start - span),
-		prevEndTime: warehouseDateTime(start),
+		prevStartTime: formatWarehouseDateTime(start - span),
+		prevEndTime: formatWarehouseDateTime(start),
 	}
 }
 

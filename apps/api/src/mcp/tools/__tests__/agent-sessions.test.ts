@@ -1,19 +1,24 @@
 // SAFETY-FILE: the fixtures below are warehouse rows this test authors itself.
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Context, Effect, Schema } from "effect"
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "@effect/vitest"
+import { Effect, Schema } from "effect"
+import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
+import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import type { McpToolRequirements } from "@/mcp/tools/runtime-requirements"
-import type { McpToolRegistrar, McpToolResult } from "@/mcp/tools/types"
+import type { McpToolError, McpToolRegistrar, McpToolResult } from "@/mcp/tools/types"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
+import { clipPayload } from "@/mcp/lib/agent-sessions"
 import { registerGetAgentSessionTool } from "@/mcp/tools/get-agent-session"
 import { registerGetAgentSessionTranscriptTool } from "@/mcp/tools/get-agent-session-transcript"
 import { registerListAgentSessionSpansTool } from "@/mcp/tools/list-agent-session-spans"
-import { registerListAgentSessionsTool } from "@/mcp/tools/list-agent-sessions"
 import { registerInspectAgentSessionSpanTool } from "@/mcp/tools/inspect-agent-session-span"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "@/mcp/__evals__/fake-warehouse"
+import { __testables } from "@/services/warehouse/WarehouseQueryService"
+import { restoreWarehouse, type FixtureRule } from "@/mcp/__evals__/fake-warehouse"
 import { makeEvalRuntime, runToolDirect, type EvalRuntime } from "@/mcp/__evals__/eval-runtime"
 
 const SESSION_ID = "wrun_01KZTEST"
 const EMPTY_SESSION_ID = "wrun_01KZEMPTY"
+/** A session whose first page fills the read — the truncation path. */
+const BIG_SESSION_ID = "wrun_01KZBIG"
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 const WINDOW = { start_time: "2026-08-19 09:00:00", end_time: "2026-08-19 12:00:00" }
 
@@ -28,7 +33,9 @@ const captureTool = (register: (server: McpToolRegistrar) => void) => {
 		| {
 				name: string
 				schema: Schema.Top
-				handler: (params: ToolInput) => Effect.Effect<McpToolResult, unknown, unknown>
+				handler: (
+					params: ToolInput,
+				) => Effect.Effect<McpToolResult, McpToolError, McpToolRequirements>
 		  }
 		| undefined
 	register({
@@ -42,16 +49,20 @@ const captureTool = (register: (server: McpToolRegistrar) => void) => {
 	return captured
 }
 
-// The validation paths below return before any service is read, so an empty
-// context is enough.
-const run = (effect: Effect.Effect<McpToolResult, unknown, unknown>) =>
-	Effect.runPromise(
-		(effect as Effect.Effect<McpToolResult, unknown, McpToolRequirements>).pipe(
-			Effect.provide(Context.empty() as Context.Context<McpToolRequirements>),
-		),
-	)
+// SAFETY: the validation paths below return before any service is read, so the
+// handler's declared requirements are never touched.
+const run = (effect: Effect.Effect<McpToolResult, McpToolError, McpToolRequirements>) =>
+	Effect.runPromise(effect as Effect.Effect<McpToolResult, McpToolError, never>)
 
-const text = (result: McpToolResult) => result.content.map((c) => ("text" in c ? c.text : "")).join("\n")
+/** The markdown the tool rendered — NOT the `__maple_ui` payload beside it,
+ *  which would let an assertion pass on the structured mirror alone. */
+const markdown = (result: McpToolResult) => result.content[0].text
+
+const properties = (name: string) =>
+	toInputSchema(mapleToolCatalog.find((entry) => entry.name === name)!.schema).properties as Record<
+		string,
+		Record<string, unknown>
+	>
 
 const AGENT_SESSION_TOOLS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
 	["list_agent_sessions", []],
@@ -87,6 +98,16 @@ describe("agent session tool registration", () => {
 			expect(definition.description, name).toContain("list_agent_sessions")
 		}
 	})
+
+	// The values a model may send are the schema's job, not a branch in the
+	// handler: published as enums they are visible before the call.
+	it("publishes the closed parameter sets as enums and the turn range as a pattern", () => {
+		const list = properties("list_agent_sessions")
+		expect(list.sort_by?.enum).toContain("durationMs")
+		expect(list.sort_dir?.enum).toEqual(["asc", "desc"])
+		expect(properties("list_agent_session_spans").scope?.enum).toEqual(["all", "ai", "app"])
+		expect(properties("get_agent_session_transcript").turns?.pattern).toBe("^\\d+(-\\d*)?$")
+	})
 })
 
 describe("agent session parameter validation", () => {
@@ -94,33 +115,30 @@ describe("agent session parameter validation", () => {
 		const tool = captureTool(registerGetAgentSessionTool)
 		const result = await run(tool.handler({ session_id: SESSION_ID, start_time: "2026-08-19 09:00:00" }))
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("start_time and end_time are a pair")
+		expect(markdown(result)).toContain("start_time and end_time are a pair")
 	})
 
-	it("rejects a turns selection it cannot read", async () => {
-		const tool = captureTool(registerGetAgentSessionTranscriptTool)
-		const result = await run(tool.handler({ session_id: SESSION_ID, turns: "the middle bit" }))
+	it("rejects a blank required id instead of throwing on the request class", async () => {
+		const tool = captureTool(registerGetAgentSessionTool)
+		const result = await run(tool.handler({ session_id: "  " }))
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("Invalid turns")
+		expect(markdown(result)).toContain("session_id is required")
+	})
+
+	it("rejects the turn ranges that parse but cannot select anything", async () => {
+		const tool = captureTool(registerGetAgentSessionTranscriptTool)
+		for (const turns of ["0", "9-4"]) {
+			const result = await run(tool.handler({ session_id: SESSION_ID, turns }))
+			expect(result.isError, turns).toBe(true)
+			expect(markdown(result), turns).toContain("Invalid turns")
+		}
 	})
 
 	it("rejects half a keyset cursor", async () => {
 		const tool = captureTool(registerListAgentSessionSpansTool)
 		const result = await run(tool.handler({ session_id: SESSION_ID, after_span_id: "1111111111111111" }))
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("after_timestamp and after_span_id are a pair")
-	})
-
-	it("rejects an unknown scope and an unknown sort key", async () => {
-		const spans = captureTool(registerListAgentSessionSpansTool)
-		const scope = await run(spans.handler({ session_id: SESSION_ID, scope: "agent" }))
-		expect(scope.isError).toBe(true)
-		expect(text(scope)).toContain("Invalid scope")
-
-		const list = captureTool(registerListAgentSessionsTool)
-		const sort = await run(list.handler({ sort_by: "spend" }))
-		expect(sort.isError).toBe(true)
-		expect(text(sort)).toContain("Invalid sort_by")
+		expect(markdown(result)).toContain("after_timestamp and after_span_id are a pair")
 	})
 
 	it("rejects a trace id that is not 32 hex characters", async () => {
@@ -129,7 +147,14 @@ describe("agent session parameter validation", () => {
 			tool.handler({ session_id: SESSION_ID, trace_id: "7f3a4b5c", span_id: "1111111111111111" }),
 		)
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("Invalid trace_id")
+		expect(markdown(result)).toContain("Invalid trace_id")
+	})
+})
+
+describe("clipPayload", () => {
+	it("clips to the character budget and reports the true size in bytes", () => {
+		expect(clipPayload(`${"a".repeat(20)}é`, 5)).toBe("aaaaa… (22 bytes total)")
+		expect(clipPayload("short", 5)).toBe("short")
 	})
 })
 
@@ -178,6 +203,31 @@ const distributionRows = [
 	{ measure: "totalTokens", buckets: { "1000": 3 }, p50: 1_600, p95: 9_000 },
 ]
 
+/** The session's own row, in the wire shape `aiSessionTotalsRowSchema` decodes —
+ *  the exact totals a truncated session is reported with. */
+const totalsRow = {
+	traceCount: "3",
+	startTime: "2026-08-19 10:00:00.000000000",
+	endTime: "2026-08-19 11:30:00.000000000",
+	durationMs: "5400000",
+	spanCount: "9001",
+	aiSpanCount: "9000",
+	llmCalls: "4500",
+	toolCalls: "4000",
+	errorSpanCount: "7",
+	inputTokens: "0",
+	outputTokens: "0",
+	cacheReadTokens: "0",
+	llmInputTokens: "0",
+	llmOutputTokens: "0",
+	llmCacheReadTokens: "0",
+	costReporters: "0",
+	cost: "0",
+	llmCost: "0",
+	models: ["gpt-5"],
+	agentNames: ["maple"],
+}
+
 /** One `trace_detail_spans` row, in the wire shape `aiSessionSpansRowSchema` decodes. */
 const spanRow = (
 	spanId: string,
@@ -187,19 +237,20 @@ const spanRow = (
 	durationMs: number,
 	statusCode: string,
 	spanAttributes: Record<string, string>,
+	sessionId: string = SESSION_ID,
 ) => ({
 	traceId: TRACE_ID,
 	spanId,
 	parentSpanId,
 	spanName,
-	spanKind: "SPAN_KIND_INTERNAL",
+	spanKind: "Internal",
 	serviceName: "agent-runner",
 	durationMs,
 	statusCode,
 	statusMessage: statusCode === "Error" ? "tool call failed" : "",
 	timestamp,
 	spanAttributes: {
-		"maple_ai.session.id": SESSION_ID,
+		"maple_ai.session.id": sessionId,
 		"maple_ai.vendor.id": "eve",
 		"maple_ai.vendor.version": "1",
 		...spanAttributes,
@@ -274,19 +325,56 @@ const sessionSpanRows = [
 	),
 ]
 
-// First match wins: the three `ai_trace_index` reads are told apart by the
-// derived tables their SQL names.
+/** A page that exactly fills the read plus the row that proves a page follows:
+ *  one turn, so the derivations stay about paging rather than about turns. */
+const bigSpanId = (index: number) => `b${index.toString(16).padStart(15, "0")}`
+const bigSessionSpanRows = [
+	spanRow(
+		bigSpanId(0),
+		"",
+		"invoke_agent maple",
+		"2026-08-19 10:00:00.000000000",
+		2_000_000,
+		"Unset",
+		{ "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "maple" },
+		BIG_SESSION_ID,
+	),
+	...Array.from({ length: AI_SESSION_SPANS_MAX_SPANS }, (_, index) =>
+		spanRow(
+			bigSpanId(index + 1),
+			bigSpanId(0),
+			"chat gpt-5",
+			`2026-08-19 10:${String(Math.floor((index + 1) / 60)).padStart(2, "0")}:${String((index + 1) % 60).padStart(2, "0")}.000000000`,
+			10,
+			"Unset",
+			{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5" },
+			BIG_SESSION_ID,
+		),
+	),
+]
+/** The cursor the first page ends on — the second page's SQL names it. */
+const BIG_PAGE_CURSOR_SPAN_ID = bigSpanId(AI_SESSION_SPANS_MAX_SPANS - 1)
+
+// First match wins: the reads over `trace_detail_spans` are told apart by the
+// derived tables and aggregates their SQL names.
 const fixtures: FixtureRule[] = [
 	{ match: (sql) => sql.includes(EMPTY_SESSION_ID), rows: [] },
 	{ match: (sql) => sql.includes("facet_traces"), rows: facetRows },
 	{ match: (sql) => sql.includes("measured_sessions"), rows: distributionRows },
+	// The summary's two reads: the turn rows under `GROUP BY`, the session's own
+	// row without it. Only a truncated session asks for them.
+	{ match: (sql) => sql.includes("GROUP BY turnKey"), rows: [] },
+	{ match: (sql) => sql.includes("aiSpanCount") && sql.includes("trace_detail_spans"), rows: [totalsRow] },
+	{ match: (sql) => sql.includes(BIG_SESSION_ID), rows: bigSessionSpanRows },
 	{ match: (sql) => sql.includes("trace_detail_spans"), rows: sessionSpanRows },
 	{
 		match: (sql) => /\bfrom\s+traces\b/i.test(sql),
 		rows: [
 			{
-				startTime: "2026-08-18 10:00:00.000000000",
-				endTime: "2026-08-20 10:00:05.000000000",
+				// Sub-second, as a session's own bounds are: the next-step hint has
+				// to round the end UP or the last spans fall outside it.
+				startTime: "2026-08-19 10:00:00.000000000",
+				endTime: "2026-08-19 10:00:05.250000000",
 				spanCount: 4,
 			},
 		],
@@ -294,11 +382,59 @@ const fixtures: FixtureRule[] = [
 	{ match: (sql) => sql.includes("ai_trace_index"), rows: [listRow] },
 ]
 
+/**
+ * SQL the warehouse answers with a response-limit abort rather than rows.
+ *
+ * The fake warehouse answers from fixtures, and a 413 is a driver failure and
+ * not a row set; the client is also cached for the runtime's lifetime, so the
+ * failure has to be switchable from inside one installed client.
+ */
+let responseTooLargeFor: (sql: string) => boolean = () => false
+
+const installFixtureWarehouse = (rules: FixtureRule[]): void => {
+	__testables.setClientFactory(() =>
+		Effect.succeed({
+			sql: (statement) =>
+				Effect.suspend(
+					(): Effect.Effect<
+						{ data: ReadonlyArray<Record<string, unknown>> },
+						WarehouseDriverError | WarehouseResponseLimitError
+					> => {
+						const sql = statement.text
+						if (responseTooLargeFor(sql)) {
+							return Effect.fail(
+								new WarehouseResponseLimitError({
+									kind: "bytes",
+									message: "response exceeded the byte limit",
+								}),
+							)
+						}
+						const rule = rules.find((candidate) => candidate.match(sql))
+						if (!rule) {
+							return Effect.fail(
+								new WarehouseDriverError({
+									reason: "unknown",
+									message: `[agent-sessions test] no fixture matched SQL:\n${sql.slice(0, 600)}`,
+								}),
+							)
+						}
+						return Effect.succeed({ data: rule.rows as ReadonlyArray<Record<string, unknown>> })
+					},
+				),
+			insert: () => Effect.void,
+		}),
+	)
+}
+
 let rt: EvalRuntime
 
 beforeAll(() => {
-	installFakeWarehouse(fixtures)
+	installFixtureWarehouse(fixtures)
 	rt = makeEvalRuntime()
+})
+
+afterEach(() => {
+	responseTooLargeFor = () => false
 })
 
 afterAll(async () => {
@@ -306,10 +442,11 @@ afterAll(async () => {
 	await rt.dispose()
 })
 
-const rendered = async (name: string, params: Record<string, unknown>): Promise<string> => {
-	const result = (await runToolDirect(rt, name, params)) as McpToolResult
-	return text(result)
-}
+const rendered = async (name: string, params: Record<string, unknown>): Promise<string> =>
+	markdown((await runToolDirect(rt, name, params)) as McpToolResult)
+
+const renderedResult = async (name: string, params: Record<string, unknown>): Promise<McpToolResult> =>
+	(await runToolDirect(rt, name, params)) as McpToolResult
 
 describe("list_agent_sessions rendering", () => {
 	it("renders the row and hands the session's own window to the next step", async () => {
@@ -321,6 +458,21 @@ describe("list_agent_sessions rendering", () => {
 		// The end bound is rounded up to the whole second: truncating it would cut
 		// the session's last spans out of the follow-up read.
 		expect(output).toContain('start_time="2026-08-19 10:00:00" end_time="2026-08-19 10:00:05"')
+	})
+
+	// An LLM sends `""` for "no filter" and a fractional count for a whole one;
+	// the request class refuses both by throwing.
+	it("normalizes the filters a model sends loosely", async () => {
+		const output = await rendered("list_agent_sessions", {
+			...WINDOW,
+			tools: "run_sql, search_logs",
+			search: "",
+			tokens_min: 1.5,
+			cost_min: -5,
+			sort_by: "cost",
+			sort_dir: "asc",
+		})
+		expect(output).toContain(SESSION_ID)
 	})
 })
 
@@ -348,6 +500,14 @@ describe("get_agent_session rendering", () => {
 		expect(output).toContain(TRACE_ID)
 	})
 
+	// No window: the session's bounds are resolved from the id, and the hint
+	// hands them on with the fractional end rounded up.
+	it("resolves the session's own bounds when no window is given", async () => {
+		const output = await rendered("get_agent_session", { session_id: SESSION_ID })
+		expect(output).toContain("Window: 2026-08-19 10:00:00.000000000 — 2026-08-19 10:00:05.250000000")
+		expect(output).toContain('start_time="2026-08-19 10:00:00" end_time="2026-08-19 10:00:06"')
+	})
+
 	it("answers an unknown session without inventing one", async () => {
 		const output = await rendered("get_agent_session", { session_id: EMPTY_SESSION_ID, ...WINDOW })
 		expect(output).toContain("No spans for AI agent session")
@@ -362,6 +522,15 @@ describe("get_agent_session_transcript rendering", () => {
 		expect(output).toContain("[tool run_sql]")
 		expect(output).toContain("table orders does not exist")
 		expect(output).toContain("[assistant]")
+	})
+
+	it("renders an open turn range from its first turn on", async () => {
+		const output = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			turns: "1-",
+		})
+		expect(output).toContain("why is checkout failing?")
 	})
 
 	it("honours a turn selection that no turn matches", async () => {
@@ -382,6 +551,18 @@ describe("list_agent_session_spans rendering", () => {
 		expect(output).toContain("inference")
 		expect(output).toContain("inspect_agent_session_span")
 	})
+
+	it("reads a page from a keyset cursor and a scope", async () => {
+		const output = await rendered("list_agent_session_spans", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			scope: "ai",
+			after_timestamp: "2026-08-19 10:00:00.000000000",
+			after_span_id: "1111111111111111",
+		})
+		expect(output).toContain("scope ai")
+		expect(output).toContain("2222222222222222")
+	})
 })
 
 describe("inspect_agent_session_span rendering", () => {
@@ -397,7 +578,10 @@ describe("inspect_agent_session_span rendering", () => {
 		expect(output).toContain("### Tool calls")
 		expect(output).toContain("run_sql")
 		expect(output).toContain("table orders does not exist")
-		expect(output).toContain("inspect_span")
+		// Both follow-ups scan a window around now unless given the span's own
+		// timestamp, so a session older than that would answer empty without it.
+		expect(output).toContain('inspect_span trace_id="7f3a4b5c6d7e8f901234567890abcdef"')
+		expect(output).toContain('timestamp="2026-08-19T10:00:00.500Z"')
 	})
 
 	it("says so when the span is not in the trace", async () => {
@@ -408,5 +592,46 @@ describe("inspect_agent_session_span rendering", () => {
 			...WINDOW,
 		})
 		expect(output).toContain("is not in trace")
+	})
+})
+
+describe("a session too large to load whole", () => {
+	it("answers a first-page 413 with the tool's own way out", async () => {
+		responseTooLargeFor = (sql) => sql.includes(BIG_SESSION_ID)
+
+		const session = await renderedResult("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
+		expect(session.isError).toBe(true)
+		expect(markdown(session)).toContain("list_agent_session_spans")
+
+		const spans = await renderedResult("list_agent_session_spans", {
+			session_id: BIG_SESSION_ID,
+			...WINDOW,
+		})
+		expect(spans.isError).toBe(true)
+		expect(markdown(spans)).toContain("smaller `limit`")
+	})
+
+	// A 413 on a page after the first is what `truncated` describes: the pages
+	// in hand are the session's beginning, and the warehouse answers the rest.
+	it("keeps the pages in hand, the exact totals and the TRUE window", async () => {
+		responseTooLargeFor = (sql) => sql.includes(BIG_PAGE_CURSOR_SPAN_ID)
+
+		const output = await rendered("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
+		expect(output).toContain("spans were loaded")
+		expect(output).toContain("Warehouse totals for the WHOLE session: 9001 spans")
+		// The window the read ran under, not the loaded spans' extent — which
+		// ends an hour and a half before the session does.
+		expect(output).toContain('start_time="2026-08-19 09:00:00" end_time="2026-08-19 12:00:00"')
+	})
+
+	it("closes a truncated transcript with the divider that says so", async () => {
+		responseTooLargeFor = (sql) => sql.includes(BIG_PAGE_CURSOR_SPAN_ID)
+
+		const output = await rendered("get_agent_session_transcript", {
+			session_id: BIG_SESSION_ID,
+			...WINDOW,
+		})
+		expect(output).toContain("The END of this session was not loaded")
+		expect(output).toContain("more of this session was not loaded")
 	})
 })

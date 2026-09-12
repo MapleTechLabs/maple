@@ -71,6 +71,11 @@ export function registerGetAgentSessionsOverviewTool(server: McpToolRegistrar) {
 				{ concurrency: 2 },
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_sessions_overview")))
 
+			yield* Effect.annotateCurrentSpan({
+				"result.vendorCount": facets.vendors.length,
+				"result.toolCount": facets.tools.length,
+				"result.agentCount": facets.agents.length,
+			})
 			if (facets.vendors.length === 0) {
 				return {
 					content: [

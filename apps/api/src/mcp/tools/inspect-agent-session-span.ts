@@ -5,23 +5,35 @@ import { formatDurationFromMs } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
+	catchSessionTooLarge,
 	clipPayload,
-	SESSION_TOO_LARGE,
-	sessionTooLargeResult,
+	requiredIdOf,
 	sessionWindowOf,
 	sessionWindowParams,
 	spanCategoryLabel,
 } from "@/mcp/lib/agent-sessions"
 import { Effect, Schema } from "effect"
-import { GetAiSessionSpansRequest, type AiSessionSpan } from "@maple/domain/http"
+import {
+	AI_SESSION_SPANS_MAX_SPANS,
+	GetAiSessionSpansRequest,
+	TraceIdHex,
+	type AiSessionSpan,
+} from "@maple/domain/http"
 import { sessionToolResults, spanMessages, spanToolCalls, type SpanMessage } from "@maple/agent-sessions"
+import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
-const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/
+/** The domain's own shape, so the parameter refuses exactly what the request
+ *  class does — and refuses it as an answer rather than as a thrown defect. */
+const isTraceIdHex = Schema.is(TraceIdHex)
 
 /** Spans of one trace — a turn's worth, which is what a trace-pinned read is. */
-const TRACE_SPAN_LIMIT = 2_000
+const TRACE_SPAN_LIMIT = AI_SESSION_SPANS_MAX_SPANS
+
+/** What to do about a trace the read cannot carry. */
+const TRACE_TOO_LARGE =
+	"Read the session's spans a page at a time with `list_agent_session_spans` and a small `limit`."
 
 /** Input-history messages kept; a long conversation re-sends its whole history
  *  on every call, and the reader asked about THIS call. */
@@ -87,26 +99,33 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 		Effect.fn("McpTool.inspectAgentSessionSpan")(function* (params) {
 			const windowInput = sessionWindowOf(params)
 			if (windowInput._tag === "invalid") return windowInput.result
-			if (!TRACE_ID_PATTERN.test(params.trace_id)) {
+			const idInput = requiredIdOf(params.session_id, "session_id", 'session_id="wrun_01KZ…"')
+			if (idInput._tag === "invalid") return idInput.result
+			const sessionId = idInput.id
+			const spanInput = requiredIdOf(params.span_id, "span_id", 'span_id="a1b2c3d4e5f60718"')
+			if (spanInput._tag === "invalid") return spanInput.result
+			const spanId = spanInput.id
+			if (!isTraceIdHex(params.trace_id.trim())) {
 				return validationError(
 					`Invalid trace_id: ${params.trace_id}. Expected 32 hex characters, as \`list_agent_session_spans\` reports it.`,
 				)
 			}
+			const traceId = params.trace_id.trim()
 			const payloadChars = clampLimit(params.payload_chars, { defaultValue: 2_000, max: 20_000 })
 
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sessionId: params.session_id,
-				traceId: params.trace_id,
-				spanId: params.span_id,
+				sessionId,
+				traceId,
+				spanId,
 			})
 
 			// A trace-pinned read is bounded by the window and nothing else, so an
 			// absent one is resolved from the session id first.
 			const window =
 				windowInput.window ??
-				(yield* resolveAiSessionWindow(tenant, params.session_id).pipe(
+				(yield* resolveAiSessionWindow(tenant, sessionId).pipe(
 					Effect.catchTags(warehouseReadToMcpHandlers("inspect_agent_session_span")),
 				)).window
 			if (window === undefined) {
@@ -114,7 +133,7 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 					content: [
 						{
 							type: "text" as const,
-							text: `No spans for AI agent session ${params.session_id}. Check the id with \`list_agent_sessions\`.`,
+							text: `No spans for AI agent session ${sessionId}. Check the id with \`list_agent_sessions\`.`,
 						},
 					],
 				}
@@ -123,28 +142,23 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 			const page = yield* readAiSessionSpans(
 				tenant,
 				new GetAiSessionSpansRequest({
-					sessionId: params.session_id,
+					sessionId,
 					startTime: window.startTime,
 					endTime: window.endTime,
-					traceIds: [params.trace_id],
+					traceIds: [traceId],
 					limit: TRACE_SPAN_LIMIT,
 				}),
-			).pipe(
-				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
-					Effect.succeed(SESSION_TOO_LARGE),
-				),
-				Effect.catchTags(warehouseReadToMcpHandlers("inspect_agent_session_span")),
-			)
-			if (page === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("inspect_agent_session_span")))
 
 			const traceSpans: readonly AiSessionSpan[] = page.data
-			const span = traceSpans.find((candidate) => candidate.spanId === params.span_id)
+			yield* Effect.annotateCurrentSpan("result.traceSpanCount", traceSpans.length)
+			const span = traceSpans.find((candidate) => candidate.spanId === spanId)
 			if (span === undefined) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Span ${params.span_id} is not in trace ${params.trace_id} (${traceSpans.length} spans read). List the session's spans with \`list_agent_session_spans session_id="${params.session_id}"\`.`,
+							text: `Span ${spanId} is not in trace ${traceId} (${traceSpans.length} spans read). List the session's spans with \`list_agent_session_spans session_id="${sessionId}"\`.`,
 						},
 					],
 				}
@@ -156,6 +170,10 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 			const keptInputs = new Set(inputs.slice(earlier))
 			const shown = messages.filter((message) => message.origin !== "input" || keptInputs.has(message))
 			const toolCalls = spanToolCalls(span, sessionToolResults(traceSpans))
+			yield* Effect.annotateCurrentSpan({
+				"result.messageCount": messages.length,
+				"result.toolCallCount": toolCalls.length,
+			})
 			const attributes = Object.entries(span.genAi)
 				.filter(([field, value]) => !CONTENT_FIELDS.has(field) && value !== undefined)
 				.map(
@@ -166,7 +184,7 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 
 			const lines: string[] = [
 				`## ${span.spanName} (${spanCategoryLabel(span)}) — span ${span.spanId}`,
-				`Session ${params.session_id} · trace ${span.traceId} · parent ${span.parentSpanId || "none"}`,
+				`Session ${sessionId} · trace ${span.traceId} · parent ${span.parentSpanId || "none"}`,
 				`Service ${span.serviceName} · ${span.timestamp} · ${formatDurationFromMs(span.durationMs)} · status ${span.statusCode}${
 					span.statusMessage === "" ? "" : ` (${span.statusMessage})`
 				}`,
@@ -201,10 +219,13 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 				}
 			}
 
+			// Both tools scan a default window around NOW unless given a timestamp,
+			// so a session older than that would answer empty without one.
+			const at = warehouseDateTimeToIso(span.timestamp)
 			lines.push(
 				formatNextSteps([
-					`\`inspect_span trace_id="${span.traceId}" span_id="${span.spanId}"\` — the raw attribute map, including non-AI attributes`,
-					`\`inspect_trace trace_id="${span.traceId}"\` — the whole trace this span ran in`,
+					`\`inspect_span trace_id="${span.traceId}" span_id="${span.spanId}" timestamp="${at}"\` — the raw attribute map, including non-AI attributes`,
+					`\`inspect_trace trace_id="${span.traceId}" timestamp="${at}"\` — the whole trace this span ran in`,
 				]),
 			)
 
@@ -212,7 +233,7 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 				content: createDualContent(lines.join("\n"), {
 					tool: "inspect_agent_session_span",
 					data: {
-						sessionId: params.session_id,
+						sessionId,
 						traceId: span.traceId,
 						spanId: span.spanId,
 						parentSpanId: span.parentSpanId,
@@ -246,6 +267,6 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 					},
 				}),
 			}
-		}),
+		}, catchSessionTooLarge(TRACE_TOO_LARGE)),
 	)
 }

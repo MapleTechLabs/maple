@@ -6,31 +6,31 @@
 // session replays `search_sessions` serves.
 
 import { Effect } from "effect"
-import { GetAiSessionSpansRequest, type AiSessionSpan, type AiSessionSpanScope } from "@maple/domain/http"
-import { classifyAiSpan, spanEndMs, spanStartMs } from "@maple/agent-sessions"
+import {
+	AI_SESSION_SPANS_MAX_SPANS,
+	GetAiSessionSpansRequest,
+	type AiSessionSpan,
+	type AiSessionSpanScope,
+	type AiSessionTooLargeError,
+} from "@maple/domain/http"
+import { classifyAiSpan } from "@maple/agent-sessions"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
 import type { TenantContext } from "@/services/auth/AuthService"
-import { optionalTimeParam, type McpToolResult } from "@/mcp/tools/types"
-
-/** The sentinel a 413 is caught into — `Effect.catchTag` needs a value, and a
- *  literal narrows where a shape union does not. */
-export const SESSION_TOO_LARGE = "session-too-large" as const
-
-/** One page of a session's spans — the ceiling the `/spans` read enforces. */
-const AGENT_SESSION_PAGE_SPANS = 2_000
+import { optionalTimeParam, validationError, type McpToolError, type McpToolResult } from "@/mcp/tools/types"
 
 /**
  * Spans one tool call will load for a session. Two pages: past that, the
  * derivations are summarising a session the answer cannot claim to describe,
  * so the tools say so and point at the paged span list instead.
  */
-export const MCP_AGENT_SESSION_MAX_SPANS = 4_000
+export const MCP_AGENT_SESSION_MAX_SPANS = 2 * AI_SESSION_SPANS_MAX_SPANS
 
-/** The bounds a session read is pruned by, as the request classes take them. */
+/** The bounds a session read is pruned by, exactly as the request classes take
+ *  them — including the sub-second precision a resolved window carries. */
 export interface SessionWindow {
-	readonly startTime: string
-	readonly endTime: string
+	readonly startTime: NonNullable<GetAiSessionSpansRequest["startTime"]>
+	readonly endTime: NonNullable<GetAiSessionSpansRequest["endTime"]>
 }
 
 /**
@@ -49,9 +49,10 @@ export const sessionWindowParams = {
 	end_time: optionalTimeParam("End of the session's own window, from a `list_agent_sessions` row."),
 }
 
+/** Derived from the parameters themselves: both bounds are the decoded brand,
+ *  so a tool cannot hand this an unvalidated string. */
 export type SessionWindowParams = {
-	readonly start_time?: string | undefined
-	readonly end_time?: string | undefined
+	readonly [K in keyof typeof sessionWindowParams]?: (typeof sessionWindowParams)[K]["Type"]
 }
 
 export type SessionWindowInput =
@@ -80,6 +81,29 @@ export function sessionWindowOf(params: SessionWindowParams): SessionWindowInput
 }
 
 /**
+ * A required id as the request classes take it, or the answer for a blank one.
+ *
+ * `Schema.Class` constructors THROW on a refused field, so an id an LLM sent as
+ * `""` would surface as a defect rather than as something the caller can fix.
+ */
+export function requiredIdOf(
+	raw: string,
+	param: string,
+	example: string,
+):
+	| { readonly _tag: "id"; readonly id: string }
+	| { readonly _tag: "invalid"; readonly result: McpToolResult } {
+	const id = raw.trim()
+	if (id === "") {
+		return {
+			_tag: "invalid",
+			result: validationError(`${param} is required and cannot be blank.`, example),
+		}
+	}
+	return { _tag: "id", id }
+}
+
+/**
  * A window as a next-step hint, with the end rounded up to the whole second.
  *
  * Time parameters decode through `WarehouseTimeInput`, which truncates to
@@ -97,7 +121,8 @@ export interface LoadedAgentSessionSpans {
 	readonly spans: readonly AiSessionSpan[]
 	/** The session has spans past what was loaded — the END of it is missing. */
 	readonly truncated: boolean
-	/** The spans' own extent, or the caller's window for an empty session. */
+	/** The window the spans were read under, or `undefined` for a session the
+	 *  warehouse knows nothing about. */
 	readonly window: SessionWindow | undefined
 }
 
@@ -107,7 +132,9 @@ export interface LoadedAgentSessionSpans {
  *
  * The window is resolved once, not per page: a page read with no window pays
  * its own resolve round trip, and the second page's bounds must still cover the
- * whole session rather than the first page's extent.
+ * whole session rather than the first page's extent. It is returned as read,
+ * so a truncated session's next steps and its exact-totals read still describe
+ * the whole session rather than the beginning the spans cover.
  */
 export const loadAgentSessionSpans = Effect.fn("mcp.loadAgentSessionSpans")(function* (
 	tenant: TenantContext,
@@ -125,37 +152,77 @@ export const loadAgentSessionSpans = Effect.fn("mcp.loadAgentSessionSpans")(func
 	const spans: AiSessionSpan[] = []
 	let after = undefined as GetAiSessionSpansRequest["after"]
 	let truncated = false
+	let pages = 0
 	while (spans.length < MCP_AGENT_SESSION_MAX_SPANS) {
 		const page = yield* readAiSessionSpans(
 			tenant,
 			new GetAiSessionSpansRequest({
 				sessionId: opts.sessionId,
 				scope: opts.scope,
-				limit: AGENT_SESSION_PAGE_SPANS,
+				// The last page asks only for what is left of the budget, so a
+				// short page cannot carry the load past it.
+				limit: Math.min(AI_SESSION_SPANS_MAX_SPANS, MCP_AGENT_SESSION_MAX_SPANS - spans.length),
 				...window,
 				...(after !== undefined && { after }),
 			}),
+		).pipe(
+			// A 413 after the first page is what `truncated` already describes:
+			// the pages in hand are the session's beginning. Only a first page
+			// that cannot be read at all fails the call.
+			Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
+				spans.length === 0 ? Effect.fail(error) : Effect.succeed(undefined),
+			),
 		)
+		pages += 1
+		if (page === undefined) {
+			yield* Effect.annotateCurrentSpan("maple.ai.too_large", true)
+			yield* Effect.logWarning("agent session span page exceeded the response limit").pipe(
+				Effect.annotateLogs({ sessionId: opts.sessionId, page: pages, loaded: spans.length }),
+			)
+			truncated = true
+			break
+		}
 		spans.push(...page.data)
 		after = page.nextCursor
 		if (after === undefined) break
 		truncated = spans.length >= MCP_AGENT_SESSION_MAX_SPANS
 	}
+	if (truncated) {
+		yield* Effect.logWarning("agent session loaded only its first spans").pipe(
+			Effect.annotateLogs({
+				sessionId: opts.sessionId,
+				loaded: spans.length,
+				cap: MCP_AGENT_SESSION_MAX_SPANS,
+			}),
+		)
+	}
+	yield* Effect.annotateCurrentSpan({
+		"maple.ai.pages": pages,
+		"maple.ai.loaded_spans": spans.length,
+		"maple.ai.truncated": truncated,
+		"maple.ai.scope": opts.scope,
+	})
 
-	return {
-		spans,
-		truncated,
-		// The spans' own extent, so a next step built from it reads the session
-		// rather than the padded bounds the id resolved to.
-		window: spans.length === 0 ? window : extentOf(spans),
-	} satisfies LoadedAgentSessionSpans
+	return { spans, truncated, window } satisfies LoadedAgentSessionSpans
 })
 
-function extentOf(spans: readonly AiSessionSpan[]): SessionWindow {
-	const startMs = spans.reduce((min, span) => Math.min(min, spanStartMs(span)), Number.POSITIVE_INFINITY)
-	const endMs = spans.reduce((max, span) => Math.max(max, spanEndMs(span)), Number.NEGATIVE_INFINITY)
-	return { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) }
-}
+/**
+ * The tool's answer to a 413 — the one failure a narrower request fixes.
+ *
+ * Applied to the handler body rather than to the read, so the recovery text is
+ * the tool's own and the read keeps its typed failure all the way out.
+ */
+export const catchSessionTooLarge =
+	(recovery: string) =>
+	<A, R>(
+		self: Effect.Effect<A, McpToolError | AiSessionTooLargeError, R>,
+	): Effect.Effect<A | McpToolResult, McpToolError, R> =>
+		Effect.catchTag(self, "@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
+			Effect.succeed<McpToolResult>({
+				isError: true,
+				content: [{ type: "text", text: `${error.message} ${recovery}` }],
+			}),
+		)
 
 /**
  * A captured payload, cut to what the answer can carry. The true size rides
@@ -179,17 +246,4 @@ export function offsetLabel(ms: number): string {
 export function spanCategoryLabel(span: AiSessionSpan): string {
 	const category = classifyAiSpan(span)
 	return category === "other" ? "app" : category
-}
-
-/** The tool's answer to a 413 — the one failure a narrower request fixes. */
-export function sessionTooLargeResult(sessionId: string): McpToolResult {
-	return {
-		isError: true,
-		content: [
-			{
-				type: "text",
-				text: `Session ${sessionId} is too large to load in one response. Pass the session's own start_time/end_time to narrow the read, or page its spans with \`list_agent_session_spans\` instead.`,
-			},
-		],
-	}
 }

@@ -3,7 +3,6 @@ import {
 	optionalNumberParam,
 	optionalStringParam,
 	optionalTimeParam,
-	validationError,
 	type McpToolRegistrar,
 } from "./types"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
@@ -13,14 +12,11 @@ import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import { windowHint } from "@/mcp/lib/agent-sessions"
-import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
+import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { AiSessionSortDir, AiSessionSortKey, ListAiSessionsRequest } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
 import { listAiSessions } from "@/services/ai-sessions/ai-session-reads"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
-
-const decodeSortKey = Schema.decodeUnknownOption(AiSessionSortKey)
-const decodeSortDir = Schema.decodeUnknownOption(AiSessionSortDir)
 
 const splitCsv = (value: string | undefined): string[] | undefined => {
 	if (value === undefined) return undefined
@@ -29,6 +25,17 @@ const splitCsv = (value: string | undefined): string[] | undefined => {
 		.map((entry) => entry.trim())
 		.filter((entry) => entry.length > 0)
 	return entries.length === 0 ? undefined : entries
+}
+
+/** The `search` ceiling the domain's own check enforces. */
+const SEARCH_MAX_CHARS = 200
+
+/** A filter the domain refuses when blank (`isMinLength(1)`) and bounds at its
+ *  own ceiling. `""` is how an LLM says "no filter", and a `Schema.Class`
+ *  constructor answers a refused field by THROWING. */
+const optionalText = (value: string | undefined, max: number): string | undefined => {
+	const trimmed = value?.trim()
+	return trimmed === undefined || trimmed === "" ? undefined : trimmed.slice(0, max)
 }
 
 // The request refuses a negative bound and a fractional count — they reach a
@@ -68,10 +75,12 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			llm_calls_max: optionalNumberParam("Only sessions with at most this many model calls"),
 			tool_calls_min: optionalNumberParam("Only sessions with at least this many tool calls"),
 			tool_calls_max: optionalNumberParam("Only sessions with at most this many tool calls"),
-			sort_by: optionalStringParam(
-				"Sort by: startTime (default), durationMs, cost, totalTokens, errorSpanCount, llmCalls, toolCalls",
-			),
-			sort_dir: optionalStringParam("Sort direction: desc (default) or asc"),
+			sort_by: Schema.optional(AiSessionSortKey).annotate({
+				description: "Sort key (default startTime)",
+			}),
+			sort_dir: Schema.optional(AiSessionSortDir).annotate({
+				description: "Sort direction (default desc)",
+			}),
 			limit: optionalNumberParam("Max sessions to return (default 25, max 100)"),
 			offset: optionalNumberParam("Rows to skip for paging (default 0)"),
 		}),
@@ -83,20 +92,10 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			const { st, et } = range
 			if (range.exceeded) return rangeExceededResult(range, "list_agent_sessions")
 
-			const sortBy =
-				params.sort_by === undefined
-					? Option.some("startTime" as const)
-					: decodeSortKey(params.sort_by)
-			if (Option.isNone(sortBy)) {
-				return validationError(
-					`Invalid sort_by: ${params.sort_by}. Must be one of: startTime, durationMs, cost, totalTokens, errorSpanCount, llmCalls, toolCalls.`,
-				)
-			}
-			const sortDir =
-				params.sort_dir === undefined ? Option.some("desc" as const) : decodeSortDir(params.sort_dir)
-			if (Option.isNone(sortDir)) {
-				return validationError(`Invalid sort_dir: ${params.sort_dir}. Must be asc or desc.`)
-			}
+			// Both publish as enums, so an unknown value is a parameter error the
+			// model is told how to fix rather than a branch here.
+			const sortBy = params.sort_by ?? "startTime"
+			const sortDir = params.sort_dir ?? "desc"
 
 			const limit = clampLimit(params.limit, { defaultValue: 25, max: 100 })
 			const offset = clampOffset(params.offset, { max: 10_000 })
@@ -104,7 +103,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sortBy: sortBy.value,
+				sortBy,
 				limit,
 				offset,
 			})
@@ -122,7 +121,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					models: splitCsv(params.models),
 					agentNames: splitCsv(params.agents),
 					toolNames: splitCsv(params.tools),
-					search: params.search,
+					search: optionalText(params.search, SEARCH_MAX_CHARS),
 					hasErrors: params.has_errors,
 					excludeTraceSessions: params.exclude_trace_sessions,
 					durationMinMs: measureBound(params.duration_min_ms),
@@ -135,8 +134,8 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					llmCallsMax: countBound(params.llm_calls_max),
 					toolCallsMin: countBound(params.tool_calls_min),
 					toolCallsMax: countBound(params.tool_calls_max),
-					sortBy: sortBy.value,
-					sortDir: sortDir.value,
+					sortBy,
+					sortDir,
 				}),
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_sessions")))
 

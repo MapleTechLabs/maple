@@ -4,14 +4,13 @@ import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
+	catchSessionTooLarge,
 	loadAgentSessionSpans,
 	offsetLabel,
-	SESSION_TOO_LARGE,
-	sessionTooLargeResult,
+	requiredIdOf,
 	sessionWindowOf,
 	sessionWindowParams,
 	windowHint,
-	MCP_AGENT_SESSION_MAX_SPANS,
 } from "@/mcp/lib/agent-sessions"
 import { Effect, Schema } from "effect"
 import { GetAiSessionSummaryRequest, type GetAiSessionSummaryResponse } from "@maple/domain/http"
@@ -31,6 +30,10 @@ const MAX_FINDINGS = 10
 const MAX_TOOLS = 15
 const MAX_TURNS = 25
 
+/** What to do about a session whose spans no read can carry. */
+const WHOLE_SESSION_TOO_LARGE =
+	"The session is too large to load whole; read it with `list_agent_session_spans` and a small `limit`."
+
 export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_agent_session",
@@ -44,33 +47,33 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 		Effect.fn("McpTool.getAgentSession")(function* (params) {
 			const windowInput = sessionWindowOf(params)
 			if (windowInput._tag === "invalid") return windowInput.result
+			const idInput = requiredIdOf(params.session_id, "session_id", 'session_id="wrun_01KZ…"')
+			if (idInput._tag === "invalid") return idInput.result
+			const sessionId = idInput.id
 
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sessionId: params.session_id,
+				sessionId,
 				windowSource: windowInput.window === undefined ? "resolved" : "client",
 			})
 
 			const loaded = yield* loadAgentSessionSpans(tenant, {
-				sessionId: params.session_id,
+				sessionId,
 				window: windowInput.window,
 				scope: "all",
-			}).pipe(
-				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
-					Effect.succeed(SESSION_TOO_LARGE),
-				),
-				Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session")),
-			)
-			if (loaded === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
+			}).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session")))
 
-			yield* Effect.annotateCurrentSpan("result.spanCount", loaded.spans.length)
+			yield* Effect.annotateCurrentSpan({
+				"result.spanCount": loaded.spans.length,
+				"result.truncated": loaded.truncated,
+			})
 			if (loaded.spans.length === 0) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `No spans for AI agent session ${params.session_id}${
+							text: `No spans for AI agent session ${sessionId}${
 								windowInput.window === undefined
 									? '. Check the id — `list_agent_sessions search="<prefix>"` finds it.'
 									: " in the given window. Drop start_time/end_time to resolve the session's own bounds, or check the id with `list_agent_sessions`."
@@ -90,8 +93,11 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 			if (loaded.truncated) {
 				exact = yield* readAiSessionSummary(
 					tenant,
+					// The window the spans were read under, which covers the whole
+					// session — not the loaded spans' extent, which would ask the
+					// warehouse about its beginning alone.
 					new GetAiSessionSummaryRequest({
-						sessionId: params.session_id,
+						sessionId,
 						...(loaded.window !== undefined && {
 							startTime: loaded.window.startTime,
 							endTime: loaded.window.endTime,
@@ -107,7 +113,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 			const shownTurns = turns.slice(0, MAX_TURNS)
 
 			const lines: string[] = [
-				`## AI agent session ${params.session_id}`,
+				`## AI agent session ${sessionId}`,
 				`Vendor ${summary.vendorIds.join(", ") || "—"} · agents ${
 					summary.agentNames.join(", ") || "—"
 				} · services ${summary.serviceNames.join(", ") || "—"} · models ${
@@ -120,7 +126,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				...(loaded.truncated
 					? [
 							``,
-							`**Only the first ${formatNumber(MCP_AGENT_SESSION_MAX_SPANS)} spans were loaded**, oldest first — the END of this session is missing, so everything derived below describes its beginning. The exact warehouse totals are printed under Work.`,
+							`**Only the first ${formatNumber(loaded.spans.length)} spans were loaded**, oldest first — the END of this session is missing, so everything derived below describes its beginning. The exact warehouse totals are printed under Work.`,
 						]
 					: []),
 				``,
@@ -244,14 +250,14 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 
 			const hint = loaded.window === undefined ? "" : ` ${windowHint(loaded.window)}`
 			const nextSteps = [
-				`\`get_agent_session_transcript session_id="${params.session_id}"${hint}\` — the conversation itself`,
-				`\`list_agent_session_spans session_id="${params.session_id}"${hint}\` — every span, paged`,
+				`\`get_agent_session_transcript session_id="${sessionId}"${hint}\` — the conversation itself`,
+				`\`list_agent_session_spans session_id="${sessionId}"${hint}\` — every span, paged`,
 			]
 			// The findings carry a span id but no trace id; the loaded spans have it.
 			const evidence = report.verdict.spanId ?? findings[0]?.spanId
 			if (evidence !== undefined) {
 				nextSteps.push(
-					`\`inspect_agent_session_span session_id="${params.session_id}" trace_id="${
+					`\`inspect_agent_session_span session_id="${sessionId}" trace_id="${
 						traceOf.get(evidence) ?? ""
 					}" span_id="${evidence}"${hint}\` — the span behind the verdict`,
 				)
@@ -262,7 +268,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				content: createDualContent(lines.join("\n"), {
 					tool: "get_agent_session",
 					data: {
-						sessionId: params.session_id,
+						sessionId,
 						window:
 							loaded.window === undefined
 								? undefined
@@ -354,6 +360,6 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					},
 				}),
 			}
-		}),
+		}, catchSessionTooLarge(WHOLE_SESSION_TOO_LARGE)),
 	)
 }
