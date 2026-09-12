@@ -173,15 +173,8 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	WarehouseQueryServiceLive,
 )
 
-/**
- * MCP execution root used by headless fanout agents and direct tool evals.
- *
- * `provideMerge`, so the services the tools run on stay reachable from the
- * root: the direct-tool evals exercise a read helper (the paged agent-session
- * span load) against the same graph a tool call uses, rather than rebuilding
- * the warehouse layer beside it.
- */
-export const McpServicesLive = McpToolExecutor.layer.pipe(Layer.provideMerge(McpRuntimeServicesLive))
+/** MCP execution root used by headless fanout agents and direct tool evals. */
+export const McpServicesLive = McpToolExecutor.layer.pipe(Layer.provide(McpRuntimeServicesLive))
 
 const InvestigationServiceLive = InvestigationService.layer.pipe(Layer.provide(InfraLive))
 

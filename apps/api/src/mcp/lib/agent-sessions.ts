@@ -13,7 +13,7 @@ import {
 	type AiSessionSpanScope,
 	type AiSessionTooLargeError,
 } from "@maple/domain/http"
-import { classifyAiSpan, jsonText } from "@maple/agent-sessions"
+import { classifyAiSpan, isRecord, jsonText } from "@maple/agent-sessions"
 import type { MutableAiGenAiValues } from "@maple/domain/gen-ai"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
@@ -96,6 +96,23 @@ const clipStrings = (value: unknown, chars: number): ClippedCapture => {
  * before the next one is read. A tool that needs a span's content in full
  * reads that span on its own — `inspect_span` decodes it from its own trace.
  */
+/**
+ * The messages a turn label can be read from: the newest user message — a
+ * history that ends on a tool result would otherwise lose the prompt that
+ * `turnLabel` looks for — plus the last message, which is what the output side
+ * of a call is.
+ */
+const messagesForLabel = (messages: ReadonlyArray<unknown>): ReadonlyArray<unknown> => {
+	const last = messages.length - 1
+	if (last < 0) return messages
+	for (let i = last; i >= 0; i--) {
+		const entry = messages[i]
+		if (!isRecord(entry) || String(entry.role).toLowerCase() !== "user") continue
+		return i === last ? [messages[last]] : [entry, messages[last]]
+	}
+	return [messages[last]]
+}
+
 const clipSpanContent = (span: AiSessionSpan): AiSessionSpan => {
 	const genAi: MutableAiGenAiValues = { ...span.genAi }
 	for (const field of MESSAGE_FIELDS) {
@@ -103,7 +120,7 @@ const clipSpanContent = (span: AiSessionSpan): AiSessionSpan => {
 		if (value === undefined) continue
 		// A non-array capture is one message already.
 		genAi[field] = Array.isArray(value)
-			? value.slice(-1).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
+			? messagesForLabel(value).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
 			: clipStrings(value, MESSAGE_TEXT_CHARS)
 	}
 	for (const field of PAYLOAD_FIELDS) {

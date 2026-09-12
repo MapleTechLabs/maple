@@ -1,6 +1,7 @@
 import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { McpServicesLive } from "@/runtime/mcp-service-graph"
+import { WarehouseLive } from "@/runtime/warehouse-layer"
 import { Env } from "@/platform/Env"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { createTestDb } from "@/platform/test-pglite"
@@ -48,7 +49,11 @@ export const makeEvalRuntime = (): EvalRuntime => {
 	const databaseLive = testDb.layer
 	const workerEnvLive = Layer.succeed(WorkerEnvironment, env as Record<string, unknown>)
 
-	const layer = McpServicesLive.pipe(
+	// The warehouse rides beside the executor so a test can drive a read helper
+	// (the paged agent-session span load) directly, without the production
+	// graph exposing its internals. It is a second instance of the service the
+	// executor holds, over the same faked client.
+	const layer = Layer.mergeAll(McpServicesLive, WarehouseLive.pipe(Layer.provide(envLive))).pipe(
 		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive)),
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern
