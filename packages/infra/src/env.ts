@@ -106,6 +106,18 @@ export const optionalPlain = (key: string, fallback?: string): Config.Config<Pla
 export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
 	trimmedOption(key).pipe(Config.map((value) => entry(key, Option.map(value, Redacted.make))))
 
+/**
+ * Whether a secret is set, without reading it.
+ *
+ * For deciding at the stack level whether a resource that *requires* a secret
+ * should be declared at all. `requiredSecret` inside a resource's props is the
+ * right shape once the resource exists, but it fails the whole `alchemy deploy`
+ * before any resource is touched — so a secret nobody provisioned takes down
+ * every Worker in the stage rather than the one feature that needed it.
+ */
+export const secretIsSet = (key: string): Config.Config<boolean> =>
+	trimmedOption(key).pipe(Config.map(Option.isSome))
+
 /** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
 export const plainFrom = (keys: ReadonlyArray<string>, fallback: string): Config.Config<string> =>
 	Config.all(keys.map(trimmedOption)).pipe(
