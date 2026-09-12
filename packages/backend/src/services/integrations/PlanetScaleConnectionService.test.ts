@@ -113,7 +113,7 @@ const stubPlanetScaleApi = (options?: {
 		if (denied) {
 			return new Response("{}", { status: denied[1], headers: { "content-type": "application/json" } })
 		}
-		if (!requestUrl.includes("api.planetscale.com") && options?.denyDataPlaneBearer) {
+		if (new URL(requestUrl).hostname !== "api.planetscale.com" && options?.denyDataPlaneBearer) {
 			const authorization = headers.get("authorization") ?? ""
 			return authorization.startsWith("token ")
 				? new Response("up 1\n", { status: 200 })
@@ -121,7 +121,7 @@ const stubPlanetScaleApi = (options?: {
 		}
 		if (
 			options?.sdGroups &&
-			requestUrl.includes("api.planetscale.com") &&
+			new URL(requestUrl).hostname === "api.planetscale.com" &&
 			requestUrl.includes("/metrics")
 		) {
 			return new Response(JSON.stringify(options.sdGroups), {

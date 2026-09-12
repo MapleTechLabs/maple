@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto"
 import {
 	CliDeviceActionResponse,
 	CliDeviceCompleteResponse,
@@ -49,10 +49,9 @@ const displayUserCode = (value: string) => `${value.slice(0, 4)}-${value.slice(4
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
 
 const makeUserCode = () => {
-	const bytes = randomBytes(8)
 	let value = ""
 	for (let index = 0; index < 8; index += 1) {
-		value += USER_CODE_ALPHABET[bytes[index]! % USER_CODE_ALPHABET.length]
+		value += USER_CODE_ALPHABET[randomInt(USER_CODE_ALPHABET.length)]
 	}
 	return value
 }
