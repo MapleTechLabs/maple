@@ -127,6 +127,8 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 							timeRange: { start: st, end: et },
 							selection: agentToolSelectionData(tool, params),
 							bucketSeconds,
+							// Nothing to clip: no groups means no trend grid was built.
+							trendClipped: false,
 							groups: [],
 						},
 					}),

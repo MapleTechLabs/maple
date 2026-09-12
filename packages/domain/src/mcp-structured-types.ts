@@ -1338,6 +1338,10 @@ export interface ListAgentToolErrorsData {
 	timeRange: { start: string; end: string }
 	selection: AgentToolSelectionData
 	bucketSeconds: number
+	/** The trend grid holds only the newest buckets; true when the window spans more. */
+	trendClipped: boolean
+	/** Where the clipped trend starts, as a warehouse datetime literal; absent when not clipped. */
+	trendStart?: string
 	groups: AgentToolErrorGroupData[]
 }
 
