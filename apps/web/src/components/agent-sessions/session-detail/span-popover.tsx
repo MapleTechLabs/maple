@@ -5,8 +5,7 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { CircleXmarkIcon, XmarkIcon } from "@/components/icons"
-import { classifyAiSpan, spanFailed, spanModel } from "@/lib/agent-sessions/session-turns"
-import type { SessionToolResults } from "@/lib/agent-sessions/span-detail"
+import { classifyAiSpan, spanFailed, spanModel, type SessionToolResults } from "@maple/agent-sessions"
 import { SpanExpansion, type SpanDetailTab } from "./span-expansion"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 

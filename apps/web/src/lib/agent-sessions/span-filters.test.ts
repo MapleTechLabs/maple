@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
+import { agentSpan, llmSpan, makeSpan, toolSpan } from "@maple/agent-sessions"
 import { filterSpans, isDelegation, shortTarget } from "./span-filters"
 import type { AiSessionSpan } from "@maple/domain/http"
 

@@ -27,8 +27,7 @@ import {
 	buildBackToSessionsHref,
 	resolveWindow,
 } from "@/lib/agent-sessions/session-window"
-import { buildSessionSummary } from "@/lib/agent-sessions/session-summary"
-import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
+import { buildSessionSummary, buildSessionTurns } from "@maple/agent-sessions"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"

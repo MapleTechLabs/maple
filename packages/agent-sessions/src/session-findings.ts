@@ -7,9 +7,8 @@
 // finding the reader clicks through to must be exactly what the spans say.
 
 import type { AiSessionSpan } from "@maple/domain/http"
-import { formatNumber } from "@maple/ui/lib/format"
-import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
+import { formatNumber, formatSessionDuration } from "./format"
 import {
 	clipDetail,
 	failureEvents,
@@ -147,13 +146,14 @@ function failureFindings(
 
 	return [...byLabel].map(([label, group]) => {
 		const turnIndices = distinctSorted(group.members.map((member) => member.turnIndex))
-		const terminal =
-			causeSpanId !== undefined && group.members.some((member) => member.span.spanId === causeSpanId)
 		// The terminal group links the span the turn died on; a recovered group
 		// links its first event, where the trouble began.
-		const linked = terminal
-			? group.members.find((member) => member.span.spanId === causeSpanId)!
-			: group.members[0]!
+		const cause =
+			causeSpanId === undefined
+				? undefined
+				: group.members.find((member) => member.span.spanId === causeSpanId)
+		const terminal = cause !== undefined
+		const linked = cause ?? group.members[0]
 		return {
 			id: `failure:${label}`,
 			// Rate limits and refusals are warnings unless the session died on one:
@@ -172,7 +172,7 @@ function failureFindings(
 					label,
 				),
 			spanId: linked.span.spanId,
-			atMs: spanStartMs(group.members[0]!.span),
+			atMs: spanStartMs(group.members[0].span),
 		}
 	})
 }
@@ -227,25 +227,28 @@ function truncationFindings(
 	turnIndexBySpan: ReadonlyMap<string, number>,
 ): SessionFinding[] {
 	const shadowed = shadowedAncestorIds(spans, truncationSignal)
-	const members = spans.filter((span) => truncationSignal(span) !== undefined && !shadowed.has(span.spanId))
-	if (members.length === 0) return []
-	const reason = truncationSignal(members[0]!)!
+	const members = spans.flatMap((span) => {
+		const reason = truncationSignal(span)
+		return reason === undefined || shadowed.has(span.spanId) ? [] : [{ span, reason }]
+	})
+	const first = members[0]
+	if (first === undefined) return []
 	return [
 		{
 			id: "truncation",
 			severity: "anomaly",
 			// `stop <reason>` is how the transcript's meta line already spells a
 			// finish reason, so the finding reads in the same vocabulary.
-			label: `stop ${reason}`,
+			label: `stop ${first.reason}`,
 			count: members.length,
 			turnText: turnListText(
-				distinctSorted(members.map((span) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				distinctSorted(members.map(({ span }) => turnIndexBySpan.get(span.spanId) ?? 0)),
 				turns,
 				false,
 			),
 			detail: "the reply hit the output token limit and was cut off",
-			spanId: members[0]!.spanId,
-			atMs: spanStartMs(members[0]!),
+			spanId: first.span.spanId,
+			atMs: spanStartMs(first.span),
 		},
 	]
 }
@@ -277,8 +280,8 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 				count: 1,
 				turnText: turnListText([index], turns, false),
 				detail: `called ${calls.length}× within one turn`,
-				spanId: calls[0]!.spanId,
-				atMs: spanStartMs(calls[0]!),
+				spanId: calls[0].spanId,
+				atMs: spanStartMs(calls[0]),
 			})
 		}
 	})
@@ -319,7 +322,7 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 function turnListText(indices: readonly number[], turns: readonly SessionTurn[], terminal: boolean): string {
 	const word = turns[0]?.anchorKind === "trace" ? "Segment" : "Turn"
 	if (indices.length === 1) {
-		const one = `${word} ${turns[indices[0]!]?.index ?? indices[0]! + 1}`
+		const one = `${word} ${turns[indices[0]]?.index ?? indices[0] + 1}`
 		return terminal ? `${one} (final)` : one
 	}
 	if (indices.length > 4) return `${indices.length} of ${turns.length} ${word.toLowerCase()}s`

@@ -11,8 +11,8 @@
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
 
-import { spanStartMs } from "@/lib/agent-sessions/session-turns"
-import { agentSpan, llmSpan, T0, toolSpan, userMessages } from "@/lib/agent-sessions/span-test-support"
+import { spanStartMs } from "./session-turns"
+import { agentSpan, llmSpan, T0, toolSpan, userMessages } from "./span-test-support"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND

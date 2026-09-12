@@ -20,7 +20,6 @@ import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { useListNavigation } from "@/hooks/use-list-navigation"
-import { spanTokenBuckets } from "@/lib/agent-sessions/session-summary"
 import {
 	classifyAiSpan,
 	isLlmCall,
@@ -28,9 +27,10 @@ import {
 	spanFailed,
 	spanModel,
 	spanStartMs,
-	type SessionTurn,
+	spanTokenBuckets,
 	type AiSpanCategory,
-} from "@/lib/agent-sessions/session-turns"
+	type SessionTurn,
+} from "@maple/agent-sessions"
 import { filterSpans, isDelegation, shortTarget } from "@/lib/agent-sessions/span-filters"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
