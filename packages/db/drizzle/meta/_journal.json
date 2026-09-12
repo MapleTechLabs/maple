@@ -379,6 +379,13 @@
       "when": 1788285534887,
       "tag": "0054_alert_incident_open_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1788910743675,
+      "tag": "0055_google_analytics_integration",
+      "breakpoints": true
     }
   ]
 }

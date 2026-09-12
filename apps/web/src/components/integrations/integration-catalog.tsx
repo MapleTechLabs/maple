@@ -8,6 +8,7 @@ import {
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
+	GoogleAnalyticsIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
@@ -29,6 +30,7 @@ export type IntegrationId =
 	| "hazel"
 	| "github"
 	| "slack"
+	| "google-analytics"
 
 /**
  * Third-party brand accents for the icon-plate wash — no app token applies.
@@ -37,6 +39,8 @@ export type IntegrationId =
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
+/** Google Analytics 4 brand orange. */
+export const GOOGLE_ANALYTICS_ACCENT = "#E37400"
 
 /**
  * Slack's deep aubergine — the brand's identity color, and the light-theme value.
@@ -148,6 +152,15 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		accent: SLACK_ACCENT,
 		docsUrl: "https://maple.dev/docs/integrations/slack",
 	},
+	{
+		id: "google-analytics",
+		name: "Google Analytics",
+		description:
+			"Connect a Google account to chart GA4 sessions, users and page views next to your traces and errors.",
+		icon: GoogleAnalyticsIcon,
+		accent: GOOGLE_ANALYTICS_ACCENT,
+		docsUrl: "https://maple.dev/docs/integrations/google-analytics",
+	},
 ]
 
 /**
@@ -208,6 +221,11 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const slackResult = useAtomValue(
 		retainedQueryV2("slackIntegration", "status", {
 			reactivityKeys: ["slackIntegration"],
+		}),
+	)
+	const googleAnalyticsResult = useAtomValue(
+		retainedQueryV2("googleAnalyticsIntegration", "status", {
+			reactivityKeys: ["googleAnalyticsIntegration"],
 		}),
 	)
 
@@ -285,6 +303,21 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
+	const googleAnalytics: CardStatus | null = Result.builder(googleAnalyticsResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			// A revoked grant still has a connection row, so "Not connected" would be wrong and
+			// "Connected" would be a lie — collection has stopped until someone reconnects.
+			if (status.revoked) return { label: "Reconnect needed", variant: "warning" }
+			const collecting = status.properties.filter((property) => property.enabled).length
+			return {
+				label: collecting > 0 ? `${collecting} propert${collecting === 1 ? "y" : "ies"}` : "Connected",
+				variant: "success",
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
+
 	return {
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
@@ -294,6 +327,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		hazel,
 		github,
 		slack,
+		"google-analytics": googleAnalytics,
 	}
 }
 
@@ -428,6 +462,11 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 	const slackResult = useAtomValue(
 		retainedQueryV2("slackIntegration", "status", {
 			reactivityKeys: ["slackIntegration"],
+		}),
+	)
+	const googleAnalyticsResult = useAtomValue(
+		retainedQueryV2("googleAnalyticsIntegration", "status", {
+			reactivityKeys: ["googleAnalyticsIntegration"],
 		}),
 	)
 
@@ -614,6 +653,40 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)
 
+	const googleAnalytics: IntegrationOverview = Result.builder(googleAnalyticsResult)
+		.onSuccess((status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const collecting = status.properties.filter((property) => property.enabled)
+			const erroring = collecting.filter((property) => property.last_error !== null)
+			// A property with no timezone yet has never been collected — Google reports hourly
+			// data in the property's own zone, so nothing can be placed until it resolves.
+			const unresolved = collecting.filter((property) => property.time_zone === null)
+			const issue = status.revoked
+				? "authorization revoked"
+				: erroring.length > 0
+					? `${plural(erroring.length, "property")} erroring`
+					: unresolved.length > 0
+						? `${plural(unresolved.length, "property")} not started`
+						: null
+			return {
+				kind: "connected",
+				health: issue ? "attention" : "healthy",
+				stateLabel: status.revoked ? "Reconnect needed" : issue ? "Needs attention" : "Healthy",
+				context: status.connected_email,
+				stat: collecting.length > 0 ? `${plural(collecting.length, "property")} collected` : null,
+				lastSyncLabel: syncedLabel(
+					maxMs(
+						collecting.map((property) =>
+							property.last_synced_at ? Date.parse(property.last_synced_at) : null,
+						),
+					),
+				),
+				issue,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
+
 	return {
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
@@ -623,6 +696,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		hazel,
 		github,
 		slack,
+		"google-analytics": googleAnalytics,
 	}
 }
 

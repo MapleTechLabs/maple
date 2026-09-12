@@ -72,6 +72,9 @@ export const DashboardTemplateCategory = Schema.Literals([
 	"database",
 	"infrastructure",
 	"messaging",
+	// What the app's USERS did, rather than what the app or its infrastructure did —
+	// web and product analytics. The other four are all operator-facing.
+	"product",
 ]).annotate({
 	identifier: "@maple/DashboardTemplateCategory",
 	title: "Dashboard Template Category",

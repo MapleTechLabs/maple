@@ -17,6 +17,8 @@ import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
+import { GoogleAnalyticsOAuthService } from "@/services/auth/GoogleAnalyticsOAuthService"
+import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
 import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
 import { SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
@@ -36,7 +38,11 @@ import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
-import { HttpV2PlanetScaleIntegrationsLive, HttpV2SlackIntegrationsLive } from "./integrations.http"
+import {
+	HttpV2GoogleAnalyticsIntegrationsLive,
+	HttpV2PlanetScaleIntegrationsLive,
+	HttpV2SlackIntegrationsLive,
+} from "./integrations.http"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
@@ -83,6 +89,7 @@ export const AllV2GroupLayersLive = Layer.mergeAll(
 	HttpV2ApiKeysLive,
 	HttpV2SlackIntegrationsLive,
 	HttpV2PlanetScaleIntegrationsLive,
+	HttpV2GoogleAnalyticsIntegrationsLive,
 	HttpV2DashboardsLive,
 	HttpV2AlertDeliveriesLive,
 	HttpV2AlertRulesLive,
@@ -330,6 +337,26 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 	// A real edge cache over the in-memory backend: `getOrCompute` must actually
 	// round-trip so the cached wire shape is exercised, and nothing here needs KV.
 	EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
+)
+
+/**
+ * Inert Google Analytics services for harnesses that never touch that integration group.
+ */
+export const GoogleAnalyticsServiceStubsLayer = Layer.mergeAll(
+	Layer.succeed(GoogleAnalyticsService, {
+		pollAllOrgs: die,
+		pollOrg: die,
+		getIntegrationStatus: die,
+		setPropertyEnabled: die,
+	}),
+	Layer.succeed(GoogleAnalyticsOAuthService, {
+		startConnect: die,
+		completeConnect: die,
+		getStatus: die,
+		getValidAccessToken: die,
+		disconnect: die,
+		markConnectionRevoked: die,
+	}),
 )
 
 /** Inert SlackIntegrationService for harnesses that never touch the slack integration group. */

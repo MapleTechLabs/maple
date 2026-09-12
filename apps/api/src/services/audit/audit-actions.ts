@@ -57,6 +57,9 @@ export const AuditResources = {
 	planetscale_integration: {
 		verbs: ["connect_started", "organization_selected", "metrics_token_set", "disconnected"],
 	},
+	google_analytics_integration: {
+		verbs: ["connect_started", "disconnected", "property_enabled", "property_disabled"],
+	},
 	slack_integration: { verbs: ["install_started", "uninstalled"] },
 	/**
 	 * Org membership, learned from Clerk's webhook — the web app changes members

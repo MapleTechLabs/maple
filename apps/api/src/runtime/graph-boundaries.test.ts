@@ -94,6 +94,7 @@ describe("API runtime graph boundaries", () => {
 		for (const routeOnlyService of [
 			"DailySpendService",
 			"CloudflareAnalyticsService",
+			"GoogleAnalyticsService",
 			"AnomalyDetectionService",
 			"AiTriageService",
 			"DigestService",

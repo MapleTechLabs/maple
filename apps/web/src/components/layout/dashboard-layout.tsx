@@ -85,12 +85,22 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 		<header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
 			<SidebarTrigger className="-ml-1" />
 			<Separator orientation="vertical" className="mr-2 h-4" />
-			<Breadcrumb>
-				<BreadcrumbList>
+			{/* The header is a fixed `h-16`, so a wrapping trail does not grow it — it spills out
+			    and gets clipped by the border. Kept to one line instead: see the per-crumb rules
+			    below for what gives way when a trail like "Settings › Integrations › Google
+			    Analytics" meets a 375px viewport. */}
+			<Breadcrumb className="min-w-0">
+				<BreadcrumbList className="flex-nowrap">
 					{items.map((item, index) => (
 						<React.Fragment key={item.label}>
-							{index > 0 && <BreadcrumbSeparator />}
-							<BreadcrumbItem>
+							{index > 0 && <BreadcrumbSeparator className="shrink-0 max-sm:hidden" />}
+							{/* Below `sm` only the leaf survives: the full trail cannot share a
+							    375px row with the action cluster, and letting the ancestors shrink
+							    instead collapses every crumb at once so their un-truncated link
+							    text overlaps. Above `sm` the whole trail is back. */}
+							<BreadcrumbItem
+								className={item.href ? "shrink-0 max-sm:hidden" : "min-w-0"}
+							>
 								{item.href ? (
 									(() => {
 										const { pathname, search } = parseSearchFromHref(item.href)
@@ -110,7 +120,7 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 										)
 									})()
 								) : (
-									<BreadcrumbPage>{item.label}</BreadcrumbPage>
+									<BreadcrumbPage className="truncate">{item.label}</BreadcrumbPage>
 								)}
 							</BreadcrumbItem>
 						</React.Fragment>

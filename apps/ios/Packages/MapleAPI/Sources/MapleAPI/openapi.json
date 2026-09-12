@@ -7328,6 +7328,10 @@
       "name": "PlanetScale Integration"
     },
     {
+      "description": "Connect Google Analytics 4 to your organization and manage what Maple collects from it: connection status, the properties discovered under the grant, and which of them are collected. Collected data lands as regular metrics, so it charts and alerts alongside your traces.",
+      "name": "Google Analytics Integration"
+    },
+    {
       "description": "Deduplicated errors and alert-backed issues tracked through Maple's triage workflow.",
       "name": "Error Issues"
     },
