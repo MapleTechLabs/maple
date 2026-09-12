@@ -6,7 +6,6 @@ import {
 	type McpToolRegistrar,
 } from "./types"
 import {
-	agentToolReadHandlers,
 	agentToolSelection,
 	agentToolSelectionData,
 	agentToolSelectionParams,
@@ -15,7 +14,7 @@ import {
 	formatNanos,
 	formatSeen,
 } from "@/mcp/lib/agent-tool-analytics"
-import { agentToolsContent } from "./agent-tools-types"
+import { createDualContent } from "@/mcp/lib/structured-output"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/mcp/lib/time"
 import { clampLimit } from "@/mcp/lib/limits"
@@ -28,6 +27,7 @@ import {
 	AiToolErrorSamplesRequest,
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 const decodeFingerprint = Schema.decodeUnknownOption(AiToolErrorFingerprint)
 
@@ -35,8 +35,12 @@ const decodeFingerprint = Schema.decodeUnknownOption(AiToolErrorFingerprint)
  * A payload as the caller asked to see it, with its true size beside it — the
  * read already truncated it once, so the byte count is the only thing that says
  * how much of the argument or result is missing.
+ *
+ * Not `clipPayload` from `lib/agent-sessions`: that one measures the text it is
+ * handed, which here is already the read's truncation rather than the span's
+ * own payload, so the size has to come from the row.
  */
-const clipPayload = (text: string, chars: number, bytes: number): string => {
+const samplePayload = (text: string, chars: number, bytes: number): string => {
 	if (text === "") return "(not available — the span was not retained)"
 	const clipped = text.length <= chars ? text : `${text.slice(0, chars)}…`
 	return `${clipped}\n(${formatNumber(bytes)} bytes total)`
@@ -110,7 +114,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					),
 				],
 				{ concurrency: 2 },
-			).pipe(Effect.catchTags(agentToolReadHandlers("get_agent_tool_error")))
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tool_error")))
 
 			const lines: string[] = [
 				`## Tool failure group ${fingerprint.value}`,
@@ -128,7 +132,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					]),
 				)
 				return {
-					content: agentToolsContent(lines.join("\n"), {
+					content: createDualContent(lines.join("\n"), {
 						tool: "get_agent_tool_error",
 						data: {
 							timeRange: { start: st, end: et },
@@ -190,11 +194,11 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					`Message: ${sample.message === "" ? "—" : truncate(sample.message.replace(/\s+/g, " "), 400)}`,
 					`Arguments:`,
 					"```",
-					clipPayload(sample.arguments, payloadChars, sample.argumentsBytes),
+					samplePayload(sample.arguments, payloadChars, sample.argumentsBytes),
 					"```",
 					`Result:`,
 					"```",
-					clipPayload(sample.result, payloadChars, sample.resultBytes),
+					samplePayload(sample.result, payloadChars, sample.resultBytes),
 					"```",
 				)
 			}
@@ -224,7 +228,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			)
 
 			return {
-				content: agentToolsContent(lines.join("\n"), {
+				content: createDualContent(lines.join("\n"), {
 					tool: "get_agent_tool_error",
 					data: {
 						timeRange: { start: st, end: et },

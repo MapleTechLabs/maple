@@ -4,7 +4,6 @@ import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/m
 import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
-import { agentSessionWarehouseHandlers } from "@/mcp/lib/agent-sessions"
 import { Effect, Schema } from "effect"
 import {
 	ListAiSessionsDistributionsRequest,
@@ -13,6 +12,7 @@ import {
 } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
 import { readAiSessionDistributions, readAiSessionFacets } from "@/services/ai-sessions/ai-session-reads"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Facet rows per dimension. Enough to pick a filter from, short enough to read. */
 const FACET_ROWS = 10
@@ -69,7 +69,7 @@ export function registerGetAgentSessionsOverviewTool(server: McpToolRegistrar) {
 					),
 				],
 				{ concurrency: 2 },
-			).pipe(Effect.catchTags(agentSessionWarehouseHandlers("get_agent_sessions_overview")))
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_sessions_overview")))
 
 			if (facets.vendors.length === 0) {
 				return {

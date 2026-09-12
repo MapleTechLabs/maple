@@ -11,7 +11,6 @@ import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
-	agentSessionWarehouseHandlers,
 	offsetLabel,
 	SESSION_TOO_LARGE,
 	sessionTooLargeResult,
@@ -24,6 +23,7 @@ import { Effect, Option, Schema } from "effect"
 import { AiSessionSpanCursor, AiSessionSpanScope, GetAiSessionSpansRequest } from "@maple/domain/http"
 import { spanModel, spanStartMs, spanTokenBuckets, spanFailed } from "@maple/agent-sessions"
 import { readAiSessionSpans } from "@/services/ai-sessions/ai-session-reads"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 const decodeScope = Schema.decodeUnknownOption(AiSessionSpanScope)
 const decodeCursor = Schema.decodeUnknownOption(AiSessionSpanCursor)
@@ -88,7 +88,7 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
 					Effect.succeed(SESSION_TOO_LARGE),
 				),
-				Effect.catchTags(agentSessionWarehouseHandlers("list_agent_session_spans")),
+				Effect.catchTags(warehouseReadToMcpHandlers("list_agent_session_spans")),
 			)
 			if (page === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
 

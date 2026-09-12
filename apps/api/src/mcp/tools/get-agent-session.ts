@@ -4,7 +4,6 @@ import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
-	agentSessionWarehouseHandlers,
 	loadAgentSessionSpans,
 	offsetLabel,
 	SESSION_TOO_LARGE,
@@ -24,6 +23,7 @@ import {
 	turnOrdinal,
 } from "@maple/agent-sessions"
 import { readAiSessionSummary } from "@/services/ai-sessions/ai-session-reads"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Table ceilings — a session with hundreds of turns is read through the
  *  transcript, not through a table of every row. */
@@ -60,7 +60,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
 					Effect.succeed(SESSION_TOO_LARGE),
 				),
-				Effect.catchTags(agentSessionWarehouseHandlers("get_agent_session")),
+				Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session")),
 			)
 			if (loaded === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
 
@@ -97,7 +97,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							endTime: loaded.window.endTime,
 						}),
 					}),
-				).pipe(Effect.catchTags(agentSessionWarehouseHandlers("get_agent_session")))
+				).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session")))
 			}
 
 			const traceOf = new Map(loaded.spans.map((span) => [span.spanId, span.traceId] as const))

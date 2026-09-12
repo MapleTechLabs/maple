@@ -124,6 +124,9 @@ const toolLabels: Record<string, string> = {
 	get_agent_session_transcript: "Agent Transcript",
 	list_agent_session_spans: "Agent Session Spans",
 	inspect_agent_session_span: "Agent Span",
+	get_agent_tools_overview: "Agent Tool Usage",
+	list_agent_tool_errors: "Agent Tool Errors",
+	get_agent_tool_error: "Agent Tool Error",
 	// misc
 	run_sql: "Run SQL",
 	register_agent: "Register Agent",
@@ -188,6 +191,9 @@ const toolIcons: Record<string, IconComponent> = {
 	get_agent_session_transcript: ChatBubbleSparkleIcon,
 	list_agent_session_spans: PulseIcon,
 	inspect_agent_session_span: MagnifierIcon,
+	get_agent_tools_overview: ChartBarTrendUpIcon,
+	list_agent_tool_errors: FireIcon,
+	get_agent_tool_error: FireIcon,
 	register_agent: IdBadgeIcon,
 	get_event: CircleInfoIcon,
 } satisfies Record<string, IconComponent>

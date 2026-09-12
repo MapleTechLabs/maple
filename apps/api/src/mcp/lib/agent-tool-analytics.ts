@@ -1,7 +1,5 @@
 import { optionalBooleanParam, optionalStringParam, optionalTimeParam } from "@/mcp/tools/types"
 import { formatDurationFromMs } from "@/mcp/lib/format"
-import { toMcpQueryError, warehouseReadHandlers } from "@/mcp/lib/map-warehouse-error"
-import { Effect } from "effect"
 
 /**
  * Shared pieces of the three AI agent tool-analytics tools
@@ -12,16 +10,6 @@ import { Effect } from "effect"
  * p95 that reads as ms in one tool and ns in another is the kind of drift this
  * module exists to prevent.
  */
-
-/**
- * Warehouse failures of a compiled read, as MCP query errors.
- *
- * `warehouseToMcpHandlers` is the whole-union table, which `catchTags` refuses
- * here: these reads compile their own SQL and never mint a raw-SQL token, so
- * the three token tags are not in their error channel.
- */
-export const agentToolReadHandlers = (tool: string) =>
-	warehouseReadHandlers((error) => Effect.fail(toMcpQueryError(tool)(error)))
 
 /** The window every tool-analytics read takes. 24h unless the agent narrows it. */
 export const agentToolWindowParams = {

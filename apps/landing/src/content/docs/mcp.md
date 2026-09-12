@@ -47,7 +47,8 @@ The tool set mirrors the [Maple API](/docs/api) and the dashboard. Broadly:
 - **Traces and logs** — `search_traces`, `find_slow_traces`, `inspect_trace`, `inspect_span`, `search_logs`, `mine_log_patterns`, `query_data`, `run_sql`
 - **Errors and incidents** — `find_errors`, `list_error_issues`, `error_detail`, `list_error_issue_events`, `get_incident_timeline`, `diagnose_service`, `compare_periods`, plus triage actions (`claim_error_issue`, `transition_error_issue`, `set_issue_severity`, `comment_on_error_issue`, `propose_fix`)
 - **Sessions** — `search_sessions`, `get_session_traces`, `get_session_transcript`
-- **Agent sessions** (AI/LLM agent traces) — `get_agent_sessions_overview`, `list_agent_sessions`, `get_agent_session`, `get_agent_session_transcript`, `list_agent_session_spans`, `inspect_agent_session_span`, `get_agent_tools_overview`, `list_agent_tool_errors`, `get_agent_tool_error`
+- **Agent sessions** (AI/LLM agent traces) — `get_agent_sessions_overview`, `list_agent_sessions`, `get_agent_session`, `get_agent_session_transcript`, `list_agent_session_spans`, `inspect_agent_session_span`
+- **Agent tool health** — `get_agent_tools_overview`, `list_agent_tool_errors`, `get_agent_tool_error`: which tools your agents call, how often they fail, and the arguments and results of the calls that failed
 - **Dashboards** — `list_dashboards`, `get_dashboard`, `create_dashboard`, `add_dashboard_widget`, `update_dashboard_widget`, `inspect_chart_data`, `describe_dashboard_schema`
 - **Alerting** — `list_alert_rules`, `get_alert_rule`, `create_alert_rule`, `update_alert_rule`, `delete_alert_rule`, `list_alert_incidents`, `list_alert_checks`
 - **Setup** — `audit_setup`, `get_instrumentation_recommendations`, `register_agent`

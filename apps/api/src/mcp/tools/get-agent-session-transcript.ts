@@ -12,7 +12,6 @@ import { formatDurationFromMs, truncate } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
-	agentSessionWarehouseHandlers,
 	clipPayload,
 	loadAgentSessionSpans,
 	offsetLabel,
@@ -32,6 +31,7 @@ import {
 	type TranscriptPayload,
 	type TranscriptRow,
 } from "@maple/agent-sessions"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Text the answer will carry, before the next-step hints. A session that runs
  *  past it is cut at a turn boundary and says where to continue. */
@@ -196,7 +196,7 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
 					Effect.succeed(SESSION_TOO_LARGE),
 				),
-				Effect.catchTags(agentSessionWarehouseHandlers("get_agent_session_transcript")),
+				Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session_transcript")),
 			)
 			if (loaded === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
 

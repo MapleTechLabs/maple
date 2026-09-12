@@ -12,11 +12,12 @@ import { clampLimit, clampOffset } from "@/mcp/lib/limits"
 import { formatDurationFromMs, formatNumber, formatTable, truncate } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
-import { agentSessionWarehouseHandlers, windowHint } from "@/mcp/lib/agent-sessions"
+import { windowHint } from "@/mcp/lib/agent-sessions"
 import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
 import { AiSessionSortDir, AiSessionSortKey, ListAiSessionsRequest } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
 import { listAiSessions } from "@/services/ai-sessions/ai-session-reads"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 const decodeSortKey = Schema.decodeUnknownOption(AiSessionSortKey)
 const decodeSortDir = Schema.decodeUnknownOption(AiSessionSortDir)
@@ -137,7 +138,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					sortBy: sortBy.value,
 					sortDir: sortDir.value,
 				}),
-			).pipe(Effect.catchTags(agentSessionWarehouseHandlers("list_agent_sessions")))
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_sessions")))
 
 			const sessions = page.data
 			yield* Effect.annotateCurrentSpan("result.rowCount", sessions.length)

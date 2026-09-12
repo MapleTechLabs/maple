@@ -102,6 +102,9 @@ const PHRASE_BY_TOOL: Record<string, string> = {
 	get_agent_session_transcript: "Reading an agent transcript…",
 	list_agent_session_spans: "Listing agent session spans…",
 	inspect_agent_session_span: "Inspecting an agent span…",
+	get_agent_tools_overview: "Checking agent tool usage…",
+	list_agent_tool_errors: "Listing agent tool failures…",
+	get_agent_tool_error: "Inspecting an agent tool failure…",
 } satisfies Record<string, string>
 
 /** Keyword fallbacks for tools not in {@link PHRASE_BY_TOOL}, checked in order. */

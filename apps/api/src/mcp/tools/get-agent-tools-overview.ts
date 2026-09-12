@@ -1,6 +1,5 @@
 import { optionalNumberParam, optionalStringParam, validationError, type McpToolRegistrar } from "./types"
 import {
-	agentToolReadHandlers,
 	agentToolSelection,
 	agentToolSelectionData,
 	agentToolSelectionParams,
@@ -11,7 +10,8 @@ import {
 	formatRate,
 	formatSeen,
 } from "@/mcp/lib/agent-tool-analytics"
-import { agentToolsContent, type AgentToolAggregateData } from "./agent-tools-types"
+import type { AgentToolAggregateData } from "@maple/domain"
+import { createDualContent } from "@/mcp/lib/structured-output"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/mcp/lib/time"
 import { formatNumber, formatTable, truncate } from "@/mcp/lib/format"
@@ -29,6 +29,7 @@ import {
 	type AiToolsAggregate,
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Points the series renders before it says it cut the rest. */
 const SERIES_POINTS_MAX = 200
@@ -123,7 +124,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 							).pipe(Effect.map(Option.some)),
 				],
 				{ concurrency: 3 },
-			).pipe(Effect.catchTags(agentToolReadHandlers("get_agent_tools_overview")))
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tools_overview")))
 
 			const series = Option.getOrUndefined(seriesResult)
 			const current = totals.current
@@ -148,7 +149,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 					]),
 				)
 				return {
-					content: agentToolsContent(lines.join("\n"), {
+					content: createDualContent(lines.join("\n"), {
 						tool: "get_agent_tools_overview",
 						data: {
 							timeRange: { start: st, end: et },
@@ -266,7 +267,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			)
 
 			return {
-				content: agentToolsContent(lines.join("\n"), {
+				content: createDualContent(lines.join("\n"), {
 					tool: "get_agent_tools_overview",
 					data: {
 						timeRange: { start: st, end: et },

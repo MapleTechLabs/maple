@@ -1,6 +1,5 @@
 import { optionalNumberParam, requiredStringParam, validationError, type McpToolRegistrar } from "./types"
 import {
-	agentToolReadHandlers,
 	agentToolSelection,
 	agentToolSelectionData,
 	agentToolSelectionParams,
@@ -9,7 +8,7 @@ import {
 	describeSelection,
 	formatSeen,
 } from "@/mcp/lib/agent-tool-analytics"
-import { agentToolsContent } from "./agent-tools-types"
+import { createDualContent } from "@/mcp/lib/structured-output"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/mcp/lib/time"
 import { clampLimit } from "@/mcp/lib/limits"
@@ -19,6 +18,7 @@ import { readAiToolErrors } from "@/services/ai-sessions/ai-session-reads"
 import { AiToolErrorsRequest } from "@maple/domain/http"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Schema } from "effect"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Buckets the default trend is cut into, and the most any trend renders. */
 const TREND_BUCKETS = 24
@@ -82,7 +82,7 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 					...agentToolSelection(params),
 					tool: params.tool,
 				}),
-			).pipe(Effect.catchTags(agentToolReadHandlers("list_agent_tool_errors")))
+			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_tool_errors")))
 
 			const groups = errors.data.map((group) => ({
 				...group,
@@ -105,7 +105,7 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 					]),
 				)
 				return {
-					content: agentToolsContent(lines.join("\n"), {
+					content: createDualContent(lines.join("\n"), {
 						tool: "list_agent_tool_errors",
 						data: {
 							timeRange: { start: st, end: et },
@@ -167,7 +167,7 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 			)
 
 			return {
-				content: agentToolsContent(lines.join("\n"), {
+				content: createDualContent(lines.join("\n"), {
 					tool: "list_agent_tool_errors",
 					data: {
 						timeRange: { start: st, end: et },

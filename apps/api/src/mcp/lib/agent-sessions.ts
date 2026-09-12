@@ -11,18 +11,7 @@ import { classifyAiSpan, spanEndMs, spanStartMs } from "@maple/agent-sessions"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
 import type { TenantContext } from "@/services/auth/AuthService"
-import { toMcpQueryError, warehouseReadHandlers } from "@/mcp/lib/map-warehouse-error"
 import { optionalTimeParam, type McpToolResult } from "@/mcp/tools/types"
-
-/**
- * Warehouse failures from the AI-session reads, as MCP query errors.
- *
- * The READ handlers rather than the full warehouse set: these reads resolve the
- * org's saved settings but never mint a raw-SQL token, so a handler for a tag
- * their channel cannot carry does not typecheck.
- */
-export const agentSessionWarehouseHandlers = (tool: string) =>
-	warehouseReadHandlers((error) => Effect.fail(toMcpQueryError(tool)(error)))
 
 /** The sentinel a 413 is caught into — `Effect.catchTag` needs a value, and a
  *  literal narrows where a shape union does not. */

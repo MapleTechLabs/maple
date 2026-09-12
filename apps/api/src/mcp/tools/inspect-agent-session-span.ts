@@ -5,7 +5,6 @@ import { formatDurationFromMs } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import {
-	agentSessionWarehouseHandlers,
 	clipPayload,
 	SESSION_TOO_LARGE,
 	sessionTooLargeResult,
@@ -17,6 +16,7 @@ import { Effect, Schema } from "effect"
 import { GetAiSessionSpansRequest, type AiSessionSpan } from "@maple/domain/http"
 import { sessionToolResults, spanMessages, spanToolCalls, type SpanMessage } from "@maple/agent-sessions"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
+import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/
 
@@ -107,7 +107,7 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 			const window =
 				windowInput.window ??
 				(yield* resolveAiSessionWindow(tenant, params.session_id).pipe(
-					Effect.catchTags(agentSessionWarehouseHandlers("inspect_agent_session_span")),
+					Effect.catchTags(warehouseReadToMcpHandlers("inspect_agent_session_span")),
 				)).window
 			if (window === undefined) {
 				return {
@@ -133,7 +133,7 @@ export function registerInspectAgentSessionSpanTool(server: McpToolRegistrar) {
 				Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", () =>
 					Effect.succeed(SESSION_TOO_LARGE),
 				),
-				Effect.catchTags(agentSessionWarehouseHandlers("inspect_agent_session_span")),
+				Effect.catchTags(warehouseReadToMcpHandlers("inspect_agent_session_span")),
 			)
 			if (page === SESSION_TOO_LARGE) return sessionTooLargeResult(params.session_id)
 
