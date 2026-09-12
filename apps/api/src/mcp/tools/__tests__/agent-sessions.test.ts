@@ -6,7 +6,12 @@ import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-
 import type { McpToolRequirements } from "@/mcp/tools/runtime-requirements"
 import type { McpToolError, McpToolRegistrar, McpToolResult } from "@/mcp/tools/types"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
-import { clipPayload, loadAgentSessionSpans, MCP_AGENT_SESSION_MAX_SPANS } from "@/mcp/lib/agent-sessions"
+import {
+	clipPayload,
+	loadAgentSessionSpans,
+	MCP_AGENT_SESSION_CONTENT_BUDGET,
+	MCP_AGENT_SESSION_MAX_SPANS,
+} from "@/mcp/lib/agent-sessions"
 import { buildSessionFindings, buildSessionSummary, buildSessionTurns } from "@maple/agent-sessions"
 import { registerGetAgentSessionTool } from "@/mcp/tools/get-agent-session"
 import { registerListAgentSessionSpansTool } from "@/mcp/tools/list-agent-session-spans"
@@ -390,6 +395,57 @@ const hugePage = (page: number) => {
 /** The cursor a page ends on — the next page's SQL names it. */
 const hugeCursorSpanId = (page: number) => hugeSpanId((page + 1) * HUGE_PAGE_SIZE - 1)
 
+/* -------------------------------------------------------------------------- */
+/* A session whose captures are MANY SHORT strings                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The content budget's own session. Per-field clipping bounds how long a
+ * retained string is, not how many of them a capture holds, so a session made
+ * of short entries survives the clip almost whole — five pages of it is what
+ * the budget exists to stop.
+ */
+const WIDE_SESSION_ID = "wrun_01KZWIDE"
+const WIDE_PAGE_SIZE = AI_SESSION_SPANS_MAX_SPANS
+const WIDE_PAGES = MCP_AGENT_SESSION_MAX_SPANS / WIDE_PAGE_SIZE
+/** Short entries per captured payload, sized just under the serialised size
+ *  past which a payload is cut as text — so every one of them is retained. */
+const WIDE_PAYLOAD = JSON.stringify(Array.from({ length: 480 }, () => "row00"))
+/** The other half: ONE message of many parts, which the shape fallback cuts. */
+const WIDE_MESSAGES = JSON.stringify([
+	{ role: "user", parts: Array.from({ length: 300 }, () => ({ type: "text", content: "part" })) },
+])
+
+const wideSpanId = (index: number) => `w${index.toString(16).padStart(15, "0")}`
+
+const wideSpanRow = (index: number) =>
+	spanRow(
+		wideSpanId(index),
+		index === 0 ? "" : wideSpanId(0),
+		index === 0 ? "invoke_agent maple" : "execute_tool run_sql",
+		`2026-08-19 10:00:00.${String(index).padStart(9, "0")}`,
+		10,
+		"Unset",
+		index === 0
+			? { "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "maple" }
+			: {
+					"gen_ai.operation.name": "execute_tool",
+					"gen_ai.tool.name": "run_sql",
+					"gen_ai.tool.call.id": `call_${index}`,
+					"gen_ai.tool.call.arguments": WIDE_PAYLOAD,
+					"gen_ai.tool.call.result": WIDE_PAYLOAD,
+					"gen_ai.input.messages": WIDE_MESSAGES,
+				},
+		WIDE_SESSION_ID,
+	)
+
+/** Every page carries the row past it: the load is expected to stop on the
+ *  budget while the session still has pages left. */
+const widePage = (page: number) =>
+	Array.from({ length: WIDE_PAGE_SIZE + 1 }, (_, index) => wideSpanRow(page * WIDE_PAGE_SIZE + index))
+
+const wideCursorSpanId = (page: number) => wideSpanId((page + 1) * WIDE_PAGE_SIZE - 1)
+
 // First match wins: the reads over `trace_detail_spans` are told apart by the
 // derived tables and aggregates their SQL names.
 const fixtures: FixtureRule[] = [
@@ -401,6 +457,18 @@ const fixtures: FixtureRule[] = [
 			return hugePage(page + 1)
 		},
 	})),
+	...Array.from({ length: WIDE_PAGES - 1 }, (_, page) => ({
+		match: (sql: string) => sql.includes(wideCursorSpanId(page)),
+		get rows() {
+			return widePage(page + 1)
+		},
+	})),
+	{
+		match: (sql: string) => sql.includes(WIDE_SESSION_ID) && sql.includes("trace_detail_spans"),
+		get rows() {
+			return widePage(0)
+		},
+	},
 	{
 		match: (sql: string) => sql.includes(HUGE_SESSION_ID) && sql.includes("trace_detail_spans"),
 		get rows() {
@@ -627,7 +695,7 @@ describe("a session loaded to the whole-session cap", () => {
 
 		expect(loaded.spans.length).toBe(MCP_AGENT_SESSION_MAX_SPANS)
 		// The session ENDS at the cap: nothing is missing, so nothing is claimed.
-		expect(loaded.truncated).toBe(false)
+		expect(loaded.truncatedBy).toBeUndefined()
 		// ~2 KB of retained content per span against the ~20 KB each carried.
 		expect(JSON.stringify(loaded.spans).length).toBeLessThan(40_000_000)
 
@@ -641,5 +709,26 @@ describe("a session loaded to the whole-session cap", () => {
 		// serialised payload would put in front of it.
 		const detail = report.findings.find((finding) => finding.detail?.includes("table orders"))?.detail
 		expect(detail?.startsWith("table orders does not exist")).toBe(true)
+	}, 120_000)
+
+	// The span cap is not the only bound: a capture of thousands of short strings
+	// is clipped to almost its own size, and five pages of those are megabytes
+	// per page whatever the span count says.
+	it("stops on the retained-content budget, well before the span cap", async () => {
+		const loaded = await rt.runtime.runPromise(
+			loadAgentSessionSpans(rt.tenant, {
+				sessionId: WIDE_SESSION_ID,
+				window: undefined,
+				scope: "all",
+			}),
+		)
+
+		expect(loaded.truncatedBy).toBe("content")
+		expect(loaded.spans.length).toBeLessThan(MCP_AGENT_SESSION_MAX_SPANS)
+		// What the budget bounds: the retained content, not the row count.
+		expect(JSON.stringify(loaded.spans).length).toBeLessThan(2 * MCP_AGENT_SESSION_CONTENT_BUDGET)
+		// A message of many parts is cut as TEXT — the per-string clip alone would
+		// have kept all 300 of them.
+		expect(typeof loaded.spans[1]?.genAi.inputMessages).toBe("string")
 	}, 120_000)
 })

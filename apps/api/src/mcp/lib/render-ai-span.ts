@@ -85,12 +85,16 @@ const messageLines = (message: SpanMessage, payloadChars: number): string[] => {
  *
  * `traceSpans` is the rest of the span's trace: a model span's output only ever
  * MAKES its tool calls, and what each returned is captured on the tool span
- * that ran it, which `sessionToolResults` indexes by call id.
+ * that ran it, which `sessionToolResults` indexes by call id. `partialTrace`
+ * says those spans are only the trace's FIRST — a call whose tool span is past
+ * them reads as "not captured", which is indistinguishable from a result the
+ * span never recorded unless the view says so.
  */
 export function renderAiSpan(
 	span: AiSessionSpan,
 	traceSpans: readonly AiSessionSpan[],
 	payloadChars: number,
+	partialTrace: boolean,
 ): { readonly lines: string[]; readonly data: InspectSpanAiData } {
 	const category = spanCategoryLabel(span)
 	const messages = spanMessages(span)
@@ -110,6 +114,11 @@ export function renderAiSpan(
 		`Vendor ${span.vendorId ?? "—"} · session ${span.sessionId ?? `trace:${span.traceId}`} · ${
 			span.spanName
 		}`,
+		...(partialTrace
+			? [
+					`Only the first ${traceSpans.length} spans of the trace were read; a tool result recorded later in the trace is shown as not captured.`,
+				]
+			: []),
 	]
 
 	if (fields.length > 0) {
@@ -145,6 +154,7 @@ export function renderAiSpan(
 		lines,
 		data: {
 			category,
+			...(partialTrace && { partial: true }),
 			vendorId: span.vendorId ?? null,
 			sessionId: span.sessionId ?? null,
 			fields: Object.fromEntries(fields),

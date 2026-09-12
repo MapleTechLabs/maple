@@ -9,13 +9,8 @@ import { createDualContent } from "@/mcp/lib/structured-output"
 import { catchSessionTooLarge } from "@/mcp/lib/agent-sessions"
 import { hasAiSignal, renderAiSpan } from "@/mcp/lib/render-ai-span"
 import { spanDetail } from "@maple/query-engine/observability"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
-import { readAiSessionSpans } from "@/services/ai-sessions/ai-session-reads"
-
-/** Half-width of the window the AI read is bounded by. A trace is a single
- *  agent turn's worth of work, so an hour either side of the span covers it. */
-const TRACE_WINDOW_MS = 60 * 60 * 1000
+import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
 
 /** What to do about a trace whose spans no read can carry. */
 const TRACE_TOO_LARGE =
@@ -85,7 +80,6 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 					? yield* decodeAiSpan({
 							traceId: trace_id,
 							spanId: span_id,
-							startTime: result.startTime,
 							payloadChars: clampLimit(payload_chars, { defaultValue: 2_000, max: 20_000 }),
 						})
 					: undefined
@@ -154,26 +148,33 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 /**
  * The span's trace, read as agent spans and decoded.
  *
- * The read is keyed on the trace and bounded by a window around the span's own
- * timestamp — `trace_detail_spans` is partitioned by day, so an unbounded trace
- * lookup seeks every partition. The session id only labels the read; it is the
- * span's own stamp where it has one, and the `trace:<id>` form the session
- * model uses for a vendor that exposed no session key otherwise.
+ * The read is keyed on the trace and bounded by the TRACE's own bounds, which
+ * are resolved first: `trace_detail_spans` is partitioned by day, so an
+ * unbounded lookup seeks every partition — but a window around the span itself
+ * is not the trace's extent, and a tool span outside it falls out of a read
+ * that has no cursor to reach it, leaving its result rendered as "not
+ * captured". The session id only labels the read; it is the `trace:<id>` form
+ * the session model uses for a vendor that exposed no session key.
  */
 const decodeAiSpan = Effect.fn("mcp.inspectSpan.decodeAi")(function* (opts: {
 	readonly traceId: string
 	readonly spanId: string
-	readonly startTime: string
 	readonly payloadChars: number
 }) {
 	const tenant = yield* CurrentMcpTenant
-	const atMs = parseWarehouseDateTime(opts.startTime)
+	const sessionId = `trace:${opts.traceId}`
+	const { window } = yield* resolveAiSessionWindow(tenant, sessionId).pipe(
+		Effect.catchTags(warehouseReadToMcpHandlers("inspect_span")),
+	)
+	// No bounds at all: the trace carries nothing the AI reads can key on, so
+	// the raw attributes below are the whole answer.
+	if (window === undefined) return undefined
+
 	const page = yield* readAiSessionSpans(
 		tenant,
 		new GetAiSessionSpansRequest({
-			sessionId: `trace:${opts.traceId}`,
-			startTime: formatWarehouseDateTime(atMs - TRACE_WINDOW_MS),
-			endTime: formatWarehouseDateTime(atMs + TRACE_WINDOW_MS),
+			sessionId,
+			...window,
 			traceIds: [opts.traceId],
 			limit: AI_SESSION_SPANS_MAX_SPANS,
 		}),
@@ -186,7 +187,9 @@ const decodeAiSpan = Effect.fn("mcp.inspectSpan.decodeAi")(function* (opts: {
 		// attributes below still answer the question the caller asked.
 		return { _tag: "partial" as const, readSpans: page.data.length }
 	}
-	const rendered = renderAiSpan(span, page.data, opts.payloadChars)
+	// A trace read that ended on a cursor decodes this span in full, but the
+	// results of the calls it made can be on a span past the page.
+	const rendered = renderAiSpan(span, page.data, opts.payloadChars, page.nextCursor !== undefined)
 	return {
 		_tag: "decoded" as const,
 		lines: rendered.lines,

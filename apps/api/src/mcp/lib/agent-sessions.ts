@@ -33,6 +33,17 @@ import { optionalTimeParam, validationError, type McpToolError, type McpToolResu
  */
 export const MCP_AGENT_SESSION_MAX_SPANS = 5 * AI_SESSION_SPANS_MAX_SPANS
 
+/**
+ * Characters of clipped content the whole load may retain.
+ *
+ * The per-field clip bounds how long a retained STRING is, not how many of them
+ * a capture holds: a span whose messages are thousands of short entries survives
+ * it almost whole, and five pages of those are back to exhausting the isolate.
+ * This is the second bound, counted as each page is clipped — the load stops on
+ * it the way it stops on the span cap.
+ */
+export const MCP_AGENT_SESSION_CONTENT_BUDGET = 40_000_000
+
 /** Characters kept per string inside a retained message. */
 const MESSAGE_TEXT_CHARS = 500
 
@@ -41,7 +52,7 @@ const PAYLOAD_TEXT_CHARS = 1_000
 
 /** Serialised size past which a payload's SHAPE is the weight — thousands of
  *  short entries — and it is kept as cut text rather than as structure. */
-const PAYLOAD_SHAPE_CHARS = 4 * PAYLOAD_TEXT_CHARS
+const PAYLOAD_SERIALIZED_CHARS = 4 * PAYLOAD_TEXT_CHARS
 
 /**
  * Message-array fields. Only the newest user message and the last message
@@ -120,24 +131,48 @@ const messagesForLabel = (messages: ReadonlyArray<unknown>): ReadonlyArray<unkno
 	return [messages[last]]
 }
 
-const clipSpanContent = (span: AiSessionSpan): AiSessionSpan => {
+/**
+ * A clipped capture as it is retained, and what retaining it costs.
+ *
+ * Kept as structure, unless its SHAPE rather than its strings is the weight —
+ * thousands of short entries — in which case it is the serialised text, cut.
+ */
+const retained = (
+	clipped: ClippedCapture,
+	chars: number,
+): { readonly value: ClippedCapture; readonly chars: number } => {
+	const text = jsonText(clipped)
+	if (text.length <= PAYLOAD_SERIALIZED_CHARS) return { value: clipped, chars: text.length }
+	const cut = `${text.slice(0, chars)}…`
+	return { value: cut, chars: cut.length }
+}
+
+const clipSpanContent = (
+	span: AiSessionSpan,
+): { readonly span: AiSessionSpan; readonly contentChars: number } => {
 	const genAi: MutableAiGenAiValues = { ...span.genAi }
+	let contentChars = 0
 	for (const field of MESSAGE_FIELDS) {
 		const value = genAi[field]
 		if (value === undefined) continue
 		// A non-array capture is one message already.
-		genAi[field] = Array.isArray(value)
-			? messagesForLabel(value).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
-			: clipStrings(value, MESSAGE_TEXT_CHARS)
+		const kept = retained(
+			Array.isArray(value)
+				? messagesForLabel(value).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
+				: clipStrings(value, MESSAGE_TEXT_CHARS),
+			MESSAGE_TEXT_CHARS,
+		)
+		genAi[field] = kept.value
+		contentChars += kept.chars
 	}
 	for (const field of PAYLOAD_FIELDS) {
 		const value = genAi[field]
 		if (value === undefined) continue
-		const clipped = clipStrings(value, PAYLOAD_TEXT_CHARS)
-		const text = jsonText(clipped)
-		genAi[field] = text.length <= PAYLOAD_SHAPE_CHARS ? clipped : `${text.slice(0, PAYLOAD_TEXT_CHARS)}…`
+		const kept = retained(clipStrings(value, PAYLOAD_TEXT_CHARS), PAYLOAD_TEXT_CHARS)
+		genAi[field] = kept.value
+		contentChars += kept.chars
 	}
-	return { ...span, genAi }
+	return { span: { ...span, genAi }, contentChars }
 }
 
 /** The bounds a session read is pruned by, exactly as the request classes take
@@ -233,8 +268,12 @@ export function windowHint(window: SessionWindow): string {
 
 export interface LoadedAgentSessionSpans {
 	readonly spans: readonly AiSessionSpan[]
-	/** The session has spans past what was loaded — the END of it is missing. */
-	readonly truncated: boolean
+	/**
+	 * Why the load stopped short of the session — the span cap, or the retained
+	 * content budget. Either way the END of the session is missing; `undefined`
+	 * where the whole session was loaded.
+	 */
+	readonly truncatedBy: "spans" | "content" | undefined
 	/** The window the spans were read under, or `undefined` for a session the
 	 *  warehouse knows nothing about. */
 	readonly window: SessionWindow | undefined
@@ -260,12 +299,13 @@ export const loadAgentSessionSpans = Effect.fn("mcp.loadAgentSessionSpans")(func
 ) {
 	const window = opts.window ?? (yield* resolveAiSessionWindow(tenant, opts.sessionId)).window
 	if (window === undefined) {
-		return { spans: [], truncated: false, window: undefined } satisfies LoadedAgentSessionSpans
+		return { spans: [], truncatedBy: undefined, window: undefined } satisfies LoadedAgentSessionSpans
 	}
 
 	const spans: AiSessionSpan[] = []
 	let after = undefined as GetAiSessionSpansRequest["after"]
-	let truncated = false
+	let truncatedBy: LoadedAgentSessionSpans["truncatedBy"] = undefined
+	let contentChars = 0
 	let pages = 0
 	while (spans.length < MCP_AGENT_SESSION_MAX_SPANS) {
 		const page = yield* readAiSessionSpans(
@@ -293,31 +333,44 @@ export const loadAgentSessionSpans = Effect.fn("mcp.loadAgentSessionSpans")(func
 			yield* Effect.logWarning("agent session span page exceeded the response limit").pipe(
 				Effect.annotateLogs({ sessionId: opts.sessionId, page: pages, loaded: spans.length }),
 			)
-			truncated = true
+			truncatedBy = "spans"
 			break
 		}
-		spans.push(...page.data.map(clipSpanContent))
+		for (const row of page.data) {
+			const clipped = clipSpanContent(row)
+			spans.push(clipped.span)
+			contentChars += clipped.contentChars
+		}
 		after = page.nextCursor
 		if (after === undefined) break
-		truncated = spans.length >= MCP_AGENT_SESSION_MAX_SPANS
+		if (contentChars >= MCP_AGENT_SESSION_CONTENT_BUDGET) {
+			truncatedBy = "content"
+			break
+		}
+		// The loop's own bound, read after the page that reached it.
+		truncatedBy = spans.length >= MCP_AGENT_SESSION_MAX_SPANS ? "spans" : undefined
 	}
-	if (truncated) {
+	if (truncatedBy !== undefined) {
 		yield* Effect.logWarning("agent session loaded only its first spans").pipe(
 			Effect.annotateLogs({
 				sessionId: opts.sessionId,
 				loaded: spans.length,
+				truncatedBy,
 				cap: MCP_AGENT_SESSION_MAX_SPANS,
+				contentChars,
 			}),
 		)
 	}
 	yield* Effect.annotateCurrentSpan({
 		"maple.ai.pages": pages,
 		"maple.ai.loaded_spans": spans.length,
-		"maple.ai.truncated": truncated,
+		"maple.ai.truncated": truncatedBy !== undefined,
+		// Characters of retained JSON, which is what the isolate holds.
+		"maple.ai.retained_content_bytes": contentChars,
 		"maple.ai.scope": opts.scope,
 	})
 
-	return { spans, truncated, window } satisfies LoadedAgentSessionSpans
+	return { spans, truncatedBy, window } satisfies LoadedAgentSessionSpans
 })
 
 /**

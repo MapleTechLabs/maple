@@ -170,6 +170,9 @@ export interface InspectSpanData {
 export interface InspectSpanAiData {
 	/** `agent`, `inference`, `tool` or `app`. */
 	category: string
+	/** Only the trace's FIRST spans were read, so a tool call whose result was
+	 *  recorded past them reads as not captured. */
+	partial?: boolean
 	vendorId: string | null
 	sessionId: string | null
 	/** The decoded `gen_ai.*` scalars; the captured content is in `messages`. */

@@ -8,6 +8,7 @@ import {
 import { makeEvalRuntime, runToolDirect, type EvalRuntime } from "@/mcp/__evals__/eval-runtime"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
 import type { McpToolResult } from "@/mcp/tools/types"
+import { TREND_BUCKETS } from "@/mcp/lib/agent-tool-analytics"
 
 // The two tool-analytics tools run through the registry the way a client
 // reaches them: `runToolDirect` decodes the parameters against the published
@@ -43,10 +44,15 @@ const rowCells = (rendered: string, first: string): ReadonlyArray<string> => {
 	return line.slice(2, -2).split(" | ")
 }
 
-// A 12h window so the trend's default bucket (window / 24) is a round 1800s and
-// the fixtures' timestamps land in known buckets.
+// A 12h window, whose default trend bucket is the window over 23 — one short of
+// the grid, so an unaligned window still fits it (see `compactTrend`).
 const WINDOW = { start_time: "2026-09-12 00:00:00", end_time: "2026-09-12 12:00:00" }
 const WINDOW_SECONDS = 12 * 60 * 60
+const DEFAULT_TREND_BUCKET = Math.ceil(WINDOW_SECONDS / (TREND_BUCKETS - 1))
+
+/** A window that does NOT start on a bucket boundary — every real 24h window
+ *  a caller asks for at some time of day. */
+const UNALIGNED_WINDOW = { start_time: "2026-09-12 12:30:00", end_time: "2026-09-13 12:30:00" }
 
 const totalsRows = [
 	{
@@ -228,6 +234,15 @@ const payloadRows = [
 		resultBytes: 32,
 	},
 ]
+
+/** A result that is itself a fenced block: a fixed ``` fence around it is
+ *  closed by the payload, and everything rendered after it reads as prose. */
+const FENCED_RESULT = "TimeoutError in:\n```js\nawait search()\n```"
+const fencedPayloadRows = payloadRows.map((row) => ({
+	...row,
+	result: FENCED_RESULT,
+	resultBytes: FENCED_RESULT.length,
+}))
 
 /** A span the retention dropped: the row exists, its payloads do not. */
 const droppedPayloadRows = payloadRows.map((row) => ({
@@ -424,12 +439,12 @@ describe("get_agent_tools_overview failure groups", () => {
 		expect(rendered).toContain("### Failure groups of search_docs (1)")
 		const cells = rowCells(rendered, FINGERPRINT)
 		expect(cells.slice(1, 4)).toEqual(["TimeoutError", "upstream timed out after 30s", "12"])
-		// 1800s buckets over 12h: 3 failures in the first bucket of the window,
+		// 1879s buckets over 12h: 3 failures in the first bucket of the window,
 		// 4 at 06:00 and 5 at 08:00, gaps rendered as zeros.
 		const expected = Array.from<number>({ length: 24 }).fill(0)
 		expected[0] = 3
-		expected[12] = 4
-		expected[16] = 5
+		expected[11] = 4
+		expected[15] = 5
 		expect(cells[cells.length - 1]).toBe(expected.join(","))
 		expect(rendered).toContain(`\`get_agent_tool_error tool="search_docs" fingerprint="${FINGERPRINT}"\``)
 	})
@@ -438,7 +453,7 @@ describe("get_agent_tools_overview failure groups", () => {
 		const result = await call(OVERVIEW, { ...WINDOW, tool: "search_docs" })
 		expect(markdown(result)).not.toContain("covers only the last")
 		expect(structured(result).trendClipped).toBe(false)
-		expect(structured(result).trendBucketSeconds).toBe(1800)
+		expect(structured(result).trendBucketSeconds).toBe(DEFAULT_TREND_BUCKET)
 	})
 
 	// `bucket_seconds` buckets the series and the trend alike, so a narrow one
@@ -456,6 +471,32 @@ describe("get_agent_tools_overview failure groups", () => {
 		expect(rendered).toContain("from 2026-09-12 11:59:36")
 		expect(structured(result).trendClipped).toBe(true)
 		expect(structured(result).trendStart).toBe("2026-09-12 11:59:36")
+	})
+
+	// The grid aligns its start DOWN to the bucket lattice, so a default bucket of
+	// window/24 spans 25 buckets for a window that starts at 12:30 — and the
+	// window's first bucket, the one the group's oldest failures are in, is the
+	// one the grid drops.
+	it("keeps the first bucket of a window that does not start on a boundary", async () => {
+		const width = Math.ceil((24 * 60 * 60) / (TREND_BUCKETS - 1)) * 1000
+		const startMs = Date.parse(`${UNALIGNED_WINDOW.start_time.replace(" ", "T")}Z`)
+		const firstBucket = new Date(Math.floor(startMs / width) * width).toISOString()
+		const rendered = await withRules(
+			[
+				{
+					match: (sql: string) => sql.includes("numbered_tool_calls"),
+					rows: [{ ...errorGroupRows[0], trend: { [firstBucket]: 7 } }],
+				},
+				...fixtures,
+			],
+			async () => markdown(await call(OVERVIEW, { ...UNALIGNED_WINDOW, tool: "search_docs" })),
+		)
+		const cells = rowCells(rendered, FINGERPRINT)
+		const trend = cells[cells.length - 1]?.split(",")
+		expect(trend).toHaveLength(TREND_BUCKETS)
+		expect(trend?.[0]).toBe("7")
+		// The whole window fits the grid, so nothing is clipped off its start.
+		expect(rendered).not.toContain("covers only the last")
 	})
 
 	it("answers a tool with no failures", async () => {
@@ -565,6 +606,23 @@ describe("get_agent_tool_error rendering", () => {
 				),
 		)
 		expect(rendered).toContain("(not available — the span was not retained)")
+	})
+
+	it("fences a sample payload that carries a code fence of its own", async () => {
+		const rendered = await withRules(
+			[
+				{ match: (sql: string) => sql.includes("trace_detail_spans"), rows: fencedPayloadRows },
+				...fixtures,
+			],
+			async () =>
+				markdown(
+					await call(ERROR_DETAIL, { ...WINDOW, tool: "search_docs", fingerprint: FINGERPRINT }),
+				),
+		)
+		// One backtick longer than the longest run inside the payload, which is
+		// left intact.
+		expect(rendered).toContain(`\`\`\`\`\n${FENCED_RESULT}`)
+		expect(rendered).toContain("```js")
 	})
 
 	it("answers a fingerprint with nothing behind it", async () => {

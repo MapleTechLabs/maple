@@ -20,7 +20,7 @@ import { createDualContent } from "@/mcp/lib/structured-output"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/mcp/lib/time"
 import { clampLimit } from "@/mcp/lib/limits"
-import { formatNumber, formatTable, truncate } from "@/mcp/lib/format"
+import { fencedBlock, formatNumber, formatTable, truncate } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { readAiToolErrorDetail, readAiToolErrorSamples } from "@/services/ai-sessions/ai-session-reads"
 import {
@@ -209,13 +209,9 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					`trace \`${sample.traceId}\` span \`${sample.spanId}\``,
 					`Message: ${sample.message === "" ? "—" : truncate(sample.message.replace(/\s+/g, " "), 400)}`,
 					`Arguments:`,
-					"```",
-					samplePayload(sample.arguments, payloadChars, sample.argumentsBytes),
-					"```",
+					fencedBlock(samplePayload(sample.arguments, payloadChars, sample.argumentsBytes)),
 					`Result:`,
-					"```",
-					samplePayload(sample.result, payloadChars, sample.resultBytes),
-					"```",
+					fencedBlock(samplePayload(sample.result, payloadChars, sample.resultBytes)),
 				)
 			}
 			if (samples.nextCursor !== undefined) {

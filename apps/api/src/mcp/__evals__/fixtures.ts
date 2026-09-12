@@ -135,6 +135,9 @@ export const AI_TOOL_SPAN_ID = "a2a2a2a2a2a2a2a2"
 export const PARTIAL_AI_TRACE_ID = "5e3d2c1b0a9f8e7d6c5b4a3928170611"
 export const PARTIAL_AI_SPAN_ID = "b9b9b9b9b9b9b9b9"
 export const PARTIAL_AI_TRACE_SPANS = 2_001
+/** The same trace's FIRST span: decoded, but with the rest of the trace — and
+ *  so the tool span answering its call — past what the read carried. */
+export const PARTIAL_AI_FIRST_SPAN_ID = "c000000000000000"
 
 const AI_SPAN_ATTRIBUTES = {
 	"maple_ai.session.id": "wrun_01KZEVAL",
@@ -215,10 +218,24 @@ export const makePartialAiTraceSpanRows = (): ReadonlyArray<Record<string, unkno
 		aiTraceSpanRow(
 			`c${index.toString(16).padStart(15, "0")}`,
 			"chat gpt-5",
-			{ "maple_ai.vendor.id": "eve", "gen_ai.operation.name": "chat" },
+			// The first span is the LLM call that requested `call_1`; the tool span
+			// that answered it is not in this trace's first page.
+			index === 0
+				? AI_SPAN_ATTRIBUTES
+				: { "maple_ai.vendor.id": "eve", "gen_ai.operation.name": "chat" },
 			PARTIAL_AI_TRACE_ID,
 		),
 	)
+
+/** A trace's own bounds, as `aiTraceWindowQuery` reports them: what
+ *  `inspect_span` resolves before it reads the trace as agent spans. */
+export const makeAiTraceWindowRows = (): ReadonlyArray<Record<string, unknown>> => [
+	{
+		startTime: "2026-06-01 10:00:00.000000000",
+		endTime: "2026-06-03 10:00:00.000000000",
+		spanCount: PARTIAL_AI_TRACE_SPANS,
+	},
+]
 
 export const makeTraceLogs = (): ListLogsOutput[] => [
 	{

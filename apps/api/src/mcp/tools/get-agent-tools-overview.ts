@@ -103,12 +103,15 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			const tool = selectionValue(params.tool)
 			const selection = { ...agentToolSelection(params), tool }
 			// The failure trend is a sparkline beside each group, so its default
-			// width is the window over a fixed number of buckets. A minute is the
-			// floor: a narrow window would otherwise bucket by seconds — and a
-			// window shorter than that floor is one bucket wide.
+			// width is the window over a fixed number of buckets. The grid aligns
+			// its start DOWN to the bucket lattice, so a window that does not begin
+			// on a boundary spans one bucket more than its width — divided by
+			// `TREND_BUCKETS` it would overflow the grid and lose its first bucket.
+			// A minute is the floor: a narrow window would otherwise bucket by
+			// seconds — and a window shorter than that floor is one bucket wide.
 			const trendBucketSeconds =
 				bucketSeconds ??
-				Math.min(windowSeconds, Math.max(60, Math.round(windowSeconds / TREND_BUCKETS)))
+				Math.min(windowSeconds, Math.max(60, Math.ceil(windowSeconds / (TREND_BUCKETS - 1))))
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

@@ -68,7 +68,8 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				"result.spanCount": loaded.spans.length,
-				"result.truncated": loaded.truncated,
+				"result.truncated": loaded.truncatedBy !== undefined,
+				...(loaded.truncatedBy !== undefined && { "result.truncated_by": loaded.truncatedBy }),
 			})
 			if (loaded.spans.length === 0) {
 				return {
@@ -92,7 +93,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 			// The warehouse's own totals, which hold for the whole session: worth a
 			// second read only when the loaded spans no longer cover it.
 			let exact: GetAiSessionSummaryResponse | undefined
-			if (loaded.truncated) {
+			if (loaded.truncatedBy !== undefined) {
 				exact = yield* readAiSessionSummary(
 					tenant,
 					// The window the spans were read under, which covers the whole
@@ -125,12 +126,16 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				...(loaded.window !== undefined
 					? [`Window: ${loaded.window.startTime} — ${loaded.window.endTime}`]
 					: []),
-				...(loaded.truncated
-					? [
+				...(loaded.truncatedBy === undefined
+					? []
+					: [
 							``,
-							`**Only the first ${formatNumber(loaded.spans.length)} spans were loaded** (the cap is ${formatNumber(MCP_AGENT_SESSION_MAX_SPANS)}), oldest first — the END of this session is missing, so everything derived below describes its beginning. The exact warehouse totals are printed under Work.`,
-						]
-					: []),
+							`**Only the first ${formatNumber(loaded.spans.length)} spans were loaded** (${
+								loaded.truncatedBy === "content"
+									? "the session's captured content exceeded the load budget"
+									: `the cap is ${formatNumber(MCP_AGENT_SESSION_MAX_SPANS)} spans`
+							}), oldest first — the END of this session is missing, so everything derived below describes its beginning. The exact warehouse totals are printed under Work.`,
+						]),
 				``,
 				`### Verdict: ${report.verdict.status}${
 					report.verdict.label !== undefined ? ` — ${report.verdict.label}` : ""
@@ -276,7 +281,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							loaded.window === undefined
 								? undefined
 								: { start: loaded.window.startTime, end: loaded.window.endTime },
-						truncated: loaded.truncated,
+						truncated: loaded.truncatedBy !== undefined,
 						verdict: {
 							status: report.verdict.status,
 							label: report.verdict.label ?? null,
