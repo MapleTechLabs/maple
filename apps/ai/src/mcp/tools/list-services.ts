@@ -1,0 +1,87 @@
+import { optionalStringParam, optionalTimeParam, type McpToolRegistrar } from "./types"
+import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
+import { resolveTimeRange } from "@ai/mcp/lib/time"
+import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "@ai/mcp/lib/format"
+import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { createDualContent } from "@ai/mcp/lib/structured-output"
+import { toMcpQueryError } from "@ai/mcp/lib/map-warehouse-error"
+import { Array as Arr, Effect, Schema } from "effect"
+import { listServices } from "@maple/query-engine/observability"
+import { provideWarehouseExecutorFromTenant } from "@/services/warehouse/WarehouseQueryService"
+
+export function registerListServicesTool(server: McpToolRegistrar) {
+	server.tool(
+		"list_services",
+		"List all active services with key metrics (throughput, error rate, P95 latency). Use as an entry point to discover services before drilling down with diagnose_service or get_service_top_operations.",
+		Schema.Struct({
+			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss UTC)"),
+			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss UTC)"),
+			environment: optionalStringParam("Filter by deployment environment (e.g. production, staging)"),
+		}),
+		Effect.fn("McpTool.listServices")(function* ({ start_time, end_time, environment }) {
+			const { st, et } = resolveTimeRange(start_time, end_time)
+			const tenant = yield* CurrentMcpTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				environment: environment ?? "all",
+			})
+
+			const services = yield* listServices({
+				timeRange: { startTime: st, endTime: et },
+				environment: environment ?? undefined,
+			}).pipe(
+				provideWarehouseExecutorFromTenant(tenant),
+				Effect.mapError(toMcpQueryError("service_overview")),
+			)
+
+			yield* Effect.annotateCurrentSpan("result.rowCount", services.length)
+
+			const lines: string[] = [
+				`## Services`,
+				`Time range: ${st} — ${et}`,
+				`Total: ${services.length} service${services.length !== 1 ? "s" : ""}`,
+				``,
+			]
+
+			if (services.length === 0) {
+				lines.push("No active services found in this time range.")
+			} else {
+				const headers = ["Service", "Throughput (rpm)", "Error Rate", "P95 Latency"]
+				const rows = Arr.map(services, (s) => [
+					s.name,
+					formatNumber(s.throughput),
+					formatPercent(s.errorRate),
+					formatDurationFromMs(s.p95Ms),
+				])
+				lines.push(formatTable(headers, rows))
+			}
+
+			const nextSteps: string[] = []
+			for (const s of Arr.take(services, 3)) {
+				nextSteps.push(`\`diagnose_service service_name="${s.name}"\` — deep-dive into ${s.name}`)
+			}
+			if (services.length > 0) {
+				nextSteps.push(
+					`\`get_service_top_operations service_name="<name>"\` — see top endpoints for a service`,
+				)
+			}
+			lines.push(formatNextSteps(nextSteps))
+
+			return {
+				content: createDualContent(lines.join("\n"), {
+					tool: "list_services",
+					data: {
+						timeRange: { start: st, end: et },
+						total: services.length,
+						services: Arr.map(services, (s) => ({
+							name: s.name,
+							throughput: s.throughput,
+							errorRate: s.errorRate,
+							p95Ms: s.p95Ms,
+						})),
+					},
+				}),
+			}
+		}),
+	)
+}

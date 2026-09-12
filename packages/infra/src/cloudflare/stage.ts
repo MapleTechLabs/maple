@@ -177,7 +177,7 @@ export function stageDeploysSandbox(stage: MapleStage): boolean {
 }
 
 /** Which worker is binding `MAPLE_DB`. prd gives each its own Hyperdrive config — see docs/infra.md. */
-export type MapleDbConsumer = "api" | "alerting"
+export type MapleDbConsumer = "api" | "ai" | "alerting"
 
 /**
  * Dashboard-managed Hyperdrive configs, bound by ID; deploys never see the
@@ -190,6 +190,11 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 		case "prd":
 			// Both target the PlanetScale `main` branch; their `origin_connection_limit`s
 			// SUM against its `max_connections`.
+			// TODO(ai-worker): `ai` shares `maple-prd` until a dedicated
+			// `maple-ai-prd` config exists in the dashboard. It must be created
+			// before maple-ai serves prd traffic — the agents are the heaviest
+			// Postgres readers after alerting, and sharing api's pool is how the
+			// api's connections got starved before alerting got its own.
 			return consumer === "alerting"
 				? "f473167201af4d2cae494f9989f1d742" // `maple-alerting-prd`
 				: "ad4c487838594b89810b23e5fb14e129" // `maple-prd`

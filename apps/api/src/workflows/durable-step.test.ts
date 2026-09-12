@@ -36,9 +36,7 @@ describe("durableStep", () => {
 				Effect.provideService(Cloudflare.WorkflowStep, recordingStep(recorded)),
 			)
 			assert.strictEqual(value, 42)
-			assert.deepStrictEqual(recorded, [
-				{ name: "claim", retries: undefined, timeout: "10 minutes" },
-			])
+			assert.deepStrictEqual(recorded, [{ name: "claim", retries: undefined, timeout: "10 minutes" }])
 		}),
 	)
 

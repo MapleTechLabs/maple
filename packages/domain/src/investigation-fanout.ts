@@ -7,6 +7,8 @@
  * investigations (`AlertsService`, `ErrorsService`, …) run in both Workers and
  * read the binding by this one name.
  */
+import type { IssueSeverity } from "./http/errors"
+
 export const INVESTIGATION_FANOUT_BINDING = "InvestigationFanoutWorkflow"
 
 export interface InvestigationFanoutWorkflowPayload {
@@ -28,4 +30,40 @@ export interface InvestigationFanoutWorkflowPayload {
 
 export interface InvestigationFanoutWorkflowResult {
 	readonly status: "ranked" | "inconclusive" | "skipped" | "failed"
+}
+
+/**
+ * How many hypotheses a subject of this shape deserves.
+ *
+ * This is the surviving half of the old `fanoutSize` table. The half that is
+ * gone decided *whether* to fan out at all — that question no longer exists, and
+ * conflating the two is what let a medium-severity alert compute a width of five
+ * and dispatch zero.
+ *
+ * An anomaly is capped below the others because an anomaly is already a narrow
+ * claim about one signal; five angles on it mostly produces four polite
+ * negatives. A null severity reads as medium rather than as "minimum": an
+ * unclassified incident is unclassified, not unimportant, and treating it as the
+ * floor is how error incidents — which carry no severity until someone triages
+ * them — would get the thinnest investigations.
+ *
+ * It sits beside the payload rather than beside the planner because the callers
+ * that compute a width are the ones that *start* an investigation, and they do
+ * not otherwise know anything about how the workflow plans.
+ */
+export const widthFor = (
+	severity: IssueSeverity | null | undefined,
+	incidentKind: string | undefined,
+): number => {
+	if (incidentKind === "anomaly") return 3
+	switch (severity) {
+		case "critical":
+			return 5
+		case "high":
+			return 4
+		case "low":
+			return 3
+		default:
+			return 4
+	}
 }

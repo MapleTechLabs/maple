@@ -54,10 +54,7 @@ export interface ToolAnalyticsResults {
 		},
 		QueryAtomFailure
 	>
-	readonly breakdowns: Result.Result<
-		{ tools: ReadonlyArray<ToolBreakdownRow> },
-		QueryAtomFailure
-	>
+	readonly breakdowns: Result.Result<{ tools: ReadonlyArray<ToolBreakdownRow> }, QueryAtomFailure>
 }
 
 export interface ToolAnalyticsWindow {
@@ -99,9 +96,7 @@ export function useToolAnalytics(
 	const selection = useMemo(() => toolAnalyticsSelection(search, window), [search, window])
 	const bucketSeconds = chartBucketSeconds(window.startTime, window.endTime)
 
-	const series = useRefreshableAtomValue(
-		aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds } }),
-	)
+	const series = useRefreshableAtomValue(aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds } }))
 	const scopeSeries = useRefreshableAtomValue(
 		aiToolSeriesResultAtom({ data: { ...selection, bucketSeconds, split: "none" as const } }),
 	)
@@ -128,10 +123,7 @@ export function useAgentSessionsTabCounts(window: ToolAnalyticsWindow): {
 	tools?: number
 } {
 	const { startTime, endTime } = window
-	const selection = useMemo(
-		() => toolAnalyticsSelection({}, { startTime, endTime }),
-		[startTime, endTime],
-	)
+	const selection = useMemo(() => toolAnalyticsSelection({}, { startTime, endTime }), [startTime, endTime])
 	const totals = useAtomValue(aiToolTotalsResultAtom({ data: selection }))
 	const breakdowns = useAtomValue(aiToolBreakdownsResultAtom({ data: selection }))
 	return {

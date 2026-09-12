@@ -16,7 +16,6 @@ import {
 	AuditEventsQueueProducer,
 	CliAuthRateLimit,
 	McpOAuthRateLimit,
-	McpToolsRateLimit,
 	type ObjectStore,
 	ObjectStoreError,
 	PlanetScaleWebhookQueueProducer,
@@ -32,10 +31,6 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "../services/auth/ApiV2RateLimiter"
-import {
-	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
-	MCP_TOOLS_RATE_LIMIT_REQUESTS,
-} from "../services/auth/McpToolRateLimiter"
 import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
@@ -63,12 +58,6 @@ export const bindApiClients = Effect.gen(function* () {
 		mcpOAuthRateLimit: yield* Cloudflare.RateLimit("MCP_OAUTH_RATE_LIMITER", {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
-		}),
-		// Authenticated POST /mcp, per credential. A short window so a runaway
-		// agent loop is cut off in seconds, at twice the v2 API's throughput.
-		mcpToolsRateLimit: yield* Cloudflare.RateLimit("MCP_TOOLS_RATE_LIMITER", {
-			namespaceId: 2026082901,
-			simple: { limit: MCP_TOOLS_RATE_LIMIT_REQUESTS, period: MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 	}
 })
@@ -149,7 +138,6 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
-		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		mapleDbConnectionLayer(env),
 		workerEnvLayer(env),

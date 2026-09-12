@@ -225,7 +225,8 @@ export class ListAiSessionDetailsRequest extends Schema.Class<ListAiSessionDetai
 				// would slip past both comparisons below.
 				if (Number.isNaN(extentMs)) return "startTime and endTime must be valid datetimes"
 				if (extentMs < 0) return "startTime must not be after endTime"
-				if (extentMs > AI_SESSION_DETAILS_MAX_EXTENT_MS) return "the window is wider than any page's extent"
+				if (extentMs > AI_SESSION_DETAILS_MAX_EXTENT_MS)
+					return "the window is wider than any page's extent"
 				return true
 			},
 			{ identifier: "DetailsWindowBounded" },
@@ -352,54 +353,63 @@ export class GetAiSessionSpansRequest extends Schema.Class<GetAiSessionSpansRequ
 	"GetAiSessionSpansRequest",
 )(
 	Schema.Struct({
-	/**
-	 * The framework's own session id, verbatim — `maple_ai.session.id` — or the
-	 * `trace:<TraceId>` id Maple synthesizes for a GenAI trace that carries none
-	 * (`MAPLE_AI_TRACE_SESSION_PREFIX`). The handler routes on the prefix and
-	 * validates the trace id behind it; a prefixed id that is not one reads as a
-	 * session nothing carries, which answers empty like any unknown id.
-	 */
-	sessionId: Schema.String.check(Schema.isMinLength(1)),
-	// Optional, and the two halves are read as a pair — supply both or neither.
-	//
-	// With a window the read is partition-pruned on both levels (detection and
-	// fan-out), which is the fast path every link from the list page takes: the
-	// row already knows the session's own bounds, so it hands them over.
-	//
-	// Without one the handler resolves the session's bounds from the id first and
-	// then runs the same pruned read. That resolve step is viable rather than
-	// reckless where the fan-out would not be: `traces` carries a
-	// `bloom_filter(0.01)` skip index over `mapValues(SpanAttributes)` for the id
-	// to prune with, and its TTL caps any scan at 30 days. It still costs an
-	// extra round trip and still degrades as an org's volume grows, so this is
-	// the exception path for hint-less deep links — a pasted id, an MCP answer —
-	// and not the default. The client is expected to write the bounds it got back
-	// into its URL, which makes the second load of any such link the direct one.
-	startTime: Schema.optionalKey(TinybirdDateTime),
-	endTime: Schema.optionalKey(TinybirdDateTime),
-	/** Defaults to `all`. */
-	scope: Schema.optionalKey(AiSessionSpanScope),
-	/** Spans strictly after this position; absent for the first page. */
-	after: Schema.optionalKey(AiSessionSpanCursor),
-	/**
-	 * Read these traces of the session instead of resolving the session's
-	 * traces — the per-turn read the detail page makes for a turn's `app`
-	 * spans, where the turn already knows which traces it spans. Requires the
-	 * window, which is what bounds the read; the session id is then only the
-	 * span the request is annotated with.
-	 */
-	traceIds: Schema.optionalKey(Schema.Array(TraceIdHex).check(Schema.isMaxLength(AI_SESSION_SPANS_MAX_TRACE_IDS))),
-	/** Page size, at most `AI_SESSION_SPANS_MAX_SPANS` (the default). */
-	limit: Schema.optionalKey(
-		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: AI_SESSION_SPANS_MAX_SPANS })),
-	),
+		/**
+		 * The framework's own session id, verbatim — `maple_ai.session.id` — or the
+		 * `trace:<TraceId>` id Maple synthesizes for a GenAI trace that carries none
+		 * (`MAPLE_AI_TRACE_SESSION_PREFIX`). The handler routes on the prefix and
+		 * validates the trace id behind it; a prefixed id that is not one reads as a
+		 * session nothing carries, which answers empty like any unknown id.
+		 */
+		sessionId: Schema.String.check(Schema.isMinLength(1)),
+		// Optional, and the two halves are read as a pair — supply both or neither.
+		//
+		// With a window the read is partition-pruned on both levels (detection and
+		// fan-out), which is the fast path every link from the list page takes: the
+		// row already knows the session's own bounds, so it hands them over.
+		//
+		// Without one the handler resolves the session's bounds from the id first and
+		// then runs the same pruned read. That resolve step is viable rather than
+		// reckless where the fan-out would not be: `traces` carries a
+		// `bloom_filter(0.01)` skip index over `mapValues(SpanAttributes)` for the id
+		// to prune with, and its TTL caps any scan at 30 days. It still costs an
+		// extra round trip and still degrades as an org's volume grows, so this is
+		// the exception path for hint-less deep links — a pasted id, an MCP answer —
+		// and not the default. The client is expected to write the bounds it got back
+		// into its URL, which makes the second load of any such link the direct one.
+		startTime: Schema.optionalKey(TinybirdDateTime),
+		endTime: Schema.optionalKey(TinybirdDateTime),
+		/** Defaults to `all`. */
+		scope: Schema.optionalKey(AiSessionSpanScope),
+		/** Spans strictly after this position; absent for the first page. */
+		after: Schema.optionalKey(AiSessionSpanCursor),
+		/**
+		 * Read these traces of the session instead of resolving the session's
+		 * traces — the per-turn read the detail page makes for a turn's `app`
+		 * spans, where the turn already knows which traces it spans. Requires the
+		 * window, which is what bounds the read; the session id is then only the
+		 * span the request is annotated with.
+		 */
+		traceIds: Schema.optionalKey(
+			Schema.Array(TraceIdHex).check(Schema.isMaxLength(AI_SESSION_SPANS_MAX_TRACE_IDS)),
+		),
+		/** Page size, at most `AI_SESSION_SPANS_MAX_SPANS` (the default). */
+		limit: Schema.optionalKey(
+			Schema.Number.check(
+				Schema.isInt(),
+				Schema.isBetween({ minimum: 1, maximum: AI_SESSION_SPANS_MAX_SPANS }),
+			),
+		),
 	}).check(
 		// The window is what bounds a trace-pinned read, and the session id
 		// cannot stand in for it: resolving the SESSION's bounds for traces named
 		// outright is a round trip that answers empty for a session nothing
 		// carries. Checked here so the miss is a 400 rather than an empty page.
 		Schema.makeFilter(
-			(request: { readonly traceIds?: readonly string[]; readonly startTime?: string; readonly endTime?: string }) =>
+			(request: {
+				readonly traceIds?: readonly string[]
+				readonly startTime?: string
+				readonly endTime?: string
+			}) =>
 				request.traceIds === undefined ||
 				(request.startTime !== undefined && request.endTime !== undefined) ||
 				"traceIds requires startTime and endTime",

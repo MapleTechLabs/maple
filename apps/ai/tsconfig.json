@@ -1,0 +1,43 @@
+{
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	// Mirrors apps/api, whose sources this program also compiles: tests are
+	// excluded from tsc there, and `bun` is the resolution condition its imports
+	// were written against.
+	"exclude": ["src/**/*.test.ts"],
+	"compilerOptions": {
+		"customConditions": ["bun"],
+		"ignoreDeprecations": "6.0",
+		"target": "ES2022",
+		"module": "ESNext",
+		"jsx": "react-jsx",
+		// ES2023: this worker's layer graph reaches apps/api. Mirrors its tsconfig.
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["node", "@cloudflare/workers-types"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"paths": {
+			// `@/` is apps/api's source, NOT this app's — the same mapping alerting
+			// uses, and it is not a style choice. This worker's layer graph pulls
+			// api's own modules into its program, and those modules spell their
+			// internal imports `@/`. Point `@/` here and every one of them resolves
+			// into the wrong tree.
+			"@/*": ["../api/src/*"],
+			// This worker's own source. The asymmetry is the dependency direction
+			// made visible: apps/ai reaches into apps/api by source, apps/api reaches
+			// back only by binding.
+			"@ai/*": ["./src/*"]
+		},
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"reportSuggestionsAsWarningsInTsc": true
+			}
+		]
+	}
+}

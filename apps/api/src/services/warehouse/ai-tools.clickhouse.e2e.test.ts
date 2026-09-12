@@ -462,10 +462,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			bucketSeconds: 3_600,
 		})
 		const modelRows = Effect.runSync(perModel.decodeRows(await runJson(perModel.sql)))
-		assert.deepStrictEqual(
-			[...modelRows].map((row) => row.seriesKey).sort(),
-			["", CLAUDE, GPT],
-		)
+		assert.deepStrictEqual([...modelRows].map((row) => row.seriesKey).sort(), ["", CLAUDE, GPT])
 	})
 
 	it("measures the window and the one before it in one read", async () => {
@@ -523,7 +520,6 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		const totalRows = Effect.runSync(totals.decodeRows(await runJson(totals.sql)))
 		const current = totalRows.find((row) => row.period === "current")
 		assert.deepStrictEqual({ calls: current?.calls, errors: current?.errors }, { calls: 1, errors: 1 })
-
 	})
 
 	it("selects by the model a tool call was attributed to, not by a column", async () => {

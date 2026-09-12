@@ -240,11 +240,17 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
  * - `scraper` — runs in production but is not part of this stack (see the
  *   dev-only note in `alchemy.run.ts`), so it sits on its own revision.
  * - `maple-landing`, `maple-ios` — deployed, but stamp no revision.
- * - api's background service names (`maple-vcs-sync`, `maple-investigations`,
- *   …) — the same Worker as `maple-api`, so they add no signal.
+ * - api's background service names (`maple-vcs-sync`, …) — the same Worker as
+ *   `maple-api`, so they add no signal. `maple-investigations` is no longer one
+ *   of them: the fan-out runs on `maple-ai` now, which is listed in its own
+ *   right below.
  */
 export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"alerting",
+	// The agent surfaces. Added when maple-ai first deployed to prd; the alert
+	// rule's SQL, which lives in the production database rather than this repo,
+	// has to list it too or a skewed maple-ai goes unnoticed.
+	"maple-ai",
 	"electric-sync",
 	"ingest",
 	"maple-api",
