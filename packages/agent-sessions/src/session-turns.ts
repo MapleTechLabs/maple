@@ -400,7 +400,9 @@ const MAX_LABEL_LENGTH = 80
  * and off by default, so returning `undefined` is the ordinary case, not a
  * failure.
  */
-function lastUserMessageText(value: unknown): string | undefined {
+/** The newest user message with readable text in a captured history — exported
+ *  so a loader that trims histories keeps exactly the message this reads. */
+export function lastUserMessageText(value: unknown): string | undefined {
 	if (!Array.isArray(value)) return undefined
 	for (let i = value.length - 1; i >= 0; i--) {
 		const entry: unknown = value[i]

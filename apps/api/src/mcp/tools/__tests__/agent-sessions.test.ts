@@ -347,11 +347,21 @@ const hugeSpanRow = (index: number) =>
 			: {
 					"gen_ai.operation.name": index % 4 === 0 ? "execute_tool" : "chat",
 					"gen_ai.response.model": "gpt-5",
+					// The history ends on a tool result carried by a role-`user` entry
+					// (the Anthropic shape): the label is the user message BEFORE it,
+					// which the clip has to keep.
 					"gen_ai.input.messages": JSON.stringify([
 						{ role: "assistant", parts: [{ type: "text", content: padded("earlier reply") }] },
 						{
 							role: "user",
 							parts: [{ type: "text", content: padded("why is checkout failing?") }],
+						},
+						{ role: "assistant", parts: [{ type: "tool_call", id: "call_0", name: "run_sql" }] },
+						{
+							role: "user",
+							parts: [
+								{ type: "tool_call_response", id: "call_0", response: padded("42 rows") },
+							],
 						},
 					]),
 					"gen_ai.output.messages": JSON.stringify([
@@ -627,8 +637,9 @@ describe("a session loaded to the whole-session cap", () => {
 		// The turn label is the newest user message, which is the message the
 		// clip keeps; the finding's detail is the failed call's own result.
 		expect(turns.some((turn) => turn.label === "why is checkout failing?")).toBe(true)
-		expect(
-			report.findings.some((finding) => finding.detail?.includes("table orders does not exist")),
-		).toBe(true)
+		// The detail is the result's prose line itself — not the JSON wrapper a
+		// serialised payload would put in front of it.
+		const detail = report.findings.find((finding) => finding.detail?.includes("table orders"))?.detail
+		expect(detail?.startsWith("table orders does not exist")).toBe(true)
 	}, 120_000)
 })

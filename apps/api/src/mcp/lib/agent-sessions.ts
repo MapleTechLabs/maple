@@ -13,7 +13,7 @@ import {
 	type AiSessionSpanScope,
 	type AiSessionTooLargeError,
 } from "@maple/domain/http"
-import { classifyAiSpan, isRecord, jsonText } from "@maple/agent-sessions"
+import { classifyAiSpan, jsonText, lastUserMessageText } from "@maple/agent-sessions"
 import type { MutableAiGenAiValues } from "@maple/domain/gen-ai"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
@@ -36,24 +36,31 @@ export const MCP_AGENT_SESSION_MAX_SPANS = 5 * AI_SESSION_SPANS_MAX_SPANS
 /** Characters kept per string inside a retained message. */
 const MESSAGE_TEXT_CHARS = 500
 
-/** Characters kept per retained tool payload, as `jsonText` renders it. */
+/** Characters kept per string inside a retained tool payload. */
 const PAYLOAD_TEXT_CHARS = 1_000
 
-/**
- * Message-array fields. Only the LAST message survives: the readers that run
- * over a whole loaded session want the turn label, which is the newest user
- * message the turn captured — the history before it is the same conversation
- * re-sent on every call, and it is what makes a 10 000-span session tens of
- * megabytes of one turn's prompt.
- */
-const MESSAGE_FIELDS = ["inputMessages", "outputMessages", "systemInstructions"] as const
+/** Serialised size past which a payload's SHAPE is the weight — thousands of
+ *  short entries — and it is kept as cut text rather than as structure. */
+const PAYLOAD_SHAPE_CHARS = 4 * PAYLOAD_TEXT_CHARS
 
 /**
- * Captured payload fields, kept as clipped text rather than as structure: the
+ * Message-array fields. Only the newest user message and the last message
+ * survive: the readers that run over a whole loaded session want the turn
+ * label, which is the newest user message the turn captured — the history
+ * before it is the same conversation re-sent on every call, and it is what
+ * makes a 10 000-span session tens of megabytes of one turn's prompt.
+ */
+const MESSAGE_FIELDS = ["inputMessages", "outputMessages"] as const
+
+/**
+ * Captured payload fields, kept as structure with their strings clipped: the
  * findings read the first prose line of a failed tool's result, and
- * `firstProse` reads a string as readily as an object.
+ * `firstProse` finds that line by walking the object's prose keys — a
+ * serialised payload would hand it the JSON wrapper instead. A payload whose
+ * shape rather than its strings is what is large is serialised and cut.
  */
 const PAYLOAD_FIELDS = [
+	"systemInstructions",
 	"toolCallArguments",
 	"toolCallResult",
 	"toolDefinitions",
@@ -97,18 +104,18 @@ const clipStrings = (value: unknown, chars: number): ClippedCapture => {
  * reads that span on its own — `inspect_span` decodes it from its own trace.
  */
 /**
- * The messages a turn label can be read from: the newest user message — a
- * history that ends on a tool result would otherwise lose the prompt that
- * `turnLabel` looks for — plus the last message, which is what the output side
- * of a call is.
+ * The messages a turn label can be read from: the newest user message with
+ * readable text — judged by the same reader `turnLabel` uses, so a role-`user`
+ * entry that only carries tool results (the Anthropic shape) is skipped the
+ * way it is there — plus the last message, which is what the output side of a
+ * call is.
  */
 const messagesForLabel = (messages: ReadonlyArray<unknown>): ReadonlyArray<unknown> => {
 	const last = messages.length - 1
 	if (last < 0) return messages
 	for (let i = last; i >= 0; i--) {
-		const entry = messages[i]
-		if (!isRecord(entry) || String(entry.role).toLowerCase() !== "user") continue
-		return i === last ? [messages[last]] : [entry, messages[last]]
+		if (lastUserMessageText([messages[i]]) === undefined) continue
+		return i === last ? [messages[last]] : [messages[i], messages[last]]
 	}
 	return [messages[last]]
 }
@@ -126,8 +133,9 @@ const clipSpanContent = (span: AiSessionSpan): AiSessionSpan => {
 	for (const field of PAYLOAD_FIELDS) {
 		const value = genAi[field]
 		if (value === undefined) continue
-		const text = jsonText(value)
-		genAi[field] = text.length <= PAYLOAD_TEXT_CHARS ? text : `${text.slice(0, PAYLOAD_TEXT_CHARS)}…`
+		const clipped = clipStrings(value, PAYLOAD_TEXT_CHARS)
+		const text = jsonText(clipped)
+		genAi[field] = text.length <= PAYLOAD_SHAPE_CHARS ? clipped : `${text.slice(0, PAYLOAD_TEXT_CHARS)}…`
 	}
 	return { ...span, genAi }
 }

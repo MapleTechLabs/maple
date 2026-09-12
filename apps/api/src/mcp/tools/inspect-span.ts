@@ -10,7 +10,7 @@ import { catchSessionTooLarge } from "@/mcp/lib/agent-sessions"
 import { hasAiSignal, renderAiSpan } from "@/mcp/lib/render-ai-span"
 import { spanDetail } from "@maple/query-engine/observability"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest } from "@maple/domain/http"
+import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
 import { readAiSessionSpans } from "@/services/ai-sessions/ai-session-reads"
 
 /** Half-width of the window the AI read is bounded by. A trace is a single
@@ -19,7 +19,14 @@ const TRACE_WINDOW_MS = 60 * 60 * 1000
 
 /** What to do about a trace whose spans no read can carry. */
 const TRACE_TOO_LARGE =
-	"Read the session's spans a page at a time with `list_agent_session_spans` and a small `limit`."
+	"Read the spans a page at a time with `list_agent_session_spans` and a small `limit` — `session_id` is the span's `maple_ai.session.id`, or `trace:<trace_id>` where it has none."
+
+/**
+ * The AI read pins the trace id into a warehouse param, so it must be the
+ * 32-hex shape the domain requires; a span in a trace stored under any other
+ * id shape still gets its raw attributes, just not the decoded view.
+ */
+const isTraceIdHex = Schema.is(TraceIdHex)
 
 export function registerInspectSpanTool(server: McpToolRegistrar) {
 	server.tool(
@@ -73,14 +80,15 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 			// tool spans that ran them.
 			const isAiSpan = hasAiSignal(result.spanAttributes)
 			yield* Effect.annotateCurrentSpan("maple.ai.span", isAiSpan)
-			const ai = isAiSpan
-				? yield* decodeAiSpan({
-						traceId: trace_id,
-						spanId: span_id,
-						startTime: result.startTime,
-						payloadChars: clampLimit(payload_chars, { defaultValue: 2_000, max: 20_000 }),
-					})
-				: undefined
+			const ai =
+				isAiSpan && isTraceIdHex(trace_id)
+					? yield* decodeAiSpan({
+							traceId: trace_id,
+							spanId: span_id,
+							startTime: result.startTime,
+							payloadChars: clampLimit(payload_chars, { defaultValue: 2_000, max: 20_000 }),
+						})
+					: undefined
 
 			const renderAttrs = (label: string, attrs: Record<string, string>): string[] => {
 				const entries = Object.entries(attrs).sort(([a], [b]) => a.localeCompare(b))
@@ -116,9 +124,11 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				formatNextSteps([
 					`\`inspect_trace trace_id="${trace_id}"\` — see the full span tree`,
 					`\`search_logs trace_id="${trace_id}" span_id="${span_id}"\` — logs for this span`,
-					...(ai?._tag === "decoded" && ai.sessionId !== null
+					// A vendor that exposed no session key still has a session: the
+					// trace itself, under the id the session model synthesises for it.
+					...(ai?._tag === "decoded"
 						? [
-								`\`get_agent_session session_id="${ai.sessionId}"\` — the agent session this span ran in`,
+								`\`get_agent_session session_id="${ai.sessionId ?? `trace:${trace_id}`}"\` — the agent session this span ran in`,
 							]
 						: []),
 				]),
