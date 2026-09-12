@@ -43,20 +43,15 @@ const base = "file://" + resolve(dir) + "/"
 global.gc?.()
 const h0 = process.memoryUsage().heapUsed
 let t = performance.now()
-await import(new URL("worker.js", base).href).catch((e) =>
-	console.error("startup eval error:", String(e).slice(0, 120)),
-)
+await import(new URL("worker.js", base).href)
 const startupMs = Math.round(performance.now() - t)
 global.gc?.()
-const startupHeap = mb(process.memoryUsage().heapUsed - h0) * 10
+const startupHeap = mb(process.memoryUsage().heapUsed - h0)
 t = performance.now()
-if (httpGraph)
-	await import(new URL(httpGraph, base).href).catch((e) =>
-		console.error("http-graph eval error:", String(e).slice(0, 120)),
-	)
+if (httpGraph) await import(new URL(httpGraph, base).href)
 const httpGraphMs = Math.round(performance.now() - t)
 global.gc?.()
-const fullHeap = mb(process.memoryUsage().heapUsed - h0) * 10
+const fullHeap = mb(process.memoryUsage().heapUsed - h0)
 
 const startupHasRegistry = registry && startup.has(registry)
 const budgets = { startupEvalMs: 150, startupHeapMB: 40 }
@@ -70,13 +65,13 @@ const result = {
 		),
 	},
 	evalMs: { startupGraph: startupMs, plusHttpGraph: httpGraphMs },
-	heapMB: { startupGraph: Math.round(startupHeap * 10) / 100, fullGraph: Math.round(fullHeap * 10) / 100 },
+	heapMB: { startupGraph: startupHeap, fullGraph: fullHeap },
 	registry: registry
 		? { file: registry, sizeMB: mb(size(registry)), inStartupGraph: !!startupHasRegistry }
 		: null,
 	verdict: {
 		startupEvalBudget: `${startupMs}ms / ${budgets.startupEvalMs}ms desktop proxy (${startupMs <= budgets.startupEvalMs ? "OK" : "OVER"})`,
-		startupHeapBudget: `${Math.round(startupHeap * 10) / 100}MB / ${budgets.startupHeapMB}MB (${startupHeap / 10 <= budgets.startupHeapMB ? "OK" : "OVER"})`,
+		startupHeapBudget: `${startupHeap}MB / ${budgets.startupHeapMB}MB (${startupHeap <= budgets.startupHeapMB ? "OK" : "OVER"})`,
 	},
 }
 console.log(JSON.stringify(result, null, 2))

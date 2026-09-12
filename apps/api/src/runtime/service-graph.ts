@@ -1,6 +1,11 @@
-import { BucketCacheService } from "@maple/query-engine/caching"
+import {
+	AuditLogServiceLive,
+	OrgClickHouseSettingsLive,
+	QueryEngineServiceLive,
+	WarehouseQueryServiceLive,
+} from "./warehouse-services"
+export { AuditLogServiceLive } from "./warehouse-services"
 import { Layer } from "effect"
-import { McpToolExecutor } from "@/mcp/dispatcher"
 import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
 import { EmailService } from "@/platform/EmailService"
 import { Env } from "@/platform/Env"
@@ -47,24 +52,18 @@ import { VcsRepository } from "@/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@/services/integrations/vcs/VcsSyncQueue"
 import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
 import { GithubAppClientLive, VcsProviderRegistryLive, VcsSourceServiceLayer } from "./vcs-source-layer"
-import { SandboxClient } from "@/sandbox/client"
-import { CloudflareRepoSandboxLive } from "@/services/sandbox/CloudflareRepoSandbox"
-import { RepoSandboxService } from "@/services/sandbox/RepoSandboxService"
 import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuditLogService } from "@/services/audit/AuditLogService"
 import { DemoService } from "@/services/org/DemoService"
 import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
 import { OnboardingService } from "@/services/org/OnboardingService"
-import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@/services/org/OrgMembersService"
 import { OrganizationService } from "@/services/org/OrganizationService"
 import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@/services/push/MobileDevicesService"
 import { SetupAuditService } from "@/services/org/SetupAuditService"
+import { SignalPresenceService } from "@/services/org/SignalPresenceService"
 import { ProductEventsService } from "@/services/product-events/ProductEventsService"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 
 const InfraLive = Env.layer
 
@@ -89,7 +88,7 @@ const CoreServicesLive = Layer.mergeAll(
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OrgIngestKeysService.layer,
-	OrgClickHouseSettingsService.layer.pipe(Layer.provide(EdgeCacheServiceLive)),
+	OrgClickHouseSettingsLive,
 	TinybirdOrgTokenService.layer,
 	OrganizationService.layer,
 	MobileDevicesService.layer,
@@ -105,15 +104,6 @@ const CoreServicesLive = Layer.mergeAll(
 	IngestAttributeMappingService.layer,
 ).pipe(Layer.provideMerge(InfraLive))
 
-const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
-
-/**
- * Audit entries are warehouse rows (Tinybird-pinned `ingest`), so the service
- * composes after the warehouse rather than inside CoreServicesLive. Exported
- * for the auth layers in `http-graph.ts`, which record denials and reads.
- */
-export const AuditLogServiceLive = AuditLogService.layer.pipe(Layer.provide(WarehouseQueryServiceLive))
-
 // Serves the integration page's per-zone collection status; the poll loop itself
 // runs in the alerting worker's cron, not here.
 const CloudflareAnalyticsServiceLive = CloudflareAnalyticsService.layer.pipe(
@@ -122,14 +112,6 @@ const CloudflareAnalyticsServiceLive = CloudflareAnalyticsService.layer.pipe(
 
 const DemoServiceLive = DemoService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
-)
-
-const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheServiceLive))
-
-const QueryEngineServiceLive = QueryEngineService.layer.pipe(
-	Layer.provideMerge(WarehouseQueryServiceLive),
-	Layer.provideMerge(EdgeCacheServiceLive),
-	Layer.provideMerge(BucketCacheServiceLive),
 )
 
 // Server-side widget data for shared dashboards. Needs both the query engine
@@ -243,17 +225,8 @@ const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 
 const SetupAuditServiceLive = SetupAuditService.layer.pipe(Layer.provideMerge(WarehouseQueryServiceLive))
 
-// The agents' repository sandbox tools, over the sandbox Worker's service
-// binding; `WorkerEnvironment` arrives at worker scope.
-const SandboxClientLive = SandboxClient.layer.pipe(Layer.provide(InfraLive))
-const RepoSandboxServiceLive = RepoSandboxService.layer.pipe(
-	Layer.provide(
-		CloudflareRepoSandboxLive.pipe(
-			Layer.provide(
-				Layer.mergeAll(VcsSourceServiceLive.pipe(Layer.provideMerge(InfraLive)), SandboxClientLive),
-			),
-		),
-	),
+const SignalPresenceServiceLive = SignalPresenceService.layer.pipe(
+	Layer.provideMerge(WarehouseQueryServiceLive),
 )
 
 // WorkerEnvironment is intentionally NOT wired here (unlike the alerting worker):
@@ -327,8 +300,8 @@ const MainServicesLive = Layer.mergeAll(
 	ErrorsServiceLive,
 	IssueFixVerificationServiceLive,
 	RecommendationIssueServiceLive,
-	RepoSandboxServiceLive,
 	SetupAuditServiceLive,
+	SignalPresenceServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,
 	VcsServicesLive,
@@ -336,11 +309,7 @@ const MainServicesLive = Layer.mergeAll(
 )
 
 /**
- * Complete service graph for the HTTP worker.
- *
- * HTTP exposes every product surface plus MCP, so this is intentionally the
- * broadest root. Non-HTTP entrypoints use the smaller roots in
- * `mcp-service-graph.ts` instead of importing or acquiring route-only services
- * such as billing, demo, digest, OAuth, anomaly detection, and Slack integration.
+ * Management and public HTTP services. The dashboard query graph uses the
+ * smaller warehouse-services root; both graphs share these layer instances.
  */
-export const HttpServicesLive = McpToolExecutor.layer.pipe(Layer.provideMerge(MainServicesLive))
+export const HttpServicesLive = MainServicesLive

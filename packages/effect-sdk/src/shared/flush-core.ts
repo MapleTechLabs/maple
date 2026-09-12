@@ -198,16 +198,32 @@ export const guardFlush =
 		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure)
 	}
 
-/** Serialize flush calls so concurrent timers/manual hooks cannot drain overlapping batches. */
+/**
+ * Serialize drains. Workers may coalesce queued calls with identical arguments:
+ * every caller waits for that drain, and calls arriving DURING it queue a later
+ * drain so spans completed after the first snapshot cannot be stranded.
+ * Other presets retain one drain per call by default.
+ */
 export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	run: (...args: Args) => Promise<void>,
+	options?: { readonly coalesceSameArguments?: boolean },
 ): ((...args: Args) => Promise<void>) => {
 	let tail: Promise<void> = Promise.resolve()
+	let queued: { readonly args: Args; readonly promise: Promise<void> } | undefined
 	return (...args) => {
-		const next = tail.then(
-			() => run(...args),
-			() => run(...args),
+		const waiting = queued
+		if (
+			options?.coalesceSameArguments &&
+			waiting &&
+			args.length === waiting.args.length &&
+			args.every((value, index) => value === waiting.args[index])
 		)
+			return waiting.promise
+		const next: Promise<void> = tail.then(() => {
+			if (queued?.promise === next) queued = undefined
+			return run(...args)
+		})
+		queued = { args, promise: next }
 		tail = next.catch(() => undefined)
 		return next
 	}

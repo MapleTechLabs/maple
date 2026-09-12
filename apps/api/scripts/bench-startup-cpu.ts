@@ -26,37 +26,15 @@
 // NOTE ON ENGINE FIDELITY: Workers run on V8 (workerd); Bun runs on JSC. The
 // ABSOLUTE numbers here are JSC's; the RELATIVE marginal cost (extra error class
 // vs. baseline graph) is what settles the argument and is engine-agnostic. For
-// the authoritative V8 startup number, use `worker` mode (it shells out to
-// `wrangler check startup`, which profiles the real worker on workerd).
+// a local workerd startup profile, use `worker` mode. It builds the installed
+// Alchemy-generated entry with Rolldown, then asks Wrangler to profile it.
+// Local profiles are not Cloudflare production CPU measurements.
 
 import { spawnSync } from "node:child_process"
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Predicate, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-
-/**
- * The entry alchemy generates for the api Worker, for `wrangler check startup`:
- * the bridge around `src/worker.ts`'s default export plus a stub per Durable
- * Object / Workflow class the init yields. Kept in step with `makeEffectVirtualEntry`
- * in alchemy's `Cloudflare/Workers/Sources/Rolldown.ts` by hand — it is not
- * reachable through alchemy's exports map.
- */
-const startupCheckEntry = (workerPath: string): string => `
-import { DurableObject, WorkerEntrypoint, WorkflowEntrypoint } from "cloudflare:workers";
-import { makeDurableObjectBridge, makeWorkerBridge, makeWorkflowBridge } from "alchemy/Cloudflare";
-import entrypoint from ${JSON.stringify(workerPath)};
-
-const meta = { entrypoint, stack: { name: "maple", stage: "startup-check" } };
-
-export default makeWorkerBridge(WorkerEntrypoint, meta);
-
-const DurableObjectBridge = makeDurableObjectBridge(DurableObject, meta);
-export class ChatSession extends DurableObjectBridge("ChatSession") {}
-const WorkflowBridgeFn = makeWorkflowBridge(WorkflowEntrypoint, meta);
-export class ClickHouseSchemaApplyWorkflow extends WorkflowBridgeFn("ClickHouseSchemaApplyWorkflow") {}
-export class InvestigationFanoutWorkflow extends WorkflowBridgeFn("InvestigationFanoutWorkflow") {}
-`
 
 // https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
 const CF_STARTUP_BUDGET_MS = 1_000
@@ -297,7 +275,7 @@ const parseProfile = (path: string, json: boolean) => {
 
 	const ranked = [...byFrame.entries()].sort((a, b) => b[1].self - a[1].self)
 	const idleMs = idleUs / 1000
-	const activeCpuMs = wallMs - idleMs // CPU actually spent executing JS at startup
+	const activeCpuMs = (profile.timeDeltas.reduce((sum, delta) => sum + delta, 0) - idleUs) / 1000 // Sampled active time; exclude unsampled time.
 	const schemaMs = ranked.filter(([, v]) => v.schema).reduce((s, [, v]) => s + v.self, 0) / 1000
 
 	if (json) {
@@ -322,11 +300,12 @@ const parseProfile = (path: string, json: boolean) => {
 	console.log(`\nstartup CPU profile: ${path}\n`)
 	console.log(`  startup phase (wall):     ${wallMs.toFixed(1)} ms  (incl. ${idleMs.toFixed(1)} ms idle)`)
 	console.log(
-		`  active startup CPU:        ${activeCpuMs.toFixed(1)} ms` + `   ← the number 10021 measures`,
+		`  active startup CPU:        ${activeCpuMs.toFixed(1)} ms` +
+			`   (local sampled time, not production CPU)`,
 	)
 	console.log(
 		`  Cloudflare budget:        ${CF_STARTUP_BUDGET_MS} ms` +
-			`  (${((activeCpuMs / CF_STARTUP_BUDGET_MS) * 100).toFixed(1)}% used)`,
+			`  (production upload validation; local timing is not budget utilization)`,
 	)
 	console.log(
 		`  schema/httpapi/domain:    ${schemaMs.toFixed(1)} ms` +
@@ -376,39 +355,40 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 		return
 	}
 	const since = Date.now() - 1000
-	const outfile = join(process.cwd(), "worker-startup.cpuprofile")
-	// The repo has no wrangler config and no entry file: alchemy generates the
-	// bundle entry around `src/worker.ts` at deploy. Startup validation only
-	// evaluates module scope, so a throwaway config naming a copy of that entry
-	// (mirrors `makeEffectVirtualEntry` in alchemy's Rolldown source) is enough.
-	// The check dir sits under this package's node_modules: wrangler runs its
-	// autoconfig detection against the cwd (and refuses a dir without a config
-	// as "not a Workers project"), while esbuild resolves the entry's imports
-	// upward from the entry file — so the dir must both hold the config and
-	// live inside the package tree.
 	const checkDir = join(process.cwd(), "node_modules", ".cache", "maple-startup-check")
-	mkdirSync(checkDir, { recursive: true })
-	const entryPath = join(checkDir, "entry.ts")
-	writeFileSync(entryPath, startupCheckEntry(join(process.cwd(), "src", "worker.ts")))
+	const outfile = join(checkDir, "worker-startup.cpuprofile")
+	const root = resolve(process.cwd(), "../..")
+	const build = spawnSync("bun", ["apps/api/scripts/cold-path/build-bundle2.mjs"], {
+		cwd: root,
+		stdio: "inherit",
+		env: { ...process.env, STARTUP: "1", SEO: "0", OUT: checkDir },
+	})
+	if (build.status !== 0) {
+		process.exitCode = 1
+		return
+	}
 	const configPath = join(checkDir, "wrangler.json")
 	writeFileSync(
 		configPath,
 		JSON.stringify({
 			name: "maple-api-startup-check",
-			main: "./entry.ts",
+			main: "./worker.js",
+			find_additional_modules: true,
+			rules: [{ type: "ESModule", globs: ["**/*.js"] }],
 			compatibility_date: "2026-04-08",
 			compatibility_flags: ["nodejs_compat"],
 		}),
 	)
-	console.error("→ running `wrangler check startup` (this builds the worker)…\n")
+	console.error("→ profiling the Alchemy/Rolldown bundle with `wrangler check startup --no-bundle`…\n")
 	// Repo-pinned wrangler (not @latest); deterministic --outfile so we parse the
 	// exact file rather than guessing.
 	const res = spawnSync(
 		"bunx",
-		["wrangler", "check", "startup", "--config", configPath, "--outfile", outfile],
+		["wrangler", "check", "startup", "--args=--no-bundle", "--config", configPath, "--outfile", outfile],
 		{ stdio: "inherit", cwd: checkDir },
 	)
 	if (res.status !== 0) {
+		process.exitCode = 1
 		console.error(
 			`\nwrangler exited ${res.status ?? "?"}. If it produced a .cpuprofile anyway, parse it with:` +
 				`\n  bun run scripts/bench-startup-cpu.ts parse <file.cpuprofile>`,
@@ -422,6 +402,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 		}
 	})()
 	if (!profile) {
+		process.exitCode = 1
 		console.error(
 			"\nNo fresh .cpuprofile found. wrangler may print a path — parse it directly with `parse <file>`.",
 		)
