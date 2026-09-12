@@ -29,6 +29,7 @@ import {
 	AiToolErrorSamplesRequest,
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
+import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 const decodeFingerprint = Schema.decodeUnknownOption(AiToolErrorFingerprint)
@@ -51,12 +52,12 @@ const samplePayload = (text: string, chars: number, bytes: number): string => {
 export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_agent_tool_error",
-		"One failure group of an AI agent tool call (the tools an LLM agent invokes during a session — not browser sessions and not Maple's own MCP tools): which sessions hit it, which message variants it folded, which models and services it happens under, and sample calls with the arguments they were made with and the results that came back. `tool` is an exact tool name from `get_agent_tools_overview`'s breakdown and `fingerprint` comes from `list_agent_tool_errors`.",
+		"One failure group of an AI agent tool call (the tools an LLM agent invokes during a session — not browser sessions and not Maple's own MCP tools): which sessions hit it, which message variants it folded, which models and services it happens under, and sample calls with the arguments they were made with and the results that came back. `tool` is an exact tool name from `get_agent_tools_overview`'s breakdown and `fingerprint` comes from the failure groups `get_agent_tools_overview` lists for a selected tool.",
 		Schema.Struct({
 			...agentToolWindowParams,
 			tool: requiredStringParam("The failing tool (exact `gen_ai.tool.name`)"),
 			fingerprint: requiredStringParam(
-				"The error group, as `list_agent_tool_errors` reported it (a decimal number)",
+				"The error group, as `get_agent_tools_overview` reported it for this tool (a decimal number)",
 			),
 			...agentToolSelectionParams,
 			session: optionalStringParam("Only samples from this session id"),
@@ -77,7 +78,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			const fingerprint = decodeFingerprint(params.fingerprint)
 			if (Option.isNone(fingerprint)) {
 				return validationError(
-					`Invalid fingerprint: '${params.fingerprint}'. It is the decimal number \`list_agent_tool_errors\` prints in its Fingerprint column.`,
+					`Invalid fingerprint: '${params.fingerprint}'. It is the decimal number \`get_agent_tools_overview tool="<tool>"\` prints in its Fingerprint column.`,
 					`get_agent_tool_error tool="search_docs" fingerprint="10453282193948324021"`,
 				)
 			}
@@ -143,7 +144,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				lines.push(
 					`No failed calls of \`${tool}\` under this fingerprint in the window.`,
 					formatNextSteps([
-						`\`list_agent_tool_errors tool="${tool}"\` — the groups that exist in this window (a fingerprint is only visible while its failures are in range)`,
+						`\`get_agent_tools_overview tool="${tool}"\` — the groups that exist in this window (a fingerprint is only visible while its failures are in range)`,
 					]),
 				)
 				return {
@@ -236,7 +237,9 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					...(firstSample === undefined
 						? []
 						: [
-								`\`inspect_agent_session_span session_id="${firstSample.sessionId}" trace_id="${firstSample.traceId}" span_id="${firstSample.spanId}"\` — the failed call in full`,
+								`\`inspect_span trace_id="${firstSample.traceId}" span_id="${firstSample.spanId}" timestamp="${warehouseDateTimeToIso(
+									firstSample.timestamp,
+								)}"\` — the failed call in full`,
 							]),
 					`\`get_agent_tool_error tool="${tool}" fingerprint="${fingerprint.value}" session="<session>"\` — the same group inside one session`,
 				]),

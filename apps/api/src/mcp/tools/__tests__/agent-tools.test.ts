@@ -9,13 +9,12 @@ import { makeEvalRuntime, runToolDirect, type EvalRuntime } from "@/mcp/__evals_
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
 import type { McpToolResult } from "@/mcp/tools/types"
 
-// The three tool-analytics tools run through the registry the way a client
+// The two tool-analytics tools run through the registry the way a client
 // reaches them: `runToolDirect` decodes the parameters against the published
 // schema and dispatches by name, so a tool dropped from `registry.ts` fails
 // here rather than at a customer's MCP client.
 
 const OVERVIEW = "get_agent_tools_overview"
-const ERROR_LIST = "list_agent_tool_errors"
 const ERROR_DETAIL = "get_agent_tool_error"
 
 const definitionOf = (name: string) => {
@@ -290,22 +289,20 @@ const call = (name: string, params: Record<string, string | number | boolean>) =
 	runToolDirect(rt, name, params) as Promise<McpToolResult>
 
 describe("agent tool analytics registration", () => {
-	it("registers three tools with object input schemas and the expected required params", () => {
-		for (const name of [OVERVIEW, ERROR_LIST, ERROR_DETAIL]) {
+	it("registers two tools with object input schemas and the expected required params", () => {
+		for (const name of [OVERVIEW, ERROR_DETAIL]) {
 			expect(toInputSchema(definitionOf(name).schema).type, name).toBe("object")
 		}
 		expect(toInputSchema(definitionOf(OVERVIEW).schema).required ?? []).toEqual([])
-		expect(toInputSchema(definitionOf(ERROR_LIST).schema).required).toEqual(["tool"])
 		expect(toInputSchema(definitionOf(ERROR_DETAIL).schema).required).toEqual(["tool", "fingerprint"])
 	})
 
 	it("says what an AI agent tool call is, and names the follow-up tool", () => {
-		for (const name of [OVERVIEW, ERROR_LIST, ERROR_DETAIL]) {
+		for (const name of [OVERVIEW, ERROR_DETAIL]) {
 			expect(definitionOf(name).description, name).toContain("AI agent tool call")
 		}
-		expect(definitionOf(OVERVIEW).description).toContain("list_agent_tool_errors")
-		expect(definitionOf(ERROR_LIST).description).toContain("get_agent_tool_error")
-		expect(definitionOf(ERROR_DETAIL).description).toContain("list_agent_tool_errors")
+		expect(definitionOf(OVERVIEW).description).toContain("get_agent_tool_error")
+		expect(definitionOf(ERROR_DETAIL).description).toContain("get_agent_tools_overview")
 	})
 
 	it("publishes `split` as an enum, so a client reads the three values off the schema", () => {
@@ -338,7 +335,7 @@ describe("agent tool analytics validation", () => {
 	})
 
 	it("rejects a bucket wider than the window, naming the range", async () => {
-		const result = await call(ERROR_LIST, {
+		const result = await call(OVERVIEW, {
 			...WINDOW,
 			tool: "search_docs",
 			bucket_seconds: WINDOW_SECONDS + 1,
@@ -348,14 +345,14 @@ describe("agent tool analytics validation", () => {
 	})
 
 	it("rejects a blank required tool rather than failing inside the request", async () => {
-		const result = await call(ERROR_LIST, { ...WINDOW, tool: "   " })
+		const result = await call(ERROR_DETAIL, { ...WINDOW, tool: "   ", fingerprint: FINGERPRINT })
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain("Invalid tool")
 		expect(markdown(result)).toContain('tool="search_docs"')
 	})
 
 	it("rejects a window wider than the search cap", async () => {
-		const result = await call(ERROR_LIST, {
+		const result = await call(OVERVIEW, {
 			tool: "search_docs",
 			start_time: "2026-01-01 00:00:00",
 			end_time: "2026-09-12 00:00:00",
@@ -376,7 +373,9 @@ describe("get_agent_tools_overview rendering", () => {
 		const tool = rowCells(rendered, "search_docs")
 		expect(tool.slice(0, 7)).toEqual(["search_docs", "80", "9", "6", "7.50%", "12.0ms", "900.0ms"])
 		// The follow-up names the worst error rate, not the busiest tool.
-		expect(rendered).toContain('`list_agent_tool_errors tool="search_docs"`')
+		expect(rendered).toContain('`get_agent_tools_overview tool="search_docs"`')
+		// No tool selected: no failure groups were read, so none are rendered.
+		expect(rendered).not.toContain("### Failure groups")
 	})
 
 	it("treats a blank filter as no filter", async () => {
@@ -413,14 +412,16 @@ describe("get_agent_tools_overview rendering", () => {
 	it("answers an empty window without a breakdown", async () => {
 		const rendered = await withRules(EMPTY_RULES, async () => markdown(await call(OVERVIEW, WINDOW)))
 		expect(rendered).toContain("No agent tool calls matched this selection in the window.")
-		expect(rendered).toContain("get_agent_sessions_overview")
+		expect(rendered).toContain("list_agent_sessions")
 	})
 })
 
-describe("list_agent_tool_errors rendering", () => {
+// Selecting one tool turns the overview into that tool's failure ledger: the
+// same groups, trend and next steps the separate errors tool used to render.
+describe("get_agent_tools_overview failure groups", () => {
 	it("renders a group whose trend keeps the window's first bucket", async () => {
-		const rendered = markdown(await call(ERROR_LIST, { ...WINDOW, tool: "search_docs" }))
-		expect(rendered).toContain("## Tool failures: search_docs")
+		const rendered = markdown(await call(OVERVIEW, { ...WINDOW, tool: "search_docs" }))
+		expect(rendered).toContain("### Failure groups of search_docs (1)")
 		const cells = rowCells(rendered, FINGERPRINT)
 		expect(cells.slice(1, 4)).toEqual(["TimeoutError", "upstream timed out after 30s", "12"])
 		// 1800s buckets over 12h: 3 failures in the first bucket of the window,
@@ -434,13 +435,16 @@ describe("list_agent_tool_errors rendering", () => {
 	})
 
 	it("says so when the trend covers the whole window", async () => {
-		const result = await call(ERROR_LIST, { ...WINDOW, tool: "search_docs" })
+		const result = await call(OVERVIEW, { ...WINDOW, tool: "search_docs" })
 		expect(markdown(result)).not.toContain("covers only the last")
 		expect(structured(result).trendClipped).toBe(false)
+		expect(structured(result).trendBucketSeconds).toBe(1800)
 	})
 
+	// `bucket_seconds` buckets the series and the trend alike, so a narrow one
+	// is the case where the trend is no longer the window.
 	it("bounds the trend grid at 24 buckets however narrow the bucket, and says where it starts", async () => {
-		const result = await call(ERROR_LIST, { ...WINDOW, tool: "search_docs", bucket_seconds: 1 })
+		const result = await call(OVERVIEW, { ...WINDOW, tool: "search_docs", bucket_seconds: 1 })
 		const rendered = markdown(result)
 		const cells = rowCells(rendered, FINGERPRINT)
 		expect(cells[cells.length - 1]?.split(",")).toHaveLength(24)
@@ -455,8 +459,9 @@ describe("list_agent_tool_errors rendering", () => {
 	})
 
 	it("answers a tool with no failures", async () => {
-		const rendered = await withRules(EMPTY_RULES, async () =>
-			markdown(await call(ERROR_LIST, { ...WINDOW, tool: "search_docs" })),
+		const rendered = await withRules(
+			[{ match: (sql) => sql.includes("numbered_tool_calls"), rows: [] }, ...fixtures],
+			async () => markdown(await call(OVERVIEW, { ...WINDOW, tool: "search_docs" })),
 		)
 		expect(rendered).toContain("No failed calls of `search_docs` in this window.")
 	})
@@ -488,7 +493,7 @@ describe("get_agent_tool_error rendering", () => {
 		expect(rendered).toContain("(4,096 bytes total)")
 		expect(rendered).not.toContain(LONG_ARGUMENTS)
 		expect(rendered).toContain('`get_agent_session session_id="sess_a"`')
-		expect(rendered).toContain("`inspect_agent_session_span")
+		expect(rendered).toContain("`inspect_span")
 	})
 
 	it("clamps samples_limit and reports that more samples exist", async () => {

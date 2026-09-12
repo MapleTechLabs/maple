@@ -97,13 +97,9 @@ const PHRASE_BY_TOOL: Record<string, string> = {
 	search_sessions: "Searching sessions…",
 	get_session_transcript: "Reading a session transcript…",
 	list_agent_sessions: "Listing agent sessions…",
-	get_agent_sessions_overview: "Surveying agent sessions…",
 	get_agent_session: "Reading an agent session…",
-	get_agent_session_transcript: "Reading an agent transcript…",
 	list_agent_session_spans: "Listing agent session spans…",
-	inspect_agent_session_span: "Inspecting an agent span…",
 	get_agent_tools_overview: "Checking agent tool usage…",
-	list_agent_tool_errors: "Listing agent tool failures…",
 	get_agent_tool_error: "Inspecting an agent tool failure…",
 } satisfies Record<string, string>
 

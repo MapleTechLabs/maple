@@ -22,6 +22,7 @@ import {
 import { Effect, Option, Schema } from "effect"
 import { AiSessionSpanCursor, AiSessionSpanScope, GetAiSessionSpansRequest } from "@maple/domain/http"
 import { spanModel, spanStartMs, spanTokenBuckets, spanFailed } from "@maple/agent-sessions"
+import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { readAiSessionSpans } from "@/services/ai-sessions/ai-session-reads"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
@@ -33,7 +34,7 @@ const PAGE_TOO_LARGE = "Pass a smaller `limit`."
 export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 	server.tool(
 		"list_agent_session_spans",
-		"List one page of an AI agent session's spans (an LLM agent trace, not a browser session replay), oldest first: category, name, service, duration, status, model or tool, tokens, and the span/parent/trace ids. Use it to find the span behind a finding, or to walk a session too large for `get_agent_session`. `scope` picks the agent's own spans (`ai`), the app's spans sharing its traces (`app`), or both (`all`). Inspect one with `inspect_agent_session_span`.",
+		"List one page of an AI agent session's spans (an LLM agent trace, not a browser session replay), oldest first: category, name, service, duration, status, model or tool, tokens, and the span/parent/trace ids. Use it to find the span behind a finding, or to walk a session too large for `get_agent_session`. `scope` picks the agent's own spans (`ai`), the app's spans sharing its traces (`app`), or both (`all`). Inspect one with `inspect_span`, which decodes an AI span's messages and tool calls.",
 		Schema.Struct({
 			session_id: requiredStringParam("The agent session id, from `list_agent_sessions`"),
 			...sessionWindowParams,
@@ -157,7 +158,11 @@ export function registerListAgentSessionSpansTool(server: McpToolRegistrar) {
 			}
 			const interesting = spans.find(spanFailed) ?? spans[0]
 			nextSteps.push(
-				`\`inspect_agent_session_span session_id="${sessionId}" trace_id="${interesting.traceId}" span_id="${interesting.spanId}"${hint}\` — messages and tool calls on ${
+				// The span's own timestamp prunes the lookup to its partition; the
+				// session window above is not a parameter `inspect_span` takes.
+				`\`inspect_span trace_id="${interesting.traceId}" span_id="${interesting.spanId}" timestamp="${warehouseDateTimeToIso(
+					interesting.timestamp,
+				)}"\` — messages and tool calls on ${
 					spanFailed(interesting) ? "the first failed span" : "a span"
 				}`,
 			)

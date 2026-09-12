@@ -122,6 +122,104 @@ export const makeSpanDetailRows = (): ReadonlyArray<Record<string, unknown>> => 
 	},
 ]
 
+/* -------------------------------------------------------------------------- */
+/* An AI agent span, as `inspect_span` reaches it: the point lookup that finds  */
+/* it, and the trace read that decodes it                                      */
+/* -------------------------------------------------------------------------- */
+
+export const AI_SPAN_TRACE_ID = "4d2c1b0a9f8e7d6c5b4a3928170615ff"
+/** The LLM call: it requests a tool, whose result is on the span below. */
+export const AI_SPAN_SPAN_ID = "a1a1a1a1a1a1a1a1"
+export const AI_TOOL_SPAN_ID = "a2a2a2a2a2a2a2a2"
+/** A trace too large for one read, and an AI span past its first page. */
+export const PARTIAL_AI_TRACE_ID = "5e3d2c1b0a9f8e7d6c5b4a3928170611"
+export const PARTIAL_AI_SPAN_ID = "b9b9b9b9b9b9b9b9"
+export const PARTIAL_AI_TRACE_SPANS = 2_001
+
+const AI_SPAN_ATTRIBUTES = {
+	"maple_ai.session.id": "wrun_01KZEVAL",
+	"maple_ai.vendor.id": "eve",
+	"gen_ai.operation.name": "chat",
+	"gen_ai.request.model": "gpt-5",
+	"gen_ai.response.model": "gpt-5",
+	"gen_ai.usage.input_tokens": "1200",
+	"gen_ai.input.messages": JSON.stringify([
+		{ role: "user", parts: [{ type: "text", content: "why is checkout failing?" }] },
+	]),
+	"gen_ai.output.messages": JSON.stringify([
+		{
+			role: "assistant",
+			parts: [{ type: "tool_call", id: "call_1", name: "run_sql", arguments: { sql: "select 1" } }],
+		},
+	]),
+}
+
+/** The point lookup, in `spanDetailQuery`'s output shape. */
+export const makeAiSpanDetailRows = (
+	spanId: string = AI_SPAN_SPAN_ID,
+	traceId: string = AI_SPAN_TRACE_ID,
+): ReadonlyArray<Record<string, unknown>> => [
+	{
+		traceId,
+		spanId,
+		parentSpanId: "",
+		spanName: "chat gpt-5",
+		serviceName: FIXTURES.service,
+		spanKind: "Client",
+		durationMs: 1_200,
+		startTime: "2026-06-02 10:00:00",
+		statusCode: "Unset",
+		statusMessage: "",
+		spanAttributes: JSON.stringify(AI_SPAN_ATTRIBUTES),
+		resourceAttributes: JSON.stringify({ "service.name": FIXTURES.service }),
+	},
+]
+
+const aiTraceSpanRow = (
+	spanId: string,
+	spanName: string,
+	attributes: Record<string, string>,
+	traceId: string = AI_SPAN_TRACE_ID,
+): Record<string, unknown> => ({
+	traceId,
+	spanId,
+	parentSpanId: "",
+	spanName,
+	spanKind: "Client",
+	serviceName: FIXTURES.service,
+	durationMs: 1_200,
+	statusCode: "Unset",
+	statusMessage: "",
+	timestamp: "2026-06-02 10:00:00.000000000",
+	spanAttributes: attributes,
+})
+
+/** The trace behind the AI span, in `aiSessionSpansRowSchema`'s shape: the call
+ *  and the tool span that answered it. */
+export const makeAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> => [
+	aiTraceSpanRow(AI_SPAN_SPAN_ID, "chat gpt-5", AI_SPAN_ATTRIBUTES),
+	aiTraceSpanRow(AI_TOOL_SPAN_ID, "execute_tool run_sql", {
+		"maple_ai.session.id": "wrun_01KZEVAL",
+		"maple_ai.vendor.id": "eve",
+		"gen_ai.operation.name": "execute_tool",
+		"gen_ai.tool.name": "run_sql",
+		"gen_ai.tool.call.id": "call_1",
+		"gen_ai.tool.call.result": JSON.stringify({ error: "table orders does not exist" }),
+	}),
+]
+
+/** One row past the trace-pinned read's limit, and the inspected span in none
+ *  of them: the read returns a cursor, so absence is not absence. */
+export const makePartialAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> =>
+	Array.from({ length: PARTIAL_AI_TRACE_SPANS }, (_, index) =>
+		aiTraceSpanRow(
+			`c${index.toString(16).padStart(15, "0")}`,
+			"chat gpt-5",
+			{ "maple_ai.vendor.id": "eve", "gen_ai.operation.name": "chat" },
+			PARTIAL_AI_TRACE_ID,
+		),
+	)
+
 export const makeTraceLogs = (): ListLogsOutput[] => [
 	{
 		timestamp: "2026-06-02 10:00:00",

@@ -6,6 +6,7 @@ import { createDualContent } from "@/mcp/lib/structured-output"
 import {
 	catchSessionTooLarge,
 	loadAgentSessionSpans,
+	MCP_AGENT_SESSION_MAX_SPANS,
 	offsetLabel,
 	requiredIdOf,
 	sessionWindowOf,
@@ -14,6 +15,7 @@ import {
 } from "@/mcp/lib/agent-sessions"
 import { Effect, Schema } from "effect"
 import { GetAiSessionSummaryRequest, type GetAiSessionSummaryResponse } from "@maple/domain/http"
+import { warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	buildSessionFindings,
 	buildSessionSummary,
@@ -37,7 +39,7 @@ const WHOLE_SESSION_TOO_LARGE =
 export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_agent_session",
-		"Read one AI agent session (an LLM agent trace, not a browser session replay): its verdict and findings, wall/active/idle time, agent time by kind, turn and call counts, token buckets, reported cost, the models and tools it used, its failure groups and its turns. Derived from the session's own spans, exactly as the Agent Sessions page derives them. Pass start_time/end_time from `list_agent_sessions` to make the read a seek. Follow up with `get_agent_session_transcript` for what was actually said.",
+		"Read one AI agent session (an LLM agent trace, not a browser session replay): its verdict and findings, wall/active/idle time, agent time by kind, turn and call counts, token buckets, reported cost, the models and tools it used, its failure groups and its turns. Derived from the session's own spans, exactly as the Agent Sessions page derives them — up to 10000 of them, past which it says so and reports the warehouse's exact totals for the whole session. Pass start_time/end_time from `list_agent_sessions` to make the read a seek. Follow up with `list_agent_session_spans` for the spans themselves, and `inspect_span` for what one of them actually said.",
 		Schema.Struct({
 			session_id: requiredStringParam(
 				"The agent session id, as `list_agent_sessions` reports it (a vendor id, or `trace:<traceId>`)",
@@ -106,7 +108,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session")))
 			}
 
-			const traceOf = new Map(loaded.spans.map((span) => [span.spanId, span.traceId] as const))
+			const spanOf = new Map(loaded.spans.map((span) => [span.spanId, span] as const))
 			const tokens = summary.tokens
 			const findings = report.findings.slice(0, MAX_FINDINGS)
 			const tools = summary.tools.slice(0, MAX_TOOLS)
@@ -126,7 +128,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				...(loaded.truncated
 					? [
 							``,
-							`**Only the first ${formatNumber(loaded.spans.length)} spans were loaded**, oldest first — the END of this session is missing, so everything derived below describes its beginning. The exact warehouse totals are printed under Work.`,
+							`**Only the first ${formatNumber(loaded.spans.length)} spans were loaded** (the cap is ${formatNumber(MCP_AGENT_SESSION_MAX_SPANS)}), oldest first — the END of this session is missing, so everything derived below describes its beginning. The exact warehouse totals are printed under Work.`,
 						]
 					: []),
 				``,
@@ -250,16 +252,17 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 
 			const hint = loaded.window === undefined ? "" : ` ${windowHint(loaded.window)}`
 			const nextSteps = [
-				`\`get_agent_session_transcript session_id="${sessionId}"${hint}\` — the conversation itself`,
 				`\`list_agent_session_spans session_id="${sessionId}"${hint}\` — every span, paged`,
 			]
-			// The findings carry a span id but no trace id; the loaded spans have it.
-			const evidence = report.verdict.spanId ?? findings[0]?.spanId
+			// The findings carry a span id but no trace id; the loaded spans have
+			// both, and the span's own timestamp is what prunes `inspect_span`'s
+			// scan to the day the session ran on.
+			const evidence = spanOf.get(report.verdict.spanId ?? findings[0]?.spanId ?? "")
 			if (evidence !== undefined) {
 				nextSteps.push(
-					`\`inspect_agent_session_span session_id="${sessionId}" trace_id="${
-						traceOf.get(evidence) ?? ""
-					}" span_id="${evidence}"${hint}\` — the span behind the verdict`,
+					`\`inspect_span trace_id="${evidence.traceId}" span_id="${evidence.spanId}" timestamp="${warehouseDateTimeToIso(
+						evidence.timestamp,
+					)}"\` — the messages and tool calls of the span behind the verdict`,
 				)
 			}
 			lines.push(formatNextSteps(nextSteps))
@@ -286,7 +289,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							turnText: finding.turnText,
 							detail: finding.detail ?? null,
 							spanId: finding.spanId,
-							traceId: traceOf.get(finding.spanId) ?? null,
+							traceId: spanOf.get(finding.spanId)?.traceId ?? null,
 						})),
 						vitals: {
 							startTime: loaded.window?.startTime ?? "",

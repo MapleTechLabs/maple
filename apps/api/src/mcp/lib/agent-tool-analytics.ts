@@ -3,13 +3,13 @@ import { formatDurationFromMs } from "@/mcp/lib/format"
 import { Option } from "effect"
 
 /**
- * Shared pieces of the three AI agent tool-analytics tools
- * (`get_agent_tools_overview`, `list_agent_tool_errors`, `get_agent_tool_error`).
+ * Shared pieces of the two AI agent tool-analytics tools
+ * (`get_agent_tools_overview`, `get_agent_tool_error`).
  *
- * They read the same population under three groupings, so their window, their
- * selection and the way they render a nanosecond duration have to agree — a
- * p95 that reads as ms in one tool and ns in another is the kind of drift this
- * module exists to prevent.
+ * They read the same population under different groupings, so their window,
+ * their selection and the way they render a nanosecond duration have to agree —
+ * a p95 that reads as ms in one tool and ns in another is the kind of drift
+ * this module exists to prevent.
  */
 
 /** The window every tool-analytics read takes. 24h unless the agent narrows it. */
@@ -19,13 +19,13 @@ export const agentToolWindowParams = {
 }
 
 /**
- * The selection, minus `tool` — which two of the three tools require and the
- * third takes as an optional filter, so each declares its own.
+ * The selection, minus `tool` — which `get_agent_tool_error` requires and
+ * `get_agent_tools_overview` takes as an optional filter, so each declares its
+ * own.
  *
  * `model`, `service` and `environment` are exact matches on values
- * `get_agent_tools_overview`'s breakdown and `get_agent_sessions_overview`'s
- * facets produce; `search` and `failing_only` are predicates over the whole
- * population.
+ * `get_agent_tools_overview`'s breakdown produces; `search` and `failing_only`
+ * are predicates over the whole population.
  */
 export const agentToolSelectionParams = {
 	model: optionalStringParam(

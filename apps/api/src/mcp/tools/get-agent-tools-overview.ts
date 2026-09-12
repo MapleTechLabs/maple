@@ -4,6 +4,7 @@ import {
 	agentToolSelectionData,
 	agentToolSelectionParams,
 	agentToolWindowParams,
+	compactTrend,
 	describeSelection,
 	formatDelta,
 	formatNanos,
@@ -11,6 +12,7 @@ import {
 	formatSeen,
 	parseBucketSeconds,
 	selectionValue,
+	TREND_BUCKETS,
 } from "@/mcp/lib/agent-tool-analytics"
 import type { AgentToolAggregateData } from "@maple/domain"
 import { createDualContent } from "@/mcp/lib/structured-output"
@@ -19,11 +21,13 @@ import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/m
 import { formatNumber, formatTable, truncate } from "@/mcp/lib/format"
 import { formatNextSteps } from "@/mcp/lib/next-steps"
 import {
+	readAiToolErrors,
 	readAiToolsBreakdowns,
 	readAiToolsSeries,
 	readAiToolsTotals,
 } from "@/services/ai-sessions/ai-session-reads"
 import {
+	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
 	AiToolsSeriesRequest,
 	AiToolsSeriesKind,
@@ -36,6 +40,13 @@ import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Points the series renders before it says it cut the rest. */
 const SERIES_POINTS_MAX = 200
+
+/** Failure groups a selected tool reports. Past that the answer is a ledger,
+ *  and the groups worth reading are the busiest ones. */
+const ERROR_GROUPS_MAX = 25
+
+/** The group's message in the table; the full text is in `get_agent_tool_error`. */
+const MESSAGE_CHARS = 120
 
 /** Percentiles are nanoseconds on the wire; everything below is milliseconds. */
 const aggregateData = (aggregate: AiToolsAggregate): AgentToolAggregateData => ({
@@ -50,7 +61,7 @@ const aggregateData = (aggregate: AiToolsAggregate): AgentToolAggregateData => (
 export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_agent_tools_overview",
-		'AI agent tool calls (the tools an LLM agent invokes during a session — not browser sessions and not Maple\'s own MCP tools): how much each tool is called, how often it fails, and how slow it is. Reports the window against the equal window before it, plus a per-tool breakdown; pass bucket_seconds for a time series. The tool names it lists are the ones `list_agent_tool_errors` and `get_agent_tool_error` take, and the ones `list_agent_sessions tools="…"` filters by. Start here, then call `list_agent_tool_errors` for the tool with the worst error rate.',
+		'AI agent tool calls (the tools an LLM agent invokes during a session — not browser sessions and not Maple\'s own MCP tools): how much each tool is called, how often it fails, and how slow it is. Reports the window against the equal window before it, plus a per-tool breakdown; pass bucket_seconds for a time series. Selecting one `tool` also lists its failure groups by error fingerprint — what it fails with, how often, and whether it is still failing. The tool names it lists are the ones `get_agent_tool_error` takes, and the ones `list_agent_sessions tools="…"` filters by. Start here with no filters, then select the tool with the worst error rate.',
 		Schema.Struct({
 			...agentToolWindowParams,
 			tool: optionalStringParam(
@@ -58,7 +69,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			),
 			...agentToolSelectionParams,
 			bucket_seconds: optionalNumberParam(
-				"Include a time series with this bucket width, in whole seconds (e.g. 3600 for hourly). Omitted: no series",
+				"Include a time series with this bucket width, in whole seconds (e.g. 3600 for hourly), and bucket a selected tool's failure trend the same way. Omitted: no series, and the trend is the window over 24 buckets",
 			),
 			// Published as an enum, so a client reads the three values off the
 			// schema and a fourth is a parameter error the decoder writes.
@@ -91,6 +102,13 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			const bucketSeconds = Option.getOrUndefined(requested)
 			const tool = selectionValue(params.tool)
 			const selection = { ...agentToolSelection(params), tool }
+			// The failure trend is a sparkline beside each group, so its default
+			// width is the window over a fixed number of buckets. A minute is the
+			// floor: a narrow window would otherwise bucket by seconds — and a
+			// window shorter than that floor is one bucket wide.
+			const trendBucketSeconds =
+				bucketSeconds ??
+				Math.min(windowSeconds, Math.max(60, Math.round(windowSeconds / TREND_BUCKETS)))
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -98,7 +116,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				...(bucketSeconds !== undefined && { bucketSeconds }),
 			})
 
-			const [totals, breakdowns, seriesResult] = yield* Effect.all(
+			const [totals, breakdowns, seriesResult, errorsResult] = yield* Effect.all(
 				[
 					readAiToolsTotals(
 						tenant,
@@ -125,15 +143,41 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 									...selection,
 								}),
 							).pipe(Effect.map(Option.some)),
+					// Only for a selected tool: the groups are fingerprints of ONE
+					// tool's failures, and "every tool's groups" is a list with no
+					// question behind it.
+					tool === undefined
+						? Effect.succeedNone
+						: readAiToolErrors(
+								tenant,
+								new AiToolErrorsRequest({
+									startTime: st,
+									endTime: et,
+									bucketSeconds: trendBucketSeconds,
+									limit: ERROR_GROUPS_MAX,
+									...selection,
+									tool,
+								}),
+							).pipe(Effect.map(Option.some)),
 				],
-				{ concurrency: 3 },
+				{ concurrency: 4 },
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tools_overview")))
 
 			const series = Option.getOrUndefined(seriesResult)
+			const startMs = parseWarehouseDateTime(st)
+			const endMs = parseWarehouseDateTime(et)
+			const errorGroups = Option.getOrUndefined(errorsResult)?.data.map((group) => {
+				const grid = compactTrend(group.trend, { startMs, endMs, bucketSeconds: trendBucketSeconds })
+				return { ...group, trend: grid.buckets, trendFrom: grid.clippedFrom }
+			})
+			// The clip is a property of the window and the bucket, so every group
+			// shares it; the first one is as good as any.
+			const trendFrom = errorGroups?.[0]?.trendFrom
 			// The series cut belongs on the span too — it is the reason a caller's
 			// chart ends early, and the rendered note is not queryable.
 			yield* Effect.annotateCurrentSpan({
 				"result.rowCount": breakdowns.tools.length,
+				...(errorGroups !== undefined && { "maple.ai.tools.error_groups": errorGroups.length }),
 				...(series !== undefined && {
 					"maple.ai.tools.series_points": Math.min(series.data.length, SERIES_POINTS_MAX),
 					"maple.ai.tools.series_truncated": series.data.length > SERIES_POINTS_MAX,
@@ -157,7 +201,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 					"No agent tool calls matched this selection in the window.",
 					formatNextSteps([
 						`\`get_agent_tools_overview\` with no filters — see which tools ran at all`,
-						`\`get_agent_sessions_overview\` — check whether any agent sessions were recorded in this window`,
+						`\`list_agent_sessions\` — check whether any agent sessions were recorded in this window`,
 					]),
 				)
 				return {
@@ -234,6 +278,50 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				),
 			)
 
+			if (errorGroups !== undefined && tool !== undefined) {
+				lines.push(``, `### Failure groups of ${tool} (${errorGroups.length})`)
+				if (errorGroups.length === 0) {
+					lines.push(`No failed calls of \`${tool}\` in this window.`)
+				} else {
+					lines.push(
+						`Most failed calls first. Trend is failed calls per ${trendBucketSeconds}s bucket, oldest first.${
+							trendFrom === undefined
+								? ""
+								: ` It covers only the last ${TREND_BUCKETS} buckets of the window — from ${trendFrom} to ${et} — not the whole range above.`
+						}`,
+						formatTable(
+							[
+								"Fingerprint",
+								"Error type",
+								"Message",
+								"Calls",
+								"Sessions",
+								"Variants",
+								"First",
+								"Last",
+								"Calls since",
+								"Trend",
+							],
+							errorGroups.map((group) => [
+								group.fingerprint,
+								group.errorType === "" ? "—" : truncate(group.errorType, 40),
+								group.message === ""
+									? "—"
+									: truncate(group.message.replace(/\s+/g, " "), MESSAGE_CHARS),
+								formatNumber(group.calls),
+								formatNumber(group.sessions),
+								formatNumber(group.variants),
+								formatSeen(group.firstSeen),
+								formatSeen(group.lastSeen),
+								formatNumber(group.callsSince),
+								group.trend.join(","),
+							]),
+						),
+						"`Calls since` counts the calls of this tool — failed or not — that came after the group's latest failure: a high count means the group stopped.",
+					)
+				}
+			}
+
 			// The query orders buckets oldest-first, so the cap keeps the newest
 			// points: an agent asking about tool health wants the end of the window.
 			const points = series === undefined ? [] : series.data.slice(-SERIES_POINTS_MAX)
@@ -267,11 +355,19 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			const busiest = breakdowns.tools[0]
 			lines.push(
 				formatNextSteps([
-					...(worst === undefined
-						? []
-						: [
-								`\`list_agent_tool_errors tool="${worst.key}"\` — the failure groups of the worst error rate (${formatRate(worst.errors, worst.calls)})`,
-							]),
+					// A selected tool's groups are already above: what is left is to
+					// open one, which is where the sample payloads live.
+					...(errorGroups ?? [])
+						.slice(0, 3)
+						.map(
+							(group) =>
+								`\`get_agent_tool_error tool="${tool}" fingerprint="${group.fingerprint}"\` — sessions, message variants and sample payloads of ${group.errorType === "" ? "this group" : group.errorType} (${formatNumber(group.calls)} calls)`,
+						),
+					...(errorGroups === undefined && worst !== undefined
+						? [
+								`\`get_agent_tools_overview tool="${worst.key}"\` — the failure groups of the worst error rate (${formatRate(worst.errors, worst.calls)})`,
+							]
+						: []),
 					...(busiest === undefined
 						? []
 						: [
@@ -318,6 +414,23 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 									})),
 								},
 							}),
+						...(errorGroups !== undefined && {
+							trendBucketSeconds,
+							trendClipped: trendFrom !== undefined,
+							...(trendFrom !== undefined && { trendStart: trendFrom }),
+							errorGroups: errorGroups.map((group) => ({
+								fingerprint: group.fingerprint,
+								errorType: group.errorType,
+								message: group.message,
+								calls: group.calls,
+								sessions: group.sessions,
+								variants: group.variants,
+								firstSeen: group.firstSeen,
+								lastSeen: group.lastSeen,
+								callsSince: group.callsSince,
+								trend: [...group.trend],
+							})),
+						}),
 					},
 				}),
 			}

@@ -13,18 +13,107 @@ import {
 	type AiSessionSpanScope,
 	type AiSessionTooLargeError,
 } from "@maple/domain/http"
-import { classifyAiSpan } from "@maple/agent-sessions"
+import { classifyAiSpan, jsonText } from "@maple/agent-sessions"
+import type { MutableAiGenAiValues } from "@maple/domain/gen-ai"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { readAiSessionSpans, resolveAiSessionWindow } from "@/services/ai-sessions/ai-session-reads"
 import type { TenantContext } from "@/services/auth/AuthService"
 import { optionalTimeParam, validationError, type McpToolError, type McpToolResult } from "@/mcp/tools/types"
 
 /**
- * Spans one tool call will load for a session. Two pages: past that, the
- * derivations are summarising a session the answer cannot claim to describe,
- * so the tools say so and point at the paged span list instead.
+ * Spans one tool call will load for a session. Five pages: an agent session
+ * that runs for hours is tens of thousands of spans, and a summary derived
+ * from the first two pages of one describes its beginning.
+ *
+ * What makes the cap affordable is {@link clipSpanContent}. A page is bounded
+ * at `MAX_AI_SESSION_SPANS_RESPONSE_BYTES` (10 MB) of raw rows, so five pages
+ * are up to 50 MB arriving through a 128 MB Worker isolate — but only one page
+ * is raw at a time, and what is RETAINED is the clipped span: the scalars plus
+ * roughly 3 KB of captured content, which is ~30 MB at the cap.
  */
-export const MCP_AGENT_SESSION_MAX_SPANS = 2 * AI_SESSION_SPANS_MAX_SPANS
+export const MCP_AGENT_SESSION_MAX_SPANS = 5 * AI_SESSION_SPANS_MAX_SPANS
+
+/** Characters kept per string inside a retained message. */
+const MESSAGE_TEXT_CHARS = 500
+
+/** Characters kept per retained tool payload, as `jsonText` renders it. */
+const PAYLOAD_TEXT_CHARS = 1_000
+
+/**
+ * Message-array fields. Only the LAST message survives: the readers that run
+ * over a whole loaded session want the turn label, which is the newest user
+ * message the turn captured — the history before it is the same conversation
+ * re-sent on every call, and it is what makes a 10 000-span session tens of
+ * megabytes of one turn's prompt.
+ */
+const MESSAGE_FIELDS = ["inputMessages", "outputMessages", "systemInstructions"] as const
+
+/**
+ * Captured payload fields, kept as clipped text rather than as structure: the
+ * findings read the first prose line of a failed tool's result, and
+ * `firstProse` reads a string as readily as an object.
+ */
+const PAYLOAD_FIELDS = [
+	"toolCallArguments",
+	"toolCallResult",
+	"toolDefinitions",
+	"retrievalDocuments",
+	"memoryRecords",
+] as const
+
+/** A captured value after the clip: the JSON it already was, with every string
+ *  cut. Captured fields are decoded JSON by the time they reach a span, so this
+ *  is the whole vocabulary. */
+type ClippedCapture =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| ReadonlyArray<ClippedCapture>
+	| { readonly [key: string]: ClippedCapture }
+
+/** Every string inside a captured value, cut to `chars`. The shape belongs to
+ *  the vendor, so this walks it instead of assuming `{ role, parts }`: what the
+ *  readers need is the structure, and what costs the isolate its memory is the
+ *  text inside it. */
+const clipStrings = (value: unknown, chars: number): ClippedCapture => {
+	if (typeof value === "string") return value.length <= chars ? value : `${value.slice(0, chars)}…`
+	if (Array.isArray(value)) return value.map((entry) => clipStrings(entry, chars))
+	if (typeof value === "object" && value !== null) {
+		return Object.fromEntries(
+			Object.entries(value).map(([key, entry]) => [key, clipStrings(entry, chars)]),
+		)
+	}
+	// A number, a boolean or a value the emitter left null — nothing to cut.
+	return value as ClippedCapture
+}
+
+/**
+ * A span with its captured content cut to what a whole-session read retains.
+ *
+ * Applied per page as it is mapped, so the raw rows of a page are collectable
+ * before the next one is read. A tool that needs a span's content in full
+ * reads that span on its own — `inspect_span` decodes it from its own trace.
+ */
+const clipSpanContent = (span: AiSessionSpan): AiSessionSpan => {
+	const genAi: MutableAiGenAiValues = { ...span.genAi }
+	for (const field of MESSAGE_FIELDS) {
+		const value = genAi[field]
+		if (value === undefined) continue
+		// A non-array capture is one message already.
+		genAi[field] = Array.isArray(value)
+			? value.slice(-1).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
+			: clipStrings(value, MESSAGE_TEXT_CHARS)
+	}
+	for (const field of PAYLOAD_FIELDS) {
+		const value = genAi[field]
+		if (value === undefined) continue
+		const text = jsonText(value)
+		genAi[field] = text.length <= PAYLOAD_TEXT_CHARS ? text : `${text.slice(0, PAYLOAD_TEXT_CHARS)}…`
+	}
+	return { ...span, genAi }
+}
 
 /** The bounds a session read is pruned by, exactly as the request classes take
  *  them — including the sub-second precision a resolved window carries. */
@@ -182,7 +271,7 @@ export const loadAgentSessionSpans = Effect.fn("mcp.loadAgentSessionSpans")(func
 			truncated = true
 			break
 		}
-		spans.push(...page.data)
+		spans.push(...page.data.map(clipSpanContent))
 		after = page.nextCursor
 		if (after === undefined) break
 		truncated = spans.length >= MCP_AGENT_SESSION_MAX_SPANS

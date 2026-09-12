@@ -53,7 +53,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss UTC, default: 24h ago)"),
 			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss UTC, default: now)"),
 			vendors: optionalStringParam(
-				"Comma-separated vendor ids to match (e.g. eve,vercel_ai_sdk) — see `get_agent_sessions_overview`",
+				"Comma-separated vendor ids to match (e.g. eve,vercel_ai_sdk) — a row's Vendor column is one",
 			),
 			services: optionalStringParam("Comma-separated service names to match"),
 			environments: optionalStringParam("Comma-separated deployment environments to match"),

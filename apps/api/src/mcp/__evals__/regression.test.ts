@@ -2,12 +2,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { makeEvalRuntime, runToolDirect, type EvalRuntime } from "./eval-runtime"
 import {
+	AI_SPAN_SPAN_ID,
+	AI_SPAN_TRACE_ID,
 	LARGE_TRACE_SPAN_COUNT,
+	makeAiSpanDetailRows,
+	makeAiTraceSpanRows,
 	makeLargeTraceSpans,
+	makePartialAiTraceSpanRows,
 	makeSmallTraceSpans,
 	makeSpanDetailRows,
 	makeTraceLogs,
 	MISSING_SPAN_ID,
+	PARTIAL_AI_SPAN_ID,
+	PARTIAL_AI_TRACE_ID,
+	PARTIAL_AI_TRACE_SPANS,
 	SMALL_TRACE_ID,
 	SPAN_DETAIL_SPAN_ID,
 	SPAN_DETAIL_TRACE_ID,
@@ -27,6 +35,15 @@ const regressionFixtures: FixtureRule[] = [
 	{ match: (sql) => sql.includes(MISSING_SPAN_ID), rows: [] },
 	// inspect_span found: point lookup returns one fully-attributed row.
 	{ match: (sql) => sql.includes(SPAN_DETAIL_SPAN_ID), rows: makeSpanDetailRows() },
+	// An AI span: the point lookup names the span id, the trace read that
+	// decodes it names only the trace — so the ids tell the two reads apart.
+	{ match: (sql) => sql.includes(AI_SPAN_SPAN_ID), rows: makeAiSpanDetailRows() },
+	{ match: (sql) => sql.includes(AI_SPAN_TRACE_ID), rows: makeAiTraceSpanRows() },
+	{
+		match: (sql) => sql.includes(PARTIAL_AI_SPAN_ID),
+		rows: makeAiSpanDetailRows(PARTIAL_AI_SPAN_ID, PARTIAL_AI_TRACE_ID),
+	},
+	{ match: (sql) => sql.includes(PARTIAL_AI_TRACE_ID), rows: makePartialAiTraceSpanRows() },
 	// Small trace (≤ overview budget) → renders in full.
 	{
 		match: (sql) => sql.includes(SMALL_TRACE_ID) && sql.includes("trace_detail_spans"),
@@ -101,6 +118,50 @@ describe("inspect_span drill-down", () => {
 		})
 		const text = renderedText(result)
 		expect(text.toLowerCase()).toContain("not found")
+	})
+
+	// An AI agent span is read twice: the point lookup for its raw attributes,
+	// and its own trace for the conversation the attributes encode.
+	it("decodes an AI span's messages and tool calls above the raw attributes", async () => {
+		const result = await runToolDirect(rt, "inspect_span", {
+			trace_id: AI_SPAN_TRACE_ID,
+			span_id: AI_SPAN_SPAN_ID,
+		})
+		const text = renderedText(result)
+		expect(text).toContain("### AI agent span — inference")
+		expect(text).toContain("#### Messages")
+		expect(text).toContain("why is checkout failing?")
+		// The call's result is captured on the tool span, not on this one.
+		expect(text).toContain("#### Tool calls")
+		expect(text).toContain("table orders does not exist")
+		// The raw maps are still there, and still below the decoded view.
+		expect(text.indexOf("### AI agent span")).toBeLessThan(text.indexOf("### Span attributes"))
+		expect(text).toContain("`gen_ai.request.model`")
+		expect(text).toContain('get_agent_session session_id="wrun_01KZEVAL"')
+	})
+
+	it("leaves an ordinary span undecoded", async () => {
+		const text = renderedText(
+			await runToolDirect(rt, "inspect_span", {
+				trace_id: SPAN_DETAIL_TRACE_ID,
+				span_id: SPAN_DETAIL_SPAN_ID,
+			}),
+		)
+		expect(text).not.toContain("AI agent span")
+	})
+
+	// A trace bigger than one read is the case where "not an AI span" and "not
+	// decoded" have to be told apart: the raw attributes still answer.
+	it("falls back to the raw view when the span is past the trace read's first page", async () => {
+		const text = renderedText(
+			await runToolDirect(rt, "inspect_span", {
+				trace_id: PARTIAL_AI_TRACE_ID,
+				span_id: PARTIAL_AI_SPAN_ID,
+			}),
+		)
+		expect(text).toContain(`only the first ${PARTIAL_AI_TRACE_SPANS - 1} spans of trace`)
+		expect(text).toContain("### Span attributes")
+		expect(text).not.toContain("#### Messages")
 	})
 })
 
