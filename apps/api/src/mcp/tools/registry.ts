@@ -54,6 +54,12 @@ import { registerQueryFunnelTool } from "./query-funnel"
 import { registerListProductEventsTool } from "./list-product-events"
 import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
+import { registerListAgentSessionsTool } from "./list-agent-sessions"
+import { registerGetAgentSessionsOverviewTool } from "./get-agent-sessions-overview"
+import { registerGetAgentSessionTool } from "./get-agent-session"
+import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
+import { registerListAgentSessionSpansTool } from "./list-agent-session-spans"
+import { registerInspectAgentSessionSpanTool } from "./inspect-agent-session-span"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
@@ -192,6 +198,12 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListProductEventsTool(registrar)
 	registerGetSessionTranscriptTool(registrar)
 	registerGetSessionTracesTool(registrar)
+	registerGetAgentSessionsOverviewTool(registrar)
+	registerListAgentSessionsTool(registrar)
+	registerGetAgentSessionTool(registrar)
+	registerGetAgentSessionTranscriptTool(registrar)
+	registerListAgentSessionSpansTool(registrar)
+	registerInspectAgentSessionSpanTool(registrar)
 	registerDiagnoseServiceTool(registrar)
 	registerFindSlowTracesTool(registrar)
 	registerErrorDetailTool(registrar)

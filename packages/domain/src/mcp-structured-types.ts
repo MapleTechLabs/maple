@@ -1008,6 +1008,12 @@ export type StructuredToolOutput =
 	  }
 	| { tool: "query_funnel"; data: QueryFunnelData }
 	| { tool: "list_product_events"; data: ListProductEventsData }
+	| { tool: "list_agent_sessions"; data: ListAgentSessionsData }
+	| { tool: "get_agent_sessions_overview"; data: GetAgentSessionsOverviewData }
+	| { tool: "get_agent_session"; data: GetAgentSessionData }
+	| { tool: "get_agent_session_transcript"; data: GetAgentSessionTranscriptData }
+	| { tool: "list_agent_session_spans"; data: ListAgentSessionSpansData }
+	| { tool: "inspect_agent_session_span"; data: InspectAgentSessionSpanData }
 
 // Product-event funnels
 
@@ -1045,5 +1051,206 @@ export interface ListProductEventsData {
 		count: number
 		sessions: number
 		persons: number
+	}>
+}
+
+// AI agent sessions
+//
+// The `maple_ai.*` agent traces the Agent Sessions page renders — not the
+// browser session replays above. Every figure a row carries is measured over
+// the session's agent spans; the derived views (`get_agent_session` and below)
+// are computed from the session's own spans by `@maple/agent-sessions`, the
+// same model the page uses.
+
+export interface AgentSessionRow {
+	sessionId: string
+	vendorId: string
+	/** The agent on the session's earliest named span; `''` when none named one. */
+	agentName: string
+	agentNames: ReadonlyArray<string>
+	services: ReadonlyArray<string>
+	models: ReadonlyArray<string>
+	/** Warehouse datetime literals — the session's own bounds. */
+	startTime: string
+	endTime: string
+	durationMs: number
+	traceCount: number
+	spanCount: number
+	llmCalls: number
+	toolCalls: number
+	errorSpanCount: number
+	toolErrorCount: number
+	turnErrorCount: number
+	totalTokens: number
+	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
+	cost: number
+}
+
+export interface ListAgentSessionsData {
+	timeRange: { start: string; end: string }
+	offset: number
+	limit: number
+	sessions: ReadonlyArray<AgentSessionRow>
+}
+
+export interface AgentSessionFacet {
+	name: string
+	count: number
+}
+
+export interface AgentSessionDistributionData {
+	p50: number
+	p95: number
+	/** Log-spaced, ascending, non-empty buckets only. */
+	buckets: ReadonlyArray<{ floor: number; count: number }>
+}
+
+export interface GetAgentSessionsOverviewData {
+	timeRange: { start: string; end: string }
+	facets: {
+		vendors: ReadonlyArray<AgentSessionFacet>
+		services: ReadonlyArray<AgentSessionFacet>
+		environments: ReadonlyArray<AgentSessionFacet>
+		models: ReadonlyArray<AgentSessionFacet>
+		agents: ReadonlyArray<AgentSessionFacet>
+		tools: ReadonlyArray<AgentSessionFacet>
+	}
+	distributions: {
+		durationMs: AgentSessionDistributionData
+		cost: AgentSessionDistributionData
+		totalTokens: AgentSessionDistributionData
+		llmCalls: AgentSessionDistributionData
+		toolCalls: AgentSessionDistributionData
+	}
+}
+
+export interface GetAgentSessionData {
+	sessionId: string
+	/** The loaded spans' own extent, which a follow-up read can seek on. */
+	window?: { start: string; end: string }
+	/** The session has spans past what was loaded — its END is missing. */
+	truncated: boolean
+	verdict: { status: string; label: string | null; spanId: string | null }
+	findings: ReadonlyArray<{
+		severity: string
+		label: string
+		count: number
+		turnText: string
+		detail: string | null
+		spanId: string
+		traceId: string | null
+	}>
+	vitals: {
+		startTime: string
+		wallClockMs: number
+		activeMs: number
+		idleMs: number
+		/** Work-span time, which exceeds the wall clock when lanes ran at once. */
+		agentTimeMs: number
+		peakParallel: number
+		agentTimeSegments: ReadonlyArray<{ kind: string; ms: number }>
+	}
+	work: { turns: number; llmCalls: number; toolCalls: number; spanCount: number; traceCount: number }
+	/** The warehouse's totals for the WHOLE session, read only when truncated. */
+	exactTotals?: {
+		spanCount: number
+		aiSpanCount: number
+		traceCount: number
+		llmCalls: number
+		toolCalls: number
+		errorSpanCount: number
+		durationMs: number
+	}
+	tokens: {
+		input: number
+		cacheRead: number
+		cacheWrite: number
+		output: number
+		reasoning: number
+		total: number
+		/** `per-call`, `roll-up`, `session-level` or `none`. */
+		reporting: string
+	}
+	cost: number | null
+	models: ReadonlyArray<{ model: string; llmCalls: number; totalTokens: number; cost: number | null }>
+	tools: ReadonlyArray<{
+		name: string
+		calls: number
+		failed: number
+		totalMs: number
+		slowestMs: number
+	}>
+	failureGroups: ReadonlyArray<{ kind: string; label: string; count: number }>
+	turns: ReadonlyArray<{
+		index: number
+		/** Which rule opened the turn: `conversation`, `agent-root` or `trace`. */
+		anchorKind: string
+		agentName: string | null
+		startOffsetMs: number
+		durationMs: number
+		spanCount: number
+		failed: boolean
+		label: string | null
+	}>
+}
+
+export interface GetAgentSessionTranscriptData {
+	sessionId: string
+	turnCount: number
+	firstTurn: number
+	lastTurn: number
+	/** Where a cut answer continues; null when the selection was rendered whole. */
+	continueFromTurn: number | null
+	sessionTruncated: boolean
+	rows: ReadonlyArray<{ kind: string; depth: number; text: string }>
+}
+
+export interface ListAgentSessionSpansData {
+	sessionId: string
+	scope: string
+	spans: ReadonlyArray<{
+		timestamp: string
+		traceId: string
+		spanId: string
+		parentSpanId: string
+		name: string
+		/** `agent`, `inference`, `tool` or `app`. */
+		category: string
+		serviceName: string
+		durationMs: number
+		statusCode: string
+		/** The span status OR an attribute-declared failure — what the page counts. */
+		failed: boolean
+		model: string | null
+		toolName: string | null
+		totalTokens: number | null
+	}>
+	nextCursor?: { timestamp: string; spanId: string }
+}
+
+export interface InspectAgentSessionSpanData {
+	sessionId: string
+	traceId: string
+	spanId: string
+	parentSpanId: string
+	name: string
+	category: string
+	serviceName: string
+	timestamp: string
+	durationMs: number
+	statusCode: string
+	statusMessage: string
+	/** The decoded `gen_ai.*` scalars; the captured content is in `messages`. */
+	attributes: Record<string, string>
+	/** Input-history messages dropped ahead of the ones shown. */
+	earlierInputMessages: number
+	messages: ReadonlyArray<{ role: string; origin: string; text: string }>
+	toolCalls: ReadonlyArray<{
+		name: string | null
+		callId: string | null
+		/** This span EXECUTED the call, rather than merely requesting it. */
+		own: boolean
+		arguments: string | null
+		result: string | null
 	}>
 }

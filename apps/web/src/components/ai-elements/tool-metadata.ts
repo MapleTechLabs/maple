@@ -117,6 +117,13 @@ const toolLabels: Record<string, string> = {
 	search_sessions: "Search Sessions",
 	get_session_traces: "Session Traces",
 	get_session_transcript: "Session Transcript",
+	// agent sessions (AI/LLM agent traces)
+	list_agent_sessions: "Agent Sessions",
+	get_agent_sessions_overview: "Agent Sessions Overview",
+	get_agent_session: "Agent Session",
+	get_agent_session_transcript: "Agent Transcript",
+	list_agent_session_spans: "Agent Session Spans",
+	inspect_agent_session_span: "Agent Span",
 	// misc
 	run_sql: "Run SQL",
 	register_agent: "Register Agent",
@@ -175,6 +182,12 @@ const toolIcons: Record<string, IconComponent> = {
 	search_sessions: HistoryIcon,
 	get_session_traces: HistoryIcon,
 	get_session_transcript: ChatBubbleSparkleIcon,
+	list_agent_sessions: ChatBubbleSparkleIcon,
+	get_agent_sessions_overview: ChartBarIcon,
+	get_agent_session: ChatBubbleSparkleIcon,
+	get_agent_session_transcript: ChatBubbleSparkleIcon,
+	list_agent_session_spans: PulseIcon,
+	inspect_agent_session_span: MagnifierIcon,
 	register_agent: IdBadgeIcon,
 	get_event: CircleInfoIcon,
 } satisfies Record<string, IconComponent>
