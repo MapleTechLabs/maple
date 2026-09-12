@@ -7,7 +7,6 @@ import {
 	UNBOUNDED_FOCUS_DISTANCE,
 	asFiniteNumber,
 	cursorTooltip,
-	dashedGridY,
 	findFirstPartialIndex,
 	focusCrosshair,
 	focusDot,
@@ -279,7 +278,6 @@ export function QueryBuilderAreaChart({
 		return defineChart({
 			gradients,
 			marks: [
-				dashedGridY(),
 				...thresholdRules(thresholds ?? [], { labelX: plotRows.at(-1)?.date }),
 				...visible.map((entry) => band(solid, entry, false)),
 				...(hasDashed ? visible.map((entry) => band(dashed, entry, true)) : []),

@@ -46,9 +46,10 @@ describe("plot grid", () => {
 
 		const grid = container.querySelector(".ts-chart__grid")
 		expect(grid).not.toBeNull()
-		// The dash is a GROUP style, inherited by every rule beneath it — the
-		// built-in grid the mark replaces had no dash anywhere.
-		expect(grid?.getAttribute("stroke-dasharray")).toBe("3 3")
-		expect(grid?.querySelectorAll("line, path").length).toBeGreaterThan(0)
+		// `createGrid` puts a `ChartGuideLineStyle` on each RULE and leaves the
+		// group on the theme defaults — the mark this replaced dashed the group.
+		const rules = [...(grid?.querySelectorAll("line, path") ?? [])]
+		expect(rules.length).toBeGreaterThan(0)
+		for (const rule of rules) expect(rule.getAttribute("stroke-dasharray")).toBe("3 3")
 	})
 })

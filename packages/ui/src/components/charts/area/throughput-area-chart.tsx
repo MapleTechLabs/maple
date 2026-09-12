@@ -7,7 +7,6 @@ import {
 	FixedMetricLegend,
 	PlotFrame,
 	asFiniteNumber,
-	dashedGridY,
 	fixedMetricTooltipBody,
 	focusCrosshair,
 	focusDot,
@@ -295,7 +294,6 @@ export const ThroughputAreaChart = memo(function ThroughputAreaChart({
 				...(hasDashed ? [verticalGradient(fadedGradientId, colors.throughput, 0.15, 0)] : []),
 			],
 			marks: [
-				dashedGridY(),
 				band(solid, gradientId, false),
 				...(hasDashed ? [band(dashed, fadedGradientId, true)] : []),
 				throughputEdge(solid, false),

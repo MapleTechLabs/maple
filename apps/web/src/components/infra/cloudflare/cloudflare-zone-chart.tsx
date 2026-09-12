@@ -9,7 +9,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -177,7 +177,6 @@ export function CloudflareZoneChart({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				...series.map((name) =>
 					lineY(data, {
 						id: name,
@@ -194,6 +193,7 @@ export function CloudflareZoneChart({
 			scales: {
 				x: axis.x,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

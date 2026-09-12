@@ -8,7 +8,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -206,7 +206,6 @@ export function StackedBreakdownChart({
 				verticalGradient(`${gradientPrefix}-${name.replace(/\W+/g, "_")}`, colorOf(name), 0.4, 0.05),
 			),
 			marks: [
-				dashedGridY(),
 				areaY(cells, {
 					x: (cell: BreakdownCell) => cell.date,
 					y: (cell: BreakdownCell) => cell.value,
@@ -223,6 +222,7 @@ export function StackedBreakdownChart({
 			scales: {
 				x: axis.x,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,
@@ -442,7 +442,6 @@ export function CloudflareZoneLatencyChart({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				...activeSeries.map((entry) =>
 					lineY(data, {
 						id: entry.key,
@@ -463,6 +462,7 @@ export function CloudflareZoneLatencyChart({
 			scales: {
 				x: axis.x,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

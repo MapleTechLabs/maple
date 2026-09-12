@@ -9,7 +9,6 @@ import {
 	asFiniteNumber,
 	bucketBandDomain,
 	cursorTooltip,
-	dashedGridY,
 	findFirstPartialIndex,
 	minBarLength,
 	thresholdRules,
@@ -375,7 +374,6 @@ export function QueryBuilderBarChart({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				// The label rides the PADDED domain's right edge, not the last
 				// bucket's timestamp: on this chart that timestamp is the last
 				// column's centre, so an end-anchored label would print across the
