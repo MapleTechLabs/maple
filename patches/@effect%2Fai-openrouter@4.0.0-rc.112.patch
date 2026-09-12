@@ -1,23 +1,32 @@
 diff --git a/dist/OpenRouterLanguageModel.js b/dist/OpenRouterLanguageModel.js
-index 371be3d891c1c3f901cac2622b08a34de8f25338..cd6a2fb2d31123d04eff2b2010e1017bf196918a 100644
+index 371be3d891c1c3f901cac2622b08a34de8f25338..ceee35db73ddae032e28dc240ef812bbeaf4654b 100644
 --- a/dist/OpenRouterLanguageModel.js
 +++ b/dist/OpenRouterLanguageModel.js
-@@ -717,7 +717,13 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -717,7 +717,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
        reasoning: undefined
      }
    };
 -  return stream.pipe(Stream.mapEffect(Effect.fnUntraced(function* (event) {
 +  // Patched (maple): a stream that ends without a usage block still has to
 +  // finish. See the terminal-chunk patch at the tail of this function.
++  //
++  // The synthetic chunk carries every field a real one is required to have
++  // except `id` — which must stay absent, because a value there would emit a
++  // second `response-metadata` part naming a response the stream never
++  // identified. Every branch below is guarded against what it does not carry,
++  // and these three keep it that way the next time one of them grows a read.
 +  let finishEmitted = false;
 +  return stream.pipe(Stream.concat(Stream.suspend(() => finishEmitted ? Stream.empty : Stream.make({
++    object: "chat.completion.chunk",
++    created: 0,
++    model: "",
 +    choices: [],
 +    maple_terminal: true
 +  }))), Stream.mapEffect(Effect.fnUntraced(function* (event) {
      const parts = [];
      if (Predicate.isNotUndefined(event.error)) {
        finishReason = "error";
-@@ -993,7 +999,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -993,7 +1008,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
      }
      // Usage is only emitted by the last part of the stream, so we need to
      // handle flushing any remaining text / reasoning / tool calls
@@ -35,7 +44,7 @@ index 371be3d891c1c3f901cac2622b08a34de8f25338..cd6a2fb2d31123d04eff2b2010e1017b
        // Fix for Gemini 3 thoughtSignature: when there are tool calls with encrypted
        // reasoning (thoughtSignature), the model returns 'stop' but expects continuation.
        // Override to 'tool-calls' so the SDK knows to continue the conversation.
-@@ -1071,6 +1086,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1071,6 +1095,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
          response: buildHttpResponseDetails(response),
          metadata
        });
@@ -44,7 +53,7 @@ index 371be3d891c1c3f901cac2622b08a34de8f25338..cd6a2fb2d31123d04eff2b2010e1017b
      }
      return parts;
    })), Stream.flattenIterable);
-@@ -1317,16 +1334,32 @@ const getUsage = usage => {
+@@ -1317,16 +1343,32 @@ const getUsage = usage => {
    const cacheReadTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
    const cacheWriteTokens = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
    const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? 0;

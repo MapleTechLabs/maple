@@ -469,15 +469,18 @@ describe("streamed usage — reasoning tokens reported outside the completion to
  * declared, `reasoning-end` and `text-end` — only from a chunk carrying a `usage` block. OpenRouter
  * does not always send one, and a stream that ends without it produced no finish part at all: the
  * agent engine then rejects the turn with `ModelProtocolError: Model response ended without a
- * finish part` after the model has already answered, and the model-call span records no usage, no
- * cost and no assistant output — which is what an Agent Session shows as a call that cost nothing
- * and said nothing.
+ * finish part` after the model has already answered, and the pass it recovers has neither the
+ * assistant's message nor the tool calls in it.
  *
  * Measured in production between 2026-09-10 and 2026-09-12: 518 of 539 failed investigation passes
  * died on exactly that error, and OpenRouter's own Broadcast trace for the same
  * `gen_ai.response.id` recorded the generation as complete, `finish_reason: tool_calls`, with a
  * full token count. The patch appends a synthetic terminal chunk when the stream ends without one,
  * so the flush runs exactly once either way.
+ *
+ * What it does NOT restore is the accounting. Nothing reported usage, so the finish part carries
+ * none, and the model-call span stamps no `gen_ai.usage.*` and no `gen_ai.usage.cost` — the turn
+ * still reads as a call that cost nothing. Only the provider can close that half.
  */
 describe("streamed completion — a stream that ends without a usage block", () => {
 	it.live("still emits the finish part, carrying the reason the stream declared", () =>
