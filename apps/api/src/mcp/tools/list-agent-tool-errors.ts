@@ -7,6 +7,9 @@ import {
 	compactTrend,
 	describeSelection,
 	formatSeen,
+	parseBucketSeconds,
+	selectionValue,
+	TREND_BUCKETS,
 } from "@/mcp/lib/agent-tool-analytics"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
@@ -17,11 +20,8 @@ import { formatNextSteps } from "@/mcp/lib/next-steps"
 import { readAiToolErrors } from "@/services/ai-sessions/ai-session-reads"
 import { AiToolErrorsRequest } from "@maple/domain/http"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
-
-/** Buckets the default trend is cut into, and the most any trend renders. */
-const TREND_BUCKETS = 24
 
 /** The group's message in the table; the full text is in `get_agent_tool_error`. */
 const MESSAGE_CHARS = 120
@@ -50,24 +50,36 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 			if (range.exceeded) return rangeExceededResult(range, "list_agent_tool_errors")
 			const startMs = parseWarehouseDateTime(st)
 			const endMs = parseWarehouseDateTime(et)
+			const windowSeconds = Math.max(1, Math.round((endMs - startMs) / 1000))
 			// The trend is a sparkline beside each group, so its default width is
 			// the window over a fixed number of buckets. A minute is the floor: a
-			// narrow window would otherwise bucket by seconds.
-			const bucketSeconds =
+			// narrow window would otherwise bucket by seconds — and a window shorter
+			// than that floor is one bucket wide.
+			const requested =
 				params.bucket_seconds === undefined
-					? Math.max(60, Math.round((endMs - startMs) / 1000 / TREND_BUCKETS))
-					: Math.floor(params.bucket_seconds)
-			if (bucketSeconds < 1) {
+					? Option.some(
+							Math.min(windowSeconds, Math.max(60, Math.round(windowSeconds / TREND_BUCKETS))),
+						)
+					: parseBucketSeconds(params.bucket_seconds, windowSeconds)
+			if (Option.isNone(requested)) {
 				return validationError(
-					`Invalid bucket_seconds: ${params.bucket_seconds}. Must be a whole number of seconds, 1 or more.`,
+					`Invalid bucket_seconds: ${params.bucket_seconds}. Must be a whole number of seconds between 1 and ${windowSeconds} (the window's own width).`,
 					`list_agent_tool_errors tool="search_docs" bucket_seconds=3600`,
+				)
+			}
+			const bucketSeconds = requested.value
+			const tool = selectionValue(params.tool)
+			if (tool === undefined) {
+				return validationError(
+					"Invalid tool: a tool name is required. It is an exact `gen_ai.tool.name`, as `get_agent_tools_overview` lists it in its breakdown.",
+					`list_agent_tool_errors tool="search_docs"`,
 				)
 			}
 			const limit = clampLimit(params.limit, { defaultValue: 25, max: 100 })
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				tool: params.tool,
+				tool,
 				bucketSeconds,
 				limit,
 			})
@@ -80,27 +92,28 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 					bucketSeconds,
 					limit,
 					...agentToolSelection(params),
-					tool: params.tool,
+					tool,
 				}),
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("list_agent_tool_errors")))
 
 			const groups = errors.data.map((group) => ({
 				...group,
-				trend: compactTrend(group.trend, { startMs, endMs, bucketSeconds }, TREND_BUCKETS),
+				trend: compactTrend(group.trend, { startMs, endMs, bucketSeconds }),
 			}))
+			yield* Effect.annotateCurrentSpan({ "result.rowCount": groups.length })
 
 			const lines: string[] = [
-				`## Tool failures: ${params.tool}`,
+				`## Tool failures: ${tool}`,
 				`Time range: ${st} — ${et}`,
-				`Selection: ${describeSelection(params.tool, params)}`,
+				`Selection: ${describeSelection(tool, params)}`,
 				``,
 			]
 
 			if (groups.length === 0) {
 				lines.push(
-					`No failed calls of \`${params.tool}\` in this window.`,
+					`No failed calls of \`${tool}\` in this window.`,
 					formatNextSteps([
-						`\`get_agent_tools_overview tool="${params.tool}"\` — check the tool ran at all, and how it is named`,
+						`\`get_agent_tools_overview tool="${tool}"\` — check the tool ran at all, and how it is named`,
 						`\`get_agent_tools_overview\` — the tools that are failing`,
 					]),
 				)
@@ -109,7 +122,7 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 						tool: "list_agent_tool_errors",
 						data: {
 							timeRange: { start: st, end: et },
-							selection: agentToolSelectionData(params.tool, params),
+							selection: agentToolSelectionData(tool, params),
 							bucketSeconds,
 							groups: [],
 						},
@@ -158,10 +171,10 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 						.slice(0, 3)
 						.map(
 							(group) =>
-								`\`get_agent_tool_error tool="${params.tool}" fingerprint="${group.fingerprint}"\` — sessions, message variants and sample payloads of ${group.errorType === "" ? "this group" : group.errorType} (${formatNumber(group.calls)} calls)`,
+								`\`get_agent_tool_error tool="${tool}" fingerprint="${group.fingerprint}"\` — sessions, message variants and sample payloads of ${group.errorType === "" ? "this group" : group.errorType} (${formatNumber(group.calls)} calls)`,
 						)
 						.concat(
-							`\`list_agent_sessions tools="${params.tool}" has_errors=true\` — the sessions these failures happened in`,
+							`\`list_agent_sessions tools="${tool}" has_errors=true\` — the sessions these failures happened in`,
 						),
 				),
 			)
@@ -171,7 +184,7 @@ export function registerListAgentToolErrorsTool(server: McpToolRegistrar) {
 					tool: "list_agent_tool_errors",
 					data: {
 						timeRange: { start: st, end: et },
-						selection: agentToolSelectionData(params.tool, params),
+						selection: agentToolSelectionData(tool, params),
 						bucketSeconds,
 						groups: groups.map((group) => ({
 							fingerprint: group.fingerprint,

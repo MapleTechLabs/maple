@@ -1,5 +1,6 @@
 import { optionalBooleanParam, optionalStringParam, optionalTimeParam } from "@/mcp/tools/types"
 import { formatDurationFromMs } from "@/mcp/lib/format"
+import { Option } from "effect"
 
 /**
  * Shared pieces of the three AI agent tool-analytics tools
@@ -44,36 +45,81 @@ export interface AgentToolSelectionInput {
 	readonly failing_only?: boolean
 }
 
+/** What the domain's selection fields take: 1–200 characters. */
+const SELECTION_CHARS = 200
+
+/** `session` is the one selection value with a wider ceiling. */
+export const SESSION_SELECTION_CHARS = 400
+
+/**
+ * A filter as the request classes will take it: trimmed, blank → absent,
+ * clipped to the schema's own ceiling.
+ *
+ * LLM callers send `""` to mean "no filter", and every request here is a
+ * `Schema.Class` — its constructor THROWS on a value the checks refuse, so an
+ * empty or over-long string surfaced as an opaque internal error instead of
+ * either a filter or a `validationError`. Clipping rather than refusing is
+ * deliberate for the free-text fields: a truncated substring match still
+ * answers the caller's question.
+ */
+export const selectionValue = (
+	value: string | undefined,
+	max: number = SELECTION_CHARS,
+): string | undefined => {
+	if (value === undefined) return undefined
+	const trimmed = value.trim()
+	return trimmed === "" ? undefined : trimmed.slice(0, max)
+}
+
 /** snake_case parameters → the selection fields the request classes take. */
 export const agentToolSelection = (params: AgentToolSelectionInput) => ({
-	model: params.model,
-	service: params.service,
-	env: params.environment,
-	search: params.search,
+	model: selectionValue(params.model),
+	service: selectionValue(params.service),
+	env: selectionValue(params.environment),
+	search: selectionValue(params.search),
 	failingOnly: params.failing_only,
 })
 
 /** The selection as the structured payload reports it back. */
-export const agentToolSelectionData = (tool: string | undefined, params: AgentToolSelectionInput) => ({
-	tool,
-	model: params.model,
-	service: params.service,
-	environment: params.environment,
-	search: params.search,
-	failingOnly: params.failing_only,
-})
+export const agentToolSelectionData = (tool: string | undefined, params: AgentToolSelectionInput) => {
+	const selection = agentToolSelection(params)
+	return {
+		tool,
+		model: selection.model,
+		service: selection.service,
+		environment: selection.env,
+		search: selection.search,
+		failingOnly: selection.failingOnly,
+	}
+}
 
 /** One line describing what the numbers below it cover. */
 export const describeSelection = (tool: string | undefined, params: AgentToolSelectionInput): string => {
+	const selection = agentToolSelection(params)
 	const parts = [
 		`tool: ${tool ?? "all tools"}`,
-		...(params.model === undefined ? [] : [`model: ${params.model}`]),
-		...(params.service === undefined ? [] : [`service: ${params.service}`]),
-		...(params.environment === undefined ? [] : [`environment: ${params.environment}`]),
-		...(params.search === undefined ? [] : [`name contains: ${params.search}`]),
-		...(params.failing_only === true ? ["failed calls only"] : []),
+		...(selection.model === undefined ? [] : [`model: ${selection.model}`]),
+		...(selection.service === undefined ? [] : [`service: ${selection.service}`]),
+		...(selection.env === undefined ? [] : [`environment: ${selection.env}`]),
+		...(selection.search === undefined ? [] : [`name contains: ${selection.search}`]),
+		...(selection.failingOnly === true ? ["failed calls only"] : []),
 	]
 	return parts.join(" · ")
+}
+
+/**
+ * `bucket_seconds` as the reads will take it: whole seconds, at least one and
+ * at most the window's own width.
+ *
+ * `BucketSeconds` refuses a fraction but accepts any positive integer, so
+ * `1e21` reached `toStartOfInterval` as an interval literal; and a bucket wider
+ * than the window is one point that describes nothing.
+ */
+export const parseBucketSeconds = (value: number, windowSeconds: number): Option.Option<number> => {
+	const seconds = Math.floor(value)
+	return Number.isFinite(seconds) && seconds >= 1 && seconds <= windowSeconds
+		? Option.some(seconds)
+		: Option.none()
 }
 
 /** Every AI duration on the wire is nanoseconds; every rendered one is ms. */
@@ -97,28 +143,40 @@ export const formatRate = (part: number, whole: number): string =>
 export const formatSeen = (value: string): string =>
 	value === "" ? "—" : value.replace("T", " ").slice(0, 19)
 
+/** Buckets a default trend is cut into, and the most any trend renders. */
+export const TREND_BUCKETS = 24
+
 /**
- * A trend's calls per bucket as a fixed-width grid, oldest last.
+ * A trend's calls per bucket as a fixed-width grid, oldest first.
  *
  * The read returns only the buckets that had a failure, so a bare join of its
  * points would read as consecutive — the grid is what makes a gap a `0`. Points
  * are binned by instant rather than by their bucket string, which keeps this
  * independent of the ISO format the query emits.
+ *
+ * Only the newest `TREND_BUCKETS` are rendered, and only those are allocated:
+ * the window's end is exclusive (a window a whole number of buckets wide spans
+ * exactly that many, not one more, so its first bucket survives the cut), and
+ * `bucket_seconds=1` over a week is 24 slots per group rather than 604 801.
  */
 export const compactTrend = (
 	points: ReadonlyArray<{ readonly bucket: string; readonly calls: number }>,
 	opts: { readonly startMs: number; readonly endMs: number; readonly bucketSeconds: number },
-	max = 24,
 ): ReadonlyArray<number> => {
 	const width = opts.bucketSeconds * 1000
-	const gridStart = Math.floor(opts.startMs / width) * width
-	const buckets = Array.from<number>({
-		length: Math.floor((opts.endMs - gridStart) / width) + 1,
-	}).fill(0)
+	// Aligned to the lattice `toStartOfInterval` snaps the query's buckets to,
+	// which is what lets a point be binned by its instant. The grid is
+	// arithmetic over caller-supplied bounds, so a non-finite one would reach
+	// `Array.from` as a length.
+	const firstBucket = Math.floor(opts.startMs / width) * width
+	const spanned = Math.ceil((opts.endMs - firstBucket) / width)
+	if (!Number.isFinite(spanned) || spanned < 1) return []
+	const length = Math.min(spanned, TREND_BUCKETS)
+	const gridStart = firstBucket + (spanned - length) * width
+	const buckets = Array.from<number>({ length }).fill(0)
 	for (const point of points) {
-		// Every point is a bucket of this window snapped down by the same
-		// interval, so it lands inside the grid the window spans.
-		buckets[Math.floor((Date.parse(point.bucket) - gridStart) / width)] = point.calls
+		const index = Math.floor((Date.parse(point.bucket) - gridStart) / width)
+		if (index >= 0 && index < length) buckets[index] = point.calls
 	}
-	return buckets.slice(-max)
+	return buckets
 }

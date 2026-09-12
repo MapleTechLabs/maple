@@ -48,3 +48,39 @@ export const installFakeWarehouse = (rules: FixtureRule[] = defaultTraceFixtures
 }
 
 export const restoreWarehouse = (): void => __testables.reset()
+
+/**
+ * One rule whose rule set can be swapped per test.
+ *
+ * The warehouse client is built once with the layer, so the fake is installed
+ * once and cannot be re-installed for a single case — `withRules` changes what
+ * the installed rule consults underneath, which is what makes an empty-read
+ * (empty state, no matching rows) test possible.
+ */
+export const swappableFixtures = (base: FixtureRule[]) => {
+	let rules = base
+	let matchedRows: ReadonlyArray<unknown> = []
+	const rule: FixtureRule = {
+		match: (sql) => {
+			const matched = rules.find((candidate) => candidate.match(sql))
+			matchedRows = matched === undefined ? [] : matched.rows
+			return matched !== undefined
+		},
+		// Read only after `match` answered true, so these are that rule's rows.
+		get rows() {
+			return matchedRows
+		},
+	}
+	return {
+		rule,
+		/** Run `body` against a narrower rule set — an empty read, usually. */
+		withRules: async <A>(temporary: FixtureRule[], body: () => Promise<A>): Promise<A> => {
+			rules = temporary
+			try {
+				return await body()
+			} finally {
+				rules = base
+			}
+		},
+	}
+}

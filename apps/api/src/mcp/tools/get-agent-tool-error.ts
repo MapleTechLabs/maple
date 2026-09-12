@@ -13,6 +13,8 @@ import {
 	describeSelection,
 	formatNanos,
 	formatSeen,
+	selectionValue,
+	SESSION_SELECTION_CHARS,
 } from "@/mcp/lib/agent-tool-analytics"
 import { createDualContent } from "@/mcp/lib/structured-output"
 import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
@@ -79,13 +81,21 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					`get_agent_tool_error tool="search_docs" fingerprint="10453282193948324021"`,
 				)
 			}
+			const tool = selectionValue(params.tool)
+			if (tool === undefined) {
+				return validationError(
+					"Invalid tool: a tool name is required. It is an exact `gen_ai.tool.name`, as `get_agent_tools_overview` lists it in its breakdown.",
+					`get_agent_tool_error tool="search_docs" fingerprint="${params.fingerprint}"`,
+				)
+			}
+			const sessionFilter = selectionValue(params.session, SESSION_SELECTION_CHARS)
 			const samplesLimit = clampLimit(params.samples_limit, { defaultValue: 10, max: 100 })
 			const payloadChars = clampLimit(params.payload_chars, { defaultValue: 800, max: 10_000 })
-			const selection = { ...agentToolSelection(params), tool: params.tool }
+			const selection = { ...agentToolSelection(params), tool }
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				tool: params.tool,
+				tool,
 				fingerprint: fingerprint.value,
 				samplesLimit,
 			})
@@ -108,7 +118,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 							endTime: et,
 							fingerprint: fingerprint.value,
 							limit: samplesLimit,
-							...(params.session !== undefined && { session: params.session }),
+							...(sessionFilter !== undefined && { session: sessionFilter }),
 							...selection,
 						}),
 					),
@@ -116,19 +126,24 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				{ concurrency: 2 },
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tool_error")))
 
+			yield* Effect.annotateCurrentSpan({
+				"result.rowCount": samples.occurrences.length,
+				"maple.ai.tools.has_more": samples.nextCursor !== undefined,
+			})
+
 			const lines: string[] = [
 				`## Tool failure group ${fingerprint.value}`,
-				`Tool: ${params.tool}`,
+				`Tool: ${tool}`,
 				`Time range: ${st} — ${et}`,
-				`Selection: ${describeSelection(params.tool, params)}`,
+				`Selection: ${describeSelection(tool, params)}`,
 				``,
 			]
 
 			if (detail.sessions.length === 0 && samples.occurrences.length === 0) {
 				lines.push(
-					`No failed calls of \`${params.tool}\` under this fingerprint in the window.`,
+					`No failed calls of \`${tool}\` under this fingerprint in the window.`,
 					formatNextSteps([
-						`\`list_agent_tool_errors tool="${params.tool}"\` — the groups that exist in this window (a fingerprint is only visible while its failures are in range)`,
+						`\`list_agent_tool_errors tool="${tool}"\` — the groups that exist in this window (a fingerprint is only visible while its failures are in range)`,
 					]),
 				)
 				return {
@@ -136,7 +151,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 						tool: "get_agent_tool_error",
 						data: {
 							timeRange: { start: st, end: et },
-							selection: agentToolSelectionData(params.tool, params),
+							selection: agentToolSelectionData(tool, params),
 							fingerprint: fingerprint.value,
 							sessions: [],
 							variants: [],
@@ -223,7 +238,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 						: [
 								`\`inspect_agent_session_span session_id="${firstSample.sessionId}" trace_id="${firstSample.traceId}" span_id="${firstSample.spanId}"\` — the failed call in full`,
 							]),
-					`\`get_agent_tool_error tool="${params.tool}" fingerprint="${fingerprint.value}" session="<session>"\` — the same group inside one session`,
+					`\`get_agent_tool_error tool="${tool}" fingerprint="${fingerprint.value}" session="<session>"\` — the same group inside one session`,
 				]),
 			)
 
@@ -232,7 +247,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					tool: "get_agent_tool_error",
 					data: {
 						timeRange: { start: st, end: et },
-						selection: agentToolSelectionData(params.tool, params),
+						selection: agentToolSelectionData(tool, params),
 						fingerprint: fingerprint.value,
 						sessions: detail.sessions.map((session) => ({ ...session })),
 						variants: detail.variants.map((variant) => ({ ...variant })),

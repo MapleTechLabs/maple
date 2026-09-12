@@ -9,6 +9,8 @@ import {
 	formatNanos,
 	formatRate,
 	formatSeen,
+	parseBucketSeconds,
+	selectionValue,
 } from "@/mcp/lib/agent-tool-analytics"
 import type { AgentToolAggregateData } from "@maple/domain"
 import { createDualContent } from "@/mcp/lib/structured-output"
@@ -28,13 +30,12 @@ import {
 	AiToolsTotalsRequest,
 	type AiToolsAggregate,
 } from "@maple/domain/http"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Option, Schema } from "effect"
 import { warehouseReadToMcpHandlers } from "@/mcp/lib/map-warehouse-error"
 
 /** Points the series renders before it says it cut the rest. */
 const SERIES_POINTS_MAX = 200
-
-const decodeSeriesKind = Schema.decodeUnknownOption(AiToolsSeriesKind)
 
 /** Percentiles are nanoseconds on the wire; everything below is milliseconds. */
 const aggregateData = (aggregate: AiToolsAggregate): AgentToolAggregateData => ({
@@ -59,9 +60,12 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			bucket_seconds: optionalNumberParam(
 				"Include a time series with this bucket width, in whole seconds (e.g. 3600 for hourly). Omitted: no series",
 			),
-			split: optionalStringParam(
-				"Series split: tool | model | none. Default: tools, or the models a selected tool ran under",
-			),
+			// Published as an enum, so a client reads the three values off the
+			// schema and a fourth is a parameter error the decoder writes.
+			split: Schema.optional(AiToolsSeriesKind).annotate({
+				description:
+					"Series split: tool | model | none. Default: tools, or the models a selected tool ran under",
+			}),
 		}),
 		Effect.fn("McpTool.getAgentToolsOverview")(function* (params) {
 			const range = resolveTimeRange(params.start_time, params.end_time, {
@@ -70,29 +74,28 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			})
 			const { st, et } = range
 			if (range.exceeded) return rangeExceededResult(range, "get_agent_tools_overview")
-			const split = params.split === undefined ? Option.none() : decodeSeriesKind(params.split)
-			if (params.split !== undefined && Option.isNone(split)) {
+			const windowSeconds = Math.max(
+				1,
+				Math.round((parseWarehouseDateTime(et) - parseWarehouseDateTime(st)) / 1000),
+			)
+			const requested =
+				params.bucket_seconds === undefined
+					? Option.none()
+					: parseBucketSeconds(params.bucket_seconds, windowSeconds)
+			if (params.bucket_seconds !== undefined && Option.isNone(requested)) {
 				return validationError(
-					`Invalid split: '${params.split}'. Must be one of: tool, model, none.`,
-					`get_agent_tools_overview bucket_seconds=3600 split="tool"`,
-				)
-			}
-			// `BucketSeconds` is whole seconds greater than zero — a fraction would
-			// reach `toStartOfInterval` as an invalid interval literal.
-			const bucketSeconds =
-				params.bucket_seconds === undefined ? undefined : Math.floor(params.bucket_seconds)
-			if (bucketSeconds !== undefined && bucketSeconds < 1) {
-				return validationError(
-					`Invalid bucket_seconds: ${params.bucket_seconds}. Must be a whole number of seconds, 1 or more.`,
+					`Invalid bucket_seconds: ${params.bucket_seconds}. Must be a whole number of seconds between 1 and ${windowSeconds} (the window's own width).`,
 					`get_agent_tools_overview bucket_seconds=3600`,
 				)
 			}
-			const selection = { ...agentToolSelection(params), tool: params.tool }
+			const bucketSeconds = Option.getOrUndefined(requested)
+			const tool = selectionValue(params.tool)
+			const selection = { ...agentToolSelection(params), tool }
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				tool: params.tool ?? "all",
-				bucketSeconds: bucketSeconds ?? 0,
+				tool: tool ?? "all",
+				...(bucketSeconds !== undefined && { bucketSeconds }),
 			})
 
 			const [totals, breakdowns, seriesResult] = yield* Effect.all(
@@ -118,7 +121,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 									startTime: st,
 									endTime: et,
 									bucketSeconds,
-									...(Option.isSome(split) && { split: split.value }),
+									...(params.split !== undefined && { split: params.split }),
 									...selection,
 								}),
 							).pipe(Effect.map(Option.some)),
@@ -127,12 +130,21 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tools_overview")))
 
 			const series = Option.getOrUndefined(seriesResult)
+			// The series cut belongs on the span too — it is the reason a caller's
+			// chart ends early, and the rendered note is not queryable.
+			yield* Effect.annotateCurrentSpan({
+				"result.rowCount": breakdowns.tools.length,
+				...(series !== undefined && {
+					"maple.ai.tools.series_points": Math.min(series.data.length, SERIES_POINTS_MAX),
+					"maple.ai.tools.series_truncated": series.data.length > SERIES_POINTS_MAX,
+				}),
+			})
 			const current = totals.current
 			const previous = totals.previous
 			const lines: string[] = [
 				`## Agent tool calls`,
 				`Time range: ${st} — ${et}`,
-				`Selection: ${describeSelection(params.tool, params)}`,
+				`Selection: ${describeSelection(tool, params)}`,
 			]
 			if (totals.description !== undefined) lines.push(`Description: ${totals.description}`)
 			lines.push(
@@ -153,7 +165,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						tool: "get_agent_tools_overview",
 						data: {
 							timeRange: { start: st, end: et },
-							selection: agentToolSelectionData(params.tool, params),
+							selection: agentToolSelectionData(tool, params),
 							current: aggregateData(current),
 							...(previous !== undefined && { previous: aggregateData(previous) }),
 							...(totals.allSessions !== undefined && { allSessions: totals.allSessions }),
@@ -271,7 +283,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 					tool: "get_agent_tools_overview",
 					data: {
 						timeRange: { start: st, end: et },
-						selection: agentToolSelectionData(params.tool, params),
+						selection: agentToolSelectionData(tool, params),
 						current: aggregateData(current),
 						...(previous !== undefined && { previous: aggregateData(previous) }),
 						...(totals.allSessions !== undefined && { allSessions: totals.allSessions }),
