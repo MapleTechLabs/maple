@@ -11,7 +11,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	resolvePlotColor,
@@ -232,7 +232,6 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 				verticalGradient(`${gradientPrefix}-${entry.key}`, entry.color, 0.35, 0.02),
 			),
 			marks: [
-				dashedGridY(),
 				// Painting order is by magnitude — see `painted`. Each series is a
 				// filled band plus its own edge line, which is what one Recharts
 				// `<Area stroke fill>` drew.
@@ -284,6 +283,7 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear,
 					axis: {
 						line: false,

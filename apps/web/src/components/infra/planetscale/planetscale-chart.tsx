@@ -9,7 +9,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -192,7 +192,6 @@ export function PlanetScaleChart({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				...chartEventMarkerMarks(placed, { yDomain }),
 				lineY(data, {
 					x: at,
@@ -207,6 +206,7 @@ export function PlanetScaleChart({
 			scales: {
 				x: axis.x,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

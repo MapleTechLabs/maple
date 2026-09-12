@@ -10,7 +10,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	linearYDomain,
 	niceLinearDomain,
 	resolvePlotColor,
@@ -137,7 +137,6 @@ function LogsVolumePlot({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				barY(cells, {
 					x: (cell: SeverityCell) => cell.bucket,
 					y: (cell: SeverityCell) => cell.value,
@@ -179,6 +178,7 @@ function LogsVolumePlot({
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

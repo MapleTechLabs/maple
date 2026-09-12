@@ -33,7 +33,7 @@ import {
 	bucketTimeScale,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	resolvePlotColor,
 	roundCapDasharray,
@@ -484,7 +484,6 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		return defineChart({
 			gradients: [signalGradient],
 			marks: [
-				dashedGridY(),
 				// No-data windows. The Recharts original hatched these with an SVG
 				// `<pattern>`; the chart spec carries gradients but not patterns, so
 				// this is a flat muted wash at the hatch's own weight. It still reads
@@ -581,6 +580,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

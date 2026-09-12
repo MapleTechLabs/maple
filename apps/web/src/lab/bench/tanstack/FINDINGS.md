@@ -47,15 +47,14 @@ Supersedes the 2026-08-05 spike, which ported the same three charts to 0.6.4 and
 >   fallback now floors its divisor at 2. Bug 2 (grouped focus returning one point) looks
 >   unchanged in `dist/focus.js` — the workaround stays.
 
-## Version bump log — 0.16.0 → 0.18.0 (2026-09-12)
+## Version bump log — 0.16.0 → 0.18.0 (2026-09-13)
 
-Bumped in the root `charts` catalog. **Zero source changes**: `@maple/ui` and `@maple/web` both
-typecheck clean, the 169 plot tests and the 63 commit-marker/analytics tests pass, and
-`tanstack.perf.spec.ts` / `charts-lab.perf.spec.ts` stay green. The 0.17 and 0.18 type surface is
-additive where it moved at all — rect corner radii (`RectRadius`, `RectCornerRadii`), radial
-gradients, `ChartGuideLineStyle` on `grid`/`line`, a themeable `focusRing`, and `colorLegendItems`.
-`defineChart` gained a branding symbol that tightens its second overload; nothing in Maple tripped
-on it.
+Bumped in the root `charts` catalog. **Zero source changes to make it compile**: `@maple/ui` and
+`@maple/web` both typecheck clean and all 661 + 2712 unit tests pass unmodified. 0.17 and 0.18 are
+additive where the type surface moved at all — selective rect corner radii (`RectRadius`,
+`RectCornerRadii`), radial gradients, `ChartGuideLineStyle` on `grid`/`axis.line`, a themeable
+`focusRing`, axis-title typography, and `colorLegendItems`. `defineChart` gained a branding symbol
+that tightens its second overload; nothing in Maple tripped on it.
 
 **The bump does not buy performance.** Measured n=4 per version, both specs, alternating installs:
 
@@ -67,42 +66,95 @@ on it.
 | `stacked-bar-production` (React ms) | 23.0 | **35.9** | **+56%, reproducible** |
 | `stacked-bar-production` (commits) | 24 | **40** | **+67%, stable across 4 runs each** |
 
-Everything else is at the floor — 0 dropped frames, 0 long tasks, 0 blocking ms on every arm of
-both versions — so these benches cannot resolve a paint-level win even if one exists. The commit
-counts are the honest signal, because they are discrete and exactly reproducible: **21 of the 22
-comparable lab arms report byte-identical commit counts across the two versions, and one does not.**
+Every arm is at the floor on both versions — 0 dropped frames, 0 long tasks, 0 blocking ms — so
+these benches cannot resolve a paint-level win even if one exists. The commit counts are the honest
+signal, because they are discrete and exactly reproducible: **21 of the 22 comparable lab arms
+report byte-identical commit counts across the two versions, and one does not.**
 
 ### The one regression, and why it is that chart
 
-`stacked-bar-production` is `QueryBuilderBarChart` (stacked, `tooltip="visible"`) — a shipped
-chart, not a spike. The cause is in `dist/react/tooltip.js`, which at 0.18 threads
-`primaryPoint: target.primaryPoint` into the tooltip content context so a row can render itself as
-`active` (bold, tinted, `data-active`). Under `focus: "nearest"` the group is one point and the
-primary never flips, which is why `stacked-bar-tanstack` holds at 24. `QueryBuilderBarChart` uses
-`focus: "group-x"`, where the group is every series in the column — so the content object now
-changes when the nearest SERIES flips inside a column, not only when the column changes, and each
-flip is a React commit that 0.16 did not schedule.
+`stacked-bar-production` is `QueryBuilderBarChart` — a shipped chart, not a spike. The cause is in
+`dist/react/tooltip.js`, which at 0.18 threads `primaryPoint: target.primaryPoint` into the tooltip
+content context so a row can render itself `active` (bold, tinted, `data-active`). Under
+`focus: "nearest"` the group is one point and the primary never flips, which is why the
+`stacked-bar-tanstack` twin holds at 24. `QueryBuilderBarChart` uses `focus: "group-x"`, where the
+group is every series in the column — so the content object now changes when the nearest SERIES
+flips inside a column, not only when the column changes, and each flip is a React commit 0.16 did
+not schedule.
 
 It is a real cost and it is not visible at this size: 35.9ms over a 180-step sweep is 0.9ms per
 commit, with no dropped frame and no blocking. It scales with series count, so a wide stacked bar
 is where it would first be felt.
 
-Maple's tooltip is `PlotTooltip`, not the library's row renderer, so the `active` styling that
-these commits pay for is not even rendered. Passing the primary series through `PlotTooltip` (the
-bench already asserts the nearest row is emphasised on the SVG arm) would turn the cost into a
-feature; dropping to `focus: "nearest"` would remove it and the column affordance with it.
+**We pay for it twice over.** `PlotTooltip` renders Maple's own rows, not the library's, so the
+`active` styling these commits buy is never drawn — and `nearest-series.ts` computes the same
+nearest-series answer in pixel space for the `font-semibold` row. Reading `primaryPoint` instead
+would delete that helper and make the commits earn their keep. Left for its own change, because it
+touches the focus model.
 
 ### Bundle
 
-Charts are lazy, so the startup budget is untouched (690.4 → 690.5 KB gzip, chunk-hash noise). The
-four chart-carrying chunks grow **49.6 → 53.3 KB gzip (+3.7, +7.5%)**, nearly all of it in
-`plot-frame` (34.0 → 37.4). Raw is +10.3 KB.
+Charts are lazy, so the startup budget is untouched. The four chart-carrying chunks grow
+**49.6 → 53.3 KB gzip (+3.7, +7.5%)**, nearly all of it in `plot-frame` (34.0 → 37.4). Raw is
++10.3 KB.
+
+### Adopted: `ChartGuideLineStyle` replaces `dashedGridY()`
+
+`grid` takes a style object now, which is the whole reason `plot-grid.ts` existed — its docstring
+said so. The mark is gone; `DASHED_Y_GRID` is a `{ strokeDasharray: "3 3" }` constant passed as
+`grid` on the y scale, and 25 call sites across 23 files lost a mark. Stroke, width and the 0.11
+opacity are no longer restated: they were copied off the library's own grid group in the first
+place, and an omitted field keeps the theme default.
+
+Verified on the canvas renderer, not assumed — the painted rules alternate 3px on, 3px off.
+One test moved: `createGrid` styles each RULE and leaves the group on theme defaults, which is the
+opposite of where the mark put the dash.
+
+### Investigated and NOT adopted: bar corner radii
+
+`radius` is a visual channel over `RectCornerRadii` at 0.18, so the Recharts rounding
+`query-builder-bar-chart.tsx` documents as unavailable — top two corners, topmost stack segment
+only — is finally expressible as `radius: (cell) => cell.top ? [2, 2, 0, 0] : 0`. It was built,
+and it works at the scene level: in jsdom the top segment serialises with `A2,2` arcs at its top
+corners and the segment beneath it with `A0,0`.
+
+**It does not paint on canvas**, which is the renderer `PlotFrame` defaults to and the one
+production uses. Sampling the scene canvas on `/lab/charts?arm=stacked-bar-production`, the topmost
+bar row is full width at full alpha, with no corner falloff at either an `alpha > 8` or an
+`alpha > 128` threshold — square. `dist/canvas.js` does carry a `cornerRadii` branch
+(`beginCornerRadiiRect`, via `arcTo`), so this reads as an SVG/canvas parity gap rather than a
+missing feature, but it was not chased further.
+
+What it would have cost, had it painted: a `radius` FUNCTION sets `preferCornerRadii`, so **every**
+bar in a stacked chart leaves the `rect` element behind and serialises as a `path` — rounded or
+not. `bar-domain-and-partials.test.tsx` reads bar geometry off `x`/`y`/`width`/`height` attributes
+in ten places and needs a path-bounds helper to keep working. Not worth it for 2px that does not
+render.
+
+`{ end }`, the semantic form, is unusable here regardless: these bars carry explicit `y1`/`y2`
+interval endpoints rather than an implicit stack, and over an explicit interval `end` rounds every
+bar — the notches the original comment warns about. `stack: "outer"` rejects explicit intervals
+outright.
+
+### Checked and still ruled out
+
+`colorLegendItems()` (indicator shapes, `justify`, typography) does not reopen the in-scene legend.
+The three constraints in § Legends are unchanged at 0.18: `ChartLegendPlacement` is still
+`'top' | 'bottom'` so production's `legend="right"` is inexpressible, there are still no stats
+columns, and `interactiveColorLegend` can still only hide. The DOM legend stays — and still costs
+what it did: this run measured the DOM legend at 29.2ms against the scene legend's 9.4ms, same 24
+commits.
 
 ### Unchanged
 
 Bug 3 still stands at 0.18: `whenFocused` emits a circle per datum and zero-sizes the unfocused
 ones, so the latency chart still holds 435 nodes to show 3. The perf spec pins that count and it
 did not move.
+
+`focusRing` is themeable now (`{ radius, strokeWidth, fill, stroke }`), which answers the
+`marker: false` note in `plot-focus.ts` — the default fill was the `Canvas` system colour the canvas
+renderer cannot resolve. It is the PRIMARY point only, so it does not replace the per-series
+`focusDot` and does not fix bug 3.
 
 ## Migration log (2026-08-18)
 

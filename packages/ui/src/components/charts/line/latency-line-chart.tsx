@@ -7,7 +7,6 @@ import {
 	FixedMetricLegend,
 	PlotFrame,
 	asFiniteNumber,
-	dashedGridY,
 	fixedMetricTooltipBody,
 	focusCrosshair,
 	focusDot,
@@ -123,7 +122,6 @@ export const LatencyLineChart = memo(function LatencyLineChart({
 			// what keeps plot rects aligned across a grid. See `PlotOverlayProps`.
 			margin: yAxisWidth == null ? undefined : { left: yAxisWidth },
 			marks: [
-				dashedGridY(),
 				...series.map((entry) => line(solid, entry, false)),
 				...(dashed.length > 0 ? series.map((entry) => line(dashed, entry, true)) : []),
 				...series.map((entry) =>
