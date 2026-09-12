@@ -234,7 +234,9 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				),
 			)
 
-			const points = series === undefined ? [] : series.data.slice(0, SERIES_POINTS_MAX)
+			// The query orders buckets oldest-first, so the cap keeps the newest
+			// points: an agent asking about tool health wants the end of the window.
+			const points = series === undefined ? [] : series.data.slice(-SERIES_POINTS_MAX)
 			if (series !== undefined) {
 				lines.push(
 					``,
@@ -252,7 +254,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				)
 				if (series.data.length > points.length) {
 					lines.push(
-						`Showing ${points.length} of ${series.data.length} points — raise bucket_seconds or narrow the window.`,
+						`Showing the newest ${points.length} of ${series.data.length} points — raise bucket_seconds or narrow the window.`,
 					)
 				}
 			}
