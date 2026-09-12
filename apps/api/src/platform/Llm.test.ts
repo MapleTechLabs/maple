@@ -325,8 +325,10 @@ const sseBody = (
 	options: {
 		readonly chunks?: ReadonlyArray<Record<string, unknown>>
 		readonly terminalChoices?: ReadonlyArray<Record<string, unknown>>
-		/** Send the stream through to `[DONE]` with no usage block on any chunk. */
+		/** Send the terminal chunk, and `[DONE]` after it, with no usage block on any chunk. */
 		readonly omitUsage?: boolean
+		/** Send no terminal chunk at all: content chunks, then `[DONE]`. */
+		readonly omitTerminal?: boolean
 	} = {},
 ): string => {
 	const envelope = {
@@ -338,14 +340,20 @@ const sseBody = (
 	const chunks = options.chunks ?? [
 		{ choices: [{ index: 0, delta: { role: "assistant", content: "hi" } }] },
 	]
+	const terminal =
+		options.omitTerminal === true
+			? []
+			: [
+					`data: ${JSON.stringify({
+						...envelope,
+						choices: options.terminalChoices ?? [{ index: 0, delta: {}, finish_reason: "stop" }],
+						...(options.omitUsage === true ? undefined : { usage }),
+					})}`,
+					"",
+				]
 	return [
 		...chunks.flatMap((chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
-		`data: ${JSON.stringify({
-			...envelope,
-			choices: options.terminalChoices ?? [{ index: 0, delta: {}, finish_reason: "stop" }],
-			...(options.omitUsage === true ? undefined : { usage }),
-		})}`,
-		"",
+		...terminal,
 		"data: [DONE]",
 		"",
 	].join("\n")
@@ -357,8 +365,15 @@ const sseBody = (
  */
 const listServices = Tool.make("list_services", { parameters: Schema.Struct({}) })
 
+/**
+ * How one streaming fixture is shaped: the wire, plus whether the call declares a tool. Only a
+ * fixture that returns a tool call declares one — a `tool-call` part is decoded against the
+ * toolkit the call was made with, and the calls without one are the plain-completion shape.
+ */
+type StreamFixture = Parameters<typeof sseBody>[1] & { readonly declareTool?: boolean }
+
 /** Stream one completion off a fake transport and return every part it emitted. */
-const streamParts = (usage: Record<string, unknown>, options?: Parameters<typeof sseBody>[1]) =>
+const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}) =>
 	Effect.gen(function* () {
 		const fakeFetch: typeof globalThis.fetch = async () =>
 			new Response(sseBody(usage, options), {
@@ -369,10 +384,14 @@ const streamParts = (usage: Record<string, unknown>, options?: Parameters<typeof
 		const model = resolveTriageModel(openRouterEnv)
 		return yield* LanguageModel.streamText({
 			prompt: "hi",
-			toolkit: Toolkit.make(listServices),
-			// What the agent engine sends: the run owns tool execution, the model call only reports
-			// the calls it was asked for.
-			disableToolCallResolution: true,
+			...(options.declareTool === true
+				? {
+						toolkit: Toolkit.make(listServices),
+						// What the agent engine sends: the run owns tool execution, the model call only
+						// reports the calls it was asked for.
+						disableToolCallResolution: true,
+					}
+				: undefined),
 		}).pipe(
 			Stream.runCollect,
 			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
@@ -383,7 +402,7 @@ const streamParts = (usage: Record<string, unknown>, options?: Parameters<typeof
 	})
 
 /** Stream one completion off a fake transport and return the run's `finish` part. */
-const streamFinishPart = (usage: Record<string, unknown>, options?: Parameters<typeof sseBody>[1]) =>
+const streamFinishPart = (usage: Record<string, unknown>, options?: StreamFixture) =>
 	Effect.gen(function* () {
 		const parts = yield* streamParts(usage, options)
 		const finish = parts.find((part) => part.type === "finish")
@@ -473,6 +492,27 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		}),
 	)
 
+	it.live("closes the assistant's message, which is what the session renders", () =>
+		Effect.gen(function* () {
+			// `text-end` comes from the same flush. A turn that never closes its text is the
+			// "said nothing" half of the report, and it survives a finish part on its own.
+			const parts = yield* streamParts(disjointReasoningUsage, { omitUsage: true })
+
+			expect(parts.map((part) => part.type)).toContain("text-end")
+		}),
+	)
+
+	it.live("finishes a stream that stops without a terminal chunk at all", () =>
+		Effect.gen(function* () {
+			// The truncated shape, as opposed to a terminal chunk that merely omits its usage: no
+			// chunk ever declared a reason, so the turn finishes under the decoder's own default
+			// rather than not finishing.
+			const finish = yield* streamFinishPart(disjointReasoningUsage, { omitTerminal: true })
+
+			expect(finish.reason).toBe("other")
+		}),
+	)
+
 	it.live("flushes a tool call whose parameters never completed", () =>
 		Effect.gen(function* () {
 			// A tool call is emitted as soon as its accumulated arguments parse, so a complete one
@@ -482,6 +522,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 			// no answer in it.
 			const parts = yield* streamParts(disjointReasoningUsage, {
 				omitUsage: true,
+				declareTool: true,
 				chunks: [
 					{
 						choices: [
@@ -517,6 +558,42 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		Effect.gen(function* () {
 			const parts = yield* streamParts(disjointReasoningUsage)
 
+			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+		}),
+	)
+
+	it.live("does not re-forward a tool call the stream already completed", () =>
+		Effect.gen(function* () {
+			// A tool call whose arguments parse is emitted there and then, and dropped from the
+			// pending set. The flush re-walks that set, so a call still listed would reach the run
+			// twice — and the run would execute the tool twice.
+			const parts = yield* streamParts(disjointReasoningUsage, {
+				omitUsage: true,
+				declareTool: true,
+				chunks: [
+					{
+						choices: [
+							{
+								index: 0,
+								delta: {
+									role: "assistant",
+									tool_calls: [
+										{
+											index: 0,
+											id: "call-1",
+											type: "function",
+											function: { name: "list_services", arguments: "{}" },
+										},
+									],
+								},
+							},
+						],
+					},
+				],
+				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+			})
+
+			expect(parts.filter((part) => part.type === "tool-call")).toHaveLength(1)
 			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
