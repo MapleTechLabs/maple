@@ -36,6 +36,9 @@ export interface SpanDetailResult {
 	readonly found: boolean
 	readonly traceId: string
 	readonly spanId: string
+	/** The span's own timestamp, as a warehouse datetime literal; `""` for a
+	 *  span no row answered, which has no timestamp to report. */
+	readonly startTime: string
 	/** Full span attribute map (not the trimmed set the trace tree renders). */
 	readonly spanAttributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
@@ -80,6 +83,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 			found: false,
 			traceId: input.traceId,
 			spanId: input.spanId,
+			startTime: "",
 			spanAttributes: {},
 			resourceAttributes: {},
 		} satisfies SpanDetailResult
@@ -92,6 +96,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 		found: true,
 		traceId: row.traceId,
 		spanId: row.spanId,
+		startTime: row.startTime,
 		spanAttributes,
 		resourceAttributes,
 	} satisfies SpanDetailResult

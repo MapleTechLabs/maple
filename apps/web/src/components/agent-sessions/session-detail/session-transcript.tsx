@@ -27,16 +27,18 @@ import {
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { callMetaLine, callMetaParts } from "@/lib/agent-sessions/session-summary"
-import { spanModel, type SessionTurn } from "@/lib/agent-sessions/session-turns"
 import {
 	assembleTranscript,
-	type CaptureCoverage,
+	callMetaLine,
+	callMetaParts,
 	prepareTranscript,
+	spanModel,
+	type CaptureCoverage,
+	type SessionToolResults,
+	type SessionTurn,
 	type TranscriptPayload,
 	type TranscriptRow,
-} from "@/lib/agent-sessions/session-transcript"
-import type { SessionToolResults } from "@/lib/agent-sessions/span-detail"
+} from "@maple/agent-sessions"
 import { formatClockInTimezone } from "@/lib/timezone-format"
 import { ClampedText, firstLine } from "./clamped-text"
 import { disclosed, MessageBody, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"

@@ -18,6 +18,8 @@
 // components cannot be windowed and a thousand-block session has to stay
 // scrollable.
 
+import { Option, Schema } from "effect"
+
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import {
@@ -31,7 +33,6 @@ import {
 	type SessionTurn,
 } from "./session-turns"
 import {
-	isRecord,
 	jsonText,
 	spanMessages,
 	toolResultFor,
@@ -782,7 +783,7 @@ function delegationTarget(
 	if (forks(span)) return span
 	if (scope.context.categoryOf(span) !== "tool") return undefined
 	const own = children.get(span.spanId) ?? []
-	return own.length === 1 && forks(own[0]!) ? own[0] : undefined
+	return own.length === 1 && forks(own[0]) ? own[0] : undefined
 }
 
 /**
@@ -806,7 +807,7 @@ function markParallelLanes(
 	for (const cluster of clusters) {
 		// `at` is where the lane's rows were pushed and its opening row is the
 		// first of them — the marker opens the cluster right above it.
-		const first = cluster.members[0]!
+		const first = cluster.members[0]
 		markers.push({
 			at: first.at,
 			row: {
@@ -889,7 +890,7 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
 			const shared = sharedStart < sharedEnd
 			return {
 				members,
-				startMs: members[0]!.startMs,
+				startMs: members[0].startMs,
 				endMs: Math.max(...members.map((item) => item.endMs)),
 				overlapStartMs: shared ? sharedStart : undefined,
 				overlapEndMs: shared ? sharedEnd : undefined,
@@ -1076,13 +1077,13 @@ function userRows(
 
 	let index = -1
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (history[i]!.role.toLowerCase() === "user") {
+		if (history[i].role.toLowerCase() === "user") {
 			index = i
 			break
 		}
 	}
 	if (index === -1) return []
-	const text = textOf(history[index]!.parts)
+	const text = textOf(history[index].parts)
 	if (text === "") return []
 
 	scope.context.userEmitted = true
@@ -1219,8 +1220,8 @@ function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, co
 function capturedPromptText(messages: readonly SpanMessage[]): string | undefined {
 	const input = messages.filter((message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
-		if (input[i]!.role.toLowerCase() !== "user") continue
-		const text = textOf(input[i]!.parts)
+		if (input[i].role.toLowerCase() !== "user") continue
+		const text = textOf(input[i].parts)
 		if (text !== "") return text
 	}
 	return undefined
@@ -1331,15 +1332,18 @@ export function payload(text: string | undefined): TranscriptPayload | undefined
  */
 const ENVELOPE_KEYS = new Set(["truncated", "prefix", "value", "content"])
 
+const decodeJsonObject = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+
 function truncationEnvelope(text: string): string | undefined {
 	if (!text.startsWith("{") || !text.includes('"truncated"')) return undefined
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(text)
-	} catch {
-		return undefined
-	}
-	if (!isRecord(parsed) || parsed.truncated !== true) return undefined
+	// `Schema.Record` admits only JSON objects, so malformed text, an array and a
+	// scalar all decode to `None` — none of them is an envelope.
+	const decoded = decodeJsonObject(text)
+	if (Option.isNone(decoded)) return undefined
+	const parsed = decoded.value
+	if (parsed.truncated !== true) return undefined
 	if (Object.keys(parsed).some((key) => !ENVELOPE_KEYS.has(key))) return undefined
 	// A prefix-less envelope is still an envelope: the emitter recorded that it
 	// cut the payload and kept none of it. The empty text is what there is.

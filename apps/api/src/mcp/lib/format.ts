@@ -24,3 +24,17 @@ export function truncate(str: string, maxLen = 80): string {
 	if (str.length <= maxLen) return str
 	return str.slice(0, maxLen - 3) + "..."
 }
+
+/**
+ * A payload as a fenced code block, with a fence longer than any backtick run
+ * inside it.
+ *
+ * A captured tool payload is arbitrary text — a fixed triple-backtick fence
+ * around one that contains ``` is closed by the payload itself, and everything
+ * the tool rendered after it reads as prose.
+ */
+export function fencedBlock(text: string, lang = ""): string {
+	const runs = text.match(/`+/g)
+	const fence = "`".repeat(Math.max(3, runs === null ? 0 : Math.max(...runs.map((run) => run.length)) + 1))
+	return `${fence}${lang}\n${text}\n${fence}`
+}

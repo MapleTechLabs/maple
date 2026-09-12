@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
-import { buildAgentSessionFixture } from "@/lab/agent-session-fixture"
-
+import { buildAgentSessionFixture } from "./agent-session-fixture"
 import { buildSessionTurns } from "./session-turns"
 import {
 	assembleTranscript,

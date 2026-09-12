@@ -158,6 +158,36 @@ export interface InspectSpanData {
 	found: boolean
 	attributes: Record<string, string>
 	resourceAttributes: Record<string, string>
+	/** Present where the span carries AI signal — see {@link InspectSpanAiData}. */
+	ai?: InspectSpanAiData
+}
+
+/**
+ * The decoded view of an AI agent span, derived by `@maple/agent-sessions` from
+ * the span's own trace — the same model the Agent Sessions page reads. It sits
+ * beside the raw attribute maps rather than replacing them.
+ */
+export interface InspectSpanAiData {
+	/** `agent`, `inference`, `tool` or `app`. */
+	category: string
+	/** Only the trace's FIRST spans were read, so a tool call whose result was
+	 *  recorded past them reads as not captured. */
+	partial?: boolean
+	vendorId: string | null
+	sessionId: string | null
+	/** The decoded `gen_ai.*` scalars; the captured content is in `messages`. */
+	fields: Record<string, string>
+	/** Input-history messages dropped ahead of the ones shown. */
+	earlierInputMessages: number
+	messages: ReadonlyArray<{ role: string; origin: string; text: string }>
+	toolCalls: ReadonlyArray<{
+		name: string | null
+		callId: string | null
+		/** This span EXECUTED the call, rather than merely requesting it. */
+		own: boolean
+		arguments: string | null
+		result: string | null
+	}>
 }
 
 export interface LogRow {
@@ -1008,6 +1038,11 @@ export type StructuredToolOutput =
 	  }
 	| { tool: "query_funnel"; data: QueryFunnelData }
 	| { tool: "list_product_events"; data: ListProductEventsData }
+	| { tool: "list_agent_sessions"; data: ListAgentSessionsData }
+	| { tool: "get_agent_session"; data: GetAgentSessionData }
+	| { tool: "list_agent_session_spans"; data: ListAgentSessionSpansData }
+	| { tool: "get_agent_tools_overview"; data: GetAgentToolsOverviewData }
+	| { tool: "get_agent_tool_error"; data: GetAgentToolErrorData }
 
 // Product-event funnels
 
@@ -1046,4 +1081,259 @@ export interface ListProductEventsData {
 		sessions: number
 		persons: number
 	}>
+}
+
+// AI agent sessions
+//
+// The `maple_ai.*` agent traces the Agent Sessions page renders — not the
+// browser session replays above. Every figure a row carries is measured over
+// the session's agent spans; the derived views (`get_agent_session` and below)
+// are computed from the session's own spans by `@maple/agent-sessions`, the
+// same model the page uses.
+
+export interface AgentSessionRow {
+	sessionId: string
+	vendorId: string
+	/** The agent on the session's earliest named span; `''` when none named one. */
+	agentName: string
+	agentNames: ReadonlyArray<string>
+	services: ReadonlyArray<string>
+	models: ReadonlyArray<string>
+	/** Warehouse datetime literals — the session's own bounds. */
+	startTime: string
+	endTime: string
+	durationMs: number
+	traceCount: number
+	spanCount: number
+	llmCalls: number
+	toolCalls: number
+	errorSpanCount: number
+	toolErrorCount: number
+	turnErrorCount: number
+	totalTokens: number
+	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
+	cost: number
+}
+
+export interface ListAgentSessionsData {
+	timeRange: { start: string; end: string }
+	offset: number
+	limit: number
+	sessions: ReadonlyArray<AgentSessionRow>
+}
+
+export interface GetAgentSessionData {
+	sessionId: string
+	/** The loaded spans' own extent, which a follow-up read can seek on. */
+	window?: { start: string; end: string }
+	/** The session has spans past what was loaded — its END is missing. */
+	truncated: boolean
+	verdict: { status: string; label: string | null; spanId: string | null }
+	findings: ReadonlyArray<{
+		severity: string
+		label: string
+		count: number
+		turnText: string
+		detail: string | null
+		spanId: string
+		traceId: string | null
+	}>
+	vitals: {
+		startTime: string
+		wallClockMs: number
+		activeMs: number
+		idleMs: number
+		/** Work-span time, which exceeds the wall clock when lanes ran at once. */
+		agentTimeMs: number
+		peakParallel: number
+		agentTimeSegments: ReadonlyArray<{ kind: string; ms: number }>
+	}
+	work: { turns: number; llmCalls: number; toolCalls: number; spanCount: number; traceCount: number }
+	/** The warehouse's totals for the WHOLE session, read only when truncated. */
+	exactTotals?: {
+		spanCount: number
+		aiSpanCount: number
+		traceCount: number
+		llmCalls: number
+		toolCalls: number
+		errorSpanCount: number
+		durationMs: number
+	}
+	tokens: {
+		input: number
+		cacheRead: number
+		cacheWrite: number
+		output: number
+		reasoning: number
+		total: number
+		/** `per-call`, `roll-up`, `session-level` or `none`. */
+		reporting: string
+	}
+	cost: number | null
+	models: ReadonlyArray<{ model: string; llmCalls: number; totalTokens: number; cost: number | null }>
+	tools: ReadonlyArray<{
+		name: string
+		calls: number
+		failed: number
+		totalMs: number
+		slowestMs: number
+	}>
+	failureGroups: ReadonlyArray<{ kind: string; label: string; count: number }>
+	turns: ReadonlyArray<{
+		index: number
+		/** Which rule opened the turn: `conversation`, `agent-root` or `trace`. */
+		anchorKind: string
+		agentName: string | null
+		startOffsetMs: number
+		durationMs: number
+		spanCount: number
+		failed: boolean
+		label: string | null
+	}>
+}
+
+export interface ListAgentSessionSpansData {
+	sessionId: string
+	scope: string
+	spans: ReadonlyArray<{
+		timestamp: string
+		traceId: string
+		spanId: string
+		parentSpanId: string
+		name: string
+		/** `agent`, `inference`, `tool` or `app`. */
+		category: string
+		serviceName: string
+		durationMs: number
+		statusCode: string
+		/** The span status OR an attribute-declared failure — what the page counts. */
+		failed: boolean
+		model: string | null
+		toolName: string | null
+		totalTokens: number | null
+	}>
+	nextCursor?: { timestamp: string; spanId: string }
+}
+
+// AI agent tool analytics — the same population as the sessions above, read by
+// tool rather than by session.
+
+export interface AgentToolSelectionData {
+	tool?: string
+	model?: string
+	service?: string
+	environment?: string
+	search?: string
+	failingOnly?: boolean
+}
+
+/** Durations are milliseconds here; the wire carries nanoseconds. */
+export interface AgentToolAggregateData {
+	calls: number
+	sessions: number
+	errors: number
+	p50Ms: number
+	p90Ms: number
+	p95Ms: number
+}
+
+export interface AgentToolBreakdownRowData {
+	tool: string
+	calls: number
+	sessions: number
+	errors: number
+	p50Ms: number
+	p95Ms: number
+	firstSeen: string
+	lastSeen: string
+}
+
+export interface AgentToolSeriesPointData {
+	bucket: string
+	seriesKey: string
+	calls: number
+	errors: number
+	p95Ms: number
+}
+
+export interface GetAgentToolsOverviewData {
+	timeRange: { start: string; end: string }
+	selection: AgentToolSelectionData
+	current: AgentToolAggregateData
+	/** The equal window ending where this one begins — the deltas' baseline. */
+	previous?: AgentToolAggregateData
+	/** Sessions of the window before the selection — the share's denominator. */
+	allSessions?: number
+	firstSeen: string
+	lastSeen: string
+	description?: string
+	breakdown: AgentToolBreakdownRowData[]
+	series?: {
+		seriesKind: string
+		bucketSeconds: number
+		/** True where points past the rendered cap were dropped. */
+		truncated: boolean
+		points: AgentToolSeriesPointData[]
+	}
+	/** The selected tool's failures by fingerprint; absent when no tool is selected. */
+	errorGroups?: AgentToolErrorGroupData[]
+	/** Bucket width of every group's trend, in whole seconds. */
+	trendBucketSeconds?: number
+	/** The trend grid holds only the newest buckets; true when the window spans more. */
+	trendClipped?: boolean
+	/** Where the clipped trend starts, as a warehouse datetime literal; absent when not clipped. */
+	trendStart?: string
+}
+
+export interface AgentToolErrorGroupData {
+	fingerprint: string
+	errorType: string
+	message: string
+	calls: number
+	sessions: number
+	variants: number
+	firstSeen: string
+	lastSeen: string
+	callsSince: number
+	/** Failed calls per bucket, oldest first, gaps filled with zero. */
+	trend: number[]
+}
+
+export interface AgentToolErrorSampleData {
+	timestamp: string
+	traceId: string
+	spanId: string
+	sessionId: string
+	vendorId: string
+	agentName: string
+	model: string
+	service: string
+	errorType: string
+	message: string
+	durationMs: number
+	statusCode: string
+	/** Clipped to the caller's `payload_chars`; `*Bytes` is the true size. */
+	arguments: string
+	argumentsBytes: number
+	result: string
+	resultBytes: number
+}
+
+export interface GetAgentToolErrorData {
+	timeRange: { start: string; end: string }
+	selection: AgentToolSelectionData
+	fingerprint: string
+	sessions: Array<{
+		sessionId: string
+		vendorId: string
+		agentName: string
+		service: string
+		hits: number
+		lastSeen: string
+	}>
+	variants: Array<{ message: string; calls: number; lastSeen: string }>
+	breakdown: Array<{ model: string; service: string; calls: number }>
+	samples: AgentToolErrorSampleData[]
+	/** True where the group has samples past this page. */
+	hasMoreSamples: boolean
 }

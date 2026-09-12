@@ -6,8 +6,7 @@ import { AiSessionTooLargeError, type AiSessionSpan } from "@maple/domain/http"
 import type { AiSessionSpansPage } from "@/api/warehouse/ai-sessions"
 import { Atom, Result } from "@/lib/effect-atom"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
-import { agentSpan, llmSpan, makeSpan } from "@/lib/agent-sessions/span-test-support"
-
+import { agentSpan, llmSpan, makeSpan } from "@maple/agent-sessions"
 import { useSessionSpans, type SessionSpansReads } from "./use-session-spans"
 
 const mocks = {

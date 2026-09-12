@@ -9,7 +9,7 @@
 import { formatDurationAtStep } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
-import type { IdleGap } from "./session-summary"
+import type { IdleGap } from "@maple/agent-sessions"
 
 export interface AxisTick {
 	/** Position along the axis, 0…1. */

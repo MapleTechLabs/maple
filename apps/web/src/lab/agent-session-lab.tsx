@@ -3,10 +3,12 @@ import { useMemo, useState } from "react"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
 import { SessionViews, type SessionView } from "@/components/agent-sessions/session-detail/session-views"
 import { Toggle } from "@maple/ui/components/ui/toggle"
-import { buildAgentSessionFixture, buildCaptureOffFixture } from "@/lab/agent-session-fixture"
-import { buildSessionSummary } from "@/lib/agent-sessions/session-summary"
-import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
-
+import {
+	buildAgentSessionFixture,
+	buildCaptureOffFixture,
+	buildSessionSummary,
+	buildSessionTurns,
+} from "@maple/agent-sessions"
 /**
  * The session detail page's views over a fixture — the fastest way to eyeball
  * the Overview, the waterfall, the flow graph and the transcript without a

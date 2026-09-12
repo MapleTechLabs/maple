@@ -40,3 +40,12 @@ export const toMcpQueryError =
  */
 export const warehouseToMcpHandlers = (pipe: string) =>
 	warehouseHandlers((error) => Effect.fail(toMcpQueryError(pipe)(error)))
+
+/**
+ * The same, for reads that compile their own SQL (the AI agent-session and
+ * tool-analytics tools). Their error channel carries no raw-SQL token tags, and
+ * `catchTags` refuses a handler table wider than the channel — so the full
+ * {@link warehouseToMcpHandlers} does not typecheck against them.
+ */
+export const warehouseReadToMcpHandlers = (pipe: string) =>
+	warehouseReadHandlers((error) => Effect.fail(toMcpQueryError(pipe)(error)))

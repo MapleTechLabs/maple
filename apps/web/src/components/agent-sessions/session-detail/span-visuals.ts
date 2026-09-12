@@ -17,9 +17,7 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 
-import type { AiSpanCategory } from "@/lib/agent-sessions/session-turns"
-import type { AgentTimeKind } from "@/lib/agent-sessions/session-summary"
-
+import { type AgentTimeKind, type AiSpanCategory } from "@maple/agent-sessions"
 // A span that is neither a model call nor a tool is not a class of work, so it
 // gets the neutral rather than a hue of its own.
 const NO_WORK_FILL = "bg-muted-foreground/40"

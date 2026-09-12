@@ -18,7 +18,7 @@ import {
 	AI_TOOL_OPERATIONS,
 } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
-import { toEpochMs } from "@maple/ui/lib/time-format"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 /**
  * How a span reads on the page. Deliberately coarse — these four are the
@@ -50,7 +50,7 @@ export const GEN_AI_OPERATIONS: ReadonlySet<string> = new Set([
 ])
 
 export function spanStartMs(span: AiSessionSpan): number {
-	return toEpochMs(span.timestamp)
+	return parseWarehouseDateTime(span.timestamp)
 }
 
 export function spanEndMs(span: AiSessionSpan): number {
@@ -214,8 +214,8 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// names no turn of its own.
 	let cursor = 0
 	for (const { span, startMs } of ordered) {
-		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1]! <= startMs) cursor++
-		buckets[turnOf(span) ?? cursor]!.push(span)
+		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1] <= startMs) cursor++
+		buckets[turnOf(span) ?? cursor].push(span)
 	}
 
 	// A turn with no spans has no start, no end and nothing to draw. Rule 1 can no
@@ -224,7 +224,7 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// agent-root or trace anchors in one millisecond still leave the earlier bucket
 	// empty.
 	return anchors
-		.map((anchor, index) => ({ anchor, turnSpans: buckets[index]! }))
+		.map((anchor, index) => ({ anchor, turnSpans: buckets[index] }))
 		.filter((entry) => entry.turnSpans.length > 0)
 		.map(({ anchor, turnSpans }, index) => {
 			const spanIds = new Set(turnSpans.map((span) => span.spanId))
@@ -400,7 +400,9 @@ const MAX_LABEL_LENGTH = 80
  * and off by default, so returning `undefined` is the ordinary case, not a
  * failure.
  */
-function lastUserMessageText(value: unknown): string | undefined {
+/** The newest user message with readable text in a captured history — exported
+ *  so a loader that trims histories keeps exactly the message this reads. */
+export function lastUserMessageText(value: unknown): string | undefined {
 	if (!Array.isArray(value)) return undefined
 	for (let i = value.length - 1; i >= 0; i--) {
 		const entry: unknown = value[i]

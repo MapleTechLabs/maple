@@ -336,7 +336,9 @@ export const AiSessionSpanCursor = Schema.Struct({
 })
 export type AiSessionSpanCursor = Schema.Schema.Type<typeof AiSessionSpanCursor>
 
-const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
+/** A trace id as the warehouse stores it. Exported because the MCP span
+ *  inspector validates its `trace_id` parameter against this same shape. */
+export const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
 
 /** Traces one span read may be pinned to — a turn's worth, not a session's. */
 export const AI_SESSION_SPANS_MAX_TRACE_IDS = 100

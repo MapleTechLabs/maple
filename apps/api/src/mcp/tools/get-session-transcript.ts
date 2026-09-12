@@ -33,7 +33,7 @@ function parseEventTypes(raw: string | null | undefined): readonly string[] {
 export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_session_transcript",
-		"Read a browser session replay as a compact text transcript: navigation, clicks, console logs, network requests, and errors in order, each with the trace id it occurred under. Use after `search_sessions` to analyze what a user did and what went wrong. Returns one page (default 100 events) — narrow with `only_errors`, `event_types`, or `around_trace_id`, or page through with `offset`. Drill into any referenced trace with `inspect_trace`.",
+		"Browser session replays (end-user web sessions), not AI agent sessions — for those use `list_agent_sessions`. Read a browser session replay as a compact text transcript: navigation, clicks, console logs, network requests, and errors in order, each with the trace id it occurred under. Use after `search_sessions` to analyze what a user did and what went wrong. Returns one page (default 100 events) — narrow with `only_errors`, `event_types`, or `around_trace_id`, or page through with `offset`. Drill into any referenced trace with `inspect_trace`.",
 		Schema.Struct({
 			session_id: requiredStringParam("The session id to read (from search_sessions)"),
 			event_types: optionalStringParam(

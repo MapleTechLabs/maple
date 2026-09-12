@@ -48,9 +48,17 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", async (importOriginal) => 
 import type { AiSessionSpan, GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
-import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "@/lib/agent-sessions/span-test-support"
-import { buildSessionSummary, type SessionSummary } from "@/lib/agent-sessions/session-summary"
-import { buildSessionTurns, type SessionTurn } from "@/lib/agent-sessions/session-turns"
+import {
+	agentSpan,
+	buildSessionSummary,
+	buildSessionTurns,
+	llmSpan,
+	makeSpan,
+	toolSpan,
+	userMessages,
+	type SessionSummary,
+	type SessionTurn,
+} from "@maple/agent-sessions"
 import { SessionFlow } from "./session-flow"
 import { SessionHeader, sessionIdentity } from "./session-header"
 import { SessionOverview } from "./session-overview"
