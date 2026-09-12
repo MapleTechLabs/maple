@@ -17,7 +17,7 @@ hmac = "0.12.1"
 dotenvy = "0.15.7"
 opentelemetry = "0.31"
 opentelemetry-appender-tracing = "0.31"
-opentelemetry_sdk = { version = "0.31", features = [
+opentelemetry_sdk = { version = "0.32", features = [
 	"rt-tokio",
 	"trace",
 	"logs",
