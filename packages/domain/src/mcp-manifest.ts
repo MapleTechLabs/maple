@@ -83,3 +83,25 @@ export const mapleMcpServerManifest = ({
 		],
 	} as const
 }
+
+/**
+ * Which entry point drove this tool call.
+ *
+ * The surfaces share one dispatcher, and until this existed none of them were
+ * distinguishable in telemetry: the public-vs-internal traffic split had to be
+ * inferred from the ratio of `tools/call` spans to executor spans. Required
+ * rather than defaulted, for the same reason `tenant` is — a caller that forgets
+ * it should not silently be counted as somebody else.
+ *
+ * It lives in the domain because the audit log records it, and the audit log is
+ * read by a Worker that does not itself run any of these surfaces.
+ */
+export type McpToolSurface =
+	/** The public MCP transport (`mcp/server.ts`). */
+	| "mcp"
+	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
+	| "chat"
+	/** Agent workflow passes (`workflows/agent-pass.ts`). */
+	| "workflow"
+	/** Retired worker-to-worker internal RPC. Kept so already-audited rows stay readable. */
+	| "rpc"

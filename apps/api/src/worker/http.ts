@@ -66,11 +66,23 @@ export const forIsolate =
 			)
 		}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
 
-/** The route graph as the bridge's handler, built for the isolate. */
-export const buildIsolateHandler = <E>(
+/**
+ * The route graph as the bridge's handler, built for the isolate.
+ *
+ * The load-bearing parameter is the third: the graph may require nothing from
+ * the request context beyond the router and its own markers, so a service a
+ * handler reads per request fails the build naming itself instead of failing
+ * every request with "Service not found".
+ *
+ * The output parameter is deliberately open. The composed graph surfaces the
+ * service layers it was provided, and pinning it to `never` only ever appeared
+ * to hold: until the MCP routes moved out, `McpLive` widened the whole
+ * composition to `any` and the constraint was satisfied vacuously.
+ */
+export const buildIsolateHandler = <ROut, E>(
 	isolate: Context.Context<never>,
 	routes: Layer.Layer<
-		never,
+		ROut,
 		E,
 		HttpRouter.HttpRouter | HttpRouter.Request<"Error" | "GlobalError" | "Requires", unknown>
 	>,
@@ -108,6 +120,16 @@ const bridgeHandler = <E, R>(
 		R | Scope.Scope | HttpServerRequest.HttpServerRequest
 	>,
 ): HttpEffect => handler as HttpEffect
+
+/**
+ * The paths maple-ai serves. `/mcp` is matched exactly rather than by prefix so
+ * a future `/mcp-something` on this origin is not silently swallowed.
+ */
+const forwardsToAi = (path: string): boolean =>
+	path === "/mcp" ||
+	path.startsWith("/mcp/") ||
+	path.startsWith("/api/chat/") ||
+	path.startsWith("/internal/chat/")
 
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
@@ -189,7 +211,31 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 		}
 		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
 
-		const isMcp = request.method === "POST" && path === "/mcp"
+		// The agent surfaces moved to maple-ai; this origin keeps serving them.
+		// Ahead of the route graph on purpose — that is the whole point of the
+		// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
+		//
+		// The forward must stay byte-transparent: the same method, the original
+		// `Host` (which is what keeps `/mcp`'s OAuth `resource_metadata` pointing
+		// at this origin's well-known), every header, and both bodies as streams.
+		// The chat tail is an open `text/event-stream`, so buffering either side
+		// would turn a live transcript into a hang.
+		if (forwardsToAi(path)) {
+			const aiWorker = (yield* Cloudflare.WorkerEnvironment).AI_WORKER
+			if (aiWorker === undefined) {
+				yield* Effect.logError("AI worker binding is missing").pipe(
+					Effect.annotateLogs({ method: request.method, path }),
+				)
+				return HttpServerResponse.text("maple-ai is unavailable", {
+					status: 503,
+					headers: API_CORS_RESPONSE_HEADERS,
+				})
+			}
+			return yield* Cloudflare.fromCloudflareFetcher(
+				aiWorker as Parameters<typeof Cloudflare.fromCloudflareFetcher>[0],
+			).fetch(request)
+		}
+
 		const startedAt = yield* Clock.currentTimeMillis
 		firstRequestAt ??= startedAt
 		const ordinal = ++served
@@ -210,17 +256,6 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, ports: Layer.
 			yield* recordIsolateAge({ ageMs: startedAt - firstRequestAt, ordinal })
 		}
 
-		if (isMcp) {
-			// The transport is stateless, so there is no session to carry across
-			// requests and nothing to write back — see `mcp/transport/stateless-http.ts`.
-			const now = yield* Clock.currentTimeMillis
-			yield* Effect.logInfo("MCP request handled").pipe(
-				Effect.annotateLogs({
-					"http.response.status_code": response.status,
-					duration_ms: now - startedAt,
-				}),
-			)
-		}
 		return response
 	}).pipe(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.

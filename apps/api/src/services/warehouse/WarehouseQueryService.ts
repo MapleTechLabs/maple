@@ -128,7 +128,10 @@ const createClickHouseSqlClient = (
 				// take and is far above anything a Maple query returns.
 				sql: (statement, options) =>
 					client
-						.query({ sql: statement.text, ...(options?.responseLimits ? { limits: options.responseLimits } : undefined) })
+						.query({
+							sql: statement.text,
+							...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
+						})
 						.pipe(
 							Effect.map(({ data }) => ({ data })),
 							Effect.mapError(clickHouseDriverError),
@@ -235,10 +238,14 @@ const createTinybirdSqlClient = (
 	Effect.map(HttpClient.HttpClient, (http): WarehouseSqlClient => {
 		const base = config.host.replace(/\/$/, "")
 		const token = Redacted.make(config.token)
-		const bodyOf = (response: { readonly stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError> }) =>
+		const bodyOf = (response: {
+			readonly stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError>
+		}) =>
 			response.stream.pipe(
 				Stream.catchTag("HttpClientError", (error) =>
-					error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(tinybirdTransportError(error)),
+					error.reason._tag === "EmptyBodyError"
+						? Stream.empty
+						: Stream.fail(tinybirdTransportError(error)),
 				),
 			)
 		// Mirrors the SDK's rendering: the JSON `error` field when there is one,
@@ -249,7 +256,10 @@ const createTinybirdSqlClient = (
 				status,
 				message: Option.getOrElse(
 					Option.map(decodeTinybirdErrorBody(body), (decoded) => decoded.error),
-					() => (body ? `Request failed with status ${status}: ${body.slice(0, 500)}` : `Request failed with status ${status}`),
+					() =>
+						body
+							? `Request failed with status ${status}: ${body.slice(0, 500)}`
+							: `Request failed with status ${status}`,
 				),
 				cause: body,
 			})

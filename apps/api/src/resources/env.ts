@@ -70,13 +70,6 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		plainWithDefault("EDGE_CACHE_READ_TIMEOUT_MS", "40"),
 		// MAPLE_ENDPOINT / MAPLE_ENVIRONMENT / COMMIT_SHA / MAPLE_INGEST_KEY.
 		selfObservabilityEnv(stage),
-		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
-		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
-		// See `@/platform/Llm` for the provider-scoped model overrides.
-		optionalPlain("MAPLE_LLM_PROVIDER"),
-		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
-		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
-		optionalSecret("OPENROUTER_API_KEY"),
 		// Svix signing secrets for the public webhook receivers (`/webhooks/clerk`,
 		// `/webhooks/autumn`); each route answers 503 until its secret is set.
 		optionalSecret("CLERK_WEBHOOK_SECRET"),

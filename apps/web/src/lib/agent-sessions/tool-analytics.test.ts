@@ -219,10 +219,7 @@ describe("scopeSummary", () => {
 
 describe("metricSpark", () => {
 	it("reads the selected metric off each bucket, in bucket order", () => {
-		const points = [
-			point(2, "a", { calls: 10, errors: 5 }),
-			point(1, "a", { calls: 20, errors: 2 }),
-		]
+		const points = [point(2, "a", { calls: 10, errors: 5 }), point(1, "a", { calls: 20, errors: 2 })]
 		expect(metricSpark(points, "calls", "p90")).toEqual([20, 10])
 		expect(metricSpark(points, "error_rate", "p90")).toEqual([0.1, 0.5])
 	})

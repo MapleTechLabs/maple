@@ -166,11 +166,7 @@ export function toolSeriesMode(tool: string | undefined, model: string | undefin
  * a different statement from "nothing ran" — so it reads 0 and the formatters
  * are what decide how that prints.
  */
-export function metricValue(
-	measures: ToolMeasures,
-	metric: ToolMetric,
-	percentile: ToolPercentile,
-): number {
+export function metricValue(measures: ToolMeasures, metric: ToolMetric, percentile: ToolPercentile): number {
 	switch (metric) {
 		case "calls":
 			return measures.calls
@@ -239,8 +235,7 @@ export function toolMetricLabel(metric: ToolMetric, percentile: ToolPercentile):
 /** True when a rise in this metric is bad news — every metric here but the
  *  counts. Read only by {@link toolDelta}, which is the one thing that grades a
  *  move on this page. */
-const metricRiseIsBad = (metric: ToolMetric): boolean =>
-	metric === "error_rate" || metric === "duration"
+const metricRiseIsBad = (metric: ToolMetric): boolean => metric === "error_rate" || metric === "duration"
 
 /* -------------------------------------------------------------------------------------------------
  * Series colours
@@ -310,9 +305,7 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 	for (const point of points) {
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
-	return [...calls.entries()]
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-		.map(([key]) => key)
+	return [...calls.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key]) => key)
 }
 
 /* -------------------------------------------------------------------------------------------------

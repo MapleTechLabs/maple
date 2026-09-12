@@ -8,7 +8,7 @@ on:
     pull_request:
         branches: [main]
         paths:
-            - "apps/api/src/mcp/**"
+            - "apps/ai/src/mcp/**"
             - "packages/domain/src/**"
             - ".github/actions/bun-install/action.yml"
             - ".github/workflows/token-cost.yml"
@@ -32,11 +32,14 @@ jobs:
 
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-            # This script only needs the API dependency closure. Installing all
-            # workspaces accounted for roughly half of this job's wall time.
+            # This script only needs the agent Worker's dependency closure, which
+            # includes apps/api: the tools import api's services by path alias, and
+            # those modules resolve `@maple/domain/*` out of api's own node_modules.
+            # Installing all workspaces accounted for roughly half of this job's
+            # wall time.
             - uses: ./.github/actions/bun-install
               with:
-                  filters: "@maple/api @maple-dev/effect-sdk @maple-dev/browser"
+                  filters: "@maple/ai @maple/api @maple-dev/effect-sdk @maple-dev/browser"
 
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -52,16 +55,19 @@ jobs:
               run: bun run alchemy:build-deps
 
             - name: Measure (PR head)
-              run: bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
+              run: bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
 
             # Re-measure against the base source (reusing the same node_modules) for a
             # best-effort delta. Source-only swap avoids a second install.
             - name: Measure (base)
               continue-on-error: true
               run: |
-                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/api/src packages/domain/src || true
-                  bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
-                  git checkout HEAD -- apps/api/src packages/domain/src || true
+                  # The agent Worker did not exist before the split, so on an older
+                  # base both the pathspec and the script are absent. Either way the
+                  # base reads 0 and the delta is the whole cost, once.
+                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/ai/src apps/api/src packages/domain/src || true
+                  bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
+                  git checkout HEAD -- apps/ai/src apps/api/src packages/domain/src || true
 
             - name: Summary
               run: |

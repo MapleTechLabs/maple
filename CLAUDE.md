@@ -36,7 +36,7 @@ you want the form.
 
 ```bash
 bun dev                        # everything, ONE `alchemy dev` stack → https://[<worktree>.]<app>.localhost
-bun dev api web                # a subset (api, alerting, electric-sync, web, landing, ingest, local-ui, scraper)
+bun dev api web                # a subset (api, ai, alerting, electric-sync, web, landing, ingest, local-ui, scraper)
 bun --filter=@maple/web dev    # single app on its raw port, no portless proxy
 bun run test                   # Vitest via turbo (NOT `bun test` — that's Bun's own runner)
 bun typecheck
@@ -49,6 +49,23 @@ bun run --cwd apps/api tinybird:deploy   # tinybird:dev / :build / :deploy live 
 Toolchain (bun/node/rust/python) is pinned in [`mise.toml`](mise.toml); `mise run setup` does
 first-time install + `.env.local` + portless CA. mise is optional but bump versions there when
 upgrading a runtime (keep `bun` in sync with `packageManager`).
+
+## The AI Worker (`apps/ai`)
+
+Every agent surface runs in its own Worker: the public MCP server and its ~47 tools, the chat agent
+and its `ChatSession` Durable Object, and the autonomous investigation fan-out. They moved together
+because all three reach the same tool registry in-process — extracting any one alone leaves the
+registry behind, which is why the first attempt was worth 1%.
+
+`api.maple.dev/mcp` is still the public address. `apps/api` forwards `/mcp`, `/api/chat/*` and
+`/internal/chat/*` over a service binding, ahead of building its route graph, which keeps the OAuth
+issuer and the RFC 8707 resource identifiers on api's origin. OAuth itself (`McpOAuthService`, the
+discovery and consent endpoints) stays in `apps/api`; maple-ai validates the ordinary API key it
+mints.
+
+**The alias convention is the opposite of what it looks like.** In `apps/ai`, `@/` is *apps/api's*
+source and `@ai/` is its own. This program compiles api's modules too, and those spell their
+internal imports `@/` — point it at `apps/ai` and every one resolves into the wrong tree.
 
 ## Warehouse queries
 
@@ -180,11 +197,10 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   it had diverged exactly where it mattered — it has `AWS/StageConfig.ts` where the real
   package has `AWS/Environment.ts` + `AWS/AuthProvider.ts` — and a code review cited its line
   numbers as fact for a bug in the live code.
-- **LLM core:** `@opencode-ai/ai` — opencode's Effect-native LLM core, on npm and pinned exactly
-  (`0.0.0-beta-18050`; the `dev`/`beta` channels carry no semver, so a bump is a read of the diff).
-  Only `apps/api` depends on it, and every piece of Maple behaviour — layer wiring, the Workers AI
-  binding shim, model/provider selection, error mapping — lives at the seam in
-  `apps/api/src/platform/Llm.ts`, never in a wrapper around the package.
+- **LLM core:** Effect AI (`@effect/ai-openrouter`, `@effect/ai-openai-compat`) plus
+  `@effect-agent/*`. Only `apps/ai` depends on them, and every piece of Maple behaviour — layer
+  wiring, the Workers AI binding shim, model/provider selection, error mapping — lives at the seam
+  in `apps/ai/src/platform/Llm.ts`, never in a wrapper around the packages.
 - **Span status codes:** Title case — `"Ok"`, `"Error"`, `"Unset"`.
 - **UI:** shadcn/Base UI + Tailwind 4 (`npx shadcn@latest add <component>`), Recharts, Nucleo icons.
   Find an icon in the local Nucleo DB, then port it into `apps/web/src/components/icons/` by copying
@@ -198,7 +214,7 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
 
 When an org has connected GitHub, every agent surface (chat, investigation lanes, public MCP)
 gets `sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
-(`apps/api/src/mcp/tools/sandbox.ts`). They run against a **full git clone at an exact commit**
+(`apps/ai/src/mcp/tools/sandbox.ts`). They run against a **full git clone at an exact commit**
 inside Cloudflare's Sandbox container, so history works (`git log`, `git blame`, `git show`).
 `git grep` and `git ls-files` back the search and listing tools, because the image ships git and
 not ripgrep — and its git is old enough to lack `git grep --max-count`, which is the kind of thing
@@ -224,7 +240,8 @@ arguments**, because `/proc/<pid>/cmdline` is readable by the account agent comm
 Testing it has three layers, and the top one is the only one that catches the image:
 
 ```bash
-bun run --cwd apps/api test src/services/sandbox src/mcp/tools/sandbox   # argument vectors, real git
+bun run --cwd apps/ai test src/mcp/tools/sandbox                 # the tools
+bun run --cwd apps/api test src/services/sandbox                 # argument vectors, real git
 bun run --cwd apps/sandbox test                                          # the generated scripts, as text
 bun run --cwd apps/sandbox verify:image                                  # the scripts, inside the image
 ```

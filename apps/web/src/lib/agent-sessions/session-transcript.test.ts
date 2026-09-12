@@ -1988,8 +1988,8 @@ describe("prepare / assemble", () => {
 				buildTranscript({ ...read, collapsedTurns, hasMore: false }),
 			)
 		}
-		expect(assembleTranscript(prepared, { collapsedTurns: collapsed, hasMore: false }).length).toBeLessThan(
-			assembleTranscript(prepared, { collapsedTurns: open, hasMore: false }).length,
-		)
+		expect(
+			assembleTranscript(prepared, { collapsedTurns: collapsed, hasMore: false }).length,
+		).toBeLessThan(assembleTranscript(prepared, { collapsedTurns: open, hasMore: false }).length)
 	})
 })

@@ -24,6 +24,7 @@ import {
 } from "@maple/infra/aws"
 import {
 	ApiWorker,
+	AiWorker,
 	SandboxWorker,
 	stageDeploysSandbox,
 	formatMapleStage,
@@ -38,6 +39,7 @@ import * as Acm from "@maple/infra/acm"
 import { optionalPlain, plainWithDefault } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
+import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
@@ -218,9 +220,18 @@ export default Alchemy.Stack(
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
 		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
-		const api = yield* sandbox === undefined
-			? MapleApi
-			: Effect.provideService(MapleApi, SandboxWorker, sandbox)
+		// Every agent surface — the MCP server and its tools, the chat agent, the
+		// investigation fan-out. Yielded before api because api binds it, and a
+		// `Worker.ref` cannot see a sibling this deploy creates.
+		// The root IS the entry point, and the AI Worker hosts the chat Durable
+		// Object: yielding the Worker resolves the class, and its Live layer is what
+		// registers the class in the deployed bundle's exports.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		const ai = yield* Effect.provide(MapleAi, MapleAiLive)
+		yield* serveWorker("ai", ai)
+		const api = yield* Effect.provideService(MapleApi, AiWorker, ai).pipe((withAi) =>
+			sandbox === undefined ? withAi : Effect.provideService(withAi, SandboxWorker, sandbox),
+		)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the
