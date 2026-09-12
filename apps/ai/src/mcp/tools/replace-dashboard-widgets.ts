@@ -1,23 +1,23 @@
 import { McpQueryError, requiredStringParam, validationError, type McpToolRegistrar } from "./types"
 import { Effect, Result, Schema } from "effect"
 import { DashboardWidgetSchema } from "@maple/domain/http"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
+import { createDualContent } from "../lib/structured-output"
 import {
 	defaultSizeForVisualization,
 	findNextWidgetPosition,
 	generateWidgetId,
 	withDashboardMutation,
 	type DashboardWidget,
-} from "@ai/mcp/lib/dashboard-mutations"
+} from "../lib/dashboard-mutations"
 import {
 	collectBlockingBuilderWarnings,
 	formatValidationSummary,
 	inspectWidgetsAfterMutation,
-} from "@ai/mcp/lib/inspect-widget"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { validateWidgetRenderability } from "@ai/mcp/lib/validate-widget-renderability"
-import { resolvePanelType } from "@ai/mcp/lib/panel-type"
-import { withScalarReduction } from "@ai/mcp/lib/raw-sql-widget"
+} from "../lib/inspect-widget"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { validateWidgetRenderability } from "../lib/validate-widget-renderability"
+import { resolvePanelType } from "../lib/panel-type"
+import { withScalarReduction } from "../lib/raw-sql-widget"
 
 const TOOL = "replace_dashboard_widgets"
 

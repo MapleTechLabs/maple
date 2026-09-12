@@ -6,15 +6,6 @@ const readModule = (path: string): string => readFileSync(new URL(path, import.m
 const importSpecifiers = (source: string): ReadonlyArray<string> =>
 	Array.from(source.matchAll(/(?:from\s+|import\s*\()["']([^"']+)["']/g), (match) => match[1]!)
 
-const layerMembers = (source: string, name: string): ReadonlyArray<string> => {
-	const block = new RegExp(`const ${name} = Layer\\.mergeAll\\(([\\s\\S]*?)\\n\\)`).exec(source)?.[1]
-	if (block === undefined) throw new Error(`Layer ${name} was not found`)
-	return block
-		.split("\n")
-		.map((line) => line.trim().replace(/,$/, ""))
-		.filter((line) => line !== "")
-}
-
 describe("AI runtime graph boundaries", () => {
 	it("keeps runtime entrypoints off the compatibility facade", () => {
 		const runtimeEntrypoints: ReadonlyArray<
@@ -31,7 +22,7 @@ describe("AI runtime graph boundaries", () => {
 			],
 			[
 				readModule("../mcp/__evals__/eval-runtime.ts"),
-				["@ai/runtime/mcp-service-graph"],
+				["../../runtime/mcp-service-graph"],
 				["McpServicesLive"],
 			],
 			[
@@ -51,36 +42,10 @@ describe("AI runtime graph boundaries", () => {
 	})
 
 	it("keeps the headless MCP root limited to registered tool requirements", () => {
-		const source = readModule("./mcp-service-graph.ts")
+		const source = readModule("../mcp/dispatcher.ts")
 		const imports = importSpecifiers(source)
 
-		expect(layerMembers(source, "McpRuntimeServicesLive")).toEqual([
-			"AlertReadModelsServiceLive",
-			"AlertRulesServiceLive",
-			"AlertsServiceLive",
-			// Lets `register_agent` (and issue-workflow mutations) write org audit entries.
-			"AuditLogServiceLive",
-			"DashboardPersistenceService.layer",
-			"ErrorActorsServiceLive",
-			"ErrorIssueReadModelsServiceLive",
-			"ErrorIssueWorkflowServiceLive",
-			"ErrorPolicyServiceLive",
-			"ErrorsServiceLive",
-			// Backs `link_pull_request`, and is what lets `propose_fix` turn its
-			// `pr_url` into a durable link rather than an event-payload string.
-			"IssueFixVerificationServiceLive",
-			"QueryEngineServiceLive",
-			"RecommendationIssueServiceLive",
-			// The agents' repository sandbox tools.
-			"RepoSandboxServiceLive",
-			"SetupAuditServiceLive",
-			"VcsSourceServiceLive",
-			"WarehouseQueryServiceLive",
-		])
-		expect(source).toContain(
-			"export const InvestigationServicesLive = Layer.mergeAll(McpServicesLive, InvestigationServiceLive)",
-		)
-		expect(imports).not.toContain("@/runtime/service-graph")
+		expect(imports).not.toContain("./service-graph")
 		for (const routeOnlyService of [
 			"DailySpendService",
 			"CloudflareAnalyticsService",

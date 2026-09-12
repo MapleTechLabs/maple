@@ -1,9 +1,15 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
-import { Database } from "@/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } from "@/platform/test-pglite"
-import { durableStep } from "./durable-step"
+
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { durableStep } from "@maple/backend/platform/durable-step"
 import { loadOptionalFeatureState, runClickHouseSchemaApply } from "./ClickHouseSchemaApplyWorkflow.run"
 
 /** The step's Effect as `task` hands it over, with the body context already provided. */

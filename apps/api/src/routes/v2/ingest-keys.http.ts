@@ -4,9 +4,9 @@ import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, V2InsufficientPermissions } from "@maple/domain/http/v2"
 import type { V2IngestKeys } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
-import { requireAdmin } from "@/services/auth/auth"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 
 const adminOnly = (action: string) => () =>
 	V2InsufficientPermissions.make(`Only org admins can ${action} ingest keys`)

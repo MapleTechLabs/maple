@@ -10,10 +10,10 @@ import {
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
 import type { V2AttributeMapping } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option } from "effect"
-import { requireAdmin } from "@/services/auth/auth"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 
 const toV2AttributeMapping = (mapping: IngestAttributeMapping): V2AttributeMapping => ({
 	id: mapping.id,

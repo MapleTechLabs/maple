@@ -6,9 +6,9 @@ import { runRawSql, autoBucketSeconds } from "./run-raw-sql"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
-} from "@/services/warehouse/WarehouseQueryService"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import type { TenantContext } from "@/services/auth/tenant-context"
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const tenant = { orgId: "org_test" } as TenantContext
 

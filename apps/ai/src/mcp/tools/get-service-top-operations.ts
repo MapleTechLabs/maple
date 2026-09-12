@@ -6,18 +6,18 @@ import {
 	validationError,
 	type McpToolRegistrar,
 } from "./types"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { resolveTimeRange, rangeExceededResult, MCP_SEARCH_MAX_HOURS } from "@ai/mcp/lib/time"
-import { clampLimit } from "@ai/mcp/lib/limits"
-import { formatTable } from "@ai/mcp/lib/format"
-import { formatMetricValue } from "@ai/mcp/lib/format-query-result"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { toMcpQueryError } from "@ai/mcp/lib/map-warehouse-error"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { resolveTimeRange, rangeExceededResult, MCP_SEARCH_MAX_HOURS } from "../lib/time"
+import { clampLimit } from "../lib/limits"
+import { formatTable } from "../lib/format"
+import { formatMetricValue } from "../lib/format-query-result"
+import { formatNextSteps } from "../lib/next-steps"
+import { createDualContent } from "../lib/structured-output"
+import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Effect, Option, Schema } from "effect"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
-import { provideWarehouseExecutorFromTenant } from "@/services/warehouse/WarehouseQueryService"
+import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const decodeTracesMetric = Schema.decodeUnknownOption(TracesMetric)
 

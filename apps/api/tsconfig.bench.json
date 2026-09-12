@@ -4,7 +4,7 @@
 		"scripts/bench-queries.ts",
 		"scripts/cold-path/*.ts",
 		"scripts/bench-suites/*.ts",
-		"src/services/warehouse/query-benchmark.clickhouse.e2e.test.ts"
+		"scripts/query-bench/catalog.clickhouse.e2e.test.ts"
 	],
 	"exclude": []
 }

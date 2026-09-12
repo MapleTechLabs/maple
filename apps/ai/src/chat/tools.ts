@@ -18,10 +18,10 @@ import { InvestigationId, UserId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
-import type { McpToolExecutorApi } from "@ai/mcp/dispatcher"
+import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "@ai/mcp/tools/llm-tools"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
 

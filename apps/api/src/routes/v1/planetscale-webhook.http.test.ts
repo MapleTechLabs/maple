@@ -1,17 +1,18 @@
+import { IntegrationsValidationError } from "@maple/domain/http"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { planetscaleConnections } from "@maple/db"
 import { ConfigProvider, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import { encryptAes256Gcm } from "@/platform/Crypto"
-import { Database } from "@/platform/DatabaseLive"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	PlanetScaleWebhookQueue,
 	PlanetScaleWebhookQueueError,
 	type PlanetScaleWebhookJob,
-} from "@/services/integrations/planetscale/PlanetScaleWebhookQueue"
+} from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 import { PlanetScaleWebhookRouter } from "./planetscale-webhook.http"
 
 const trackedDbs: TestDb[] = []
@@ -59,7 +60,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			const encrypted = yield* encryptAes256Gcm(
 				SECRET,
 				ENCRYPTION_KEY,
-				(message) => new Error(message),
+				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = new Date("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
@@ -129,7 +130,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			const encrypted = yield* encryptAes256Gcm(
 				SECRET,
 				ENCRYPTION_KEY,
-				(message) => new Error(message),
+				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = new Date("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
@@ -199,7 +200,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			const encrypted = yield* encryptAes256Gcm(
 				SECRET,
 				ENCRYPTION_KEY,
-				(message) => new Error(message),
+				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = new Date("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
@@ -280,7 +281,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			const encrypted = yield* encryptAes256Gcm(
 				SECRET,
 				ENCRYPTION_KEY,
-				(message) => new Error(message),
+				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = new Date("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>

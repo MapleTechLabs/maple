@@ -2,12 +2,12 @@ import { assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SandboxOutputLimitError, SandboxImplementation } from "@effect-agent/sandbox/Sandbox"
 import { Effect, Layer, Schema } from "effect"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	RepoSandboxService,
 	type RepoSandboxServiceApi,
 	type SandboxCommandResult,
-} from "@/services/sandbox/RepoSandboxService"
+} from "@maple/backend/services/sandbox/RepoSandboxService"
 import { registerSandboxTools } from "./sandbox"
 import type { McpToolError, McpToolRegistrar, McpToolResult } from "./types"
 

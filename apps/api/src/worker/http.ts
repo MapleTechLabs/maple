@@ -1,3 +1,4 @@
+import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
  * The api Worker's request path: the route graph built once per isolate on
  * the first request, and the `fetch` handler the bridge serves around it.
@@ -5,68 +6,18 @@
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Cause, Clock, Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
+import { Cause, Clock, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
-import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "../http/api-cors"
+import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "@maple/backend/http/api-cors"
 import { aiUnavailableResponse, forwardsToAi, forwardToAi, isCloudflareFetcher } from "./ai-forward"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
-import type { MapleDbConnection } from "../platform/bindings"
-import { layerPg } from "../platform/DatabasePgLive"
-import { recordRenderedFailure } from "../routes/rendered-failure"
-import { withPgConnectionScope } from "../platform/pg-connection-scope"
+import type { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
-
-const WorkerFileSystemLive = FileSystem.layerNoop({})
-
-const WorkerHttpPlatformLive = Layer.effect(
-	HttpPlatform.HttpPlatform,
-	HttpPlatform.make({
-		platform: "web",
-		compression: HttpPlatform.makeCompressionWeb({
-			algorithms: ["gzip", "deflate"],
-			transform: (algorithm) => HttpPlatform.compressionTransformWeb(algorithm),
-		}),
-		fileResponse: (_path, status, statusText, headers) =>
-			HttpServerResponse.text("File responses are unavailable in the worker runtime", {
-				status,
-				statusText,
-				headers,
-			}),
-		fileWebResponse: (_file, status, statusText, headers) =>
-			HttpServerResponse.text("File responses are unavailable in the worker runtime", {
-				status,
-				statusText,
-				headers,
-			}),
-	}),
-).pipe(Layer.provideMerge(WorkerFileSystemLive), Layer.provideMerge(Etag.layer))
-
-export const WorkerPlatformLive = Layer.mergeAll(Path.layer, WorkerHttpPlatformLive)
-
-/**
- * A build run under the isolate's context — never the first event's fiber —
- * on a scope closed only if the build fails (workerd has no teardown).
- *
- * The builds run lazily on the first event, inside that event's fiber, and
- * the HttpApi group layers capture the fiber context they are built in and
- * wrap every route handler in it, overriding the per-request one: a graph
- * built inside request A served every later request with A's
- * `HttpServerRequest` (its bearer, its content-type, its body), A's execution
- * context and A's already-flushed span exporter. `isolate` is the context the
- * init captured before any event existed.
- */
-export const forIsolate =
-	(isolate: Context.Context<never>) =>
-	<A, E>(build: Effect.Effect<A, E, Scope.Scope>): Effect.Effect<A, E> =>
-		Effect.gen(function* () {
-			const scope = yield* Scope.make()
-			return yield* build.pipe(
-				Scope.provide(scope),
-				Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
-			)
-		}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -178,20 +129,6 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 		}
 	})
 
-/**
- * SAFETY: `toHttpEffect` keeps the routes' error and requirement markers in
- * the handler's type; the bridge's `safeHttpEffect` renders any escaping cause
- * (a Respondable as its own response, anything else as a 500), so the markers
- * are discharged here, once.
- */
-const bridgeHandler = <E, R>(
-	handler: Effect.Effect<
-		HttpServerResponse.HttpServerResponse,
-		E,
-		R | Scope.Scope | HttpServerRequest.HttpServerRequest
-	>,
-): HttpEffect => handler as HttpEffect
-
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
 	return query === -1 ? url : url.slice(0, query)
@@ -242,12 +179,6 @@ const recordIsolateAge = (isolate: { readonly ageMs: number; readonly ordinal: n
  * database scope or the route codecs, and a cold isolate can report health
  * when an unrelated binding is unavailable. Everything else runs the router
  * under one Postgres connection for the request.
- *
- * MCP session persistence is driven from here rather than from inside the
- * MCP layer: the sessions Map hands Effect's MCP server its transcript, and
- * the KV copy behind it is what lets the next isolate find a session this one
- * issued. The ports are provided around the whole request, the same way the
- * background events get them.
  */
 export const makeFetch = (
 	app: Effect.Effect<HttpEffect, unknown>,

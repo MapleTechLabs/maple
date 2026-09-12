@@ -1,15 +1,18 @@
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 /** The dashboard read path acquires only its warehouse, auth, and audit dependencies. */
 import { MapleInternalApi } from "@maple/domain/http"
 import { Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
-import { API_CORS_OPTIONS } from "@/http/api-cors"
-import { Env } from "@/platform/Env"
+import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
+import { Env } from "@maple/backend/platform/Env"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
-import { V1ErrorBoundaryLive } from "@/routes/v1/error-boundary"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { NotFoundRouter } from "@/routes/discovery.http"
-import { SessionAuthorizationLayer } from "@/services/auth/SessionAuthorizationLayer"
-import { AuditLogServiceLive, QueryEngineServiceLive } from "./warehouse-services"
+import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
 // Select the already-decorated group: its session auth and v1 error middleware
 // are exactly those of the complete internal API. The service key keeps the API id.
@@ -24,7 +27,8 @@ export const QueryRoutes = Layer.mergeAll(
 ).pipe(
 	Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)),
 	Layer.provideMerge(
-		SessionAuthorizationLayer.pipe(Layer.provide(AuditLogServiceLive), Layer.provide(Env.layer)),
+		SessionAuthorizationLayer.pipe(Layer.provide(AuditLogService.layer), Layer.provide(Env.layer)),
 	),
-	Layer.provideMerge(QueryEngineServiceLive),
+	Layer.provideMerge(Layer.mergeAll(QueryEngineService.layer, WarehouseQueryService.layer)),
+	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

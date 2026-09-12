@@ -12,11 +12,11 @@ import { Cause, Effect, Schema } from "effect"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { orgIdFromChatSessionId } from "@maple/domain/chat-session"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
-import { mapleToolCatalog } from "@ai/mcp/tools/registry"
-import { MUTATING_TOOL_NAMES } from "@ai/mcp/tools/mutating"
-import { McpToolExecutor } from "@ai/mcp/dispatcher"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { summarizeCause } from "@/platform/describe-cause"
+import { mapleToolCatalog } from "../../mcp/tools/registry"
+import { MUTATING_TOOL_NAMES } from "../../mcp/tools/mutating"
+import { McpToolExecutor } from "../../mcp/dispatcher"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const executionDefect = (tool: string, defect: unknown) =>
 	Effect.logError("Chat approval tool execution defect").pipe(

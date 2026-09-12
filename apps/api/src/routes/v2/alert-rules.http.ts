@@ -20,10 +20,10 @@ import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid }
 import { AlertForbiddenError } from "@maple/domain/http"
 import { Effect, Encoding, Result, Schema } from "effect"
 import { auditDiff } from "@/routes/v2/audit-changes"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { AlertsService } from "@/services/alerts/AlertsService"
-import { AlertReadModelsService } from "@/services/alerts/AlertReadModelsService"
-import { AlertRulesService } from "@/services/alerts/AlertRulesService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
 

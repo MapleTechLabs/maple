@@ -5,47 +5,22 @@
  * graph this file drags in is imported on the first fire, not at startup and
  * not in the deploy process, where the Worker's init also runs.
  */
-import {
-	AlertDestinationsService,
-	AlertReadModelsService,
-	AlertRuntime,
-	AlertRulesService,
-	AlertsService,
-	AuditLogService,
-	AnomalyDetectionService,
-	BucketCacheService,
-	CacheBackendLive,
-	CloudflareAnalyticsService,
-	CloudflareOAuthService,
-	DigestService,
-	EdgeCacheService,
-	EmailService,
-	Env,
-	ErrorActorsService,
-	ErrorIssueWorkflowService,
-	ErrorPolicyService,
-	ErrorsService,
-	EscalationService,
-	FixVerificationTickService,
-	HazelOAuthService,
-	layerPg,
-	NotificationDispatcher,
-	IssueFixVerificationService,
-	OrgClickHouseSettingsService,
-	OrgIngestKeysService,
-	OrgMembersService,
-	PlanetScaleOAuthService,
-	PullRequestLookupLive,
-	PlanetScaleService,
-	QueryEngineService,
-	ServiceMapRollupService,
-	TinybirdOrgTokenService,
-	VcsSourceServiceLayer,
-	WarehouseQueryService,
-	mapleDbConnectionLayer,
-	summarizeCause,
-	withPgConnectionScope,
-} from "@maple/api/alerting"
+import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
+import { Env } from "@maple/backend/platform/Env"
+import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
+import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
+import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { Cause, Effect, Layer, Match } from "effect"
 import type { AlertingWorkerEnv } from "./worker.ts"
@@ -57,207 +32,22 @@ import type { AlertingWorkerEnv } from "./worker.ts"
  * provided either would shadow them — `worker-telemetry.test.ts` pins that
  * a tick's spans still reach the export.
  */
-export const buildLayer = (env: AlertingWorkerEnv) => {
-	// Keep config and binding services on the same invocation-scoped env record;
-	// scheduled handlers already receive the authoritative Cloudflare bindings.
-	// The fire's env as `WorkerEnvironment` and the `ConfigProvider` `Env` reads.
-	const WorkerEnvironmentLive = workerEnvLayer(env)
-	const EnvLive = Env.layer
-
-	// `MAPLE_DB` off this fire's env, bound to the Worker by its init (`MapleDb`).
-	const MapleDbConnectionLive = mapleDbConnectionLayer(env)
-	const DatabaseLive = layerPg.pipe(Layer.provide(MapleDbConnectionLive))
-
-	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
-	const AlertRuntimeLive = AlertRuntime.layer
-	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
-
-	const OrgClickHouseSettingsLive = OrgClickHouseSettingsService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, EdgeCacheServiceLive)),
+export const buildLayer = (env: AlertingWorkerEnv) =>
+	Layer.mergeAll(
+		AlertsService.layer,
+		AnomalyDetectionService.layer,
+		CloudflareAnalyticsService.layer,
+		PlanetScaleService.layer,
+		DigestService.layer,
+		ErrorsService.layer,
+		FixVerificationTickService.layer,
+		EscalationService.layer,
+		ServiceMapRollupService.layer,
+	).pipe(
+		Layer.provide(PullRequestLookupLive),
+		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive)),
+		Layer.provideMerge(Layer.mergeAll(mapleDbConnectionLayer(env), workerEnvLayer(env))),
 	)
-
-	const TinybirdOrgTokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(EnvLive))
-
-	const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
-	)
-
-	const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provide(EdgeCacheServiceLive))
-
-	const QueryEngineServiceLive = QueryEngineService.layer.pipe(
-		Layer.provide(WarehouseQueryServiceLive),
-		Layer.provide(EdgeCacheServiceLive),
-		Layer.provide(BucketCacheServiceLive),
-	)
-
-	const HazelOAuthServiceLive = HazelOAuthService.layer.pipe(Layer.provide(BaseLive))
-
-	// EmailService resolves the Cloudflare Email Service `EMAIL` binding from
-	// WorkerEnvironment (delivery binding) in addition to EnvLive (EMAIL_FROM).
-	const EmailServiceLive = EmailService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, WorkerEnvironmentLive)),
-	)
-
-	const OrgMembersServiceLive = OrgMembersService.layer.pipe(Layer.provide(EnvLive))
-
-	const AlertDestinationsServiceLive = AlertDestinationsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(BaseLive, HazelOAuthServiceLive, EmailServiceLive, OrgMembersServiceLive),
-		),
-	)
-
-	const AlertReadModelsServiceLive = AlertReadModelsService.layer.pipe(
-		Layer.provide(Layer.mergeAll(DatabaseLive, WarehouseQueryServiceLive)),
-	)
-
-	const AlertRulesServiceLive = AlertRulesService.layer.pipe(
-		Layer.provide(Layer.mergeAll(DatabaseLive, AlertRuntimeLive)),
-	)
-
-	// WorkerEnvironment is merged in so the incident-open issue-hub hook can see
-	// the cross-script investigation workflow binding. The hoisted AlertRuntime
-	// layer is shared with the narrow rules capability even though the reference
-	// also has production defaults.
-	const AlertsServiceLive = AlertsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				QueryEngineServiceLive,
-				WarehouseQueryServiceLive,
-				OrgClickHouseSettingsLive,
-				AlertRuntimeLive,
-				HazelOAuthServiceLive,
-				EmailServiceLive,
-				AlertDestinationsServiceLive,
-				AlertReadModelsServiceLive,
-				AlertRulesServiceLive,
-				WorkerEnvironmentLive,
-			),
-		),
-	)
-
-	const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, HazelOAuthServiceLive, EmailServiceLive)),
-	)
-
-	const EscalationServiceLive = EscalationService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, NotificationDispatcherLive)),
-	)
-
-	const ErrorActorsServiceLive = ErrorActorsService.layer.pipe(Layer.provide(BaseLive))
-	const ErrorIssueWorkflowServiceLive = ErrorIssueWorkflowService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				ErrorActorsServiceLive,
-				AuditLogService.layer.pipe(Layer.provide(WarehouseQueryServiceLive)),
-			),
-		),
-	)
-	const ErrorPolicyServiceLive = ErrorPolicyService.layer.pipe(Layer.provide(BaseLive))
-
-	// Only reachable from here through an investigation agent's `propose_fix`, but
-	// wired all the same: which worker served the call should not decide whether a
-	// pull-request link arrives with its title and state, or whether attaching an
-	// already-merged PR opens a verification window.
-	const VcsSourceServiceLive = VcsSourceServiceLayer.pipe(Layer.provide(BaseLive))
-
-	const IssueFixVerificationServiceLive = IssueFixVerificationService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				ErrorActorsServiceLive,
-				ErrorIssueWorkflowServiceLive,
-				PullRequestLookupLive.pipe(Layer.provide(VcsSourceServiceLive)),
-			),
-		),
-	)
-
-	// WorkerEnvironment is merged in so incident-open investigations can see the
-	// cross-script fan-out workflow binding.
-	const ErrorsServiceLive = ErrorsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				WarehouseQueryServiceLive,
-				EdgeCacheServiceLive,
-				NotificationDispatcherLive,
-				ErrorActorsServiceLive,
-				ErrorIssueWorkflowServiceLive,
-				ErrorPolicyServiceLive,
-				IssueFixVerificationServiceLive,
-				WorkerEnvironmentLive,
-			),
-		),
-	)
-
-	// WorkerEnvironment merged in so the tick can reach the fan-out workflow
-	// binding when it opens a verification investigation.
-	const FixVerificationTickServiceLive = FixVerificationTickService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				WarehouseQueryServiceLive,
-				IssueFixVerificationServiceLive,
-				WorkerEnvironmentLive,
-			),
-		),
-	)
-
-	const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EdgeCacheServiceLive, WorkerEnvironmentLive),
-		),
-	)
-
-	const DigestServiceLive = DigestService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EdgeCacheServiceLive, EmailServiceLive),
-		),
-	)
-
-	const ServiceMapRollupServiceLive = ServiceMapRollupService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, WarehouseQueryServiceLive)),
-	)
-
-	const CloudflareOAuthServiceLive = CloudflareOAuthService.layer.pipe(Layer.provide(BaseLive))
-
-	const OrgIngestKeysServiceLive = OrgIngestKeysService.layer.pipe(Layer.provide(BaseLive))
-
-	const CloudflareAnalyticsServiceLive = CloudflareAnalyticsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				WarehouseQueryServiceLive,
-				CloudflareOAuthServiceLive,
-				OrgIngestKeysServiceLive,
-				OrgClickHouseSettingsLive,
-			),
-		),
-	)
-
-	const PlanetScaleOAuthServiceLive = PlanetScaleOAuthService.layer.pipe(Layer.provide(BaseLive))
-
-	const PlanetScaleServiceLive = PlanetScaleService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, PlanetScaleOAuthServiceLive)),
-	)
-
-	return Layer.mergeAll(
-		AlertsServiceLive,
-		AnomalyDetectionServiceLive,
-		CloudflareAnalyticsServiceLive,
-		PlanetScaleServiceLive,
-		DigestServiceLive,
-		ErrorsServiceLive,
-		FixVerificationTickServiceLive,
-		EscalationServiceLive,
-		ServiceMapRollupServiceLive,
-		WorkerEnvironmentLive,
-		// Exposed in the output, not just provided inward: `withPgConnectionScope`
-		// opens the tick's socket on it.
-		MapleDbConnectionLive,
-	).pipe(Layer.provideMerge(WorkerEnvironmentLive))
-}
 
 /**
  * Standard tick failure isolation. A broken tick must not fail the whole scheduled

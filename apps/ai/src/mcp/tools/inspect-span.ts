@@ -1,10 +1,10 @@
 import { requiredStringParam, optionalStringParam, type McpToolRegistrar } from "./types"
-import { warehouseToMcpHandlers } from "@ai/mcp/lib/map-warehouse-error"
-import { withTenantExecutor } from "@ai/mcp/lib/query-warehouse"
-import { truncate } from "@ai/mcp/lib/format"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { truncate } from "../lib/format"
+import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
+import { createDualContent } from "../lib/structured-output"
 import { spanDetail } from "@maple/query-engine/observability"
 
 export function registerInspectSpanTool(server: McpToolRegistrar) {

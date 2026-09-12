@@ -34,9 +34,9 @@ import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import * as Output from "@effect-agent/engine/Output"
 import { Effect, Layer, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
-import type { McpToolExecutorApi } from "@ai/mcp/dispatcher"
-import type { LlmClients, ResolvedModel } from "@ai/platform/Llm"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import type { LlmClients, ResolvedModel } from "../platform/Llm"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import {
 	agentPolicyFor,
 	buildSystemPrompt,

@@ -1,15 +1,15 @@
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Schema } from "effect"
-import type { Database, DatabaseError } from "@/platform/DatabaseLive"
-import type { QueueBatch } from "@/platform/queue-batch"
+import type { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import {
 	classifyPlanetScaleEvent,
 	deployRequestNumber,
 	insertPlanetScaleEvent,
 	planetScaleBranchName,
 	upsertPlanetScaleIssue,
-} from "./services/integrations/planetscale/webhook-events"
-import { PlanetScaleWebhookJob } from "./services/integrations/planetscale/PlanetScaleWebhookQueue"
+} from "@maple/backend/services/integrations/planetscale/webhook-events"
+import { PlanetScaleWebhookJob } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 
 /**
  * Deliberately not `maple-api`: background work sharing the request-facing

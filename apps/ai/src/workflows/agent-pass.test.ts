@@ -15,7 +15,7 @@ import { describe, it } from "@effect/vitest"
 import { assert } from "vitest"
 import { Effect, Layer, Option, Schema } from "effect"
 import { Model, Tool, Toolkit } from "effect/unstable/ai"
-import { MapleToolFailure } from "@ai/mcp/tools/llm-tools"
+import { MapleToolFailure } from "../mcp/tools/llm-tools"
 import {
 	ScriptedModel,
 	type ScriptedStreamPart,
@@ -25,11 +25,11 @@ import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PermissionRule } from "@maple/domain/permission"
 import { OrgId, UserId } from "@maple/domain"
-import type { AgentDefinition } from "@ai/chat/agents"
-import { McpToolExecutor } from "@ai/mcp/dispatcher"
-import type { ResolvedModel } from "@ai/platform/Llm"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { makeRecordingTracer } from "@/testing/recording-tracer"
+import type { AgentDefinition } from "../chat/agents"
+import { McpToolExecutor } from "../mcp/dispatcher"
+import type { ResolvedModel } from "../platform/Llm"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { runAgentPass } from "./agent-pass"
 
 const TENANT: TenantContext = {

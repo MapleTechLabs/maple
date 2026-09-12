@@ -2,12 +2,12 @@ import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import { AuthService } from "@/services/auth/AuthService"
-import { McpOAuthService } from "@/services/auth/McpOAuthService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { resolveMcpTenantContext } from "@ai/mcp/lib/resolve-tenant"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { resolveMcpTenantContext } from "./resolve-tenant"
 
 /**
  * The seam between the two Workers.

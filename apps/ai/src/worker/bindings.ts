@@ -14,12 +14,12 @@ import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Effect, Layer } from "effect"
-import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@/platform/bindings"
-import { mapleDbConnectionLayer } from "@/platform/pg-connection-source"
+import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
+import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
-} from "@/services/auth/McpToolRateLimiter"
+} from "@maple/backend/services/auth/McpToolRateLimiter"
 
 export const bindAiClients = Effect.gen(function* () {
 	// `MAPLE_DB` in the stage's flavor. The agents read and write the same

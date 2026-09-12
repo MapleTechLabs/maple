@@ -1,3 +1,4 @@
+import { WorkerPlatformLive } from "@maple/infra/worker-http"
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
@@ -7,10 +8,10 @@ import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { MapleDbConnection } from "./platform/bindings"
+import { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { recordRenderedFailure } from "./routes/rendered-failure"
-import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
+import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { buildIsolateHandler, makeFetch } from "./worker/http"
 
 /**
  * One request the way alchemy's bridge runs it — `makeRequestHandler` is the

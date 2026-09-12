@@ -5,10 +5,10 @@ import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
-import { McpToolExecutor, type McpToolExecutorApi } from "@ai/mcp/dispatcher"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { McpToolExecutor, type McpToolExecutorApi } from "../../mcp/dispatcher"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { HttpChatLive } from "./chat.http"
-import { V1ErrorBoundaryLive } from "@/routes/v1/error-boundary"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 class ChatOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)

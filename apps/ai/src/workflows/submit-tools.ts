@@ -20,7 +20,7 @@
 import { AiTriageResult, InvestigationPlan, LensCandidate, ValidatorVerdict } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
-import { MapleToolFailure } from "@ai/mcp/tools/llm-tools"
+import { MapleToolFailure } from "../mcp/tools/llm-tools"
 import { PLANNER_SUBMIT_DESCRIPTION, PLANNER_SUBMIT_TOOL } from "./planner-prompt"
 
 /** What a model is told when it calls a submit tool as an ordinary one. */

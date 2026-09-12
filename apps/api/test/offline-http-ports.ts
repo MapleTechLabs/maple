@@ -10,7 +10,7 @@ import {
 	PlanetScaleWebhookQueueProducer,
 	ReplayBlobBucket,
 	VcsSyncQueueProducer,
-} from "../src/platform/bindings"
+} from "@maple/backend/platform/bindings"
 const rejectIO = () => Effect.die("Unexpected external I/O in cold-path probe")
 const queue = { sendBatch: rejectIO }
 const limiter = { limit: rejectIO }

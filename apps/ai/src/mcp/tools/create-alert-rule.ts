@@ -7,10 +7,10 @@ import {
 	type McpToolRegistrar,
 } from "./types"
 import { Effect, Match, Option, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { toMcpHttpError } from "@ai/mcp/lib/map-http-error"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { AlertRulesService } from "@/services/alerts/AlertRulesService"
+import { createDualContent } from "../lib/structured-output"
+import { toMcpHttpError } from "../lib/map-http-error"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertRuleUpsertRequest } from "@maple/domain/http"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)

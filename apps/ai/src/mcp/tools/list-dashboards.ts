@@ -1,11 +1,11 @@
 import { McpQueryError, optionalStringParam, type McpToolRegistrar } from "./types"
-import { formatTable } from "@ai/mcp/lib/format"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { formatTable } from "../lib/format"
+import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { DASHBOARD_TEMPLATES } from "@/dashboard-templates"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { DASHBOARD_TEMPLATES } from "@maple/backend/dashboard-templates"
 
 export function registerListDashboardsTool(server: McpToolRegistrar) {
 	server.tool(

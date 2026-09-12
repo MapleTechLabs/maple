@@ -2,9 +2,9 @@ import { afterAll, assert, describe, it } from "@effect/vitest"
 import { createMaplePgSocket } from "@maple/db/client"
 import { sql } from "drizzle-orm"
 import { Effect, Exit, Tracer } from "effect"
-import type { DatabaseClient } from "@/platform/DatabaseLive"
-import { makePgConnectionScope, MAX_CONNECTIONS } from "@/platform/pg-connection-scope"
-import { isPostgresConnectionError, postgresErrorType } from "@/platform/postgres-errors"
+import type { DatabaseClient } from "@maple/backend/platform/DatabaseLive"
+import { makePgConnectionScope, MAX_CONNECTIONS } from "@maple/backend/platform/pg-connection-scope"
+import { isPostgresConnectionError, postgresErrorType } from "@maple/backend/platform/postgres-errors"
 
 /**
  * These assertions are the reason this suite exists. The unit tests replace the

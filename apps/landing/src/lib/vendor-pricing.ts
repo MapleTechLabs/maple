@@ -12,7 +12,7 @@
  * Maple branch converts with a per-item estimate documented at that branch.
  */
 
-export type Vendor = "datadog" | "grafana" | "new-relic" | "dash0" | "openobserve" | "signoz"
+export type Vendor = "datadog" | "grafana" | "new-relic" | "dash0" | "openobserve" | "signoz" | "axiom"
 
 /** Month the list prices were last checked against the vendors' pages. */
 export const PRICES_VERIFIED = "2026-08"
@@ -200,6 +200,47 @@ export const vendorConfigs = {
 			},
 		],
 	},
+	axiom: {
+		name: "Axiom",
+		sliders: [
+			{
+				key: "logVolume",
+				label: "Log volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "traceVolume",
+				label: "Trace volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "metricVolume",
+				label: "Metric volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "queryHours",
+				label: "Query compute",
+				min: 10,
+				max: 5000,
+				step: 10,
+				default: 250,
+				unit: "GB-hrs/mo",
+			},
+		],
+	},
 } satisfies Record<Vendor, { name: string; sliders: SliderConfig[] }>
 
 /** The slider defaults — the reference workload the receipts are priced on. */
@@ -380,6 +421,81 @@ const signoz = (values: Record<string, number>): Estimate => {
 	}
 }
 
+/**
+ * Marginal tiers, AWS-style: each band prices only the amount that falls in
+ * it, which is what "sub-linear" means on Axiom's rate card. `[upTo, rate]`,
+ * the last band open-ended.
+ */
+const tiered = (amount: number, tiers: readonly [number, number][]): number => {
+	let priced = 0
+	let cost = 0
+	for (const [upTo, rate] of tiers) {
+		const inBand = Math.min(amount, upTo) - priced
+		if (inBand <= 0) break
+		cost += inBand * rate
+		priced += inBand
+	}
+	return cost
+}
+
+const axiom = (values: Record<string, number>): Estimate => {
+	// Axiom Cloud's published rate card: $25/mo platform fee, then three
+	// meters, each with an Always Free allowance and marginal volume tiers.
+	// Data loading: 1,000 GB free, then $0.12/GB falling to $0.06 above 5 PB.
+	// Query compute: 100 GB-hours free, then $0.20 falling to $0.08.
+	// Storage: 100 GB of compressed data free, then $0.03/GB/mo.
+	// Credits convert at $1 and pre-purchase discounts (to $0.60) are not
+	// modeled, which biases the estimate in Axiom's favour.
+	const PLATFORM_FEE = 25
+	const LOADING_TIERS = [
+		[1_000, 0],
+		[100_000, 0.12],
+		[500_000, 0.1],
+		[1_000_000, 0.085],
+		[5_000_000, 0.07],
+		[Number.POSITIVE_INFINITY, 0.06],
+	] as const satisfies readonly [number, number][]
+	const QUERY_TIERS = [
+		[100, 0],
+		[500, 0.2],
+		[5_000, 0.16],
+		[50_000, 0.12],
+		[2_500_000, 0.1],
+		[Number.POSITIVE_INFINITY, 0.08],
+	] as const satisfies readonly [number, number][]
+
+	const ingestGB = values.logVolume + values.traceVolume + values.metricVolume
+	const loading = tiered(ingestGB, LOADING_TIERS)
+	const query = tiered(values.queryHours, QUERY_TIERS)
+	// Storage bills compressed bytes at Axiom's documented 95% default ratio,
+	// over a month of ingest held for a month, the shortest retention this
+	// month's data can have, so the cheapest this line gets.
+	const storedGB = ingestGB * 0.05
+	const storage = Math.max(0, storedGB - 100) * 0.03
+
+	return {
+		total: PLATFORM_FEE + loading + query + storage,
+		breakdown: [
+			{ label: "Platform fee", value: PLATFORM_FEE, detail: "$25/mo Axiom Cloud" },
+			{
+				label: "Data loading",
+				value: loading,
+				detail: `${Math.round(ingestGB).toLocaleString()} GB (1 TB free)`,
+			},
+			{
+				label: "Query compute",
+				value: query,
+				detail: `${values.queryHours.toLocaleString()} GB-hrs (100 free)`,
+			},
+			{
+				label: "Storage",
+				value: storage,
+				detail: `${Math.round(storedGB).toLocaleString()} GB compressed (100 GB free)`,
+			},
+		],
+	}
+}
+
 /** What the vendor charges for `values` — the slider state of `vendorConfigs[vendor]`. */
 export const estimateVendor = (vendor: Vendor, values: Record<string, number>): Estimate => {
 	if (vendor === "datadog") return datadog(values)
@@ -387,6 +503,7 @@ export const estimateVendor = (vendor: Vendor, values: Record<string, number>): 
 	if (vendor === "dash0") return dash0(values)
 	if (vendor === "openobserve") return openObserve(values)
 	if (vendor === "signoz") return signoz(values)
+	if (vendor === "axiom") return axiom(values)
 	return newRelic(values)
 }
 
@@ -414,8 +531,9 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 		logsGB = values.logVolume
 		tracesGB = values.traceVolume
 		metricsGB = values.metricSeries * 4.32
-	} else if (vendor === "openobserve") {
-		// Both bill per GB ingested, so volumes map across directly.
+	} else if (vendor === "openobserve" || vendor === "axiom") {
+		// Both bill per GB ingested, so volumes map across directly. Axiom's
+		// query-compute meter has no Maple counterpart: queries are included.
 		logsGB = values.logVolume
 		tracesGB = values.traceVolume
 		metricsGB = values.metricVolume
@@ -472,8 +590,9 @@ export const vendorCaveat = {
 	dash0: "Dash0 bills per data point (spans & logs $0.60/M, metrics $0.20/M); Maple bills per GB, so the Maple estimate converts at roughly 1 KB per span and log record and 0.1 KB per metric data point. Your real ratio depends on attribute and payload sizes.",
 	openobserve:
 		"OpenObserve modeled at its headline $0.50/GB ingestion rate, which already includes the 30% annual-commitment discount; query fees ($0.01/GB scanned) and extended retention beyond the included 30 days for logs and traces ($0.02/GB per additional 30 days) are not included, which favors OpenObserve.",
+	axiom: "Axiom modeled on Axiom Cloud's published rate card: $25/mo platform fee, data loading at $0.12/GB beyond the 1 TB Always Free allowance (falling to $0.06/GB at petabyte volumes), query compute at $0.20/GB-hour beyond 100 GB-hours free, and storage at $0.03/GB/mo beyond 100 GB, on Axiom's documented 95% compression ratio and a month of retention. Pre-purchase credit discounts (down to $0.60 per credit) and the governance add-ons (SSO $100, Directory Sync $100, RBAC $50, audit log $50 a month) are not modeled. Maple has no query-compute or storage meter, so the Maple estimate prices ingest only.",
 	signoz: "SigNoz modeled on the Teams plan at its default retention (logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at 1 month) with the $49/mo base fee, from which $49 of usage is subtracted as included; longer retention costs more (up to $1.40/GB at 1 year) and is not included, which favors SigNoz. Maple bills per GB, so the Maple estimate converts metric samples at roughly 0.1 KB per data point (0.1 GB per million samples).",
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =
-	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal — logs, traces, metrics — then $0.30/GB, billed per signal), metered on uncompressed (decoded OTLP) bytes."
+	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal (logs, traces, metrics), then $0.30/GB, billed per signal), metered on uncompressed (decoded OTLP) bytes."

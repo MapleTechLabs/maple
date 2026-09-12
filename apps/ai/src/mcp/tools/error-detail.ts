@@ -7,15 +7,15 @@ import {
 	validationError,
 	type McpToolRegistrar,
 } from "./types"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { resolveTimeRange } from "@ai/mcp/lib/time"
-import { formatDurationFromMs, truncate } from "@ai/mcp/lib/format"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
-import { toMcpQueryError } from "@ai/mcp/lib/map-warehouse-error"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { resolveTimeRange } from "../lib/time"
+import { formatDurationFromMs, truncate } from "../lib/format"
+import { formatNextSteps } from "../lib/next-steps"
+import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Array as Arr, Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
+import { createDualContent } from "../lib/structured-output"
 import { errorDetail } from "@maple/query-engine/observability"
-import { provideWarehouseExecutorFromTenant } from "@/services/warehouse/WarehouseQueryService"
+import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 /**
  * A FingerprintHash is a ClickHouse UInt64 rendered as a decimal string. It is NOT

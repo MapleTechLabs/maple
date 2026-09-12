@@ -48,12 +48,12 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Context, Effect, Layer } from "effect"
-import { ChatSessionLive, ChatSessionObject } from "@ai/chat/ChatSession"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@ai/mcp/expected-failures"
-import InvestigationFanoutWorkflow from "@ai/workflows/InvestigationFanoutWorkflow"
-import { aiPorts, AiBindingLayers, bindAiClients } from "@ai/worker/bindings"
-import { buildApp, makeFetch } from "@ai/worker/http"
-import { AiObservabilityLive } from "@ai/worker/observability"
+import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
+import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
+import { aiPorts, AiBindingLayers, bindAiClients } from "./worker/bindings"
+import { buildApp, makeFetch } from "./worker/http"
+import { AiObservabilityLive } from "./worker/observability"
 
 /**
  * The AI worker's resource bindings, split from the `Config`-sourced env so
@@ -98,7 +98,7 @@ const configuredEnv = (stage: MapleStage) =>
 		ingestKeyCryptoEnv,
 		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
 		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
-		// See `@ai/platform/Llm` for the provider-scoped model overrides.
+		// See `@/platform/Llm` for the provider-scoped model overrides.
 		optionalPlain("MAPLE_LLM_PROVIDER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),

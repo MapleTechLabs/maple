@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
-import { DigestService } from "@/services/digest/DigestService"
+import { DigestService } from "@maple/backend/services/digest/DigestService"
 
 export const HttpDigestLive = HttpApiBuilder.group(MapleInternalApi, "digest", (handlers) =>
 	Effect.gen(function* () {

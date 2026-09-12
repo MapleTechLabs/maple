@@ -16,14 +16,14 @@ Maple stores relational application state in PostgreSQL with a schema defined by
   need `Database` fail normally; DB-free routes such as health checks continue to work.
 
 Application code keeps timestamps as epoch-millisecond numbers and converts at the Drizzle
-boundary — use `msToDate` / `dateToMs` from `apps/api/src/platform/time.ts` rather than bare
+boundary — use `msToDate` / `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare
 `new Date(ms)` / `.getTime()`, including inside Promise-land helpers.
 
 ## Connections on Workers
 
 One connection per invocation — request, cron tick, or Workflow run — created lazily on the first
 query and closed at the boundary. This is Cloudflare's documented Hyperdrive shape, and
-`makePgConnectionScope` (`apps/api/src/platform/pg-connection-scope.ts`) is the only implementation
+`makePgConnectionScope` (`packages/backend/src/platform/pg-connection-scope.ts`) is the only implementation
 of it: `pgConnectionMiddleware` installs a scope for HTTP, `withPgConnectionScope` for cron, and
 `executeOnFreshPgClient` is the same scope one call long for entry points that have none.
 

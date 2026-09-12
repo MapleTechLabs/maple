@@ -5,13 +5,13 @@ import {
 	optionalBooleanParam,
 	type McpToolRegistrar,
 } from "./types"
-import { warehouseToMcpHandlers } from "@ai/mcp/lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { truncate } from "@ai/mcp/lib/format"
-import { clampLimit, clampOffset } from "@ai/mcp/lib/limits"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
+import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { truncate } from "../lib/format"
+import { clampLimit, clampOffset } from "../lib/limits"
+import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
+import { createDualContent } from "../lib/structured-output"
 import { getSessionTranscript, type SessionTranscriptOutput } from "@maple/query-engine/observability"
 
 const KNOWN_EVENT_TYPES = ["navigation", "click", "input", "console", "network", "error"] as const

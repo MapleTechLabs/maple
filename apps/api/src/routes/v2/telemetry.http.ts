@@ -11,7 +11,6 @@ import {
 	MapleApiV2,
 	paginateOffsetQuery,
 	timestamp,
-	V2CursorInvalid,
 	V2LogIdInvalid,
 	V2LogNotFound,
 	V2LogQueryInvalid,
@@ -40,7 +39,6 @@ import {
 	QueryEngineExecuteRequest,
 	formatWarehouseDateTime,
 	formatWarehouseDateTimeMs,
-	WarehouseDateTime,
 } from "@maple/query-engine"
 import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
 import {
@@ -54,8 +52,8 @@ import {
 } from "@maple/query-engine/runtime"
 import { Effect, Encoding, Option, Result, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)

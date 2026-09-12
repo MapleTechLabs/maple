@@ -19,6 +19,7 @@
 		"@effect/ai-openai-compat": "catalog:effect",
 		"@effect/ai-openrouter": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
+		"@maple/backend": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",

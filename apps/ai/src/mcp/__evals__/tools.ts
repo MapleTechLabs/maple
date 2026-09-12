@@ -1,8 +1,8 @@
 import { jsonSchema, tool, type ToolSet } from "ai"
 import { Effect, type ManagedRuntime } from "effect"
-import { McpToolExecutor } from "@ai/mcp/dispatcher"
-import { mapleToolCatalog, toInputSchema } from "@ai/mcp/tools/registry"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { McpToolExecutor } from "../dispatcher"
+import { mapleToolCatalog, toInputSchema } from "../tools/registry"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 /**
  * Every Maple MCP tool's name/description/schema exposed to a model WITHOUT an

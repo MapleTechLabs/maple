@@ -29,9 +29,9 @@ their callers; Effect API checks used the installed `4.0.0-rc.111` implementatio
   status helper's untyped parameter with table-derived `Partial<typeof table.$inferInsert>`.
   The touched timestamp initializers use `msToDate`. This restores column/value checks without
   changing the public APIs, updates, or credential-origin guards. Files:
-  [IngestAttributeMappingService.ts](../apps/api/src/services/org/IngestAttributeMappingService.ts),
-  [ScrapeTargetsService.ts](../apps/api/src/services/integrations/ScrapeTargetsService.ts),
-  [RecommendationIssueService.ts](../apps/api/src/services/errors/RecommendationIssueService.ts).
+  [IngestAttributeMappingService.ts](../packages/backend/src/services/org/IngestAttributeMappingService.ts),
+  [ScrapeTargetsService.ts](../packages/backend/src/services/integrations/ScrapeTargetsService.ts),
+  [RecommendationIssueService.ts](../packages/backend/src/services/errors/RecommendationIssueService.ts).
 
 ## Highest-value follow-ups
 
@@ -98,7 +98,7 @@ there is no inherited Effect connection scope. Each tool database callback there
 `DatabasePgLive`'s fresh-client fallback.
 
 Wrap the turn program, including its billing finalizer, in the existing
-[withPgConnectionScope](../apps/api/src/platform/pg-connection-scope.ts). Test connection reuse
+[withPgConnectionScope](../packages/backend/src/platform/pg-connection-scope.ts). Test connection reuse
 across multiple tool calls and release on success, failure, and interruption. Audit child-work
 lifetime before sharing the connection. The current code is safe but causes repeated dials;
 this is not evidence of a fatal database failure.
@@ -107,13 +107,13 @@ this is not evidence of a fatal database failure.
 
 **Confirmed duplication; medium effort in small batches; behavior-risk.**
 
-[makeDbExecute](../apps/api/src/platform/db-execute.ts):48 centralizes contention retries,
+[makeDbExecute](../packages/backend/src/platform/db-execute.ts):48 centralizes contention retries,
 operation-aware logs, and public error mapping. Older direct-execute/mapper wrappers remain in:
 
-- [DashboardPersistenceService.ts](../apps/api/src/services/dashboards/DashboardPersistenceService.ts):279.
-- [OAuthStateRepository.ts](../apps/api/src/services/auth/OAuthStateRepository.ts):30–56.
-- [VcsRepository.ts](../apps/api/src/services/integrations/vcs/VcsRepository.ts):185 and its transactions.
-- [RecommendationIssueService.ts](../apps/api/src/services/errors/RecommendationIssueService.ts):76.
+- [DashboardPersistenceService.ts](../packages/backend/src/services/dashboards/DashboardPersistenceService.ts):279.
+- [OAuthStateRepository.ts](../packages/backend/src/services/auth/OAuthStateRepository.ts):30–56.
+- [VcsRepository.ts](../packages/backend/src/services/integrations/vcs/VcsRepository.ts):185 and its transactions.
+- [RecommendationIssueService.ts](../packages/backend/src/services/errors/RecommendationIssueService.ts):76.
 
 These omit the shared SQLSTATE `40001`/`40P01` retry behavior and maintain separate log/error
 contracts. Migrate single statements and verified whole transactions first. **Do not bulk-wrap

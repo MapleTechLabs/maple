@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { WarehouseDriverError } from "@maple/query-engine/execution"
-import { __testables } from "@/services/warehouse/WarehouseQueryService"
+import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
 
 export interface FixtureRule {

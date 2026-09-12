@@ -9,7 +9,7 @@ import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"
 import { buildDiagnosisCompletion, makeRunUsage, type SubmitDiagnosis } from "./tools"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")
 const human = Schema.decodeSync(UserId)("user_test")

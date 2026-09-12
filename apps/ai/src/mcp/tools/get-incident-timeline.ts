@@ -1,9 +1,9 @@
 import { McpQueryError, optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { AlertReadModelsService } from "@/services/alerts/AlertReadModelsService"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 
 const comparatorLabel: Record<string, string> = {
 	gt: ">",

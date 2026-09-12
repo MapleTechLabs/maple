@@ -1,5 +1,5 @@
 import type { SelfDescribingHttpError } from "@maple/domain/http"
-import { McpQueryError } from "@ai/mcp/tools/types"
+import { McpQueryError } from "../tools/types"
 
 /** Adapt an HTTP-domain failure at the MCP protocol boundary without reclassifying its tag. */
 export const toMcpHttpError =

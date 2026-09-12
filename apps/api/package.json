@@ -2,10 +2,6 @@
 	"name": "@maple/api",
 	"private": true,
 	"type": "module",
-	"exports": {
-		".": "./src/index.ts",
-		"./alerting": "./src/alerting.ts"
-	},
 	"scripts": {
 		"db:generate": "bun run --cwd ../../packages/db db:generate",
 		"test": "vitest run",
@@ -24,28 +20,21 @@
 		"bench:startup-cpu": "bun run scripts/bench-startup-cpu.ts"
 	},
 	"dependencies": {
-		"@clerk/backend": "^3.16.12",
-		"@distilled.cloud/cloudflare": "1.0.0-rc.6",
-		"@distilled.cloud/core": "1.0.0-rc.6",
-		"@effect-agent/sandbox": "0.1.0-beta.74",
 		"@effect/platform-bun": "catalog:effect",
 		"@maple-dev/effect-clickhouse": "0.1.0",
-		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/ai-model-catalog": "workspace:*",
 		"@maple/auth": "workspace:*",
+		"@maple/backend": "workspace:*",
 		"@maple/cache": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
-		"@maple/email": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-engine-integrations": "workspace:*",
-		"@maple/query-model": "workspace:*",
-		"@maple/safe-fetch": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"@tinybirdco/sdk": "catalog:tinybird",
-		"@typeonce/effect-machine": "0.24.0",
+		"alchemy": "catalog:alchemy",
 		"drizzle-orm": "^0.45.1",
 		"effect": "catalog:effect"
 	},

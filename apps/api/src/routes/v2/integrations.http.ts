@@ -31,15 +31,24 @@ import {
 	V2TimeRangeInvalid,
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { requireAdmin } from "@/services/auth/auth"
-import { Env } from "@/platform/Env"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheService } from "@maple/cache"
-import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
-import type { SlackChannelList, SlackInstallStatus } from "@/services/integrations/SlackIntegrationService"
-import { SLACK_CALLBACK_PATH, SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
+import {
+	PLANETSCALE_CALLBACK_PATH,
+	PlanetScaleOAuthService,
+} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import type {
+	SlackChannelList,
+	SlackInstallStatus,
+} from "@maple/backend/services/integrations/SlackIntegrationService"
+import {
+	SLACK_CALLBACK_PATH,
+	SlackIntegrationService,
+} from "@maple/backend/services/integrations/SlackIntegrationService"
 
 /**
  * Best-effort origin of the incoming request. `x-forwarded-*` is client-supplied

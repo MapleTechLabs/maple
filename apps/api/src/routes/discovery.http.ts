@@ -3,7 +3,7 @@ import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
 import { Effect } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
-import { Env } from "@/platform/Env"
+import { Env } from "@maple/backend/platform/Env"
 
 /**
  * Machine discovery for agents and tooling.

@@ -49,9 +49,9 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { randomUUID } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
 import { Cause, Clock, type Context, Effect, Exit, Layer, Option, Schema, type Scope } from "effect"
-import type { ChatSessionObject } from "@ai/chat/ChatSession"
-import type { McpToolExecutor } from "@ai/mcp/dispatcher"
-import { Database } from "@/platform/DatabaseLive"
+import type { ChatSessionObject } from "../chat/ChatSession"
+import type { McpToolExecutor } from "../mcp/dispatcher"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	type LlmCallTags,
 	type LlmClients,
@@ -59,17 +59,17 @@ import {
 	layerLlm,
 	resolveLensModel,
 	resolveTriageModel,
-} from "@ai/platform/Llm"
-import { msToDate } from "@/platform/time"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { trackTokenUsage } from "@/services/billing/autumn-tracker"
+} from "../platform/Llm"
+import { msToDate } from "@maple/backend/platform/time"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 import {
 	applyDiagnosisWrites,
 	applyInconclusiveWrites,
 	subjectTypeOf,
-} from "@/services/errors/apply-diagnosis"
+} from "@maple/backend/services/errors/apply-diagnosis"
 import { McpServicesLive } from "../runtime/mcp-service-graph"
-import { durableStep } from "@/workflows/durable-step"
+import { durableStep } from "@maple/backend/platform/durable-step"
 import { runHypothesisAgent, runSoloHypothesisAgent } from "./hypothesis-agent"
 import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/incident-context"
 import { normalizePlan, type NormalizedPlan, type PlannedHypothesis } from "./plan-normalize"

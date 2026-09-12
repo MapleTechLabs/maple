@@ -5,7 +5,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { Tool } from "effect/unstable/ai"
-import { makeRecordingTracer } from "@/testing/recording-tracer"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { invokeAgentAttributes, messagesJson, toolCallJson, withToolCallContent } from "./genai-spans"
 
 const TRUNCATION_MARKER = "…[truncated]"

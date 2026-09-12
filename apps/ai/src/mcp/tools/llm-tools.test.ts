@@ -9,9 +9,9 @@
 import { OrgId, UserId } from "@maple/domain"
 import { Effect, Result, Schema } from "effect"
 import { assert, describe, it } from "vitest"
-import type { McpToolExecutorApi } from "@ai/mcp/dispatcher"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { makeRecordingTracer } from "@/testing/recording-tracer"
+import type { McpToolExecutorApi } from "../dispatcher"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { APPROVAL_NOTE, buildMapleToolkit } from "./llm-tools"
 
 const TENANT: TenantContext = {

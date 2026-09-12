@@ -1,8 +1,8 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { AiTriageForbiddenError, CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
-import { AiTriageService } from "@/services/errors/AiTriageService"
-import { requireAdmin } from "@/services/auth/auth"
+import { AiTriageService } from "@maple/backend/services/errors/AiTriageService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 
 export const HttpAiTriageLive = HttpApiBuilder.group(MapleInternalApi, "aiTriage", (handlers) =>
 	Effect.gen(function* () {

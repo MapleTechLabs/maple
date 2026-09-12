@@ -16,10 +16,10 @@
  */
 import { ValidatorVerdict } from "@maple/domain/http"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
-import type { ResolvedModel } from "@ai/platform/Llm"
+import type { ResolvedModel } from "../platform/Llm"
 import { Effect, Option, Schema } from "effect"
-import { AGENTS } from "@ai/chat/agents"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { AGENTS } from "../chat/agents"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 import { submitVerdict } from "./submit-tools"
 import { buildIncidentContextMessage } from "@maple/domain/incident-context"

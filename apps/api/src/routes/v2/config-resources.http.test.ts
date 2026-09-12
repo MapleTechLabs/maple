@@ -4,22 +4,22 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, ScrapeTargetId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@/platform/test-pglite"
-import type { WarehouseQueryServiceApi } from "@/services/warehouse/WarehouseQueryService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { Env } from "@/platform/Env"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
-import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
-import { PlanetScaleDiscoveryService } from "@/services/integrations/PlanetScaleDiscoveryService"
-import { PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
-import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { Env } from "@maple/backend/platform/Env"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
+import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
@@ -93,7 +93,9 @@ const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseStub)
-	const scrapeTargetsLive = ScrapeTargetsService.layer.pipe(Layer.provide(planetScaleStubs))
+	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+		Layer.provide(planetScaleStubs),
+	)
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
@@ -101,7 +103,9 @@ const makeHarness = () => {
 		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
-		RecommendationIssueService.layer.pipe(Layer.provide(warehouseLive)),
+		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
+			Layer.provide(warehouseLive),
+		),
 		scrapeTargetsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 

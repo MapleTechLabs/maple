@@ -14,12 +14,12 @@
  */
 import { Cause, Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
-import type { McpToolExecutorApi } from "@ai/mcp/dispatcher"
+import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { mapleToolCatalog, toInputSchema } from "@ai/mcp/tools/registry"
-import { truncateToolOutput } from "@ai/mcp/tools/tool-output"
-import { withToolCallContent } from "@ai/platform/genai-spans"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { mapleToolCatalog, toInputSchema } from "./registry"
+import { truncateToolOutput } from "./tool-output"
+import { withToolCallContent } from "../../platform/genai-spans"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 /**
  * Serialize an MCP tool result for the model. Maple's tools already return model-facing text blocks,

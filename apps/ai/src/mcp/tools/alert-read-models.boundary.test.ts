@@ -20,8 +20,8 @@ describe("alert read tools", () => {
 			"./list-alert-checks.ts",
 		]) {
 			const imports = importSpecifiers(readModule(path))
-			expect(imports).toContain("@/services/alerts/AlertReadModelsService")
-			expect(imports).not.toContain("@/services/alerts/AlertsService")
+			expect(imports).toContain("@maple/backend/services/alerts/AlertReadModelsService")
+			expect(imports).not.toContain("@maple/backend/services/alerts/AlertsService")
 		}
 	})
 })

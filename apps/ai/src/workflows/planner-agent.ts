@@ -13,10 +13,10 @@ import type {
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
 } from "@maple/domain/http"
-import type { ResolvedModel } from "@ai/platform/Llm"
+import type { ResolvedModel } from "../platform/Llm"
 import { Effect, Option } from "effect"
-import { plannerAgent } from "@ai/chat/agents"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { plannerAgent } from "../chat/agents"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 import { buildIncidentContextMessage } from "@maple/domain/incident-context"
 import { submitPlan } from "./submit-tools"

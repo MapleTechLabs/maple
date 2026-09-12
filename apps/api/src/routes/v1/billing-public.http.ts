@@ -2,9 +2,9 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpServerRequest } from "effect/unstable/http"
 import { Effect, Option, Schema } from "effect"
 import { CatalogPlan, CatalogPlansResponse, MapleApi } from "@maple/domain/http"
-import { decodeUpstream, ensureOk } from "@/services/billing/autumn-client"
-import { AutumnClient } from "@/services/billing/autumn-http"
-import { AuthService } from "@/services/auth/AuthService"
+import { decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
+import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
 
 // The plan catalog is the one billing operation that is NOT internal-only: it is
 // served unauthenticated so a transient token-settle gap renders prices instead

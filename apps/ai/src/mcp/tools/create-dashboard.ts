@@ -1,15 +1,15 @@
 import { McpQueryError, optionalStringParam, requiredStringParam, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	DashboardTemplateParameterKey,
 	PortableDashboardDocument,
 	defaultWidgetLayout,
 	findNextPosition,
 } from "@maple/domain/http"
-import { DASHBOARD_TEMPLATES, getTemplate } from "@/dashboard-templates"
+import { DASHBOARD_TEMPLATES, getTemplate } from "@maple/backend/dashboard-templates"
 import {
 	QUERY_BUILDER_DATA_SOURCES,
 	QUERY_BUILDER_METRIC_TYPES,
@@ -20,18 +20,18 @@ import {
 	collectBlockingBuilderWarnings,
 	formatValidationSummary,
 	inspectWidgetsAfterMutation,
-} from "@ai/mcp/lib/inspect-widget"
+} from "../lib/inspect-widget"
 import {
 	chartDisplayForMetric,
 	makeQueryBuilderBreakdownDataSource,
 	makeQueryBuilderTimeseriesDataSource,
 	makeQueryDraft,
-} from "@/dashboard-templates/helpers"
-import type { TemplateParameterValues, WidgetDef } from "@/dashboard-templates"
-import { validateDashboardTimeRange } from "@ai/mcp/lib/resolve-dashboard-time-range"
+} from "@maple/backend/dashboard-templates/helpers"
+import type { TemplateParameterValues, WidgetDef } from "@maple/backend/dashboard-templates"
+import { validateDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS, formatRangeSeconds } from "@maple/query-engine"
 import { makeRouteDataSource } from "@maple/widgets/dashboard"
-import { collectDocumentRenderWarnings } from "@ai/mcp/lib/validate-widget-renderability"
+import { collectDocumentRenderWarnings } from "../lib/validate-widget-renderability"
 
 const decodePortableDashboard = Schema.decodeUnknownEffect(PortableDashboardDocument)
 const PortableDashboardFromJson = Schema.fromJsonString(PortableDashboardDocument)

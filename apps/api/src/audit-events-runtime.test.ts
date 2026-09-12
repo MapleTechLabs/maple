@@ -5,8 +5,8 @@ import { WarehouseUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Schema } from "effect"
 import { processAuditEventsBatch } from "./audit-events-runtime"
 import { makeWarehouseServiceStub } from "@/routes/v2/v2-test-support"
-import { AuditLogEvent, encodeAuditLogEventSync } from "./services/audit/audit-event"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { AuditLogEvent, encodeAuditLogEventSync } from "@maple/backend/services/audit/audit-event"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_audit_consumer_test")

@@ -12,13 +12,13 @@ import {
 	V2ParameterInvalid,
 } from "@maple/domain/http/v2"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
-import type { AuditLogEntry } from "@/services/audit/audit-event"
+import type { AuditLogEntry } from "@maple/backend/services/audit/audit-event"
 import { Cause, Effect, Option, Schema } from "effect"
-import { summarizeCause } from "@/platform/describe-cause"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { OrgMembersService } from "@/services/org/OrgMembersService"
-import { requireAdmin } from "@/services/auth/auth"
-import type { AuditLogListFilters } from "@/services/audit/AuditLogService"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
+import type { AuditLogListFilters } from "@maple/backend/services/audit/AuditLogService"
 
 const adminOnly = () => V2InsufficientPermissions.make("Only org admins can read the audit log")
 

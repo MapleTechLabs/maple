@@ -1,11 +1,11 @@
 import { optionalBooleanParam, optionalStringParam, type McpToolRegistrar } from "./types"
-import { formatTable } from "@ai/mcp/lib/format"
-import { toMcpHttpError } from "@ai/mcp/lib/map-http-error"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { formatTable } from "../lib/format"
+import { toMcpHttpError } from "../lib/map-http-error"
+import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { AlertRulesService } from "@/services/alerts/AlertRulesService"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 
 const comparatorLabel: Record<string, string> = {
 	gt: ">",

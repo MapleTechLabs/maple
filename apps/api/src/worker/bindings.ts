@@ -25,12 +25,12 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	VcsSyncQueueProducer,
-} from "../platform/bindings"
-import { mapleDbConnectionLayer } from "../platform/pg-connection-source"
+} from "@maple/backend/platform/bindings"
+import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
-} from "../services/auth/ApiV2RateLimiter"
+} from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 

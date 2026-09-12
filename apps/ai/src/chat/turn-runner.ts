@@ -19,18 +19,17 @@
  *     thread the worker env through.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@ai/mcp/expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import {
 	decodeChatTurnTenant,
 	investigationIdFromChatSessionId,
-	type ChatMessage,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Stream } from "effect"
+import { Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import type { ChatSession } from "./ChatSession"
-import { makeRunUsage, type RunUsage } from "./tools"
+import { makeRunUsage } from "./tools"
 
 /**
  * Low-cardinality facts collected during the run and emitted once on the turn span.
@@ -44,9 +43,9 @@ interface TurnObservability {
 
 const makeTurnObservability = (): TurnObservability => ({})
 import { runChatTurn } from "./run"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { summarizeCause } from "@/platform/describe-cause"
-import { trackTokenUsage } from "@/services/billing/autumn-tracker"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 import { InvestigationId } from "@maple/domain/primitives"
 
 // Deliberately not `maple-api`: background work sharing the request-facing
@@ -207,13 +206,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ McpToolExecutor },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
-		import("@/platform/DatabasePgLive"),
-		import("@/platform/pg-connection-source"),
+		import("@maple/backend/platform/DatabasePgLive"),
+		import("@maple/backend/platform/pg-connection-source"),
 		import("../platform/Llm"),
 		import("./tools"),
 		import("../mcp/dispatcher"),
 	])
-	const { InvestigationService } = await import("@/services/errors/InvestigationService")
+	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(

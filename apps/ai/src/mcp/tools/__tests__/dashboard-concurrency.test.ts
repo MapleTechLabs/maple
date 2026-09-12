@@ -20,9 +20,9 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 
 const trackedDbs: TestDb[] = []
 

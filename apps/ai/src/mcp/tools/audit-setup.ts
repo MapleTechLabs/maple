@@ -1,11 +1,11 @@
 import { McpQueryError, optionalBooleanParam, type McpToolRegistrar } from "./types"
-import { formatTable, truncate } from "@ai/mcp/lib/format"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { formatTable, truncate } from "../lib/format"
+import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 import type { AuditCheckResult, AuditSeverity } from "@maple/domain/setup-audit"
-import { SetupAuditService } from "@/services/org/SetupAuditService"
+import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 
 /** Fail-first, then by severity, so the table's top rows are the ones worth acting on. */
 const SEVERITY_RANK: Record<AuditSeverity, number> = { critical: 0, warn: 1, info: 2 } satisfies Record<

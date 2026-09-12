@@ -5,7 +5,7 @@ import {
 	makeRawSqlDataSource,
 	makeStaticDataSource,
 } from "@maple/widgets/dashboard"
-import { makeQueryDraft } from "@/dashboard-templates/helpers"
+import { makeQueryDraft } from "@maple/backend/dashboard-templates/helpers"
 import type { PanelType } from "@maple/domain/http"
 import { collectDocumentRenderWarnings, validateWidgetRenderability } from "./validate-widget-renderability"
 

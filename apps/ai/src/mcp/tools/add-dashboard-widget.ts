@@ -8,7 +8,7 @@ import {
 } from "./types"
 import { Effect, Schema } from "effect"
 import { MCP_VISUALIZATIONS, RawSqlDisplayType } from "@maple/domain/http"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
+import { createDualContent } from "../lib/structured-output"
 import {
 	decodeDataSourceJson,
 	decodeDisplayJson,
@@ -19,17 +19,17 @@ import {
 	generateWidgetId,
 	withDashboardMutation,
 	type DashboardWidget,
-} from "@ai/mcp/lib/dashboard-mutations"
-import { buildRawSqlDataSource, validateRawSql, withScalarReduction } from "@ai/mcp/lib/raw-sql-widget"
+} from "../lib/dashboard-mutations"
+import { buildRawSqlDataSource, validateRawSql, withScalarReduction } from "../lib/raw-sql-widget"
 import { makeProductEventsFunnelDataSource } from "@maple/widgets/dashboard"
-import { PANEL_TYPE_LIST_MD, resolvePanelType } from "@ai/mcp/lib/panel-type"
-import { formatRenderIssues, validateWidgetRenderability } from "@ai/mcp/lib/validate-widget-renderability"
+import { PANEL_TYPE_LIST_MD, resolvePanelType } from "../lib/panel-type"
+import { formatRenderIssues, validateWidgetRenderability } from "../lib/validate-widget-renderability"
 import {
 	collectBlockingBuilderWarnings,
 	formatValidationSummary,
 	inspectWidgetsAfterMutation,
-} from "@ai/mcp/lib/inspect-widget"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
+} from "../lib/inspect-widget"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 
 const TOOL = "add_dashboard_widget"
 

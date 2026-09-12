@@ -15,7 +15,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { API_CORS_RESPONSE_HEADERS } from "../http/api-cors"
+import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"
 
 /**
  * The paths maple-ai serves.

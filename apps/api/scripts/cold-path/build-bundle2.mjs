@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process"
 import { createRequire } from "module"
 import { realpathSync, mkdirSync, writeFileSync, rmSync } from "fs"
-import { resolve } from "path"
+import { dirname, resolve } from "path"
 const alch = realpathSync(process.cwd() + "/node_modules/alchemy")
 const req = createRequire(alch + "/package.json")
 const { rolldown } = await import(req.resolve("rolldown"))
@@ -62,6 +62,16 @@ if (baselineRef) {
 }
 const sourceOverride = {
 	name: "benchmark-baseline",
+	resolveId(source, importer) {
+		if (!baselineRef || !importer) return
+		const base = source.startsWith("@/")
+			? resolve("apps/api/src", source.slice(2))
+			: source.startsWith(".")
+				? resolve(dirname(importer), source)
+				: undefined
+		if (base === undefined) return
+		return [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`].find((file) => overrides.has(file))
+	},
 	load(id) {
 		return overrides.get(id)
 	},

@@ -3,9 +3,9 @@ import type { RawSqlValidationError } from "@maple/domain/http"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import { computeBucketSecondsForRange } from "@maple/query-engine"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { describeFailure, recordRawSqlAudit } from "@/services/audit/audit-access"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
 
 /**
  * `$__interval_s` when the caller doesn't pin `granularitySeconds`.

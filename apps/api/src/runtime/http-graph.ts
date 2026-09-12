@@ -3,8 +3,8 @@ import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
-import { API_CORS_OPTIONS } from "@/http/api-cors"
-import { Env } from "@/platform/Env"
+import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
+import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
@@ -12,7 +12,7 @@ import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/v1/billing-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
-import { V1ErrorBoundaryLive } from "@/routes/v1/error-boundary"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
 import { DiscoveryRouter, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
@@ -47,7 +47,7 @@ import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommendations.http"
 import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
-import { AuditLogServiceLive } from "@/runtime/service-graph"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
@@ -62,14 +62,14 @@ import {
 } from "@/routes/v2/telemetry.http"
 import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
-import { ApiAuthorizationLayer } from "@/services/auth/ApiAuthorizationLayer"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { SessionAuthorizationLayer } from "@/services/auth/SessionAuthorizationLayer"
-import { ApiV2RateLimiter } from "@/services/auth/ApiV2RateLimiter"
-import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
-import { EdgeCacheServiceLive } from "@/platform/CacheBackendLive"
-import { OrgMembershipService } from "@/services/auth/OrgMembershipService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
+import { ApiAuthorizationLayer } from "@maple/backend/services/auth/ApiAuthorizationLayer"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import type { ApiPortsLayer } from "@/worker/bindings"
 
 const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", HttpServerResponse.text("OK")))
@@ -218,10 +218,10 @@ export const ApiAuthLive = Layer.mergeAll(
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
-	Layer.provideMerge(AuditLogServiceLive),
+	Layer.provideMerge(AuditLogService.layer),
 	// Membership verification for `x-maple-org-id`. Only the v2 layer asks for
 	// it; without it that layer cannot build, which is deliberate — the header
 	// must never end up silently ignored in a runtime that forgot to wire this.
 	Layer.provideMerge(OrgMembershipService.layer.pipe(Layer.provide(EdgeCacheServiceLive))),
-	Layer.provideMerge(Env.layer),
+	Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

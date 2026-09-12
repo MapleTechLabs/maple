@@ -1,6 +1,6 @@
 import { Clock, Effect, Option, Redacted, Result } from "effect"
 import { HttpServerResponse, type HttpServerRequest } from "effect/unstable/http"
-import { readSvixHeaders, verifySvixSignature } from "@/services/product-events/svix"
+import { readSvixHeaders, verifySvixSignature } from "@maple/backend/services/product-events/svix"
 
 /**
  * Shared receive step for Svix-delivered webhooks (Clerk, Autumn). NOT behind

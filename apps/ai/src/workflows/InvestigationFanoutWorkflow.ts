@@ -8,11 +8,11 @@
  * The api and alerting Workers bind the same physical workflow cross-script
  * under this class name — see `@maple/domain/investigation-fanout`.
  */
-import { ChatSessionObject } from "@ai/chat/ChatSession"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@ai/mcp/expected-failures"
-import { layerPg } from "@/platform/DatabasePgLive"
-import { withPgConnectionScope } from "@/platform/pg-connection-scope"
-import { mapleDbConnectionLayer } from "@/platform/pg-connection-source"
+import { ChatSessionObject } from "../chat/ChatSession"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
+import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
+import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import { MapleDb } from "@maple/infra/cloudflare"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
