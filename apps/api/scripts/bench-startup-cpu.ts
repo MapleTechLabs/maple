@@ -358,7 +358,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 	const checkDir = join(process.cwd(), "node_modules", ".cache", "maple-startup-check")
 	const outfile = join(checkDir, "worker-startup.cpuprofile")
 	const root = resolve(process.cwd(), "../..")
-	const build = spawnSync("bun", ["apps/api/scripts/cold-path/build-bundle2.mjs"], {
+	const build = spawnSync("bun", [resolve(root, "apps/api/scripts/cold-path/build-bundle2.mjs")], {
 		cwd: root,
 		stdio: "inherit",
 		env: { ...process.env, STARTUP: "1", SEO: "0", OUT: checkDir },

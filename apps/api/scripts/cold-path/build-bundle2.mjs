@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { createRequire } from "module"
 import { realpathSync, mkdirSync, writeFileSync, rmSync } from "fs"
 import { resolve } from "path"
@@ -50,6 +50,10 @@ if (baselineRef) {
 		.split("\n")
 		.filter(Boolean)
 	for (const file of changed) {
+		// Added runtime modules have no historical source to override.
+		const exists = spawnSync("git", ["cat-file", "-e", `${baselineRef}:${file}`], { stdio: "ignore" })
+		if (exists.error) throw exists.error
+		if (exists.status !== 0) continue
 		overrides.set(
 			resolve(file),
 			execFileSync("git", ["show", `${baselineRef}:${file}`], { encoding: "utf8" }),

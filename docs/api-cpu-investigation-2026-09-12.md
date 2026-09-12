@@ -4,7 +4,7 @@ Implemented locally against revision `79dfb6da9d`, with measurements after each 
 
 ## Results
 
-Final comparison uses nine fresh-process desktop V8 samples per variant, identical offline fixtures, and the same installed dependencies. The cold metric is startup-module imports + HTTP-module imports + real route/service construction; it excludes network and the first request handler itself.
+Final comparison uses nine fresh-process desktop V8 samples per variant, identical offline fixtures, and the same installed dependencies. The cold metric is the per-run `total`: startup-module imports + fixture imports + HTTP-module imports + real route/service construction; it excludes network and the first request handler itself.
 
 | Metric                                           |  Baseline |     Final |                          Change |
 | ------------------------------------------------ | --------: | --------: | ------------------------------: |

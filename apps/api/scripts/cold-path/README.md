@@ -36,4 +36,59 @@ Builds a single Worker entry with the installed Alchemy `makeEffectVirtualEntry`
 
 ## Offline request smoke test in workerd
 
-Build with `WORKER_PROBE=1` and the same cache output setting. Point a temporary Wrangler config at `worker.js`, with compatibility date `2026-04-08`, `nodejs_compat`, `find_additional_modules: true`, and an ESModule rule for `**/*.js`. Start `wrangler dev --local --no-bundle` from `apps/api`. The fixture uses the real graph caches and request bridge, but only offline ports. Send concurrent POSTs to `/internal/query-engine/execute-batch` and a full-graph route; expected results include 401 without credentials, 403 with `Bearer maple_ak_rejected`, and the normal 404 envelope for an unknown route. Stop the local server after testing.
+Run this Bash sequence from the repository root. Port 8797 must be free. The temporary config, responses and log stay in the benchmark cache; the subshell stops Wrangler on exit.
+
+```bash
+(
+  set -euo pipefail
+  OUT=apps/api/node_modules/.cache/cold-path/smoke WORKER_PROBE=1 bun apps/api/scripts/cold-path/build-bundle2.mjs
+  cd apps/api
+  probe_dir=node_modules/.cache/cold-path/smoke
+  cat > "$probe_dir/wrangler.json" <<'JSON'
+{
+  "name": "maple-api-offline-smoke",
+  "main": "./worker.js",
+  "compatibility_date": "2026-04-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "find_additional_modules": true,
+  "rules": [{ "type": "ESModule", "globs": ["**/*.js"] }]
+}
+JSON
+  WRANGLER_SEND_METRICS=false bunx wrangler dev --local --no-bundle \
+    --config "$probe_dir/wrangler.json" --port 8797 > "$probe_dir/wrangler.log" 2>&1 &
+  probe_pid=$!
+  trap 'kill "$probe_pid" 2>/dev/null || true; wait "$probe_pid" 2>/dev/null || true' EXIT
+  ready=0
+  for attempt in {1..100}; do
+    if curl -fsS http://127.0.0.1:8797/health > /dev/null 2>&1; then ready=1; break; fi
+    sleep 0.2
+  done
+  test "$ready" = 1
+  # Health does not build either HTTP graph. Exercise both graphs concurrently.
+  node --input-type=module <<'JS'
+import assert from "node:assert/strict"
+const cases = [
+  ["/internal/query-engine/execute-batch", "", 401],
+  ["/internal/ai-sessions/list", "", 401], // AllRoutes; not forwarded to maple-ai
+  ["/internal/query-engine/execute-batch", "Bearer maple_ak_rejected", 403],
+  ["/internal/ai-sessions/list", "Bearer maple_ak_rejected", 403],
+  ["/internal/query-engine/not-a-route", "", 404],
+  ["/not-a-route", "", 404],
+]
+await Promise.all(cases.map(async ([path, authorization, expected]) => {
+  const response = await fetch(`http://127.0.0.1:8797${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://app.maple.dev", authorization },
+    body: "{}",
+  })
+  const body = await response.json()
+  assert.equal(response.status, expected, path)
+  assert.equal(response.headers.get("access-control-allow-origin"), "*", path)
+  if (expected === 404) assert.equal(body.error.code, "route_not_found")
+}))
+console.log("PASS: concurrent cold requests, both graphs, 401/403/404 and CORS")
+JS
+)
+```
+
+The fixture uses the real graph caches and request bridge with offline ports. These requests stop at auth or routing, without database or warehouse calls. This is a request-ownership smoke test, not a performance benchmark.
