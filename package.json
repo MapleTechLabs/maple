@@ -85,8 +85,8 @@
 			"alchemy": "2.0.0-beta.74"
 		},
 		"charts": {
-			"@tanstack/charts": "0.16.0",
-			"@tanstack/charts-scales": "0.16.0"
+			"@tanstack/charts": "0.18.0",
+			"@tanstack/charts-scales": "0.18.0"
 		},
 		"effect": {
 			"@effect/ai-openai-compat": "4.0.0-rc.112",
