@@ -1,6 +1,7 @@
 /** Every app `bun dev` can run. */
 export const DEV_APPS = [
 	"api",
+	"ai",
 	"alerting",
 	"electric-sync",
 	"web",

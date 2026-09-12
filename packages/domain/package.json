@@ -12,12 +12,13 @@
 		"./gen-ai": "./src/gen-ai.ts",
 		"./glob": "./src/glob.ts",
 		"./http": "./src/http/index.ts",
+		"./incident-context": "./src/incident-context.ts",
 		"./http/v2": "./src/http/v2/index.ts",
 		"./http/v2-worker-unavailable": "./src/http/v2/worker-unavailable.ts",
-		"./internal-rpc": "./src/internal-rpc.ts",
 		"./investigation-fanout": "./src/investigation-fanout.ts",
 		"./llm": "./src/llm.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",
+		"./mcp-tool-contract": "./src/mcp-tool-contract.ts",
 		"./permission": "./src/permission.ts",
 		"./primitives": "./src/primitives.ts",
 		"./query-engine": "./src/query-engine.ts",
@@ -39,7 +40,8 @@
 		"./where-clause": "./src/where-clause.ts",
 		"./http/warehouse-errors": "./src/http/warehouse-errors.ts",
 		"./chat-preamble": "./src/chat-preamble.ts",
-		"./chat-session": "./src/chat-session.ts"
+		"./chat-session": "./src/chat-session.ts",
+		"./chat-session-stub": "./src/chat-session-stub.ts"
 	},
 	"scripts": {
 		"gen:anticipated-errors": "bun scripts/gen-anticipated-errors.ts",

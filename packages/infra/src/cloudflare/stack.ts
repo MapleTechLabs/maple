@@ -56,6 +56,15 @@ export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Wor
 ) {}
 
 /**
+ * The deployed AI Worker, for the api's binding to it — the one that forwards
+ * `/mcp` and the chat paths so they keep answering on api's origin, with the
+ * OAuth issuer and RFC 8707 resource identifiers unchanged. Provided by the root
+ * right after yielding it, for the same reason as {@link ApiWorker}: a
+ * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ */
+export class AiWorker extends Context.Service<AiWorker, Cloudflare.Worker>()("@maple/infra/AiWorker") {}
+
+/**
  * Props for a resource declared at module scope whose physical name is
  * stage-derived (`resolveWorkerName(base, stage)`): `make` receives that name
  * and returns the props. Reads alchemy's own `Stage` — one of the platform

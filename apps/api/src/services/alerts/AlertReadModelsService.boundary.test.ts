@@ -25,13 +25,10 @@ describe("AlertReadModelsService boundary", () => {
 		}
 	})
 
-	it("is the capability consumed by incident, delivery, and check read handlers", () => {
+	it("is the capability consumed by the incident and delivery read handlers", () => {
 		for (const path of [
 			"../../routes/v2/alert-incidents.http.ts",
 			"../../routes/v2/alert-deliveries.http.ts",
-			"../../mcp/tools/list-alert-incidents.ts",
-			"../../mcp/tools/get-incident-timeline.ts",
-			"../../mcp/tools/list-alert-checks.ts",
 		]) {
 			const imports = importSpecifiers(readModule(path))
 			expect(imports).toContain("@/services/alerts/AlertReadModelsService")

@@ -369,6 +369,7 @@ describe("the prd revision lockstep the skew alert depends on", () => {
 		// that does.
 		expect([...PRD_LOCKSTEP_REVISION_SERVICES]).toStrictEqual([
 			"alerting",
+			"maple-ai",
 			"electric-sync",
 			"ingest",
 			"maple-api",

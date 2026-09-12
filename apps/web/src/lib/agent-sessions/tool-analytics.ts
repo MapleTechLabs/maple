@@ -55,27 +55,60 @@ export interface ToolBreakdownRow extends ToolMeasures {
  * The tool detail page's failures
  * -----------------------------------------------------------------------------------------------*/
 
-/** One error type a tool failed with. */
+/** One error group a tool failed with. */
 export interface ToolErrorRow {
-	/** `''` is a real group: a call that failed naming no type. */
+	/** `ErrorFingerprint` in decimal. {@link UNGROUPED_FINGERPRINT} is a real group. */
+	readonly fingerprint: string
+	/** `error.type` of the group's latest failure — a label, not the key. */
 	readonly errorType: string
+	/** The group's latest raw text; `''` where the failure said nothing. */
 	readonly message: string
-	/** Failed calls with this type. */
+	/** Failed calls in this group. */
 	readonly calls: number
 	readonly sessions: number
+	/** Raw texts the group folded. */
+	readonly variants: number
 	/** Epoch ms. */
 	readonly firstSeen: number
 	readonly lastSeen: number
+	/** The selection's calls, failed or not, newer than the group's latest failure. */
+	readonly callsSince: number
+	/** Failed calls per trend bucket, epoch ms, oldest first; empty buckets absent. */
+	readonly trend: ReadonlyArray<{ readonly bucket: number; readonly calls: number }>
 }
 
-/** One session that hit an error type — the modal's left pane. */
+/**
+ * The fingerprint of a failure recorded before error grouping existed. Those
+ * failures carry no text either, so they are one group the page names for
+ * what it is rather than a message it does not have.
+ */
+export const UNGROUPED_FINGERPRINT = "0"
+
+/** One session that hit an error group. */
 export interface ToolErrorSessionRow {
 	readonly sessionId: string
+	readonly vendorId: string
 	readonly agentName: string
-	readonly model: string
+	readonly service: string
 	readonly hits: number
 	/** Epoch ms. */
 	readonly lastSeen: number
+}
+
+/** One raw text an error group folded. */
+export interface ToolErrorVariantRow {
+	readonly message: string
+	readonly calls: number
+	/** Epoch ms. */
+	readonly lastSeen: number
+}
+
+/** A group's failed calls under one model and one service. */
+export interface ToolErrorBreakdownRow {
+	/** `''` where no model resolved. */
+	readonly model: string
+	readonly service: string
+	readonly calls: number
 }
 
 /** One failed call, with what it was called with and what came back. */
@@ -85,9 +118,12 @@ export interface ToolErrorOccurrenceRow {
 	readonly traceId: string
 	readonly spanId: string
 	readonly sessionId: string
+	readonly vendorId: string
 	readonly agentName: string
 	readonly model: string
+	readonly service: string
 	readonly errorType: string
+	/** This call's raw text — the variant it is. */
 	readonly message: string
 	readonly durationNs: number
 	readonly statusCode: string
@@ -97,11 +133,6 @@ export interface ToolErrorOccurrenceRow {
 	readonly result: string
 	readonly resultBytes: number
 }
-
-/** `''` is the failures that named no error type. */
-export const UNKNOWN_ERROR_TYPE_LABEL = "unknown"
-export const errorTypeLabel = (errorType: string): string =>
-	errorType === "" ? UNKNOWN_ERROR_TYPE_LABEL : errorType
 
 export const EMPTY_MEASURES: ToolMeasures = { calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 }
 
@@ -135,11 +166,7 @@ export function toolSeriesMode(tool: string | undefined, model: string | undefin
  * a different statement from "nothing ran" — so it reads 0 and the formatters
  * are what decide how that prints.
  */
-export function metricValue(
-	measures: ToolMeasures,
-	metric: ToolMetric,
-	percentile: ToolPercentile,
-): number {
+export function metricValue(measures: ToolMeasures, metric: ToolMetric, percentile: ToolPercentile): number {
 	switch (metric) {
 		case "calls":
 			return measures.calls
@@ -208,8 +235,7 @@ export function toolMetricLabel(metric: ToolMetric, percentile: ToolPercentile):
 /** True when a rise in this metric is bad news — every metric here but the
  *  counts. Read only by {@link toolDelta}, which is the one thing that grades a
  *  move on this page. */
-const metricRiseIsBad = (metric: ToolMetric): boolean =>
-	metric === "error_rate" || metric === "duration"
+const metricRiseIsBad = (metric: ToolMetric): boolean => metric === "error_rate" || metric === "duration"
 
 /* -------------------------------------------------------------------------------------------------
  * Series colours
@@ -279,9 +305,7 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 	for (const point of points) {
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
-	return [...calls.entries()]
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-		.map(([key]) => key)
+	return [...calls.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key]) => key)
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -402,54 +426,6 @@ export function toolDelta(
 	if (before === 0) return null
 	const change = (after - before) / before
 	return { text: formatPercent(Math.abs(change)), direction: direction(change, 0.001), good }
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Table badges
- * -----------------------------------------------------------------------------------------------*/
-
-export type ToolBadge = "slowest" | "new"
-
-/** Volume floor a row must clear to be called the slowest, as a share of the
- *  busiest row. A tool called nine times in a week has the slowest p90 in most
- *  windows and is never what the badge is for. */
-const SLOWEST_MIN_VOLUME_SHARE = 0.1
-
-/** How far into the window a tool's first call has to land before it reads as
- *  new. Bounded by the window, so this is "new in this range". */
-const NEW_AFTER_WINDOW_SHARE = 0.2
-
-/**
- * The one-word annotations the Tools table puts beside a name.
- *
- * `slowest` is the worst P90 among the rows that carry real volume, not the
- * worst P90 outright. `new` is a tool whose first call in the window lands well
- * after the window opened — the honest version of "new" available without a
- * lookback read.
- */
-export function toolBadges(
-	rows: ReadonlyArray<ToolBreakdownRow>,
-	window: { readonly startMs: number; readonly endMs: number },
-): ReadonlyMap<string, ToolBadge> {
-	const out = new Map<string, ToolBadge>()
-	if (rows.length === 0) return out
-
-	const busiest = rows.reduce((max, row) => Math.max(max, row.calls), 0)
-	const contenders = rows.filter((row) => row.calls >= busiest * SLOWEST_MIN_VOLUME_SHARE)
-	const slowest = contenders.reduce<ToolBreakdownRow | undefined>(
-		(worst, row) => (worst === undefined || row.p90 > worst.p90 ? row : worst),
-		undefined,
-	)
-	if (slowest !== undefined && slowest.p90 > 0) out.set(slowest.key, "slowest")
-
-	const span = window.endMs - window.startMs
-	if (span > 0) {
-		const cutoff = window.startMs + span * NEW_AFTER_WINDOW_SHARE
-		for (const row of rows) {
-			if (row.firstSeen > cutoff && !out.has(row.key)) out.set(row.key, "new")
-		}
-	}
-	return out
 }
 
 /* -------------------------------------------------------------------------------------------------

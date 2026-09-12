@@ -30,6 +30,7 @@ import * as containerQueries from "../ch/queries/containers"
 import * as errorQueries from "../ch/queries/errors"
 import * as infraQueries from "../ch/queries/infra"
 import * as livenessQueries from "../ch/queries/liveness"
+import * as signalPresenceQueries from "../ch/queries/signal-presence"
 import * as logQueries from "../ch/queries/logs"
 import * as metricQueries from "../ch/queries/metrics"
 import * as serviceInfraQueries from "../ch/queries/service-infra"
@@ -270,6 +271,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"service-endpoints": serviceEndpointQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
+	"signal-presence": signalPresenceQueries,
 	releases: releaseQueries,
 	"session-events": sessionEventQueries,
 	"session-replays": sessionReplayQueries,

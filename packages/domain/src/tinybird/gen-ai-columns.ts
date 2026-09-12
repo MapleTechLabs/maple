@@ -22,6 +22,8 @@
 import type { Condition, Expr } from "@maple-dev/effect-clickhouse/expr"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { compile } from "@maple-dev/effect-clickhouse/sql"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { applyRedactions, chRedactChain, MSG_TEXT_REDACTIONS } from "./fingerprint"
 import {
 	GENAI_DEFAULT_USAGE_CONVENTION,
 	GENAI_PROVIDER_USAGE_CONVENTIONS,
@@ -41,6 +43,7 @@ export interface MapColumnLike {
 export interface GenAiSpanColumnsLike {
 	readonly SpanName: Expr<string>
 	readonly StatusCode: Expr<string>
+	readonly StatusMessage: Expr<string>
 	readonly SpanAttributes: MapColumnLike
 }
 
@@ -53,6 +56,7 @@ const mapColumn = (name: string): MapColumnLike => {
 const rawSpan: GenAiSpanColumnsLike = {
 	SpanName: CH.dynamicColumn<string>("SpanName"),
 	StatusCode: CH.dynamicColumn<string>("StatusCode"),
+	StatusMessage: CH.dynamicColumn<string>("StatusMessage"),
 	SpanAttributes: mapColumn("SpanAttributes"),
 }
 
@@ -72,6 +76,11 @@ export const firstNonEmptyAttr = (attrs: MapColumnLike, keys: ReadonlyArray<stri
 	const candidates = keys.slice(0, -1).map((key) => CH.nullIf(attrs.get(key), ""))
 	return candidates.length === 0 ? attrs.get(last) : CH.coalesce(...candidates, attrs.get(last))
 }
+
+/** Characters, not bytes: `left` cuts mid-codepoint on any text holding one,
+ *  and these two columns hold whatever a framework wrote. */
+const leftUTF8 = (value: Expr<string>, chars: number): Expr<string> =>
+	CH.compileFnCall<string>("leftUTF8", value, CH.lit(chars))
 
 // Identity — model, agent, tool
 
@@ -98,6 +107,18 @@ export const GENAI_AGENT_NAME_KEYS = ["gen_ai.agent.name", "ai.telemetry.functio
 /** The tool an `execute_tool` span ran. */
 export const GENAI_TOOL_NAME_KEYS = ["gen_ai.tool.name", "ai.toolCall.name", "tool.name"] as const
 
+/** What the tool told the model it does — the tool detail page's header. Only
+ *  tool spans carry it, and a tool that stamps one stamps it on every call. */
+export const GENAI_TOOL_DESCRIPTION_KEYS = ["gen_ai.tool.description", "tool.description"] as const
+
+/**
+ * How much of a description the index carries. A description is a sentence
+ * meant for a model, but nothing stops a framework from inlining a schema or a
+ * whole prompt, and the index is a narrow table read a million rows at a time.
+ * The header shows it as prose, so a cut past this is a cut nobody sees.
+ */
+export const GENAI_TOOL_DESCRIPTION_MAX = 2_000
+
 export function genAiModelExpr(spanAttributes: MapColumnLike): Expr<string> {
 	return firstNonEmptyAttr(spanAttributes, GENAI_MODEL_KEYS)
 }
@@ -108,6 +129,10 @@ export function genAiAgentNameExpr(spanAttributes: MapColumnLike): Expr<string> 
 
 export function genAiToolNameExpr(spanAttributes: MapColumnLike): Expr<string> {
 	return firstNonEmptyAttr(spanAttributes, GENAI_TOOL_NAME_KEYS)
+}
+
+export function genAiToolDescriptionExpr(spanAttributes: MapColumnLike): Expr<string> {
+	return leftUTF8(firstNonEmptyAttr(spanAttributes, GENAI_TOOL_DESCRIPTION_KEYS), GENAI_TOOL_DESCRIPTION_MAX)
 }
 
 /** The provider's id for the response — the one fact two observations of the
@@ -209,18 +234,122 @@ export function genAiIsToolCallCond($: Pick<GenAiSpanColumnsLike, "SpanName" | "
  *  `session-turns.ts`. */
 export const GENAI_FAILED_RESPONSE_STATUSES = ["failed", "error"] as const
 
+/** WHY the span failed, where it named a reason — plain OTel semconv, which is
+ *  why one key answers for every dialect today. `''` is a real answer: a call
+ *  that failed naming no type, which the tools page labels `unknown`. */
+export const GENAI_ERROR_TYPE_KEYS = ["error.type"] as const
+
+export function genAiErrorTypeExpr(spanAttributes: MapColumnLike): Expr<string> {
+	return firstNonEmptyAttr(spanAttributes, GENAI_ERROR_TYPE_KEYS)
+}
+
 /**
  * The span failed: by its own status, or by an attribute-declared failure —
  * frameworks record a failed model or tool call as a VALUE on an `Ok` span.
  * Scoped to GenAI spans by construction (every index row is one), which is
  * what keeps an HTTP span's `error.type` on an expected 4xx out of it.
+ *
+ * The type half is {@link genAiErrorTypeExpr} rather than the bare lookup, so a
+ * second source key added to the list cannot make `IsError` and `ErrorType`
+ * disagree — a row the page would file under a named type while counting it as
+ * a success.
  */
 export function genAiIsErrorCond($: Pick<GenAiSpanColumnsLike, "StatusCode" | "SpanAttributes">): Condition {
 	const attrs = $.SpanAttributes
 	return $.StatusCode.eq("Error")
-		.or(attrs.get("error.type").neq(""))
+		.or(genAiErrorTypeExpr(attrs).neq(""))
 		.or(CH.inList(attrs.get("gen_ai.response.status"), GENAI_FAILED_RESPONSE_STATUSES))
 }
+
+/**
+ * How much of a span's status message the index carries. A status message and
+ * nothing else is what most failures carry, so it is the identity of a failure
+ * group as often as the type is — but a framework that puts a stack trace there
+ * would otherwise make the index as wide as the raw span, and a `GROUP BY` on
+ * one is not free either. The tools page clamps the message to a line anyway.
+ */
+export const GENAI_STATUS_MESSAGE_MAX = 400
+
+export function genAiStatusMessageExpr($: Pick<GenAiSpanColumnsLike, "StatusMessage">): Expr<string> {
+	return leftUTF8($.StatusMessage, GENAI_STATUS_MESSAGE_MAX)
+}
+
+/** What a tool call returned. On a failed call it is often the only account of
+ *  the failure: an agent framework that catches a tool's error hands its message
+ *  back to the model as the call's result, on an `Ok` span with no status
+ *  message. */
+export const GENAI_TOOL_CALL_RESULT_KEYS = ["gen_ai.tool.call.result", "ai.toolCall.result"] as const
+
+/** How much of a failed call's result the index carries. An explanation of a
+ *  failure is its opening; the rest of a result is payload. */
+export const GENAI_FAILED_TOOL_CALL_RESULT_MAX = 1_000
+
+/**
+ * The result of a tool call that failed, `''` on every other span. Only a
+ * failure's result is carried: a successful one is the call's payload, not a
+ * fact the index filters or groups on.
+ */
+export function genAiFailedToolCallResultExpr(
+	$: Pick<GenAiSpanColumnsLike, "SpanName" | "StatusCode" | "SpanAttributes">,
+): Expr<string> {
+	return CH.if_(
+		genAiIsErrorCond($).and(genAiIsToolCallCond($)),
+		leftUTF8(
+			firstNonEmptyAttr($.SpanAttributes, GENAI_TOOL_CALL_RESULT_KEYS),
+			GENAI_FAILED_TOOL_CALL_RESULT_MAX,
+		),
+		CH.lit(""),
+	)
+}
+
+/** How much of a failure's text is redacted and hashed. No longer than either
+ *  `GENAI_STATUS_MESSAGE_MAX` or `GENAI_FAILED_TOOL_CALL_RESULT_MAX`, so a
+ *  fingerprint is a function of its row's own `FailedToolCallResult` and
+ *  `StatusMessage`. */
+export const GENAI_ERROR_FINGERPRINT_CHARS = 400
+
+/**
+ * The failure group a failed span belongs to, `0` on every other span: a hash
+ * of its failed tool call's result, else of its status message, after the
+ * redactions `error_events` fingerprints messages with — so a missing key at
+ * `["evidence"][0]` and at `["evidence"][1]` is one group, and a timeout that
+ * reports its elapsed milliseconds is one group rather than one per call.
+ * Neither the tool name nor `ErrorType` is hashed: failures are grouped within
+ * one tool.
+ *
+ * The status message is the index's own, {@link genAiStatusMessageExpr}, which
+ * the view projects under the raw column's name. Whichever of the two
+ * ClickHouse binds `StatusMessage` to inside this expression, the hash is the
+ * same: the cut here is no longer than that one.
+ */
+export function genAiErrorFingerprintExpr($: GenAiSpanColumnsLike): Expr<number> {
+	const text = leftUTF8(
+		CH.coalesce(CH.nullIf(genAiFailedToolCallResultExpr($), ""), genAiStatusMessageExpr($)),
+		GENAI_ERROR_FINGERPRINT_CHARS,
+	)
+	return CH.if_(
+		genAiIsErrorCond($),
+		CH.cityHash64(CH.rawExpr(chRedactChain(sql(text), MSG_TEXT_REDACTIONS), T.string)),
+		CH.lit(0),
+	)
+}
+
+/**
+ * The text {@link genAiErrorFingerprintExpr} hashes, from a failed row's own
+ * columns — the TypeScript mirror its grouping is tested against, as
+ * `computeFingerprintInputs` is for `error_events`. Cut by code point, as
+ * `leftUTF8` cuts. If you change one, change both.
+ */
+export const genAiErrorFingerprintText = (row: {
+	readonly failedToolCallResult: string
+	readonly statusMessage: string
+}): string =>
+	applyRedactions(
+		Array.from(row.failedToolCallResult !== "" ? row.failedToolCallResult : row.statusMessage)
+			.slice(0, GENAI_ERROR_FINGERPRINT_CHARS)
+			.join(""),
+		MSG_TEXT_REDACTIONS,
+	)
 
 // Usage — the five token buckets `spanTokenBuckets` sums, each under its
 // canonical key, its legacy `gen_ai.*` alias, and the Vercel AI SDK and
@@ -403,6 +532,11 @@ export const GENAI_IS_TOOL_CALL_SQL = sql(flag(genAiIsToolCallCond(rawSpan)))
 export const GENAI_IS_ERROR_SQL = sql(flag(genAiIsErrorCond(rawSpan)))
 export const GENAI_TOKENS_SQL = sql(genAiTokensExpr(rawSpan.SpanAttributes))
 export const GENAI_COST_SQL = sql(genAiCostExpr(rawSpan.SpanAttributes))
+export const GENAI_ERROR_TYPE_SQL = sql(genAiErrorTypeExpr(rawSpan.SpanAttributes))
+export const GENAI_STATUS_MESSAGE_SQL = sql(genAiStatusMessageExpr(rawSpan))
+export const GENAI_TOOL_DESCRIPTION_SQL = sql(genAiToolDescriptionExpr(rawSpan.SpanAttributes))
+export const GENAI_FAILED_TOOL_CALL_RESULT_SQL = sql(genAiFailedToolCallResultExpr(rawSpan))
+export const GENAI_ERROR_FINGERPRINT_SQL = sql(genAiErrorFingerprintExpr(rawSpan))
 
 const usageBuckets = genAiUsageBucketsExpr(rawSpan.SpanAttributes)
 export const GENAI_INPUT_TOKENS_SQL = sql(usageBuckets.input)

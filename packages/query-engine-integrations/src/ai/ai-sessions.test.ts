@@ -9,6 +9,7 @@ import {
 import {
 	aiSessionDetailsQuery,
 	aiSessionDetailsSlices,
+	aiSessionDistributionsQuery,
 	aiSessionFacetsQuery,
 	idSearchPattern,
 	mergeAiSessionDetails,
@@ -911,6 +912,90 @@ describe("aiSessionFacetsQuery", () => {
 			{ name: "eve", count: 12, facetType: "vendor" },
 			{ name: "maple-slack-agent", count: 9, facetType: "service" },
 		])
+	})
+})
+
+describe("aiSessionDistributionsQuery", () => {
+	/** The levels, outermost first: the grouping by measure, the unnesting,
+	 *  the sums, the netting, the sessions and the traces. */
+	const distributionLevels = (sql: string) => {
+		const [grouped = "", unnested = "", sums = "", netted = "", sessions = "", traces = ""] =
+			sql.split("FROM (SELECT")
+		return { grouped, unnested, sums, netted, sessions, traces }
+	}
+
+	it("reads ai_trace_index alone, once, org-scoped", () => {
+		const compiled = compileUnsafe(aiSessionDistributionsQuery(), params)
+
+		expect(compiled.sql).toContain("FROM ai_trace_index")
+		expect(compiled.sql).not.toContain("trace_detail_spans")
+		expect(compiled.sql).not.toContain("FROM traces")
+		expect(compiled.sql.split("FROM ai_trace_index").length - 1).toBe(1)
+		expect(orgPredicateCount(compiled.sql)).toBe(1)
+		expect(compiled.tenantScope).toBe("single-tenant")
+		expect(compiled.sql).not.toContain("__PARAM_")
+	})
+
+	it("nets the reporters once over the unfiltered window, the way the page does", () => {
+		const { sql } = compileUnsafe(aiSessionDistributionsQuery(), params)
+		const { sums, netted, sessions, traces } = distributionLevels(sql)
+
+		// One netting pass for all three usage measures: five grouped passes, or
+		// a netting per measure, would multiply the cost of the page's slowest part.
+		expect(sql.split("arrayMap(r -> tuple(").length - 1).toBe(1)
+		expect(netted).toContain("AS netted")
+		expect(sums).toMatch(/AS llmCalls,/)
+		expect(sums).toMatch(/AS totalTokens,/)
+		expect(sums).toMatch(/AS cost\b/)
+		expect(sessions).toContain(`${SESSION_KEY} AS sessionId`)
+		expect(sql).toContain("GROUP BY sessionId")
+		// No range, sort or page: every session in the window is placed.
+		expect(sql).not.toContain("HAVING")
+		expect(sql).not.toContain("LIMIT")
+		expect(sql).not.toContain("ORDER BY")
+		expect(traces).toContain(`Timestamp >= '${params.startTime}'`)
+		expect(traces).toContain(`Timestamp <= '${params.endTime}'`)
+	})
+
+	it("unnests every measure into one Float64 tuple per session, then groups by measure", () => {
+		const { sql } = compileUnsafe(aiSessionDistributionsQuery(), params)
+		const { grouped, unnested, sums } = distributionLevels(sql)
+
+		// Float64 throughout: `UInt64` and `Float64` have no supertype, so an
+		// array mixing the two sums with the three nettings would not analyze.
+		expect(sums).toContain("toFloat64(agentDurationMs) AS durationMs")
+		expect(sums).toContain("toFloat64(toolCalls) AS toolCalls")
+		expect(unnested.split("arrayJoin(").length - 1).toBe(1)
+		for (const measure of ["durationMs", "cost", "totalTokens", "llmCalls", "toolCalls"]) {
+			expect(unnested).toContain(`tuple('${measure}', ${measure}, `)
+		}
+		expect(grouped).toContain("tupleElement(measured, 1) AS measure")
+		expect(grouped).toContain("sumMap(map(toString(tupleElement(measured, 3)), toUInt64(1))) AS buckets")
+		expect(grouped).toContain("quantile(0.5)(tupleElement(measured, 2)) AS p50")
+		expect(grouped).toContain("quantile(0.95)(tupleElement(measured, 2)) AS p95")
+		// Zero has no place on a log axis: a session with no priced call has no cost.
+		expect(sql).toContain("WHERE tupleElement(measured, 2) > 0")
+		expect(sql).toContain("GROUP BY measure")
+	})
+
+	it("steps the continuous measures in clamped half-octaves and the counts in octaves", () => {
+		const { sql } = compileUnsafe(aiSessionDistributionsQuery(), params)
+
+		expect(sql).toContain("pow(2, floor(log2(greatest(durationMs / 1000, 1)) * 2) / 2) * 1000")
+		expect(sql).toContain("pow(2, floor(log2(greatest(cost, 0.001)) * 2) / 2)")
+		for (const count of ["totalTokens", "llmCalls", "toolCalls"]) {
+			expect(sql).toContain(`pow(2, floor(log2(${count})))`)
+		}
+	})
+
+	it("decodes the quoted 64-bit bucket counts", () => {
+		const compiled = compileUnsafe(aiSessionDistributionsQuery(), params)
+
+		expect(
+			decodeRows(compiled, [
+				{ measure: "totalTokens", buckets: { "8": "1", "128": 2 }, p50: 150, p95: "150" },
+			]),
+		).toEqual([{ measure: "totalTokens", buckets: { "8": 1, "128": 2 }, p50: 150, p95: 150 }])
 	})
 })
 

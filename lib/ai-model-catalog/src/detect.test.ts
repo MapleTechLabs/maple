@@ -11,6 +11,8 @@ describe("detectAiModel", () => {
 			displayName: "GLM 5.3 Flash (nitro)",
 			vendorSlug: "z-ai",
 			vendorName: "Z.ai",
+			// A vendor the catalog lists no color for.
+			brandColor: null,
 			family: null,
 			source: "openrouter",
 		})
@@ -27,6 +29,7 @@ describe("detectAiModel", () => {
 			openRouterId: "anthropic/claude-sonnet-4.5",
 			displayName: "Claude Sonnet 4.5",
 			vendorSlug: "anthropic",
+			brandColor: { light: "#D97757", dark: "#D97757" },
 			family: "claude",
 			source: "openrouter",
 		})
@@ -112,6 +115,8 @@ describe("detectAiModel", () => {
 		expect(detectAiModel("grok-4")).toMatchObject({
 			vendorSlug: "x-ai",
 			vendorName: "xAI",
+			// A heuristic vendor carries its color too; xAI's mark is monochrome.
+			brandColor: { light: "#000000", dark: "#FFFFFF" },
 			family: "grok",
 		})
 		expect(detectAiModel("gemini-1.5-pro-002").displayName).toBe("Gemini 1.5 Pro")
@@ -134,6 +139,7 @@ describe("detectAiModel", () => {
 		for (const input of ["constructor/foo", "constructor.foo", "__proto__/foo", "-", "anthropic/"]) {
 			const detected = detectAiModel(input)
 			expect(detected.source).toBe("unknown")
+			expect(detected.brandColor).toBeNull()
 			expect(typeof detected.vendorName === "string" || detected.vendorName === null).toBe(true)
 			expect(detected.displayName.length).toBeGreaterThan(0)
 		}
@@ -148,6 +154,7 @@ describe("detectAiModel", () => {
 			displayName: "My Azure Deployment",
 			vendorSlug: null,
 			vendorName: null,
+			brandColor: null,
 			family: null,
 			source: "unknown",
 		})

@@ -72,13 +72,18 @@ jobs:
             # host app, which needs a Clerk publishable key and a Keychain
             # entitlement that an unsigned CI build does not have. Every test
             # worth having is in the MapleAPI package above, which needs neither.
+            #
+            # The destination is generic on purpose. A build needs an SDK, not a
+            # bootable device, and the runtimes on the runner follow whatever
+            # Xcode `latest-stable` currently resolves to — a named device pin
+            # breaks the moment an image roll stops shipping that model.
             - name: Build app
               run: |
                   set -o pipefail
                   xcodebuild build \
                     -project Maple.xcodeproj \
                     -scheme Maple \
-                    -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+                    -destination 'generic/platform=iOS Simulator' \
                     -skipPackagePluginValidation \
                     -skipMacroValidation \
                     CODE_SIGNING_ALLOWED=NO \

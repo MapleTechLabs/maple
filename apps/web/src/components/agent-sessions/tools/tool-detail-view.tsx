@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
@@ -16,7 +17,7 @@ import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import { ToolDetailCharts } from "./tool-detail-charts"
 import { ToolDetailSessions } from "./tool-detail-sessions"
-import { ToolErrorsTable } from "./tool-errors-table"
+import { ToolErrorsTable, type ToolErrorsWindow } from "./tool-errors-table"
 import { ToolFilterToolbar, type ToolFilterOption } from "./tool-filter-toolbar"
 import { ToolScopeRow, type ToolScopeChip } from "./tool-scope-row"
 
@@ -28,6 +29,10 @@ export interface ToolDetailViewData {
 	/** Epoch ms of the tool's first and last call in the window; 0 where it never ran. */
 	readonly firstSeen: number
 	readonly lastSeen: number
+	/** The tool's latest `gen_ai.tool.description`; absent where no call stamped one. */
+	readonly description?: string
+	/** The window, as epoch ms — what the Errors table's trends are drawn over. */
+	readonly range: ToolErrorsWindow
 	readonly errors: ReadonlyArray<ToolErrorRow>
 	/** The Errors read's state, so an empty table is only ever a finding. */
 	readonly errorsLoading: boolean
@@ -44,8 +49,8 @@ export interface ToolDetailViewData {
  *
  * The overview ranks tools against each other; this page stops comparing. Four
  * charts of one tool, then the two things a reader came for once a tool is
- * suspect: how it fails, and which sessions it failed in. The toolbar and the
- * scope band are the overview's, unchanged — the window and the filters travel
+ * suspect: how it fails, and which sessions it failed in. The toolbar (minus the
+ * tool-name search) and the scope band are the overview's — the window and the filters travel
  * with the reader, and the scope band states the tool as the denominator it now
  * is ("1,942 of 3,908 run_tests calls match").
  */
@@ -93,10 +98,26 @@ export function ToolDetailView({
 	return (
 		<div className="flex flex-col">
 			<header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-[22px] pb-4">
-				<div className="flex min-w-0 flex-col gap-1.5">
-					<h1 className="truncate font-mono text-[26px] font-semibold leading-8 tracking-[-0.01em] text-foreground">
-						{tool}
-					</h1>
+				<div className="flex min-w-0 flex-1 flex-col gap-1.5">
+					<div className="flex min-w-0 items-baseline gap-3">
+						<h1 className="truncate font-mono text-[26px] font-semibold leading-8 tracking-[-0.01em] text-foreground">
+							{tool}
+						</h1>
+						{data.description !== undefined && (
+							<Tooltip>
+								{/* `w-0 flex-1`: fills the row beside the name without its own
+								    width pushing the header controls onto the next line. */}
+								<TooltipTrigger
+									render={<span />}
+									tabIndex={0}
+									className="w-0 min-w-0 flex-1 cursor-default truncate text-[13px] leading-[18px] text-muted-foreground"
+								>
+									{data.description}
+								</TooltipTrigger>
+								<TooltipContent className="max-w-md">{data.description}</TooltipContent>
+							</Tooltip>
+						)}
+					</div>
 					<p className="font-mono text-[13px] leading-[18px] text-muted-foreground">
 						{subtitle.join(" · ")}
 					</p>
@@ -107,8 +128,6 @@ export function ToolDetailView({
 			</header>
 
 			<ToolFilterToolbar
-				query={search.q ?? ""}
-				onSearch={(value) => onSearchChange({ q: value === "" ? undefined : value })}
 				service={search.service}
 				serviceOptions={serviceOptions}
 				onServiceChange={(value) => onSearchChange({ service: value })}
@@ -137,11 +156,15 @@ export function ToolDetailView({
 			<ToolErrorsTable
 				rows={data.errors}
 				tool={tool}
+				toolCalls={data.totals.calls}
+				window={data.range}
 				selected={search.error}
-				// Opening a different error drops the session the last one was
-				// narrowed to — a `?session=` left behind would narrow occurrences
-				// of an error that never happened in it.
-				onSelect={(errorType) => onSearchChange({ error: errorType, session: undefined })}
+				// Opening a different group drops the session and variant the last
+				// one was narrowed to — either left behind would narrow samples of a
+				// group that never failed that way.
+				onSelect={(fingerprint) =>
+					onSearchChange({ error: fingerprint, session: undefined, variant: undefined })
+				}
 				loading={data.errorsLoading}
 				failure={data.errorsFailure}
 				waiting={waiting}

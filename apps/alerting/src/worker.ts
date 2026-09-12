@@ -48,7 +48,7 @@ import { HttpServerResponse } from "effect/unstable/http"
  * so `InferEnv` can derive `AlertingWorkerEnv` below.
  */
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
-	// Cross-script binding to the investigation fan-out Workflow the api Worker
+	// Cross-script binding to the investigation fan-out Workflow the AI Worker
 	// hosts as an alchemy class. Alert, error, and anomaly ticks start
 	// investigations when incidents open. Bound under the CLASS name because the
 	// api services shared with these ticks read it there
@@ -59,7 +59,7 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 		INVESTIGATION_FANOUT_BINDING,
 		{
 			className: INVESTIGATION_FANOUT_BINDING,
-			scriptName: resolveWorkerName("api", stage),
+			scriptName: resolveWorkerName("ai", stage),
 		},
 	),
 	...emailBinding(stage),

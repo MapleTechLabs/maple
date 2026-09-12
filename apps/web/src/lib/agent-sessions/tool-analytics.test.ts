@@ -11,7 +11,6 @@ import {
 	metricValue,
 	rankSeriesKeys,
 	scopeSummary,
-	toolBadges,
 	toolChartTitle,
 	toolDelta,
 	toolMetricLabel,
@@ -128,47 +127,6 @@ describe("toolDelta", () => {
 	})
 })
 
-describe("toolBadges", () => {
-	const window = { startMs: 0, endMs: 1000 }
-	const row = (over: Partial<ToolBreakdownRow>): ToolBreakdownRow => ({
-		key: "k",
-		...EMPTY_MEASURES,
-		lastSeen: 0,
-		firstSeen: 0,
-		...over,
-	})
-
-	it("calls the slowest only among rows carrying real volume", () => {
-		// A tool called nine times in a week has the worst p90 in most windows
-		// and is never what the badge is for.
-		const badges = toolBadges(
-			[
-				row({ key: "busy", calls: 1000, p90: 5 }),
-				row({ key: "rare", calls: 1, p90: 5000 }),
-			],
-			window,
-		)
-		expect(badges.get("busy")).toBe("slowest")
-		expect(badges.get("rare")).toBeUndefined()
-	})
-
-	it("names no slowest when nothing has a measured p90", () => {
-		expect(toolBadges([row({ key: "a", calls: 100, p90: 0 })], window).get("a")).toBeUndefined()
-	})
-
-	it("calls a tool new when its first call lands well after the window opened", () => {
-		const badges = toolBadges(
-			[
-				row({ key: "old", calls: 10, firstSeen: 50 }),
-				row({ key: "fresh", calls: 10, firstSeen: 900 }),
-			],
-			window,
-		)
-		expect(badges.get("fresh")).toBe("new")
-		expect(badges.get("old")).toBeUndefined()
-	})
-})
-
 describe("toolsTableFooter", () => {
 	const rows = (count: number): ReadonlyArray<ToolBreakdownRow> =>
 		Array.from({ length: count }, (_, index) => ({
@@ -261,10 +219,7 @@ describe("scopeSummary", () => {
 
 describe("metricSpark", () => {
 	it("reads the selected metric off each bucket, in bucket order", () => {
-		const points = [
-			point(2, "a", { calls: 10, errors: 5 }),
-			point(1, "a", { calls: 20, errors: 2 }),
-		]
+		const points = [point(2, "a", { calls: 10, errors: 5 }), point(1, "a", { calls: 20, errors: 2 })]
 		expect(metricSpark(points, "calls", "p90")).toEqual([20, 10])
 		expect(metricSpark(points, "error_rate", "p90")).toEqual([0.1, 0.5])
 	})

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,8 +14,8 @@ export interface ToolFilterOption {
 const ALL = "__all__"
 
 interface ToolFilterToolbarProps {
-	query: string
-	onSearch: (value: string | undefined) => void
+	/** The tool-name search. Absent on the tool detail page, which is one tool. */
+	nameSearch?: { query: string; onSearch: (value: string | undefined) => void }
 	service: string | undefined
 	serviceOptions: ReadonlyArray<ToolFilterOption>
 	onServiceChange: (value: string | undefined) => void
@@ -26,11 +28,14 @@ interface ToolFilterToolbarProps {
 	failingOnly: boolean
 	onToggleFailingOnly: () => void
 	waiting?: boolean
+	/** Trailing controls, right-aligned after the filters: the overview's
+	 *  time-range picker and Reload, where the Sessions list's toolbar ends in its own Reload. */
+	actions?: ReactNode
 }
 
 /**
- * Which calls the page is about: a tool-name search, the service and
- * environment they ran in, and the one-chip triage filter.
+ * Which calls the page is about: a tool-name search (overview only), the
+ * service and environment they ran in, and the one-chip triage filter.
  *
  * Model is one of the three selects rather than a table of its own: the page
  * is about tools, and "which model ran them" is a lens on that list, not a
@@ -42,8 +47,7 @@ interface ToolFilterToolbarProps {
  * a glance.
  */
 export function ToolFilterToolbar({
-	query,
-	onSearch,
+	nameSearch,
 	service,
 	serviceOptions,
 	onServiceChange,
@@ -56,15 +60,18 @@ export function ToolFilterToolbar({
 	failingOnly,
 	onToggleFailingOnly,
 	waiting = false,
+	actions,
 }: ToolFilterToolbarProps) {
 	return (
 		<div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
-			<ToolbarSearch
-				query={query}
-				onSearch={onSearch}
-				placeholder="Tool name…"
-				className="w-full font-mono sm:w-[260px]"
-			/>
+			{nameSearch ? (
+				<ToolbarSearch
+					query={nameSearch.query}
+					onSearch={nameSearch.onSearch}
+					placeholder="Tool name…"
+					className="w-full font-mono sm:w-[260px]"
+				/>
+			) : null}
 
 			<div
 				className={cn(
@@ -102,6 +109,8 @@ export function ToolFilterToolbar({
 					Failing only
 				</button>
 			</div>
+
+			{actions ? <div className="ml-auto">{actions}</div> : null}
 		</div>
 	)
 }

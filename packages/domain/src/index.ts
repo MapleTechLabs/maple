@@ -1,6 +1,6 @@
 export * from "./glob"
 export * from "./http"
-export * from "./internal-rpc"
+export * from "./mcp-tool-contract"
 export * from "./mcp-structured-types"
 export * from "./primitives"
 export * from "./query-engine"

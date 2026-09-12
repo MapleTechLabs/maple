@@ -1,4 +1,5 @@
 export * from "./api"
+export * from "./ai-api"
 export * from "./internal-api"
 export * from "./ai-models"
 export * from "./ai-sessions"

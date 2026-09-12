@@ -3,8 +3,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 
+import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
 import { QueryErrorState } from "@/components/common/query-error-state"
@@ -26,7 +26,7 @@ import {
 	ToolAnalyticsSearchFields,
 	type ToolAnalyticsSearch,
 } from "@/lib/agent-sessions/tool-search"
-import { useToolAnalytics } from "@/lib/agent-sessions/use-tool-analytics"
+import { useAgentSessionsTabCounts, useToolAnalytics } from "@/lib/agent-sessions/use-tool-analytics"
 import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 const toolsSearchSchema = Schema.Struct({
@@ -91,7 +91,7 @@ function AgentToolsPageContent() {
 								window={window}
 								preset={preset}
 								onSearchChange={onSearchChange}
-								headerControls={
+								actions={
 									<TimeRangeHeaderControls
 										startTime={search.startTime ?? startTime}
 										endTime={search.endTime ?? endTime}
@@ -126,22 +126,17 @@ function AgentToolsBody({
 	window,
 	preset,
 	onSearchChange,
-	headerControls,
+	actions,
 }: {
 	search: ToolAnalyticsSearch & TimeRangeSearch
 	window: { startTime: string; endTime: string }
 	preset: string
 	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
-	headerControls: ReactNode
+	actions: ReactNode
 }) {
 	const results = useToolAnalytics(search, window)
-	// A fresh object literal per render would defeat the `new`-badge memo in the
-	// Tools table, which keys on this identity.
-	const windowMs = useMemo(
-		() => ({ startMs: toEpochMs(window.startTime), endMs: toEpochMs(window.endTime) }),
-		[window.startTime, window.endTime],
-	)
-	// Same reason: it is memo input for the detail links the table builds.
+	const tabCounts = useAgentSessionsTabCounts(window)
+	// Memoized: it is memo input for the detail links the table builds.
 	const timeRange = useMemo(
 		() => ({
 			startTime: search.startTime,
@@ -182,8 +177,16 @@ function AgentToolsBody({
 
 	return Result.builder(results.totals)
 		.onInitial(() => (
-			<div className="flex flex-col gap-5">
-				<Skeleton className="mx-6 mt-6 h-14 w-full max-w-2xl" />
+			<div className="flex flex-col gap-5 pt-4">
+				{/* The real strip while the page waits: it is what must not move when
+				    a reader switches tabs. */}
+				<AgentSessionsTabs
+					active="tools"
+					search={timeRange}
+					counts={tabCounts}
+					className="border-b border-border px-6"
+				/>
+				<Skeleton className="mx-6 h-8 max-w-2xl" />
 				<ToolMetricStripLoading />
 				<Skeleton className="mx-6 h-56" />
 				<Skeleton className="mx-6 h-80" />
@@ -196,7 +199,6 @@ function AgentToolsBody({
 			<AgentToolsView
 				search={search}
 				onSearchChange={onSearchChange}
-				window={windowMs}
 				data={{
 					series: series.data,
 					seriesKind: series.seriesKind,
@@ -221,7 +223,8 @@ function AgentToolsBody({
 				envOptions={facets?.environments ?? []}
 				windowLabel={preset}
 				timeRange={timeRange}
-				headerControls={headerControls}
+				tabCounts={tabCounts}
+				actions={actions}
 				waiting={result.waiting}
 			/>
 		))

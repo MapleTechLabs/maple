@@ -1,16 +1,20 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { AgentSessionsList } from "@/components/agent-sessions/agent-sessions-list"
+import {
+	AgentSessionsList,
+	AgentSessionsListSkeleton,
+} from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsFilterSidebar } from "@/components/agent-sessions/agent-sessions-filter-sidebar"
 import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import {
 	agentSessionsFilterInputs,
-	sortOptionFor,
+	agentSessionsSort,
+	agentSessionsSortPatch,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import { NotFoundError } from "@/components/route-error"
 import {
@@ -21,11 +25,15 @@ import { ReloadControls } from "@/components/time-range-picker/reload-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
-import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import {
+	aiSessionsDistributionsResultAtom,
+	aiSessionsFacetsResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
+import { resolveEffectiveTimeRange, useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteAiSessions } from "@/hooks/use-infinite-ai-sessions"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { useAgentSessionsTabCounts } from "@/lib/agent-sessions/use-tool-analytics"
 
 /**
  * The list's window. There is no picker: sessions are read newest-first over
@@ -112,18 +120,22 @@ function AgentSessionsBody() {
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
 	const { refreshVersion } = usePageRefreshContext()
-	// The window rolls forward with every navigation — a filter or sort change
-	// re-resolves "the last week" against now, snapped to the cache grid so a
-	// change within the grid interval keeps its key — and with every Reload.
-	// Once Reload has been pressed the window stops snapping, as in
-	// `useEffectiveTimeRange`: a snapped end would keep the newest sessions out
-	// however many times it is clicked.
+	// Resolved in the selected zone, as `useEffectiveTimeRange` does on the Tools
+	// tab: `7d` starts at that zone's midnight.
+	const { effectiveTimezone } = useTimezonePreference()
+	// "The last week" resolves against now once per mount and once per Reload,
+	// never snapped: the list is newest-first, and an end floored to the cache
+	// grid hid up to a grid interval of the newest sessions on every page load.
+	// A filter or sort change keeps the window rather than re-resolving it, which
+	// is what holds the unfiltered facets' and distributions' keys steady — the
+	// job the snap used to do.
 	const { startTime, endTime } = useMemo(
 		() =>
 			resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW, {
-				snap: refreshVersion === 0,
+				snap: false,
+				timeZone: effectiveTimezone,
 			}),
-		[searchKey, refreshVersion],
+		[refreshVersion, effectiveTimezone],
 	)
 	const filterInputs = useMemo(
 		() => agentSessionsFilterInputs(search, { startTime, endTime }),
@@ -136,12 +148,29 @@ function AgentSessionsBody() {
 	// the Reload subscription — the facets refetch when the window rolls, which
 	// is enough.
 	const facetsResult = useAtomValue(aiSessionsFacetsResultAtom({ data: { startTime, endTime } }))
+	// The ranges' histograms, over the same unfiltered window — a request of its
+	// own, because it nets every session's usage and the facets need not wait.
+	const distributionsResult = useAtomValue(
+		aiSessionsDistributionsResultAtom({ data: { startTime, endTime } }),
+	)
 	const sessions = allData
-	const sortOption = sortOptionFor(search.sortBy, search.sortDir)
+	// Both tabs' counts over this week, unfiltered — over the Tools tab's own
+	// resolution of its default window (snapped, unlike the list's), so the reads
+	// are the ones it makes: the numbers match there and survive the switch.
+	const tabCountsWindow = useEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW)
+	const tabCounts = useAgentSessionsTabCounts(tabCountsWindow)
+	const { sortBy, sortDir } = agentSessionsSort(search)
+	const onSortChange = useCallback(
+		(key: AiSessionSortKey) =>
+			navigate({ search: (prev) => ({ ...prev, ...agentSessionsSortPatch(prev, key) }) }),
+		[navigate],
+	)
 
 	const toolbar = (
 		<AgentSessionsToolbar
-			sessionCount={sessions.length}
+			// Held back until the first page lands, so the count never reads zero
+			// above a list that is about to fill.
+			sessionCount={Result.isSuccess(firstPageResult) ? sessions.length : undefined}
 			query={search.q ?? ""}
 			onSearch={(value) => navigate({ search: (prev) => ({ ...prev, q: value }) })}
 			errorsOnly={search.hasErrors === true}
@@ -153,24 +182,6 @@ function AgentSessionsBody() {
 					}),
 				})
 			}
-			sortKey={sortOption.key}
-			// The default sort leaves the URL clean, so a shared link only carries
-			// a sort when one was chosen.
-			onSortChange={(option) =>
-				navigate({
-					search: (prev) => ({
-						...prev,
-						sortBy:
-							option.sortBy === "startTime" && option.sortDir === "desc"
-								? undefined
-								: option.sortBy,
-						sortDir:
-							option.sortBy === "startTime" && option.sortDir === "desc"
-								? undefined
-								: option.sortDir,
-					}),
-				})
-			}
 			waiting={firstPageResult.waiting}
 			actions={<ReloadControls />}
 		/>
@@ -179,38 +190,40 @@ function AgentSessionsBody() {
 	return (
 		<>
 			<DashboardLayout.Filters>
-				<AgentSessionsFilterSidebar facetsResult={facetsResult} />
+				<AgentSessionsFilterSidebar
+					facetsResult={facetsResult}
+					distributionsResult={distributionsResult}
+				/>
 			</DashboardLayout.Filters>
 			<DashboardLayout.Content>
-				<DashboardLayout.Sticky>
+				{/* `pb-3` over an unpadded scroll area: the layout's `p-4` on both
+				    stacked 32px between the toolbar and the table. */}
+				<DashboardLayout.Sticky className="pb-3">
 					{/* The Tools tab reads the same spans across every session; this
-					    page reads one session at a time. Two routes, one strip. */}
-					<div className="space-y-2">
-						<AgentSessionsTabs active="sessions" />
+					    page reads one session at a time. Two routes, one strip — with
+					    the Tools page's hairline and 12px gap, so the strip and the
+					    toolbar sit at the same height on both. */}
+					<div className="space-y-3">
+						<AgentSessionsTabs
+							active="sessions"
+							counts={tabCounts}
+							className="border-b border-border"
+						/>
 						{toolbar}
 					</div>
 				</DashboardLayout.Sticky>
-				<DashboardLayout.Scroll>
+				<DashboardLayout.Scroll className="pt-0">
 					{Result.builder(firstPageResult)
-						.onInitial(() => (
-							<div className="divide-y divide-border">
-								{Array.from({ length: 8 }).map((_, i) => (
-									<div key={i} className="flex items-center gap-3 py-3">
-										<div className="flex-1 space-y-1.5">
-											<Skeleton className="h-3.5 w-64" />
-											<Skeleton className="h-3 w-28" />
-										</div>
-										<Skeleton className="hidden h-3.5 w-40 sm:block" />
-									</div>
-								))}
-							</div>
-						))
+						.onInitial(() => <AgentSessionsListSkeleton />)
 						.onError((error) => (
 							<QueryErrorState error={error} titleOverride="Failed to load agent sessions" />
 						))
 						.onSuccess(() => (
 							<AgentSessionsList
 								sessions={allData}
+								sortBy={sortBy}
+								sortDir={sortDir}
+								onSortChange={onSortChange}
 								hasMore={hasNextPage}
 								isCapped={isCapped}
 								loadingMore={isFetchingNextPage}

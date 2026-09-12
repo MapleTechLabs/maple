@@ -40,13 +40,15 @@ export const ToolAnalyticsSearchFields = {
 	/** Restrict to calls that failed. */
 	failing: BooleanParam,
 	/**
-	 * The error type the tool detail page's modal is open on. Present-but-empty
-	 * is the failures that named no type, which is a real row — so the param is
-	 * "absent means closed", not "empty means closed".
+	 * The error group the tool detail page's modal is open on — its fingerprint.
+	 * Only ever opens a row the Errors table holds, so a stale or hand-edited
+	 * value closes the modal rather than issuing a read for it.
 	 */
 	error: Schema.optional(Schema.String),
-	/** The session the open modal's occurrences are narrowed to. */
+	/** The session the open modal's samples are narrowed to. */
 	session: Schema.optional(Schema.String),
+	/** The raw text the open modal's samples are narrowed to — one of the group's variants. */
+	variant: Schema.optional(Schema.String),
 }
 
 export const ToolAnalyticsSearch = Schema.Struct(ToolAnalyticsSearchFields)

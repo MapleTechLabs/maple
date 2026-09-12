@@ -338,6 +338,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 
 export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...productEventsFixtures,
+	// Signal presence — the org-wide "have you ever sent this?" probe behind every
+	// empty state (apps/api/src/services/org/SignalPresenceService.ts). One fixture
+	// suffices: the builder takes no options, so there is only one SQL shape.
+	{
+		module: "signal-presence",
+		name: "signalPresenceQuery",
+		label: "default",
+		compile: () => CH.compileUnionUnsafe(CH.signalPresenceQuery(), window),
+	},
 	// Audit log listing (apps/api/src/services/audit/AuditLogService.ts `list`).
 	{
 		module: "audit-log",

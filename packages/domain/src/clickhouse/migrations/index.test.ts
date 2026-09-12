@@ -36,6 +36,7 @@ import { migration_0027_audit_log } from "./0027_audit_log"
 import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
 import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
+import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -52,10 +53,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31,
+			28, 29, 30, 31, 32,
 		])
-		expect(migrations.at(-1)).toBe(migration_0031_ai_trace_index_list_columns)
-		expect(latestMigrationVersion).toBe(31)
+		expect(migrations.at(-1)).toBe(migration_0032_ai_trace_index_tool_detail_columns)
+		expect(latestMigrationVersion).toBe(32)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -85,8 +86,9 @@ describe("ClickHouse migrations", () => {
 		expect(migration_0028_product_events_from_traces.requiredForIngest).toBe(false)
 		// 0030 only recreates the error-events MVs.
 		expect(migration_0030_error_events_attribute_fallback.requiredForIngest).toBe(false)
-		// 0031 widens the same MV-populated ai_trace_index again.
+		// 0031 and 0032 widen the same MV-populated ai_trace_index again.
 		expect(migration_0031_ai_trace_index_list_columns.requiredForIngest).toBe(false)
+		expect(migration_0032_ai_trace_index_tool_detail_columns.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -813,6 +815,68 @@ describe("migration 0031 — ai_trace_index list columns", () => {
 			"CacheWriteTokens",
 			"OutputTokens",
 			"ReasoningTokens",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0032 — ai_trace_index tool detail columns", () => {
+	const migration = migrations.find((entry) => entry.version === 32)!
+
+	it("adds the failure's type, message, tool call result and fingerprint and the tool description, then recreates the view", () => {
+		const statements = migration.statements as ReadonlyArray<string>
+		const alters = statements.slice(0, 5)
+		const [drop, create, ...rest] = statements.slice(5)
+		expect(rest).toEqual([])
+		expect(alters).toEqual([
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorType LowCardinality(String)",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS StatusMessage String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ToolDescription String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS FailedToolCallResult String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorFingerprint UInt64",
+		])
+		// An MV's SELECT is frozen at creation, so the 0031 view is dropped
+		// before the widened one is created.
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		)
+		// `error.type` is plain semconv, so one key answers for every dialect —
+		// and it is the same lookup `IsError` already tests for emptiness.
+		expect(create).toContain("SpanAttributes['error.type'] AS ErrorType")
+		// Both free-text columns are cut at insert, in CHARACTERS: `left` would
+		// cut mid-codepoint on any message or description holding one.
+		expect(create).toContain("leftUTF8(StatusMessage, 400) AS StatusMessage")
+		expect(create).toContain(
+			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), SpanAttributes['tool.description']), 2000) AS ToolDescription",
+		)
+		// A tool call's result is carried only where the call failed, cut the same
+		// way.
+		expect(create).toContain(
+			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.result'], ''), SpanAttributes['ai.toolCall.result']), 1000), '') AS FailedToolCallResult",
+		)
+		// The fingerprint hashes that result, else the index's own status message,
+		// through the redaction chain `error_events` uses — its first pattern
+		// innermost, its last outermost — and is 0 on a span that did not fail.
+		expect(create).toContain("cityHash64(replaceRegexpAll(replaceRegexpAll(")
+		expect(create).toContain("leftUTF8(StatusMessage, 400)), 400), '[a-zA-Z0-9._%+-]+@")
+		expect(create).toContain("'[0-9a-fA-F-]{6,}|[0-9]+', '#')), 0) AS ErrorFingerprint")
+		// Every column the target holds is still projected: the view maps to the
+		// table by NAME.
+		for (const column of [
+			"VendorVersion",
+			"ReasoningTokens",
+			"ErrorType",
+			"StatusMessage",
+			"ToolDescription",
+			"FailedToolCallResult",
+			"ErrorFingerprint",
 		]) {
 			expect(create).toContain(` AS ${column}`)
 		}
