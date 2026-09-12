@@ -8,6 +8,8 @@
  *   00  PageHero          bg-bg        the question: "Maple vs X"
  *   01  CompareNav        sticky       five anchors, the page's wayfinding
  *   02  DifferenceTable   bg-bg-deep   the evidence, difference-first
+ *   02a Surfaces          bg-bg        optional: what the vendor leaves you
+ *                                      to build, drawn by the live artifacts
  *   03  Receipts          bg-bg        the same month billed twice, then the
  *                                      calculator for the visitor's numbers
  *   04  Migration         bg-bg-deep   three steps + the exporter change
@@ -39,6 +41,7 @@ import DifferenceTable from "./DifferenceTable.astro";
 import Migration from "./Migration.astro";
 import Receipts from "./Receipts.astro";
 import Sources from "./Sources.astro";
+import Surfaces from "./Surfaces.astro";
 
 interface Props {
 	slug: string;
@@ -103,7 +106,7 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 		<ComparePair slot="aside" competitor={competitor} />
 	</PageHero>
 
-	<CompareNav competitorName={competitor.name} />
+	<CompareNav competitorName={competitor.name} surfaces={Boolean(competitor.surfaces)} />
 
 	<DifferenceTable
 		competitorName={competitor.name}
@@ -111,6 +114,8 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 		parity={competitor.parity.map((item) => item())}
 		sources={competitor.sources}
 	/>
+
+	{competitor.surfaces && <Surfaces competitorName={competitor.name} surfaces={competitor.surfaces} />}
 
 	<Receipts vendor={competitor.vendor} competitorName={competitor.name} />
 
