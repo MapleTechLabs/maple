@@ -1,0 +1,260 @@
+import {
+	optionalNumberParam,
+	optionalStringParam,
+	requiredStringParam,
+	validationError,
+	type McpToolRegistrar,
+} from "./types"
+import {
+	agentToolReadHandlers,
+	agentToolSelection,
+	agentToolSelectionData,
+	agentToolSelectionParams,
+	agentToolWindowParams,
+	describeSelection,
+	formatNanos,
+	formatSeen,
+} from "@/mcp/lib/agent-tool-analytics"
+import { agentToolsContent } from "./agent-tools-types"
+import { CurrentMcpTenant } from "@/mcp/lib/query-warehouse"
+import { MCP_SEARCH_MAX_HOURS, rangeExceededResult, resolveTimeRange } from "@/mcp/lib/time"
+import { clampLimit } from "@/mcp/lib/limits"
+import { formatNumber, formatTable, truncate } from "@/mcp/lib/format"
+import { formatNextSteps } from "@/mcp/lib/next-steps"
+import { readAiToolErrorDetail, readAiToolErrorSamples } from "@/services/ai-sessions/ai-session-reads"
+import {
+	AiToolErrorDetailRequest,
+	AiToolErrorFingerprint,
+	AiToolErrorSamplesRequest,
+} from "@maple/domain/http"
+import { Effect, Option, Schema } from "effect"
+
+const decodeFingerprint = Schema.decodeUnknownOption(AiToolErrorFingerprint)
+
+/**
+ * A payload as the caller asked to see it, with its true size beside it — the
+ * read already truncated it once, so the byte count is the only thing that says
+ * how much of the argument or result is missing.
+ */
+const clipPayload = (text: string, chars: number, bytes: number): string => {
+	if (text === "") return "(not available — the span was not retained)"
+	const clipped = text.length <= chars ? text : `${text.slice(0, chars)}…`
+	return `${clipped}\n(${formatNumber(bytes)} bytes total)`
+}
+
+export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
+	server.tool(
+		"get_agent_tool_error",
+		"One failure group of an AI agent tool call (the tools an LLM agent invokes during a session — not browser sessions and not Maple's own MCP tools): which sessions hit it, which message variants it folded, which models and services it happens under, and sample calls with the arguments they were made with and the results that came back. `tool` is an exact tool name from `get_agent_tools_overview`'s breakdown and `fingerprint` comes from `list_agent_tool_errors`.",
+		Schema.Struct({
+			...agentToolWindowParams,
+			tool: requiredStringParam("The failing tool (exact `gen_ai.tool.name`)"),
+			fingerprint: requiredStringParam(
+				"The error group, as `list_agent_tool_errors` reported it (a decimal number)",
+			),
+			...agentToolSelectionParams,
+			session: optionalStringParam("Only samples from this session id"),
+			samples_limit: optionalNumberParam("Max sample calls to return (default 10, max 100)"),
+			payload_chars: optionalNumberParam(
+				"Max characters of each argument/result block (default 800, max 10000)",
+			),
+		}),
+		Effect.fn("McpTool.getAgentToolError")(function* (params) {
+			const range = resolveTimeRange(params.start_time, params.end_time, {
+				defaultHours: 24,
+				maxHours: MCP_SEARCH_MAX_HOURS,
+			})
+			const { st, et } = range
+			if (range.exceeded) return rangeExceededResult(range, "get_agent_tool_error")
+			// The fingerprint reaches a UInt64 column comparison, so anything else
+			// is refused here rather than as a warehouse error.
+			const fingerprint = decodeFingerprint(params.fingerprint)
+			if (Option.isNone(fingerprint)) {
+				return validationError(
+					`Invalid fingerprint: '${params.fingerprint}'. It is the decimal number \`list_agent_tool_errors\` prints in its Fingerprint column.`,
+					`get_agent_tool_error tool="search_docs" fingerprint="10453282193948324021"`,
+				)
+			}
+			const samplesLimit = clampLimit(params.samples_limit, { defaultValue: 10, max: 100 })
+			const payloadChars = clampLimit(params.payload_chars, { defaultValue: 800, max: 10_000 })
+			const selection = { ...agentToolSelection(params), tool: params.tool }
+			const tenant = yield* CurrentMcpTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				tool: params.tool,
+				fingerprint: fingerprint.value,
+				samplesLimit,
+			})
+
+			const [detail, samples] = yield* Effect.all(
+				[
+					readAiToolErrorDetail(
+						tenant,
+						new AiToolErrorDetailRequest({
+							startTime: st,
+							endTime: et,
+							fingerprint: fingerprint.value,
+							...selection,
+						}),
+					),
+					readAiToolErrorSamples(
+						tenant,
+						new AiToolErrorSamplesRequest({
+							startTime: st,
+							endTime: et,
+							fingerprint: fingerprint.value,
+							limit: samplesLimit,
+							...(params.session !== undefined && { session: params.session }),
+							...selection,
+						}),
+					),
+				],
+				{ concurrency: 2 },
+			).pipe(Effect.catchTags(agentToolReadHandlers("get_agent_tool_error")))
+
+			const lines: string[] = [
+				`## Tool failure group ${fingerprint.value}`,
+				`Tool: ${params.tool}`,
+				`Time range: ${st} — ${et}`,
+				`Selection: ${describeSelection(params.tool, params)}`,
+				``,
+			]
+
+			if (detail.sessions.length === 0 && samples.occurrences.length === 0) {
+				lines.push(
+					`No failed calls of \`${params.tool}\` under this fingerprint in the window.`,
+					formatNextSteps([
+						`\`list_agent_tool_errors tool="${params.tool}"\` — the groups that exist in this window (a fingerprint is only visible while its failures are in range)`,
+					]),
+				)
+				return {
+					content: agentToolsContent(lines.join("\n"), {
+						tool: "get_agent_tool_error",
+						data: {
+							timeRange: { start: st, end: et },
+							selection: agentToolSelectionData(params.tool, params),
+							fingerprint: fingerprint.value,
+							sessions: [],
+							variants: [],
+							breakdown: [],
+							samples: [],
+							hasMoreSamples: false,
+						},
+					}),
+				}
+			}
+
+			lines.push(
+				`### Sessions (${detail.sessions.length}, most hits first)`,
+				formatTable(
+					["Session", "Vendor", "Agent", "Service", "Hits", "Last seen"],
+					detail.sessions.map((session) => [
+						session.sessionId,
+						session.vendorId === "" ? "—" : session.vendorId,
+						session.agentName === "" ? "—" : truncate(session.agentName, 40),
+						session.service === "" ? "—" : session.service,
+						formatNumber(session.hits),
+						formatSeen(session.lastSeen),
+					]),
+				),
+				``,
+				`### Message variants (${detail.variants.length})`,
+				formatTable(
+					["Calls", "Last seen", "Message"],
+					detail.variants.map((variant) => [
+						formatNumber(variant.calls),
+						formatSeen(variant.lastSeen),
+						truncate(variant.message.replace(/\s+/g, " "), 200),
+					]),
+				),
+				``,
+				`### Where it fails`,
+				formatTable(
+					["Model", "Service", "Calls"],
+					detail.breakdown.map((row) => [
+						row.model === "" ? "(unattributed)" : row.model,
+						row.service === "" ? "—" : row.service,
+						formatNumber(row.calls),
+					]),
+				),
+				``,
+				`### Samples (${samples.occurrences.length}, newest first)`,
+			)
+
+			for (const sample of samples.occurrences) {
+				lines.push(
+					``,
+					`**${formatSeen(sample.timestamp)}** · session \`${sample.sessionId}\` · agent ${sample.agentName === "" ? "—" : sample.agentName} · model ${sample.model === "" ? "(unattributed)" : sample.model} · service ${sample.service === "" ? "—" : sample.service}`,
+					`duration ${formatNanos(sample.durationNs)} · status ${sample.statusCode === "" ? "—" : sample.statusCode} · error.type ${sample.errorType === "" ? "—" : sample.errorType}`,
+					`trace \`${sample.traceId}\` span \`${sample.spanId}\``,
+					`Message: ${sample.message === "" ? "—" : truncate(sample.message.replace(/\s+/g, " "), 400)}`,
+					`Arguments:`,
+					"```",
+					clipPayload(sample.arguments, payloadChars, sample.argumentsBytes),
+					"```",
+					`Result:`,
+					"```",
+					clipPayload(sample.result, payloadChars, sample.resultBytes),
+					"```",
+				)
+			}
+			if (samples.nextCursor !== undefined) {
+				lines.push(
+					``,
+					`More samples exist past this page — raise samples_limit, or narrow with session="…".`,
+				)
+			}
+
+			const firstSession = detail.sessions[0]
+			const firstSample = samples.occurrences[0]
+			lines.push(
+				formatNextSteps([
+					...(firstSession === undefined
+						? []
+						: [
+								`\`get_agent_session session_id="${firstSession.sessionId}"\` — the session that hit this group most`,
+							]),
+					...(firstSample === undefined
+						? []
+						: [
+								`\`inspect_agent_session_span session_id="${firstSample.sessionId}" trace_id="${firstSample.traceId}" span_id="${firstSample.spanId}"\` — the failed call in full`,
+							]),
+					`\`get_agent_tool_error tool="${params.tool}" fingerprint="${fingerprint.value}" session="<session>"\` — the same group inside one session`,
+				]),
+			)
+
+			return {
+				content: agentToolsContent(lines.join("\n"), {
+					tool: "get_agent_tool_error",
+					data: {
+						timeRange: { start: st, end: et },
+						selection: agentToolSelectionData(params.tool, params),
+						fingerprint: fingerprint.value,
+						sessions: detail.sessions.map((session) => ({ ...session })),
+						variants: detail.variants.map((variant) => ({ ...variant })),
+						breakdown: detail.breakdown.map((row) => ({ ...row })),
+						samples: samples.occurrences.map((sample) => ({
+							timestamp: sample.timestamp,
+							traceId: sample.traceId,
+							spanId: sample.spanId,
+							sessionId: sample.sessionId,
+							vendorId: sample.vendorId,
+							agentName: sample.agentName,
+							model: sample.model,
+							service: sample.service,
+							errorType: sample.errorType,
+							message: sample.message,
+							durationMs: sample.durationNs / 1_000_000,
+							statusCode: sample.statusCode,
+							arguments: sample.arguments.slice(0, payloadChars),
+							argumentsBytes: sample.argumentsBytes,
+							result: sample.result.slice(0, payloadChars),
+							resultBytes: sample.resultBytes,
+						})),
+						hasMoreSamples: samples.nextCursor !== undefined,
+					},
+				}),
+			}
+		}),
+	)
+}
