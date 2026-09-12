@@ -316,10 +316,9 @@ const disjointReasoningUsage = {
 /**
  * A streamed completion, as chunks on the wire.
  *
- * `chunks` are the content chunks; `terminal` is the last one, which is where OpenRouter puts the
- * usage block. Both are overridable because the two things these tests pin — how a usage block is
- * folded, and whether the terminal chunk is recognised as terminal at all — are facts about
- * different chunks.
+ * `chunks` are the content chunks; the last chunk is the terminal one, which is where OpenRouter
+ * puts the usage block. Both halves are overridable because the two things these tests pin — how a
+ * usage block is folded, and what happens when none arrives — are facts about different chunks.
  */
 const sseBody = (
 	usage: Record<string, unknown>,
@@ -474,10 +473,13 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		}),
 	)
 
-	it.live("flushes the tool calls the turn declared", () =>
+	it.live("flushes a tool call whose parameters never completed", () =>
 		Effect.gen(function* () {
-			// The tool calls are only forwarded by the same flush, so losing it loses the turn's
-			// answer as well as its accounting.
+			// A tool call is emitted as soon as its accumulated arguments parse, so a complete one
+			// survives either way. One left half-written — which is what a stream that stops early
+			// leaves behind — is only forwarded by this flush, with its parameters coerced to `{}`.
+			// Without it the turn carries no tool call at all, so the pass the engine recovers has
+			// no answer in it.
 			const parts = yield* streamParts(disjointReasoningUsage, {
 				omitUsage: true,
 				chunks: [
@@ -492,7 +494,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 											index: 0,
 											id: "call-1",
 											type: "function",
-											function: { name: "list_services", arguments: "{}" },
+											function: { name: "list_services", arguments: '{"servi' },
 										},
 									],
 								},
