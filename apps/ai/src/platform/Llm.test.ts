@@ -10,8 +10,8 @@
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { Effect, Layer, Stream } from "effect"
-import { LanguageModel } from "effect/unstable/ai"
+import { Effect, Layer, Schema, Stream } from "effect"
+import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
@@ -313,47 +313,98 @@ const disjointReasoningUsage = {
 	completion_tokens_details: { reasoning_tokens: 321 },
 }
 
-const sseBody = (usage: Record<string, unknown>): string =>
-	[
-		`data: ${JSON.stringify({
-			id: "gen-1",
-			object: "chat.completion.chunk",
-			created: 1_789_056_870,
-			model: "z-ai/glm-5.3-flash",
-			choices: [{ index: 0, delta: { role: "assistant", content: "hi" } }],
-		})}`,
-		"",
-		`data: ${JSON.stringify({
-			id: "gen-1",
-			object: "chat.completion.chunk",
-			created: 1_789_056_870,
-			model: "z-ai/glm-5.3-flash",
-			choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-			usage,
-		})}`,
-		"",
+/**
+ * A streamed completion, as chunks on the wire.
+ *
+ * `chunks` are the content chunks; the last chunk is the terminal one, which is where OpenRouter
+ * puts the usage block. Both halves are overridable because the two things these tests pin — how a
+ * usage block is folded, and what happens when none arrives — are facts about different chunks.
+ */
+const sseBody = (
+	usage: Record<string, unknown>,
+	options: {
+		readonly chunks?: ReadonlyArray<Record<string, unknown>>
+		readonly terminalChoices?: ReadonlyArray<Record<string, unknown>>
+		/** Send the terminal chunk, and `[DONE]` after it, with no usage block on any chunk. */
+		readonly omitUsage?: boolean
+		/** Send no terminal chunk at all: content chunks, then `[DONE]`. */
+		readonly omitTerminal?: boolean
+	} = {},
+): string => {
+	const envelope = {
+		id: "gen-1",
+		object: "chat.completion.chunk",
+		created: 1_789_056_870,
+		model: "z-ai/glm-5.3-flash",
+	}
+	const chunks = options.chunks ?? [
+		{ choices: [{ index: 0, delta: { role: "assistant", content: "hi" } }] },
+	]
+	const terminal =
+		options.omitTerminal === true
+			? []
+			: [
+					`data: ${JSON.stringify({
+						...envelope,
+						choices: options.terminalChoices ?? [{ index: 0, delta: {}, finish_reason: "stop" }],
+						...(options.omitUsage === true ? undefined : { usage }),
+					})}`,
+					"",
+				]
+	return [
+		...chunks.flatMap((chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
+		...terminal,
 		"data: [DONE]",
 		"",
 	].join("\n")
+}
 
-/** Stream one completion off a fake transport and return the run's `finish` part. */
-const streamFinishPart = (usage: Record<string, unknown>) =>
+/**
+ * The one tool the streaming fixtures declare. A `tool-call` part is decoded against the toolkit
+ * the call declared, so a stream that returns one is only readable with the tool in hand.
+ */
+const listServices = Tool.make("list_services", { parameters: Schema.Struct({}) })
+
+/**
+ * How one streaming fixture is shaped: the wire, plus whether the call declares a tool. Only a
+ * fixture that returns a tool call declares one — a `tool-call` part is decoded against the
+ * toolkit the call was made with, and the calls without one are the plain-completion shape.
+ */
+type StreamFixture = Parameters<typeof sseBody>[1] & { readonly declareTool?: boolean }
+
+/** Stream one completion off a fake transport and return every part it emitted. */
+const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}) =>
 	Effect.gen(function* () {
 		const fakeFetch: typeof globalThis.fetch = async () =>
-			new Response(sseBody(usage), {
+			new Response(sseBody(usage, options), {
 				status: 200,
 				headers: { "content-type": "text/event-stream" },
 			})
 
 		const model = resolveTriageModel(openRouterEnv)
-		const parts = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+		return yield* LanguageModel.streamText({
+			prompt: "hi",
+			...(options.declareTool === true
+				? {
+						toolkit: Toolkit.make(listServices),
+						// What the agent engine sends: the run owns tool execution, the model call only
+						// reports the calls it was asked for.
+						disableToolCallResolution: true,
+					}
+				: undefined),
+		}).pipe(
 			Stream.runCollect,
 			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
 			// they go in as a single merged layer rather than two lifecycles stacked on each other.
 			Effect.provide(Layer.provide(model.layer, layerLlm(openRouterEnv))),
 			Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 		)
+	})
 
+/** Stream one completion off a fake transport and return the run's `finish` part. */
+const streamFinishPart = (usage: Record<string, unknown>, options?: StreamFixture) =>
+	Effect.gen(function* () {
+		const parts = yield* streamParts(usage, options)
 		const finish = parts.find((part) => part.type === "finish")
 		if (finish === undefined) return yield* Effect.die("the stream carried no finish part")
 		return finish
@@ -410,3 +461,144 @@ describe("streamed usage — reasoning tokens reported outside the completion to
 		}),
 	)
 })
+
+/**
+ * Guards the second `@effect/ai-openrouter` patch in `patches/`.
+ *
+ * The stream decoder emits the turn's `finish` part — and with it the tool calls the model
+ * declared, `reasoning-end` and `text-end` — only from a chunk carrying a `usage` block. OpenRouter
+ * does not always send one, and a stream that ends without it produced no finish part at all: the
+ * agent engine then rejects the turn with `ModelProtocolError: Model response ended without a
+ * finish part` after the model has already answered, and the pass it recovers has neither the
+ * assistant's message nor the tool calls in it.
+ *
+ * Measured in production between 2026-09-10 and 2026-09-12: 518 of 539 failed investigation passes
+ * died on exactly that error, and OpenRouter's own Broadcast trace for the same
+ * `gen_ai.response.id` recorded the generation as complete, `finish_reason: tool_calls`, with a
+ * full token count. The patch appends a synthetic terminal chunk when the stream ends without one,
+ * so the flush runs exactly once either way.
+ *
+ * What it does NOT restore is the accounting. Nothing reported usage, so the finish part carries
+ * none, and the model-call span stamps no `gen_ai.usage.*` and no `gen_ai.usage.cost` — the turn
+ * still reads as a call that cost nothing. Only the provider can close that half.
+ */
+describe("streamed completion — a stream that ends without a usage block", () => {
+	it.live("still emits the finish part, carrying the reason the stream declared", () =>
+		Effect.gen(function* () {
+			const finish = yield* streamFinishPart(disjointReasoningUsage, { omitUsage: true })
+
+			expect(finish.reason).toBe("stop")
+			// Nothing reported usage, and nothing may invent it: the reader takes every field as
+			// optional, and a zero would be indistinguishable from a free call.
+			expect(finish.usage.inputTokens.total).toBeUndefined()
+			expect(finish.usage.outputTokens.total).toBeUndefined()
+		}),
+	)
+
+	it.live("closes the assistant's message, which is what the session renders", () =>
+		Effect.gen(function* () {
+			// `text-end` comes from the same flush. A turn that never closes its text is the
+			// "said nothing" half of the report, and it survives a finish part on its own.
+			const parts = yield* streamParts(disjointReasoningUsage, { omitUsage: true })
+
+			expect(parts.map((part) => part.type)).toContain("text-end")
+		}),
+	)
+
+	it.live("finishes a stream that stops without a terminal chunk at all", () =>
+		Effect.gen(function* () {
+			// The truncated shape, as opposed to a terminal chunk that merely omits its usage: no
+			// chunk ever declared a reason, so the turn finishes under the decoder's own default
+			// rather than not finishing.
+			const finish = yield* streamFinishPart(disjointReasoningUsage, { omitTerminal: true })
+
+			expect(finish.reason).toBe("other")
+		}),
+	)
+
+	it.live("flushes a tool call whose parameters never completed", () =>
+		Effect.gen(function* () {
+			// A tool call is emitted as soon as its accumulated arguments parse, so a complete one
+			// survives either way. One left half-written — which is what a stream that stops early
+			// leaves behind — is only forwarded by this flush, with its parameters coerced to `{}`.
+			// Without it the turn carries no tool call at all, so the pass the engine recovers has
+			// no answer in it.
+			const parts = yield* streamParts(disjointReasoningUsage, {
+				omitUsage: true,
+				declareTool: true,
+				chunks: [
+					{
+						choices: [
+							{
+								index: 0,
+								delta: {
+									role: "assistant",
+									tool_calls: [
+										{
+											index: 0,
+											id: "call-1",
+											type: "function",
+											function: { name: "list_services", arguments: '{"servi' },
+										},
+									],
+								},
+							},
+						],
+					},
+				],
+				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+			})
+
+			expect(parts.find((part) => part.type === "tool-call")).toMatchObject({
+				name: "list_services",
+				params: {},
+			})
+			expect(parts.find((part) => part.type === "finish")?.reason).toBe("tool-calls")
+		}),
+	)
+
+	it.live("emits exactly one finish part when the usage block does arrive", () =>
+		Effect.gen(function* () {
+			const parts = yield* streamParts(disjointReasoningUsage)
+
+			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+		}),
+	)
+
+	it.live("does not re-forward a tool call the stream already completed", () =>
+		Effect.gen(function* () {
+			// A tool call whose arguments parse is emitted there and then, and dropped from the
+			// pending set. The flush re-walks that set, so a call still listed would reach the run
+			// twice — and the run would execute the tool twice.
+			const parts = yield* streamParts(disjointReasoningUsage, {
+				omitUsage: true,
+				declareTool: true,
+				chunks: [
+					{
+						choices: [
+							{
+								index: 0,
+								delta: {
+									role: "assistant",
+									tool_calls: [
+										{
+											index: 0,
+											id: "call-1",
+											type: "function",
+											function: { name: "list_services", arguments: "{}" },
+										},
+									],
+								},
+							},
+						],
+					},
+				],
+				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+			})
+
+			expect(parts.filter((part) => part.type === "tool-call")).toHaveLength(1)
+			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+		}),
+	)
+})
+
