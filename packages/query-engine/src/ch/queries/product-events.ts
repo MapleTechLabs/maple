@@ -437,7 +437,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				return cond ? flag(cond) : CH.lit(0)
 			})
 			const d = dimExpr($)
-			const row = { key, ts: epochMs($.Timestamp), ...flags }
+			const row = { key, ts: epochMs($.Timestamp), seq: $.Seq, ...flags }
 			return d ? { ...row, dim: d } : row
 		})
 		.where(($) => {
@@ -486,7 +486,8 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 		.select(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			const flags = stepFlags(opts.steps, (_, index) => CH.lit(index === 0 ? 1 : 0))
-			const row = { key, ts: epochMs($.StartTime), ...flags }
+			// A session entry has no row order of its own; 0 sorts it first inside its millisecond.
+			const row = { key, ts: epochMs($.StartTime), seq: CH.lit(0), ...flags }
 			if (dim === undefined) return row
 			// An attribute breakdown has no value on a session row; the events
 			// branch supplies it. A session dimension is read straight off the row.
@@ -860,11 +861,12 @@ function chainQuery(plan: FunnelPlan) {
 		.select(($) => {
 			const ts = $.ts as CH.Expr<number>
 			const conditions = opts.steps.map((_, index) => ($[stepColumn(index)] as CH.Expr<number>).eq(1))
-			const tuple = ["ts", ...opts.steps.map((_, index) => stepColumn(index))].join(", ")
+			const tuple = ["ts", "seq", ...opts.steps.map((_, index) => stepColumn(index))].join(", ")
 			return {
 				key: $.key as CH.Expr<string>,
 				level: CH.windowFunnel(windowMs)(ts, ...conditions),
-				evs: CH.untypedExpr<unknown>(`arraySort(x -> x.1, groupArray(tuple(${tuple})))`),
+				// `Seq` breaks ties inside a millisecond, as the table's sorting key does.
+				evs: CH.untypedExpr<unknown>(`arraySort(x -> (x.1, x.2), groupArray(tuple(${tuple})))`),
 			}
 		})
 		.groupBy("key")
@@ -872,12 +874,15 @@ function chainQuery(plan: FunnelPlan) {
 	return fromQuery(perPerson, "chain_events").select(($) => {
 		const times = Object.fromEntries(
 			opts.steps.map((_, index) => {
-				// Tuple element index: 1 is `ts`, k + 2 is the flag of step k (0-based).
-				const flagIndex = index + 2
+				// Tuple element index: 1 is `ts`, 2 is `seq`, k + 3 is the flag of step k (0-based).
+				const flagIndex = index + 3
+				// A step only counts once the previous one was found: with `t_{k-1}`
+				// still 0 the `>=` would match any row and hand the quantiles a
+				// duration measured from the epoch.
 				const walk =
 					index === 0
 						? `x.${flagIndex} = 1`
-						: `x.${flagIndex} = 1 AND x.1 >= ${stepTimeColumn(index - 1)} AND x.1 <= t1 + ${windowMs}`
+						: `${stepTimeColumn(index - 1)} > 0 AND x.${flagIndex} = 1 AND x.1 >= ${stepTimeColumn(index - 1)} AND x.1 <= t1 + ${windowMs}`
 				return [
 					stepTimeColumn(index),
 					CH.rawExpr<number>(`tupleElement(arrayFirst(x -> ${walk}, evs), 1)`, T.uint64),
@@ -979,7 +984,13 @@ export function productEventsFunnelLeaversQuery(
 			step: ($.level as CH.Expr<number>).add(1),
 			tLast: CH.rawExpr<number>(`arrayElement([${timeColumns}], level)`, T.uint64),
 		}))
-		.where(($) => [($.level as CH.Expr<number>).gte(1), ($.level as CH.Expr<number>).lt(n)])
+		.where(($) => [
+			($.level as CH.Expr<number>).gte(1),
+			($.level as CH.Expr<number>).lt(n),
+			// A person the funnel counts at this level but whose first-occurrence
+			// walk never reached it has no "last step" instant to look after.
+			CH.rawCond(`arrayElement([${timeColumns}], level) > 0`),
+		])
 
 	const nexts = fromQuery(personEventsBranch(plan), "e")
 		.innerJoinQuery(dropped, "d", (e, d) => e.key.eq(d.key))

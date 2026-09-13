@@ -284,6 +284,14 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 		run: (params, context) =>
 			Effect.gen(function* () {
 				const widgetParams = yield* decodeProductEventsPathsWidgetParams(params)
+				// No anchor yet (the preset tile, a widget mid-edit): the empty state,
+				// not a 400 from the builder — the same guard the browser's server
+				// function applies.
+				const anchorName =
+					widgetParams.anchor.kind === "event"
+						? widgetParams.anchor.eventName
+						: widgetParams.anchor.pagePath
+				if (anchorName.trim() === "") return { data: [] }
 				const payload = yield* decodeProductEventsPaths({
 					direction: "after",
 					depth: DEFAULT_PATHS_DEPTH,

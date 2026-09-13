@@ -174,7 +174,10 @@ export function WidgetQueryBuilderPage({
 	} = useDashboardTimeRange()
 
 	const initialMode: SourceMode = dataSourceRawSql(widget.dataSource) !== null ? "rawSql" : "builder"
-	const [mode, setMode] = React.useState<SourceMode>(initialMode)
+	const [chosenMode, setMode] = React.useState<SourceMode>(initialMode)
+	// A paths widget has no SQL rendering and hides the source toggle, so a
+	// raw-SQL widget switched to Paths would otherwise be stuck building SQL.
+	const mode: SourceMode = state.visualization === "paths" ? "builder" : chosenMode
 	const initialModeRef = React.useRef<SourceMode>(initialMode)
 
 	// The preview pane's width drives its auto bucket exactly as a canvas tile's

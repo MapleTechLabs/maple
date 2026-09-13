@@ -29,12 +29,20 @@ describe("productEventsPathsQuery", () => {
 		expect(compiled.sql.match(/OrgId = 'org_1'/g)?.length).toBeGreaterThanOrEqual(2)
 	})
 
-	it("walks forward from the first anchor within the window, `depth + 1` names per person", () => {
+	it("walks forward from the first anchor, over the rows inside its window, `depth + 1` names per person", () => {
 		const { sql } = compileUnsafe(productEventsPathsQuery(base), params)
 		expect(sql).toContain("toUInt8(e.EventName = 'signup_completed') AS isAnchor")
-		expect(sql).toContain("arrayFirstIndex(x -> x.3 = 1, evs) AS anchorIdx")
-		expect(sql).toContain("x.1 <= anchorTs + 86400000")
-		expect(sql).toContain(", 1, 4) AS seq")
+		// The anchor instant per person, then only the rows inside its window.
+		expect(sql).toContain("min(toUInt64(toUnixTimestamp64Milli(e.Timestamp))) AS anchorTs")
+		expect(sql).toContain("WHERE r.ts >= a.anchorTs")
+		expect(sql).toContain("AND r.ts <= a.anchorTs + 86400000")
+		// Ordered by (ts, seq) so a same-millisecond pair keeps its row order.
+		expect(sql).toContain("arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, name, isAnchor))) AS evs")
+		expect(sql).toContain("arrayFirstIndex(x -> x.4 = 1, evs) AS anchorIdx")
+		// Compacted before truncation, no raw-row tail.
+		expect(sql).toContain(
+			"arraySlice(arrayCompact(arrayMap(x -> x.3, arraySlice(evs, anchorIdx))), 1, 4) AS seq",
+		)
 		expect(sql).toContain("WHERE anchorIdx > 0")
 		expect(sql).toContain("WHERE tupleElement(edge, 1) <= 3")
 		expect(sql).toContain("groupArray(tuple(name, n))), 1, 4) AS head")
@@ -46,8 +54,10 @@ describe("productEventsPathsQuery", () => {
 			productEventsPathsQuery({ ...base, direction: "before", windowSeconds: 3_600 }),
 			params,
 		)
-		expect(sql).toContain("arrayFirstIndex(x -> x.3 = 1, arrayReverse(evs))")
-		expect(sql).toContain("x.1 >= anchorTs - 3600000")
+		expect(sql).toContain("max(toUInt64(toUnixTimestamp64Milli(e.Timestamp))) AS anchorTs")
+		expect(sql).toContain("WHERE r.ts <= a.anchorTs")
+		expect(sql).toContain("AND r.ts >= a.anchorTs - 3600000")
+		expect(sql).toContain("arrayFirstIndex(x -> x.4 = 1, arrayReverse(evs))")
 	})
 
 	it("only reads persons who have the anchor, and computes the hop rows once as a CTE", () => {
@@ -70,8 +80,10 @@ describe("productEventsPathsQuery", () => {
 		)
 		// No identity join on a session key, so the columns go unprefixed.
 		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
-		expect(sql).toContain("AND Kind = 'navigation'")
-		expect(sql).toContain("NOT IN ('heartbeat', '/')")
+		// The anchor row is exempt from its own kind and name filters.
+		expect(sql).toContain(
+			"(r.isAnchor = 1 OR (r.kind = 'navigation' AND r.name NOT IN ('heartbeat', '/')))",
+		)
 		expect(sql).toContain("(Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev'")
 		expect(sql).toContain("SessionId AS key")
 		expect(sql).not.toContain("identity_links")

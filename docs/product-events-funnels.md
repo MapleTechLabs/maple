@@ -464,14 +464,17 @@ chain `windowFunnel` counted, so a person the funnel counts at level N can
 occasionally have no step-N timestamp and is left out of the quantiles. The
 extras ride on the same `{ name, value }` rows as optional per-step fields
 (`p50Ms`, `p90Ms`, `leavers`), so a reader that only knows the bars ignores
-them. Endpoints: `/product-events-funnel-timing`, `/product-events-funnel-leavers`.
+them. With a `breakdownBy` the route returns the grouped rows only: the drop-off view then draws one
+hatched cap per group and no timing or leavers, since those are per-step totals.
+Endpoints: `/product-events-funnel-timing`, `/product-events-funnel-leavers`.
 
 **Paths** is a new panel type (`paths`, route `product_events_paths`,
 definition on `display.paths`): what people do in the hops after (or before)
-one anchor event or page. `productEventsPathsQuery` gathers each person's
-events in time order (`groupArray`, capped at 5000 rows per person), cuts at
-the first anchor going forward or the last going backward, bounds by
-`windowSeconds`, collapses consecutive repeats, and emits one
+one anchor event or page. `productEventsPathsQuery` finds each person's anchor
+instant (the first going forward, the last going backward), reads only the
+rows inside `windowSeconds` of it in `(ts, seq)` order — the anchor row always
+kept, `include` / `exclude` narrowing the rest — collapses consecutive repeats,
+and emits one
 `{ hop, fromNode, toNode, count }` row per hop up to `depth` (1–5). Only the
 top `branches` (1–10) nodes per column are named; the rest fold into
 `$other` on both sides of every hop, and a sequence that stops short ends in

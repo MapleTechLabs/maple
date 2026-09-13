@@ -125,12 +125,12 @@ describe("productEventsFunnelQuery", () => {
 		expect(sql).toContain("UNION ALL")
 		// The session branch: s1 = 1, every other step 0, at the session's StartTime.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(StartTime)) AS ts, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
+			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
 		)
 		expect(sql).toContain("AND ReferrerHost = 'news.ycombinator.com'")
 		// The events branch never satisfies the session step.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts, 0 AS s1,",
+			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts, Seq AS seq, 0 AS s1,",
 		)
 		expect(sql).toContain("windowFunnel(86400000)(ts, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level")
 	})
@@ -325,9 +325,12 @@ describe("funnel drop-off details", () => {
 			productEventsFunnelTimingQuery({ steps: STEPS, keyBy: "person", windowSeconds: 3_600 }),
 			params,
 		)
-		expect(sql).toContain("arraySort(x -> x.1, groupArray(tuple(ts, s1, s2, s3))) AS evs")
-		expect(sql).toContain("tupleElement(arrayFirst(x -> x.2 = 1, evs), 1) AS t1")
-		expect(sql).toContain("arrayFirst(x -> x.3 = 1 AND x.1 >= t1 AND x.1 <= t1 + 3600000, evs), 1) AS t2")
+		expect(sql).toContain("arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, s1, s2, s3))) AS evs")
+		expect(sql).toContain("tupleElement(arrayFirst(x -> x.3 = 1, evs), 1) AS t1")
+		// A step is only found once the previous one was.
+		expect(sql).toContain(
+			"arrayFirst(x -> t1 > 0 AND x.4 = 1 AND x.1 >= t1 AND x.1 <= t1 + 3600000, evs), 1) AS t2",
+		)
 		expect(sql).toContain("quantileIf(0.5)(toFloat64(t2 - t1), level >= 2 AND t2 > 0)")
 		expect(sql).toContain("quantileIf(0.9)(toFloat64(t3 - t2), level >= 3 AND t3 > 0)")
 		expect(sql).toContain("arrayJoin([2, 3]) AS step")
@@ -343,6 +346,7 @@ describe("funnel drop-off details", () => {
 		expect(sql).toContain("arrayElement([t1, t2, t3], level) AS tLast")
 		expect(sql).toContain("WHERE level >= 1")
 		expect(sql).toContain("AND level < 3")
+		expect(sql).toContain("AND arrayElement([t1, t2, t3], level) > 0")
 		expect(sql).toContain("argMinIf(e.name, e.ts, e.ts > d.tLast) AS next")
 		// No identity join on a visitor key, so the branch's columns go unprefixed.
 		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")

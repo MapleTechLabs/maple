@@ -531,6 +531,10 @@ const FUNNEL_EVENTS: ReadonlyArray<FunnelSeedEvent> = [
 	// "/", so the paths suite has a node to fold into `$other`.
 	fev("f6", "v6", "", at(7 * HOUR_MS), 0, "navigation", "https://maple.dev/"),
 	fev("f6", "v6", "", at(7 * HOUR_MS + MINUTE_MS), 1, "navigation", "https://maple.dev/docs"),
+	// v7: a page view and a custom event in the SAME millisecond, told apart by
+	// `Seq` alone. A path ordered by timestamp only could put `scroll` first.
+	fev("f7", "v7", "", at(8 * HOUR_MS), 0, "navigation", "https://maple.dev/"),
+	fev("f7", "v7", "", at(8 * HOUR_MS), 1, "custom", "https://maple.dev/", "scroll"),
 ]
 
 const FUNNEL_SESSIONS: ReadonlyArray<SeedSession> = [
@@ -713,8 +717,9 @@ describe.skipIf(!clickhouseE2eEnabled)("product events funnels", () => {
 				Number(row.persons),
 			]),
 			[
-				["$pageview", "navigation", 8, 5, 5],
+				["$pageview", "navigation", 9, 6, 6],
 				["plan_started", "custom", 2, 0, 2],
+				["scroll", "custom", 1, 1, 1],
 				["signup_started", "custom", 1, 1, 1],
 			],
 		)
@@ -843,6 +848,7 @@ describe.skipIf(!clickhouseE2eEnabled)("product events paths", () => {
 			}),
 			[
 				[1, "/", "/pricing", 2],
+				[1, "/", "", 1],
 				[1, "/", "$other", 1],
 				[2, "/pricing", "", 2],
 				[2, "$other", "", 1],
@@ -861,9 +867,46 @@ describe.skipIf(!clickhouseE2eEnabled)("product events paths", () => {
 				exclude: ["/pricing"],
 			}),
 			[
-				[1, "/", "", 2],
+				[1, "/", "", 3],
 				[1, "/", "/docs", 1],
 			],
+		)
+	})
+
+	it("keeps the anchor row when include or exclude would drop its kind", async () => {
+		// A page anchor with `include: "events"`: the page view still anchors,
+		// and only custom events follow it. v1: / → signup_started; v7: / → scroll.
+		assert.deepStrictEqual(
+			await pathRows({
+				anchor: { kind: "page", pagePath: "/" },
+				direction: "after",
+				depth: 1,
+				branches: 4,
+				keyBy: "visitor",
+				windowSeconds: 86_400,
+				include: "events",
+			}),
+			[
+				[1, "/", "", 2],
+				[1, "/", "scroll", 1],
+				[1, "/", "signup_started", 1],
+			],
+		)
+	})
+
+	it("orders a same-millisecond pair by Seq", async () => {
+		// v7's page view and `scroll` share a timestamp; Seq says the page came first.
+		const rows = await pathRows({
+			anchor: { kind: "page", pagePath: "/" },
+			direction: "after",
+			depth: 1,
+			branches: 4,
+			keyBy: "visitor",
+			windowSeconds: 60,
+		})
+		assert.deepStrictEqual(
+			rows.filter((row) => row[2] === "scroll"),
+			[[1, "/", "scroll", 1]],
 		)
 	})
 })

@@ -179,6 +179,12 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				`\`display_json.paths.depth\` must be an integer in 1..${PATHS_MAX_DEPTH} (got ${JSON.stringify(paths.depth)}).`,
 			)
 		}
+		const pathsWindow = paths?.windowSeconds
+		if (pathsWindow !== undefined && (!Number.isFinite(pathsWindow) || pathsWindow <= 0)) {
+			fatal.push(
+				`\`display_json.paths.windowSeconds\` bounds how far from the anchor a hop may be and must be a positive number of seconds (got ${JSON.stringify(pathsWindow)}). Omit it to use the default 86400 (24h).`,
+			)
+		}
 		if (
 			paths?.branches !== undefined &&
 			(!Number.isInteger(paths.branches) || paths.branches < 1 || paths.branches > PATHS_MAX_BRANCHES)

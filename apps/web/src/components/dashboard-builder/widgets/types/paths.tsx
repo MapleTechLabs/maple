@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect"
 import { WIDGET_TYPES } from "@maple/domain/http"
-import { ProductEventsPathsWidgetParams } from "@maple/query-model"
+import { PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH, ProductEventsPathsWidgetParams } from "@maple/query-model"
 import {
 	PRODUCT_EVENTS_PATHS_ENDPOINT,
 	dataSourceEndpoint,
@@ -110,8 +110,11 @@ export const pathsWidgetType: WidgetTypeDefinition = {
 		const filters = parseProductEventsFilterClause(filterClause)
 		if (!filters.ok) return `Filters: ${filters.error}`
 		if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) return "The window must be positive"
-		if (!Number.isInteger(depth) || depth < 1) return "Steps must be at least 1"
-		if (!Number.isInteger(branches) || branches < 1) return "Branches must be at least 1"
+		// Stored and imported JSON can carry any number; the route rejects these past the maxima.
+		if (!Number.isInteger(depth) || depth < 1 || depth > PATHS_MAX_DEPTH)
+			return `Steps must be between 1 and ${PATHS_MAX_DEPTH}`
+		if (!Number.isInteger(branches) || branches < 1 || branches > PATHS_MAX_BRANCHES)
+			return `Branches must be between 1 and ${PATHS_MAX_BRANCHES}`
 		return null
 	},
 }

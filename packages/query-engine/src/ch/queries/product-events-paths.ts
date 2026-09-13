@@ -1,19 +1,21 @@
 // User paths over `product_events`: what people do in the steps after (or
 // before) one anchor event.
 //
-// Per person the events in range are gathered in time order, cut at the anchor
-// (the first occurrence going forward, the last going backward), bounded by
-// the window, collapsed of consecutive repeats, and truncated to `depth` hops.
-// Each hop is one `(hop, fromNode, toNode)` row; a person whose sequence ends
-// before `depth` emits a hop into `''` — the chart's "Ended". Only the top
-// `branches` nodes per column are named; the rest fold into `$other` on both
-// sides of every hop, so the flows a reader sees always add up.
+// Per person the walk starts at the anchor — the first occurrence going
+// forward, the last going backward — and only the rows inside the window
+// around it are gathered, in `(ts, seq)` order. The anchor row is always kept;
+// `include` / `exclude` narrow the rows after it. Consecutive repeats
+// collapse, the sequence is truncated to `depth` hops, and each hop is one
+// `(hop, fromNode, toNode)` row; a person whose sequence ends before `depth`
+// emits a hop into `''` — the chart's "Ended". Only the top `branches` nodes
+// per column are named; the rest fold into `$other` on both sides of every
+// hop, so the flows a reader sees always add up.
 //
 // The sequence work is raw SQL over per-person arrays (`arrayFirstIndex`,
-// `arrayFilter`, `arrayCompact` with lambdas), which the builder cannot
-// express; every column the raw strings name is one the same query projects,
-// and every user-supplied value (the anchor, the excluded names) enters through
-// a typed condition, never a string.
+// `arrayCompact`, `arrayMap` with lambdas), which the builder cannot express;
+// every column the raw strings name is one the same query projects, and every
+// user-supplied value (the anchor, the excluded names) enters through a typed
+// condition, never a string.
 
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-clickhouse"
@@ -66,10 +68,6 @@ export const PATHS_MAX_DEPTH = 5
 export const PATHS_MAX_BRANCHES = 10
 /** The folded remainder of a column, on the wire. */
 export const PATHS_OTHER = "$other"
-/** Most events kept per person before sequencing — a bound on the per-person array, not a semantic. */
-const PATHS_EVENTS_PER_PERSON = 5000
-/** Events kept after the anchor before compaction; well above `depth` so repeats do not eat the tail. */
-const PATHS_RAW_TAIL = 200
 
 export const productEventsPathsRowSchema = Schema.Struct({
 	/** 1-based: `fromNode` sits in column `hop - 1`, `toNode` in column `hop`. */
@@ -109,27 +107,34 @@ function validate(opts: ProductEventsPathsOpts): void {
 	}
 }
 
-/** The include filter as a row predicate; `undefined` for "all". */
-function includeCondition($: OpenJoinAccessor<typeof ProductEvents.columns>, include: PathsInclude) {
+/** The include filter over a projected `kind` column; `undefined` for "all". */
+function includeCondition(kind: CH.Expr<string>, include: PathsInclude): CH.Condition | undefined {
 	switch (include) {
 		case "all":
 			return undefined
 		case "events":
-			return $.Kind.neq("navigation")
+			return kind.neq("navigation")
 		case "pages":
-			return $.Kind.eq("navigation")
+			return kind.eq("navigation")
 	}
 }
 
 /**
- * Every qualifying event of every person who has the anchor in range, as
- * `(key, ts, name, isAnchor)`. The anchor semi-join is what keeps the
- * per-person arrays to the persons the chart can draw.
+ * The rows a path is walked over: for every person with the anchor in range,
+ * the events inside the window around that person's anchor (the first going
+ * forward, the last going backward), as `(key, ts, seq, name, isAnchor)`.
+ *
+ * The anchor's own rows always qualify; `include` / `exclude` narrow the rest.
+ * Bounding by the anchor window HERE, before any aggregation, is what keeps
+ * the per-person arrays small and deterministic — an unordered cap on
+ * `groupArray` could drop the anchor itself for a bot-like visitor.
  */
 function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFilters) {
 	const keyBy = opts.keyBy
 	const include = opts.include ?? "all"
 	const exclude = opts.exclude ?? []
+	const forward = opts.direction === "after"
+	const windowMs = opts.windowSeconds * 1000
 
 	const withIdentity = (): OpenJoinQuery<typeof ProductEvents.columns> => {
 		const base: OpenJoinQuery<typeof ProductEvents.columns> = from(ProductEvents, "e")
@@ -151,24 +156,54 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 			: undefined,
 	]
 
-	const anchorPersons = withIdentity()
-		.select(($) => ({ key: keyOf($) }))
+	// Each person's anchor instant. Rows are read by `idx_event_name` for an
+	// event anchor, so this is the cheap side.
+	const anchorTimes = withIdentity()
+		.select(($) => ({
+			key: keyOf($),
+			anchorTs: forward ? CH.min_(epochMs($.Timestamp)) : CH.max_(epochMs($.Timestamp)),
+		}))
 		.where(($) => [...inRange($), eventStepCondition($, opts.anchor)])
 		.groupBy("key")
 
-	return withIdentity()
+	const rows = withIdentity()
 		.select(($) => ({
 			key: keyOf($),
 			ts: epochMs($.Timestamp),
+			seq: $.Seq,
+			kind: $.Kind,
 			name: eventDisplayName($),
 			isAnchor: flag(eventStepCondition($, opts.anchor) ?? CH.rawCond("0")),
 		}))
-		.where(($) => [
-			...inRange($),
-			includeCondition($, include),
-			exclude.length > 0 ? CH.notInList(eventDisplayName($), exclude) : undefined,
-			inSubquery(keyOf($), anchorPersons),
-		])
+		.where(($) => inRange($))
+
+	return fromQuery(rows, "r")
+		.innerJoinQuery(anchorTimes, "a", (r, a) => r.key.eq(a.key))
+		.select(($) => ({
+			key: $.key,
+			ts: $.ts,
+			seq: $.seq,
+			name: $.name,
+			isAnchor: $.isAnchor,
+		}))
+		.where(($) => {
+			const ts = $.ts as CH.Expr<number>
+			const anchorTs = $.a.anchorTs as CH.Expr<number>
+			const narrowing = [
+				includeCondition($.kind as CH.Expr<string>, include),
+				exclude.length > 0 ? CH.notInList($.name as CH.Expr<string>, exclude) : undefined,
+			].filter((cond): cond is CH.Condition => cond !== undefined)
+			const narrowed = narrowing.reduce<CH.Condition | undefined>(
+				(acc, cond) => (acc ? acc.and(cond) : cond),
+				undefined,
+			)
+			return [
+				forward ? ts.gte(anchorTs) : ts.lte(anchorTs),
+				forward ? ts.lte(anchorTs.add(windowMs)) : ts.gte(anchorTs.sub(windowMs)),
+				// The anchor row is never filtered away by its own kind or name.
+				narrowed ? ($.isAnchor as CH.Expr<number>).eq(1).or(narrowed) : undefined,
+			]
+		})
 }
 
 /**
@@ -182,30 +217,31 @@ export function productEventsPathsQuery(
 ): CHQuery<any, ProductEventsPathsOutput, any> {
 	validate(opts)
 	const filters = opts.filters ?? {}
-	const windowMs = opts.windowSeconds * 1000
 	const forward = opts.direction === "after"
 
-	// Per person: the sorted `(ts, name, isAnchor)` tuples — reversed for a
-	// backward walk so "first anchor, then onward" reads the same either way.
+	// Per person: the `(ts, seq, name, isAnchor)` tuples in event order —
+	// `Seq` breaks ties inside a millisecond, as the table's sorting key does —
+	// reversed for a backward walk so "first anchor, then onward" reads the
+	// same either way. The rows are already bounded to the anchor window.
 	const ordered = forward ? "evs" : "arrayReverse(evs)"
-	const windowCond = forward ? `x.1 <= anchorTs + ${windowMs}` : `x.1 >= anchorTs - ${windowMs}`
 
 	const perPerson = fromQuery(pathEventsBranch(opts, filters), "path_events")
 		.select(($) => ({
 			key: $.key,
 			evs: CH.untypedExpr<unknown>(
-				`arraySort(x -> x.1, groupArray(${PATHS_EVENTS_PER_PERSON})(tuple(ts, name, isAnchor)))`,
+				"arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, name, isAnchor)))",
 			),
 		}))
 		.groupBy("key")
 
+	// Compact BEFORE truncating: a run of repeats is one node, and must not eat
+	// the hops behind it.
 	const sequences = fromQuery(perPerson, "per_person")
 		.select(($) => ({
 			key: $.key,
-			anchorIdx: CH.rawExpr<number>(`arrayFirstIndex(x -> x.3 = 1, ${ordered})`, T.uint32),
-			anchorTs: CH.rawExpr<number>(`tupleElement(arrayElement(${ordered}, anchorIdx), 1)`, T.uint64),
+			anchorIdx: CH.rawExpr<number>(`arrayFirstIndex(x -> x.4 = 1, ${ordered})`, T.uint32),
 			seq: CH.rawExpr<ReadonlyArray<string>>(
-				`arraySlice(arrayCompact(arrayMap(x -> x.2, arrayFilter(x -> ${windowCond}, arraySlice(${ordered}, anchorIdx, ${PATHS_RAW_TAIL})))), 1, ${opts.depth + 1})`,
+				`arraySlice(arrayCompact(arrayMap(x -> x.3, arraySlice(${ordered}, anchorIdx))), 1, ${opts.depth + 1})`,
 				T.array(T.string),
 			),
 		}))

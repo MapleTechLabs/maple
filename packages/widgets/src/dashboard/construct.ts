@@ -155,7 +155,12 @@ export interface ProductEventsFunnelDefinition {
 	readonly breakdownBy?: FunnelBreakdownBy
 	/** Narrow the population to persons with a session matching these dimensions. */
 	readonly filters?: FunnelPopulationFilters
-	/** Drawn as descending bars (default) or the step-by-step drop-off view, which also fetches timing and leavers. */
+	/**
+	 * Drawn as descending bars (default) or the step-by-step drop-off view,
+	 * which also fetches timing and leavers. With a `breakdownBy` the drop-off
+	 * view draws one hatched cap per group and no timing or leavers: those are
+	 * per-step totals, not per-group ones, and the route leaves them out.
+	 */
 	readonly variant?: FunnelVariant
 }
 

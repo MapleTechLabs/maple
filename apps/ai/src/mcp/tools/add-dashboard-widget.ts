@@ -187,7 +187,21 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 					)
 				}
 				dataSource = makeProductEventsFunnelDataSource(funnelDefinition)
-			} else if (pathsDefinition !== undefined && !data_source_json) {
+			} else if (pathsDefinition !== undefined || panel.visualization === "paths") {
+				// A paths panel has exactly one source, derived from its definition.
+				// A caller-supplied one would feed the chart rows it cannot read.
+				if (data_source_json) {
+					return validationError(
+						'`panel_type: "paths"` derives its data source from `display_json.paths`; do not pass `data_source_json`.',
+						'{ "panel_type": "paths", "display_json": "{\\"title\\":\\"After signup\\",\\"paths\\":{\\"anchor\\":{\\"kind\\":\\"event\\",\\"eventName\\":\\"signup_completed\\"}}}" }',
+					)
+				}
+				if (pathsDefinition === undefined) {
+					return validationError(
+						'`panel_type: "paths"` needs `display_json.paths` with an `anchor` (`{ "kind": "event", "eventName": … }` or `{ "kind": "page", "pagePath": … }`).',
+						'{ "panel_type": "paths", "display_json": "{\\"title\\":\\"After signup\\",\\"paths\\":{\\"anchor\\":{\\"kind\\":\\"event\\",\\"eventName\\":\\"signup_completed\\"}}}" }',
+					)
+				}
 				if (panel.visualization !== "paths") {
 					return validationError(
 						`\`display_json.paths\` defines a paths widget, which only \`panel_type: "paths"\` renders (got \`${panel.panelType}\`).`,
