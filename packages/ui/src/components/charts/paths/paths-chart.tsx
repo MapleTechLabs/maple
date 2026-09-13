@@ -5,6 +5,7 @@ import { cn } from "../../../lib/utils"
 import { formatNumber } from "../../../lib/format"
 import { asFiniteNumber } from "../_shared/breakdown-rows"
 import { useContainerSize } from "../../../hooks/use-container-size"
+import { ArrowLeftIcon, UserIcon } from "../../icons"
 
 // Paths: a column-wise flow out of (or into) one anchor.
 //
@@ -381,9 +382,17 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 					}}
 					data-slot="paths-tooltip"
 				>
-					<div className="mb-1 truncate text-foreground/90">
-						{labelOf(hoveredNode)}
-						<span className="ml-1.5 text-muted-foreground">
+					<div className="mb-1.5 flex min-w-0 items-center gap-1.5">
+						<span
+							className={cn(
+								"size-2 shrink-0 rounded-[2px]",
+								hoveredNode.kind === "event" && "bg-[var(--chart-2)]",
+								hoveredNode.kind === "end" && "bg-foreground/20",
+								hoveredNode.kind === "other" && "bg-foreground/35",
+							)}
+						/>
+						<span className="truncate font-medium text-foreground">{labelOf(hoveredNode)}</span>
+						<span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] leading-none text-muted-foreground">
 							{hoveredNode.column === 0
 								? "anchor"
 								: reverse
@@ -391,37 +400,66 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 									: `step ${hoveredNode.column}`}
 						</span>
 					</div>
-					<div className="flex justify-between gap-3 tabular-nums">
-						<span className="text-muted-foreground">
+					<div className="mb-1.5 h-1.5 overflow-hidden rounded-sm bg-foreground/5">
+						<div
+							className="h-full rounded-sm bg-[var(--chart-2)]"
+							style={{ width: `${Math.min(100, (hoveredNode.count / anchor.count) * 100)}%` }}
+						/>
+					</div>
+					<div className="flex items-center justify-between gap-3 tabular-nums">
+						<span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground">
+							<UserIcon size={12} />
 							{hoveredNode.column === 0 ? "started here" : "reached"}
 						</span>
-						<span className="text-foreground/90">
-							{hoveredNode.count.toLocaleString("en-US")} ·{" "}
-							{((hoveredNode.count / anchor.count) * 100).toFixed(
-								hoveredNode.count / anchor.count < 0.1 ? 1 : 0,
-							)}
-							%
+						<span className="flex items-baseline gap-1.5 whitespace-nowrap">
+							<span className="font-semibold text-foreground">
+								{hoveredNode.count.toLocaleString("en-US")}
+							</span>
+							<span className="text-[10px] whitespace-nowrap text-muted-foreground">
+								{((hoveredNode.count / anchor.count) * 100).toFixed(
+									hoveredNode.count / anchor.count < 0.1 ? 1 : 0,
+								)}
+								% of anchor
+							</span>
 						</span>
 					</div>
 					{hoveredNode.column > 0 && (
-						<div className="mt-1 text-[10px] text-muted-foreground">
+						<>
+							<div className="-mx-2.5 my-1.5 h-px bg-border" />
+							<div className="mb-1 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+								Came from
+							</div>
 							{links
 								.filter((link) => link.target === hoveredNode.id)
 								.sort((a, b) => b.count - a.count)
 								.slice(0, 3)
 								.map((link) => {
 									const from = graph.nodes.get(link.source)
+									const share = hoveredNode.count > 0 ? link.count / hoveredNode.count : 0
 									return (
-										<div
-											key={link.source}
-											className="flex justify-between gap-3 tabular-nums"
-										>
-											<span className="truncate">← {from ? labelOf(from) : ""}</span>
-											<span>{link.count.toLocaleString("en-US")}</span>
+										<div key={link.source} className="my-0.5">
+											<div className="flex items-center gap-2 tabular-nums">
+												<ArrowLeftIcon
+													size={10}
+													className="shrink-0 text-muted-foreground"
+												/>
+												<span className="min-w-0 flex-1 truncate text-foreground/90">
+													{from ? labelOf(from) : ""}
+												</span>
+												<span className="text-muted-foreground">
+													{link.count.toLocaleString("en-US")}
+												</span>
+											</div>
+											<div className="relative mt-0.5 ml-4 h-1 rounded-sm bg-foreground/5">
+												<div
+													className="absolute inset-y-0 left-0 rounded-sm bg-[var(--chart-2)]/70"
+													style={{ width: `${share * 100}%` }}
+												/>
+											</div>
 										</div>
 									)
 								})}
-						</div>
+						</>
 					)}
 				</div>
 			)}

@@ -6,7 +6,7 @@ import { formatNumber, formatValueByUnit } from "../../../lib/format"
 import { asFiniteNumber, pickValueField, toBreakdownRows } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
-import { ArrowDownIcon, ArrowRightIcon, CircleCheckIcon } from "../../icons"
+import { ArrowDownIcon, ArrowRightIcon, CircleCheckIcon, ClockIcon } from "../../icons"
 
 // The funnel's drop-off view: one column per step, read left to right.
 //
@@ -406,27 +406,44 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 					style={{ left: tipLeft, width: TIP_W }}
 					data-slot="funnel-dropoff-tooltip"
 				>
-					<div className="mb-1 truncate text-muted-foreground">
-						{hoveredPrev.name} → {hovered.name}
+					<div className="mb-1.5 flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+						<span className="truncate">{hoveredPrev.name}</span>
+						<ArrowRightIcon size={12} className="shrink-0 text-muted-foreground" />
+						<span className="truncate">{hovered.name}</span>
+					</div>
+					{/* The split between who went on and who left, as one bar. */}
+					<div className="mb-1.5 flex h-1.5 gap-px overflow-hidden rounded-sm">
+						<div className="bg-success" style={{ width: `${(hovered.ofPrev ?? 0) * 100}%` }} />
+						<div className="flex-1 bg-destructive/70" />
 					</div>
 					<Row
+						icon={<ArrowRightIcon size={12} className="text-success" />}
 						label="converted"
-						value={`${fmtValue(hovered.value, unit)} · ${fmtPct(hovered.ofPrev ?? 0)}`}
+						value={fmtValue(hovered.value, unit)}
+						share={fmtPct(hovered.ofPrev ?? 0)}
+						shareClass="text-success-foreground"
 					/>
 					<Row
+						icon={<ArrowDownIcon size={12} className="text-destructive" />}
 						label="dropped"
-						value={`${fmtValue(hovered.dropped, unit)} · ${hoveredPrev.value > 0 ? fmtPct(hovered.dropped / hoveredPrev.value) : "—"}`}
+						value={fmtValue(hovered.dropped, unit)}
+						share={hoveredPrev.value > 0 ? fmtPct(hovered.dropped / hoveredPrev.value) : "—"}
+						shareClass="text-destructive"
 					/>
 					{hovered.p50Ms !== undefined && (
 						<Row
+							icon={<ClockIcon size={12} className="text-muted-foreground" />}
 							label="time between"
-							value={`p50 ${fmtSpan(hovered.p50Ms)}${hovered.p90Ms !== undefined ? ` · p90 ${fmtSpan(hovered.p90Ms)}` : ""}`}
+							value={`p50 ${fmtSpan(hovered.p50Ms)}`}
+							share={hovered.p90Ms !== undefined ? `p90 ${fmtSpan(hovered.p90Ms)}` : undefined}
+							shareClass="text-muted-foreground"
 						/>
 					)}
 					{hovered.leavers.length > 0 && hovered.dropped > 0 && (
 						<>
 							<div className="-mx-2.5 my-1.5 h-px bg-border" />
-							<div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+							<div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+								<ArrowDownIcon size={10} className="text-destructive" />
 								Dropped here went to
 							</div>
 							{leaverRows(hovered.leavers, hovered.dropped).map((entry) => (
@@ -435,7 +452,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 										<span
 											className={cn(
 												"min-w-0 flex-1 truncate",
-												entry.ended && "text-muted-foreground",
+												entry.ended ? "text-muted-foreground" : "text-foreground/90",
 											)}
 										>
 											{entry.name}
@@ -446,7 +463,10 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 									</div>
 									<div className="relative mt-0.5 h-1 rounded-sm bg-foreground/5">
 										<div
-											className="absolute inset-y-0 left-0 rounded-sm bg-foreground/35"
+											className={cn(
+												"absolute inset-y-0 left-0 rounded-sm",
+												entry.ended ? "bg-foreground/25" : "bg-[var(--chart-2)]",
+											)}
 											style={{ width: `${entry.share * 100}%` }}
 										/>
 									</div>
@@ -460,11 +480,29 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 	)
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+	icon,
+	label,
+	value,
+	share,
+	shareClass,
+}: {
+	icon: React.ReactNode
+	label: string
+	value: string
+	share?: string
+	shareClass?: string
+}) {
 	return (
-		<div className="flex justify-between gap-3 tabular-nums">
-			<span className="text-muted-foreground">{label}</span>
-			<span className="truncate text-foreground/90">{value}</span>
+		<div className="flex items-center justify-between gap-3 py-px tabular-nums">
+			<span className="flex items-center gap-1.5 text-muted-foreground">
+				{icon}
+				{label}
+			</span>
+			<span className="flex items-baseline gap-1.5 truncate">
+				<span className="font-semibold text-foreground">{value}</span>
+				{share !== undefined && <span className={cn("text-[10px]", shareClass)}>{share}</span>}
+			</span>
 		</div>
 	)
 }

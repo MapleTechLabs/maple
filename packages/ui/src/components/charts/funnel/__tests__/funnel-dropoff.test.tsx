@@ -82,7 +82,8 @@ describe("query-builder funnel: the drop-off variant", () => {
 		expect(tipText).toContain("Nothing after")
 		expect(tipText).toContain("44%")
 		expect(tipText).toContain("/docs/quickstart")
-		expect(tipText).toContain("p50 4m · p90 1h")
+		expect(tipText).toContain("p50 4m")
+		expect(tipText).toContain("p90 1h")
 	})
 
 	it("hovering step 1 opens nothing — there is no previous step to have dropped from", () => {
