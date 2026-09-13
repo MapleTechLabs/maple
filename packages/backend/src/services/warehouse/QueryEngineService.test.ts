@@ -178,7 +178,14 @@ describe("makeQueryEngineExecute", () => {
 						calls.push({ context: options.context, profile: options.profile, sql })
 						return Effect.succeed(
 							sql.includes("AS bucket")
-								? [{ bucket: "2026-01-01 00:00:00", groupName: "signup_completed", value: 3 }]
+								? [
+										{
+											bucket: "2026-01-01 00:00:00",
+											groupName: "signup_completed",
+											value: 3,
+											eventCount: 5,
+										},
+									]
 								: [{ name: "/pricing", value: 12 }],
 						)
 					},
