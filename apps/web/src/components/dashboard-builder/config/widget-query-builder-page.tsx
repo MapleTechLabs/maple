@@ -235,6 +235,13 @@ export function WidgetQueryBuilderPage({
 			legendPosition: state.legendPosition,
 			seriesStatsEnabled: state.seriesStatsEnabled,
 			pointsMode: state.pointsMode,
+			// The funnel's View (bars / drop-off) and step labels are presentation
+			// too; its steps stay staged, since they are the query.
+			funnel: {
+				...stagedState.funnel,
+				variant: state.funnel.variant,
+				showStepPercent: state.funnel.showStepPercent,
+			},
 		}
 		return {
 			...widget,

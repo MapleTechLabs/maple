@@ -399,6 +399,9 @@ describe("product-event funnel widget", () => {
 			display,
 			dataSource: buildWidgetDataSource(widget, state, ["A"]),
 		})
+		// Query A mirrors the funnel's source: `reconcileFunnelSource` runs on every
+		// settings-rail edit and would otherwise flip the funnel back to the query set.
+		expect(reopened.queries[0]?.dataSource).toBe("product_events")
 		expect(reopened.funnel).toEqual({
 			source: "product_events",
 			steps: [

@@ -1,4 +1,8 @@
-import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
+import {
+	buildTimeseriesQuerySpec,
+	createQueryDraft,
+	resetQueryForDataSource,
+} from "@maple/query-engine/query-builder"
 import { TRACE_DEFAULT_COLUMNS, type ListColumnDraft } from "@/lib/query-builder/list-widget-config"
 import type {
 	DashboardWidget,
@@ -140,6 +144,19 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 	if (querySet !== null) {
 		const { queries, formulas } = loadQueryDrafts(querySet)
 		if (queries.length > 0) return { ...shared, queries, formulas }
+	}
+
+	// A product-event funnel's placeholder query A is a product-event query,
+	// not a traces one: the panel's source select and `funnel.source` tell the
+	// same story, and `reconcileFunnelSource` (run on every settings change)
+	// keeps the step editor open instead of flipping the funnel back to the
+	// query set on the first rail edit.
+	if (definition.meta.panelType === "funnel" && definition.ownsDataSource?.(shared)) {
+		return {
+			...shared,
+			queries: [resetQueryForDataSource(createQueryDraft(0), "product_events")],
+			formulas: [],
+		}
 	}
 
 	return { ...shared, queries: [legacyQueryDraft(routeParams)], formulas: [] }
