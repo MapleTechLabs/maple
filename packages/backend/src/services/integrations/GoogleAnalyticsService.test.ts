@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/http"
+import { IntegrationsValidationError, OrgId } from "@maple/domain/http"
 import { googleAnalyticsLedger, googleAnalyticsState, oauthConnections } from "@maple/db"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -155,9 +155,10 @@ const makeLayer = (testDb: TestDb, fetchOptions: FetchOptions) =>
 /** A live grant with a real encrypted, non-expiring access token. */
 const seedConnection = Effect.gen(function* () {
 	const database = yield* Database
-	const key = yield* parseBase64Aes256GcmKey(ENCRYPTION_KEY_B64, (message) => new Error(message))
-	const accessEnc = yield* encryptAes256Gcm("ga-access-token", key, (message) => new Error(message))
-	const refreshEnc = yield* encryptAes256Gcm("ga-refresh-token", key, (message) => new Error(message))
+	const toError = (message: string) => new IntegrationsValidationError({ message })
+	const key = yield* parseBase64Aes256GcmKey(ENCRYPTION_KEY_B64, toError)
+	const accessEnc = yield* encryptAes256Gcm("ga-access-token", key, toError)
+	const refreshEnc = yield* encryptAes256Gcm("ga-refresh-token", key, toError)
 	yield* database.execute((db) =>
 		db.insert(oauthConnections).values({
 			id: "conn-ga",
