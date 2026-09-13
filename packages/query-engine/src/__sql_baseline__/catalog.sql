@@ -1108,6 +1108,125 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
+-- builder:product-events-explore:productEventAttributeKeysQuery:default  [f7da3259]
+SELECT
+          arrayJoin(mapKeys(Attributes)) AS attributeKey,
+          count() AS usageCount
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY attributeKey
+        ORDER BY usageCount DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventAttributeValuesQuery:default  [8f896fc0]
+SELECT
+          Attributes['plan'] AS attributeValue,
+          count() AS usageCount
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND has(mapKeys(Attributes), 'plan')
+        GROUP BY attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsBreakdownQuery:sessions-by-page  [747efb4d]
+SELECT
+          PagePath AS name,
+          uniqIf(SessionId, SessionId != '') AS value
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Host IN ('maple.dev')
+        GROUP BY name
+        ORDER BY value DESC, name ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsListQuery:default  [e6dcd1d1]
+SELECT
+          Timestamp AS timestamp,
+          EventName AS eventName,
+          Kind AS kind,
+          Source AS source,
+          Host AS host,
+          PagePath AS pagePath,
+          Url AS url,
+          ServiceName AS serviceName,
+          UserId AS userId,
+          GroupId AS groupId,
+          VisitorId AS visitorId,
+          SessionId AS sessionId,
+          TraceId AS traceId,
+          SpanId AS spanId,
+          Attributes AS attributes
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind IN ('custom')
+          AND Timestamp < '2026-01-03 12:00:00'
+        ORDER BY timestamp DESC, sessionId ASC, spanId ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsTimeseriesQuery:count  [239d041a]
+SELECT
+          toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          'all' AS groupName,
+          count() AS value
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC, groupName ASC
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [23a2bfdd]
+SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          max(value) OVER (PARTITION BY groupName) AS __series_peak
+        FROM (SELECT
+          toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          coalesce(nullIf(arrayStringConcat(arrayFilter(x -> x != '', [toString(EventName), toString(Attributes['plan'])]), ' · '), ''), 'all') AS groupName,
+          uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND EventName IN ('signup_completed')
+          AND Attributes['plan'] = 'startup'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND Country = 'DE'
+        GROUP BY sessionId)
+        GROUP BY bucket, groupName) AS __series_base) AS __series_peaks) AS __series_ranked
+        WHERE __series_rank <= 5
+        ORDER BY bucket ASC, groupName ASC
+        FORMAT JSON
+
 -- builder:product-events:productEventNamesQuery:default  [7c7336c7]
 SELECT
           EventName AS eventName,
@@ -9684,6 +9803,19 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- spec:attribute-keys-product-events:baseline  [f7da3259]
+SELECT
+          arrayJoin(mapKeys(Attributes)) AS attributeKey,
+          count() AS usageCount
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY attributeKey
+        ORDER BY usageCount DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- spec:attribute-keys-resource:baseline  [f2e10453]
 SELECT
           AttributeKey AS attributeKey,
@@ -9780,6 +9912,20 @@ SELECT
           AND Hour <= '2026-01-03 14:15:00'
           AND AttributeScope = 'metric'
           AND AttributeKey = 'http.route'
+        GROUP BY attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- spec:attribute-values-product-events:baseline  [8f896fc0]
+SELECT
+          Attributes['plan'] AS attributeValue,
+          count() AS usageCount
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND has(mapKeys(Attributes), 'plan')
         GROUP BY attributeValue
         ORDER BY usageCount DESC
         LIMIT 50
@@ -10269,6 +10415,96 @@ SELECT
           AND ServiceName = 'api'
         GROUP BY bucket, serviceName
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- spec:product-events-breakdown:baseline  [747efb4d]
+SELECT
+          PagePath AS name,
+          uniqIf(SessionId, SessionId != '') AS value
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Host IN ('maple.dev')
+        GROUP BY name
+        ORDER BY value DESC, name ASC
+        LIMIT 25
+        FORMAT JSON
+
+-- spec:product-events-list:baseline  [6722dfd5]
+SELECT
+          Timestamp AS timestamp,
+          EventName AS eventName,
+          Kind AS kind,
+          Source AS source,
+          Host AS host,
+          PagePath AS pagePath,
+          Url AS url,
+          ServiceName AS serviceName,
+          UserId AS userId,
+          GroupId AS groupId,
+          VisitorId AS visitorId,
+          SessionId AS sessionId,
+          TraceId AS traceId,
+          SpanId AS spanId,
+          Attributes AS attributes
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind IN ('custom')
+        ORDER BY timestamp DESC, sessionId ASC, spanId ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- spec:product-events-timeseries-grouped:baseline  [35c4fef7]
+SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          max(value) OVER (PARTITION BY groupName) AS __series_peak
+        FROM (SELECT
+          toStartOfInterval(Timestamp, INTERVAL 60 SECOND) AS bucket,
+          coalesce(nullIf(arrayStringConcat(arrayFilter(x -> x != '', [toString(EventName), toString(Attributes['plan'])]), ' · '), ''), 'all') AS groupName,
+          uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-03 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-03 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND Country = 'DE'
+        GROUP BY sessionId)
+        GROUP BY bucket, groupName) AS __series_base) AS __series_peaks) AS __series_ranked
+        WHERE __series_rank <= 5
+        ORDER BY bucket ASC, groupName ASC
+        FORMAT JSON
+
+-- spec:product-events-timeseries:baseline  [86a2373f]
+SELECT
+          toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          'all' AS groupName,
+          count() AS value
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND EventName IN ('signup_completed')
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
 -- spec:services-facets:baseline  [d6b6158c]
