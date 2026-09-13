@@ -114,8 +114,8 @@ jobs:
 
             # ⚠️ The deploy role's trust policy must accept this job's OIDC
             # subject (`repo:<org>/<repo>:environment:pr-preview`). It was
-            # written for the production and staging subjects only; previews get
-            # AccessDenied until it is widened.
+            # written for the production subject only; previews get AccessDenied
+            # until it is widened.
             - name: Deploy setup
               id: setup
               uses: ./.github/actions/deploy-setup

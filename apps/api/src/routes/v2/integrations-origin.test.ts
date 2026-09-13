@@ -62,8 +62,8 @@ describe("resolveRequestOrigin (untrusted — reflects client-controlled headers
 	})
 
 	it("preserves an explicit port on a non-local host", () => {
-		const origin = resolveRequestOrigin(fakeRequest({ host: "api.staging.maple.dev:8443" }))
-		assert.strictEqual(origin, "https://api.staging.maple.dev:8443")
+		const origin = resolveRequestOrigin(fakeRequest({ host: "api.maple.dev:8443" }))
+		assert.strictEqual(origin, "https://api.maple.dev:8443")
 	})
 
 	it("falls back to parsing an absolute request url when no host headers exist", () => {
@@ -91,7 +91,6 @@ describe("isTrustedCallbackOrigin", () => {
 	it("accepts sibling hosts under the same registrable domain, per stage", () => {
 		for (const [origin, appBaseUrl] of [
 			["https://api.maple.dev", "https://app.maple.dev"],
-			["https://api-staging.maple.dev", "https://staging.maple.dev"],
 			["https://api-pr-12.maple.dev", "https://app-pr-12.maple.dev"],
 		] as const) {
 			assert.isTrue(isTrustedCallbackOrigin(origin, appBaseUrl), `${origin} vs ${appBaseUrl}`)

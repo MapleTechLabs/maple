@@ -20,7 +20,7 @@
  * There is no up/down here — alchemy owns the config's lifecycle; this script
  * exists only as the sweep safety net. Deletion is double-gated like the
  * sibling sweeps: the config name must match `maple-db-pr-<digits>` exactly
- * (prd `maple-prd`, stg `maple-db-stg`, and dev `maple-db-dev-<name>` can
+ * (prd `maple-prd` and dev `maple-db-dev-<name>` can
  * never match), AND the GitHub API must affirmatively report that PR closed —
  * unknown/open → keep. Deleting a config out from under a later alchemy
  * destroy of the same stage is fine: alchemy tolerates already-deleted

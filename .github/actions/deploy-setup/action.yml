@@ -2,12 +2,12 @@ name: deploy setup
 description: >-
     Everything an alchemy deploy job needs after checkout: the toolchain,
     Infisical secrets, AWS OIDC credentials, dependencies, and (optionally)
-    the prebuilt ingest binary. Shared by deploy-prd, deploy-stg,
-    deploy-pr-preview and aws-probe so the order is decided once.
+    the prebuilt ingest binary. Shared by deploy-prd, deploy-pr-preview and
+    aws-probe so the order is decided once.
 
 inputs:
     infisical-env-slug:
-        description: Infisical environment to export (prod, staging, dev).
+        description: Infisical environment to export (prod, dev).
         required: true
     infisical-identity-id:
         description: The Infisical machine identity (a repo secret; composites cannot read secrets).

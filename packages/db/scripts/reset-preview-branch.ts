@@ -79,7 +79,7 @@ export const isPreviewBranchName = (name: string | undefined): boolean =>
 /**
  * Tripwire: this script empties whatever DATABASE_URL points at, and the
  * connected role inherits `postgres`, so nothing downstream would stop it from
- * gutting prod/stg. The caller must therefore assert WHAT it is resetting —
+ * gutting prod. The caller must therefore assert WHAT it is resetting —
  * `RESET_EXPECTED_BRANCH=pr-<n>` (planetscale-pr-branch.ts sets it from the
  * branch it minted the credential for) — or a human must set
  * `RESET_PREVIEW_CONFIRM=1`. The old guard keyed off `process.env.CI`, which

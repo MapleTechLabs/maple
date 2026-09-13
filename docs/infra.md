@@ -243,7 +243,7 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   request carries `SANDBOX_INTERNAL_SERVICE_TOKEN` — deliberately not the shared
   `INTERNAL_SERVICE_TOKEN`, which lets its holder act as any organization.
 
-    Only `prd` and `stg` get one (`stageDeploysSandbox`). A PR preview has no application
+    Only `prd` gets one (`stageDeploysSandbox`). A PR preview has no application
     database, so no repository resolves there; and on a dev stage `alchemy dev` would put a
     multi-gigabyte `docker pull` between every developer and `bun dev`.
 
@@ -275,7 +275,7 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.
 - **The application database** (`alerting`, `api`): `yield* MapleDb(consumer)` in the init
   binds `MAPLE_DB` in the stage's flavor — `Hyperdrive.Connect(ManagedMapleDb)` on dev
-  stages, `host.bind` of the dashboard-managed config by id on stg/prd (alchemy has no `env`
+  stages, `host.bind` of the dashboard-managed config by id on prd (alchemy has no `env`
   form for a Hyperdrive it did not create; its own `ConnectBinding` attaches the same raw
   metadata), nothing on previews. The api's Workflows yield it too, from their outer phase.
   The root yields `ManagedMapleDb` first on dev stages so its `MAPLE_PG_URL` read happens
@@ -378,7 +378,7 @@ ingest resources, so an unset variable produced a byte-identical pure-Cloudflare
 left to protect: `AWS.providers()` is registered unconditionally (it cannot be
 stage-derived — the `Alchemy.Stack` options are evaluated before `Alchemy.Stage` is
 readable inside the stack effect), and `stageDeploysIngest` alone decides which stages get
-a fleet. It covers prd, stg **and PR previews**; dev stages run the gateway through
+a fleet. It covers prd **and PR previews**; dev stages run the gateway through
 docker-compose. The spend gate moved to where the spend is: a preview only exists while
 its PR carries the `preview` label.
 
@@ -416,13 +416,15 @@ per-config `origin_connection_limit`s sum against the branch's `max_connections`
 Hyperdrive will not coordinate between them, so over-provisioning one starves the other at
 the database rather than at the pool.
 
-**Open item — staging points at production.** `resolveHyperdriveRefId` returns the prd
-config for `stg` (owner decision, 2026-07-14). stg workers therefore read and write the
-production database, and the stg alerting crons overlap prod's. `MAPLE_ALERTING_ALLOW_NONPROD`
-exists to keep those crons off for exactly this reason. Fixing it means a PlanetScale `stg`
-branch plus dedicated `maple-stg` / `maple-alerting-stg` dashboard configs, split per
-consumer the same way prd is — and then a deliberate decision about whether stg crons
-should run.
+**Resolved by deletion — staging pointed at production.** `resolveHyperdriveRefId` used to
+return the prd config for `stg` (owner decision, 2026-07-14), so stg workers read and wrote
+the production database and the stg alerting crons overlapped prod's. The stage was removed
+in full (2026-09): its deploy workflow had been disabled with no run history and neither
+`api-staging.maple.dev` nor `ingest-staging.maple.dev` resolved, so the hazard was the only
+thing it still cost. `prd` is now the only stage `resolveHyperdriveRefId` answers for, and
+`parseMapleStage` rejects `stg` outright rather than letting it fall through to a dev stage.
+A future staging stage needs its own PlanetScale branch and its own dashboard configs, split
+per consumer the way prd is, before it gets a `MAPLE_DB` binding at all.
 
 ## The cold-start regression (`strictExecutionOrder: false`)
 

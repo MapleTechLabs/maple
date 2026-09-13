@@ -4,7 +4,7 @@
  * bucket-scoped token is minted in `apps/ingest/alchemy.run.ts`, next to the
  * writer — and the api Worker binds the same bucket to hydrate
  * `session_replay_events` rows whose `Events` is empty. Stage-isolated, so a
- * pr/stg deploy can never serve or overwrite prd recordings. Declared once
+ * pr deploy can never serve or overwrite prd recordings. Declared once
  * here; alchemy registers a resource by id, so the second yield returns the
  * first's registration.
  *

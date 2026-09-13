@@ -1,8 +1,4 @@
-export type MapleStage =
-	| { kind: "prd" }
-	| { kind: "stg" }
-	| { kind: "pr"; prNumber: number }
-	| { kind: "dev"; name: string }
+export type MapleStage = { kind: "prd" } | { kind: "pr"; prNumber: number } | { kind: "dev"; name: string }
 
 const PR_STAGE_RE = /^pr-(\d+)$/
 // Underscores allowed so alchemy's default `dev_${USER}` stage parses as a dev stage.
@@ -37,16 +33,6 @@ const PRD_DOMAINS: MapleDomains = {
 	local: "local.maple.dev",
 }
 
-const STG_DOMAINS: MapleDomains = {
-	web: "staging.maple.dev",
-	api: "api-staging.maple.dev",
-	ingest: "ingest-staging.maple.dev",
-	sync: "sync-staging.maple.dev",
-	electric: "electric-staging.maple.dev",
-	landing: "staging-landing.maple.dev",
-	local: "local-staging.maple.dev",
-}
-
 export function parseMapleStage(stage: string): MapleStage {
 	const normalized = stage.trim().toLowerCase()
 
@@ -54,8 +40,15 @@ export function parseMapleStage(stage: string): MapleStage {
 		return { kind: "prd" }
 	}
 
+	// `stg` is rejected rather than left to fall through to the dev-stage
+	// pattern, which it matches. The staging stage was removed (2026-09) after
+	// sitting disabled and unreachable with its Hyperdrive ref pointed at the
+	// production database; a `--stage stg` that quietly built a dev stack named
+	// `maple-*-dev-stg` is not the failure anyone typing it wants.
 	if (normalized === "stg") {
-		return { kind: "stg" }
+		throw new Error(
+			'The "stg" stage was removed. Deploy prd, a pr-<number> preview, or a dev stage name.',
+		)
 	}
 
 	const prMatch = normalized.match(PR_STAGE_RE)
@@ -74,7 +67,7 @@ export function parseMapleStage(stage: string): MapleStage {
 	}
 
 	throw new Error(
-		`Unsupported deployment stage "${stage}". Expected prd, stg, pr-<number>, or a dev stage name matching [a-z0-9][a-z0-9_-]*.`,
+		`Unsupported deployment stage "${stage}". Expected prd, pr-<number>, or a dev stage name matching [a-z0-9][a-z0-9_-]*.`,
 	)
 }
 
@@ -82,8 +75,6 @@ export function formatMapleStage(stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
 			return "prd"
-		case "stg":
-			return "stg"
 		case "pr":
 			return `pr-${stage.prNumber}`
 		case "dev":
@@ -95,8 +86,6 @@ export function resolveDeploymentEnvironment(stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
 			return "production"
-		case "stg":
-			return "staging"
 		case "pr":
 			return `pr-${stage.prNumber}`
 		case "dev":
@@ -108,8 +97,6 @@ export function resolveMapleDomains(stage: MapleStage): MapleDomains {
 	switch (stage.kind) {
 		case "prd":
 			return PRD_DOMAINS
-		case "stg":
-			return STG_DOMAINS
 		case "pr":
 			// Give PR previews stable, secret-free URLs. The default workers.dev URL
 			// embeds the Cloudflare account subdomain, which Infisical masks as a
@@ -136,7 +123,7 @@ export type MapleDatabaseMode = "ref" | "managed" | "none"
 /**
  * How a stage reaches the application database.
  *
- * - `"ref"` — bind a dashboard-managed Hyperdrive config by ID (stg/prd).
+ * - `"ref"` — bind a dashboard-managed Hyperdrive config by ID (prd).
  * - `"managed"` — alchemy creates a Hyperdrive whose origin is pushed from
  *   `MAPLE_PG_URL` (dev stages, against the docker-compose Postgres).
  * - `"none"` — no `MAPLE_DB` binding at all. `DatabasePgLive` then fails every
@@ -152,7 +139,6 @@ export type MapleDatabaseMode = "ref" | "managed" | "none"
 export function resolveDatabaseMode(stage: MapleStage): MapleDatabaseMode {
 	switch (stage.kind) {
 		case "prd":
-		case "stg":
 			return "ref"
 		case "pr":
 			return "none"
@@ -164,16 +150,16 @@ export function resolveDatabaseMode(stage: MapleStage): MapleDatabaseMode {
 /**
  * Which stages get the agents' repository sandbox.
  *
- * Deployed stages only. A PR preview has no application database
- * ({@link resolveDatabaseMode} returns `"none"`), so no repository can be
- * resolved there and a container would be provisioned to do nothing but cost
- * money. Dev stages are excluded for a sharper reason: `alchemy dev` resolves a
- * container image by pulling it locally, so provisioning one would put a
- * multi-gigabyte pull and a running Docker daemon between every developer and
- * `bun dev`, whichever apps they asked for.
+ * prd only, which is now the only stage with an application database. A PR
+ * preview has none ({@link resolveDatabaseMode} returns `"none"`), so no
+ * repository can be resolved there and a container would be provisioned to do
+ * nothing but cost money. Dev stages are excluded for a sharper reason:
+ * `alchemy dev` resolves a container image by pulling it locally, so
+ * provisioning one would put a multi-gigabyte pull and a running Docker daemon
+ * between every developer and `bun dev`, whichever apps they asked for.
  */
 export function stageDeploysSandbox(stage: MapleStage): boolean {
-	return stage.kind === "prd" || stage.kind === "stg"
+	return stage.kind === "prd"
 }
 
 /** Which worker is binding `MAPLE_DB`. prd gives each its own Hyperdrive config — see docs/infra.md. */
@@ -198,14 +184,6 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 			return consumer === "alerting"
 				? "f473167201af4d2cae494f9989f1d742" // `maple-alerting-prd`
 				: "ad4c487838594b89810b23e5fb14e129" // `maple-prd`
-		case "stg":
-			// TEMPORARY: staging shares prod's `maple-prd` config (owner decision,
-			// 2026-07-14) — stg workers therefore read/write the PRODUCTION
-			// database and the stg alerting crons overlap prod's. Replace with a
-			// dedicated `maple-stg` config (PlanetScale `stg` branch) ASAP.
-			// Deliberately NOT split per consumer here: stg is already pointed at the
-			// wrong database, and splitting it would add a second wrong pool.
-			return "ad4c487838594b89810b23e5fb14e129"
 		case "pr":
 		case "dev":
 			return undefined
@@ -216,8 +194,6 @@ export function resolveWorkerName(base: string, stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
 			return `maple-${base}`
-		case "stg":
-			return `maple-${base}-stg`
 		case "pr":
 			return `maple-${base}-pr-${stage.prNumber}`
 		case "dev":

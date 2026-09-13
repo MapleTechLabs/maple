@@ -148,7 +148,7 @@ isolated database and exercises run/compare/inspect against real Maple builders.
 ## Application database (PlanetScale Postgres)
 
 Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/`pgTable` in
-`packages/db/src/schema/`, one PS branch per deployed stage (`main`=prd, `stg`), reached from
+`packages/db/src/schema/`, one PS branch per deployed stage (`main`=prd), reached from
 Workers via the Hyperdrive binding `MAPLE_DB`.
 
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
@@ -269,12 +269,12 @@ refuses to run the command at all rather than running it with egress. Every bug 
 that the unit tests could not see (a `mktemp -d` mode, a git flag this image predates, `runuser`
 adding `USER` and `LOGNAME` after `env -i`) was found by running the image.
 
-End to end needs a real deployment: `stageDeploysSandbox` is `prd`/`stg` only, so `bun dev` binds no
+End to end needs a real deployment: `stageDeploysSandbox` is `prd` only, so `bun dev` binds no
 `SANDBOX` and the four tools report that no sandbox is available.
 
 The container is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the script
 must export, and an Effect-native Worker's generated entry exports only its own bridge classes. It
-lives in `apps/sandbox`, on `prd`/`stg` only; see `docs/infra.md` § Single-module Workers.
+lives in `apps/sandbox`, on `prd` only; see `docs/infra.md` § Single-module Workers.
 
 ## Self-observability (trace loop prevention)
 

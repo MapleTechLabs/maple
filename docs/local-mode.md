@@ -343,9 +343,9 @@ Because the remote UI auto-updates independently of the binary, keep the
 ([apps/cli/src/server/schema/local-schema.sql](../apps/cli/src/server/schema/local-schema.sql))
 backward compatible — a newer UI may run against an older binary.
 
-`MAPLE_LOCAL_UI_URL` overrides the default UI origin (e.g. point a binary at
-`https://local-staging.maple.dev` for testing). The startup link marks that
-custom origin as a hosted loopback client.
+`MAPLE_LOCAL_UI_URL` overrides the default UI origin (e.g. point a binary at a
+locally served build for testing). The startup link marks that custom origin as
+a hosted loopback client.
 
 `MAPLE_LOCAL_BIND_HOST` sets the `maple start` listening address and defaults to
 `127.0.0.1`; the `--host` flag overrides it for one invocation.

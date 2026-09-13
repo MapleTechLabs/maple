@@ -50,8 +50,7 @@ const props = Effect.gen(function* () {
 				// Sized for the work, not for the stage. The checkout is a full clone,
 				// so the smaller tiers are not a cheaper version of this container —
 				// `lite`/`dev` is 1/16 vCPU with 256 MiB and 2 GB of disk, which any
-				// real repository exhausts. Staging runs the same shape as production
-				// because a sandbox that only fails there tells us nothing.
+				// real repository exhausts.
 				// The tier carries its own disk (`standard-2` 1 vCPU/6 GiB/12 GB,
 				// `standard-1` 1/2 vCPU/4 GiB/8 GB) and Cloudflare rejects a request that
 				// also sets vcpu/memory/disk, so the named tier is the only dial we have.

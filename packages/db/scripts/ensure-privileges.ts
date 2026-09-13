@@ -70,7 +70,7 @@ const quoteIdent = (role: string): string => {
  * and `drizzle-kit migrate` runs later as a separate process whose connections
  * authenticate as the login role. Unless that login carries a persisted
  * `role=postgres` (the brokered prod path's `ALTER ROLE … SET role`, see
- * planetscale-connection.ts — the standalone stg path has no such guarantee),
+ * planetscale-connection.ts — a standalone run has no such guarantee),
  * its objects are created by the login role and postgres-keyed defaults never
  * fire — recreating exactly the owner-only-table outage this script prevents.
  *

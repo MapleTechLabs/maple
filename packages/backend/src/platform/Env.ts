@@ -48,9 +48,9 @@ export interface EnvConfig {
 	 * `Host`/`X-Forwarded-*` headers, which a client controls.
 	 */
 	readonly MAPLE_API_BASE_URL: string
-	/** Deployment environment (`production`, `staging`, `pr-<n>`, `development`) — set by alchemy from the stage. */
+	/** Deployment environment (`production`, `pr-<n>`, `development`) — set by alchemy from the stage. */
 	readonly MAPLE_ENVIRONMENT: string
-	/** Escape hatch: allow real email sends outside production (e.g. a dedicated stg test run). */
+	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
 	readonly MAPLE_EMAIL_ALLOW_NONPROD: string
 	/** Route every org to the managed warehouse; honoured only in development. */
 	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: string

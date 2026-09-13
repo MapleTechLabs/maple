@@ -45,7 +45,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 			const workerEnv = yield* WorkerEnvironment
 			const binding = (workerEnv as Record<string, SendEmailBinding | undefined>).EMAIL
 
-			// Real sends are production-only: preview/stg stages share real user data
+			// Real sends are production-only: non-prod stages share real user data
 			// (branched DBs, Clerk members), so a live binding there would deliver
 			// duplicate copies of every cron-driven email. The alchemy configs no
 			// longer attach EMAIL outside prd; this guard covers any binding that
