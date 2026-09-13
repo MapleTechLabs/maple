@@ -77,7 +77,14 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // for the new reads, and the detail route's `variant` search param. The display
 // rules, the redaction list they read and the modal's parts stay in the route
 // chunk; none of them is in the startup graph.
-const maxGzipBytes = 690 * 1024
+// 692 KB from product events as a query-builder source (#877, 2026-09-13):
+// ~1.9 KB of startup measured against main's 689.9 — the fourth source's
+// aggregation, group-by and where-clause vocabularies in the query-builder
+// model every panel reads, the product-event `QuerySpec` arms and filters on
+// the contract every page's client carries, and three gallery tiles in the
+// widget registry. The step editor and the funnel suggestions stay in the
+// editor's route chunk.
+const maxGzipBytes = 692 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
