@@ -102,8 +102,9 @@ only the raw ClickHouse HTTP interface exposes.
    — add a `PREWHERE`, narrow the projection, switch from `Traces` to an
    already-aggregated MV, whatever the EXPLAIN suggested.
 
-5. **Re-run.** Either deploy the change and run `bench:fetch` again (so the
-   new fingerprint shows up in traces), or hand-edit the SQL in a copy of the
+5. **Re-run.** Either deploy the change to **production** and run `bench:fetch`
+   again (so the new fingerprint shows up in the traces this tool mines — a PR
+   or dev stage's traces are not queried), or hand-edit the SQL in a copy of the
    baseline JSON for a faster local loop. Then:
 
     ```

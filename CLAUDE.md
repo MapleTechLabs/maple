@@ -148,8 +148,8 @@ isolated database and exercises run/compare/inspect against real Maple builders.
 ## Application database (PlanetScale Postgres)
 
 Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/`pgTable` in
-`packages/db/src/schema/`, one PS branch per deployed stage (`main`=prd), reached from
-Workers via the Hyperdrive binding `MAPLE_DB`.
+`packages/db/src/schema/`, on the PlanetScale `main` branch (prd — the only stage with a
+database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
   `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare `new Date(ms)` /
