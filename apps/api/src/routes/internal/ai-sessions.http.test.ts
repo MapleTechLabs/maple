@@ -385,6 +385,51 @@ describe("POST /internal/ai-sessions/spans", () => {
  * the fan-out's window from the page, and it re-imposes the page's order on an
  * aggregation that cannot know it. Both are invisible in either query alone.
  */
+describe("POST /internal/ai-sessions/distributions", () => {
+	// The measure names are string literals on both sides; a drift comes back
+	// as an empty histogram behind a 200. The floor sort is pinned on `cost`:
+	// its keys are not integer-like, so JS keeps their insertion order and only
+	// the handler's sort puts 0.01 first.
+	it("splits the measure rows into the five histograms, buckets in floor order", async () => {
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled)
+					.decodeRows([
+						{ measure: "durationMs", buckets: { "1000": 5, "60000": 2 }, p50: 1200, p95: 58000 },
+						{ measure: "cost", buckets: { "0.1": 3, "0.01": 9 }, p50: 0.12, p95: 0.4 },
+						{ measure: "llmCalls", buckets: { "1": 4 }, p50: 2, p95: 9 },
+					])
+					.pipe(Effect.orDie),
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/distributions", WINDOW)
+			expect(response.status).toBe(200)
+			expect(response.body.durationMs).toEqual({
+				buckets: [
+					{ floor: 1000, count: 5 },
+					{ floor: 60000, count: 2 },
+				],
+				p50: 1200,
+				p95: 58000,
+			})
+			expect(response.body.cost).toEqual({
+				buckets: [
+					{ floor: 0.01, count: 9 },
+					{ floor: 0.1, count: 3 },
+				],
+				p50: 0.12,
+				p95: 0.4,
+			})
+			expect(response.body.llmCalls).toEqual({ buckets: [{ floor: 1, count: 4 }], p50: 2, p95: 9 })
+			expect(response.body.totalTokens).toEqual({ buckets: [], p50: 0, p95: 0 })
+			expect(response.body.toolCalls).toEqual({ buckets: [], p50: 0, p95: 0 })
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
 describe("POST /internal/ai-sessions/list", () => {
 	const LIST_BODY = { ...WINDOW, limit: 3 }
 

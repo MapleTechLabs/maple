@@ -475,9 +475,9 @@ function countableUsageSpans(
 
 	const bySpan = new Map<string, SessionTokenTotals>()
 	let rolledUp = false
-	for (const [spanId, beneath] of chargeToNearestReporter(byId, reported)) {
+	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
 		if (beneath.length > 0) rolledUp = true
-		const tokens = excessTokens(reported.get(spanId)!, sumTokens(beneath))
+		const tokens = excessTokens(own, sumTokens(beneath))
 		if (tokens.total > 0) bySpan.set(spanId, tokens)
 	}
 	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
@@ -572,20 +572,24 @@ function countedLlmCalls(
 /**
  * Each reporter charged to the NEAREST ancestor that also reports, so a
  * two-level roll-up subtracts each figure once rather than at every level.
- * Every reporter has an entry; a leaf's list is empty.
+ * Every reporter has an entry, carrying what it reported itself (`own`) next to
+ * what was charged to it; a leaf's list is empty.
  */
 function chargeToNearestReporter<T>(
 	byId: ReadonlyMap<string, AiSessionSpan>,
 	reported: ReadonlyMap<string, T>,
-): Map<string, T[]> {
-	const claimed = new Map<string, T[]>([...reported.keys()].map((spanId) => [spanId, []]))
-	for (const [spanId, value] of reported) {
+): Map<string, { readonly own: T; readonly beneath: T[] }> {
+	const claimed = new Map([...reported].map(([spanId, own]) => [spanId, { own, beneath: [] as T[] }]))
+	for (const [spanId, span] of byId) {
+		const value = reported.get(spanId)
+		if (value === undefined) continue
 		const seen = new Set<string>([spanId])
-		let parent = byId.get(byId.get(spanId)!.parentSpanId)
+		let parent = byId.get(span.parentSpanId)
 		while (parent !== undefined && !seen.has(parent.spanId)) {
 			seen.add(parent.spanId)
-			if (reported.has(parent.spanId)) {
-				claimed.get(parent.spanId)!.push(value)
+			const ancestor = claimed.get(parent.spanId)
+			if (ancestor !== undefined) {
+				ancestor.beneath.push(value)
 				break
 			}
 			parent = byId.get(parent.parentSpanId)
@@ -612,8 +616,8 @@ function costBySpan(
 	}
 
 	const bySpan = new Map<string, number>()
-	for (const [spanId, beneath] of chargeToNearestReporter(byId, reported)) {
-		bySpan.set(spanId, Math.max(0, reported.get(spanId)! - beneath.reduce((sum, c) => sum + c, 0)))
+	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
+		bySpan.set(spanId, Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0)))
 	}
 	return bySpan
 }
@@ -662,10 +666,13 @@ function isSessionLevelReporter(span: AiSessionSpan, turns: readonly SessionTurn
 export function countTurnTokens(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTokenTotals {
 	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
 	const { bySpan } = countableUsageSpans(turn.spans, byId)
+	// Walked over the deduplicated map rather than `turn.spans`: the session-level
+	// test needs the span, and a page-overlapping read can repeat a row.
 	return sumTokens(
-		[...bySpan]
-			.filter(([spanId]) => !isSessionLevelReporter(byId.get(spanId)!, turns))
-			.map(([, tokens]) => tokens),
+		[...byId.values()].flatMap((span) => {
+			const tokens = bySpan.get(span.spanId)
+			return tokens === undefined || isSessionLevelReporter(span, turns) ? [] : [tokens]
+		}),
 	)
 }
 
@@ -675,9 +682,9 @@ function classifyTokenReporting(
 	byId: ReadonlyMap<string, AiSessionSpan>,
 	turns: readonly SessionTurn[],
 ): SessionTokenReporting {
-	const reporters = [...usage.bySpan.keys()]
+	const reporters = [...byId.values()].filter((span) => usage.bySpan.has(span.spanId))
 	if (reporters.length === 0) return "none"
-	if (reporters.every((spanId) => isSessionLevelReporter(byId.get(spanId)!, turns))) {
+	if (reporters.every((span) => isSessionLevelReporter(span, turns))) {
 		return "session-level"
 	}
 	return usage.rolledUp ? "roll-up" : "per-call"
