@@ -7,7 +7,7 @@ import {
 	type PanelType,
 } from "@maple/domain/http"
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
-import { FUNNEL_MAX_STEPS } from "@maple/query-model"
+import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
 
 type DashboardWidget = typeof DashboardWidgetSchema.Type
@@ -154,6 +154,42 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				`\`display_json.funnel.windowSeconds\` is the conversion window and must be a positive number of seconds (got ${JSON.stringify(windowSeconds)}). Omit it to use the default 86400 (24h).`,
 			)
 		}
+	}
+
+	// A paths widget is its definition. The route answers an empty anchor with
+	// no rows, so a missing one is a widget that can never draw.
+	if (panelType === "paths") {
+		const paths = widget.display.paths
+		const anchorName =
+			paths === undefined
+				? ""
+				: paths.anchor.kind === "event"
+					? paths.anchor.eventName
+					: paths.anchor.pagePath
+		if (anchorName.trim() === "") {
+			fatal.push(
+				'`panel_type: "paths"` needs an anchor: set `display_json.paths.anchor` to `{ "kind": "event", "eventName": … }` or `{ "kind": "page", "pagePath": … }`.',
+			)
+		}
+		if (
+			paths?.depth !== undefined &&
+			(!Number.isInteger(paths.depth) || paths.depth < 1 || paths.depth > PATHS_MAX_DEPTH)
+		) {
+			fatal.push(
+				`\`display_json.paths.depth\` must be an integer in 1..${PATHS_MAX_DEPTH} (got ${JSON.stringify(paths.depth)}).`,
+			)
+		}
+		if (
+			paths?.branches !== undefined &&
+			(!Number.isInteger(paths.branches) || paths.branches < 1 || paths.branches > PATHS_MAX_BRANCHES)
+		) {
+			fatal.push(
+				`\`display_json.paths.branches\` must be an integer in 1..${PATHS_MAX_BRANCHES} (got ${JSON.stringify(paths.branches)}).`,
+			)
+		}
+	}
+	if (panelType !== "paths" && widget.display.paths !== undefined) {
+		warnings.push('`display_json.paths` only applies to `panel_type: "paths"`; other panels ignore it.')
 	}
 
 	// --- warnings ----------------------------------------------------------

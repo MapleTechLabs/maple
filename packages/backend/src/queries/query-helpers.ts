@@ -256,12 +256,26 @@ const isProductEventsFunnelError = Schema.is(CH.ProductEventsFunnelError)
  */
 export const validateFunnelDefinition = (
 	opts: CH.ProductEventsFunnelOpts | CH.ProductEventsFunnelBreakdownOpts,
+	/** The drop-off details builders need two steps; check through one of them. */
+	variant: "counts" | "details" = "counts",
 ): Effect.Effect<void, QueryEngineValidationError> =>
+	validateThroughBuilder(() => {
+		if ("breakdownBy" in opts) CH.productEventsFunnelBreakdownQuery(opts)
+		else if (variant === "details") CH.productEventsFunnelTimingQuery(opts)
+		else CH.productEventsFunnelQuery(opts)
+	})
+
+/** The paths builder's own checks (depth, branches, window, a named anchor), as a 400. */
+export const validatePathsDefinition = (
+	opts: CH.ProductEventsPathsOpts,
+): Effect.Effect<void, QueryEngineValidationError> =>
+	validateThroughBuilder(() => {
+		CH.productEventsPathsQuery(opts)
+	})
+
+const validateThroughBuilder = (build: () => void): Effect.Effect<void, QueryEngineValidationError> =>
 	Effect.try({
-		try: () => {
-			if ("breakdownBy" in opts) CH.productEventsFunnelBreakdownQuery(opts)
-			else CH.productEventsFunnelQuery(opts)
-		},
+		try: build,
 		catch: (error) => error,
 	}).pipe(
 		Effect.catch((error) =>

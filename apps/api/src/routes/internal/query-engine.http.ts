@@ -79,6 +79,9 @@ import {
 	WebAnalyticsBreakdownsResponse,
 	ProductEventsFunnelResponse,
 	ProductEventsFunnelBreakdownResponse,
+	ProductEventsFunnelTimingResponse,
+	ProductEventsFunnelLeaversResponse,
+	ProductEventsPathsResponse,
 	ProductEventNamesResponse,
 	ProductEventsForTraceResponse,
 	ProductEventTraceSamplesResponse,
@@ -116,10 +119,15 @@ import {
 	podMetricSpec,
 	toCloudflareFilters,
 	validateFunnelDefinition,
+	validatePathsDefinition,
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
-import { productEventsFunnelOpts, type QueryDefinition } from "@maple/query-engine/registry"
+import {
+	productEventsFunnelOpts,
+	productEventsPathsOpts,
+	type QueryDefinition,
+} from "@maple/query-engine/registry"
 import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
@@ -2133,6 +2141,49 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: rows.map((row) => ({
 								group: String(row.group),
 								step: Number(row.step) || 0,
+								count: Number(row.count) || 0,
+							})),
+						})
+					}),
+				)
+				.handle("productEventsFunnelTiming", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* validateFunnelDefinition(productEventsFunnelOpts(payload), "details")
+						const rows = yield* runQuery(Queries.productEventsFunnelTiming, tenant, payload)
+						return new ProductEventsFunnelTimingResponse({
+							data: rows.map((row) => ({
+								step: Number(row.step) || 0,
+								p50Ms: Number(row.p50Ms) || 0,
+								p90Ms: Number(row.p90Ms) || 0,
+							})),
+						})
+					}),
+				)
+				.handle("productEventsFunnelLeavers", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* validateFunnelDefinition(productEventsFunnelOpts(payload), "details")
+						const rows = yield* runQuery(Queries.productEventsFunnelLeavers, tenant, payload)
+						return new ProductEventsFunnelLeaversResponse({
+							data: rows.map((row) => ({
+								step: Number(row.step) || 0,
+								next: String(row.next),
+								count: Number(row.count) || 0,
+							})),
+						})
+					}),
+				)
+				.handle("productEventsPaths", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* validatePathsDefinition(productEventsPathsOpts(payload))
+						const rows = yield* runQuery(Queries.productEventsPaths, tenant, payload)
+						return new ProductEventsPathsResponse({
+							data: rows.map((row) => ({
+								hop: Number(row.hop) || 0,
+								fromNode: String(row.fromNode),
+								toNode: String(row.toNode),
 								count: Number(row.count) || 0,
 							})),
 						})

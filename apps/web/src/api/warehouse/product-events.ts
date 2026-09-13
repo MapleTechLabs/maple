@@ -10,15 +10,24 @@ import {
 	ProductEventNamesRequest,
 	ProductEventsForTraceRequest,
 	ProductEventsFunnelBreakdownRequest,
+	ProductEventsFunnelLeaversRequest,
 	ProductEventsFunnelRequest,
+	ProductEventsFunnelTimingRequest,
+	ProductEventsPathsRequest,
 	ProductEventTraceSamplesRequest,
 } from "@maple/domain/http"
 import {
+	DEFAULT_PATHS_BRANCHES,
+	DEFAULT_PATHS_DEPTH,
 	FUNNEL_WIDGET_BREAKDOWN_LIMIT,
 	ProductEventsFunnelWidgetParams,
+	ProductEventsPathsWidgetParams,
+	funnelStepDetails,
 	funnelWidgetBreakdownRows,
 	funnelWidgetRows,
+	funnelWidgetRowsWithDetails,
 	type FunnelWidgetRow,
+	type PathsWidgetRow,
 } from "@maple/query-model"
 import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
@@ -199,7 +208,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 	// empty state rather than asking the warehouse for a definition it rejects.
 	if (input.steps.length === 0) return { data: [] satisfies ReadonlyArray<FunnelWidgetRow> }
 
-	const { breakdownBy, ...rest } = input
+	const { breakdownBy, details, ...rest } = input
 	const request = {
 		...rest,
 		keyBy: input.keyBy ?? WIDGET_DEFAULT_KEY_BY,
@@ -230,7 +239,84 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 			})
 		}),
 	)
-	return { data: funnelWidgetRows(input.steps, result.data) }
+	// The drop-off view's extras: time between steps and where the leavers
+	// went. Two more queries, so only that view asks; a one-step funnel has
+	// neither and draws with counts alone.
+	if (details !== true || input.steps.length < 2)
+		return { data: funnelWidgetRows(input.steps, result.data) }
+	const [timing, leavers] = yield* Effect.all(
+		[
+			runWarehouseQuery("productEventsFunnelWidgetTiming", () =>
+				Effect.gen(function* () {
+					const client = yield* MapleInternalAtomClient
+					return yield* client.queryEngine.productEventsFunnelTiming({
+						payload: new ProductEventsFunnelTimingRequest(request),
+					})
+				}),
+			),
+			runWarehouseQuery("productEventsFunnelWidgetLeavers", () =>
+				Effect.gen(function* () {
+					const client = yield* MapleInternalAtomClient
+					return yield* client.queryEngine.productEventsFunnelLeavers({
+						payload: new ProductEventsFunnelLeaversRequest(request),
+					})
+				}),
+			),
+		],
+		{ concurrency: 2 },
+	)
+	return {
+		data: funnelWidgetRowsWithDetails(
+			input.steps,
+			result.data,
+			funnelStepDetails(timing.data, leavers.data),
+		),
+	}
+})
+
+// Dashboard paths widget (route data source `product_events_paths`).
+//
+// The stored `display.paths` definition is the route's params bag
+// (`ProductEventsPathsWidgetParams`), defaults applied here exactly as the
+// share API's route plan applies them. Rows are the query's own hops.
+
+const ProductEventsPathsWidgetInputSchema = Schema.Struct({
+	...TimeWindowFields,
+	...ProductEventsPathsWidgetParams.fields,
+})
+
+export type GetProductEventsPathsWidgetInput = (typeof ProductEventsPathsWidgetInputSchema)["Encoded"]
+
+export function getProductEventsPathsWidget({ data }: { data: GetProductEventsPathsWidgetInput }) {
+	return getProductEventsPathsWidgetEffect({ data })
+}
+
+const getProductEventsPathsWidgetEffect = Effect.fn("QueryEngine.getProductEventsPathsWidget")(function* ({
+	data,
+}: {
+	data: GetProductEventsPathsWidgetInput
+}) {
+	const input = yield* decodeInput(ProductEventsPathsWidgetInputSchema, data, "getProductEventsPathsWidget")
+	const anchorName = input.anchor.kind === "event" ? input.anchor.eventName : input.anchor.pagePath
+	// No anchor yet (the preset tile, a widget mid-edit): the empty state.
+	if (anchorName.trim() === "") return { data: [] satisfies ReadonlyArray<PathsWidgetRow> }
+
+	const result = yield* runWarehouseQuery("productEventsPathsWidget", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.productEventsPaths({
+				payload: new ProductEventsPathsRequest({
+					...input,
+					direction: input.direction ?? "after",
+					depth: input.depth ?? DEFAULT_PATHS_DEPTH,
+					branches: input.branches ?? DEFAULT_PATHS_BRANCHES,
+					keyBy: input.keyBy ?? WIDGET_DEFAULT_KEY_BY,
+					windowSeconds: input.windowSeconds ?? WIDGET_DEFAULT_WINDOW_SECONDS,
+				}),
+			})
+		}),
+	)
+	return { data: result.data satisfies ReadonlyArray<PathsWidgetRow> }
 })
 
 // The `track()` prop keys in use — what the query builder's `attr.` completion

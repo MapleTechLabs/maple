@@ -1,5 +1,6 @@
 import {
 	ArrowTrendDownIcon,
+	BranchForkIcon,
 	ConnectionIcon,
 	PulseIcon,
 	FileIcon,
@@ -19,6 +20,7 @@ import type {
 } from "@/components/dashboard-builder/types"
 import {
 	makeProductEventsFunnelDataSource,
+	makeProductEventsPathsDataSource,
 	makeQueryDataSource,
 	makeRouteDataSource,
 	makeStaticDataSource,
@@ -442,6 +444,21 @@ export const funnelPresets: WidgetPresetDefinition[] = [
 		},
 	},
 	{
+		id: "funnel-dropoff-product-events",
+		name: "Drop-off",
+		description:
+			"Where people leave a product-event funnel, how long each step takes, and where the leavers went",
+		icon: ArrowTrendDownIcon,
+		visualization: "funnel",
+		dataSource: makeProductEventsFunnelDataSource({ steps: [], variant: "dropoff" }),
+		display: {
+			title: "Drop-off",
+			chartId: "query-builder-funnel",
+			unit: "number",
+			funnel: { showStepPercent: true, steps: [], variant: "dropoff" },
+		},
+	},
+	{
 		id: "funnel-traces-by-service",
 		name: "Traces by Service",
 		description: "Trace volume per service as a descending funnel",
@@ -491,6 +508,40 @@ export const funnelPresets: WidgetPresetDefinition[] = [
 			chartId: "query-builder-funnel",
 			unit: "number",
 			funnel: { showStepPercent: false },
+		},
+	},
+]
+
+export const pathsPresets: WidgetPresetDefinition[] = [
+	{
+		id: "paths-after-event",
+		name: "Paths after an event",
+		description: "What people do in the steps after one event or page, top branches per step",
+		icon: BranchForkIcon,
+		visualization: "paths",
+		// No anchor yet: the route answers the empty state and the editor opens on
+		// the anchor picker.
+		dataSource: makeProductEventsPathsDataSource({ anchor: { kind: "event", eventName: "" } }),
+		display: {
+			title: "Paths",
+			chartId: "query-builder-paths",
+			paths: { anchor: { kind: "event", eventName: "" }, direction: "after" },
+		},
+	},
+	{
+		id: "paths-before-event",
+		name: "Paths before an event",
+		description: "How people arrived at one event or page, read back from it",
+		icon: BranchForkIcon,
+		visualization: "paths",
+		dataSource: makeProductEventsPathsDataSource({
+			anchor: { kind: "event", eventName: "" },
+			direction: "before",
+		}),
+		display: {
+			title: "Paths to",
+			chartId: "query-builder-paths",
+			paths: { anchor: { kind: "event", eventName: "" }, direction: "before" },
 		},
 	},
 ]

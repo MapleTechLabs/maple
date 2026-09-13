@@ -1232,6 +1232,286 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
+-- builder:product-events-paths:productEventsPathsQuery:after-person  [8262e95d]
+SELECT
+          hop AS hop,
+          fromNode AS fromNode,
+          toNode AS toNode,
+          count AS count
+        FROM (WITH path_hops AS (
+SELECT
+          key AS key,
+          tupleElement(edge, 1) AS hop,
+          tupleElement(edge, 2) AS fromNode,
+          tupleElement(edge, 3) AS toNode
+        FROM (SELECT
+          key AS key,
+          arrayJoin(arrayMap(i -> tuple(i, arrayElement(seq, i), if(i < length(seq), arrayElement(seq, i + 1), '')), arrayEnumerate(seq))) AS edge
+        FROM (SELECT
+          key AS key,
+          arrayFirstIndex(x -> x.3 = 1, evs) AS anchorIdx,
+          tupleElement(arrayElement(evs, anchorIdx), 1) AS anchorTs,
+          arraySlice(arrayCompact(arrayMap(x -> x.2, arrayFilter(x -> x.1 <= anchorTs + 86400000, arraySlice(evs, anchorIdx, 200)))), 1, 4) AS seq
+        FROM (SELECT
+          key AS key,
+          arraySort(x -> x.1, groupArray(5000)(tuple(ts, name, isAnchor))) AS evs
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts,
+          if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name,
+          toUInt8(e.EventName = 'signup_completed') AS isAnchor
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          VisitorId AS VisitorId,
+          argMin(UserId, FirstSeen) AS UserId
+        FROM (SELECT
+          VisitorId AS VisitorId,
+          UserId AS UserId,
+          min(FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != ''
+          AND if(e.Kind = 'navigation', e.PagePath, e.EventName) NOT IN ('heartbeat', '/')
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) IN (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          VisitorId AS VisitorId,
+          argMin(UserId, FirstSeen) AS UserId
+        FROM (SELECT
+          VisitorId AS VisitorId,
+          UserId AS UserId,
+          min(FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != ''
+          AND e.EventName = 'signup_completed'
+        GROUP BY key)) AS path_events
+        GROUP BY key) AS per_person
+        WHERE anchorIdx > 0) AS sequences) AS edges
+        WHERE tupleElement(edge, 1) <= 3
+)
+SELECT
+          h.hop AS hop,
+          multiIf(h.hop = 1, h.fromNode, coalesce(kf.name, '') != '', h.fromNode, '$other') AS fromNode,
+          multiIf(h.toNode = '', '', coalesce(kt.name, '') != '', h.toNode, '$other') AS toNode,
+          count() AS count
+        FROM path_hops AS h
+        LEFT JOIN (SELECT
+          hop AS hop,
+          hop + 1 AS nextHop,
+          tupleElement(entry, 1) AS name
+        FROM (SELECT
+          hop AS hop,
+          arrayJoin(head) AS entry
+        FROM (SELECT
+          hop AS hop,
+          arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(name, n))), 1, 4) AS head
+        FROM (SELECT
+          hop AS hop,
+          toNode AS name,
+          count() AS n
+        FROM path_hops
+        WHERE toNode != ''
+        GROUP BY hop, name) AS node_counts
+        GROUP BY hop) AS ranked) AS kept_entries) AS kf ON (h.hop = kf.nextHop AND h.fromNode = kf.name)
+        LEFT JOIN (SELECT
+          hop AS hop,
+          hop + 1 AS nextHop,
+          tupleElement(entry, 1) AS name
+        FROM (SELECT
+          hop AS hop,
+          arrayJoin(head) AS entry
+        FROM (SELECT
+          hop AS hop,
+          arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(name, n))), 1, 4) AS head
+        FROM (SELECT
+          hop AS hop,
+          toNode AS name,
+          count() AS n
+        FROM path_hops
+        WHERE toNode != ''
+        GROUP BY hop, name) AS node_counts
+        GROUP BY hop) AS ranked) AS kept_entries) AS kt ON (h.hop = kt.hop AND h.toNode = kt.name)
+        GROUP BY hop, fromNode, toNode) AS mapped
+        ORDER BY hop ASC, count DESC, fromNode ASC, toNode ASC
+        FORMAT JSON
+
+-- builder:product-events-paths:productEventsPathsQuery:before-session-pages-filtered  [1a01b77e]
+SELECT
+          hop AS hop,
+          fromNode AS fromNode,
+          toNode AS toNode,
+          count AS count
+        FROM (WITH path_hops AS (
+SELECT
+          key AS key,
+          tupleElement(edge, 1) AS hop,
+          tupleElement(edge, 2) AS fromNode,
+          tupleElement(edge, 3) AS toNode
+        FROM (SELECT
+          key AS key,
+          arrayJoin(arrayMap(i -> tuple(i, arrayElement(seq, i), if(i < length(seq), arrayElement(seq, i + 1), '')), arrayEnumerate(seq))) AS edge
+        FROM (SELECT
+          key AS key,
+          arrayFirstIndex(x -> x.3 = 1, arrayReverse(evs)) AS anchorIdx,
+          tupleElement(arrayElement(arrayReverse(evs), anchorIdx), 1) AS anchorTs,
+          arraySlice(arrayCompact(arrayMap(x -> x.2, arrayFilter(x -> x.1 >= anchorTs - 3600000, arraySlice(arrayReverse(evs), anchorIdx, 200)))), 1, 3) AS seq
+        FROM (SELECT
+          key AS key,
+          arraySort(x -> x.1, groupArray(5000)(tuple(ts, name, isAnchor))) AS evs
+        FROM (SELECT
+          SessionId AS key,
+          toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts,
+          if(Kind = 'navigation', PagePath, EventName) AS name,
+          toUInt8(((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev')) AS isAnchor
+        FROM product_events AS e
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND SessionId != ''
+          AND SessionId IN (SELECT
+          SessionId AS key
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND Host = 'maple.dev'
+          AND PagePath = '/pricing'
+        GROUP BY sessionId)
+          AND ReferrerHost = 't.co'
+          AND Country = 'DE'
+          AND DeviceType = 'desktop'
+          AND BrowserName = 'Chrome'
+          AND OsName = 'macOS'
+          AND Language = 'en-US'
+          AND UtmSource = 'twitter'
+          AND UtmMedium = 'social'
+          AND UtmCampaign = 'launch'
+          AND VisitorIsNew = 1
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'custom'
+          AND EventName = 'signup_started'
+        GROUP BY sessionId)
+        GROUP BY key)
+          AND Kind = 'navigation'
+          AND SessionId IN (SELECT
+          SessionId AS key
+        FROM product_events AS e
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND SessionId != ''
+          AND SessionId IN (SELECT
+          SessionId AS key
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND Host = 'maple.dev'
+          AND PagePath = '/pricing'
+        GROUP BY sessionId)
+          AND ReferrerHost = 't.co'
+          AND Country = 'DE'
+          AND DeviceType = 'desktop'
+          AND BrowserName = 'Chrome'
+          AND OsName = 'macOS'
+          AND Language = 'en-US'
+          AND UtmSource = 'twitter'
+          AND UtmMedium = 'social'
+          AND UtmCampaign = 'launch'
+          AND VisitorIsNew = 1
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'custom'
+          AND EventName = 'signup_started'
+        GROUP BY sessionId)
+        GROUP BY key)
+          AND ((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev')
+        GROUP BY key)) AS path_events
+        GROUP BY key) AS per_person
+        WHERE anchorIdx > 0) AS sequences) AS edges
+        WHERE tupleElement(edge, 1) <= 2
+)
+SELECT
+          h.hop AS hop,
+          multiIf(h.hop = 1, h.fromNode, coalesce(kf.name, '') != '', h.fromNode, '$other') AS fromNode,
+          multiIf(h.toNode = '', '', coalesce(kt.name, '') != '', h.toNode, '$other') AS toNode,
+          count() AS count
+        FROM path_hops AS h
+        LEFT JOIN (SELECT
+          hop AS hop,
+          hop + 1 AS nextHop,
+          tupleElement(entry, 1) AS name
+        FROM (SELECT
+          hop AS hop,
+          arrayJoin(head) AS entry
+        FROM (SELECT
+          hop AS hop,
+          arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(name, n))), 1, 3) AS head
+        FROM (SELECT
+          hop AS hop,
+          toNode AS name,
+          count() AS n
+        FROM path_hops
+        WHERE toNode != ''
+        GROUP BY hop, name) AS node_counts
+        GROUP BY hop) AS ranked) AS kept_entries) AS kf ON (h.hop = kf.nextHop AND h.fromNode = kf.name)
+        LEFT JOIN (SELECT
+          hop AS hop,
+          hop + 1 AS nextHop,
+          tupleElement(entry, 1) AS name
+        FROM (SELECT
+          hop AS hop,
+          arrayJoin(head) AS entry
+        FROM (SELECT
+          hop AS hop,
+          arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(name, n))), 1, 3) AS head
+        FROM (SELECT
+          hop AS hop,
+          toNode AS name,
+          count() AS n
+        FROM path_hops
+        WHERE toNode != ''
+        GROUP BY hop, name) AS node_counts
+        GROUP BY hop) AS ranked) AS kept_entries) AS kt ON (h.hop = kt.hop AND h.toNode = kt.name)
+        GROUP BY hop, fromNode, toNode) AS mapped
+        ORDER BY hop ASC, count DESC, fromNode ASC, toNode ASC
+        FORMAT JSON
+
 -- builder:product-events:productEventNamesQuery:default  [7c7336c7]
 SELECT
           EventName AS eventName,
@@ -1421,6 +1701,141 @@ SELECT
         ORDER BY entered DESC, group ASC
         LIMIT 10) AS groups
         ORDER BY group ASC, step ASC
+        FORMAT JSON
+
+-- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [8547b03a]
+SELECT
+          step AS step,
+          tupleElement(hop, 1) AS next,
+          tupleElement(hop, 2) AS count
+        FROM (SELECT
+          step AS step,
+          arrayJoin(head) AS hop
+        FROM (SELECT
+          step AS step,
+          arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(next, count))), 1, 6) AS head
+        FROM (SELECT
+          step AS step,
+          next AS next,
+          count() AS count
+        FROM (SELECT
+          e.key AS key,
+          d.step AS step,
+          argMinIf(e.name, e.ts, e.ts > d.tLast) AS next
+        FROM (SELECT
+          VisitorId AS key,
+          toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts,
+          if(Kind = 'navigation', PagePath, EventName) AS name
+        FROM product_events AS e
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND VisitorId != ''
+          AND VisitorId IN (SELECT
+          VisitorId AS key
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND Host = 'maple.dev'
+          AND PagePath = '/pricing'
+        GROUP BY sessionId)
+          AND ReferrerHost = 't.co'
+          AND Country = 'DE'
+          AND DeviceType = 'desktop'
+          AND BrowserName = 'Chrome'
+          AND OsName = 'macOS'
+          AND Language = 'en-US'
+          AND UtmSource = 'twitter'
+          AND UtmMedium = 'social'
+          AND UtmCampaign = 'launch'
+          AND VisitorIsNew = 1
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'custom'
+          AND EventName = 'signup_started'
+        GROUP BY sessionId)
+        GROUP BY key)) AS e
+        INNER JOIN (SELECT
+          key AS key,
+          level + 1 AS step,
+          arrayElement([t1, t2, t3], level) AS tLast
+        FROM (SELECT
+          key AS key,
+          level AS level,
+          tupleElement(arrayFirst(x -> x.2 = 1, evs), 1) AS t1,
+          tupleElement(arrayFirst(x -> x.3 = 1 AND x.1 >= t1 AND x.1 <= t1 + 604800000, evs), 1) AS t2,
+          tupleElement(arrayFirst(x -> x.4 = 1 AND x.1 >= t2 AND x.1 <= t1 + 604800000, evs), 1) AS t3
+        FROM (SELECT
+          key AS key,
+          windowFunnel(604800000)(ts, s1 = 1, s2 = 1, s3 = 1) AS level,
+          arraySort(x -> x.1, groupArray(tuple(ts, s1, s2, s3))) AS evs
+        FROM (SELECT
+          VisitorId AS key,
+          toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts,
+          toUInt8(((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev')) AS s1,
+          toUInt8(EventName = 'signup_completed') AS s2,
+          toUInt8((EventName = 'plan_started' AND Attributes['plan'] = 'startup')) AS s3
+        FROM product_events AS e
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND ((((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev') OR EventName = 'signup_completed') OR (EventName = 'plan_started' AND Attributes['plan'] = 'startup'))
+          AND VisitorId != ''
+          AND VisitorId IN (SELECT
+          VisitorId AS key
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND Host = 'maple.dev'
+          AND PagePath = '/pricing'
+        GROUP BY sessionId)
+          AND ReferrerHost = 't.co'
+          AND Country = 'DE'
+          AND DeviceType = 'desktop'
+          AND BrowserName = 'Chrome'
+          AND OsName = 'macOS'
+          AND Language = 'en-US'
+          AND UtmSource = 'twitter'
+          AND UtmMedium = 'social'
+          AND UtmCampaign = 'launch'
+          AND VisitorIsNew = 1
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'custom'
+          AND EventName = 'signup_started'
+        GROUP BY sessionId)
+        GROUP BY key)) AS funnel_events
+        GROUP BY key) AS chain_events) AS chain
+        WHERE level >= 1
+          AND level < 3) AS d ON e.key = d.key
+        GROUP BY key, step) AS nexts
+        GROUP BY step, next) AS counted
+        GROUP BY step) AS ranked) AS hops
+        ORDER BY step ASC, count DESC, next ASC
         FORMAT JSON
 
 -- builder:product-events:productEventsFunnelQuery:person  [41bb75cc]
@@ -1681,6 +2096,51 @@ SELECT
           AND VisitorId != ''
 ) AS funnel_events
         GROUP BY key) AS levels) AS totals
+        ORDER BY step ASC
+        FORMAT JSON
+
+-- builder:product-events:productEventsFunnelTimingQuery:person  [1a1e232c]
+SELECT
+          arrayJoin([2, 3]) AS step,
+          arrayElement(p50s, step) AS p50Ms,
+          arrayElement(p90s, step) AS p90Ms
+        FROM (SELECT
+          [0, ifNotFinite(quantileIf(0.5)(toFloat64(t2 - t1), level >= 2 AND t2 > 0), 0), ifNotFinite(quantileIf(0.5)(toFloat64(t3 - t2), level >= 3 AND t3 > 0), 0)] AS p50s,
+          [0, ifNotFinite(quantileIf(0.9)(toFloat64(t2 - t1), level >= 2 AND t2 > 0), 0), ifNotFinite(quantileIf(0.9)(toFloat64(t3 - t2), level >= 3 AND t3 > 0), 0)] AS p90s
+        FROM (SELECT
+          key AS key,
+          level AS level,
+          tupleElement(arrayFirst(x -> x.2 = 1, evs), 1) AS t1,
+          tupleElement(arrayFirst(x -> x.3 = 1 AND x.1 >= t1 AND x.1 <= t1 + 604800000, evs), 1) AS t2,
+          tupleElement(arrayFirst(x -> x.4 = 1 AND x.1 >= t2 AND x.1 <= t1 + 604800000, evs), 1) AS t3
+        FROM (SELECT
+          key AS key,
+          windowFunnel(604800000)(ts, s1 = 1, s2 = 1, s3 = 1) AS level,
+          arraySort(x -> x.1, groupArray(tuple(ts, s1, s2, s3))) AS evs
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts,
+          toUInt8(((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
+          toUInt8(e.EventName = 'signup_completed') AS s2,
+          toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          VisitorId AS VisitorId,
+          argMin(UserId, FirstSeen) AS UserId
+        FROM (SELECT
+          VisitorId AS VisitorId,
+          UserId AS UserId,
+          min(FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
+        GROUP BY key) AS chain_events) AS chain) AS totals
         ORDER BY step ASC
         FORMAT JSON
 

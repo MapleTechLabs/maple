@@ -2,7 +2,10 @@ import type {
 	ProductEventNamesRequest,
 	ProductEventsForTraceRequest,
 	ProductEventsFunnelBreakdownRequest,
+	ProductEventsFunnelLeaversRequest,
 	ProductEventsFunnelRequest,
+	ProductEventsFunnelTimingRequest,
+	ProductEventsPathsRequest,
 	ProductEventTraceSamplesRequest,
 } from "@maple/domain/http"
 import type {
@@ -41,7 +44,11 @@ const productEventsFilters = (payload: ProductEventNamesRequest): CH.ProductEven
 
 /** The funnel option bag shared by the plain and breakdown queries. */
 export const productEventsFunnelOpts = (
-	payload: ProductEventsFunnelRequest | ProductEventsFunnelBreakdownRequest,
+	payload:
+		| ProductEventsFunnelRequest
+		| ProductEventsFunnelBreakdownRequest
+		| ProductEventsFunnelTimingRequest
+		| ProductEventsFunnelLeaversRequest,
 ): CH.ProductEventsFunnelOpts => ({
 	steps: payload.steps,
 	keyBy: payload.keyBy,
@@ -74,6 +81,55 @@ export const productEventsFunnelBreakdown = defineQuery({
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
+})
+
+export const productEventsFunnelTiming = defineQuery({
+	id: "productEventsFunnelTiming",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProductEventsFunnelTimingRequest, orgId: string) =>
+		CH.compile(CH.productEventsFunnelTimingQuery(productEventsFunnelOpts(payload)), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+export const productEventsFunnelLeavers = defineQuery({
+	id: "productEventsFunnelLeavers",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProductEventsFunnelLeaversRequest, orgId: string) =>
+		CH.compile(CH.productEventsFunnelLeaversQuery(productEventsFunnelOpts(payload)), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+/** The paths option bag; the same filter surface as a funnel. */
+export const productEventsPathsOpts = (payload: ProductEventsPathsRequest): CH.ProductEventsPathsOpts => ({
+	anchor: payload.anchor,
+	direction: payload.direction,
+	depth: payload.depth,
+	branches: payload.branches,
+	keyBy: payload.keyBy,
+	windowSeconds: payload.windowSeconds,
+	include: payload.include,
+	exclude: payload.exclude,
+	filters: productEventsFilters(payload),
+})
+
+export const productEventsPaths = defineQuery({
+	id: "productEventsPaths",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProductEventsPathsRequest, orgId: string) =>
+		CH.compile(CH.productEventsPathsQuery(productEventsPathsOpts(payload)), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
 })
 
 export const productEventNames = defineQuery({

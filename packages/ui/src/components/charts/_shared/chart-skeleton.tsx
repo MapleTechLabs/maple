@@ -178,6 +178,23 @@ function renderVariant(variant: ChartSkeletonVariant) {
 				</div>
 			)
 
+		case "paths":
+			return (
+				<div className="flex h-full w-full items-stretch justify-between gap-6 p-3">
+					{[[100], [64, 22, 10], [40, 18, 12, 8]].map((column, i) => (
+						<div key={i} className="flex flex-1 flex-col gap-1.5">
+							{column.map((h, j) => (
+								<div
+									key={j}
+									className="w-full rounded-[3px] bg-foreground/10 skeleton-bar"
+									style={{ height: `${h}%`, animationDelay: `${-(i + j) * 0.13}s` }}
+								/>
+							))}
+						</div>
+					))}
+				</div>
+			)
+
 		case "pie":
 			return (
 				<svg

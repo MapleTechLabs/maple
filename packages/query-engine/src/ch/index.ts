@@ -191,9 +191,14 @@ export {
 	productEventNamesRowSchema,
 	productEventsForTraceQuery,
 	productEventTraceSamplesQuery,
+	productEventsFunnelTimingQuery,
+	productEventsFunnelTimingRowSchema,
+	productEventsFunnelLeaversQuery,
+	productEventsFunnelLeaversRowSchema,
 	ProductEventsFunnelError,
 	FUNNEL_MAX_STEPS,
 	FUNNEL_BREAKDOWN_MAX_GROUPS,
+	FUNNEL_LEAVERS_PER_STEP,
 	type FunnelStep,
 	type FunnelKeyBy,
 	type FunnelSessionDimension,
@@ -208,7 +213,23 @@ export {
 	type ProductEventsFunnelBreakdownOutput,
 	type ProductEventNamesOpts,
 	type ProductEventNamesOutput,
+	type ProductEventsFunnelTimingOutput,
+	type ProductEventsFunnelLeaversOutput,
 } from "./queries/product-events"
+
+// Queries — Product events (paths after / before an anchor)
+export {
+	productEventsPathsQuery,
+	productEventsPathsRowSchema,
+	PATHS_MAX_DEPTH,
+	PATHS_MAX_BRANCHES,
+	PATHS_OTHER,
+	type PathsAnchor,
+	type PathsDirection,
+	type PathsInclude,
+	type ProductEventsPathsOpts,
+	type ProductEventsPathsOutput,
+} from "./queries/product-events-paths"
 
 // Queries — Product events as a query-builder source (timeseries / breakdown / list)
 export {

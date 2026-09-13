@@ -12,6 +12,7 @@ export {
 export * from "./logs"
 export {
 	productEventsFunnelOpts,
+	productEventsPathsOpts,
 	productEventsQueryOptions,
 	productEventsTimeseries,
 	productEventsBreakdown,

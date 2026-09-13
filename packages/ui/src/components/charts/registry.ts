@@ -10,6 +10,7 @@ import type {
 	QueryBuilderHistogramChartProps,
 	QueryBuilderLineChartProps,
 	QueryBuilderPieChartProps,
+	PathsChartProps,
 	ServiceChartProps,
 	ThroughputAreaChartProps,
 } from "./_shared/chart-types"
@@ -23,6 +24,7 @@ import {
 	heatmapSampleData,
 	funnelSampleData,
 	hbarSampleData,
+	pathsSampleData,
 } from "./_shared/sample-data"
 
 /**
@@ -60,6 +62,7 @@ export type ChartRegistryEntry =
 	| ChartEntry<"heatmap", QueryBuilderHeatmapChartProps>
 	| ChartEntry<"funnel", QueryBuilderFunnelChartProps>
 	| ChartEntry<"hbar", QueryBuilderHbarChartProps>
+	| ChartEntry<"paths", PathsChartProps>
 	| ChartEntry<"service", ServiceChartProps>
 	| ChartEntry<"throughput", ThroughputAreaChartProps>
 
@@ -240,6 +243,17 @@ export const chartRegistry: ChartRegistryEntry[] = [
 		),
 		sampleData: funnelSampleData,
 		tags: ["funnel", "conversion", "stages", "query-builder"],
+	},
+	// Paths
+	{
+		kind: "paths",
+		id: "query-builder-paths",
+		name: "Paths",
+		description: "What people do in the steps after, or before, one event",
+		category: "paths",
+		component: lazy(() => import("./paths/paths-chart").then((m) => ({ default: m.PathsChart }))),
+		sampleData: pathsSampleData,
+		tags: ["paths", "sankey", "flow", "journey", "query-builder"],
 	},
 ]
 

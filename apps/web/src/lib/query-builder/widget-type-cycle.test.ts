@@ -11,7 +11,7 @@ import {
 	type QueryBuilderWidgetState,
 } from "@/lib/query-builder/widget-builder-utils"
 import type { DashboardWidget } from "@/components/dashboard-builder/types"
-import { defaultFunnelDraft } from "@/lib/query-builder/widget-builder-shared"
+import { defaultFunnelDraft, DEFAULT_PATHS_DRAFT } from "@/lib/query-builder/widget-builder-shared"
 
 /**
  * What a widget routed to, as one comparable value.
@@ -90,6 +90,7 @@ function makeState(overrides: Partial<QueryBuilderWidgetState> = {}): QueryBuild
 		sparklineEnabled: false,
 		markdownContent: "",
 		funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 		...overrides,
 	}
 }
@@ -125,7 +126,7 @@ function selectPanel(state: QueryBuilderWidgetState, panel: PanelType): QueryBui
 
 describe("switching panel type", () => {
 	it("covers every panel type in the registry", () => {
-		expect(ALL_PANELS).toHaveLength(13)
+		expect(ALL_PANELS).toHaveLength(14)
 		expect(Object.keys(widgetTypes).sort()).toEqual([...ALL_PANELS].sort())
 	})
 

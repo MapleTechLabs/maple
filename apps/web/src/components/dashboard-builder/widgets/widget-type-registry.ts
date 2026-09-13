@@ -77,10 +77,10 @@ export interface WidgetTypeDefinition {
 	Renderer: VisualizationComponent
 	/**
 	 * Which editor the left half of the widget editor shows. `"builder"` is the
-	 * query builder; `"list"` and `"markdown"` are their own panels and skip
-	 * query validation entirely.
+	 * query builder; `"list"`, `"markdown"` and `"paths"` are their own panels
+	 * and skip query validation (paths validates its own definition).
 	 */
-	queryEditor: "builder" | "list" | "markdown"
+	queryEditor: "builder" | "list" | "markdown" | "paths"
 	/** The type-specific half of the settings rail. Reads state from context. */
 	ConfigPanel: ComponentType
 	/** Ready-made widgets offered in the "Add widget" picker. */

@@ -12,7 +12,7 @@ import {
 	type QueryBuilderWidgetState,
 } from "@/lib/query-builder/widget-builder-utils"
 import type { DashboardWidget } from "@/components/dashboard-builder/types"
-import { defaultFunnelDraft } from "@/lib/query-builder/widget-builder-shared"
+import { defaultFunnelDraft, DEFAULT_PATHS_DRAFT } from "@/lib/query-builder/widget-builder-shared"
 
 /**
  * What a widget routed to, as one comparable value.
@@ -78,6 +78,7 @@ function makeState(): QueryBuilderWidgetState {
 		sparklineEnabled: false,
 		markdownContent: "",
 		funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 	}
 }
 
@@ -413,6 +414,7 @@ describe("product-event funnel widget", () => {
 			windowSeconds: 3600,
 			breakdownBy: "attribute:plan",
 			filterClause: 'country = "DE"',
+			variant: "bars",
 			showStepPercent: false,
 			addOns: { keyBy: true, window: true, breakdown: true },
 		})

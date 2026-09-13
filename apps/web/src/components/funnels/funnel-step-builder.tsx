@@ -55,6 +55,8 @@ interface FunnelStepBuilderProps {
 	pageStepHost?: boolean
 	/** Tighter spacing for a settings rail. */
 	compact?: boolean
+	/** Steps the builder holds; at `1` it is a single anchor picker with no add / remove / reorder. */
+	maxSteps?: number
 	className?: string
 }
 
@@ -95,8 +97,10 @@ export function FunnelStepBuilder({
 	eventStepFilter = false,
 	pageStepHost = false,
 	compact = false,
+	maxSteps = FUNNEL_MAX_STEPS,
 	className,
 }: FunnelStepBuilderProps) {
+	const single = maxSteps <= 1
 	const update = (index: number, step: FunnelStepDraft) =>
 		onChange(steps.map((current, i) => (i === index ? step : current)))
 	const remove = (index: number) => onChange(steps.filter((_, i) => i !== index))
@@ -117,7 +121,8 @@ export function FunnelStepBuilder({
 					key={index}
 					index={index}
 					step={step}
-					total={steps.length}
+					total={single ? 1 : steps.length}
+					single={single}
 					compact={compact}
 					eventNames={eventNames}
 					pagePaths={pagePaths}
@@ -129,20 +134,22 @@ export function FunnelStepBuilder({
 					onMoveDown={() => reorder(index, index + 1)}
 				/>
 			))}
-			<Button
-				type="button"
-				variant="outline"
-				size="sm"
-				onClick={add}
-				disabled={steps.length >= FUNNEL_MAX_STEPS}
-				className="w-fit"
-			>
-				<PlusIcon size={14} />
-				Add step
-				{steps.length >= FUNNEL_MAX_STEPS ? (
-					<span className="text-muted-foreground">(max {FUNNEL_MAX_STEPS})</span>
-				) : null}
-			</Button>
+			{!single && (
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					onClick={add}
+					disabled={steps.length >= maxSteps}
+					className="w-fit"
+				>
+					<PlusIcon size={14} />
+					Add step
+					{steps.length >= maxSteps ? (
+						<span className="text-muted-foreground">(max {maxSteps})</span>
+					) : null}
+				</Button>
+			)}
 		</div>
 	)
 }
@@ -160,10 +167,13 @@ function StepRow({
 	onRemove,
 	onMoveUp,
 	onMoveDown,
+	single = false,
 }: {
 	index: number
 	step: FunnelStepDraft
 	total: number
+	/** An anchor picker: no session kind, no number badge, no row actions. */
+	single?: boolean
 	compact: boolean
 	eventNames: ReadonlyArray<FunnelStepSuggestion>
 	pagePaths: ReadonlyArray<FunnelStepSuggestion>
@@ -174,7 +184,8 @@ function StepRow({
 	onMoveUp: () => void
 	onMoveDown: () => void
 }) {
-	const kinds: ReadonlyArray<StepKind> = index === 0 ? ["event", "page", "session"] : ["event", "page"]
+	const kinds: ReadonlyArray<StepKind> =
+		index === 0 && !single ? ["event", "page", "session"] : ["event", "page"]
 	const kindItems = Object.fromEntries(kinds.map((kind) => [kind, KIND_LABEL[kind]]))
 
 	// The filter line only exists for event steps and only when offered; its
@@ -191,15 +202,17 @@ function StepRow({
 			)}
 		>
 			<div className="flex items-center gap-1.5">
-				<span
-					className={cn(
-						"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] tabular-nums text-muted-foreground",
-						compact ? "size-5" : "size-6",
-					)}
-					aria-label={`Step ${index + 1}`}
-				>
-					{index + 1}
-				</span>
+				{!single && (
+					<span
+						className={cn(
+							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] tabular-nums text-muted-foreground",
+							compact ? "size-5" : "size-6",
+						)}
+						aria-label={`Step ${index + 1}`}
+					>
+						{index + 1}
+					</span>
+				)}
 
 				<Select
 					items={kindItems}
@@ -298,37 +311,39 @@ function StepRow({
 					)}
 				</div>
 
-				<div className="flex shrink-0 items-center">
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						onClick={onMoveUp}
-						disabled={index === 0}
-						aria-label="Move step up"
-					>
-						<ArrowUpIcon size={12} />
-					</Button>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						onClick={onMoveDown}
-						disabled={index === total - 1}
-						aria-label="Move step down"
-					>
-						<ArrowDownIcon size={12} />
-					</Button>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						onClick={onRemove}
-						aria-label="Remove step"
-					>
-						<XmarkIcon size={12} />
-					</Button>
-				</div>
+				{!single && (
+					<div className="flex shrink-0 items-center">
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-xs"
+							onClick={onMoveUp}
+							disabled={index === 0}
+							aria-label="Move step up"
+						>
+							<ArrowUpIcon size={12} />
+						</Button>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-xs"
+							onClick={onMoveDown}
+							disabled={index === total - 1}
+							aria-label="Move step down"
+						>
+							<ArrowDownIcon size={12} />
+						</Button>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-xs"
+							onClick={onRemove}
+							aria-label="Remove step"
+						>
+							<XmarkIcon size={12} />
+						</Button>
+					</div>
+				)}
 			</div>
 			{eventStepFilter && step.kind === "event" ? (
 				<div className={cn("flex flex-col gap-0.5", compact ? "pl-6" : "pl-7")}>

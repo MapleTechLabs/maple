@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { createQueryDraft, resetQueryForDataSource } from "@maple/query-engine/query-builder"
 import type { QueryBuilderWidgetState } from "@/lib/query-builder/widget-builder-utils"
-import { defaultFunnelDraft } from "@/lib/query-builder/widget-builder-shared"
+import { defaultFunnelDraft, DEFAULT_PATHS_DRAFT } from "@/lib/query-builder/widget-builder-shared"
 import { reconcileFunnelSource } from "./funnel-source"
 
 const base = (): QueryBuilderWidgetState => ({
@@ -36,6 +36,7 @@ const base = (): QueryBuilderWidgetState => ({
 	sparklineEnabled: false,
 	markdownContent: "",
 	funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 })
 
 describe("reconcileFunnelSource", () => {

@@ -295,6 +295,74 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// Drop-off details and paths share the funnel's person-key axis; one fixture
+	// per builder plus the direction / include / exclude shapes of the paths one.
+	{
+		module: "product-events",
+		name: "productEventsFunnelTimingQuery",
+		label: "person",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsFunnelTimingQuery({
+					steps: FUNNEL_STEPS,
+					keyBy: "person",
+					windowSeconds: 7 * 86_400,
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelLeaversQuery",
+		label: "visitor-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsFunnelLeaversQuery({
+					steps: FUNNEL_STEPS,
+					keyBy: "visitor",
+					windowSeconds: 7 * 86_400,
+					filters: WEB_ANALYTICS_ALL_FILTERS,
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-paths",
+		name: "productEventsPathsQuery",
+		label: "after-person",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsPathsQuery({
+					anchor: { kind: "event", eventName: "signup_completed" },
+					direction: "after",
+					depth: 3,
+					branches: 4,
+					keyBy: "person",
+					windowSeconds: 86_400,
+					exclude: ["heartbeat", "/"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-paths",
+		name: "productEventsPathsQuery",
+		label: "before-session-pages-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsPathsQuery({
+					anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
+					direction: "before",
+					depth: 2,
+					branches: 3,
+					keyBy: "session",
+					windowSeconds: 3_600,
+					include: "pages",
+					filters: WEB_ANALYTICS_ALL_FILTERS,
+				}),
+				window,
+			),
+	},
 	{
 		module: "product-events",
 		name: "productEventNamesQuery",

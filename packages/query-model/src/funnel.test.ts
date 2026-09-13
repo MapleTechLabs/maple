@@ -4,8 +4,11 @@ import { Schema } from "effect"
 import {
 	FUNNEL_EMPTY_GROUP_LABEL,
 	ProductEventsFunnelWidgetParams,
+	ProductEventsPathsWidgetParams,
+	funnelStepDetails,
 	funnelWidgetBreakdownRows,
 	funnelWidgetRows,
+	funnelWidgetRowsWithDetails,
 	type FunnelStep,
 } from "./funnel"
 
@@ -69,5 +72,64 @@ describe("ProductEventsFunnelWidgetParams", () => {
 		expect(decoded.breakdownBy).toBe("attribute:plan")
 		expect(decoded.country).toBe("DE")
 		expect(decoded.windowSeconds).toBeUndefined()
+	})
+})
+
+describe("funnel drop-off details", () => {
+	it("merges timing and leavers onto the step rows, by 1-based step", () => {
+		const details = funnelStepDetails(
+			[
+				{ step: 2, p50Ms: 60_000, p90Ms: 3_600_000 },
+				{ step: 3, p50Ms: 0, p90Ms: 0 },
+			],
+			[
+				{ step: 2, next: "", count: 5 },
+				{ step: 2, next: "/docs", count: 3 },
+				{ step: 3, next: "/pricing", count: 1 },
+			],
+		)
+		const rows = funnelWidgetRowsWithDetails(
+			steps,
+			[
+				{ step: 1, count: 10 },
+				{ step: 2, count: 2 },
+			],
+			details,
+		)
+		expect(rows[0]).toEqual({ name: "/pricing", value: 10 })
+		expect(rows[1]).toEqual({
+			name: "signup_completed",
+			value: 2,
+			p50Ms: 60_000,
+			p90Ms: 3_600_000,
+			leavers: [
+				{ name: "", count: 5 },
+				{ name: "/docs", count: 3 },
+			],
+		})
+		expect(rows[2]?.leavers).toEqual([{ name: "/pricing", count: 1 }])
+	})
+})
+
+describe("ProductEventsPathsWidgetParams", () => {
+	it("decodes the flat params bag a paths widget stores", () => {
+		const decoded = Schema.decodeSync(ProductEventsPathsWidgetParams)({
+			anchor: { kind: "page", pagePath: "/pricing" },
+			direction: "before",
+			depth: 2,
+			exclude: ["heartbeat"],
+			country: "DE",
+		})
+		expect(decoded.direction).toBe("before")
+		expect(decoded.exclude).toEqual(["heartbeat"])
+		expect(decoded.branches).toBeUndefined()
+	})
+
+	it("refuses a session step as the anchor", () => {
+		expect(() =>
+			Schema.decodeSync(ProductEventsPathsWidgetParams)({
+				anchor: { kind: "session", dimension: "utmSource", value: "twitter" },
+			}),
+		).toThrow()
 	})
 })

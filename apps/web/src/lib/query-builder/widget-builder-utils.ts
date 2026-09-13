@@ -10,6 +10,7 @@ import { widgetTypes } from "@/components/dashboard-builder/widgets/types"
 import { fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
 import {
 	defaultFunnelDraft,
+	DEFAULT_PATHS_DRAFT,
 	deriveDefaultWidgetTitle,
 	hasActiveGroupBy,
 	inferDefaultUnitForQueries,
@@ -126,6 +127,7 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 		heatmapScaleType: "linear",
 		markdownContent: "",
 		funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 		...definition.initialState?.(widget),
 	}
 
@@ -257,6 +259,10 @@ export function buildWidgetDisplay(
 export function validateQueries(state: QueryBuilderWidgetState): string | null {
 	const definition = definitionForState(state)
 
+	// A paths widget has its own panel and its own definition to check.
+	if (definition.queryEditor === "paths") {
+		return definition.validate?.({ state, activeQueries: [], visibleQueries: [] }) ?? null
+	}
 	// Neither uses the query builder — a list is configured by ListConfigPanel and
 	// a note doesn't query at all, so validating their placeholder draft would
 	// block Apply on an error the user has no panel to fix.

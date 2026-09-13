@@ -32,17 +32,26 @@ import {
 	ErrorsSummaryRequest,
 	ListLogsRequest,
 	ProductEventsFunnelBreakdownRequest,
+	ProductEventsFunnelLeaversRequest,
 	ProductEventsFunnelRequest,
+	ProductEventsFunnelTimingRequest,
+	ProductEventsPathsRequest,
 	ServiceOverviewRequest,
 	ServiceUsageRequest,
 } from "@maple/domain/http"
 import {
+	DEFAULT_PATHS_BRANCHES,
+	DEFAULT_PATHS_DEPTH,
 	FUNNEL_WIDGET_BREAKDOWN_LIMIT,
 	ProductEventsFunnelWidgetParams,
+	ProductEventsPathsWidgetParams,
+	funnelStepDetails,
 	funnelWidgetBreakdownRows,
 	funnelWidgetRows,
+	funnelWidgetRowsWithDetails,
+	type PathsWidgetRow,
 } from "@maple/query-model"
-import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
+import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
 import { Effect, Schema } from "effect"
 import {
 	coerceErrorsByTypeRows,
@@ -53,8 +62,13 @@ import {
 	serviceUsagePreviousTotals,
 	windowDurationSeconds,
 } from "@maple/query-engine"
-import { Queries, productEventsFunnelOpts, type QueryDefinition } from "@maple/query-engine/registry"
-import { validateFunnelDefinition } from "@maple/backend/queries/query-helpers"
+import {
+	Queries,
+	productEventsFunnelOpts,
+	productEventsPathsOpts,
+	type QueryDefinition,
+} from "@maple/query-engine/registry"
+import { validateFunnelDefinition, validatePathsDefinition } from "@maple/backend/queries/query-helpers"
 import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -135,6 +149,10 @@ const asRows = <Row>(rows: ReadonlyArray<Row>): ReadonlyArray<Record<string, unk
 const decodeProductEventsFunnel = Schema.decodeUnknownEffect(ProductEventsFunnelRequest)
 const decodeProductEventsFunnelBreakdown = Schema.decodeUnknownEffect(ProductEventsFunnelBreakdownRequest)
 const decodeProductEventsFunnelWidgetParams = Schema.decodeUnknownEffect(ProductEventsFunnelWidgetParams)
+const decodeProductEventsFunnelTiming = Schema.decodeUnknownEffect(ProductEventsFunnelTimingRequest)
+const decodeProductEventsFunnelLeavers = Schema.decodeUnknownEffect(ProductEventsFunnelLeaversRequest)
+const decodeProductEventsPathsWidgetParams = Schema.decodeUnknownEffect(ProductEventsPathsWidgetParams)
+const decodeProductEventsPaths = Schema.decodeUnknownEffect(ProductEventsPathsRequest)
 
 export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 	errors_by_type: readModelPlan(ErrorsByTypeRequest, Queries.errorsByType, (rows) => ({
@@ -182,7 +200,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				const widgetParams = yield* decodeProductEventsFunnelWidgetParams(params)
 				// No steps yet: the empty state, not a 400 from the builder.
 				if (widgetParams.steps.length === 0) return { data: [] }
-				const { breakdownBy, ...rest } = widgetParams
+				const { breakdownBy, details, ...rest } = widgetParams
 				const request = {
 					keyBy: "person",
 					windowSeconds: 24 * 3600,
@@ -224,12 +242,71 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				}
 				yield* validateFunnelDefinition(productEventsFunnelOpts(payload))
 				const rows = yield* runQuery(Queries.productEventsFunnel, context.tenant, payload)
+				const counts = rows.map((row) => ({ step: Number(row.step), count: Number(row.count) || 0 }))
+				// The drop-off view's extras. A one-step funnel has no "between"
+				// and no leavers, so it draws with counts alone.
+				if (details !== true || payload.steps.length < 2) {
+					return { data: funnelWidgetRows(payload.steps, counts) }
+				}
+				const timingPayload = yield* decodeProductEventsFunnelTiming(request)
+				const leaversPayload = yield* decodeProductEventsFunnelLeavers(request)
+				const [timing, leavers] = yield* Effect.all(
+					[
+						runQuery(Queries.productEventsFunnelTiming, context.tenant, timingPayload),
+						runQuery(Queries.productEventsFunnelLeavers, context.tenant, leaversPayload),
+					],
+					{ concurrency: 2 },
+				)
 				return {
-					data: funnelWidgetRows(
+					data: funnelWidgetRowsWithDetails(
 						payload.steps,
-						rows.map((row) => ({ step: Number(row.step), count: Number(row.count) || 0 })),
+						counts,
+						funnelStepDetails(
+							timing.map((row) => ({
+								step: Number(row.step),
+								p50Ms: Number(row.p50Ms) || 0,
+								p90Ms: Number(row.p90Ms) || 0,
+							})),
+							leavers.map((row) => ({
+								step: Number(row.step),
+								next: String(row.next),
+								count: Number(row.count) || 0,
+							})),
+						),
 					),
 				}
+			}),
+	},
+	// The paths widget: the stored `display.paths` definition, flat, with the
+	// route's defaults for what is unset — the same defaults the browser's
+	// `getProductEventsPathsWidget` applies.
+	[PRODUCT_EVENTS_PATHS_ENDPOINT]: {
+		run: (params, context) =>
+			Effect.gen(function* () {
+				const widgetParams = yield* decodeProductEventsPathsWidgetParams(params)
+				const payload = yield* decodeProductEventsPaths({
+					direction: "after",
+					depth: DEFAULT_PATHS_DEPTH,
+					branches: DEFAULT_PATHS_BRANCHES,
+					keyBy: "person",
+					windowSeconds: 24 * 3600,
+					...widgetParams,
+					startTime: context.window.startTime,
+					endTime: context.window.endTime,
+				})
+				yield* validatePathsDefinition(productEventsPathsOpts(payload))
+				const { runQuery } = makeQueryRunners({
+					warehouse: context.warehouse,
+					queryEngine: context.queryEngine,
+				})
+				const rows = yield* runQuery(Queries.productEventsPaths, context.tenant, payload)
+				const data: ReadonlyArray<PathsWidgetRow> = rows.map((row) => ({
+					hop: Number(row.hop) || 0,
+					fromNode: String(row.fromNode),
+					toNode: String(row.toNode),
+					count: Number(row.count) || 0,
+				}))
+				return { data }
 			}),
 	},
 }

@@ -1,4 +1,13 @@
-import { FunnelBreakdownBy, FunnelKeyBy, FunnelPopulationFilters, FunnelStep } from "@maple/query-model"
+import {
+	FunnelBreakdownBy,
+	FunnelKeyBy,
+	FunnelPopulationFilters,
+	FunnelStep,
+	FunnelVariant,
+	PathsAnchor,
+	PathsDirection,
+	PathsInclude,
+} from "@maple/query-model"
 import { Schema } from "effect"
 import { HEATMAP_COLOR_SCALES, HEATMAP_SCALE_TYPES } from "../../widget-types"
 import { StringRecord } from "./transform"
@@ -128,6 +137,26 @@ export const makeWidgetDisplayConfigSchema = <DataSource extends Schema.Top>(dat
 				breakdownBy: Schema.optional(FunnelBreakdownBy),
 				// The population filter: persons with a session matching these
 				// dimensions. Additive like the rest of the block.
+				filters: Schema.optional(FunnelPopulationFilters),
+				// How the funnel is drawn. Absent means the descending bars every
+				// funnel drew before the drop-off view existed.
+				variant: Schema.optional(FunnelVariant),
+			}),
+		),
+
+		// Paths-specific: the anchor and how far / how wide to walk from it.
+		// The definition's home, mirrored into the `product_events_paths` route
+		// params exactly as the funnel's is.
+		paths: Schema.optional(
+			Schema.Struct({
+				anchor: PathsAnchor,
+				direction: Schema.optional(PathsDirection),
+				depth: Schema.optional(Schema.Number),
+				branches: Schema.optional(Schema.Number),
+				keyBy: Schema.optional(FunnelKeyBy),
+				windowSeconds: Schema.optional(Schema.Number),
+				include: Schema.optional(PathsInclude),
+				exclude: Schema.optional(Schema.Array(Schema.String)),
 				filters: Schema.optional(FunnelPopulationFilters),
 			}),
 		),

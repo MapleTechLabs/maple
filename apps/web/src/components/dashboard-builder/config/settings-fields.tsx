@@ -718,12 +718,30 @@ function FunnelStepPercent() {
 	)
 }
 
+/** Bars, or the step-by-step drop-off view with timing and leavers. */
+function FunnelVariant() {
+	const { state, set } = useSettings()
+	return (
+		<Field label="View">
+			<Segments
+				value={state.funnel.variant}
+				onSelect={(variant) => set({ funnel: { ...state.funnel, variant } })}
+				options={[
+					{ value: "bars", label: "Bars" },
+					{ value: "dropoff", label: "Drop-off" },
+				]}
+			/>
+		</Field>
+	)
+}
+
 /**
  * The rail's field vocabulary. A panel type's `ConfigPanel` composes these; none
  * of them takes the widget state as a prop.
  */
 export const WidgetSettings = {
 	FunnelStepPercent,
+	FunnelVariant,
 	Divider,
 	Name,
 	Description,
