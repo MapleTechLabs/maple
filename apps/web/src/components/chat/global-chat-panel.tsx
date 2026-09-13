@@ -3,7 +3,9 @@ import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Sheet, SheetDescription, SheetHeader, SheetPopup, SheetTitle } from "@maple/ui/components/ui/sheet"
-import { ExternalLinkIcon, PlusIcon } from "@/components/icons"
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { MapleMark } from "@maple/ui/components/icons/maple-mark"
+import { MaximizeIcon } from "@/components/icons"
 import { ensureStoredTab, useChatTabs } from "@/hooks/use-chat-tabs"
 import { QUICK_CHAT_TAB_ID } from "./global-chat-constants"
 
@@ -40,36 +42,54 @@ export function GlobalChatPanel({
 			<SheetPopup
 				side="right"
 				className="w-[calc(100%-(--spacing(12)))] sm:max-w-2xl"
-				closeProps={{ className: "absolute end-3 top-5 z-10" }}
+				closeProps={{ className: "absolute end-2 top-1.5 z-10" }}
 			>
-				<SheetHeader className="gap-3 border-b pb-4">
-					<div className="min-w-0 space-y-1 pe-8">
-						<SheetTitle className="truncate text-base">Maple AI</SheetTitle>
-						<SheetDescription>
-							Ask about your services, traces, errors, and alerts.
-						</SheetDescription>
-					</div>
-					<div className="flex flex-wrap items-center gap-1">
-						<Button size="sm" variant="ghost" onClick={handleCreate}>
-							<PlusIcon className="size-3.5" />
-							New chat
-						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							onClick={() => {
-								ensureStoredTab(
-									orgId,
-									tabId,
-									tabId === QUICK_CHAT_TAB_ID ? "Quick chat" : "New Chat",
-								)
-								onOpenChange(false)
-							}}
-							render={<Link to="/chat" search={{ tab: tabId }} />}
-						>
-							Open full page
-							<ExternalLinkIcon className="size-3.5" />
-						</Button>
+				<SheetHeader className="h-11 flex-row items-center gap-1 border-b px-3 py-0 pe-11">
+					<SheetTitle className="flex min-w-0 items-center gap-2 text-sm">
+						<MapleMark aria-hidden size={16} className="shrink-0 text-primary" />
+						<span className="truncate">
+							Maple{" "}
+							<span className="shimmer shimmer-color-primary shimmer-duration-3200 shimmer-spread-[2ch]">
+								AI
+							</span>
+						</span>
+					</SheetTitle>
+					<SheetDescription className="sr-only">
+						Ask about your services, traces, errors, and alerts.
+					</SheetDescription>
+					<div className="ms-auto flex items-center gap-1.5">
+						<Tooltip>
+							<TooltipTrigger
+								render={<Button size="sm" variant="outline" onClick={handleCreate} />}
+							>
+								New chat
+							</TooltipTrigger>
+							<TooltipPopup side="bottom">Start a new conversation</TooltipPopup>
+						</Tooltip>
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										size="icon-sm"
+										variant="ghost"
+										aria-label="Open full page"
+										onClick={() => {
+											ensureStoredTab(
+												orgId,
+												tabId,
+												tabId === QUICK_CHAT_TAB_ID ? "Quick chat" : "New Chat",
+											)
+											onOpenChange(false)
+										}}
+										render={<Link to="/chat" search={{ tab: tabId }} />}
+									/>
+								}
+							>
+								<MaximizeIcon className="size-4" />
+							</TooltipTrigger>
+							<TooltipPopup side="bottom">Open this chat in the full page view</TooltipPopup>
+						</Tooltip>
+						<div aria-hidden className="ms-0.5 h-4 w-px bg-border" />
 					</div>
 				</SheetHeader>
 				<div className="flex min-h-0 flex-1 flex-col">

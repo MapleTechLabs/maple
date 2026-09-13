@@ -3,7 +3,8 @@
  * CompareNav — the in-page rail under the site nav.
  *
  * A comparison page is nine screens long and a visitor arrives with one
- * question: price, or migration, or "what am I giving up". Four anchors,
+ * question: price, or migration, or "what am I giving up". Four anchors (five
+ * where the page carries the Surfaces section),
  * sticky under the 4rem site nav, on a solid ground (no blur — the live
  * frames' rule applies to chrome too). The active anchor is set by an
  * IntersectionObserver so the rail doubles as a progress indicator; without
@@ -13,12 +14,15 @@ import * as m from "../../paraglide/messages.js";
 
 interface Props {
 	competitorName: string;
+	/** Whether the page carries the optional Surfaces section. */
+	surfaces?: boolean;
 }
 
-const { competitorName } = Astro.props;
+const { competitorName, surfaces = false } = Astro.props;
 
 const items = [
 	{ href: "#differences", label: m.cmp_nav_differences() },
+	...(surfaces ? [{ href: "#surfaces", label: m.cmp_nav_surfaces() }] : []),
 	{ href: "#price", label: m.cmp_nav_price() },
 	{ href: "#migration", label: m.cmp_nav_migration() },
 	{ href: "#faq", label: m.cmp_nav_faq() },

@@ -1,30 +1,38 @@
 import { formatNumber } from "@maple/ui/lib/format"
+import { CircleWarningIcon } from "@/components/icons"
+import {
+	INLINE_CARD_META,
+	INLINE_CARD_ROW,
+	InlineMetric,
+	InlineServiceChips,
+	inlineCardClass,
+} from "./inline-card"
 import type { InlineErrorData } from "./types"
 
+/**
+ * An error fingerprint. Not a link: the model reports the *message*, and Maple's
+ * error pages are keyed by fingerprint, so there is nowhere honest to navigate to.
+ */
 export function InlineError({ data }: { data: InlineErrorData }) {
+	const services = data.affectedServices ?? []
 	return (
-		<div className="my-1 flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-[11px]">
-			<span className="min-w-0 truncate text-severity-error" title={data.errorType}>
-				{data.errorType.length > 80 ? `${data.errorType.slice(0, 80)}...` : data.errorType}
-			</span>
-			<span className="shrink-0 rounded bg-severity-error/10 px-1.5 py-0.5 font-mono text-[10px] text-severity-error">
-				{formatNumber(data.count)}
-			</span>
-			{data.affectedServices && data.affectedServices.length > 0 && (
-				<div className="ml-auto flex shrink-0 gap-1">
-					{data.affectedServices.slice(0, 3).map((svc) => (
-						<span
-							key={svc}
-							className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground"
-						>
-							{svc}
-						</span>
-					))}
-					{data.affectedServices.length > 3 && (
-						<span className="text-[10px] text-muted-foreground">
-							+{data.affectedServices.length - 3}
-						</span>
-					)}
+		<div className={inlineCardClass()}>
+			<div className={INLINE_CARD_ROW}>
+				<CircleWarningIcon className="size-3.5 shrink-0 text-severity-error" />
+				{/* Truncation is the browser's job. Cutting the string at 80 characters put an
+				    ellipsis mid-word regardless of how much room the card actually had. */}
+				<span className="min-w-0 flex-1 truncate text-xs text-foreground" title={data.errorType}>
+					{data.errorType}
+				</span>
+				{data.count != null && (
+					<InlineMetric width="min-w-12" unit="events" tone="text-severity-error">
+						{formatNumber(data.count)}
+					</InlineMetric>
+				)}
+			</div>
+			{services.length > 0 && (
+				<div className={INLINE_CARD_META}>
+					<InlineServiceChips services={services} />
 				</div>
 			)}
 		</div>

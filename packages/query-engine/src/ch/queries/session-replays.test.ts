@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	getSessionReplayQuery,
 	sessionReplaysFacetsQuery,
@@ -216,11 +216,11 @@ describe("sessionReplaysFacetsQuery userId filter", () => {
 		const q = sessionReplaysFacetsQuery({ userId: "user_123" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
 		// Branches: service / browser / country / device / group / error count /
-		// duration histogram / p50 / p95 — userId is applied to all of them (never
-		// excluded, unlike each branch's own dimension), so the distribution
-		// reflects the selected user rather than the whole org.
+		// duration histogram / p50 / p95 / total / live — userId is applied to all
+		// of them (never excluded, unlike each branch's own dimension), so the
+		// distribution reflects the selected user rather than the whole org.
 		const occurrences = sql.split("UserId = 'user_123'").length - 1
-		expect(occurrences).toBe(9)
+		expect(occurrences).toBe(11)
 	})
 
 	it("omits the UserId predicate when absent", () => {
@@ -278,8 +278,8 @@ describe("session replay identity columns", () => {
 		const q = sessionReplaysFacetsQuery({ groupName: "Acme Inc" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
 		expect(sql).toContain("GroupName AS name")
-		// 9 branches, minus the group branch itself.
-		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(8)
+		// 11 branches, minus the group branch itself.
+		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(10)
 	})
 
 	it("never offers an empty group as a facet option", () => {
@@ -508,5 +508,96 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 	it("never reads session_events — active time has no distribution branch", () => {
 		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
 		expect(sql).not.toContain("session_events")
+	})
+})
+
+// Live-ness, keyset paging and visitor scoping
+//
+// The read side used to trust `Status` on its own. It cannot: the SDK writes
+// `"ended"` from an unload handler, so a tab that is killed, crashes or is put
+// to sleep leaves the row saying `"active"` for the rest of its retention.
+// Measured in production that made 69 of 70 LIVE badges wrong, and left the
+// same sessions with a NULL `DurationMs` forever.
+
+describe("sessionReplaysListQuery live-ness columns", () => {
+	it("selects LastActivityAt on every branch that returns list rows", () => {
+		const branches = [{}, { durationMinMs: 1_000 }, { activeTimeMinMs: 1_000 }, { eventType: "error" }]
+		for (const opts of branches) {
+			const { sql } = compileUnsafe(sessionReplaysListQuery(opts), { ...baseParams, ...WINDOW })
+			expect(sql, JSON.stringify(opts)).toContain("AS lastActivityAt")
+		}
+	})
+
+	it("finalizes it through argMax like every other ReplacingMergeTree column", () => {
+		const { sql } = compileUnsafe(sessionReplaysListQuery({}), { ...baseParams, ...WINDOW })
+		expect(sql).toContain("argMax(LastActivityAt, Version) AS lastActivityAt")
+	})
+})
+
+describe("sessionReplaysListQuery keyset cursor", () => {
+	it("walks (StartTime, SessionId) so a tie can't swallow a page boundary", () => {
+		const { sql } = compileUnsafe(
+			sessionReplaysListQuery({
+				cursor: { startTime: "2026-09-01 12:00:00", sessionId: "sess_9" },
+			}),
+			{ ...baseParams, ...WINDOW },
+		)
+		expect(sql).toContain("StartTime < '2026-09-01 12:00:00'")
+		expect(sql).toContain("SessionId < 'sess_9'")
+		// The tie-break is a disjunction, not a second AND: rows at the boundary
+		// timestamp with a lower id still belong to the next page.
+		expect(sql).toContain("OR")
+	})
+
+	it("falls back to the bare timestamp comparison without a session id", () => {
+		const { sql } = compileUnsafe(
+			sessionReplaysListQuery({ cursor: { startTime: "2026-09-01 12:00:00" } }),
+			{ ...baseParams, ...WINDOW },
+		)
+		expect(sql).toContain("StartTime < '2026-09-01 12:00:00'")
+		expect(sql).not.toContain("SessionId <")
+	})
+
+	it("filters before the GROUP BY, not after it", () => {
+		const { sql } = compileUnsafe(
+			sessionReplaysListQuery({
+				cursor: { startTime: "2026-09-01 12:00:00", sessionId: "sess_9" },
+			}),
+			{ ...baseParams, ...WINDOW },
+		)
+		expect(sql.indexOf("StartTime < '2026-09-01 12:00:00'")).toBeLessThan(sql.indexOf("GROUP BY"))
+	})
+})
+
+describe("sessionReplaysFacetsQuery header counts", () => {
+	it("emits a window total and a live count", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
+		expect(sql).toContain("'total' AS facetType")
+		expect(sql).toContain("'live' AS facetType")
+	})
+
+	it("counts live on activity recency, not on Status alone", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
+		// Same shape as the analytics live badge: coalesce to StartTime so a
+		// session whose only row is the v1 start row is judged on when it began.
+		expect(sql).toContain("coalesce(LastActivityAt, StartTime)")
+		expect(sql).toContain("INTERVAL 300 SECOND")
+		expect(sql).toContain("Status = 'active'")
+	})
+
+	it("scopes every branch to the selected visitor", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({ visitorId: "vis_abc" }), {
+			...baseParams,
+			...WINDOW,
+		})
+		// VisitorId has no facet branch of its own, so like userId it narrows all
+		// eleven. Left out, the sidebar and header described the whole org while
+		// the list beside them showed one browser.
+		expect(sql.split("VisitorId = 'vis_abc'").length - 1).toBe(11)
+	})
+
+	it("omits the visitor predicate when absent", () => {
+		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("VisitorId =")
 	})
 })

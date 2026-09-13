@@ -8,7 +8,7 @@ network, and wall-clock dependencies. A host supplies observations and durable
 state, calls the pure decision functions, then applies the returned transition
 and delivery intent through its own adapters.
 
-Current hosted adapters live in `apps/api` and are scheduled by
+Current hosted adapters live in `packages/backend` and are scheduled by
 `apps/alerting`. A Maple Local adapter can use the same core with chDB-backed
 queries, Local durable state, an in-process scheduler, and its own outbound URL
 policy without importing either hosted application.

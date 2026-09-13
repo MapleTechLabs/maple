@@ -11,7 +11,6 @@ import {
 	DockerIcon,
 	KubernetesIcon,
 	LayersIcon,
-	MagnifierCheckIcon,
 	NetworkNodesIcon,
 	PlanetScaleIcon,
 	PlayRotateClockwiseIcon,
@@ -272,7 +271,9 @@ export function navGroups(flags?: OrganizationFeatureFlags): NavGroup[] {
 			id: "triage",
 			label: "Triage",
 			items: [
-				{ title: "Investigations", href: "/investigations", icon: MagnifierCheckIcon },
+				// Investigations is not ready for users yet — the row stays out of the sidebar
+				// (and out of the palette, which derives from these groups) until it ships.
+				// { title: "Investigations", href: "/investigations", icon: MagnifierCheckIcon },
 				{ title: "Errors", href: "/errors", icon: CircleWarningIcon },
 				{ title: "Alerts", href: "/alerts", icon: BellIcon },
 			],

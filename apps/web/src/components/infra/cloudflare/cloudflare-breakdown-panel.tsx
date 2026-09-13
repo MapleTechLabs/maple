@@ -24,6 +24,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type {
 	CloudflareBreakdownDimension,
 	CloudflareBreakdownTotal,
@@ -118,11 +119,11 @@ const CHIP_CLASS =
 	"inline-flex items-center rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
 
 /** ISO-8601 UTC → "Jul 28". */
-const formatCollectedFrom = (iso: string) => {
+const formatCollectedFrom = (iso: string, timeZone: string) => {
 	const date = new Date(iso)
 	return Number.isNaN(date.getTime())
 		? null
-		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
+		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })
 }
 
 export function CloudflareBreakdownPanel({
@@ -425,6 +426,7 @@ function StoredBreakdown({
 }) {
 	// Deferred so a keystroke paints the input immediately and the 100-row re-render trails it.
 	const query = useDeferredValue(search).trim().toLowerCase()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	return Result.builder(result)
 		.onInitial(() => (
@@ -443,7 +445,7 @@ function StoredBreakdown({
 			const collectedFrom =
 				data.coverageStart != null &&
 				warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
-					? formatCollectedFrom(data.coverageStart)
+					? formatCollectedFrom(data.coverageStart, effectiveTimezone)
 					: null
 			const notCollected = data.coverageStart == null && data.totals.length === 0
 			const matches =

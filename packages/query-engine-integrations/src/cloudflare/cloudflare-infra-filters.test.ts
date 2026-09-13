@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { cloudflareZoneCacheTimeseriesSQL } from "./cloudflare-infra"
 import { cloudflareZoneBreakdownTotalsSQL } from "./cloudflare-infra-breakdowns"
 import { cloudflareZoneFirewallTopSQL } from "./cloudflare-infra-extended"

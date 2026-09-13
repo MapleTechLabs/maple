@@ -4,14 +4,20 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, UserId } from "@maple/domain/http"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } from "@/platform/test-pglite"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { AuditLogService } from "@/services/audit/AuditLogService"
+import { Env } from "@maple/backend/platform/Env"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,

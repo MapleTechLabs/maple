@@ -2,29 +2,11 @@ import { Match, pipe } from "effect"
 
 import { toEpochMs } from "./time-format"
 
-/**
- * Format a duration in milliseconds to a human-readable string.
- * - < 1ms: microseconds (μs)
- * - < 1s: milliseconds (ms)
- * - < 60s: seconds (s)
- * - < 1h: minutes (min)
- * - >= 1h: hours (h)
- */
-export function formatDuration(ms: number): string {
-	if (ms < 1) {
-		return `${(ms * 1000).toFixed(0)}μs`
-	}
-	if (ms < 1000) {
-		return `${ms.toFixed(1)}ms`
-	}
-	if (ms < 60_000) {
-		return `${(ms / 1000).toFixed(2)}s`
-	}
-	if (ms < 3_600_000) {
-		return `${(ms / 60_000).toFixed(1)}min`
-	}
-	return `${(ms / 3_600_000).toFixed(1)}h`
-}
+// Imported, not re-exported straight through: the formatters below CALL these,
+// and a bare `export … from` binds nothing in this module's scope.
+import { formatDuration, formatNumber } from "@maple/domain/format"
+
+export { formatDuration, formatNumber }
 
 /**
  * Format a duration for an axis tick, at a precision derived from the tick spacing.
@@ -53,39 +35,6 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 		return `${(ms / 1000).toFixed(Math.min(3, decimalsFor(step / 1000)))}s`
 	}
 	return `${(ms / 60_000).toFixed(Math.min(2, decimalsFor(step / 60_000)))}min`
-}
-
-/**
- * Format a number with compact notation.
- * - |n| >= 1T: displays as e.g. "1.2T"
- * - |n| >= 1B: displays as e.g. "2.5B"
- * - |n| >= 1M: displays as e.g. "1.2M"
- * - |n| >= 1K: displays as e.g. "3.4K"
- * - 0 < |n| < 1: 3 significant digits (e.g. "0.08", "0.0267") — axis ticks for
- *   rates/ratios must not collapse to "0" or trail "0.026666…"
- * - otherwise: locale formatting
- *
- * Compacts negatives too (`-1500` → `"-1.5K"`), which matters for the delta
- * columns on comparison tables.
- */
-export function formatNumber(num: number): string {
-	const abs = Math.abs(num)
-	if (abs >= 1_000_000_000_000) {
-		return `${(num / 1_000_000_000_000).toFixed(1)}T`
-	}
-	if (abs >= 1_000_000_000) {
-		return `${(num / 1_000_000_000).toFixed(1)}B`
-	}
-	if (abs >= 1_000_000) {
-		return `${(num / 1_000_000).toFixed(1)}M`
-	}
-	if (abs >= 1_000) {
-		return `${(num / 1_000).toFixed(1)}K`
-	}
-	if (abs > 0 && abs < 1) {
-		return num.toLocaleString(undefined, { maximumSignificantDigits: 3 })
-	}
-	return num.toLocaleString()
 }
 
 // Two byte formatters, not one with a `base` option: the choice between them is
@@ -248,7 +197,7 @@ export function inferRangeMs(data: ReadonlyArray<Record<string, unknown>>): numb
  */
 export function formatBucketLabel(
 	value: unknown,
-	context: { rangeMs: number; bucketSeconds: number | undefined },
+	context: { rangeMs: number; bucketSeconds: number | undefined; timeZone?: string },
 	mode: "tick" | "tooltip",
 ): string {
 	if (typeof value !== "string") return ""
@@ -260,11 +209,15 @@ export function formatBucketLabel(
 
 	const includeDate = context.rangeMs >= 24 * 60 * 60 * 1000 || (context.bucketSeconds ?? 0) >= 24 * 60 * 60
 	const includeSeconds = context.rangeMs <= 30 * 60 * 1000 && !includeDate
+	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
+	// the browser's otherwise.
+	const timeZone = context.timeZone
 
 	if (mode === "tooltip") {
 		// The tooltip header always carries the full date — ticks stay terse, but a
 		// hovered point should never make the reader work out which day it was.
 		return date.toLocaleString(undefined, {
+			timeZone,
 			year: "numeric",
 			month: "short",
 			day: "numeric",
@@ -276,18 +229,22 @@ export function formatBucketLabel(
 
 	if (includeDate) {
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
-			return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+			return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
 		}
-		return date.toLocaleString(undefined, {
-			month: "short",
-			day: "numeric",
-			hour: "2-digit",
-			minute: "2-digit",
-		})
+		return date
+			.toLocaleString(undefined, {
+				timeZone,
+				month: "short",
+				day: "numeric",
+				hour: "2-digit",
+				minute: "2-digit",
+			})
+			.replace(/ 24:/, " 00:")
 	}
 
 	return date
 		.toLocaleTimeString(undefined, {
+			timeZone,
 			hour: "2-digit",
 			minute: "2-digit",
 			second: includeSeconds ? "2-digit" : undefined,

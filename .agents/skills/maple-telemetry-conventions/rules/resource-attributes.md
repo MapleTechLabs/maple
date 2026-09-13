@@ -51,7 +51,7 @@ Source: `apps/ingest/src/main.rs:526-538`
 
 The value comes from the first env var that resolves, in this order:
 
-1. `MAPLE_ENVIRONMENT` — set by alchemy via `resolveDeploymentEnvironment(stage)` (`apps/api/alchemy.run.ts` and friends)
+1. `MAPLE_ENVIRONMENT` — set by alchemy via `resolveDeploymentEnvironment(stage)` (`selfObservabilityEnv` in `packages/infra/src/env.ts`)
 2. `RAILWAY_ENVIRONMENT_NAME` — Railway's free runtime label
 3. `DEPLOYMENT_ENV` — manual override of last resort
 4. Default: `"development"`

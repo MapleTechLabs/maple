@@ -24,7 +24,7 @@
  * wedged), and a queue referenced by a Worker's producer BINDING cannot be
  * deleted either (error 11005 — run 30407693847). Each preview api worker
  * both binds and consumes its stage's `maple-vcs-sync-pr-<n>` /
- * `maple-planetscale-webhooks-pr-<n>` queues (apps/api/alchemy.run.ts), so
+ * `maple-planetscale-webhooks-pr-<n>` queues (apps/api/src/resources/queues.ts), so
  * the sweep breaks the cycle in three passes:
  *   1. detach the consumer registrations of closed-PR queues,
  *   2. delete the workers (their producer bindings die with them),
@@ -32,7 +32,7 @@
  *
  * Deletion is double-gated like the sibling sweeps: the queue/worker name must
  * match `maple-<base>-pr-<digits>` exactly, where <base> may not contain
- * `-dev-` (prd `maple-api`, stg `maple-api-stg` can never match; a dev stage
+ * `-dev-` (prd `maple-api` can never match; a dev stage
  * named "pr-3" would produce `maple-api-dev-pr-3`, hence the -dev- exclusion),
  * AND the GitHub API must affirmatively report that PR closed — unknown/open →
  * keep. Worker deletes use ?force=true because preview workers service-bind

@@ -191,7 +191,7 @@ export const chRedactChain = (expr: string, redactions: Redactions): string =>
  * Apply a redaction list in TypeScript. The replacement is passed as a function
  * so JS never reinterprets `$&` and friends — ClickHouse would not.
  */
-const applyRedactions = (value: string, redactions: Redactions): string =>
+export const applyRedactions = (value: string, redactions: Redactions): string =>
 	redactions.reduce(
 		(acc, [pattern, replacement]) => acc.replace(new RegExp(pattern, "g"), () => replacement),
 		value,
@@ -284,6 +284,7 @@ function messageSignature(statusMessage: string): string {
 	)
 }
 
+/** `statusMessage` is the MV's resolved `_msgText`, including attribute fallback. */
 export function computeFingerprintInputs(args: {
 	readonly exceptionType: string
 	readonly exceptionStacktrace: string

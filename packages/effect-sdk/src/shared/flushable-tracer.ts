@@ -275,15 +275,19 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 				? `HTTP ${serverError} (${method} ${path})`
 				: `HTTP ${serverError}`
 		otelStatus = { code: StatusCode.Error, message }
-		events.push({
-			name: "exception",
-			timeUnixNano: String(status.endTime),
-			droppedAttributesCount: 0,
-			attributes: [
-				{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: "HttpServerErrorResponse" } },
-				{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: message } },
-			],
-		})
+		// Only when nothing named the failure itself — relabelling a recorded exception would
+		// collapse every such 5xx into one anonymous bucket in error tracking.
+		if (!events.some((event) => event.name === "exception")) {
+			events.push({
+				name: "exception",
+				timeUnixNano: String(status.endTime),
+				droppedAttributesCount: 0,
+				attributes: [
+					{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: "HttpServerErrorResponse" } },
+					{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: message } },
+				],
+			})
+		}
 	} else if (status.exit._tag === "Success") {
 		otelStatus = constOtelStatusSuccess
 	} else if (Cause.hasInterruptsOnly(status.exit.cause)) {

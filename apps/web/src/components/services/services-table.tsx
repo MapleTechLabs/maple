@@ -18,6 +18,7 @@ import {
 	useServiceHealthSummary,
 } from "@/components/services/use-service-health-summary"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
@@ -25,6 +26,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { formatErrorRate } from "@maple/ui/lib/format"
 import {
 	CommitShaHoverCard,
@@ -337,8 +339,9 @@ function ResolvedCommitMessages({ shasKey, children }: { shasKey: string; childr
  */
 function ResolvedDeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
 	const messages = React.useContext(CommitMessagesContext)
+	const { effectiveTimezone } = useTimezonePreference()
 	const shortSha = truncateCommitSha(sha)
-	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen) : ""
+	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen, undefined, effectiveTimezone) : ""
 	const message = messages.get(sha) ?? ""
 	return (
 		<>
@@ -351,10 +354,11 @@ function ResolvedDeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
 }
 
 function DeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	if (isResolvableSha(sha)) {
 		return <ResolvedDeployLines sha={sha} firstSeen={firstSeen} stateLine={stateLine} />
 	}
-	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen) : ""
+	const age = firstSeen !== "" ? formatRelativeTimeOrDate(firstSeen, undefined, effectiveTimezone) : ""
 	return (
 		<>
 			<CommitShaHoverCard sha={sha} className="min-w-0 max-w-full truncate text-xs text-foreground">
@@ -366,13 +370,17 @@ function DeployLines({ sha, firstSeen, stateLine }: DeployLinesProps) {
 }
 
 const DeployCell = React.memo(function DeployCell({ commits }: { commits: CommitBreakdown[] }) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const info = deriveDeployInfo(commits)
 	if (info === undefined) {
 		return <span className="text-xs text-muted-foreground">N/A</span>
 	}
 	const stateLine = info.errorsSince ? (
 		<span className="truncate text-[10px] text-severity-error">
-			{info.firstSeen !== "" ? `${formatRelativeTimeOrDate(info.firstSeen)} · ` : ""}errors ↑ since
+			{info.firstSeen !== ""
+				? `${formatRelativeTimeOrDate(info.firstSeen, undefined, effectiveTimezone)} · `
+				: ""}
+			errors ↑ since
 		</span>
 	) : info.rollout !== undefined ? (
 		<Tooltip>
@@ -573,6 +581,28 @@ interface ServicesTableProps {
 	filters?: ServicesSearchParams
 }
 
+/**
+ * The search params that can empty the table by themselves. Time range is NOT one of them: an empty
+ * window is what `SignalEmptyState`'s quiet-window branch exists to explain, and clearing it here
+ * would throw away the range the user chose.
+ */
+const SERVICE_FILTER_KEYS = [
+	"environments",
+	"namespaces",
+	"commitShas",
+	"excludedEnvironments",
+	"excludedNamespaces",
+	"excludedCommitShas",
+	"health",
+] as const satisfies ReadonlyArray<keyof ServicesSearchParams>
+
+const hasActiveServiceFilters = (filters: ServicesSearchParams | undefined): boolean =>
+	filters !== undefined &&
+	SERVICE_FILTER_KEYS.some((key) => {
+		const value = filters[key]
+		return Array.isArray(value) ? value.length > 0 : value !== undefined
+	})
+
 const SERVICES_SKELETON_COLUMNS = [
 	{ header: "Service", skeleton: "w-32" },
 	{ header: "P50", headClassName: "w-[6%]", skeleton: "w-12" },
@@ -648,6 +678,22 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 			},
 		}),
 	)
+
+	const filtersActive = hasActiveServiceFilters(filters)
+	const clearServiceFilters = () => {
+		navigate({
+			to: "/services",
+			// Rebuilt from the typed search rather than spreading `prev`: `prev` is the union of every
+			// route's params, so its `groupBy` widens to `string` and no longer satisfies this route.
+			// Time range and grouping are carried over deliberately — neither is a filter.
+			search: {
+				startTime: filters?.startTime,
+				endTime: filters?.endTime,
+				timePreset: filters?.timePreset,
+				groupBy: filters?.groupBy,
+			},
+		})
+	}
 
 	const healthFilter = filters?.health
 	// Kept in the blocking Result.all below so the health lane never flashes
@@ -798,8 +844,15 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 								<TableBody>
 									{services.length === 0 ? (
 										<TableRow>
-											<TableCell colSpan={7} className="h-24 text-center">
-												No services found
+											<TableCell colSpan={7} className="p-0">
+												<SignalEmptyState
+													signal="traces"
+													noun="services"
+													filtered={filtersActive}
+													onClearFilters={
+														filtersActive ? clearServiceFilters : undefined
+													}
+												/>
 											</TableCell>
 										</TableRow>
 									) : (
@@ -861,9 +914,12 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 				    match the desktop table; metrics collapse to a tight mono line. */}
 						<div className="overflow-hidden rounded-md border md:hidden">
 							{services.length === 0 ? (
-								<div className="p-6 text-center text-sm text-muted-foreground">
-									No services found
-								</div>
+								<SignalEmptyState
+									signal="traces"
+									noun="services"
+									filtered={filtersActive}
+									onClearFilters={filtersActive ? clearServiceFilters : undefined}
+								/>
 							) : (
 								groups.map(([namespace, envGroups]) => (
 									<div key={namespace}>

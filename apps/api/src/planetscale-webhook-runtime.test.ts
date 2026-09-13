@@ -3,14 +3,14 @@ import type { MessageBatch } from "@cloudflare/workers-types"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import { Effect, Layer, Schema } from "effect"
-import { Database, DatabaseError } from "@/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@/platform/test-pglite"
+import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { processPlanetScaleWebhookBatch } from "./planetscale-webhook-runtime"
 import {
 	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
 	type PlanetScaleWebhookPayload,
-} from "./services/integrations/planetscale/webhook-events"
-import type { PlanetScaleWebhookJob } from "./services/integrations/planetscale/PlanetScaleWebhookQueue"
+} from "@maple/backend/services/integrations/planetscale/webhook-events"
+import type { PlanetScaleWebhookJob } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 
 const projectPlanetScaleWebhookEvent = (...args: Parameters<typeof projectPlanetScaleWebhookEventResult>) =>
 	Result.getOrThrow(projectPlanetScaleWebhookEventResult(...args))

@@ -12,6 +12,7 @@ import { ServiceMapView } from "@/components/service-map/service-map-view"
 import type { DeclutterFocus } from "@/components/service-map/service-map-declutter"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { QueryErrorState } from "@/components/common/query-error-state"
@@ -38,6 +39,7 @@ const serviceMapSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/service-map")({
 	component: ServiceMapPage,
 	validateSearch: Schema.toStandardSchemaV1(serviceMapSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 function ServiceMapPage() {

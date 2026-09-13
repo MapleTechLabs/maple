@@ -236,6 +236,41 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 		}),
 	)
 
+	it.effect("keeps an exception the handler recorded itself instead of relabelling it", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			// A service that names the failure where it renders the response: the
+			// generic type would collapse every such 5xx into one bucket.
+			yield* Effect.currentSpan.pipe(
+				Effect.flatMap((span) =>
+					Effect.sync(() =>
+						span.event("exception", 1n, {
+							"exception.type": "WarehouseQueryError",
+							"exception.message": "Memory limit exceeded",
+						}),
+					),
+				),
+				Effect.andThen(
+					Effect.annotateCurrentSpan({
+						"http.request.method": "GET",
+						"url.path": "/api/sync/shape",
+						"http.response.status_code": 500,
+					}),
+				),
+				Effect.withSpan("http.server GET", { kind: "server" }),
+				Effect.provide(buffer.tracerLayer),
+			)
+			const [span] = buffer.drain()
+			assert.strictEqual(span!.status.code, 2 /* Error */)
+			const exceptions = span!.events.filter((event) => event.name === "exception")
+			assert.strictEqual(exceptions.length, 1)
+			assert.deepStrictEqual(
+				exceptions[0]!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+				{ stringValue: "WarehouseQueryError" },
+			)
+		}),
+	)
+
 	it.effect("leaves a 4xx server span Ok", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer()

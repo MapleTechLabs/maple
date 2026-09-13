@@ -1,13 +1,13 @@
 // ClickHouse Query DSL — Maple facade
 //
 // The generic, reusable query builder now lives in the standalone
-// @maple-dev/clickhouse-builder package. This module re-exports that public API
+// @maple-dev/effect-clickhouse package. This module re-exports that public API
 // and layers Maple's OpenTelemetry-specific table definitions, the named-query
 // ("pipe") registry, and the pre-built query templates on top of it.
 
 // Generic DSL — types, table, expressions, functions, params, query builder,
 // compilation, and unions — re-exported from the standalone library.
-export * from "@maple-dev/clickhouse-builder"
+export * from "@maple-dev/effect-clickhouse"
 
 // Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
 // is any string, with one that pins Maple's closed `RawSqlReason` union — the
@@ -191,9 +191,14 @@ export {
 	productEventNamesRowSchema,
 	productEventsForTraceQuery,
 	productEventTraceSamplesQuery,
+	productEventsFunnelTimingQuery,
+	productEventsFunnelTimingRowSchema,
+	productEventsFunnelLeaversQuery,
+	productEventsFunnelLeaversRowSchema,
 	ProductEventsFunnelError,
 	FUNNEL_MAX_STEPS,
 	FUNNEL_BREAKDOWN_MAX_GROUPS,
+	FUNNEL_LEAVERS_PER_STEP,
 	type FunnelStep,
 	type FunnelKeyBy,
 	type FunnelSessionDimension,
@@ -208,7 +213,44 @@ export {
 	type ProductEventsFunnelBreakdownOutput,
 	type ProductEventNamesOpts,
 	type ProductEventNamesOutput,
+	type ProductEventsFunnelTimingOutput,
+	type ProductEventsFunnelLeaversOutput,
 } from "./queries/product-events"
+
+// Queries — Product events (paths after / before an anchor)
+export {
+	productEventsPathsQuery,
+	productEventsPathsRowSchema,
+	PATHS_MAX_DEPTH,
+	PATHS_MAX_BRANCHES,
+	PATHS_OTHER,
+	type PathsAnchor,
+	type PathsDirection,
+	type PathsInclude,
+	type ProductEventsPathsOpts,
+	type ProductEventsPathsOutput,
+} from "./queries/product-events-paths"
+
+// Queries — Product events as a query-builder source (timeseries / breakdown / list)
+export {
+	productEventsTimeseriesQuery,
+	productEventsBreakdownQuery,
+	productEventsListQuery,
+	productEventAttributeKeysQuery,
+	productEventAttributeValuesQuery,
+	type ProductEventsQueryOpts,
+	type ProductEventsGroupByKey,
+	type ProductEventsTimeseriesOpts,
+	type ProductEventsTimeseriesOutput,
+	type ProductEventsBreakdownOpts,
+	type ProductEventsBreakdownOutput,
+	type ProductEventsListOpts,
+	type ProductEventsListOutput,
+	type ProductEventAttributeKeysOpts,
+	type ProductEventAttributeKeysOutput,
+	type ProductEventAttributeValuesOpts,
+	type ProductEventAttributeValuesOutput,
+} from "./queries/product-events-explore"
 
 // Queries — Services
 export {
@@ -469,6 +511,13 @@ export {
 	type ServiceLivenessOutput,
 	type TelemetryPulseOutput,
 } from "./queries/liveness"
+
+// Queries — Signal presence (what the org has ever sent, per signal; drives every empty state)
+export {
+	signalPresenceQuery,
+	type SignalPresenceOutput,
+	type TelemetrySignal,
+} from "./queries/signal-presence"
 
 // Queries — Top Operations (per-service operation ranking by metric)
 export {

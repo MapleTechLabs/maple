@@ -2,8 +2,8 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, isoTimestamp } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 
 /**
  * The widget credential's ceilings, all of them the server's.

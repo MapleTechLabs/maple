@@ -2,7 +2,7 @@ import { Effect, Metric } from "effect"
 import { onCLS, onINP, onLCP, type Metric as WebVitalMetric } from "web-vitals"
 
 import { isLabPath } from "@/lab/registry"
-import { runtime } from "./services/common/runtime"
+import { mapleRuntime } from "./registry"
 
 /**
  * Production RUM for the dashboard itself. Emits Core Web Vitals and a periodic
@@ -37,7 +37,7 @@ function readHeap(): MemoryInfo | undefined {
 }
 
 function logRow(message: string, attributes: Record<string, string | number | boolean>): void {
-	runtime.runFork(Effect.logInfo(message).pipe(Effect.annotateLogs(attributes)))
+	mapleRuntime.runFork(Effect.logInfo(message).pipe(Effect.annotateLogs(attributes)))
 }
 
 const clsMetric = Metric.histogram("web.vitals.cls", {
@@ -71,7 +71,7 @@ const heapUsedMetric = Metric.gauge("web.performance.js_heap_used_bytes")
 
 function reportVital(metric: WebVitalMetric): void {
 	const valueMetric = metric.name === "CLS" ? clsMetric : metric.name === "INP" ? inpMetric : lcpMetric
-	runtime.runFork(
+	mapleRuntime.runFork(
 		Effect.all([
 			Metric.update(valueMetric, metric.value),
 			Metric.update(vitalRatings, `${metric.name.toLowerCase()}:${metric.rating}`),
@@ -112,7 +112,7 @@ export function initPerfVitals(): void {
 	const emitSummary = () => {
 		if (longFrames === 0) return
 		const heap = readHeap()
-		runtime.runFork(
+		mapleRuntime.runFork(
 			Effect.all([
 				Metric.update(longFramesMetric, longFrames),
 				Metric.update(totalBlockingMetric, totalBlockingMs),

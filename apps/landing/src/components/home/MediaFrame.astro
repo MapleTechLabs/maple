@@ -26,6 +26,13 @@ interface Props {
 	height?: number;
 	loading?: "eager" | "lazy";
 	class?: string;
+	/**
+	 * Opens the shot full-size in the shared lightbox on click. On by default
+	 * for images: a product screenshot scaled into a page column is usually too
+	 * small to read, and the replay data says people click it expecting exactly
+	 * this. Videos opt out — they carry their own controls.
+	 */
+	zoomable?: boolean;
 }
 
 const {
@@ -38,6 +45,7 @@ const {
 	height = 600,
 	loading = "lazy",
 	class: className = "",
+	zoomable = true,
 } = Astro.props;
 
 const ratio = `${width} / ${height}`;
@@ -73,6 +81,7 @@ const hasAsset = Boolean(src ?? (isVideo ? poster : undefined));
 					height={height}
 					loading={loading}
 					decoding="async"
+					data-zoomable={zoomable ? "" : undefined}
 					class="block w-full h-auto"
 				/>
 			)}

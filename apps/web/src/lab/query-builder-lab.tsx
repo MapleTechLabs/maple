@@ -162,6 +162,11 @@ const GROUP_BY_OPTIONS: Record<DataSource, Array<{ label: string; value: string 
 		{ label: "service.name", value: "service.name" },
 		{ label: "none", value: "none" },
 	],
+	product_events: [
+		{ label: "event.name", value: "event.name" },
+		{ label: "page.path", value: "page.path" },
+		{ label: "none", value: "none" },
+	],
 } satisfies Record<DataSource, Array<{ label: string; value: string }>>
 
 function GroupByAutocomplete({

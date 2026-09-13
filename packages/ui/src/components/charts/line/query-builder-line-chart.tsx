@@ -6,7 +6,6 @@ import {
 	Timeseries,
 	asFiniteNumber,
 	cursorTooltip,
-	dashedGridY,
 	findFirstPartialIndex,
 	focusCrosshair,
 	focusDot,
@@ -94,7 +93,6 @@ export function QueryBuilderLineChart({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				// `labelX` anchors the label at the last bucket; without it
 				// `thresholdRules` draws the rule and omits the text, which is how a
 				// widget that names a threshold "SLO" ended up with an anonymous

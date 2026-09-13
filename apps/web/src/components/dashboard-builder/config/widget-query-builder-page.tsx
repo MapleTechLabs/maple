@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
 import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
 import { FunnelQueryPanel } from "@/components/dashboard-builder/config/funnel-query-panel"
+import { PathsQueryPanel } from "@/components/dashboard-builder/config/paths-query-panel"
 import { MarkdownEditorPanel } from "@/components/dashboard-builder/config/markdown-editor-panel"
 import { FormulaPanel } from "@/components/dashboard-builder/config/formula-panel"
 import { WidgetSettingsBar } from "@/components/dashboard-builder/config/widget-settings-bar"
@@ -45,7 +46,7 @@ import {
 	inferDefaultUnitForQueries,
 } from "@/lib/query-builder/widget-builder-utils"
 import { isProductEventsFunnel } from "@/lib/query-builder/widget-builder-shared"
-import { emptyEventStep } from "@/components/funnels/definition"
+import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
 export interface WidgetQueryBuilderPageHandle {
@@ -154,6 +155,7 @@ export function WidgetQueryBuilderPage({
 			removeFormula,
 			updateFormula,
 			updateFunnel,
+			updatePaths,
 			runPreview,
 		},
 		meta: { validationError, seriesFieldOptions },
@@ -172,7 +174,10 @@ export function WidgetQueryBuilderPage({
 	} = useDashboardTimeRange()
 
 	const initialMode: SourceMode = dataSourceRawSql(widget.dataSource) !== null ? "rawSql" : "builder"
-	const [mode, setMode] = React.useState<SourceMode>(initialMode)
+	const [chosenMode, setMode] = React.useState<SourceMode>(initialMode)
+	// A paths widget has no SQL rendering and hides the source toggle, so a
+	// raw-SQL widget switched to Paths would otherwise be stuck building SQL.
+	const mode: SourceMode = state.visualization === "paths" ? "builder" : chosenMode
 	const initialModeRef = React.useRef<SourceMode>(initialMode)
 
 	// The preview pane's width drives its auto bucket exactly as a canvas tile's
@@ -233,6 +238,13 @@ export function WidgetQueryBuilderPage({
 			legendPosition: state.legendPosition,
 			seriesStatsEnabled: state.seriesStatsEnabled,
 			pointsMode: state.pointsMode,
+			// The funnel's View (bars / drop-off) and step labels are presentation
+			// too; its steps stay staged, since they are the query.
+			funnel: {
+				...stagedState.funnel,
+				variant: state.funnel.variant,
+				showStepPercent: state.funnel.showStepPercent,
+			},
 		}
 		return {
 			...widget,
@@ -364,33 +376,23 @@ export function WidgetQueryBuilderPage({
 				)
 				const nextUnit = inferDefaultUnitForQueries(queries)
 
-				return {
+				// On a funnel, "Product events" on query A means the step editor.
+				return reconcileFunnelSource({
 					...current,
 					queries,
 					unit: nextUnit ?? current.unit,
-				}
+				})
 			})
 		},
 		[setState],
 	)
 
-	// A funnel's one panel offers "Product events" beside the three query
-	// sources. Choosing it swaps the query panels for the funnel panel; choosing
-	// a query source from the funnel panel brings the query set back, retargeted
-	// to that source.
-	const isFunnel = state.visualization === "funnel"
+	// A funnel on Product events shows the step editor instead of the query
+	// panels; choosing another source from it brings the query set back,
+	// retargeted to that source.
 	const showFunnelPanel = isProductEventsFunnel(state)
 	const handleFunnelSourceChange = React.useCallback(
-		(source: QueryBuilderDataSource | "product_events") => {
-			if (source === "product_events") {
-				updateFunnel((current) => ({
-					...current,
-					source: "product_events",
-					// Open on a step to fill in rather than an empty list.
-					steps: current.steps.length > 0 ? current.steps : [emptyEventStep()],
-				}))
-				return
-			}
+		(source: Exclude<QueryBuilderDataSource, "product_events">) => {
 			updateFunnel((current) => ({ ...current, source: "query_set" }))
 			const first = state.queries[0]
 			if (first) handleDataSourceChange(first.id, source)
@@ -410,7 +412,9 @@ export function WidgetQueryBuilderPage({
 	// has a RawSqlDisplayType, so raw SQL isn't a sensible target for either.
 	const isList = state.visualization === "list"
 	const isMarkdown = state.visualization === "markdown"
-	const showSourceToggle = !isList && !isMarkdown
+	// Paths read product events only; neither a query set nor raw SQL applies.
+	const isPaths = state.visualization === "paths"
+	const showSourceToggle = !isList && !isMarkdown && !isPaths
 
 	return (
 		<div className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-1 min-h-0 -m-4">
@@ -502,6 +506,20 @@ export function WidgetQueryBuilderPage({
 										</Button>
 									</div>
 								</>
+							) : isPaths ? (
+								<>
+									<PathsQueryPanel
+										paths={state.paths}
+										onUpdate={updatePaths}
+										suggestionWindow={suggestionWindow}
+									/>
+									<div className="flex items-center gap-3">
+										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
+											Run Preview
+										</Button>
+										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+									</div>
+								</>
 							) : showFunnelPanel ? (
 								<>
 									<FunnelQueryPanel
@@ -542,10 +560,6 @@ export function WidgetQueryBuilderPage({
 												onDataSourceChange={(ds) =>
 													handleDataSourceChange(query.id, ds)
 												}
-												extraSourceOptions={
-													isFunnel && index === 0 ? ["product_events"] : undefined
-												}
-												onExtraSourceChange={handleFunnelSourceChange}
 												autoIntervalLabel={autoIntervalLabel}
 											/>
 										))}

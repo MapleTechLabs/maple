@@ -12,8 +12,8 @@
 // Scoping to a branch is what makes the chart mean anything.
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, fromQuery, param } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, fromQuery, param } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge } from "@maple/query-engine/ch/tables"
 import {
 	CONNECTION_METRIC_NAMES,

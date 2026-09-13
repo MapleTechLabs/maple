@@ -11,9 +11,9 @@ import {
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { auditDiff, redactAuditUrl } from "@/routes/v2/audit-changes"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
-import { requireAdmin } from "@/services/auth/auth"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 
 // Every write is admin-gated: a scrape target stores credentials and makes
 // Maple's infrastructure fetch an operator-chosen URL, so `probe` (which sends

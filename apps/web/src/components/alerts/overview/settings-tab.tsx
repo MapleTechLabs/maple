@@ -24,6 +24,7 @@ import {
 } from "@/lib/alerts/form-utils"
 import { publicError } from "@/lib/error-messages"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -214,7 +215,8 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 	const deliveryEvents = Result.builder(deliveryEventsResult)
 		.onSuccess((response) => response.data.map(v2DeliveryToDocument))
 		.orElse(() => [])
-	const deliveryEventGroups = groupDeliveryEventsByDay(deliveryEvents)
+	const { effectiveTimezone } = useTimezonePreference()
+	const deliveryEventGroups = groupDeliveryEventsByDay(deliveryEvents, effectiveTimezone)
 
 	return (
 		<>
@@ -425,10 +427,10 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 																render={<span />}
 																className="cursor-default text-muted-foreground tabular-nums"
 															>
-																{formatAlertTime(event.scheduledAt)}
+																{formatAlertTime(event.scheduledAt, effectiveTimezone)}
 															</TooltipTrigger>
 															<TooltipContent>
-																{formatAlertDateTime(event.scheduledAt)}
+																{formatAlertDateTime(event.scheduledAt, effectiveTimezone)}
 															</TooltipContent>
 														</Tooltip>
 													</TableCell>

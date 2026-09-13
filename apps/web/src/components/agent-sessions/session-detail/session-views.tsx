@@ -13,13 +13,14 @@ import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
+import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
+
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
-import type { SessionSummary } from "@/lib/agent-sessions/session-summary"
-import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
+import type { SessionLoadProgress } from "@/hooks/use-session-spans"
+import { sessionToolResults, type SessionSummary, type SessionTurn } from "@maple/agent-sessions"
 import { SessionFlow } from "./session-flow"
 import { SessionOverview } from "./session-overview"
 import { toggled } from "./payload-view"
-import { sessionToolResults } from "@/lib/agent-sessions/span-detail"
 import { SessionTranscript } from "./session-transcript"
 import { SessionWaterfall } from "./session-waterfall"
 import type { SpanDetailTab } from "./span-expansion"
@@ -53,22 +54,36 @@ export function SessionViews({
 	onViewChange,
 	turns,
 	summary,
-	truncated,
+	progress,
+	totals,
 	selectedSpanId,
 	onSelectSpan,
+	initialQuery,
 }: {
 	view: SessionView
 	onViewChange: (view: SessionView) => void
 	turns: readonly SessionTurn[]
 	summary: SessionSummary
-	/** The response dropped the END of the session — the transcript says so. */
-	truncated: boolean
+	/**
+	 * How far a session larger than one page has loaded — present from the
+	 * first page of such a session on, `complete` once the whole session is in
+	 * hand. Absent for a session that fit one page.
+	 */
+	progress: SessionLoadProgress | undefined
+	/** The whole session's totals, for the progress of a session still loading. */
+	totals: GetAiSessionSummaryResponse | undefined
 	/** The span open in the inspection popover, in whichever view (`?span=`). */
 	selectedSpanId: string | undefined
 	/** Raised with a span id to open it, `undefined` to close. */
 	onSelectSpan: (spanId: string | undefined) => void
+	/**
+	 * What the span filter starts on — a tool name carried in by `?tool=` from
+	 * the tools page. A seed, not a controlled value: the filter belongs to the
+	 * reader from the first keystroke, and clearing it must not fight the URL.
+	 */
+	initialQuery?: string
 }) {
-	const [query, setQuery] = useState("")
+	const [query, setQuery] = useState(initialQuery ?? "")
 	const [agentSpansOnly, setAgentSpansOnly] = useState(true)
 	const [collapseIdle, setCollapseIdle] = useState(true)
 	const [mergeRepeats, setMergeRepeats] = useState(false)
@@ -93,24 +108,15 @@ export function SessionViews({
 	// reader lands at the top of six hundred of them. Component state rather
 	// than the URL: it is where the reader was just sent, not a place to link to.
 	const [revealedSpanId, setRevealedSpanId] = useState<string | undefined>(undefined)
-	// The same door, one level up: a cell of the Overview's session shape is a
-	// whole turn, so what the reader is sent to is the turn's header row rather
-	// than any one span inside it.
-	const [revealedTurnId, setRevealedTurnId] = useState<string | undefined>(undefined)
-
 	// Opening the panel on any span — or picking another view by hand — is the
 	// reader moving on, and the mark comes off the row they were sent to.
-	const clearRevealed = () => {
-		setRevealedSpanId(undefined)
-		setRevealedTurnId(undefined)
-	}
+	const clearRevealed = () => setRevealedSpanId(undefined)
 	// Stable, like the two toggles below: the transcript's rows are memoized
 	// on their props, and a callback minted per render would re-render every
 	// mounted block on every scroll.
 	const selectSpan = useCallback(
 		(spanId: string | undefined) => {
 			setRevealedSpanId(undefined)
-			setRevealedTurnId(undefined)
 			onSelectSpan(spanId)
 		},
 		[onSelectSpan],
@@ -129,26 +135,6 @@ export function SessionViews({
 	const openInTraceView = () => {
 		clearRevealed()
 		setRevealedSpanId(selectedSpanId)
-		onSelectSpan(undefined)
-		onViewChange("trace")
-	}
-
-	/** A session-shape cell: cross to Traces and land on that turn, expanded —
-	 *  a turn folded shut would put the reader on a header with nothing under it. */
-	const openTurnInTraceView = (turnId: string) => {
-		clearRevealed()
-		// The Overview never showed the filter box, so a query left behind by an
-		// earlier visit to Traces is invisible from where this click was made —
-		// and one that matches nothing in this turn would drop the very row the
-		// reader was sent to. Crossing from a view with no filter clears it.
-		setQuery("")
-		setRevealedTurnId(turnId)
-		setCollapsedTurns((previous) => {
-			if (!previous.has(turnId)) return previous
-			const next = new Set(previous)
-			next.delete(turnId)
-			return next
-		})
 		onSelectSpan(undefined)
 		onViewChange("trace")
 	}
@@ -293,13 +279,14 @@ export function SessionViews({
 					<SessionOverview
 						turns={turns}
 						summary={summary}
+						progress={progress}
+						totals={totals}
 						selectedSpanId={selectedSpanId}
 						onSelectSpan={selectSpan}
 						spanTab={spanTab}
 						onSpanTabChange={setSpanTab}
 						toolResults={toolResults}
 						onOpenTraceView={openInTraceView}
-						onOpenTurnInTraceView={openTurnInTraceView}
 					/>
 				)}
 			</TabsContent>
@@ -315,7 +302,6 @@ export function SessionViews({
 						onToggleTurn={toggleTurn}
 						selectedSpanId={selectedSpanId}
 						revealedSpanId={revealedSpanId}
-						revealedTurnId={revealedTurnId}
 						onSelectSpan={selectSpan}
 						spanTab={spanTab}
 						onSpanTabChange={setSpanTab}
@@ -349,7 +335,7 @@ export function SessionViews({
 						query={query}
 						showThinking={showThinking}
 						showPayloads={showPayloads}
-						truncated={truncated}
+						progress={progress}
 						collapsedTurns={collapsedTurns}
 						onToggleTurn={toggleTurn}
 						openRows={openRows}

@@ -9,8 +9,8 @@
 // metric emit literal 0 for those columns, so the response schema and the UI
 // table stay generic.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { MetricsSum } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 import {

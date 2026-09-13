@@ -106,6 +106,14 @@ export const optionalPlain = (key: string, fallback?: string): Config.Config<Pla
 export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
 	trimmedOption(key).pipe(Config.map((value) => entry(key, Option.map(value, Redacted.make))))
 
+/** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
+export const plainFrom = (keys: ReadonlyArray<string>, fallback: string): Config.Config<string> =>
+	Config.all(keys.map(trimmedOption)).pipe(
+		Config.map((values: ReadonlyArray<Option.Option<string>>) =>
+			Option.getOrElse(Option.firstSomeOf(values), () => fallback),
+		),
+	)
+
 /**
  * Optional value with a default that a BLANK env var also falls back to.
  *
@@ -232,11 +240,17 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
  * - `scraper` — runs in production but is not part of this stack (see the
  *   dev-only note in `alchemy.run.ts`), so it sits on its own revision.
  * - `maple-landing`, `maple-ios` — deployed, but stamp no revision.
- * - api's background service names (`maple-vcs-sync`, `maple-investigations`,
- *   …) — the same Worker as `maple-api`, so they add no signal.
+ * - api's background service names (`maple-vcs-sync`, …) — the same Worker as
+ *   `maple-api`, so they add no signal. `maple-investigations` is no longer one
+ *   of them: the fan-out runs on `maple-ai` now, which is listed in its own
+ *   right below.
  */
 export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"alerting",
+	// The agent surfaces. Added when maple-ai first deployed to prd; the alert
+	// rule's SQL, which lives in the production database rather than this repo,
+	// has to list it too or a skewed maple-ai goes unnoticed.
+	"maple-ai",
 	"electric-sync",
 	"ingest",
 	"maple-api",
@@ -264,7 +278,7 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_PLANETSCALE_API_BASE_URL"),
 )
 
-/** Apple push (iOS app) — token auth; see `apps/api/src/platform/Apns.ts`. */
+/** Apple push (iOS app) — token auth; see `packages/backend/src/platform/Apns.ts`. */
 export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),

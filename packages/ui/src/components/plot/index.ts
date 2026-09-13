@@ -104,7 +104,7 @@ export {
 } from "./plot-legend"
 
 // Marks and paint helpers that are not a chart's subject: grid, focus, fills.
-export { dashedGridY, type DashedGridYOptions } from "./plot-grid"
+export { DASHED_Y_GRID } from "./plot-grid"
 export { focusCrosshair, focusDot } from "./plot-focus"
 export { roundCapDasharray, useChartId, verticalGradient } from "./plot-paint"
 export {
@@ -113,6 +113,9 @@ export {
 	type PlotThreshold,
 	type ThresholdRulesOptions,
 } from "./threshold-rules"
+
+// The zone plots print their clock in.
+export { PlotTimeZoneProvider, usePlotTimeZone } from "./time-zone-context"
 
 // Scales and domains.
 export {
@@ -125,6 +128,7 @@ export {
 	logYScale,
 	minBarLength,
 	niceLinearDomain,
+	zonedTimeScale,
 	type DomainThreshold,
 	type LinearYDomainOptions,
 } from "./plot-scales"

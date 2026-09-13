@@ -1,0 +1,19 @@
+# Roman hero
+
+Current asset: `maple-rome-balanced.webp`. Generated with built-in GPT Image Gen. The original finer version remains at `maple-rome.webp`; the rejected coarse variant remains at `maple-rome-dither.webp`.
+
+Reference: https://x.com/i/status/2097207950389764518
+
+## Generation prompt
+
+### Balanced revision (current)
+
+Create a restrained middle ground between these two versions of the SAME image. Image 1 is too smooth/fine, image 2 is MUCH too coarse and chunky. Preserve the exact Roman temple, aqueduct, composition, crop, empty charcoal sky, and Maple amber #E8872A / charcoal #1A1714 palette. Use medium-fine ordered dithering: small 2px pixel clusters at 1536px image width, mostly in shadow transitions, columns' side faces, bridge piers and rocky midtones. Keep the building outlines, pediment carvings and column capitals crisp and detailed like image 1. No large checkerboard blocks, no chunky broken silhouettes, no big solid orange patches. Dither should be clearly detectable on close inspection and subtly textured at website size, not dominate the architecture. Aim for 65 percent image 1 finesse and 35 percent image 2 pixel treatment. Do not alter objects, geometry, framing or colors. No text.
+
+### Coarse-dither revision
+
+Edit only the rendering texture of this image, preserve exactly its Roman temple, aqueduct, terrain, camera, crop, empty left-side sky and composition. The current engraving is much too fine and smooth. Transform it into unmistakable COARSE 1-BIT ORDERED BAYER DITHER PIXEL ART: use a visible square pixel grid, roughly 4x4 to 6x6 pixel clusters at this 1536px width. All midtones must be regular checkerboard/stair-step clusters of ONLY Maple amber #E8872A and charcoal #1A1714. Strong pixelated breakup across columns, pediment, bridge piers, arches, rocks and foliage. Big repeated ordered-dither patterns should remain clearly visible when this image is displayed at 800px wide. Remove fine etched hatch lines, photographic texture and smooth tonal shading. Preserve recognizable architectural silhouettes and structures, using stepped pixel contours. Retro 1980s two-color computer bitmap, not an engraving, not noise or film grain, no smooth gradients, no antialiasing. Leave empty sky solid charcoal. Do not add text, borders, objects or other colors. Make the dither transformation substantial and obvious.
+
+### Original composition
+
+Use case: stylized-concept. Create a new landing page hero illustration. Reference image 1 is an architectural inspiration board ONLY: borrow classical Roman temples, monumental arches, stone bridges over ravines, etched antique landscape details. Do not copy its layout, branding or text. Reference image 2 is the existing Maple hero: preserve its amber-on-charcoal dither style and right-heavy composition, but completely replace the modern block towers with a Rome-inspired scene. Show an imposing ancient Roman temple with Corinthian columns and carved triangular pediment on a rocky hill on the right, a sweeping multi-arched stone aqueduct bridge across the foreground, distant ruins and slender cypress trees. A sophisticated Piranesi-inspired architectural engraving translated into crisp ordered pixel dithering and stipple. Monumental architectural scale, dramatic three-quarter view. STRICT two-color print palette: Maple amber #E8872A lines and lit stone, warm charcoal #1A1714 background and shadows. No cream, white, blue or other colors. Left 40 percent predominantly empty flat charcoal for HTML title and buttons, temple occupies right half, small distant details at lower edge only. The entire temple pediment must fit within frame, with generous dark sky above so responsive crops retain the roof. Broad 3:2 landscape. No text, typography, labels, logos, watermarks or borders. Deliver artwork only, not website mockup.

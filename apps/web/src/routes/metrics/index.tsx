@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MetricsBrowse, type MetricsBrowsePatch } from "@/components/metrics/metrics-browse"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import {
@@ -28,6 +29,7 @@ export type MetricsSearchParams = Schema.Schema.Type<typeof metricsSearchSchema>
 export const Route = createFileRoute("/metrics/")({
 	component: MetricsPage,
 	validateSearch: Schema.toStandardSchemaV1(metricsSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricsPage() {

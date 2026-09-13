@@ -18,6 +18,9 @@ import schemaV16Sql from "./schema/local-schema-v16.sql" with { type: "text" }
 import schemaV17Sql from "./schema/local-schema-v17.sql" with { type: "text" }
 import schemaV18Sql from "./schema/local-schema-v18.sql" with { type: "text" }
 import schemaV19Sql from "./schema/local-schema-v19.sql" with { type: "text" }
+import schemaV20Sql from "./schema/local-schema-v20.sql" with { type: "text" }
+import schemaV21Sql from "./schema/local-schema-v21.sql" with { type: "text" }
+import schemaV22Sql from "./schema/local-schema-v22.sql" with { type: "text" }
 import { schemaDigest as digestSchema, schemaFingerprint as fingerprintSchema } from "./store-version"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LOCAL_SCHEMA_VERSION } from "./local-schema-version"
@@ -81,6 +84,9 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV17Sql,
 	schemaV18Sql,
 	schemaV19Sql,
+	schemaV20Sql,
+	schemaV21Sql,
+	schemaV22Sql,
 ]
 
 export interface LocalSchemaSnapshot {
@@ -143,6 +149,12 @@ export const LOCAL_SCHEMA_V18_SQL = snapshotAt(18).sql
 export const LOCAL_SCHEMA_V18_MANIFEST = snapshotAt(18).manifest
 export const LOCAL_SCHEMA_V19_SQL = snapshotAt(19).sql
 export const LOCAL_SCHEMA_V19_MANIFEST = snapshotAt(19).manifest
+export const LOCAL_SCHEMA_V20_SQL = snapshotAt(20).sql
+export const LOCAL_SCHEMA_V20_MANIFEST = snapshotAt(20).manifest
+export const LOCAL_SCHEMA_V21_SQL = snapshotAt(21).sql
+export const LOCAL_SCHEMA_V21_MANIFEST = snapshotAt(21).manifest
+export const LOCAL_SCHEMA_V22_SQL = snapshotAt(22).sql
+export const LOCAL_SCHEMA_V22_MANIFEST = snapshotAt(22).manifest
 
 export interface LocalSchemaIdentity {
 	readonly version: number
@@ -192,6 +204,9 @@ export const LOCAL_SCHEMA_V16 = identityAt(16)
 export const LOCAL_SCHEMA_V17 = identityAt(17)
 export const LOCAL_SCHEMA_V18 = identityAt(18)
 export const LOCAL_SCHEMA_V19 = identityAt(19)
+export const LOCAL_SCHEMA_V20 = identityAt(20)
+export const LOCAL_SCHEMA_V21 = identityAt(21)
+export const LOCAL_SCHEMA_V22 = identityAt(22)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

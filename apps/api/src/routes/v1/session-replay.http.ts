@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { CH } from "@maple/query-engine"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const decodeSessionId = Schema.decodeSync(SessionId)
 const decodeTraceId = Schema.decodeSync(TraceId)
@@ -39,7 +39,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							visitorId: payload.visitorId,
 							hasErrors: payload.hasErrors,
 							search: payload.search,
-							cursor: payload.cursor,
+							cursor:
+								payload.cursor === undefined
+									? undefined
+									: { startTime: payload.cursor, sessionId: payload.cursorSessionId },
 							durationMinMs: payload.durationMinMs,
 							durationMaxMs: payload.durationMaxMs,
 							activeTimeMinMs: payload.activeTimeMinMs,

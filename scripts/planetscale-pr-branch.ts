@@ -398,8 +398,8 @@ const fetchPrState = async (prNumber: string): Promise<"open" | "closed" | "unkn
 
 /**
  * Delete every `pr-<n>` branch whose PR is closed. Only branches matching the
- * exact `pr-<digits>` shape are considered — `main`, `stg`, and anything else
- * are never candidates. Branches whose PR state cannot be determined are
+ * exact `pr-<digits>` shape are considered — `main` and anything else are
+ * never candidates. Branches whose PR state cannot be determined are
  * skipped (deleting on uncertainty risks tearing down a live preview).
  */
 const sweepOrphanBranches = async (database: string): Promise<void> => {

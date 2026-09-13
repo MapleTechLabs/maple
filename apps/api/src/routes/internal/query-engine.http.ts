@@ -79,6 +79,9 @@ import {
 	WebAnalyticsBreakdownsResponse,
 	ProductEventsFunnelResponse,
 	ProductEventsFunnelBreakdownResponse,
+	ProductEventsFunnelTimingResponse,
+	ProductEventsFunnelLeaversResponse,
+	ProductEventsPathsResponse,
 	ProductEventNamesResponse,
 	ProductEventsForTraceResponse,
 	ProductEventTraceSamplesResponse,
@@ -90,22 +93,24 @@ import {
 	TraceId,
 	SpanId,
 } from "@maple/domain/http"
-import { WEB_ANALYTICS_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { Clock, Effect, Match, Option, Schema } from "effect"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { isMissingProductEvents, isMissingServiceOperationsRollup } from "@/services/warehouse/missing-table"
-import { makeDirectRouteCachePolicy, makeExecuteRawSql } from "@maple/query-engine/runtime"
-import { describeFailure, recordRawSqlAudit } from "@/services/audit/audit-access"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { traceCacheTtlSeconds } from "@/services/warehouse/trace-detail-cache"
+import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { Clock, Effect, Option, Schema } from "effect"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import {
+	isMissingProductEvents,
+	isMissingServiceOperationsRollup,
+} from "@maple/backend/services/warehouse/missing-table"
+import { makeExecuteRawSql } from "@maple/query-engine/runtime"
+import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import {
 	CH,
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
-	parseWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
 } from "@maple/query-engine"
-import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
+
 import {
 	containerMetricSpec,
 	hostMetricSpec,
@@ -114,14 +119,19 @@ import {
 	podMetricSpec,
 	toCloudflareFilters,
 	validateFunnelDefinition,
+	validatePathsDefinition,
 	workloadMetricSpec,
-} from "@/routes/query-helpers"
+} from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
-import { productEventsFunnelOpts, type QueryDefinition } from "@maple/query-engine/registry"
-import { makeQueryRunners } from "@/routes/query-runner"
+import {
+	productEventsFunnelOpts,
+	productEventsPathsOpts,
+	type QueryDefinition,
+} from "@maple/query-engine/registry"
+import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
-import type { TenantContext } from "@/services/auth/AuthService"
+import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 // `warehouse.sqlQuery` fails with the warehouse error union (distinct tagged
@@ -1970,7 +1980,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: {
 								visitors: Number(row?.visitors) || 0,
 								sessions: Number(row?.sessions) || 0,
-								windowSeconds: WEB_ANALYTICS_LIVE_WINDOW_SECONDS,
+								windowSeconds: SESSION_LIVE_WINDOW_SECONDS,
 							},
 						})
 					}),
@@ -2131,6 +2141,49 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: rows.map((row) => ({
 								group: String(row.group),
 								step: Number(row.step) || 0,
+								count: Number(row.count) || 0,
+							})),
+						})
+					}),
+				)
+				.handle("productEventsFunnelTiming", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* validateFunnelDefinition(productEventsFunnelOpts(payload), "details")
+						const rows = yield* runQuery(Queries.productEventsFunnelTiming, tenant, payload)
+						return new ProductEventsFunnelTimingResponse({
+							data: rows.map((row) => ({
+								step: Number(row.step) || 0,
+								p50Ms: Number(row.p50Ms) || 0,
+								p90Ms: Number(row.p90Ms) || 0,
+							})),
+						})
+					}),
+				)
+				.handle("productEventsFunnelLeavers", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* validateFunnelDefinition(productEventsFunnelOpts(payload), "details")
+						const rows = yield* runQuery(Queries.productEventsFunnelLeavers, tenant, payload)
+						return new ProductEventsFunnelLeaversResponse({
+							data: rows.map((row) => ({
+								step: Number(row.step) || 0,
+								next: String(row.next),
+								count: Number(row.count) || 0,
+							})),
+						})
+					}),
+				)
+				.handle("productEventsPaths", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* validatePathsDefinition(productEventsPathsOpts(payload))
+						const rows = yield* runQuery(Queries.productEventsPaths, tenant, payload)
+						return new ProductEventsPathsResponse({
+							data: rows.map((row) => ({
+								hop: Number(row.hop) || 0,
+								fromNode: String(row.fromNode),
+								toNode: String(row.toNode),
 								count: Number(row.count) || 0,
 							})),
 						})

@@ -128,6 +128,48 @@ describe("runFlush", () => {
 		expect(peak).toBe(1)
 	})
 
+	vitestIt("coalesces queued calls but drains again for arrivals during export", async () => {
+		let release!: () => void
+		const gate = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		let calls = 0
+		const env = { id: "fixture" }
+		const run = makeSerializedFlush(
+			async (_env: typeof env) => {
+				calls++
+				if (calls === 1) await gate
+			},
+			{ coalesceSameArguments: true },
+		)
+		const first = run(env)
+		expect(run(env)).toBe(first)
+		await Promise.resolve()
+		const trailing = run(env)
+		expect(trailing).not.toBe(first)
+		expect(run(env)).toBe(trailing)
+		release()
+		await Promise.all([first, trailing])
+		expect(calls).toBe(2)
+	})
+
+	vitestIt("does not coalesce different arguments and recovers after a rejected drain", async () => {
+		const seen: number[] = []
+		const run = makeSerializedFlush(
+			async (value: number) => {
+				seen.push(value)
+				if (value === 1) throw new Error("fixture failure")
+			},
+			{ coalesceSameArguments: true },
+		)
+		const first = run(1)
+		const second = run(2)
+		await expect(first).rejects.toThrow("fixture failure")
+		await second
+		await run(3)
+		expect(seen).toEqual([1, 2, 3])
+	})
+
 	it.live("exports Effect metric snapshots as OTLP metrics", () =>
 		Effect.gen(function* () {
 			const spans = makeSpanBuffer()

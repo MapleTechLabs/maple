@@ -17,7 +17,17 @@ import type {
 } from "@/components/dashboard-builder/types"
 import type { LegendPosition } from "@/components/dashboard-builder/config/settings-fields"
 import { STAT_AGGREGATES, type StatAggregate } from "@maple/domain/http"
-import type { FunnelBreakdownBy, FunnelKeyBy, QueryComparisonMode } from "@maple/query-model"
+import {
+	DEFAULT_PATHS_BRANCHES,
+	DEFAULT_PATHS_DEPTH,
+	type FunnelBreakdownBy,
+	type FunnelKeyBy,
+	type FunnelVariant,
+	type PathsDirection,
+	type PathsInclude,
+	toQueryBuilderDataSource,
+	type QueryComparisonMode,
+} from "@maple/query-model"
 import type { FunnelStepDraft } from "@/lib/query-builder/funnel-filters"
 import { DEFAULT_FUNNEL_KEY_BY, DEFAULT_FUNNEL_WINDOW_SECONDS } from "@/components/funnels/definition"
 import type { HeatmapColorScale, HeatmapScaleType } from "@maple/domain/http"
@@ -98,6 +108,8 @@ export interface QueryBuilderWidgetState {
 	 * set draws a group-by breakdown as a funnel, exactly as before.
 	 */
 	funnel: FunnelWidgetDraft
+	/** Paths-specific: the anchor and the walk, edited as the widget's query panel. */
+	paths: PathsWidgetDraft
 }
 
 /** What a funnel widget's one query panel reads from. */
@@ -117,9 +129,43 @@ export interface FunnelWidgetDraft {
 	filterClause: string
 	/** `display.funnel.showStepPercent` — the chart's tri-state label mode. */
 	showStepPercent: boolean | undefined
+	/** `display.funnel.variant` — descending bars, or the drop-off view. */
+	variant: FunnelVariant
 	/** Which optional rows the panel shows, mirroring a query panel's add-on bar. */
 	addOns: Record<FunnelAddOnKey, boolean>
 }
+
+export type PathsAddOnKey = "keyBy" | "window" | "include" | "exclude"
+
+/** The paths widget's editor state for its `display.paths` definition block. */
+export interface PathsWidgetDraft {
+	/** The anchor as a step draft; never a session step. */
+	anchor: FunnelStepDraft
+	direction: PathsDirection
+	depth: number
+	branches: number
+	keyBy: FunnelKeyBy
+	windowSeconds: number
+	include: PathsInclude
+	/** Comma-separated names to drop before sequencing, as typed. */
+	excludeText: string
+	filterClause: string
+	addOns: Record<PathsAddOnKey, boolean>
+}
+
+/** A fresh paths draft: an empty event anchor, three steps forward, four branches. */
+export const DEFAULT_PATHS_DRAFT = (): PathsWidgetDraft => ({
+	anchor: { kind: "event", eventName: "" },
+	direction: "after",
+	depth: DEFAULT_PATHS_DEPTH,
+	branches: DEFAULT_PATHS_BRANCHES,
+	keyBy: DEFAULT_FUNNEL_KEY_BY,
+	windowSeconds: DEFAULT_FUNNEL_WINDOW_SECONDS,
+	include: "all",
+	excludeText: "",
+	filterClause: "",
+	addOns: { keyBy: false, window: false, include: false, exclude: false },
+})
 
 /** A fresh funnel draft: the query-set funnel, no steps, the /analytics defaults. */
 export const defaultFunnelDraft = (): FunnelWidgetDraft => ({
@@ -129,6 +175,7 @@ export const defaultFunnelDraft = (): FunnelWidgetDraft => ({
 	windowSeconds: DEFAULT_FUNNEL_WINDOW_SECONDS,
 	filterClause: "",
 	showStepPercent: undefined,
+	variant: "bars",
 	addOns: { keyBy: false, window: false, breakdown: false },
 })
 
@@ -178,7 +225,7 @@ export function inferDisplayUnitForQuery(query: QueryBuilderQueryDraft): ValueUn
 		return undefined
 	}
 
-	if (query.dataSource === "logs") {
+	if (query.dataSource === "logs" || query.dataSource === "product_events") {
 		return "number"
 	}
 
@@ -246,10 +293,7 @@ export function toStatAggregate(value: unknown): StatAggregate {
 
 function normalizeLoadedQuery(raw: QueryBuilderQueryDraft, index: number): QueryBuilderQueryDraft {
 	const base = createQueryDraft(index)
-	const source: QueryBuilderDataSource =
-		raw.dataSource === "traces" || raw.dataSource === "logs" || raw.dataSource === "metrics"
-			? raw.dataSource
-			: base.dataSource
+	const source: QueryBuilderDataSource = toQueryBuilderDataSource(raw.dataSource) ?? base.dataSource
 
 	const shared = {
 		id: raw.id || base.id,
@@ -285,7 +329,9 @@ function normalizeLoadedQuery(raw: QueryBuilderQueryDraft, index: number): Query
 			isMonotonic: metrics?.isMonotonic ?? metrics?.metricType === "sum",
 		}
 	}
-	return source === "logs" ? { ...shared, dataSource: "logs" } : { ...shared, dataSource: "traces" }
+	if (source === "logs") return { ...shared, dataSource: "logs" }
+	if (source === "product_events") return { ...shared, dataSource: "product_events" }
+	return { ...shared, dataSource: "traces" }
 }
 
 export function toSeriesFieldOptions(state: QueryBuilderWidgetState): string[] {
@@ -344,6 +390,14 @@ const TRACES_AGGREGATION_TITLES: Record<string, string> = {
 	apdex: "Apdex",
 } satisfies Record<string, string>
 
+const PRODUCT_EVENTS_AGGREGATION_TITLES = new Map<string, string>([
+	["count", "Count of events"],
+	["sessions", "Sessions with events"],
+	["persons", "Persons with events"],
+	["users", "Users with events"],
+	["visitors", "Visitors with events"],
+])
+
 /**
  * Human-readable fallback title derived from the first visible query, e.g.
  * "Error rate by service.name" or "Count of logs by severity" — so widgets
@@ -368,6 +422,9 @@ export function deriveDefaultWidgetTitle(queries: readonly QueryBuilderQueryDraf
 	}
 	if (query.dataSource === "logs") {
 		return `Count of logs${bySuffix}`
+	}
+	if (query.dataSource === "product_events") {
+		return `${PRODUCT_EVENTS_AGGREGATION_TITLES.get(query.aggregation) ?? query.aggregation}${bySuffix}`
 	}
 	const base = TRACES_AGGREGATION_TITLES[query.aggregation] ?? `${query.aggregation} of traces`
 	return `${base}${bySuffix}`

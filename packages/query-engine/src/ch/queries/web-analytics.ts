@@ -8,13 +8,13 @@
 // use `uniq[If](SessionId)`. Page views come from append-only navigation events.
 // WHERE clauses use only columns written identically to both session versions.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/clickhouse-builder"
-import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-clickhouse"
+import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { SessionReplays, SessionEvents, ProductEvents } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"
-import { WEB_ANALYTICS_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
+import { SESSION_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 
 /**
  * The page-view discriminator: `session_events.Type` on the raw path,
@@ -531,7 +531,7 @@ export function webAnalyticsSummaryQuery(
 // Live visitors
 
 export interface WebAnalyticsLiveOpts extends WebAnalyticsFilters {
-	/** Activity recency that counts as "now". Defaults to {@link WEB_ANALYTICS_LIVE_WINDOW_SECONDS}. */
+	/** Activity recency that counts as "now". Defaults to {@link SESSION_LIVE_WINDOW_SECONDS}. */
 	readonly windowSeconds?: number
 }
 
@@ -561,7 +561,7 @@ export interface WebAnalyticsLiveOutput {
 export function webAnalyticsLiveQuery(
 	opts: WebAnalyticsLiveOpts = {},
 ): CHQuery<any, WebAnalyticsLiveOutput, any> {
-	const windowSeconds = opts.windowSeconds ?? WEB_ANALYTICS_LIVE_WINDOW_SECONDS
+	const windowSeconds = opts.windowSeconds ?? SESSION_LIVE_WINDOW_SECONDS
 	return from(SessionReplays)
 		.select(($) => ({
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),

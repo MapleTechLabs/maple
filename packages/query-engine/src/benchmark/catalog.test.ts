@@ -30,6 +30,7 @@ import * as containerQueries from "../ch/queries/containers"
 import * as errorQueries from "../ch/queries/errors"
 import * as infraQueries from "../ch/queries/infra"
 import * as livenessQueries from "../ch/queries/liveness"
+import * as signalPresenceQueries from "../ch/queries/signal-presence"
 import * as logQueries from "../ch/queries/logs"
 import * as metricQueries from "../ch/queries/metrics"
 import * as serviceInfraQueries from "../ch/queries/service-infra"
@@ -43,6 +44,8 @@ import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
 import * as productEventQueries from "../ch/queries/product-events"
+import * as productEventPathQueries from "../ch/queries/product-events-paths"
+import * as productEventExploreQueries from "../ch/queries/product-events-explore"
 import * as topOperationQueries from "../ch/queries/top-operations"
 import * as traceQueries from "../ch/queries/traces"
 
@@ -270,12 +273,15 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"service-endpoints": serviceEndpointQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
+	"signal-presence": signalPresenceQueries,
 	releases: releaseQueries,
 	"session-events": sessionEventQueries,
 	"session-replays": sessionReplayQueries,
 	"top-operations": topOperationQueries,
 	"web-analytics": webAnalyticsQueries,
 	"product-events": productEventQueries,
+	"product-events-paths": productEventPathQueries,
+	"product-events-explore": productEventExploreQueries,
 	traces: traceQueries,
 } satisfies Record<string, Record<string, unknown>>
 

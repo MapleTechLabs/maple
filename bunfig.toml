@@ -1,7 +1,8 @@
 [install]
-# Don't resolve a version published less than 1 day ago — skips the window in
-# which most compromised npm releases are caught and unpublished. Only affects
-# new resolution; versions already pinned in bun.lock install as-is, so
-# `bun install --frozen-lockfile` in CI is unaffected.
-# Emergency override: bun install --minimum-release-age=0
-minimumReleaseAge = 86400
+# No release-age floor. The 1-day guard was skipping the window in which most
+# compromised npm releases are caught, but it also blocked every install that
+# resolves a fresh dependency — effect-agent publishes several betas a day, and
+# changing the workspace list re-resolves every range at once. Turned off
+# deliberately; the trade is that a new resolution can pick up a release nobody
+# has had time to catch yet.
+minimumReleaseAge = 0

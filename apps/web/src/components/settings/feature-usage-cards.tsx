@@ -1,7 +1,7 @@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 import {
 	featureUnit,
 	FEATURE_COLORS,

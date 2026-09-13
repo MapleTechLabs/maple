@@ -25,12 +25,19 @@ vi.stubGlobal("ResizeObserver", NoopObserver)
 vi.stubGlobal("IntersectionObserver", NoopObserver)
 
 /**
- * The status orb paints to a canvas, and jsdom's `getContext` is a stub that logs
- * "Not implemented" to stderr on every call. The component already treats a null
- * context as "don't animate", so returning null is the honest answer here — this
- * only silences the noise, it doesn't change what's asserted.
+ * jsdom ships no `matchMedia`, and the dot-matrix loaders ask it whether motion is welcome.
+ * Answering "no preference" is the branch that actually animates, which is the one under test.
  */
-HTMLCanvasElement.prototype.getContext = () => null
+vi.stubGlobal("matchMedia", (query: string) => ({
+	matches: false,
+	media: query,
+	onchange: null,
+	addEventListener: () => {},
+	removeEventListener: () => {},
+	addListener: () => {},
+	removeListener: () => {},
+	dispatchEvent: () => false,
+}))
 
 const message = (id: string, role: "user" | "assistant", text: string): UIMessage =>
 	({ id, role, parts: [{ type: "text", text }] }) as UIMessage
@@ -126,7 +133,7 @@ describe("ChatTranscript", () => {
 		expect(items().map((el) => (el as HTMLElement).dataset.messageId)).toEqual(["m1", "__status"])
 	})
 
-	describe("the status orb tracks what the agent is doing", () => {
+	describe("exactly one loader marks what the agent is doing", () => {
 		/** An assistant turn stopped mid-call on `toolName`. */
 		// SAFETY: this fixture constructs the in-progress tool variant consumed by ChatTranscript.
 		const runningTool = (id: string, toolName: string): UIMessage =>
@@ -143,31 +150,30 @@ describe("ChatTranscript", () => {
 				],
 			}) as unknown as UIMessage
 
-		/** Every animating orb on screen, by accessible name. There should never be more than one. */
-		const orbs = () =>
-			[...document.querySelectorAll("canvas")].map((c) => c.getAttribute("aria-label") ?? "")
+		/**
+		 * Every dot-matrix loader on screen. Which animation each one draws is random by design,
+		 * so what is asserted is placement and count — there should never be more than one.
+		 */
+		const loaders = () => document.querySelectorAll(".dmx-root")
 
 		const marker = () => document.querySelector('[data-slot="marker"]')
 
-		it.each([
-			["search_traces", "Searching…"],
-			["run_sql", "Solving…"],
-			["service_map", "Connecting…"],
-			// Unmapped tools fall back rather than needing registration in `toolOrbStates`.
-			["create_dashboard", "Working…"],
-		])("gives a running %s its own orb, and no second one", (toolName, expected) => {
-			render(
-				<ChatTranscript
-					{...baseProps}
-					isLoading
-					messages={[message("m1", "user", "hi"), runningTool("m2", toolName)]}
-				/>,
-			)
+		it.each([["search_traces"], ["run_sql"], ["service_map"], ["create_dashboard"]])(
+			"gives a running %s one loader, and no second one",
+			(toolName) => {
+				render(
+					<ChatTranscript
+						{...baseProps}
+						isLoading
+						messages={[message("m1", "user", "hi"), runningTool("m2", toolName)]}
+					/>,
+				)
 
-			// The tool row is the turn's live edge. A status marker here would repeat it verbatim.
-			expect(orbs()).toEqual([expected])
-			expect(marker()).toBeNull()
-		})
+				// The tool row is the turn's live edge. A status marker here would repeat it verbatim.
+				expect(loaders()).toHaveLength(1)
+				expect(marker()).toBeNull()
+			},
+		)
 
 		it("shows the thinking row only when no tool is in flight", () => {
 			render(
@@ -179,10 +185,10 @@ describe("ChatTranscript", () => {
 			)
 
 			expect(marker()?.textContent).toBe("Thinking…")
-			expect(orbs()).toEqual(["Thinking…"])
+			expect(loaders()).toHaveLength(1)
 		})
 
-		it("puts one orb in the group header, tracking the call actually in flight", () => {
+		it("puts one loader in the group header, next to the call actually in flight", () => {
 			// SAFETY: this fixture deliberately mixes settled and in-flight tool parts for the grouping test.
 			const burst = {
 				id: "m2",
@@ -199,17 +205,17 @@ describe("ChatTranscript", () => {
 			)
 
 			// Collapsed group: the header is the only live thing, and it reads as the running call.
-			expect(orbs()).toEqual(["Solving…"])
+			expect(loaders()).toHaveLength(1)
 			expect(marker()).toBeNull()
-			expect(screen.getByText("Run Sql")).toBeTruthy()
+			expect(screen.getByText("Running SQL")).toBeTruthy()
 			expect(screen.getByText("2/3")).toBeTruthy()
 		})
 
-		it("keeps a single orb when an expanded group has several calls in flight", () => {
+		it("keeps a single loader when an expanded group has several calls in flight", () => {
 			const parts = Array.from({ length: 12 }, (_, i) => ({
 				type: "tool-search_traces",
 				toolCallId: `c${i}`,
-				// Two still running: without the live/grouped split these would each add a canvas.
+				// Two still running: without the live/grouped split these would each add a loader.
 				state: i < 10 ? "output-available" : "input-available",
 				input: {},
 				output: i < 10 ? "{}" : undefined,
@@ -221,7 +227,7 @@ describe("ChatTranscript", () => {
 			)
 			fireEvent.click(screen.getAllByRole("button")[0]!)
 
-			expect(orbs()).toEqual(["Searching…"])
+			expect(loaders()).toHaveLength(1)
 		})
 
 		it("yields to streaming prose — the text is the progress signal at that point", () => {
@@ -298,7 +304,7 @@ describe("ChatTranscript", () => {
 	})
 
 	// An agent loop emits one message per round-trip; six of them used to read as six
-	// identical `Used 2 tools` cards stacked down the page.
+	// identical `List Services ×2` groups stacked down the page.
 	it("collapses a run of tool-only turns into a single tool group", () => {
 		// SAFETY: this fixture constructs the repeated tool-only message variant consumed by ChatTranscript.
 		const burst = (id: string): UIMessage =>
@@ -322,7 +328,10 @@ describe("ChatTranscript", () => {
 			/>,
 		)
 
-		expect(screen.getByText("Used 6 tools")).toBeTruthy()
+		// The header names the work rather than counting it: one tool, called six times.
+		const groupHeader = document.querySelector('[data-slot="tool-group"] button')
+		expect(groupHeader?.textContent).toContain("List Services")
+		expect(groupHeader?.textContent).toContain("×6")
 		expect(items()).toHaveLength(1)
 		// Nothing to copy, so no invisible hover-action row reserving height either.
 		expect(document.querySelectorAll('[data-slot="message-footer"]')).toHaveLength(0)
@@ -385,7 +394,7 @@ describe("ChatTranscript sub-agent cards", () => {
 					type: "task",
 					toolCallId: "t1",
 					agent: "explore",
-					description: "trace checkout latency",
+					prompt: "trace checkout latency",
 					status,
 					messages: [
 						{
@@ -398,28 +407,106 @@ describe("ChatTranscript sub-agent cards", () => {
 			],
 		}) as UIMessage
 
-	it("renders a collapsed card naming the sub-agent and what it was asked", () => {
+	it("renders a single line naming the sub-agent and what it was asked", () => {
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		expect(screen.getByText("explore")).toBeTruthy()
+		expect(screen.getByText("Explore")).toBeTruthy()
 		expect(screen.getByText("trace checkout latency")).toBeTruthy()
-		// Collapsed by default: the point of delegating is that the parent thread does not carry
-		// the sub-agent's search.
+		// The line is all the transcript spends on it: the point of delegating is that the parent
+		// thread does not carry the sub-agent's search.
 		expect(screen.queryByText("p99 is 4.2s in checkout-api.")).toBeNull()
 	})
 
-	it("expands to the sub-agent's own transcript on click", () => {
+	it("opens the sub-agent's own run in a sheet on click", () => {
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		fireEvent.click(screen.getByText("explore"))
+		fireEvent.click(screen.getByText("Explore"))
 		expect(screen.getByText("p99 is 4.2s in checkout-api.")).toBeTruthy()
 	})
 
-	it("never folds a sub-agent into a Used N tools header", () => {
+	it("shows the answer the sub-agent returned, which is all the parent thread sees of the run", () => {
+		const answered = {
+			...taskMessage(),
+			parts: [{ ...(taskMessage().parts[0] as object), answer: "Checkout p99 is 4.2s." }],
+		} as UIMessage
+		render(<ChatTranscript {...baseProps} messages={[answered]} />)
+
+		fireEvent.click(screen.getByText("Explore"))
+		expect(screen.getByText("Checkout p99 is 4.2s.")).toBeTruthy()
+	})
+
+	it("says what the sub-agent is doing while it runs, and defers the thinking row to it", () => {
+		render(<ChatTranscript {...baseProps} messages={[taskMessage("running")]} isLoading />)
+
+		expect(screen.getByText("Exploring…")).toBeTruthy()
+		// One live element per turn: the card's own loader, not a second "Thinking…" under it.
+		expect(screen.queryByText("Thinking…")).toBeNull()
+	})
+
+	it("never folds a sub-agent into a tool group header", () => {
 		// A sub-agent run is content, not plumbing.
 		render(<ChatTranscript {...baseProps} messages={[taskMessage()]} />)
 
-		expect(screen.queryByText(/Used \d+ tools/)).toBeNull()
+		expect(document.querySelector('[data-slot="tool-group"]')).toBeNull()
 		expect(items().map((el) => (el as HTMLElement).dataset.messageId)).toEqual(["m1"])
+	})
+})
+
+describe("ChatTranscript turn rail", () => {
+	const rail = () => document.querySelector('[data-slot="turn-minimap"]')
+	const markers = () =>
+		Array.from(document.querySelectorAll('[data-slot="turn-minimap"] span[aria-hidden]'))
+
+	/** jsdom has no layout, and the rail maps pointer position onto its own box. */
+	const withLayout = (height: number) => {
+		const original = HTMLElement.prototype.getBoundingClientRect
+		HTMLElement.prototype.getBoundingClientRect = function rect(this: HTMLElement) {
+			return {
+				top: 0,
+				left: 0,
+				right: 1440,
+				bottom: height,
+				width: 1440,
+				height,
+				x: 0,
+				y: 0,
+			} as DOMRect
+		}
+		return () => {
+			HTMLElement.prototype.getBoundingClientRect = original
+		}
+	}
+
+	const thread = [
+		message("u1", "user", "why is checkout slow"),
+		message("a1", "assistant", "the db pool is exhausted"),
+		message("u2", "user", "how do I fix it"),
+		message("a2", "assistant", "raise the pool size"),
+	]
+
+	it("stays away until the thread has more than one turn", () => {
+		render(<ChatTranscript {...baseProps} messages={[message("u1", "user", "hi")]} />)
+
+		expect(rail()).toBeNull()
+	})
+
+	it("draws one marker per human turn", () => {
+		render(<ChatTranscript {...baseProps} messages={thread} />)
+
+		expect(markers()).toHaveLength(2)
+	})
+
+	it("previews the turn under the pointer, question and reply", () => {
+		const restore = withLayout(200)
+		try {
+			render(<ChatTranscript {...baseProps} messages={thread} />)
+			fireEvent.mouseMove(screen.getByLabelText("Jump to a turn"), { clientY: 0 })
+
+			// Both texts are on screen twice: once in the transcript, once in the preview.
+			expect(screen.getAllByText("why is checkout slow")).toHaveLength(2)
+			expect(screen.getAllByText("the db pool is exhausted")).toHaveLength(2)
+		} finally {
+			restore()
+		}
 	})
 })

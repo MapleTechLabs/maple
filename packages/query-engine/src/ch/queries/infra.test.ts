@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
-import { compileUnionUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,

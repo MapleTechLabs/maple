@@ -41,8 +41,12 @@ export interface WhereClauseAutocompleteValues {
 	resourceAttributeValues?: string[]
 	/** Dashboard variable names — suggested as `$name` in every value position. */
 	variables?: string[]
-	/** Per-field values for the `product_events` scope (the web-analytics facets). */
+	/** Per-field values for the session dimensions (the web-analytics facets). */
 	productEventFacets?: Partial<Record<FunnelPopulationFilterField, string[]>>
+	/** `product_events` source: the event names, hosts and page paths seen in the window. */
+	eventNames?: string[]
+	hosts?: string[]
+	pagePaths?: string[]
 }
 
 export interface WhereClauseAutocompleteSuggestion {
@@ -157,6 +161,34 @@ const KEY_DEFINITIONS: Record<QueryBuilderDataSource, KeyDefinition[]> = {
 			insertText: "resource.",
 			description: "Filter by a resource attribute",
 		},
+	],
+	product_events: [
+		{
+			label: "event.name",
+			insertText: "event.name",
+			description: "Event name, comma-separated for several",
+		},
+		{ label: "event.kind", insertText: "event.kind", description: "navigation | custom | screen" },
+		{ label: "source", insertText: "source", description: "browser | server | mobile | trace" },
+		{ label: "host", insertText: "host", description: "Site host the event fired on" },
+		{ label: "page.path", insertText: "page.path", description: "Page path the event fired on" },
+		{
+			label: "service.name",
+			insertText: "service.name",
+			description: "Emitting service (server events)",
+		},
+		{ label: "user.id", insertText: "user.id", description: "Identified user" },
+		{ label: "group.id", insertText: "group.id", description: "Group / organization id" },
+		{ label: "attr.<key>", insertText: "attr.", description: "Filter by a track() prop" },
+		{ label: "country", insertText: "country", description: "Session country code, e.g. DE" },
+		{ label: "referrer.host", insertText: "referrer.host", description: "Session referrer host" },
+		{ label: "utm.source", insertText: "utm.source", description: "Session utm_source" },
+		{ label: "utm.medium", insertText: "utm.medium", description: "Session utm_medium" },
+		{ label: "utm.campaign", insertText: "utm.campaign", description: "Session utm_campaign" },
+		{ label: "device.type", insertText: "device.type", description: "desktop | mobile | tablet" },
+		{ label: "browser", insertText: "browser", description: "Session browser name" },
+		{ label: "os", insertText: "os", description: "Session operating system" },
+		{ label: "visitor.type", insertText: "visitor.type", description: "new | returning" },
 	],
 	metrics: [
 		{
@@ -715,6 +747,40 @@ function buildVariableSuggestions(
 	}))
 }
 
+const PRODUCT_EVENT_KINDS = ["navigation", "custom", "screen"]
+const PRODUCT_EVENT_SOURCES = ["browser", "server", "mobile", "trace"]
+
+/** Values for the `product_events` source's own keys; `undefined` when the key is not one of them. */
+function buildProductEventValueSuggestions(
+	normalizedKey: string,
+	values: WhereClauseAutocompleteValues | undefined,
+): WhereClauseAutocompleteSuggestion[] | undefined {
+	const fixed = {
+		"event.name": uniqueValues(values?.eventNames ?? []),
+		event: uniqueValues(values?.eventNames ?? []),
+		"event.kind": PRODUCT_EVENT_KINDS,
+		kind: PRODUCT_EVENT_KINDS,
+		source: PRODUCT_EVENT_SOURCES,
+		host: uniqueValues(values?.hosts ?? []),
+		"page.path": uniqueValues(values?.pagePaths ?? []),
+		path: uniqueValues(values?.pagePaths ?? []),
+		"service.name": uniqueValues(values?.services ?? []),
+	} satisfies Record<string, string[]>
+	if (Object.hasOwn(fixed, normalizedKey)) {
+		const own: string[] = fixed[normalizedKey as keyof typeof fixed]
+		return own.map((value) => toStringValueSuggestion(value, normalizedKey))
+	}
+
+	const field = productEventsFilterField(normalizedKey)
+	if (field === undefined) return undefined
+	if (field === "visitorType") {
+		return ["new", "returning"].map((value) => toStringValueSuggestion(value, "visitor_type"))
+	}
+	return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
+		toStringValueSuggestion(value, normalizedKey),
+	)
+}
+
 function buildValueSuggestions(
 	key: string | null,
 	dataSource: QueryBuilderDataSource,
@@ -733,6 +799,11 @@ function buildValueSuggestions(
 		return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
 			toStringValueSuggestion(value, normalizedKey),
 		)
+	}
+
+	if (dataSource === "product_events") {
+		const eventValues = buildProductEventValueSuggestions(normalizedKey, values)
+		if (eventValues !== undefined) return eventValues
 	}
 
 	if (normalizedKey === "root_only") {

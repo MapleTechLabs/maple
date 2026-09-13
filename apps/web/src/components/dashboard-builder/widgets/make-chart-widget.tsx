@@ -167,8 +167,13 @@ function renderChart({ entry, display, data, className, legend }: RenderArgs): R
 					className={className}
 					unit={display.unit}
 					showStepPercent={display.funnel?.showStepPercent}
+					variant={display.funnel?.variant}
 				/>
 			)
+		}
+		case "paths": {
+			const Chart = entry.component
+			return <Chart data={data} className={className} direction={display.paths?.direction} />
 		}
 		case "hbar": {
 			const Chart = entry.component
@@ -267,6 +272,12 @@ export const HeatmapWidget = makeChartWidget({
 export const FunnelWidget = makeChartWidget({
 	displayName: "FunnelWidget",
 	defaultChartId: "query-builder-funnel",
+})
+
+export const PathsWidget = makeChartWidget({
+	displayName: "PathsWidget",
+	defaultChartId: "query-builder-paths",
+	className: "h-full w-full",
 })
 
 export const HbarWidget = makeChartWidget({

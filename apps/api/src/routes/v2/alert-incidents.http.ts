@@ -4,7 +4,7 @@ import { CurrentTenant } from "@maple/domain/http"
 import type { V2AlertIncident } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { AlertReadModelsService } from "@/services/alerts/AlertReadModelsService"
+import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 
 const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	id: doc.id,

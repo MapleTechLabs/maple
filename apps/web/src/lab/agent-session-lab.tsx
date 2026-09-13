@@ -3,19 +3,17 @@ import { useMemo, useState } from "react"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
 import { SessionViews, type SessionView } from "@/components/agent-sessions/session-detail/session-views"
 import { Toggle } from "@maple/ui/components/ui/toggle"
-import { buildAgentSessionFixture, buildCaptureOffFixture } from "@/lab/agent-session-fixture"
-import { buildSessionSummary } from "@/lib/agent-sessions/session-summary"
-import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
-
+import { buildSessionSummary, buildSessionTurns } from "@maple/agent-sessions"
+import { buildAgentSessionFixture, buildCaptureOffFixture } from "@maple/agent-sessions/testing"
 /**
  * The session detail page's views over a fixture — the fastest way to eyeball
  * the Overview, the waterfall, the flow graph and the transcript without a
  * warehouse.
  *
- * The two toggles are the session-level states no fixture can be in and out of
- * at once: message capture off (the production default, which the transcript
- * has to survive as pure structure) and a truncated response (the END of the
- * session missing).
+ * The toggle is the session-level state no fixture can be in and out of at
+ * once: message capture off, the production default, which the transcript has
+ * to survive as pure structure. A partly loaded session is not simulated here —
+ * it needs the paged reads, and the page is where those live.
  *
  * The page's own scroller is a `PageLayout.ScrollArea`, which is where the
  * views' sticky control bar pins; the plain `overflow-auto` column here stands
@@ -23,7 +21,6 @@ import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
  */
 export function AgentSessionLab({ initialView }: { initialView?: SessionView }) {
 	const [captureOff, setCaptureOff] = useState(false)
-	const [truncated, setTruncated] = useState(false)
 
 	const spans = useMemo(
 		() => (captureOff ? buildCaptureOffFixture() : buildAgentSessionFixture()),
@@ -40,7 +37,7 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 			{/* The page's own header, over the fixture — the one place to eyeball it. */}
 			<div className="flex shrink-0 items-start gap-4 border-border border-b px-4 py-3">
 				<div className="min-w-0 flex-1">
-					<SessionHeader sessionId="lab-session-0f3c9a1e2b7d" summary={summary} turns={turns} />
+					<SessionHeader sessionId="lab-session-0f3c9a1e2b7d" summary={summary} />
 					{selectedSpanId !== undefined && (
 						<p className="mt-1 text-muted-foreground text-xs">selected {selectedSpanId}</p>
 					)}
@@ -55,15 +52,6 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 					>
 						Capture off
 					</Toggle>
-					<Toggle
-						variant="outline"
-						size="sm"
-						pressed={truncated}
-						onPressedChange={setTruncated}
-						className="text-xs"
-					>
-						Truncated
-					</Toggle>
 				</div>
 			</div>
 			{/* The same slot and the same classes `PageLayout.ScrollArea` carries:
@@ -77,7 +65,8 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 						onViewChange={setView}
 						turns={turns}
 						summary={summary}
-						truncated={truncated}
+						progress={undefined}
+						totals={undefined}
 						selectedSpanId={selectedSpanId}
 						onSelectSpan={setSelectedSpanId}
 					/>

@@ -1,3 +1,4 @@
+import type * as Cloudflare from "alchemy/Cloudflare"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
@@ -36,6 +37,32 @@ export interface MapleStackContext {
  * behind its `__ALCHEMY_RUNTIME__` guard, so it never has to exist in an isolate.
  */
 export class MapleStack extends Context.Service<MapleStack, MapleStackContext>()("@maple/infra/MapleStack") {}
+
+/**
+ * The deployed api Worker, for a Worker whose props bind it (web's `API`
+ * service binding). The root provides it right after yielding the api, so
+ * web's module never imports the api's; a `Worker.ref` would not do — it
+ * reads stored state and cannot see a sibling created by the same deploy.
+ */
+export class ApiWorker extends Context.Service<ApiWorker, Cloudflare.Worker>()("@maple/infra/ApiWorker") {}
+
+/**
+ * The deployed sandbox Worker, for the api's service binding to it. Provided by
+ * the root right after yielding it, for the same reason as {@link ApiWorker}: a
+ * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ */
+export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Worker>()(
+	"@maple/infra/SandboxWorker",
+) {}
+
+/**
+ * The deployed AI Worker, for the api's binding to it — the one that forwards
+ * `/mcp` and the chat paths so they keep answering on api's origin, with the
+ * OAuth issuer and RFC 8707 resource identifiers unchanged. Provided by the root
+ * right after yielding it, for the same reason as {@link ApiWorker}: a
+ * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ */
+export class AiWorker extends Context.Service<AiWorker, Cloudflare.Worker>()("@maple/infra/AiWorker") {}
 
 /**
  * Props for a resource declared at module scope whose physical name is

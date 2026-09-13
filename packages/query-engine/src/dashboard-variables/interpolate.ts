@@ -16,7 +16,7 @@
 //     references an "All" selection is dropped entirely (All = don't filter).
 //   - everything else gets plain text substitution.
 
-import { escapeClickHouseString } from "@maple-dev/clickhouse-builder/sql"
+import { escapeClickHouseString } from "@maple-dev/effect-clickhouse/sql"
 import { splitWhereClause } from "@maple/domain/where-clause"
 
 /** Sentinel for the "All" selection, both in URLs and resolved values. */

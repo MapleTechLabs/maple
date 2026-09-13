@@ -24,6 +24,7 @@ import type { Feature } from "./page-registry"
 export const features: Feature[] = [
 	{
 		slug: "distributed-tracing",
+		illustration: "/art/features/distributed-tracing.webp",
 		navLabel: m.nav_distributed_tracing,
 		navDesc: m.nav_desc_distributed_tracing,
 		seoTitle: m.feat_tracing_seo_title,
@@ -72,6 +73,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "browser-sessions",
+		illustration: "/art/features/browser-sessions.webp",
 		navLabel: m.nav_browser_sessions,
 		navDesc: m.nav_desc_browser_sessions,
 		seoTitle: m.feat_sessions_seo_title,
@@ -119,6 +121,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "log-management",
+		illustration: "/art/features/log-management.webp",
 		navLabel: m.nav_log_management,
 		navDesc: m.nav_desc_log_management,
 		seoTitle: m.feat_logs_seo_title,
@@ -166,6 +169,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "metrics-dashboards",
+		illustration: "/art/features/metrics-dashboards.webp",
 		navLabel: m.nav_metrics_dashboards,
 		navDesc: m.nav_desc_metrics_dashboards,
 		seoTitle: m.feat_metrics_seo_title,
@@ -212,6 +216,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "service-catalog",
+		illustration: "/art/features/service-catalog.webp",
 		navLabel: m.nav_service_catalog,
 		navDesc: m.nav_desc_service_catalog,
 		seoTitle: m.feat_catalog_seo_title,
@@ -262,6 +267,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "error-tracking",
+		illustration: "/art/features/error-tracking.webp",
 		navLabel: m.nav_error_tracking,
 		navDesc: m.nav_desc_error_tracking,
 		seoTitle: m.feat_errors_seo_title,
@@ -307,6 +313,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "alerts",
+		illustration: "/art/features/alerts.webp",
 		navLabel: m.nav_alerts,
 		navDesc: m.nav_desc_alerts,
 		seoTitle: m.feat_alerts_seo_title,
@@ -355,6 +362,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "ai-mcp-integration",
+		illustration: "/art/features/ai-mcp-integration.webp",
 		navLabel: m.nav_ai_mcp,
 		navDesc: m.nav_desc_ai_mcp,
 		seoTitle: m.feat_mcp_seo_title,
@@ -403,6 +411,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "kubernetes-monitoring",
+		illustration: "/art/features/kubernetes-monitoring.webp",
 		navLabel: m.nav_kubernetes,
 		navDesc: m.nav_desc_kubernetes,
 		seoTitle: m.page_k8s_title,

@@ -16,15 +16,22 @@ export function HeroCta({ className }: { className?: string }) {
 		document.addEventListener(SIGNED_IN_EVENT, onChange)
 		return () => document.removeEventListener(SIGNED_IN_EVENT, onChange)
 	}, [])
+	const href = signedIn ? APP_URL : APP_SIGN_UP_URL
+	const label = signedIn ? m.nav_dashboard() : m.cta_get_started()
 	return (
 		<a
-			href={signedIn ? APP_URL : APP_SIGN_UP_URL}
+			href={href}
 			data-hero-cta
 			data-track="cta_click"
 			data-track-location="hero"
+			// `location` alone cannot separate "the hero CTA converts" from "the
+			// hero CTA sends signed-in visitors back to their dashboard" — the
+			// two are the same event on the same element with different intent.
+			data-track-label={label}
+			data-track-destination={href}
 			className={className}
 		>
-			{signedIn ? m.nav_dashboard() : m.cta_get_started()}
+			{label}
 		</a>
 	)
 }

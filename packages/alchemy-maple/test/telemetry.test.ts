@@ -37,7 +37,7 @@ describe("Maple.Telemetry", () => {
 						serviceName: "api",
 						ingestKey: Redacted.make("maple_sk_test"),
 						endpoint: "https://ingest.test",
-						environment: "staging",
+						environment: "production",
 					}),
 				).pipe(Effect.provide(Layer.succeed(RuntimeContext, context)))
 				assert.deepStrictEqual([...bound.keys()].sort(), [

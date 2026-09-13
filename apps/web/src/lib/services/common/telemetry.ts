@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { noteReachable, noteUnreachable, PEER_OUTAGE_GRACE_MS } from "./peer-reachability"
-import { runtime } from "./runtime"
+import { mapleRuntime } from "@/lib/registry"
 
 const requestUrl = (input: RequestInfo | URL): string =>
 	typeof input === "string" ? input : input instanceof URL ? input.href : input.url
@@ -99,7 +99,7 @@ export const tracedFetch = (
 		init?.method ?? (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET")
 
 	return (
-		runtime
+		mapleRuntime
 			.runPromise(
 				Effect.gen(function* () {
 					const span = yield* Effect.currentSpan
@@ -193,7 +193,7 @@ export const logClientError = (
 	error: unknown,
 	attributes: Record<string, string | number | boolean> = {},
 ): void => {
-	runtime.runFork(
+	mapleRuntime.runFork(
 		Effect.logError("Client operation failed").pipe(
 			Effect.annotateLogs({
 				...attributes,
@@ -210,7 +210,7 @@ export const logClientWarning = (
 	error: unknown,
 	attributes: Record<string, string | number | boolean> = {},
 ): void => {
-	runtime.runFork(
+	mapleRuntime.runFork(
 		Effect.logWarning("Client operation degraded").pipe(
 			Effect.annotateLogs({
 				...attributes,

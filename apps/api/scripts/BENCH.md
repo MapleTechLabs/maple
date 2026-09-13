@@ -75,8 +75,8 @@ only the raw ClickHouse HTTP interface exposes.
     ```
 
     Skim the table to confirm the queries look real — they should start with
-    `SELECT`, contain `OrgId =`, and the p95 column should match the staging
-    trace dashboard.
+    `SELECT`, contain `OrgId =`, and the p95 column should match the trace
+    dashboard.
 
 2. **Measure baseline.** Replay them locally, 5 runs each:
 
@@ -102,9 +102,10 @@ only the raw ClickHouse HTTP interface exposes.
    — add a `PREWHERE`, narrow the projection, switch from `Traces` to an
    already-aggregated MV, whatever the EXPLAIN suggested.
 
-5. **Re-run.** Either deploy the change to staging and run `bench:fetch`
-   again (so the new fingerprint shows up in traces), or hand-edit the SQL in
-   a copy of the baseline JSON for a faster local loop. Then:
+5. **Re-run.** Either deploy the change to **production** and run `bench:fetch`
+   again (so the new fingerprint shows up in the traces this tool mines — a PR
+   or dev stage's traces are not queried), or hand-edit the SQL in a copy of the
+   baseline JSON for a faster local loop. Then:
 
     ```
     bun bench:run .bench/errorsByType-after-prewhere.json --runs 5 \

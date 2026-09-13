@@ -1,13 +1,13 @@
 import { Effect, Option } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/unstable/http"
-import { Env } from "@/platform/Env"
+import { Env } from "@maple/backend/platform/Env"
 import {
 	AUTUMN_BILLING_UPDATED,
 	decodeAutumnBillingUpdated,
 	decodeAutumnEnvelope,
 	planEventsFromBillingUpdated,
-} from "@/services/product-events/autumn-events"
-import { ProductEventsService } from "@/services/product-events/ProductEventsService"
+} from "@maple/backend/services/product-events/autumn-events"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { receiveSvixWebhook, webhookText } from "./svix-receiver"
 
 /**

@@ -8,7 +8,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -34,6 +34,7 @@ import {
 	type TransformedPoint,
 } from "../chart-utils"
 import { LinkedCursorOverlay, linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**
  * The utilization chart behind `/infra`'s host and Kubernetes detail pages.
@@ -164,7 +165,11 @@ export function InfraMetricChart({
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
-	const axis = useMemo(() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket)), [xDomain, data])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket), effectiveTimezone),
+		[xDomain, data, effectiveTimezone],
+	)
 
 	/**
 	 * Series names carry dots and slashes (container names, mount points), which
@@ -286,7 +291,6 @@ export function InfraMetricChart({
 				? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
 				: [],
 			marks: [
-				dashedGridY(),
 				// Labels sit at the domain's right end, whether that is the last row
 				// or a shared domain that outruns this chart's rows.
 				...thresholdRules(thresholds, {
@@ -299,6 +303,7 @@ export function InfraMetricChart({
 			scales: {
 				x: axis.x,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: { line: false, ticks: { size: 0, padding: 8, format: tickFormatter } },
 				},

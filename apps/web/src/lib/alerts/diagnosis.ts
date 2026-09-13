@@ -9,6 +9,7 @@ import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { staleThresholdMs } from "@/lib/alerts/rule-status"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 export type DiagnosisStageStatus = "pass" | "fail" | "warn" | "unknown"
 
@@ -35,6 +36,7 @@ export interface DiagnosisInput {
 	/** Delivery events pre-filtered to this rule, newest first. */
 	readonly deliveryEvents: ReadonlyArray<AlertDeliveryEventDocument>
 	readonly now: number
+	readonly timeZone: string
 	/** Grouped rules: diagnose one group; defaults to the worst one. */
 	readonly selectedGroupKey?: string
 }
@@ -54,7 +56,7 @@ const parseMs = (value: string | null | undefined): number | null => {
  * incident → notification. Pure so it can be unit-tested exhaustively.
  */
 export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
-	const { rule, checks, openIncidents, destinations, deliveryEvents, now } = input
+	const { rule, checks, openIncidents, destinations, deliveryEvents, now, timeZone } = input
 
 	// Scope per-group evidence to the selected group (or the whole set when
 	// ungrouped / unselected).
@@ -114,7 +116,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			label: "Evaluated recently",
 			status: "warn",
 			summary: `Scheduled ${relative(now, scheduledAt)} but no evaluation has completed yet`,
-			evidence: [`Last scheduled: ${new Date(scheduledAt).toLocaleString()}`],
+			evidence: [
+				`Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`,
+			],
 		})
 	} else if (evaluatedAt != null) {
 		const stale = now - evaluatedAt > staleThresholdMs()
@@ -126,8 +130,10 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				? `Last evaluated ${relative(now, evaluatedAt)} — expected roughly every minute`
 				: `Last evaluated ${relative(now, evaluatedAt)}`,
 			evidence: [
-				`Last evaluation: ${new Date(evaluatedAt).toLocaleString()}`,
-				scheduledAt != null ? `Last scheduled: ${new Date(scheduledAt).toLocaleString()}` : null,
+				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
+				scheduledAt != null
+					? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
+					: null,
 			].filter((line): line is string => line != null),
 		})
 	}

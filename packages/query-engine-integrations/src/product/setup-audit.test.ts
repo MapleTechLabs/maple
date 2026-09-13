@@ -1,7 +1,7 @@
 // BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
 import { describe, expect, it } from "vitest"
 import { Schema, Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	auditAttributeKeyInventoryQuery,
 	auditAttributeKeyInventoryRowSchema,

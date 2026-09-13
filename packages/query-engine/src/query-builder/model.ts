@@ -65,7 +65,15 @@ export interface MetricsQueryDraft extends QueryBuilderQueryDraftBase {
 	isMonotonic: boolean
 }
 
-export type QueryBuilderQueryDraft = TracesQueryDraft | LogsQueryDraft | MetricsQueryDraft
+export interface ProductEventsQueryDraft extends QueryBuilderQueryDraftBase {
+	dataSource: "product_events"
+}
+
+export type QueryBuilderQueryDraft =
+	| TracesQueryDraft
+	| LogsQueryDraft
+	| MetricsQueryDraft
+	| ProductEventsQueryDraft
 
 export interface BuildSpecResult {
 	query: QuerySpec | null
@@ -95,6 +103,15 @@ export const AGGREGATIONS_BY_SOURCE: Record<
 		{ label: "rate", value: "rate" },
 		{ label: "increase", value: "increase" },
 	],
+	// `persons` is the row-local key (UserId, else VisitorId) — no identity
+	// stitching, which is the funnel's job.
+	product_events: [
+		{ label: "count", value: "count" },
+		{ label: "uniq(sessions)", value: "sessions" },
+		{ label: "uniq(persons)", value: "persons" },
+		{ label: "uniq(users)", value: "users" },
+		{ label: "uniq(visitors)", value: "visitors" },
+	],
 } satisfies Record<QueryBuilderDataSource, Array<{ label: string; value: string }>>
 
 /**
@@ -123,6 +140,7 @@ const ALLOWED_AGGREGATIONS = {
 	traces: new Set(AGGREGATIONS_BY_SOURCE.traces.map((option) => option.value)),
 	logs: new Set(AGGREGATIONS_BY_SOURCE.logs.map((option) => option.value)),
 	metrics: new Set(AGGREGATIONS_BY_SOURCE.metrics.map((option) => option.value)),
+	product_events: new Set(AGGREGATIONS_BY_SOURCE.product_events.map((option) => option.value)),
 } satisfies Record<QueryBuilderDataSource, ReadonlySet<string>>
 
 const ALLOWED_TRACES_NUMERIC_AGGREGATIONS: ReadonlySet<string> = new Set(TRACES_NUMERIC_AGGREGATIONS)
@@ -196,6 +214,17 @@ export const GROUP_BY_OPTIONS: Record<QueryBuilderDataSource, Array<{ label: str
 		{ label: "service.name", value: "service.name" },
 		{ label: "attr.*", value: "attr." },
 		{ label: "resource.*", value: "resource." },
+		{ label: "none", value: "none" },
+	],
+	product_events: [
+		{ label: "event.name", value: "event.name" },
+		{ label: "event.kind", value: "event.kind" },
+		{ label: "source", value: "source" },
+		{ label: "host", value: "host" },
+		{ label: "page.path", value: "page.path" },
+		{ label: "service.name", value: "service.name" },
+		{ label: "group.id", value: "group.id" },
+		{ label: "attr.*", value: "attr." },
 		{ label: "none", value: "none" },
 	],
 } satisfies Record<QueryBuilderDataSource, Array<{ label: string; value: string }>>
@@ -501,6 +530,184 @@ function applyLogsClause(
 	)
 }
 
+interface ProductEventsFilterAccumulator {
+	eventNames?: string[]
+	kinds?: string[]
+	sources?: string[]
+	hosts?: string[]
+	pagePaths?: string[]
+	serviceNames?: string[]
+	userIds?: string[]
+	groupIds?: string[]
+	excludedEventNames?: string[]
+	excludedKinds?: string[]
+	excludedSources?: string[]
+	excludedHosts?: string[]
+	excludedPagePaths?: string[]
+	excludedServiceNames?: string[]
+	referrerHost?: string
+	country?: string
+	deviceType?: string
+	browserName?: string
+	osName?: string
+	language?: string
+	utmSource?: string
+	utmMedium?: string
+	utmCampaign?: string
+	visitorType?: "new" | "returning"
+	groupByAttributeKey?: string
+	attributeFilters: AccumulatedAttributeFilter[]
+}
+
+/** Row columns that take `=` / `!=` with a comma-separated value list. */
+const PRODUCT_EVENT_LIST_FIELDS = {
+	"event.name": ["eventNames", "excludedEventNames"],
+	event: ["eventNames", "excludedEventNames"],
+	event_name: ["eventNames", "excludedEventNames"],
+	"event.kind": ["kinds", "excludedKinds"],
+	kind: ["kinds", "excludedKinds"],
+	source: ["sources", "excludedSources"],
+	host: ["hosts", "excludedHosts"],
+	"page.path": ["pagePaths", "excludedPagePaths"],
+	page_path: ["pagePaths", "excludedPagePaths"],
+	path: ["pagePaths", "excludedPagePaths"],
+	"service.name": ["serviceNames", "excludedServiceNames"],
+	service: ["serviceNames", "excludedServiceNames"],
+	"user.id": ["userIds", "userIds"],
+	"group.id": ["groupIds", "groupIds"],
+} as const satisfies Record<
+	string,
+	readonly [keyof ProductEventsFilterAccumulator, keyof ProductEventsFilterAccumulator]
+>
+
+/** `session_replays` dimensions — equality only, they lower to the analytics semi-join. */
+const PRODUCT_EVENT_SESSION_FIELDS = {
+	"referrer.host": "referrerHost",
+	referrer_host: "referrerHost",
+	referrer: "referrerHost",
+	country: "country",
+	"device.type": "deviceType",
+	device_type: "deviceType",
+	device: "deviceType",
+	browser: "browserName",
+	"browser.name": "browserName",
+	os: "osName",
+	"os.name": "osName",
+	language: "language",
+	"utm.source": "utmSource",
+	utm_source: "utmSource",
+	"utm.medium": "utmMedium",
+	utm_medium: "utmMedium",
+	"utm.campaign": "utmCampaign",
+	utm_campaign: "utmCampaign",
+} as const satisfies Record<string, keyof ProductEventsFilterAccumulator>
+
+function applyProductEventsClause(
+	filters: ProductEventsFilterAccumulator,
+	clause: { key: string; rawKey?: string; operator: string; value: string },
+	warnings: string[],
+): ProductEventsFilterAccumulator {
+	const key = normalizeKey(clause.key)
+	// Prop keys keep their case: `Attributes` is a case-sensitive Map of the customer's own names.
+	const rawKey = (clause.rawKey ?? clause.key).trim()
+	const attributeKey = key.startsWith("attr.") ? rawKey.slice(5) : undefined
+
+	if (attributeKey === undefined && Object.hasOwn(PRODUCT_EVENT_LIST_FIELDS, key)) {
+		const [positive, negative] = PRODUCT_EVENT_LIST_FIELDS[key as keyof typeof PRODUCT_EVENT_LIST_FIELDS]
+		if (clause.operator !== "=" && clause.operator !== "!=") {
+			warnings.push(
+				`Product events filter ${clause.key} supports only = and !=; ignoring ${clause.operator}`,
+			)
+			return filters
+		}
+		if (clause.operator === "!=" && positive === negative) {
+			warnings.push(`Product events filter ${clause.key} supports only =; ignoring !=`)
+			return filters
+		}
+		const target = clause.operator === "=" ? positive : negative
+		return { ...filters, [target]: splitCsv(clause.value) }
+	}
+
+	if (attributeKey === undefined && Object.hasOwn(PRODUCT_EVENT_SESSION_FIELDS, key)) {
+		if (clause.operator !== "=") {
+			warnings.push(`Product events filter ${clause.key} supports only =; ignoring ${clause.operator}`)
+			return filters
+		}
+		const target = PRODUCT_EVENT_SESSION_FIELDS[key as keyof typeof PRODUCT_EVENT_SESSION_FIELDS]
+		return { ...filters, [target]: clause.value }
+	}
+
+	if (attributeKey === undefined && (key === "visitor.type" || key === "visitor_type")) {
+		if (clause.operator !== "=") {
+			warnings.push(`Product events filter ${clause.key} supports only =; ignoring ${clause.operator}`)
+			return filters
+		}
+		if (clause.value !== "new" && clause.value !== "returning") {
+			warnings.push(`Invalid visitor.type value ignored: ${clause.value}`)
+			return filters
+		}
+		return { ...filters, visitorType: clause.value }
+	}
+
+	// Anything else is a `track()` prop, prefixed or bare — same rule as traces.
+	const propKey = attributeKey ?? rawKey
+	if (!propKey) {
+		warnings.push(`Invalid attr.* filter ignored: ${clause.key}`)
+		return filters
+	}
+	if (filters.attributeFilters.length >= 5) {
+		warnings.push(`Maximum of 5 attr.* filters supported; ignoring ${clause.key}`)
+		return filters
+	}
+	return {
+		...filters,
+		attributeFilters: [
+			...filters.attributeFilters,
+			makeAttrFilter(propKey, clause.operator, clause.value),
+		],
+	}
+}
+
+function resolveProductEventsGroupByToken(
+	raw: string,
+	filters: ProductEventsFilterAccumulator,
+	warnings: string[],
+): ProductEventsGroupByKey | null {
+	const resolution = resolveGroupByToken("product_events", GROUP_BY_ALIASES.product_events, raw)
+	switch (resolution._tag) {
+		case "Empty":
+			return null
+		case "Rejected":
+			warnings.push(resolution.warning)
+			return null
+		case "Literal":
+			return resolution.token
+		case "Prefixed": {
+			// The shared resolver lowercases the token; the prop key keeps the case it was typed with.
+			const key = raw.trim().slice(ATTRIBUTE_PREFIX.prefix.length)
+			// One attribute group column, as on metrics.
+			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== key) {
+				warnings.push(`Product events queries support a single attr.* group by; ignoring attr.${key}`)
+				return null
+			}
+			filters.groupByAttributeKey = key
+			return resolution.token
+		}
+	}
+}
+
+function buildProductEventsSpecFilters(
+	acc: ProductEventsFilterAccumulator,
+): Record<string, unknown> | undefined {
+	const { attributeFilters, ...rest } = acc
+	const filters: Record<string, unknown> = {}
+	for (const [field, value] of Object.entries(rest)) {
+		if (value !== undefined && !(Array.isArray(value) && value.length === 0)) filters[field] = value
+	}
+	if (attributeFilters.length > 0) filters.attributeFilters = attributeFilters
+	return Object.keys(filters).length > 0 ? filters : undefined
+}
+
 interface MetricsFilterAccumulator {
 	metricName: string
 	metricType: QueryBuilderMetricType
@@ -599,6 +806,16 @@ function applyMetricsClause(
 
 type TracesGroupByKey = "service" | "span_name" | "status_code" | "http_method" | "attribute" | "none"
 type LogsGroupByKey = "service" | "severity" | "none"
+type ProductEventsGroupByKey =
+	| "event_name"
+	| "kind"
+	| "source"
+	| "host"
+	| "page_path"
+	| "service"
+	| "group"
+	| "attribute"
+	| "none"
 type MetricsGroupByKey = "service" | "attribute" | "resource_attribute" | "none"
 
 /** Which bucket a prefixed token's key lands in. */
@@ -679,10 +896,33 @@ const GROUP_BY_ALIASES = {
 		},
 		prefixes: [ATTRIBUTE_PREFIX, RESOURCE_PREFIX],
 	},
+	product_events: {
+		aliases: {
+			event: "event_name",
+			"event.name": "event_name",
+			event_name: "event_name",
+			kind: "kind",
+			"event.kind": "kind",
+			source: "source",
+			host: "host",
+			page: "page_path",
+			"page.path": "page_path",
+			page_path: "page_path",
+			service: "service",
+			"service.name": "service",
+			service_name: "service",
+			group: "group",
+			"group.id": "group",
+			none: "none",
+			all: "none",
+		},
+		prefixes: [ATTRIBUTE_PREFIX],
+	},
 } as const satisfies {
 	readonly traces: GroupBySourceSpec<TracesGroupByKey>
 	readonly logs: GroupBySourceSpec<LogsGroupByKey>
 	readonly metrics: GroupBySourceSpec<MetricsGroupByKey>
+	readonly product_events: GroupBySourceSpec<ProductEventsGroupByKey>
 }
 
 /**
@@ -701,6 +941,10 @@ export const GROUP_BY_TOKENS = {
 	metrics: {
 		literals: Object.keys(GROUP_BY_ALIASES.metrics.aliases),
 		prefixes: GROUP_BY_ALIASES.metrics.prefixes.map((p) => p.prefix),
+	},
+	product_events: {
+		literals: Object.keys(GROUP_BY_ALIASES.product_events.aliases),
+		prefixes: GROUP_BY_ALIASES.product_events.prefixes.map((p) => p.prefix),
 	},
 } satisfies Readonly<
 	Record<
@@ -1087,6 +1331,44 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				metric: "count",
 				groupBy,
 				filters: Object.keys(filters).length ? filters : undefined,
+				bucketSeconds,
+				seriesLimit,
+			} as QuerySpec,
+			warnings,
+			error: null,
+		}
+	}
+
+	if (query.dataSource === "product_events") {
+		if (!ALLOWED_AGGREGATIONS.product_events.has(query.aggregation)) {
+			return {
+				query: null,
+				warnings,
+				error: `Unsupported product events aggregation: ${query.aggregation}. Valid: ${[...ALLOWED_AGGREGATIONS.product_events].join(", ")}`,
+			}
+		}
+
+		const filters = clauses.reduce<ProductEventsFilterAccumulator>(
+			(acc, clause) => applyProductEventsClause(acc, clause, warnings),
+			{ attributeFilters: [] },
+		)
+
+		const groupByKeys: ProductEventsGroupByKey[] = []
+		if (query.addOns?.groupBy && (query.groupBy?.length ?? 0) > 0) {
+			for (const raw of query.groupBy ?? []) {
+				const resolved = resolveProductEventsGroupByToken(raw, filters, warnings)
+				if (resolved) groupByKeys.push(resolved)
+			}
+		}
+		const groupBy = groupByKeys.length > 0 ? dedupeGroupByKeys(groupByKeys) : undefined
+
+		return {
+			query: {
+				kind: "timeseries",
+				source: "product_events",
+				metric: query.aggregation as "count" | "sessions" | "persons" | "users" | "visitors",
+				groupBy,
+				filters: buildProductEventsSpecFilters(filters),
 				bucketSeconds,
 				seriesLimit,
 			} as QuerySpec,

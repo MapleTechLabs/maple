@@ -9,6 +9,7 @@ import { buildServiceOpenIssuesQuery, errorIssueFromV2 } from "@/lib/services/er
 import { formatNumber } from "@maple/ui/lib/format"
 import { SectionCard } from "./section-card"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 interface ServiceErrorsPanelProps {
 	serviceName: string
@@ -57,6 +58,7 @@ function PanelMessage({ children }: { children: React.ReactNode }) {
 }
 
 function IssueLine({ issue }: { issue: ErrorIssueDocument }) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
 	return (
 		<Link
@@ -72,7 +74,7 @@ function IssueLine({ issue }: { issue: ErrorIssueDocument }) {
 				{formatNumber(issue.occurrenceCount)}×
 			</span>
 			<span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/70">
-				{formatRelativeTimeOrDate(issue.lastSeenAt)}
+				{formatRelativeTimeOrDate(issue.lastSeenAt, undefined, effectiveTimezone)}
 			</span>
 		</Link>
 	)

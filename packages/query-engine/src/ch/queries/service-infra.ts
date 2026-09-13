@@ -25,14 +25,14 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
 import { Schema, Effect } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, ServicePlatformsHourly } from "../tables"
 import { CHNumber } from "../schema"
-import type { QueryBuilderError } from "@maple-dev/clickhouse-builder"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 
 export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>

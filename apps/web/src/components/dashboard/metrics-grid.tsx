@@ -13,6 +13,8 @@ interface MetricsGridItem {
 	id: string
 	chartId: string
 	title: string
+	/** Short explanation of the metric, shown behind an info icon in the header. */
+	titleHint?: { text: string; href?: string }
 	layout: { x: number; y: number; w: number; h: number }
 	data: Record<string, unknown>[]
 	legend?: ChartLegendMode
@@ -94,6 +96,7 @@ export function MetricsGrid({ items, className, waiting, syncId, overlay, yAxisW
 						>
 							<ReadonlyWidgetShell
 								title={item.title}
+								titleHint={item.titleHint}
 								headerValue={item.headerValue}
 								footer={item.footer}
 								// Commit deploy markers draw their label chip ABOVE the plot, so it

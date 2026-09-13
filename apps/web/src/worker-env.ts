@@ -4,10 +4,8 @@
  * Structural on purpose, like the `HTMLRewriter` slice in `og/share-preview.ts`:
  * this app's tsconfig is a browser one (`lib: DOM`), and importing
  * `@cloudflare/workers-types` to describe two bindings would retype the entire
- * SPA. The other direction is checked instead — `alchemy.run.ts` asserts that
- * the env it deploys satisfies this type, under the tsconfig that *can* see the
- * Workers types (`tsconfig.alchemy.json`), so a drifted key or type fails CI
- * there rather than 404ing in production here.
+ * SPA. The bindings are declared thirty lines above where they are read, in
+ * `worker.ts`, which is what keeps the two in step.
  *
  * Everything except `ASSETS` is optional because absence is a real runtime
  * state, not a type error: this worker only exists on deployed stages (`bun

@@ -1,6 +1,7 @@
 import { type ReactNode, createElement, useCallback, useMemo } from "react"
 import { Atom, ScopedAtom, useAtom } from "@/lib/effect-atom"
 import { useOptionalPageRefreshContext } from "@/components/time-range-picker/page-refresh-context"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type { TimeRange } from "@/components/dashboard-builder/types"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 
@@ -14,6 +15,8 @@ export interface ResolveTimeRangeOptions {
 	 * an explicit reload so the window actually advances to "now".
 	 */
 	snap?: boolean
+	/** The zone day-aligned presets start their day in; defaults to the runtime's. */
+	timeZone?: string
 }
 
 /**
@@ -30,7 +33,7 @@ export function resolveTimeRange(
 	timeRange: TimeRange,
 	options?: ResolveTimeRangeOptions,
 ): ResolvedTimeRange | null {
-	const resolved = resolveTimeRangeWindow(timeRange, { snap: options?.snap })
+	const resolved = resolveTimeRangeWindow(timeRange, { snap: options?.snap, timeZone: options?.timeZone })
 	if (resolved) return resolved
 
 	if (import.meta.env.DEV) {
@@ -40,7 +43,7 @@ export function resolveTimeRange(
 	}
 	return resolveTimeRangeWindow(
 		{ type: "relative", value: DEFAULT_RELATIVE_FALLBACK },
-		{ snap: options?.snap },
+		{ snap: options?.snap, timeZone: options?.timeZone },
 	)
 }
 
@@ -70,13 +73,14 @@ export function useDashboardTimeRange() {
 	// so they are unaffected (the explicit useRefreshableAtomValue refresh still
 	// re-runs their queries).
 	const refreshVersion = useOptionalPageRefreshContext()?.refreshVersion ?? 0
+	const { effectiveTimezone } = useTimezonePreference()
 	const resolvedTimeRange = useMemo(
 		// Snapped while idle so navigating back to a dashboard reuses every tile's
 		// cached result; unsnapped once the user reloads, so the window advances to
 		// the real "now" rather than staying inside the previous grid cell.
-		() => resolveTimeRange(timeRange, { snap: refreshVersion === 0 }),
+		() => resolveTimeRange(timeRange, { snap: refreshVersion === 0, timeZone: effectiveTimezone }),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[timeRange, refreshVersion],
+		[timeRange, refreshVersion, effectiveTimezone],
 	)
 
 	// Skip atom writes when the new range is structurally equal to the current

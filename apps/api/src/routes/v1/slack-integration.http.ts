@@ -3,13 +3,13 @@ import { Effect, Option, Redacted, Schema } from "effect"
 import { timingSafeEqual } from "node:crypto"
 import { SlackBotResolutionResponseSchema } from "@maple/domain/http"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { Env } from "@/platform/Env"
-import { trackTokenUsage } from "@/services/billing/autumn-tracker"
+import { Env } from "@maple/backend/platform/Env"
+import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 import {
 	SlackIntegrationService,
 	SLACK_CALLBACK_PATH,
 	type SlackRevocationReason,
-} from "@/services/integrations/SlackIntegrationService"
+} from "@maple/backend/services/integrations/SlackIntegrationService"
 
 const INTERNAL_SERVICE_PREFIX = "maple_svc_"
 

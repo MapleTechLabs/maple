@@ -15,6 +15,7 @@ import {
 	ChartWidget,
 	FunnelWidget,
 	HbarWidget,
+	PathsWidget,
 	HeatmapWidget,
 	HistogramWidget,
 	PieWidget,
@@ -41,6 +42,8 @@ import {
 	listScenarios,
 	pieScenarios,
 	funnelScenarios,
+	funnelDropoffScenarios,
+	pathsScenarios,
 	hbarScenarios,
 	histogramScenarios,
 	heatmapScenarios,
@@ -241,6 +244,8 @@ const NAV_ITEMS: Array<{ id: string; label: string }> = [
 	{ id: "list", label: "List" },
 	{ id: "pie", label: "Pie" },
 	{ id: "funnel", label: "Funnel" },
+	{ id: "funnel-dropoff", label: "Drop-off" },
+	{ id: "paths", label: "Paths" },
 	{ id: "hbar", label: "Horizontal Bar" },
 	{ id: "histogram", label: "Histogram" },
 	{ id: "heatmap", label: "Heatmap" },
@@ -419,6 +424,30 @@ export function WidgetLab() {
 									</Section>
 
 									<Section
+										id="funnel-dropoff"
+										title="Funnel · Drop-off"
+										description="One column per step: the solid bar is who reached it, the hatched cap who left since the previous step. Connectors carry conversion and median time; hover a step for where its leavers went."
+									>
+										{funnelDropoffScenarios.map((s, i) => (
+											<FunnelScenarioCard
+												key={`funnel-dropoff-${i}`}
+												scenario={s}
+												mode={mode}
+											/>
+										))}
+									</Section>
+
+									<Section
+										id="paths"
+										title="Paths"
+										description="What people do in the steps after (or before) one anchor. Top branches per step named, the rest folded into Other, sequence ends as neutral terminals. Hover a node to lift its flows."
+									>
+										{pathsScenarios.map((s, i) => (
+											<PathsScenarioCard key={`paths-${i}`} scenario={s} mode={mode} />
+										))}
+									</Section>
+
+									<Section
 										id="hbar"
 										title="Horizontal Bar"
 										description="Ranked categories, each a share of the total. Polish: long labels, value column alignment, overflow cap, near-identical top rows (the case a funnel mislabels as 100%)."
@@ -578,6 +607,14 @@ function FunnelScenarioCard({ scenario, mode }: { scenario: WidgetScenario; mode
 	return (
 		<ScenarioCell label={scenario.label}>
 			<FunnelWidget dataState={scenario.dataState} display={scenario.display} mode={mode} />
+		</ScenarioCell>
+	)
+}
+
+function PathsScenarioCard({ scenario, mode }: { scenario: WidgetScenario; mode: WidgetMode }) {
+	return (
+		<ScenarioCell label={scenario.label}>
+			<PathsWidget dataState={scenario.dataState} display={scenario.display} mode={mode} />
 		</ScenarioCell>
 	)
 }

@@ -221,6 +221,7 @@ export const make = (config: Config = {}): Telemetry => {
 				onNoOp: noOpNotice,
 			})
 		}),
+		{ coalesceSameArguments: true },
 	)
 
 	const requestLayer = Layer.mergeAll(

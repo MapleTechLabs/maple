@@ -48,6 +48,20 @@
 	   reasoning at a distance the eye cannot resolve at that size. Warm for what
 	   the model produced, cool for what it was given, magenta for what it
 	   thought. Same hues in both themes; only lightness moves. */
+	/* The agent-session vocabulary: the four kinds of work the occupancy bar,
+	   the waterfall and the flow view all draw, usually side by side in a 16px
+	   bar. Designated hues ~85° apart, the same in both themes, for the reason
+	   the token buckets have them — the chart-1..5 slots are spaced per theme,
+	   and in dark they put TTFT (chart-3, green) next to tool (chart-4, teal)
+	   at ΔE 0.08, which is one band to the eye. Only lightness moves per theme.
+	   Agent keeps the amber it has always worn in dark: it marks a span, and no
+	   view draws a span beside a class of agent time, so its closeness to TTFT
+	   costs nothing — while a purple agent read as the reasoning tokens, which
+	   wear the same glyph two sections away. */
+	--chart-ai-ttft: oklch(0.64 0.16 65);
+	--chart-ai-tool: oklch(0.6 0.15 155);
+	--chart-ai-inference: oklch(0.6 0.15 250);
+	--chart-ai-agent: oklch(0.63 0.16 59);
 	--chart-tok-input: oklch(0.6 0.15 246);
 	--chart-tok-cache-read: oklch(0.62 0.13 174);
 	--chart-tok-cache-write: oklch(0.62 0.15 102);
@@ -197,6 +211,10 @@
 	   tuned slightly lighter for the dark canvas. */
 	--chart-throughput: oklch(0.66 0.14 290);
 	--chart-apdex: oklch(0.658 0.134 151);
+	--chart-ai-ttft: oklch(0.73 0.15 65);
+	--chart-ai-tool: oklch(0.7 0.14 155);
+	--chart-ai-inference: oklch(0.69 0.15 250);
+	--chart-ai-agent: oklch(0.714 0.154 59);
 	--chart-tok-input: oklch(0.69 0.15 246);
 	--chart-tok-cache-read: oklch(0.72 0.12 174);
 	--chart-tok-cache-write: oklch(0.73 0.15 102);
@@ -306,6 +324,10 @@
 	--color-chart-error: var(--chart-error);
 	--color-chart-throughput: var(--chart-throughput);
 	--color-chart-apdex: var(--chart-apdex);
+	--color-chart-ai-ttft: var(--chart-ai-ttft);
+	--color-chart-ai-tool: var(--chart-ai-tool);
+	--color-chart-ai-inference: var(--chart-ai-inference);
+	--color-chart-ai-agent: var(--chart-ai-agent);
 	--color-chart-tok-input: var(--chart-tok-input);
 	--color-chart-tok-cache-read: var(--chart-tok-cache-read);
 	--color-chart-tok-cache-write: var(--chart-tok-cache-write);

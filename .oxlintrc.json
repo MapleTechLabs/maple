@@ -48,6 +48,51 @@
 		"require-yield": "off"
 	},
 	"overrides": [
+		// Existing API burndown entries, relocated with their implementation.
+		{
+			"files": [
+				"packages/backend/src/platform/Apns.ts",
+				"packages/backend/src/platform/CacheBackendLive.ts",
+				"packages/backend/src/platform/describe-cause.ts",
+				"packages/backend/src/services/alerts/AlertDeliveryDispatch.ts",
+				"packages/backend/src/services/alerts/AlertsService.ts",
+				"packages/backend/src/services/billing/autumn-tracker.ts",
+				"packages/backend/src/services/integrations/PlanetScaleDiscoveryService.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/github/GithubProvider.ts",
+				"packages/backend/src/services/org/OrgClickHouseSettingsService.ts",
+				"packages/backend/src/services/product-events/svix.ts"
+			],
+			"rules": { "maple/no-try-catch": "off" }
+		},
+		// Existing API burndown entries, relocated with their implementation.
+		{
+			"files": [
+				"packages/backend/src/http/schema-error-detail.ts",
+				"packages/backend/src/services/alerts/AlertDestinationsService.ts",
+				"packages/backend/src/services/alerts/AlertsService.ts",
+				"packages/backend/src/services/alerts/AnomalyDetectionService.ts",
+				"packages/backend/src/services/alerts/anomaly/detection.ts",
+				"packages/backend/src/services/alerts/delivery/transports/email.ts",
+				"packages/backend/src/services/auth/CliDeviceAuthService.ts",
+				"packages/backend/src/services/auth/McpOAuthService.ts",
+				"packages/backend/src/services/auth/PlanetScaleOAuthService.ts",
+				"packages/backend/src/services/dashboards/ServiceMapRollupService.ts",
+				"packages/backend/src/services/dashboards/dashboard-changes.ts",
+				"packages/backend/src/services/digest/DigestService.ts",
+				"packages/backend/src/services/errors/ErrorIssueReadModelsService.ts",
+				"packages/backend/src/services/errors/ErrorIssueWorkflowService.ts",
+				"packages/backend/src/services/errors/ErrorsService.ts",
+				"packages/backend/src/services/errors/InvestigationService.ts",
+				"packages/backend/src/services/integrations/PlanetScaleConnectionService.ts",
+				"packages/backend/src/services/integrations/PlanetScaleService.ts",
+				"packages/backend/src/services/integrations/ScrapeTargetsService.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/github/GithubProvider.ts",
+				"packages/backend/src/services/org/demo/fixtures.ts",
+				"packages/backend/src/services/push/LiveActivitiesService.ts",
+				"packages/backend/src/services/push/MobileDevicesService.ts"
+			],
+			"rules": { "typescript/no-non-null-assertion": "off" }
+		},
 		// The executor is the seam that decides a compile failure is a defect — the
 		// one place `Effect.orDie` around a compile is the intended behaviour rather
 		// than a call site restating it.
@@ -119,16 +164,14 @@
 		},
 		// Provider code is private outside its implementation, tests, and composition roots.
 		{
-			"files": ["apps/api/src/**/*.ts", "apps/api/src/**/*.tsx"],
+			"files": ["apps/api/src/**/*.ts", "apps/api/src/**/*.tsx", "packages/backend/src/**/*.ts"],
 			"excludeFiles": [
 				"apps/api/src/vcs-sync-runtime.ts",
-				"apps/api/src/runtime/mcp-service-graph.ts",
 				"apps/api/src/runtime/service-graph.ts",
-				"apps/api/src/runtime/vcs-source-layer.ts",
-				"apps/api/src/services/integrations/vcs/VcsProviderRegistry.ts",
+				"packages/backend/src/services/integrations/vcs/VcsProviderRegistry.ts",
 				"apps/api/src/routes/v1/integrations.http.ts",
-				"apps/api/src/services/integrations/vcs/vendor/**",
-				"apps/api/src/services/integrations/vcs/__tests__/**"
+				"packages/backend/src/services/integrations/vcs/vendor/**",
+				"packages/backend/src/services/integrations/vcs/__tests__/**"
 			],
 			"rules": {
 				"no-restricted-imports": [
@@ -145,6 +188,10 @@
 			}
 		}
 	],
+	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
+	// so house rules that would be rewrites are not applied to it. The dot-matrix loader runtime
+	// comes from the `@dotmatrix` shadcn registry (see `registries` in `apps/web/components.json`);
+	// re-add a variant with `shadcn add`, don't hand-edit these.
 	"ignorePatterns": [
 		".agents/**",
 		".codex/**",
@@ -154,7 +201,9 @@
 		".impeccable/**",
 		".superset/**",
 		"apps/web/src/routeTree.gen.ts",
-		"lib/thinking-orbs/**",
+		"apps/web/src/components/ui/dotm-*.tsx",
+		"apps/web/src/lib/dotmatrix-core.tsx",
+		"apps/web/src/lib/dotmatrix-hooks.ts",
 		"scripts/oxlint-plugins/anti-slop/**"
 	]
 }

@@ -1,0 +1,31 @@
+diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
+index b71c514f6c36983a6fb94a663e9ff878d58a3c1b..6192bdac6f761aef3c8e1ed2f3b4747ffd55692f 100644
+--- a/dist/internal/redacted.js
++++ b/dist/internal/redacted.js
+@@ -1,5 +1,11 @@
+ /** @internal */
+-export const redactedRegistry = /*#__PURE__*/new WeakMap();
++// Patched (maple): share the registry across duplicate `effect` module
++// instances via a Symbol.for-keyed global (like effect v3's globalValue).
++// Bun's isolated linker gives the alchemy CLI and the user's alchemy.run.ts
++// two path-distinct copies of this module; a module-local WeakMap makes
++// `Redacted.value` throw "Unable to get redacted value" for a Redacted made
++// by the other copy.
++export const redactedRegistry = globalThis[Symbol.for("effect/Redacted/redactedRegistry")] ??= /*#__PURE__*/new WeakMap();
+ /** @internal */
+ export const value = self => {
+   if (redactedRegistry.has(self)) {
+diff --git a/dist/unstable/httpapi/HttpApiBuilder.js b/dist/unstable/httpapi/HttpApiBuilder.js
+index 6ef6f4b25b9ae549ed9d983386b2c5df8a3c82a7..d0d9e9f772a1f5534e27f8453aea9ce762e4042b 100644
+--- a/dist/unstable/httpapi/HttpApiBuilder.js
++++ b/dist/unstable/httpapi/HttpApiBuilder.js
+@@ -347,7 +347,8 @@ function handlerToHttpEffect(group, endpoint, context, handler, isRaw) {
+ /** @internal */
+ export function handlerToRoute(group, handler, context) {
+   const endpoint = handler.endpoint;
+-  return HttpRouter.route(endpoint.method, endpoint.path, handlerToHttpEffect(group, endpoint, context, handler.handler, handler.isRaw), {
++  let httpEffect;
++  return HttpRouter.route(endpoint.method, endpoint.path, Effect.suspend(() => httpEffect ??= handlerToHttpEffect(group, endpoint, context, handler.handler, handler.isRaw)), {
+     uninterruptible: handler.uninterruptible
+   });
+ }

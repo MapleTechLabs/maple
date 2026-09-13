@@ -1,5 +1,0 @@
-{
-	"extends": "./tsconfig.json",
-	"include": ["tests/**/*.ts"],
-	"compilerOptions": { "types": ["node"] }
-}

@@ -131,7 +131,7 @@ export interface ChartEventMarkerOptions {
  *
  * ```tsx
  * defineChart({
- *   marks: [dashedGridY(), ...chartEventMarkerMarks(placed, { yDomain }), lineY(…)],
+ *   marks: [...chartEventMarkerMarks(placed, { yDomain }), lineY(…)],
  * })
  * ```
  *

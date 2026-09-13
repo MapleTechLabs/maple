@@ -12,17 +12,28 @@ const stars = await getGitHubStars();
     </div>
 </nav>
 
-<script>
-    // Past the fold the bar drops one tonal step, rather than brightening its
-    // border. Depth in this system is conveyed by tone, never by chroma — and
-    // the hairline stays a hairline (no blur, no glass: DESIGN.md bans both).
-    const nav = document.getElementById("main-nav");
-    if (nav) {
-        const update = () => {
-            nav.classList.toggle("bg-bg-deep", window.scrollY > 100);
-            nav.classList.toggle("bg-bg", window.scrollY <= 100);
-        };
-        window.addEventListener("scroll", update, { passive: true });
-        update();
+<style>
+    #main-nav {
+        background: var(--background);
+        font-family: "Geist Variable", sans-serif;
     }
-</script>
+    #main-nav > .shell {
+        height: 76px;
+    }
+    #main-nav :global(a[href="https://github.com/MapleTechLabs/maple"]) {
+        height: 36px;
+    }
+    #main-nav :global(a[href="https://github.com/MapleTechLabs/maple"] > span) {
+        font-size: 14px;
+    }
+    #main-nav :global([data-slot="context-menu-trigger"] > a > span) {
+        font-size: 22px;
+        font-weight: 750;
+        letter-spacing: -0.04em;
+    }
+    @media (max-width: 767px) {
+        #main-nav > .shell {
+            height: 64px;
+        }
+    }
+</style>

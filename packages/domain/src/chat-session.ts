@@ -52,19 +52,12 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
-export const ChatMode = Schema.Literals([
-	"default",
-	"dashboard-builder",
-	"alert",
-	"widget-fix",
-	"investigate",
-])
+export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
 export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	if (tab.startsWith("dashboard-builder-")) return "dashboard-builder"
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
@@ -91,6 +84,7 @@ export class ChatSubToolCall extends Schema.Class<ChatSubToolCall>("@maple/ChatS
 	input: Schema.Unknown,
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
 export class ChatSubMessage extends Schema.Class<ChatSubMessage>("@maple/ChatSubMessage")({
@@ -123,6 +117,16 @@ export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCal
 	proposed: Schema.optionalKey(Schema.Boolean),
 	/** Present on a `task` call: the sub-agent run it started, and that run's own transcript. */
 	task: Schema.optionalKey(ChatTaskState),
+	/**
+	 * How much of the message's `text` had been streamed when the model asked for this call —
+	 * the one thing that survives flattening prose and calls into two fields.
+	 *
+	 * Without it a reloaded turn has no way back to the order the reader watched: every call
+	 * lands under all of the prose, so an eight-step investigation reads as one essay followed
+	 * by one undifferentiated pile of tools. Optional because conversations recorded before it
+	 * existed have nothing to say; those still render prose-then-calls.
+	 */
+	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
 export class ChatMessage extends Schema.Class<ChatMessage>("@maple/ChatMessage")({
@@ -173,6 +177,28 @@ export const ChatTaskRef = Schema.Struct({
 	parentMessageId: Schema.String,
 })
 export type ChatTaskRef = Schema.Schema.Type<typeof ChatTaskRef>
+
+/**
+ * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`.
+ *
+ * Here rather than in `apps/api/src/chat/agents.ts`, where it started, because the *client* has to
+ * recognise a delegation from the tool name alone. A streamed `tool-call` carries the tool's name
+ * and nothing else that says "this opens a sub-agent" — the `task` ref only ever rides on the
+ * child's own events — so the web client matched the name against a literal `"task"` and never
+ * recognised a single delegation live: every sub-agent rendered as an ordinary tool row until the
+ * conversation was reloaded and the server's `ChatToolCall.task` took over. Two spellings of one
+ * convention in two apps is exactly the drift this file exists to prevent.
+ */
+export const DELEGATION_TOOL_PREFIX = "task_"
+
+/** The tool that delegates to `agent`. */
+export const delegationToolName = (agent: string): string => `${DELEGATION_TOOL_PREFIX}${agent}`
+
+/** The sub-agent a tool name delegates to, or `undefined` for an ordinary tool. */
+export const delegatedAgentOf = (toolName: string): string | undefined =>
+	toolName.startsWith(DELEGATION_TOOL_PREFIX) && toolName.length > DELEGATION_TOOL_PREFIX.length
+		? toolName.slice(DELEGATION_TOOL_PREFIX.length)
+		: undefined
 
 const task = { task: Schema.optionalKey(ChatTaskRef) }
 

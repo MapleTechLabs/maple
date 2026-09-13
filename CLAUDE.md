@@ -11,7 +11,7 @@ Three roots, and the split is a rule, not a habit:
 - **`packages/*`** — shared code that **knows Maple**: its schema, tables, API, or product.
   `domain`, `query-engine`, `ui`, `db`, `auth`, `effect-sdk`, `browser`, …
 - **`lib/*`** — libraries with **zero Maple knowledge**, extractable to their own repo tomorrow.
-  `clickhouse-builder`, `effect-db`, `effect-router`, `cache`, `safe-fetch`,
+  `effect-db`, `effect-router`, `cache`, `safe-fetch`,
   `otel-helpers`, `unitflow`.
 
 The test for `lib/` is "could this ship as a standalone OSS library?" — not "is it published?"
@@ -19,17 +19,24 @@ and not "did we write it?". Publishability is a `package.json` fact, not a direc
 `packages/effect-sdk` and `packages/browser` are both published. **New packages go in
 `packages/` unless they pass the lib test.**
 
+`@maple-dev/effect-clickhouse` lives in the public
+[effect-clickhouse repository](https://github.com/MapleTechLabs/effect-clickhouse).
+Maple consumes its built release package; library changes and tests belong there.
+
 Anything in `lib/` that starts importing `@maple/domain` has stopped qualifying — move it to
 `packages/` rather than weakening the rule.
 
 ## Local dev
 
-Sign in at `https://web.localhost` with the Clerk test account `david+clerk_test@gmail.com` /
-`Maple-Dev-Kx92qZ!` when you need an authenticated browser session.
+Need an authenticated browser session? `bun run dev:signin` prints a one-shot Clerk ticket link
+(`/sign-in?__clerk_ticket=…`, 10 minutes, dev instance only) that lands signed in as
+`david+clerk_test@gmail.com` — no password typing, and nothing in the app bypasses auth. Pass another
+email as the first argument for a different dev user. The password `Maple-Dev-Kx92qZ!` still works if
+you want the form.
 
 ```bash
 bun dev                        # everything, ONE `alchemy dev` stack → https://[<worktree>.]<app>.localhost
-bun dev api web                # a subset (api, alerting, electric-sync, web, landing, ingest, local-ui, scraper)
+bun dev api web                # a subset (api, ai, alerting, electric-sync, web, landing, ingest, local-ui, scraper)
 bun --filter=@maple/web dev    # single app on its raw port, no portless proxy
 bun run test                   # Vitest via turbo (NOT `bun test` — that's Bun's own runner)
 bun typecheck
@@ -43,17 +50,50 @@ Toolchain (bun/node/rust/python) is pinned in [`mise.toml`](mise.toml); `mise ru
 first-time install + `.env.local` + portless CA. mise is optional but bump versions there when
 upgrading a runtime (keep `bun` in sync with `packageManager`).
 
+## The AI Worker (`apps/ai`)
+
+Every agent surface runs in its own Worker: the public MCP server and its ~47 tools, the chat agent
+and its `ChatSession` Durable Object, and the autonomous investigation fan-out. They moved together
+because all three reach the same tool registry in-process — extracting any one alone leaves the
+registry behind, which is why the first attempt was worth 1%.
+
+`api.maple.dev/mcp` is still the public address. `apps/api` forwards `/mcp`, `/api/chat/*` and
+`/internal/chat/*` over a service binding, ahead of building its route graph, which keeps the OAuth
+issuer and the RFC 8707 resource identifiers on api's origin. OAuth itself (`McpOAuthService`, the
+discovery and consent endpoints) stays in `apps/api`; maple-ai validates the ordinary API key it
+mints.
+
+Shared backend services and adapters live in `packages/backend`, imported through explicit
+`@maple/backend/*` subpaths. API, AI, and alerting own their entrypoints, routes, and resource
+bindings. `@/` resolves to each app's own source.
+
+## Service ownership
+
+Service constructors acquire their implementation dependencies; public methods close over them.
+A method leaking an implementation service in its Effect requirements is a bug. Explicit
+invocation-owned context (request scopes, transactions, tenant/actor context) must remain on the
+current invocation rather than being captured at isolate construction.
+
+Each service owns its `static readonly layer`: `Layer.effect(this, this.make)` with internal
+service dependencies supplied through `Layer.provide`. The layer exports only its own service;
+`Env`, `Database`, cache backends, and binding ports are supplied by the application root.
+Tests inject substitutes through `Layer.effect(Service, Service.make)`. Application roots merge
+only the services their consumers need; they do not reconstruct service dependency chains.
+
 ## Warehouse queries
 
 **No Tinybird pipes/endpoints exist.** All backend queries use the ClickHouse DSL in
-`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to the
-Tinybird SDK or ClickHouse per org config. Never `fetch()` `/v0/sql` directly.
+`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to
+Tinybird's HTTP API or a ClickHouse HTTP endpoint per org config. Both drivers live in
+`WarehouseQueryService.ts` on Effect's `HttpClient` (ClickHouse via `lib/effect-clickhouse-http`)
+and fail with a structured `WarehouseDriverError` the classifier reads. Never `fetch()` `/v0/sql`
+directly.
 
 Subpath exports: `./ch` (DSL + `compile`), `./runtime` (dashboard/alert lowering, `evaluate`,
 cache keys), `./execution` (`makeWarehouseExecutor` — retry, error mapping, OrgId scoping, spans),
 `./caching` (edge/bucket caches behind a `CacheBackend` port), `./profiles` (cost profiles →
 `SETTINGS`), `./observability` (MCP/agent helpers). The **root barrel stays driver-free** so web/cli
-can import it; only `apps/api` touches the other subpaths (`WarehouseQueryService.ts` injects the
+can import it; the shared backend touches the other subpaths (`WarehouseQueryService.ts` injects the
 drivers, `QueryEngineService.ts` the caches).
 
 To add a query: define it in `packages/query-engine/src/ch/queries/*.ts` with
@@ -108,18 +148,18 @@ isolated database and exercises run/compare/inspect against real Maple builders.
 ## Application database (PlanetScale Postgres)
 
 Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/`pgTable` in
-`packages/db/src/schema/`, one PS branch per deployed stage (`main`=prd, `stg`), reached from
-Workers via the Hyperdrive binding `MAPLE_DB`.
+`packages/db/src/schema/`, on the PlanetScale `main` branch (prd — the only stage with a
+database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
-  `dateToMs` from `apps/api/src/platform/time.ts` rather than bare `new Date(ms)` /
+  `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare `new Date(ms)` /
   `.getTime()`, including inside Promise-land helpers. Never read driver write-result shapes
   — use `.returning()` + length. `count(*)` needs `::int` (bigint → string).
 - Layers: `DatabasePgLive` (Workers) and `DatabasePgliteLive` (tests/local; `createTestDb()` in
-  `apps/api/src/platform/test-pglite.ts`).
+  `packages/backend/src/platform/test-pglite.ts`).
 - One Postgres connection per invocation — request, cron tick, or Workflow run — created lazily and
   closed at the boundary, which is Cloudflare's documented Hyperdrive shape. The single primitive is
-  `makePgConnectionScope` in `apps/api/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
+  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
   installs it for HTTP, `withPgConnectionScope` for cron. Sockets are request-bound on Workers, so a
   connection may be reused freely WITHIN an invocation but must never outlive it. `max` is 5
   (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost 3–6x on p50) and the
@@ -149,7 +189,7 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   JS plugin in `scripts/oxlint-plugins/maple.mjs`) and the repo is at zero — keep it there. Generic
   constraints (`<T extends Record<string, any>>`) are exempt: `unknown` does not work in that
   position. `typescript/no-explicit-any` is `warn` (75 left, all outside `lib/`). Both rules are off
-  under `lib/**`, whose builder DSLs (`clickhouse-builder`, `unitflow`) use
+  under `lib/**`, whose builder DSLs (`unitflow`) use
   `any` as a type-level placeholder in variance positions. `Record<string, unknown>` is _not_ banned —
   it forces narrowing at every read, which is the point.
 - **Effect:** source is vendored at `.context/effect/` (subtree of Effect-TS/effect-smol).
@@ -170,11 +210,10 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
   it had diverged exactly where it mattered — it has `AWS/StageConfig.ts` where the real
   package has `AWS/Environment.ts` + `AWS/AuthProvider.ts` — and a code review cited its line
   numbers as fact for a bug in the live code.
-- **LLM core:** `@opencode-ai/ai` — opencode's Effect-native LLM core, on npm and pinned exactly
-  (`0.0.0-beta-18050`; the `dev`/`beta` channels carry no semver, so a bump is a read of the diff).
-  Only `apps/api` depends on it, and every piece of Maple behaviour — layer wiring, the Workers AI
-  binding shim, model/provider selection, error mapping — lives at the seam in
-  `apps/api/src/platform/Llm.ts`, never in a wrapper around the package.
+- **LLM core:** Effect AI (`@effect/ai-openrouter`, `@effect/ai-openai-compat`) plus
+  `@effect-agent/*`. Only `apps/ai` depends on them, and every piece of Maple behaviour — layer
+  wiring, the Workers AI binding shim, model/provider selection, error mapping — lives at the seam
+  in `apps/ai/src/platform/Llm.ts`, never in a wrapper around the packages.
 - **Span status codes:** Title case — `"Ok"`, `"Error"`, `"Unset"`.
 - **UI:** shadcn/Base UI + Tailwind 4 (`npx shadcn@latest add <component>`), Recharts, Nucleo icons.
   Find an icon in the local Nucleo DB, then port it into `apps/web/src/components/icons/` by copying
@@ -183,6 +222,59 @@ Workers via the Hyperdrive binding `MAPLE_DB`.
     sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
       "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
     ```
+
+## Repository sandbox (agent code access)
+
+When an org has connected GitHub, every agent surface (chat, investigation lanes, public MCP)
+gets `sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
+(`apps/ai/src/mcp/tools/sandbox.ts`). They run against a **full git clone at an exact commit**
+inside Cloudflare's Sandbox container, so history works (`git log`, `git blame`, `git show`).
+`git grep` and `git ls-files` back the search and listing tools, because the image ships git and
+not ripgrep — and its git is old enough to lack `git grep --max-count`, which is the kind of thing
+`RepoSandboxService.test.ts` exists to catch: it runs the real argument vectors against a real
+repository, where every other test in this area stubs the container.
+
+A command runs as an unprivileged account over a tree it cannot write, in a three-variable
+environment, inside a network namespace with no egress, and is refused outright if the container
+cannot open one. `sandbox_exec` passes arguments directly rather than through a shell, but the
+checkout has real interpreters, so treat it as general code execution inside that container.
+
+The port is effect-agent's `Sandbox` contract (`@effect-agent/sandbox/Sandbox`): one
+`SandboxRequest` per command, the repository named as the single read-only mount
+`maple-vcs://<orgId>/<owner>/<name>@<ref>`, and an implementation that rejects any feature it
+cannot enforce (`admit` in `packages/backend/src/services/sandbox/CloudflareRepoSandbox.ts`). Swapping the
+container out again is a change below that port and nothing above it.
+
+Two rules worth keeping: a **ref reaching the provider is validated** (`unsafeRef`) and encoded at
+the GitHub call, because an unencoded `..` is normalised away and would walk an installation-wide
+token onto a repository the org never connected; and the **clone credential never enters a command's
+arguments**, because `/proc/<pid>/cmdline` is readable by the account agent commands run as.
+
+Testing it has three layers, and the top one is the only one that catches the image:
+
+```bash
+bun run --cwd apps/ai test src/mcp/tools/sandbox                 # the tools
+bun run --cwd packages/backend test src/services/sandbox                 # argument vectors, real git
+bun run --cwd apps/sandbox test                                          # the generated scripts, as text
+bun run --cwd apps/sandbox verify:image                                  # the scripts, inside the image
+```
+
+`verify:image` needs Docker. It builds a fixture repository in the real container, runs the actual
+`cloneScript` and `wrapCommand` output against it, and checks what happened: the commit is cloned
+with its history, the token is nowhere on disk afterwards, commands run as `maple-agent` in exactly
+three environment variables over a tree they cannot write, egress is denied, and output is cut at the
+bound while the trailer still reports the true size. `MAPLE_SANDBOX_NO_CAPS=1` drops `SYS_ADMIN` and
+asserts the other half of the contract — that a container which cannot open a network namespace
+refuses to run the command at all rather than running it with egress. Every bug this area has had
+that the unit tests could not see (a `mktemp -d` mode, a git flag this image predates, `runuser`
+adding `USER` and `LOGNAME` after `env -i`) was found by running the image.
+
+End to end needs a real deployment: `stageDeploysSandbox` is `prd` only, so `bun dev` binds no
+`SANDBOX` and the four tools report that no sandbox is available.
+
+The container is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the script
+must export, and an Effect-native Worker's generated entry exports only its own bridge classes. It
+lives in `apps/sandbox`, on `prd` only; see `docs/infra.md` § Single-module Workers.
 
 ## Self-observability (trace loop prevention)
 
@@ -205,7 +297,7 @@ there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER
 ## Docs (`docs/`)
 
 `api-v2.md` (v2 public API spec) · `error-issue-lifecycle.md` (how an error becomes an issue,
-gets diagnosed, fixed and verified — read before touching `apps/api/src/services/errors/`) ·
+gets diagnosed, fixed and verified — read before touching `packages/backend/src/services/errors/`) ·
 `sampling-throughput.md` · `persistence.md` ·
 `ingest-wal-durability.md` (WAL segments, the S3 tier, and what survives a task dying) ·
 `docker-container-monitoring.md` (Docker agent → `/infra/containers` lifecycle + its invariants) ·

@@ -10,7 +10,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	linearYDomain,
 	niceLinearDomain,
 	resolvePlotColor,
@@ -20,6 +20,7 @@ import {
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { ChartLoading } from "@maple/ui/components/charts"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
@@ -93,9 +94,10 @@ function LogsVolumePlot({
 		return resolved
 	}, [seriesKeys, theme])
 
+	const { effectiveTimezone } = useTimezonePreference()
 	const axisContext = useMemo(
-		() => ({ rangeMs, bucketSeconds: dataBucketSeconds }),
-		[rangeMs, dataBucketSeconds],
+		() => ({ rangeMs, bucketSeconds: dataBucketSeconds, timeZone: effectiveTimezone }),
+		[rangeMs, dataBucketSeconds, effectiveTimezone],
 	)
 
 	/**
@@ -135,7 +137,6 @@ function LogsVolumePlot({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				barY(cells, {
 					x: (cell: SeverityCell) => cell.bucket,
 					y: (cell: SeverityCell) => cell.value,
@@ -177,6 +178,7 @@ function LogsVolumePlot({
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

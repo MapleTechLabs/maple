@@ -15,11 +15,7 @@ import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
 	CliAuthRateLimit,
-	type KeyValueStore,
-	KeyValueStoreError,
 	McpOAuthRateLimit,
-	McpSessionStore,
-	McpToolsRateLimit,
 	type ObjectStore,
 	ObjectStoreError,
 	PlanetScaleWebhookQueueProducer,
@@ -29,17 +25,12 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	VcsSyncQueueProducer,
-} from "../platform/bindings"
-import { mapleDbConnectionLayer } from "../platform/pg-connection-source"
-import { McpSessions } from "../resources/mcp-sessions"
+} from "@maple/backend/platform/bindings"
+import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
-} from "../services/auth/ApiV2RateLimiter"
-import {
-	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
-	MCP_TOOLS_RATE_LIMIT_REQUESTS,
-} from "../services/auth/McpToolRateLimiter"
+} from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
@@ -54,7 +45,6 @@ export const bindApiClients = Effect.gen(function* () {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
-		mcpSessions: yield* Cloudflare.KV.ReadWriteNamespace(McpSessions),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
@@ -69,12 +59,6 @@ export const bindApiClients = Effect.gen(function* () {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
 		}),
-		// Authenticated POST /mcp, per credential. A short window so a runaway
-		// agent loop is cut off in seconds, at twice the v2 API's throughput.
-		mcpToolsRateLimit: yield* Cloudflare.RateLimit("MCP_TOOLS_RATE_LIMITER", {
-			namespaceId: 2026082901,
-			simple: { limit: MCP_TOOLS_RATE_LIMIT_REQUESTS, period: MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS },
-		}),
 	}
 })
 
@@ -84,7 +68,6 @@ type ApiBindingClients = Effect.Success<typeof bindApiClients>
 export const ApiBindingLayers = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
-	Cloudflare.KV.ReadWriteNamespaceBinding,
 	Cloudflare.R2.ReadBucketBinding,
 	Cloudflare.Workers.RateLimitBinding,
 )
@@ -140,20 +123,6 @@ const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 		),
 })
 
-const keyValueStore = (client: Cloudflare.KV.ReadWriteNamespaceClient): KeyValueStore => {
-	const storeError = (error: { readonly message: string; readonly cause?: unknown }) =>
-		new KeyValueStoreError({ message: error.message, cause: error.cause })
-	return {
-		getJson: (key) =>
-			runtime(client.get<unknown>(key, "json")).pipe(
-				Effect.map((value) => Option.fromNullishOr(value)),
-				Effect.mapError(storeError),
-			),
-		put: (key, value, options) =>
-			runtime(client.put(key, value, options)).pipe(Effect.mapError(storeError)),
-	}
-}
-
 /**
  * The ports the service graph depends on, over the clients the init bound,
  * plus the env itself as `WorkerEnvironment` and the `ConfigProvider` — the
@@ -169,9 +138,7 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
-		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
-		Layer.succeed(McpSessionStore, keyValueStore(clients.mcpSessions)),
 		mapleDbConnectionLayer(env),
 		workerEnvLayer(env),
 	)

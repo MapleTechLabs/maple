@@ -5,8 +5,8 @@
 // The request-count metrics are 5-min delta sums written by the analytics
 // poller, so sum(Value) per bucket is the true request count.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param } from "@maple-dev/effect-clickhouse"
 import { MetricsSum } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 

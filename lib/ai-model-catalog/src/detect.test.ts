@@ -8,9 +8,11 @@ describe("detectAiModel", () => {
 			slug: "glm-5.3-flash:nitro",
 			normalizedSlug: "glm-5.3-flash",
 			openRouterId: "z-ai/glm-5.3-flash",
-			displayName: "GLM 5.3 Flash",
+			displayName: "GLM 5.3 Flash (nitro)",
 			vendorSlug: "z-ai",
 			vendorName: "Z.ai",
+			// A vendor the catalog lists no color for.
+			brandColor: null,
 			family: null,
 			source: "openrouter",
 		})
@@ -27,6 +29,7 @@ describe("detectAiModel", () => {
 			openRouterId: "anthropic/claude-sonnet-4.5",
 			displayName: "Claude Sonnet 4.5",
 			vendorSlug: "anthropic",
+			brandColor: { light: "#D97757", dark: "#D97757" },
 			family: "claude",
 			source: "openrouter",
 		})
@@ -89,9 +92,16 @@ describe("detectAiModel", () => {
 		})
 	})
 
-	it("names a variant after its plain listing", () => {
-		expect(detectAiModel("anthropic/claude-opus-5:batch").displayName).toBe("Claude Opus 5")
-		expect(detectAiModel("z-ai/glm-5.3-flash:free").displayName).toBe("GLM 5.3 Flash")
+	it("names a variant after its plain listing, and keeps the variant", () => {
+		expect(detectAiModel("anthropic/claude-opus-5:batch").displayName).toBe("Claude Opus 5 (batch)")
+		expect(detectAiModel("z-ai/glm-5.3-flash:free").displayName).toBe("GLM 5.3 Flash (free)")
+		// The plain listing keeps the plain name, so the two never collide.
+		expect(detectAiModel("z-ai/glm-5.3-flash").displayName).toBe("GLM 5.3 Flash")
+	})
+
+	it("keeps an Ollama size tag, and reads a Bedrock version as no tag at all", () => {
+		expect(detectAiModel("llama3.1:8b").displayName).toBe("Llama 3.1 (8b)")
+		expect(detectAiModel("us.anthropic.claude-opus-5-20250929-v1:0").displayName).toBe("Claude Opus 5")
 	})
 
 	it("places an unlisted model with its vendor by prefix", () => {
@@ -105,6 +115,8 @@ describe("detectAiModel", () => {
 		expect(detectAiModel("grok-4")).toMatchObject({
 			vendorSlug: "x-ai",
 			vendorName: "xAI",
+			// A heuristic vendor carries its color too; xAI's mark is monochrome.
+			brandColor: { light: "#000000", dark: "#FFFFFF" },
 			family: "grok",
 		})
 		expect(detectAiModel("gemini-1.5-pro-002").displayName).toBe("Gemini 1.5 Pro")
@@ -127,6 +139,7 @@ describe("detectAiModel", () => {
 		for (const input of ["constructor/foo", "constructor.foo", "__proto__/foo", "-", "anthropic/"]) {
 			const detected = detectAiModel(input)
 			expect(detected.source).toBe("unknown")
+			expect(detected.brandColor).toBeNull()
 			expect(typeof detected.vendorName === "string" || detected.vendorName === null).toBe(true)
 			expect(detected.displayName.length).toBeGreaterThan(0)
 		}
@@ -141,6 +154,7 @@ describe("detectAiModel", () => {
 			displayName: "My Azure Deployment",
 			vendorSlug: null,
 			vendorName: null,
+			brandColor: null,
 			family: null,
 			source: "unknown",
 		})

@@ -42,6 +42,8 @@ export function LogList({ props }: RendererComponentProps<LogListProps>) {
 							{log.traceId && (
 								<a
 									href={`/traces/${log.traceId}${log.timestamp ? `?t=${encodeURIComponent(log.timestamp)}` : ""}`}
+									target="_blank"
+									rel="noreferrer"
 									className="shrink-0 text-primary hover:underline"
 									title={log.traceId}
 								>

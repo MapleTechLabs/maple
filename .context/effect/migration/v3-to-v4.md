@@ -4,7 +4,7 @@
 
 Base: `3d390f232bdbc3f0d3d6a2ae3c775084f494b547` (`3d390f232bdbc3f0d3d6a2ae3c775084f494b547`)
 
-Head: `origin/main` (`b7559505c831c779eb2c3a974e88d35cb1f2fae5`)
+Head: `origin/main` (`20cb4f260e45d37fa417c292c57be015314efe16`)
 
 This file is generated from the API diff and `migration/annotations/*.yaml`.
 
@@ -5674,7 +5674,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/cluster/Message`
 
-- `Message.serialize` -> `effect/unstable/cluster/Message#serialize`: Moved into core Effect. It now returns Envelope.Partial; use serializeEnvelope for the JSON Envelope.Encoded form.
+- `Message.serialize` -> `effect/unstable/cluster/Message#serialize`: Moved into core Effect. Pass the transport's codecFor as the second argument; use serializeEnvelope for the JSON Envelope.Encoded form.
 
 ### `@effect/cluster/MessageStorage`
 
@@ -5686,11 +5686,11 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/cluster/Reply`
 
-- `Reply.ReplyEncoded` -> `effect/unstable/cluster/Reply#Encoded`: Renamed to Encoded and no longer parameterized by an Rpc; payload fields are unknown and validated by Reply.Reply(rpc).
+- `Reply.ReplyEncoded` -> `effect/unstable/cluster/Reply#Encoded`: Renamed to Encoded and no longer parameterized by an Rpc; payload fields are unknown and validated by Reply.Reply(rpc, codecFor) with the transport's codec.
 
 - `Reply.TypeId` -> `none`: The reply marker is private in v4. Use Reply.isReply for runtime refinement.
 
-- `Reply.serialize` -> `effect/unstable/cluster/Reply#serialize`: Moved into core Effect and now returns the non-generic Reply.Encoded wire union.
+- `Reply.serialize` -> `effect/unstable/cluster/Reply#serialize`: Moved into core Effect and now returns the non-generic Reply.Encoded wire union. Pass the transport's codecFor as the second argument.
 
 ### `@effect/cluster/Runner`
 
@@ -5706,7 +5706,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/cluster/Runners`
 
-- `Runners.make` -> `effect/unstable/cluster/Runners#make`: Moved into core Effect with the same callbacks and requirements; Context service projections now use Service instead of Type.
+- `Runners.make` -> `effect/unstable/cluster/Runners#make`: Moved into core Effect. Its options now require codecFor; pass the codec used by the remote runner transport, such as RpcSerialization.json.codecFor for JSON. Context service projections now use Service instead of Type.
 
 - `Runners.makeNoop` -> `effect/unstable/cluster/Runners#makeNoop`: Moved into core Effect; it returns the Context.Service implementation through the Service projection instead of Type.
 
@@ -7590,6 +7590,8 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/rpc/RpcMessage`
 
+- `RpcMessage.FromServerEncoded` -> `effect/unstable/rpc/RpcMessage#FromServerEncoded`: The union is retained and now also includes RequestEncoded for server-originated requests and notifications. Handle \_tag: "Request" when matching exhaustively; isNotification identifies notifications.
+
 - `RpcMessage.RequestId` -> `effect/unstable/rpc/RpcMessage#RequestId`: Request ids are now branded string or number values; convert bigint ids before calling the retained RequestId constructor.
 
 - `RpcMessage.RequestIdTypeId` -> `effect/unstable/rpc/RpcMessage#RequestId`: The public symbol marker was removed; use the branded RequestId type and RequestId constructor rather than inspecting its brand.
@@ -7638,7 +7640,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/rpc/RpcServer`
 
-- `RpcServer.Protocol` -> `effect/unstable/rpc/RpcServer#Protocol`: Retained as a Context.Service; custom transports now expose a disconnect queue and explicit capability flags.
+- `RpcServer.Protocol` -> `effect/unstable/rpc/RpcServer#Protocol`: Retained as a Context.Service; custom transports now expose a disconnect queue, explicit capability flags, and codecFor for schema-aware payload and exit encoding.
 
 - `RpcServer.fiberIdClientInterrupt` -> `effect/unstable/rpc/RpcSchema#ClientAbort`: The sentinel FiberId was replaced by a Cause annotation; inspect ClientAbort in the interruption cause when client cancellation must be distinguished.
 
@@ -11267,7 +11269,11 @@ JsonSchema.toDocumentDraft07(Schema.toJsonSchemaDocument(schema))
 
 ### `effect/Match`
 
+- `Match.Matcher` -> `Match.Matcher`: The type is retained, but its fifth argument is now a flavor marker (ValueFlavor for Match.value and never for Match.type or Match.fn) rather than the provided value; an optional seventh Args tuple tracks Match.fn selector arguments. Prefer inference from Match.type, Match.value, or Match.fn and update hand-written Matcher annotations.
+
 - `Match.MatcherTypeId` -> `none`: The public matcher brand was internalized. Obtain matchers from Match.type or Match.value and use their public \_tag when discrimination is required.
+
+- `Match.Not` -> `Match.Not`: The case type is retained. Its evaluate method now receives any Match.fn selector arguments after the selected input; update custom case implementations that consume those arguments.
 
 - `Match.SafeRefinementId` -> `none`: The public safe-refinement brand was internalized. Use Predicate.Refinement, Predicate.Predicate, or a built-in Match refinement instead of constructing the brand.
 
@@ -11292,6 +11298,8 @@ JsonSchema.toDocumentDraft07(Schema.toJsonSchemaDocument(schema))
 - `Match.Types.ToSafeRefinement` -> `Match.Types.ToSafeRefinement`: The type-only matching helper is retained unchanged.
 
 - `Match.ValueMatcher` -> `Match.ValueMatcher`: The type is retained, but value now uses Result instead of Either and the brand is private; create values with Match.value.
+
+- `Match.When` -> `Match.When`: The case type is retained. Its evaluate method now receives any Match.fn selector arguments after the selected input; update custom case implementations that consume those arguments.
 
 - `Match.either` -> `Match.result`: Renamed finalizer with a container change: matched Right and unmatched Left become Result.Success and Result.Failure.
 

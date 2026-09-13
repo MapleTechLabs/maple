@@ -6,7 +6,7 @@ import {
 	resolveSubscriptionPlan,
 	type PlanLike,
 } from "@maple/domain/billing"
-import { formatCurrency } from "./currency"
+import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatUsage } from "./usage"
 
 // Metered features surfaced on the billing page. AI token features stay hidden,

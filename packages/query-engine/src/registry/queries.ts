@@ -49,7 +49,7 @@ import type {
 	WebAnalyticsBreakdownsRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
-import { WEB_ANALYTICS_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { formatWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
@@ -61,9 +61,15 @@ export { logsCount, logsTimeseries } from "./logs"
 export {
 	productEventsFunnel,
 	productEventsFunnelBreakdown,
+	productEventsFunnelTiming,
+	productEventsFunnelLeavers,
+	productEventsPaths,
 	productEventNames,
 	productEventsForTrace,
 	productEventTraceSamples,
+	productEventsTimeseries,
+	productEventsBreakdown,
+	productEventsList,
 } from "./product-events"
 
 /**
@@ -865,7 +871,7 @@ const webAnalyticsLiveDef = (useProductEvents: boolean) => ({
 		return CH.compile(
 			CH.webAnalyticsLiveQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
-				windowSeconds: WEB_ANALYTICS_LIVE_WINDOW_SECONDS,
+				windowSeconds: SESSION_LIVE_WINDOW_SECONDS,
 			}),
 			{
 				orgId,

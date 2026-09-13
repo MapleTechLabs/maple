@@ -1,3 +1,7 @@
+# DORMANT — disabled in the GitHub UI. Both Tinybird workspaces (EU prod and
+# `maple_us`) are deployed by hand from a `tb login` (see
+# docs/tinybird-pr-branches.md and the notes in the memory index); this file is
+# kept for the day that moves back into CI.
 name: Tinybird - CD Workflow
 
 on:
@@ -26,16 +30,12 @@ jobs:
         # One leg per long-lived Tinybird workspace. Each GitHub Environment supplies
         # its own TINYBIRD_HOST/TINYBIRD_TOKEN, so the matching workspace admin token
         # scopes each deploy to that workspace — no `--branch`/`__tb__` params needed.
-        # Staging is a separate workspace (Tinybird's documented long-lived pattern;
-        # branches are ephemeral and share prod compute, so they're unsuitable here).
         strategy:
             fail-fast: false
             matrix:
                 target:
                     - label: production
                       environment: tinybird-cd
-                    - label: staging
-                      environment: tinybird-cd-stg
                     # The us-east-1 workspace being migrated to. Both production
                     # legs must receive every schema deploy for the whole
                     # dual-emit window — a month of drift between the two
@@ -45,7 +45,7 @@ jobs:
                       environment: tinybird-cd-us
         environment: ${{ matrix.target.environment }}
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
             - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
             - name: Install dependencies
               # Run install before any secrets are scoped to the deploy step.
@@ -57,7 +57,7 @@ jobs:
                   ALLOW_DESTRUCTIVE: ${{ github.event.inputs.allow_destructive }}
               run: |
                   set -euo pipefail
-                  # Graceful no-op until an environment is provisioned: lets the staging
+                  # Graceful no-op until an environment is provisioned: lets a new
                   # leg stay green before its workspace/secrets exist, without ever
                   # affecting the production leg (whose token is always set).
                   if [ -z "${TINYBIRD_TOKEN:-}" ]; then

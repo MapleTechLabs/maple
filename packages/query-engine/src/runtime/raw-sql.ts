@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http"
 import { rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
 import type { QueryProfileName } from "../profiles"
-import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/clickhouse-builder/sql"
+import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
 
 // User-authored ClickHouse SQL: validation, macro expansion, and execution.
 //

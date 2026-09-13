@@ -1,0 +1,7 @@
+# Roman closing artwork
+
+Asset: `maple-rome-arch.webp`, generated with the built-in GPT Image Gen tool. Lossless WebP delivery copy. Style reference: `maple-rome-balanced.webp`.
+
+## Prompt
+
+Use case: stylized-concept. Asset: closing CTA illustration for Maple website, landscape 3:2. Reference image is the current hero: match its ancient Roman world, precise architectural engraving and balanced medium-fine ordered dithering. Create a companion illustration of a monumental ancient Roman triumphal arch with one tall rounded archway, classical engaged columns, carved cornice and restrained sculptural relief, standing on broad worn stone steps. Low three-quarter viewpoint, arch on right two thirds, complete recognizable silhouette with some breathing room at top. Sparse distant cypresses, a suggestion of an aqueduct visible through the opening. Left third mostly empty orange sky, for adjacent HTML copy. Reverse the hero palette for an orange closing section: flat Maple amber #E8872A background with warm charcoal #1A1714 engraved architecture and shadows. Strict duotone, no white, no yellow or other hues. Match reference dither density: crisp architectural linework and medium-fine pixel stipple concentrated in shadows, clear solid lit planes, not coarse checkerboard or excessive noisy grain. Sophisticated Roman engraving, monumental, quiet, rich detail. No text, inscriptions, letters, logos, frame or border. Full bleed.

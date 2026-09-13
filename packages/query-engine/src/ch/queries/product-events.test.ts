@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	productEventsFunnelQuery,
 	productEventsFunnelBreakdownQuery,
 	productEventNamesQuery,
+	productEventsFunnelTimingQuery,
+	productEventsFunnelLeaversQuery,
 	ProductEventsFunnelError,
 	type FunnelStep,
 } from "./product-events"
@@ -123,12 +125,12 @@ describe("productEventsFunnelQuery", () => {
 		expect(sql).toContain("UNION ALL")
 		// The session branch: s1 = 1, every other step 0, at the session's StartTime.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(StartTime)) AS ts, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
+			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
 		)
 		expect(sql).toContain("AND ReferrerHost = 'news.ycombinator.com'")
 		// The events branch never satisfies the session step.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts, 0 AS s1,",
+			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts, Seq AS seq, 0 AS s1,",
 		)
 		expect(sql).toContain("windowFunnel(86400000)(ts, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level")
 	})
@@ -308,5 +310,60 @@ describe("productEventNamesQuery", () => {
 		expect(flat).toContain("AND ReferrerHost = 't.co'")
 		// pagePath narrows sessions through the navigation semi-join, not the events.
 		expect(flat).toContain("AND Kind = 'navigation' AND PagePath = '/pricing' GROUP BY sessionId)")
+	})
+})
+
+// productEventsFunnelTimingQuery / productEventsFunnelLeaversQuery
+//
+// The drop-off view's extras. Both walk each person's chain from the first
+// step-1 event (`t1..tN`); timing takes quantiles of the gaps, leavers join
+// every event of the population back onto the chain to find what came next.
+
+describe("funnel drop-off details", () => {
+	it("walks each step's first event in chain order and takes p50/p90 of the gaps", () => {
+		const { sql } = compileUnsafe(
+			productEventsFunnelTimingQuery({ steps: STEPS, keyBy: "person", windowSeconds: 3_600 }),
+			params,
+		)
+		expect(sql).toContain("arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, s1, s2, s3))) AS evs")
+		expect(sql).toContain("tupleElement(arrayFirst(x -> x.3 = 1, evs), 1) AS t1")
+		// A step is only found once the previous one was.
+		expect(sql).toContain(
+			"arrayFirst(x -> t1 > 0 AND x.4 = 1 AND x.1 >= t1 AND x.1 <= t1 + 3600000, evs), 1) AS t2",
+		)
+		expect(sql).toContain("quantileIf(0.5)(toFloat64(t2 - t1), level >= 2 AND t2 > 0)")
+		expect(sql).toContain("quantileIf(0.9)(toFloat64(t3 - t2), level >= 3 AND t3 > 0)")
+		expect(sql).toContain("arrayJoin([2, 3]) AS step")
+		expect(sql).toContain("arrayElement(p50s, step) AS p50Ms")
+	})
+
+	it("finds the first event after the last step a leaver reached, top rows per step", () => {
+		const { sql } = compileUnsafe(
+			productEventsFunnelLeaversQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			params,
+		)
+		expect(sql).toContain("level + 1 AS step")
+		expect(sql).toContain("arrayElement([t1, t2, t3], level) AS tLast")
+		expect(sql).toContain("WHERE level >= 1")
+		expect(sql).toContain("AND level < 3")
+		expect(sql).toContain("AND arrayElement([t1, t2, t3], level) > 0")
+		expect(sql).toContain("argMinIf(e.name, e.ts, e.ts > d.tLast) AS next")
+		// No identity join on a visitor key, so the branch's columns go unprefixed.
+		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
+		// Every event of the population, not just step matches: no step OR-chain
+		// on the joined branch.
+		expect(sql).toContain("INNER JOIN")
+		expect(sql).toContain("groupArray(tuple(next, count))), 1, 6) AS head")
+		expect(sql).toContain("ORDER BY step ASC, count DESC, next ASC")
+	})
+
+	it("need two steps — there is no 'between' with one", () => {
+		const one = [STEPS[0]!]
+		expect(() =>
+			productEventsFunnelTimingQuery({ steps: one, keyBy: "person", windowSeconds: 60 }),
+		).toThrow(ProductEventsFunnelError)
+		expect(() =>
+			productEventsFunnelLeaversQuery({ steps: one, keyBy: "person", windowSeconds: 60 }),
+		).toThrow(ProductEventsFunnelError)
 	})
 })

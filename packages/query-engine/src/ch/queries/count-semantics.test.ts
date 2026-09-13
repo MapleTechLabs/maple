@@ -15,7 +15,7 @@
 // reading 5.5B directly above a status donut totalling 26.6M.
 
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import { tracesBreakdownQuery, tracesTimeseriesQuery } from "./traces"
 import type { TracesBaseWhereOpts } from "./query-helpers"
 

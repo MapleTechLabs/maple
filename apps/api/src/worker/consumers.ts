@@ -7,7 +7,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
-import { layerPg } from "../platform/DatabasePgLive"
+import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { AuditEventsDlq, AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent } from "./events"

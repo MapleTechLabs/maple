@@ -7,7 +7,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { billingInvoicesAtom } from "@/lib/services/atoms/billing-atoms"
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 
 // Stripe invoice statuses → badge treatment. Unknown statuses fall through to a
 // plain secondary badge with the raw status text, never a crash.

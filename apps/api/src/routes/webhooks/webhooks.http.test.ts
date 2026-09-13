@@ -1,15 +1,18 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import { Env } from "@/platform/Env"
-import { ProductEventsService, type ProductEventInput } from "@/services/product-events/ProductEventsService"
-import { signSvix } from "@/services/product-events/svix"
-import { AuditLogService, type AuditLogRecordInput } from "@/services/audit/AuditLogService"
+import { Env } from "@maple/backend/platform/Env"
+import {
+	ProductEventsService,
+	type ProductEventInput,
+} from "@maple/backend/services/product-events/ProductEventsService"
+import { signSvix } from "@maple/backend/services/product-events/svix"
+import { AuditLogService, type AuditLogRecordInput } from "@maple/backend/services/audit/AuditLogService"
 import {
 	MembershipRevocationService,
 	MembershipRevocationError,
 	type MembershipRevocationSummary,
-} from "@/services/auth/MembershipRevocationService"
+} from "@maple/backend/services/auth/MembershipRevocationService"
 import { AutumnWebhookRouter } from "./autumn.http"
 import { ClerkWebhookRoute } from "./clerk.http"
 

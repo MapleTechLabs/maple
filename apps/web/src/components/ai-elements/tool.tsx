@@ -1,16 +1,11 @@
 import { lazy, memo, Suspense, useMemo, useState } from "react"
-import {
-	ChevronDownIcon,
-	ChevronRightIcon,
-	CircleCheckIcon,
-	CircleXmarkIcon,
-	LoaderIcon,
-} from "@/components/icons"
+import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon, LoaderIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import type { StructuredToolOutput } from "@maple/domain"
 import { STRUCTURED_MARKER } from "./renderers/constants"
-import { ThinkingOrbIcon } from "./thinking-orb-icon"
-import { toolIcon, toolLabel, toolOrbState } from "./tool-metadata"
+import { DotLoader } from "./dot-loader"
+import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
+import { formatElapsed, useElapsedSeconds } from "@/hooks/use-elapsed-seconds"
 
 export { normalizeToolName, toolLabel } from "./tool-metadata"
 
@@ -37,27 +32,34 @@ function deriveStatus(state: string): ToolStatus {
 }
 
 /**
- * Only `live` rows get an orb.
+ * The row's 20px glyph column.
  *
- * A live row is the trailing edge of a streaming turn — a standalone call with nothing after it —
- * so it is the one thing on screen that should be moving. Rows inside a `ToolGroup` are detail
- * behind a header that already carries an orb, and an expanded twelve-call burst would otherwise
- * be twelve canvases animating against each other.
+ * Only a `live` row — the trailing edge of a streaming turn, with nothing after it — gets a
+ * dot-matrix loader. Rows inside a `ToolGroup` are detail behind a header that already carries
+ * one, and an expanded twelve-call burst would otherwise be twelve grids animating against
+ * each other.
  *
- * Within a row every state shares one size so the line doesn't shift as the call settles: `size-5`
- * for live rows, to match the orb's 20px, and `size-4` for grouped rows.
+ * The slot is a fixed box rather than a sized glyph, and the matrix draws in the same 14px box
+ * as the check that replaces it, so the line does not move when a call settles.
  */
-function StatusGlyph({ status, toolName, live }: { status: ToolStatus; toolName: string; live: boolean }) {
-	const size = live ? "size-5" : "size-4"
-	if (status === "running") {
-		return live ? (
-			<ThinkingOrbIcon state={toolOrbState(toolName)} />
+function StatusGlyph({ status, live }: { status: ToolStatus; live: boolean }) {
+	const glyph =
+		status === "running" ? (
+			live ? (
+				<DotLoader />
+			) : (
+				<LoaderIcon className="size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" />
+			)
+		) : status === "error" ? (
+			<CircleXmarkIcon className="size-3.5 text-destructive" />
 		) : (
-			<LoaderIcon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+			<CircleCheckIcon className="size-3.5 text-severity-info" />
 		)
-	}
-	if (status === "error") return <CircleXmarkIcon className={cn(size, "shrink-0 text-destructive")} />
-	return <CircleCheckIcon className={cn(size, "shrink-0 text-severity-info")} />
+	return (
+		<span className={cn("flex shrink-0 items-center justify-center", live ? "size-5" : "size-4")}>
+			{glyph}
+		</span>
+	)
 }
 
 // Pick the most salient input field for a one-line row summary, e.g. `service=api`.
@@ -215,19 +217,25 @@ interface ToolProps {
 	input?: unknown
 	output?: unknown
 	errorText?: string
-	/** This row is the turn's live edge, so its running state is an orb rather than a quiet loader. */
+	/** This row is the turn's live edge, so its running state is the dot matrix and a running
+	 *  clock rather than a quiet spinner. */
 	live?: boolean
 }
 
 /**
- * A single, cardless tool line: status glyph, tool icon, label, salient-argument
- * summary, and an inline-expandable detail panel. The bordered container is owned
- * by the parent (standalone `Tool` shell or `ToolGroup`) so rows never nest cards.
+ * One tool call, as a single quiet line: status glyph, what the call is (or was) doing, its
+ * most salient argument, and an inline-expandable detail panel.
+ *
+ * Deliberately not a card. A Maple turn routinely makes a dozen calls, and at ~40px of bordered,
+ * filled panel apiece the plumbing outweighed the answer it was there to support — the reader
+ * scrolled past tool chrome to find two paragraphs of prose. A line is ~24px, carries the same
+ * four facts, and still opens to the full arguments and result.
  */
 export const ToolRow = memo(function ToolRow(props: ToolProps) {
 	const { toolName, state, input, output, errorText, live = false } = props
 	const status = deriveStatus(state)
-	const label = toolLabel(toolName)
+	// A call in flight is described by what it is doing; a settled one by what it did.
+	const label = status === "running" ? toolActivity(toolName) : toolLabel(toolName)
 	const Icon = toolIcon(toolName)
 	const summary = useMemo(() => toolSummary(input), [input])
 
@@ -244,39 +252,46 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 	const hasContent = hasInput || structuredData != null || outputText != null || errorText != null
 
 	return (
-		<div className="text-sm">
+		<div className="text-xs">
 			<button
 				type="button"
-				className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+				className="group/tool flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
 				disabled={!hasContent}
 				onClick={() => setOpen((v) => !v)}
 			>
-				<StatusGlyph status={status} toolName={toolName} live={live} />
-				{/* The tool icon differentiates rows when you're scanning a group of a dozen. A
-				    standalone row has nothing to differentiate itself from, and its label already
-				    names the tool — so next to the orb it was just a second glyph competing with a
-				    finely-dotted one. Dropped in both of a live row's states, so nothing shifts
-				    when the call settles. */}
-				{live ? null : <Icon className="size-4 shrink-0 text-muted-foreground" />}
-				<span className="shrink-0 font-medium text-foreground">{label}</span>
+				<StatusGlyph status={status} live={live} />
+				{/* The tool icon differentiates rows when you're scanning a group of a dozen. A live
+				    row has nothing to differentiate itself from, and next to the loader it was just a
+				    second glyph competing with a finely-dotted one. */}
+				{live ? null : <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />}
+				<span
+					className={cn(
+						"shrink-0 font-medium",
+						status === "running" ? "shimmer text-foreground" : "text-muted-foreground",
+					)}
+				>
+					{label}
+				</span>
 				{summary ? (
-					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-						<span className="mr-1 text-muted-foreground/40">·</span>
-						<span className="font-mono">{summary}</span>
+					<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/60">
+						{summary}
 					</span>
 				) : (
 					<span className="flex-1" />
 				)}
-				{hasContent &&
-					(open ? (
-						<ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
-					) : (
-						<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
-					))}
+				{status === "running" && live ? <RunningClock /> : null}
+				{hasContent ? (
+					<ChevronDownIcon
+						className={cn(
+							"size-3 shrink-0 text-muted-foreground/60 transition-transform",
+							open ? "rotate-0" : "-rotate-90",
+						)}
+					/>
+				) : null}
 			</button>
 
 			{open && hasContent && (
-				<div className="space-y-2 border-t border-border/40 px-3 pb-2.5 pl-[2.375rem] pt-2.5 text-xs">
+				<div className="ms-[0.9375rem] space-y-2 border-s border-border/60 py-1.5 ps-3">
 					{hasInput && (
 						<div>
 							<p className="mb-1 font-medium text-muted-foreground">Arguments</p>
@@ -326,11 +341,18 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 	)
 })
 
-/** Standalone (non-grouped) tool call: one `ToolRow` in its own hairline shell. */
+/**
+ * How long the call in flight has been running. Silent for the first couple of seconds — most
+ * Maple tools answer inside one, and a counter that flashes `1s` and vanishes is noise. Past
+ * that it is the difference between "querying the warehouse" and "wedged".
+ */
+export function RunningClock() {
+	const elapsed = formatElapsed(useElapsedSeconds())
+	if (!elapsed) return null
+	return <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground/60">{elapsed}</span>
+}
+
+/** A tool call standing on its own — same line, no shell around it. */
 export const Tool = memo(function Tool(props: ToolProps) {
-	return (
-		<div className="overflow-hidden rounded-lg border border-border/60 bg-muted/20">
-			<ToolRow {...props} />
-		</div>
-	)
+	return <ToolRow {...props} />
 })

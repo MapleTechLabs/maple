@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { buildSessionAxis } from "./session-axis"
-import type { IdleGap } from "./session-summary"
+import type { IdleGap } from "@maple/agent-sessions"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND

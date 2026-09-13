@@ -18,27 +18,68 @@ interface MessageActionsProps {
 }
 
 /**
- * Assistant-message actions, revealed on hover of the enclosing `Message` row.
- * Deliberately limited to what `useMapleChat` exposes: just `sendMessage`, so
- * there is no retry or stop to offer here, and no message carries a timestamp
- * to show.
+ * Wall-clock label for a message, e.g. "Sep 11, 2:03 PM". The year is only spelled
+ * out on threads from a previous one, where it is the part that disambiguates.
+ */
+function timeLabel(createdAt: number): string {
+	const date = new Date(createdAt)
+	const options: Intl.DateTimeFormatOptions = {
+		month: "short",
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	}
+	if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric"
+	return date.toLocaleString(undefined, options)
+}
+
+/**
+ * Assistant-message actions, revealed on hover of the enclosing `Message` row,
+ * with the turn's timestamp beside them. Deliberately limited to what
+ * `useMapleChat` exposes: just `sendMessage`, so there is no retry or stop to
+ * offer here.
  */
 export function MessageActions({ message, permalink }: MessageActionsProps) {
 	const text = messageText(message)
-	if (!text && !permalink) return null
+	const createdAt = message.createdAt
+	if (!text && !permalink && createdAt === undefined) return null
 
 	return (
-		<div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
-			{text ? <CopyButton value={text} label="Message" size="icon-sm" toast={false} /> : null}
+		// The row is hover-revealed but always occupies height, so it sets the gap between a
+		// reply and the turn after it. Sized down from the default icon button: 28px of
+		// permanently empty space under every one-line answer is what made short exchanges
+		// read as spaced-out.
+		<div className="-my-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+			{text ? (
+				<CopyButton
+					value={text}
+					label="Message"
+					size="icon-xs"
+					iconSize={12}
+					className="size-5"
+					toast={false}
+				/>
+			) : null}
 			{permalink ? (
 				<CopyButton
 					value={permalink}
 					label="Link to message"
 					idleIcon={LinkIcon}
-					size="icon-sm"
+					size="icon-xs"
+					iconSize={12}
+					className="size-5"
 					toast={false}
 				/>
 			) : null}
+			{createdAt === undefined ? null : (
+				<time
+					dateTime={new Date(createdAt).toISOString()}
+					title={new Date(createdAt).toLocaleString()}
+					className="ml-1 text-[11px] text-muted-foreground tabular-nums"
+				>
+					{timeLabel(createdAt)}
+				</time>
+			)}
 		</div>
 	)
 }

@@ -3,6 +3,10 @@ import type {
 	FunnelKeyBy,
 	FunnelPopulationFilters,
 	FunnelStep,
+	FunnelVariant,
+	PathsAnchor,
+	PathsDirection,
+	PathsInclude,
 	QueryResultContract,
 	QuerySet,
 } from "@maple/query-model"
@@ -151,6 +155,13 @@ export interface ProductEventsFunnelDefinition {
 	readonly breakdownBy?: FunnelBreakdownBy
 	/** Narrow the population to persons with a session matching these dimensions. */
 	readonly filters?: FunnelPopulationFilters
+	/**
+	 * Drawn as descending bars (default) or the step-by-step drop-off view,
+	 * which also fetches timing and leavers. With a `breakdownBy` the drop-off
+	 * view draws one hatched cap per group and no timing or leavers: those are
+	 * per-step totals, not per-group ones, and the route leaves them out.
+	 */
+	readonly variant?: FunnelVariant
 }
 
 /**
@@ -176,6 +187,56 @@ export const makeProductEventsFunnelDataSource = (
 			...(!(funnel.keyBy === undefined) ? { keyBy: funnel.keyBy } : undefined),
 			...(!(funnel.windowSeconds === undefined) ? { windowSeconds: funnel.windowSeconds } : undefined),
 			...(!(funnel.breakdownBy === undefined) ? { breakdownBy: funnel.breakdownBy } : undefined),
+			// The drop-off view is the only reader of timing and leavers, so only it
+			// pays for the two extra queries.
+			...(funnel.variant === "dropoff" ? { details: true } : undefined),
+			...filters,
+		},
+		transform,
+	)
+}
+
+/** The route a paths widget fetches through. */
+export const PRODUCT_EVENTS_PATHS_ENDPOINT = "product_events_paths"
+
+/** The stored `display.paths` definition — what `makeProductEventsPathsDataSource` reads. */
+export interface ProductEventsPathsDefinition {
+	readonly anchor: PathsAnchor
+	readonly direction?: PathsDirection
+	readonly depth?: number
+	readonly branches?: number
+	readonly keyBy?: FunnelKeyBy
+	readonly windowSeconds?: number
+	readonly include?: PathsInclude
+	readonly exclude?: ReadonlyArray<string>
+	readonly filters?: FunnelPopulationFilters
+}
+
+/**
+ * A paths widget over `product_events`: the definition mirrored flat into the
+ * route params, the same way the funnel's is. Unset options are left to the
+ * route's defaults.
+ */
+export const makeProductEventsPathsDataSource = (
+	paths: ProductEventsPathsDefinition,
+	transform?: WidgetDataSourceTransform,
+) => {
+	const filters = Object.fromEntries(
+		Object.entries(paths.filters ?? {}).filter(([, value]) => value !== undefined && value !== ""),
+	)
+	return makeRouteDataSource(
+		PRODUCT_EVENTS_PATHS_ENDPOINT,
+		{
+			anchor: paths.anchor,
+			...(!(paths.direction === undefined) ? { direction: paths.direction } : undefined),
+			...(!(paths.depth === undefined) ? { depth: paths.depth } : undefined),
+			...(!(paths.branches === undefined) ? { branches: paths.branches } : undefined),
+			...(!(paths.keyBy === undefined) ? { keyBy: paths.keyBy } : undefined),
+			...(!(paths.windowSeconds === undefined) ? { windowSeconds: paths.windowSeconds } : undefined),
+			...(!(paths.include === undefined) ? { include: paths.include } : undefined),
+			...(paths.exclude !== undefined && paths.exclude.length > 0
+				? { exclude: paths.exclude }
+				: undefined),
 			...filters,
 		},
 		transform,

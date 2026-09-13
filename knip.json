@@ -1,6 +1,6 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
-	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*", "lib/thinking-orbs"],
+	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
 	"ignore": [".context/**", ".deepsec/**", "**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
@@ -12,7 +12,6 @@
 			"entry": [
 				"src/routes/**/*.tsx",
 				"src/worker.ts",
-				"alchemy.run.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
 				"src/lib/effect-atom.ts"
@@ -30,19 +29,26 @@
 			"entry": [
 				"src/worker.ts",
 				"autumn.config.ts",
-				"scripts/cold-path/*.mjs",
+				"scripts/cold-path/*.{ts,mjs}",
 				"scripts/bench-suites/*.ts"
-			],
-			// Shelled out to by scripts/bench-startup-cpu.ts, never imported.
-			"ignoreDependencies": ["cloudflare"]
+			]
 		},
 		// Single-module Workers: the root alchemy.run.ts imports src/worker.ts, and
 		// alchemy bundles it, so it is the app's one entry.
+		"apps/ai": {
+			"entry": ["src/worker.ts"]
+		},
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
 		},
 		"apps/electric-sync": {
 			"entry": ["src/worker.ts"]
+		},
+		// The sandbox Worker's entry is its own plain module (that is the point: a
+		// generated entry would drop the container-backed class export), and the
+		// alchemy declaration beside it is what the root stack yields.
+		"apps/sandbox": {
+			"entry": ["src/worker.ts", "alchemy.run.ts"]
 		},
 		"apps/local-ui": {
 			"entry": ["src/worker.ts"]
@@ -65,6 +71,12 @@
 			"entry": ["scripts/**/*.ts"],
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
+		},
+		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
+		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
+		"apps/clickhouse-builder-docs": {
+			"entry": ["press.config.tsx", "src/app.css"],
+			"ignoreDependencies": ["@base-ui/react"]
 		},
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]

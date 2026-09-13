@@ -81,7 +81,8 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Comparisons",
 		"",
-		`Maple against Datadog, Grafana Cloud, New Relic and Dash0. Each page tabulates the differences with who has the edge on each row, prices one reference month on both at list price, and cites the vendor pages it was checked against, with dates. ${CONVENTION("comparison")}`,
+		// Named from the registry, so a new comparison page never leaves this line stale.
+		`Maple against ${competitors.map((competitor) => competitor.name).join(", ")}. Each page tabulates the differences with who has the edge on each row, prices one reference month on both at list price, and cites the vendor pages it was checked against, with dates. ${CONVENTION("comparison")}`,
 		"",
 		...both("Comparisons index", "/compare"),
 		...competitors.map(
@@ -95,6 +96,7 @@ export const GET: APIRoute = ({ site }) => {
 		"",
 		`- [Guides index](${url("/guides")})`,
 		`- [What is APM, and why is it important?](${url("/guides/what-is-apm")})`,
+		`- [What is Apdex, and how do you use the score?](${url("/guides/what-is-apdex")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,

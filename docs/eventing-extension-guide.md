@@ -384,7 +384,7 @@ A hosted source should:
 4. persist the resulting events through the hosted durable boundary.
 
 The PlanetScale webhook composition in
-[`apps/api/src/services/integrations/planetscale/webhook-events.ts`](../apps/api/src/services/integrations/planetscale/webhook-events.ts)
+[`packages/backend/src/services/integrations/planetscale/webhook-events.ts`](../packages/backend/src/services/integrations/planetscale/webhook-events.ts)
 is the current reference implementation. Provider verification stays outside
 the projector, while the normalized fact uses the shared registry and
 CloudEvent contracts.

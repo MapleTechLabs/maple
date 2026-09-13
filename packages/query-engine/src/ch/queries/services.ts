@@ -3,9 +3,9 @@
 // DSL-based query definitions for service overview, releases, apdex, and usage.
 
 import { Schema } from "effect"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
 import {
 	from,
 	fromQuery,
@@ -13,9 +13,9 @@ import {
 	type CHQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/clickhouse-builder"
-import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
-import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
+} from "@maple-dev/effect-clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import {
 	ServiceOverviewHourly,
 	ServiceOverviewMinutely,

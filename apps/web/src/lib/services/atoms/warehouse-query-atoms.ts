@@ -114,7 +114,21 @@ import {
 	getSessionTraceSummaries,
 	listReplays,
 } from "@/api/warehouse/replays"
-import { getAiSessionSpans, getAiSessionsFacets, listAiSessions } from "@/api/warehouse/ai-sessions"
+import {
+	getAiSessionSpans,
+	getAiSessionSummary,
+	getAiSessionsDistributions,
+	getAiSessionsFacets,
+	listAiSessions,
+} from "@/api/warehouse/ai-sessions"
+import {
+	getAiToolBreakdowns,
+	getAiToolErrorDetail,
+	getAiToolErrorSamples,
+	getAiToolErrors,
+	getAiToolSeries,
+	getAiToolTotals,
+} from "@/api/warehouse/ai-session-tools"
 import {
 	getWebAnalyticsBreakdowns,
 	getWebAnalyticsEvents,
@@ -125,6 +139,7 @@ import {
 	getWebAnalyticsTimeseries,
 } from "@/api/warehouse/web-analytics"
 import {
+	getProductEventAttributeKeys,
 	getProductEventNames,
 	getProductEventsForTrace,
 	getProductEventTraceSamples,
@@ -342,8 +357,44 @@ export const aiSessionsFacetsResultAtom = makeQueryAtomFamily(getAiSessionsFacet
 	staleTime: 30_000,
 })
 
+export const aiSessionsDistributionsResultAtom = makeQueryAtomFamily(getAiSessionsDistributions, {
+	staleTime: 30_000,
+})
+
 export const aiSessionSpansResultAtom = makeQueryAtomFamily(getAiSessionSpans, {
 	staleTime: 60_000,
+})
+
+export const aiSessionSummaryResultAtom = makeQueryAtomFamily(getAiSessionSummary, {
+	staleTime: 60_000,
+})
+
+// Agent Sessions › Tools. Five reads over one selection, all 30s: the page is
+// a time-ranged analytics view whose numbers are watched while a rollout lands,
+// and one TTL keeps the strip, the chart and the breakdowns from refreshing
+// against each other.
+export const aiToolSeriesResultAtom = makeQueryAtomFamily(getAiToolSeries, {
+	staleTime: 30_000,
+})
+
+export const aiToolTotalsResultAtom = makeQueryAtomFamily(getAiToolTotals, {
+	staleTime: 30_000,
+})
+
+export const aiToolBreakdownsResultAtom = makeQueryAtomFamily(getAiToolBreakdowns, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorsResultAtom = makeQueryAtomFamily(getAiToolErrors, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorDetailResultAtom = makeQueryAtomFamily(getAiToolErrorDetail, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorSamplesResultAtom = makeQueryAtomFamily(getAiToolErrorSamples, {
+	staleTime: 30_000,
 })
 
 export const replaysFacetsResultAtom = makeQueryAtomFamily(getReplaysFacets, {
@@ -387,6 +438,10 @@ export const webAnalyticsBreakdownsResultAtom = makeQueryAtomFamily(getWebAnalyt
 // The event-name list backs the step builder's autocomplete and changes only
 // when someone ships a new `track()` call, so it can sit for a minute.
 export const productEventNamesResultAtom = makeQueryAtomFamily(getProductEventNames, {
+	staleTime: 60_000,
+})
+
+export const getProductEventAttributeKeysResultAtom = makeQueryAtomFamily(getProductEventAttributeKeys, {
 	staleTime: 60_000,
 })
 

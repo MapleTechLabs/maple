@@ -1,3 +1,4 @@
+import { WorkerPlatformLive } from "@maple/infra/worker-http"
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
@@ -7,9 +8,10 @@ import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { type KeyValueStore, MapleDbConnection, McpSessionStore } from "./platform/bindings"
-import { cachedRecoverable } from "./platform/cached-recoverable"
-import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
+import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
+import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { buildIsolateHandler, makeFetch } from "./worker/http"
 
 /**
  * One request the way alchemy's bridge runs it — `makeRequestHandler` is the
@@ -19,11 +21,16 @@ import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/htt
  * on the route graph (liveness, preflights, the graph failing to build) and
  * that a routed answer exports as a server span.
  */
+const ExportedAttribute = Schema.Struct({
+	key: Schema.String,
+	value: Schema.Record(Schema.String, Schema.Unknown),
+})
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
 	status: Schema.Struct({ code: Schema.optionalKey(Schema.Finite) }),
-	attributes: Schema.Array(
-		Schema.Struct({ key: Schema.String, value: Schema.Record(Schema.String, Schema.Unknown) }),
+	attributes: Schema.Array(ExportedAttribute),
+	events: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ name: Schema.String, attributes: Schema.Array(ExportedAttribute) })),
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
@@ -35,6 +42,21 @@ const ExportedTraces = Schema.Struct({
 	),
 })
 const decodeExportedTraces = Schema.decodeUnknownSync(ExportedTraces)
+
+const ExportedLogRecord = Schema.Struct({
+	severityText: Schema.optionalKey(Schema.String),
+	body: Schema.optionalKey(Schema.Struct({ stringValue: Schema.optionalKey(Schema.String) })),
+})
+const ExportedLogs = Schema.Struct({
+	resourceLogs: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				scopeLogs: Schema.Array(Schema.Struct({ logRecords: Schema.Array(ExportedLogRecord) })),
+			}),
+		),
+	),
+})
+const decodeExportedLogs = Schema.decodeUnknownSync(ExportedLogs)
 
 interface RecordedRequest {
 	readonly url: string
@@ -57,20 +79,35 @@ const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSp
 		.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
 		.filter((span) => span.name.startsWith("http.server "))
 
-const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === "http.response.status_code")?.value
-	return value === undefined ? undefined : Number(Object.values(value)[0])
+const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
+	recorded
+		.filter((request) => request.url.endsWith("/v1/logs"))
+		.flatMap((request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [])
+		.flatMap((resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords))
+		.flatMap((record) => (record.body?.stringValue === undefined ? [] : [record.body.stringValue]))
+
+/** One attribute as its rendered value — OTLP JSON carries ints as strings anyway. */
+const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
+	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
+	const rendered = value === undefined ? undefined : Object.values(value)[0]
+	return rendered === undefined ? undefined : String(rendered)
 }
 
-/** No MCP session lands in these requests and no stage database exists, so neither port is reached. */
-const noSessions: KeyValueStore = {
-	getJson: () => Effect.succeed(Option.none()),
-	put: () => Effect.void,
+const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
+	const value = attributeOf(span, "http.response.status_code")
+	return value === undefined ? undefined : Number(value)
 }
-const noPorts = Layer.mergeAll(
-	Layer.succeed(McpSessionStore, noSessions),
-	Layer.succeed(MapleDbConnection, Option.none()),
-)
+
+/** What error tracking will group this span's failure under. */
+const exceptionTypeOf = (span: ExportedSpan | undefined): string | undefined => {
+	const event = span?.events?.find((candidate) => candidate.name === "exception")
+	const value = event?.attributes.find((attribute) => attribute.key === "exception.type")?.value
+	const rendered = value === undefined ? undefined : Object.values(value)[0]
+	return rendered === undefined ? undefined : String(rendered)
+}
+
+/** No stage database exists in these requests, so the port is never reached. */
+const noPorts = Layer.succeed(MapleDbConnection, Option.none())
 
 const env = {
 	MAPLE_INGEST_KEY: "maple_sk_test",
@@ -87,6 +124,14 @@ const notFoundApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 })),
 )
 
+/** A graph that renders its own 500, the shape the unattributed prod 500s arrive in. */
+const renderedServerErrorApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
+	Effect.succeed(HttpServerResponse.text("", { status: 500 })),
+)
+
+/** A graph whose handler dies, so the cause is still live when it leaves the router. */
+const dyingApp: Effect.Effect<HttpEffect, never> = Effect.succeed(Effect.die(new Error("handler exploded")))
+
 /** One route that answers with the bearer it was called with — the header a leaked request would get wrong. */
 const EchoGroup = HttpApiGroup.make("echo").add(
 	HttpApiEndpoint.get("echo", "/echo", { success: Schema.String }),
@@ -99,6 +144,49 @@ const EchoHandlersLive = HttpApiBuilder.group(EchoApi, "echo", (handlers) =>
 				HttpServerRequest.HttpServerRequest,
 				(request) => request.headers["authorization"] ?? "",
 			),
+		),
+	),
+)
+
+/**
+ * One route that logs from inside its handler, the way `V1ErrorBoundaryLive`
+ * logs a defect before answering `V1UnexpectedError`.
+ *
+ * The graph is built under the isolate's context, not the first event's, and
+ * the HttpApi group layers wrap every handler in the context they were built
+ * in — so a handler's logger is the one the build captured. This pins that it
+ * is still the event's, and that what a route logs reaches the exporter: a
+ * boundary that logs into a dropped batch is a 500 with no cause anywhere.
+ */
+const LoggingGroup = HttpApiGroup.make("logging").add(
+	HttpApiEndpoint.get("logging", "/logging", { success: Schema.String }),
+)
+class LoggingApi extends HttpApi.make("LoggingApi").add(LoggingGroup) {}
+const LoggingHandlersLive = HttpApiBuilder.group(LoggingApi, "logging", (handlers) =>
+	Effect.succeed(
+		handlers.handle("logging", () =>
+			Effect.logError("boundary answered with a server error").pipe(Effect.as("logged")),
+		),
+	),
+)
+
+/** One route that records a rendered failure the way the boundaries do, to pin which span it lands on. */
+const RecordingGroup = HttpApiGroup.make("recording").add(
+	HttpApiEndpoint.get("recording", "/recording", { success: Schema.String }),
+)
+class RecordingApi extends HttpApi.make("RecordingApi").add(RecordingGroup) {}
+const RecordingHandlersLive = HttpApiBuilder.group(RecordingApi, "recording", (handlers) =>
+	Effect.succeed(
+		handlers.handle("recording", () =>
+			recordRenderedFailure({
+				group: "recording",
+				operation: "recording",
+				errorType: "WarehouseQueryError",
+				summary: "Route answered with a server error",
+				message: "memory limit exceeded",
+				status: 502,
+				cause: new Error("memory limit exceeded"),
+			}).pipe(Effect.as("recorded")),
 		),
 	),
 )
@@ -128,7 +216,10 @@ const event = (
 			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
 			request,
 		)
-		const fetchEvent = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
+		// Alchemy currently erases this helper's return type to any. Restore its boundary contract.
+		const fetchEvent:
+			| Effect.Effect<Response, never, Scope.Scope | Cloudflare.WorkerEnvironment>
+			| undefined = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
 			kind: "Cloudflare.Workers.WorkerEvent",
 			type: "fetch",
 			input: new Request(`http://api.maple.test${path}`, { method, headers }),
@@ -138,10 +229,68 @@ const event = (
 		const body = yield* Effect.promise(() => response.text())
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)
-		return { response, body, server: serverSpans(recorded) }
+		return { response, body, server: serverSpans(recorded), logs: logBodies(recorded) }
 	}).pipe(Effect.scoped)
 
 describe("the api Worker through alchemy's bridge", () => {
+	it.effect("records isolate age for successful requests and graph-build failures", () =>
+		Effect.gen(function* () {
+			const success = yield* event(
+				"GET",
+				"/ok",
+				Effect.succeed(Effect.succeed(HttpServerResponse.text("ok"))),
+			)
+			const failed = yield* event(
+				"GET",
+				"/broken",
+				Effect.fail(new GraphBuildFailure({ message: "fixture" })),
+			)
+			assert.strictEqual(success.response.status, 200)
+			assert.strictEqual(failed.response.status, 504)
+			for (const result of [success, failed]) {
+				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.request_ordinal"), "1")
+				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.age_ms"), "0")
+			}
+		}),
+	)
+
+	it.effect("shares dependency instances without sharing routers between graphs", () =>
+		Effect.gen(function* () {
+			let acquisitions = 0
+			const dependency = Layer.effectDiscard(
+				Effect.sync(() => {
+					acquisitions++
+				}),
+			)
+			const memo = yield* Layer.makeMemoMap
+			const echo = yield* buildIsolateHandler(
+				Context.empty(),
+				HttpApiBuilder.layer(EchoApi).pipe(
+					Layer.provide(EchoHandlersLive),
+					Layer.provide(WorkerPlatformLive),
+					Layer.provide(dependency),
+				),
+				memo,
+			)
+			const logging = yield* buildIsolateHandler(
+				Context.empty(),
+				HttpApiBuilder.layer(LoggingApi).pipe(
+					Layer.provide(LoggingHandlersLive),
+					Layer.provide(WorkerPlatformLive),
+					Layer.provide(dependency),
+				),
+				memo,
+			)
+			assert.strictEqual(acquisitions, 1)
+			const own = yield* event("GET", "/echo", Effect.succeed(echo), { authorization: "first" })
+			const other = yield* event("GET", "/echo", Effect.succeed(logging))
+			const fresh = yield* event("GET", "/echo", Effect.succeed(echo), { authorization: "second" })
+			assert.strictEqual(own.response.status, 200)
+			assert.strictEqual(other.response.status, 404)
+			assert.strictEqual(fresh.body, '"second"')
+		}),
+	)
+
 	it.effect("answers liveness without the route graph", () =>
 		Effect.gen(function* () {
 			const { response, body } = yield* event(
@@ -206,6 +355,63 @@ describe("the api Worker through alchemy's bridge", () => {
 			const second = yield* event("GET", "/echo", app, { authorization: "Bearer second" })
 			assert.strictEqual(second.response.status, 200)
 			assert.strictEqual(second.body, JSON.stringify("Bearer second"))
+		}),
+	)
+
+	it.effect("a log emitted inside a route handler is exported", () =>
+		Effect.gen(function* () {
+			const app = yield* cachedRecoverable(
+				buildIsolateHandler(
+					Context.empty(),
+					HttpApiBuilder.layer(LoggingApi).pipe(
+						Layer.provide(LoggingHandlersLive),
+						Layer.provide(WorkerPlatformLive),
+					),
+				),
+			)
+			const { response, logs } = yield* event("GET", "/logging", app)
+			assert.strictEqual(response.status, 200)
+			assert.include(logs, "boundary answered with a server error")
+		}),
+	)
+
+	it.effect("a 5xx no seam recorded stays anonymous and carries the isolate shape", () =>
+		Effect.gen(function* () {
+			const { response, server } = yield* event("GET", "/boom", renderedServerErrorApp)
+			assert.strictEqual(response.status, 500)
+			// The exit is a success, so the tracer flags the span from the status alone.
+			assert.strictEqual(server[0]?.status.code, 2 /* Error */)
+			// Nothing named it, which is exactly what the generic type means.
+			assert.strictEqual(exceptionTypeOf(server[0]), "HttpServerErrorResponse")
+			assert.strictEqual(Number(attributeOf(server[0], "maple.isolate.age_ms")), 0)
+			assert.strictEqual(Number(attributeOf(server[0], "maple.isolate.request_ordinal")), 1)
+		}),
+	)
+
+	it.effect("a cause escaping the route graph reaches error tracking under its own name", () =>
+		Effect.gen(function* () {
+			const { response, server, logs } = yield* event("GET", "/boom", dyingApp)
+			assert.strictEqual(response.status, 500)
+			assert.include(logs, "Cause escaped the route graph")
+			assert.strictEqual(attributeOf(server[0], "error.type"), "Error")
+			// The real exception survives instead of being relabelled by the tracer.
+			assert.strictEqual(exceptionTypeOf(server[0]), "Error")
+		}),
+	)
+
+	it.effect("a failure recorded inside an HttpApi handler lands on the server span", () =>
+		Effect.gen(function* () {
+			const app = yield* cachedRecoverable(
+				buildIsolateHandler(
+					Context.empty(),
+					HttpApiBuilder.layer(RecordingApi).pipe(
+						Layer.provide(RecordingHandlersLive),
+						Layer.provide(WorkerPlatformLive),
+					),
+				),
+			)
+			const { server } = yield* event("GET", "/recording", app)
+			assert.strictEqual(exceptionTypeOf(server[0]), "WarehouseQueryError")
 		}),
 	)
 

@@ -742,7 +742,8 @@ The intended ownership is:
 - `packages/domain`: public/API schemas when projection CRUD becomes public.
 - `apps/cli`: Maple Local OTLP source adapter, compiled-registry lifecycle,
   durable Local ports, ingest staging, and optional replay adapter.
-- `apps/api`: provider webhook adapters and hosted persistence wiring.
+- `packages/backend`: provider webhook adapters and hosted persistence wiring.
+- `apps/api`: authenticated provider webhook HTTP receivers and queue entrypoints.
 - `apps/ingest`: a future Rust OTLP adapter only when hosted per-signal projection
   is required.
 

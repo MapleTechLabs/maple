@@ -594,9 +594,9 @@ describe("SQL parity", () => {
 	it("truncates by character in both implementations, not by byte", () => {
 		// ClickHouse `substring` counts bytes while JS `slice` counts UTF-16 units,
 		// so a non-ASCII message would truncate at a different point on each side.
-		expect(sql).toContain(`substringUTF8(StatusMessage, 1, ${MSG_SCAN_CHARS})`)
+		expect(sql).toContain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`)
 		expect(sql).toContain(`1, ${MSG_SIGNATURE_CHARS}`)
-		expect(sql).not.toMatch(/substring\(StatusMessage/)
+		expect(sql).not.toMatch(/substring\((StatusMessage|_msgText)/)
 	})
 
 	it("keeps the frame limit in step", () => {

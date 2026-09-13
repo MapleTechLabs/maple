@@ -124,6 +124,8 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", () => ({
 	getSpanAttributeValuesResultAtom: () => atoms.spanAttributeValues,
 	getResourceAttributeKeysResultAtom: () => atoms.resourceAttributeKeys,
 	getResourceAttributeValuesResultAtom: () => atoms.resourceAttributeValues,
+	productEventNamesResultAtom: () => atoms.spanAttributeKeys,
+	getProductEventAttributeKeysResultAtom: () => atoms.spanAttributeKeys,
 }))
 
 vi.mock("@/lib/effect-atom", async () => {

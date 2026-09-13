@@ -21,6 +21,7 @@ import {
 	applyTimeRangeSearch,
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { listPodsResultAtom, nodeDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 
@@ -31,6 +32,7 @@ const nodeDetailSearchSchema = Schema.Struct(TimeRangeSearchFields)
 export const Route = createFileRoute("/infra/kubernetes/nodes/$nodeName")({
 	component: NodeDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(nodeDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const METRIC_OPTIONS = [

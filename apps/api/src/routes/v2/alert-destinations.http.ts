@@ -21,8 +21,8 @@ import type {
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { AlertDestinationsService } from "@/services/alerts/AlertDestinationsService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 
 const toV2Destination = (doc: AlertDestinationDocument): V2AlertDestination => ({
 	id: doc.id,

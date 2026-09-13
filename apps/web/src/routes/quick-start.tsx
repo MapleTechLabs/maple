@@ -1,19 +1,21 @@
-import { useState, type ReactNode } from "react"
+import { StepIntent } from "@/components/onboarding/step-intent"
+import { StepTeamConnected } from "@/components/onboarding/step-team-connected"
+import { MotionStep } from "@/components/onboarding/motion-step"
+import { useState } from "react"
 import { createFileRoute, Navigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { useAuth } from "@clerk/clerk-react"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence } from "motion/react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
 
 import { BootSplash } from "@/components/boot-splash"
 import { OnboardingLayout } from "@/components/onboarding/onboarding-layout"
-import { QUALIFY_QUESTIONS, StepQualifyQuestion } from "@/components/onboarding/step-qualify"
+import { StepRole } from "@/components/onboarding/step-role"
 import { StepPlan } from "@/components/onboarding/step-plan"
-import { StepDemo } from "@/components/onboarding/step-demo"
 
 import { useQuickStart, type StepId } from "@/hooks/use-quick-start"
 import { hasSelectedPlan, resolvePlanAccess } from "@/lib/billing/plan-gating"
-import { STEP_IDS, type RoleOption } from "@/atoms/quick-start-atoms"
+import { STEP_IDS } from "@/atoms/quick-start-atoms"
 
 const QuickStartSearch = Schema.Struct({
 	// Where __root sends the user once onboarding completes.
@@ -27,22 +29,10 @@ export const Route = createFileRoute("/quick-start")({
 	validateSearch: Schema.toStandardSchemaV1(QuickStartSearch),
 })
 
-export const STEP_MOTION = {
-	duration: 0.28,
-	ease: [0.16, 1, 0.3, 1] as const,
-}
-
 function QuickStartPage() {
 	const { orgId } = useAuth()
-	const {
-		activeStep,
-		setActiveStep,
-		completeStep,
-		isStepComplete,
-		qualifyAnswers,
-		setQualifyAnswers,
-		setDemoDataRequested,
-	} = useQuickStart(orgId)
+	const { activeStep, setActiveStep, completeStep, isStepComplete, qualifyAnswers, setQualifyAnswers } =
+		useQuickStart(orgId)
 
 	const { data: customer, isLoading, error } = useMapleCustomer()
 	const planSelected = hasSelectedPlan(customer)
@@ -56,7 +46,8 @@ function QuickStartPage() {
 	// "plan" completion is the live Autumn plan state, never a persisted flag.
 	// A stale flag would disagree with __root.tsx's no-plan guard and trap the
 	// user in an infinite /quick-start <-> / redirect loop that freezes the tab.
-	const onboardingComplete = isStepComplete("role") && isStepComplete("demo") && planSelected
+	const onboardingComplete =
+		STEP_IDS.filter((step) => step !== "plan").every(isStepComplete) && planSelected
 
 	const currentStepNumber = STEP_IDS.indexOf(activeStep as StepId) + 1
 	const stepLabel = `Step ${currentStepNumber} of ${STEP_IDS.length}`
@@ -85,48 +76,42 @@ function QuickStartPage() {
 			<AnimatePresence mode="wait" custom={direction} initial={false}>
 				{activeStep === "role" && (
 					<MotionStep key="role" direction={direction}>
-						<StepQualifyQuestion
-							{...QUALIFY_QUESTIONS.role}
+						<StepRole
 							value={qualifyAnswers.role}
-							onSelect={(role: RoleOption) => setQualifyAnswers({ ...qualifyAnswers, role })}
+							detail={qualifyAnswers.roleDetail}
+							onChange={(role, roleDetail) =>
+								setQualifyAnswers({ ...qualifyAnswers, role, roleDetail })
+							}
 							onContinue={() => completeStep("role")}
 						/>
 					</MotionStep>
 				)}
 
-				{activeStep === "demo" && (
-					<MotionStep key="demo" direction={direction}>
-						<StepDemo
-							onComplete={() => completeStep("demo")}
-							onRequestDemo={() => setDemoDataRequested(true)}
-							onSkipDemo={() => setDemoDataRequested(false)}
+				{activeStep === "intent" && (
+					<MotionStep key="intent" direction={direction}>
+						<StepIntent
+							value={qualifyAnswers.intents}
+							onChange={(intents) => setQualifyAnswers({ ...qualifyAnswers, intents })}
+							onContinue={() => completeStep("intent")}
 							onBack={() => setActiveStep("role")}
+						/>
+					</MotionStep>
+				)}
+				{activeStep === "team" && (
+					<MotionStep key="team" direction={direction}>
+						<StepTeamConnected
+							onContinue={() => completeStep("team")}
+							onBack={() => setActiveStep("intent")}
 						/>
 					</MotionStep>
 				)}
 
 				{activeStep === "plan" && (
 					<MotionStep key="plan" direction={direction}>
-						<StepPlan onBack={() => setActiveStep("demo")} />
+						<StepPlan onBack={() => setActiveStep("team")} />
 					</MotionStep>
 				)}
 			</AnimatePresence>
 		</OnboardingLayout>
-	)
-}
-
-function MotionStep({ children, direction }: { children: ReactNode; direction: number }) {
-	const reduceMotion = useReducedMotion()
-	return (
-		<motion.div
-			custom={direction}
-			initial={{ opacity: 0, x: reduceMotion ? 0 : direction * 24 }}
-			animate={{ opacity: 1, x: 0 }}
-			exit={{ opacity: 0, x: reduceMotion ? 0 : direction * -24 }}
-			transition={reduceMotion ? { duration: 0 } : STEP_MOTION}
-			className="flex flex-1 flex-col"
-		>
-			{children}
-		</motion.div>
 	)
 }

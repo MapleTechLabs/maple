@@ -7,6 +7,7 @@ import { KubernetesIcon } from "@/components/icons"
 import { ServiceLensShell } from "@/components/infra/service-lens/service-lens-shell"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 
 /**
  * The lens with nothing selected.
@@ -21,6 +22,7 @@ const searchSchema = Schema.Struct(TimeRangeSearchFields)
 export const Route = createFileRoute("/infra/kubernetes/services/")({
 	component: ServiceLensIndexPage,
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function ServiceLensIndexPage() {

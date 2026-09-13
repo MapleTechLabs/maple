@@ -5,15 +5,15 @@
 
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import type { ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import type { ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
 import { MetricsSum, MetricsGauge, MetricsHistogram, MetricsExpHistogram } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 // APDEX expressions
 

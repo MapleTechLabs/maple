@@ -56,45 +56,41 @@ export const AGENT_SESSIONS_FILTER_KEYS = [
 	"toolCallsMax",
 ] as const satisfies ReadonlyArray<keyof AgentSessionsSearchState>
 
-/**
- * One row of the sort menu: the measure and the direction it makes sense in.
- * The list exposes no direction toggle — "most expensive" is the question, and
- * "least expensive" is not one anybody asks a session list.
- */
-export interface AgentSessionsSortOption {
-	readonly key: string
-	readonly label: string
+export interface AgentSessionsSort {
 	readonly sortBy: AiSessionSortKey
 	readonly sortDir: AiSessionSortDir
 }
 
-export const AGENT_SESSIONS_SORT_OPTIONS: ReadonlyArray<AgentSessionsSortOption> = [
-	{ key: "newest", label: "Newest first", sortBy: "startTime", sortDir: "desc" },
-	{ key: "oldest", label: "Oldest first", sortBy: "startTime", sortDir: "asc" },
-	{ key: "longest", label: "Longest", sortBy: "durationMs", sortDir: "desc" },
-	{ key: "cost", label: "Most expensive", sortBy: "cost", sortDir: "desc" },
-	{ key: "tokens", label: "Most tokens", sortBy: "totalTokens", sortDir: "desc" },
-	{ key: "errors", label: "Most errors", sortBy: "errorSpanCount", sortDir: "desc" },
-	{ key: "llm-calls", label: "Most LLM calls", sortBy: "llmCalls", sortDir: "desc" },
-	{ key: "tool-calls", label: "Most tool calls", sortBy: "toolCalls", sortDir: "desc" },
-]
+/** The order the list reads in when the URL names none: newest first. */
+const DEFAULT_SORT: AgentSessionsSort = { sortBy: "startTime", sortDir: "desc" }
 
-export const DEFAULT_SORT_OPTION = AGENT_SESSIONS_SORT_OPTIONS[0]!
+const isDefaultSort = (sort: AgentSessionsSort) =>
+	sort.sortBy === DEFAULT_SORT.sortBy && sort.sortDir === DEFAULT_SORT.sortDir
+
+/** The order a URL names, with either half it leaves off taken from the default. */
+export function agentSessionsSort(search: Pick<AgentSessionsSearchState, "sortBy" | "sortDir">): AgentSessionsSort {
+	return {
+		sortBy: search.sortBy ?? DEFAULT_SORT.sortBy,
+		sortDir: search.sortDir ?? DEFAULT_SORT.sortDir,
+	}
+}
 
 /**
- * The menu row a URL pair names; the default when the URL names none, or a
- * pair the menu does not offer. The query is built from THIS, so what the
- * select says is always what the list is sorted by.
+ * The URL patch a click on a column header writes. The sorted column flips
+ * direction; any other starts descending — the longest, costliest, busiest end
+ * of a measure is the one a session list is read for. Landing back on the
+ * default order clears both params, so a shared link only carries a sort when
+ * one was chosen.
  */
-export function sortOptionFor(
-	sortBy: AiSessionSortKey | undefined,
-	sortDir: AiSessionSortDir | undefined,
-): AgentSessionsSortOption {
-	return (
-		AGENT_SESSIONS_SORT_OPTIONS.find(
-			(option) => option.sortBy === (sortBy ?? "startTime") && option.sortDir === (sortDir ?? "desc"),
-		) ?? DEFAULT_SORT_OPTION
-	)
+export function agentSessionsSortPatch(
+	search: Pick<AgentSessionsSearchState, "sortBy" | "sortDir">,
+	key: AiSessionSortKey,
+): { sortBy: AiSessionSortKey | undefined; sortDir: AiSessionSortDir | undefined } {
+	const current = agentSessionsSort(search)
+	const sortDir: AiSessionSortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
+	return isDefaultSort({ sortBy: key, sortDir })
+		? { sortBy: undefined, sortDir: undefined }
+		: { sortBy: key, sortDir }
 }
 
 export function hasAgentSessionsFilters(search: AgentSessionsSearchState): boolean {
@@ -118,7 +114,7 @@ export function agentSessionsFilterInputs(
 	search: AgentSessionsSearchState,
 	window: { readonly startTime: string; readonly endTime: string },
 ): AiSessionsFilterInputs {
-	const sortOption = sortOptionFor(search.sortBy, search.sortDir)
+	const sort = agentSessionsSort(search)
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,
@@ -141,10 +137,7 @@ export function agentSessionsFilterInputs(
 		llmCallsMax: search.llmCallsMax,
 		toolCallsMin: search.toolCallsMin,
 		toolCallsMax: search.toolCallsMax,
-		// Resolved through the menu, and left off for the default so the first
-		// page's SQL stays the baseline shape.
-		...(sortOption === DEFAULT_SORT_OPTION
-			? undefined
-			: { sortBy: sortOption.sortBy, sortDir: sortOption.sortDir }),
+		// Left off for the default so the first page's SQL stays the baseline shape.
+		...(isDefaultSort(sort) ? undefined : sort),
 	}
 }

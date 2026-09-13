@@ -3,15 +3,15 @@
 // DSL-based query definitions for error aggregation and timeseries.
 
 import { finiteOrZero } from "./format"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
-import { exists, inSubquery } from "@maple-dev/clickhouse-builder"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromQuery, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
-import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
-import * as T from "@maple-dev/clickhouse-builder/types"
-import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
+import { exists, inSubquery } from "@maple-dev/effect-clickhouse"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 import {

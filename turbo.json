@@ -12,7 +12,7 @@
 		// which emits nothing a downstream task can consume, and no tsconfig here uses
 		// composite/references — so `^typecheck` was ordering-only and serialized a
 		// topological wave across ~26 packages. `^build` is the real edge: it produces
-		// the .d.mts for the four dist-pointing packages (effect-sdk, clickhouse-builder,
+		// the .d.mts for the three dist-pointing packages (effect-sdk,
 		// alchemy-maple, browser). Re-add `^typecheck` only if TS project references land.
 		"typecheck": {
 			"dependsOn": ["^build"]

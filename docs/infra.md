@@ -8,6 +8,38 @@ readable and the incidents stay findable.
 If you are about to delete a comment in a stack file because "the history is in git" —
 put it here instead. Git blame does not survive a refactor of the line it annotates.
 
+## The AI Worker (`maple-ai`)
+
+`apps/ai` hosts every agent surface: the MCP transport and its tools, the chat
+`ChatSession` Durable Object, and the `InvestigationFanoutWorkflow`. `apps/api`
+keeps the hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to
+it over a service binding, so the OAuth issuer and the RFC 8707 resource
+identifiers never move off api's origin.
+
+Measured before committing to the split (rolldown, unminified, same tree),
+dropping the MCP registry, the chat routes and the two hosted classes from api:
+
+|                   | with AI  | without |
+| ----------------- | -------- | ------- |
+| worker bundle     | 11.74 MB | 9.34 MB |
+| bundle chunks     | 85       | 50      |
+| module evaluation | ~336 ms  | ~278 ms |
+
+The per-request half is not in that table: a `/mcp` call no longer builds
+`AllRoutes` and `ApiAuthLive`, and a `/v2` call no longer builds 47 tool schemas.
+A 2026-09-08 attempt that moved only the transport measured 1.0%, which is what
+moving the registry too is worth avoiding.
+
+Two things a future change here needs to know:
+
+- **The `ChatSession` class carries `transferredFrom: "api"`.** Dropping a
+  locally hosted Durable Object class while keeping a cross-script reference is
+  the shape that destroys a namespace, and alchemy refuses it before uploading.
+  The property is inert once a stage has transferred, so it stays.
+- **The Workflow has no equivalent.** Moving `InvestigationFanoutWorkflow` to a
+  new script mints a new physical workflow and orphans in-flight runs, which sit
+  in `status='running'` until the stale watchdog or a manual sweep clears them.
+
 ## Layout
 
 - `alchemy.run.ts` — the root stack. Provides `MapleStack` (stage, domains, public URLs,
@@ -15,12 +47,12 @@ put it here instead. Git blame does not survive a refactor of the line it annota
   (also emitted as GitHub step outputs).
 - `apps/<app>/src/worker.ts` — a Worker as one module: the alchemy Worker class the root
   yields, whose props are an Effect over `MapleStack`, and the bundle alchemy deploys
-  (`api`, `alerting`, `electric-sync`, `landing`, `local-ui`; see "Single-module Workers"
-  below).
-- `apps/<app>/alchemy.run.ts` — a `create*` factory, only where the Worker still takes
-  another resource as an argument (`web`) or the app is not a Worker (`ingest`, `electric`
-  on ECS). Owns that app's resources and bindings and nothing else's. The one api resource the
-  ingest gateway shares (the replay bucket) is `apps/api/src/resources/replay-blobs.ts`.
+  (`api`, `alerting`, `electric-sync`, `web`, `landing`, `local-ui`; see "Single-module
+  Workers" below).
+- `apps/<app>/alchemy.run.ts` — a `create*` factory, only for the apps that are not
+  Workers (`ingest`, `electric` on ECS). Owns that app's resources and nothing else's. The one
+  api resource the ingest gateway shares (the replay bucket) is
+  `apps/api/src/resources/replay-blobs.ts`.
 - `packages/infra` — stage/region/domain/naming logic, the shared deploy-time env groups,
   and the few resources several Worker modules bind.
     - `cloudflare/stage.ts` — `MapleStage`, domains, worker names, Hyperdrive resolution.
@@ -145,8 +177,10 @@ Effect that reads `MapleStack` (`@maple/infra/cloudflare`, provided once by the 
 the shared `ManagedMapleDb` or `WorkersObservabilityDestinations` (alchemy registers a
 resource by id, so a second module yielding the same one gets the first's). `impl` runs once
 per isolate on the first event and returns the handlers. No hand-written `export default
-{ fetch }`, no per-app `alchemy.run.ts`, no factory arguments. api, electric-sync, alerting,
-landing and local-ui ship this way.
+{ fetch }`, no per-app `alchemy.run.ts`, no factory arguments. Every Worker ships this way.
+A Worker that binds another (web's `API` service binding to the api) takes it as a service
+the root provides after yielding it (`ApiWorker` in `@maple/infra/cloudflare`) — a
+`Worker.ref` reads stored state and cannot see a sibling the same deploy creates.
 
 What each kind of Worker keeps beside the module:
 
@@ -195,17 +229,58 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
   `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
   hand-written entry.
+- **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is
+  its bundle entry. It hosts Cloudflare's Sandbox Durable Object (`@cloudflare/sandbox`),
+  which is a class the deployed script must export — and an Effect-native Worker cannot
+  export one, because alchemy generates its entry (`makeEffectVirtualEntry`) and exports
+  only the bridge classes it created. A plain module is used verbatim, so
+  `export { Sandbox }` in `apps/sandbox/src/worker.ts` is what binds. A separate app is
+  not the only way to run this image — an alchemy `Cloudflare.DurableObject` in the api
+  can front a `Cloudflare.Container` and talk to its port directly — but that means
+  owning the container's control protocol instead of using the vendor client, so this
+  buys the client at the price of an app. It has no route and no hostname: the api reaches
+  it over a `SANDBOX` service binding, provided by the root as `SandboxWorker`, and every
+  request carries `SANDBOX_INTERNAL_SERVICE_TOKEN` — deliberately not the shared
+  `INTERNAL_SERVICE_TOKEN`, which lets its holder act as any organization.
+
+    Only `prd` gets one (`stageDeploysSandbox`). A PR preview has no application
+    database, so no repository resolves there; and on a dev stage `alchemy dev` would put a
+    multi-gigabyte `docker pull` between every developer and `bun dev`.
+
+    What runs inside is one full `git clone` per commit under `/workspace/maple/<sha>`, kept
+    to the newest three. The clone is a **background process** the Worker polls, because a
+    container request is capped well below what a cold clone of a real repository takes; a
+    call that arrives first gets `SandboxRunCheckoutPending` and retries. The credential is a
+    GitHub token minted for that one repository with read-only contents, staged through the
+    container's file API into a root-only path and read by a git credential helper — never
+    put in a command, because every process's arguments are readable by the account the
+    agent's own commands run as. Commands run through a wrapper (`wrapCommand`): `env -i`
+    with a fixed environment, `runuser` to an unprivileged account that does not own the
+    tree, `unshare -n` for a network namespace with no egress, and each stream cut to the
+    request's bound where it is produced. The command's real exit status and whether the
+    namespace opened travel in a trailer, so a command exiting 97 is not mistaken for one
+    that never ran.
+
+    **`unshare -n` needs `CAP_SYS_ADMIN`, and whether Cloudflare's container runtime grants
+    it is unverified.** Measured against the published image: under default container
+    capabilities it fails and the wrapper refuses to run the command; with the capability
+    added, the namespace opens and a lookup inside it is denied while the same lookup outside
+    succeeds. If the platform withholds it, every sandbox command returns
+    `SandboxRunIsolationUnavailable` and the tools are dead until the request stops asking
+    for isolation. It fails closed, which is the intended direction, but it needs proving on
+    a real deploy.
+
 - **Assets** (`landing`, `local-ui`): the handler reads `Cloudflare.Workers.Request` and
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.
 - **The application database** (`alerting`, `api`): `yield* MapleDb(consumer)` in the init
   binds `MAPLE_DB` in the stage's flavor — `Hyperdrive.Connect(ManagedMapleDb)` on dev
-  stages, `host.bind` of the dashboard-managed config by id on stg/prd (alchemy has no `env`
+  stages, `host.bind` of the dashboard-managed config by id on prd (alchemy has no `env`
   form for a Hyperdrive it did not create; its own `ConnectBinding` attaches the same raw
   metadata), nothing on previews. The api's Workflows yield it too, from their outer phase.
   The root yields `ManagedMapleDb` first on dev stages so its `MAPLE_PG_URL` read happens
   outside any init, where alchemy's plan-time ConfigProvider would bind it as a secret. Every
-  Postgres layer reads the `MapleDbConnection` port (`apps/api/src/platform/bindings.ts`),
+  Postgres layer reads the `MapleDbConnection` port (`packages/backend/src/platform/bindings.ts`),
   never the env.
 
 Still a factory: `web` (takes `api`, for the service binding); `ingest` and `electric` are
@@ -261,21 +336,19 @@ shard (`ci.yml`). Measured on the pilot (#745, local workerd A/B): +15ms startup
 list of yields. What it composes lives beside it:
 
 - `src/resources/*` — one file per resource the Worker binds, declared at module scope and
-  inert until yielded (`queues.ts`, `mcp-sessions.ts`, `replay-blobs.ts`, `env.ts` for the
+  inert until yielded (`queues.ts`, `replay-blobs.ts`, `env.ts` for the
   `Config` catalog). Stage-derived physical names come from `stageNamed` / `stageProps`
   (`@maple/infra/cloudflare`), which read alchemy's own `Stage` — one of the platform
   services a Worker's init may require, unlike `MapleStack` — behind the same
   `__ALCHEMY_RUNTIME__` guard as a Worker's props, because alchemy evaluates a resource's props
   Effect wherever it is yielded, the bundle included. The ingest factory yields the same
-  `ReplayBlobs` declaration to mint the gateway's writer token; `apps/api/alchemy.run.ts` is
-  gone.
+  `ReplayBlobs` declaration to mint the gateway's writer token.
 - `src/worker/*` — the runtime shell: `http.ts` (the lazily built route graph and `fetch`),
   `rpc.ts`, `crons.ts`, `consumers.ts` (`consumeQueueMessages` over the declarations, so no
   binding is read back off the host), `events.ts`, `modules.ts` (the dynamic imports), and
   `bindings.ts`.
 - **Bindings are alchemy capabilities, read as Maple ports.** The init yields
-  `Queues.WriteQueue(VcsSyncQueue)`, `KV.ReadWriteNamespace(McpSessions)`,
-  `R2.ReadBucket(ReplayBlobs)` and the four `Cloudflare.RateLimit(...)`s
+  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadBucket(ReplayBlobs)` and the four `Cloudflare.RateLimit(...)`s
   (`worker/bindings.ts`); each yield attaches the native binding at plan time — under the
   resource's logical id, so the queue and bucket bindings are `vcs-sync`, `replay-blobs`, … —
   and resolves it from the env in the isolate. The clients become the ports in
@@ -305,7 +378,7 @@ ingest resources, so an unset variable produced a byte-identical pure-Cloudflare
 left to protect: `AWS.providers()` is registered unconditionally (it cannot be
 stage-derived — the `Alchemy.Stack` options are evaluated before `Alchemy.Stage` is
 readable inside the stack effect), and `stageDeploysIngest` alone decides which stages get
-a fleet. It covers prd, stg **and PR previews**; dev stages run the gateway through
+a fleet. It covers prd **and PR previews**; dev stages run the gateway through
 docker-compose. The spend gate moved to where the spend is: a preview only exists while
 its PR carries the `preview` label.
 
@@ -343,13 +416,15 @@ per-config `origin_connection_limit`s sum against the branch's `max_connections`
 Hyperdrive will not coordinate between them, so over-provisioning one starves the other at
 the database rather than at the pool.
 
-**Open item — staging points at production.** `resolveHyperdriveRefId` returns the prd
-config for `stg` (owner decision, 2026-07-14). stg workers therefore read and write the
-production database, and the stg alerting crons overlap prod's. `MAPLE_ALERTING_ALLOW_NONPROD`
-exists to keep those crons off for exactly this reason. Fixing it means a PlanetScale `stg`
-branch plus dedicated `maple-stg` / `maple-alerting-stg` dashboard configs, split per
-consumer the same way prd is — and then a deliberate decision about whether stg crons
-should run.
+**Resolved by deletion — staging pointed at production.** `resolveHyperdriveRefId` used to
+return the prd config for `stg` (owner decision, 2026-07-14), so stg workers read and wrote
+the production database and the stg alerting crons overlapped prod's. The stage was removed
+in full (2026-09): its deploy workflow had been disabled with no run history and neither
+`api-staging.maple.dev` nor `ingest-staging.maple.dev` resolved, so the hazard was the only
+thing it still cost. `prd` is now the only stage `resolveHyperdriveRefId` answers for, and
+`parseMapleStage` rejects `stg` outright rather than letting it fall through to a dev stage.
+A future staging stage needs its own PlanetScale branch and its own dashboard configs, split
+per consumer the way prd is, before it gets a `MAPLE_DB` binding at all.
 
 ## The cold-start regression (`strictExecutionOrder: false`)
 

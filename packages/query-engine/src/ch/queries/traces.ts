@@ -3,11 +3,11 @@
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
 import type { TracesMetric } from "@maple/domain/query-engine"
-import { compileFnCall, subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/clickhouse-builder"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { param } from "@maple-dev/clickhouse-builder"
-import { from, fromUnion, unionAll, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
-import type { Table } from "@maple-dev/clickhouse-builder"
+import { compileFnCall, subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { param } from "@maple-dev/effect-clickhouse"
+import { from, fromUnion, unionAll, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import type { Table } from "@maple-dev/effect-clickhouse"
 import {
 	ServiceMapSpans,
 	ServiceOverviewSpans,
@@ -19,8 +19,8 @@ import {
 	TracesAggregatesHourly,
 } from "../tables"
 import { METRIC_NEEDS } from "../../traces-shared"
-import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
-import * as T from "@maple-dev/clickhouse-builder/types"
+import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-clickhouse/types"
 import { finalizeTimeseries } from "./series-cap"
 import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
 import {

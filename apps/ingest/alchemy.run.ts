@@ -290,7 +290,7 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 
 		// Optional credentials — absent in a stage that hasn't enabled the feature.
 		// Autumn absent means billing enforcement is dark.
-		const autumnKey = process.env.AUTUMN_SECRET_KEY?.trim()
+		const { AUTUMN_SECRET_KEY: autumnKey } = yield* optionalPlain("AUTUMN_SECRET_KEY")
 		const autumnSecret = autumnKey ? yield* secret("autumn-secret-key", autumnKey) : undefined
 
 		// Second Tinybird workspace to mirror writes into during a workspace
@@ -311,7 +311,9 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 		// one deploy, which is how a preview tests it. Without a collector the
 		// gateway keeps whatever forward endpoint the deploy env supplies — its
 		// self-telemetry goes nowhere reachable, exactly as before.
-		const deployCollector = stageDeploysCollector(stage) || process.env.MAPLE_DEPLOY_AWS_COLLECTOR === "1"
+		const deployCollector =
+			stageDeploysCollector(stage) ||
+			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
 		const collectorEndpoint = deployCollector ? resolveCollectorEndpoint(stage, region) : undefined
 		const collector = deployCollector
 			? yield* Effect.gen(function* () {
@@ -700,7 +702,7 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 				// 30s cuts the ~2M balances.track calls/day by ~30x.
 				...(yield* optionalPlain("AUTUMN_FLUSH_INTERVAL_SECS", "30")),
 				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
-				...(yield* optionalPlain("COMMIT_SHA", process.env.GITHUB_SHA?.trim())),
+				...(yield* optionalPlain("COMMIT_SHA", (yield* optionalPlain("GITHUB_SHA")).GITHUB_SHA)),
 				// `satisfies` rather than a bare literal: alchemy types `env` as
 				// `Record<string, any>`, which is what let a spread `Config` object
 				// through unnoticed. Pinning the literal to string values makes that

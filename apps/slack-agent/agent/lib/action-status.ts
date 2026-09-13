@@ -89,9 +89,17 @@ const PHRASE_BY_TOOL: Record<string, string> = {
 	search_source_code: "Searching source code…",
 	read_source_file: "Reading source code…",
 	list_source_repositories: "Listing repositories…",
+	sandbox_grep: "Searching the checkout…",
+	sandbox_list_files: "Listing checkout files…",
+	sandbox_read_file: "Reading source code…",
+	sandbox_exec: "Running in the sandbox…",
 	propose_fix: "Drafting a fix…",
 	search_sessions: "Searching sessions…",
 	get_session_transcript: "Reading a session transcript…",
+	list_agent_sessions: "Listing agent sessions…",
+	get_agent_session: "Reading an agent session…",
+	get_agent_tools_overview: "Checking agent tool usage…",
+	get_agent_tool_error: "Inspecting an agent tool failure…",
 } satisfies Record<string, string>
 
 /** Keyword fallbacks for tools not in {@link PHRASE_BY_TOOL}, checked in order. */
