@@ -323,6 +323,9 @@ describe("the model-call span", () => {
 			)
 			assert.isAtLeast(firstChunkMs, 0)
 			assert.isAtMost(firstChunkMs, Number(attributes?.get("maple_ai.model_duration_ms")))
+			// The finish part passed the tap, so the call is timed by it and is not a rejected one.
+			assert.isFalse(attributes?.has("error.type"))
+			assert.isFalse(attributes?.has("gen_ai.response.status"))
 		}),
 	)
 
