@@ -14,10 +14,11 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Effect, Layer, Stream } from "effect"
-import type { Exit, Tracer } from "effect"
-import { LanguageModel } from "effect/unstable/ai"
+import { Cause, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import type { Tracer } from "effect"
+import { AiError, LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
+import { instrumentLanguageModel } from "./genai-spans"
 import { layerLlm, resolveTriageModel } from "./Llm"
 
 /** Two frames, the first naming the response and the model that served it. */
@@ -84,9 +85,9 @@ const chunk = (delta: Record<string, unknown>, finishReason: string | null) => (
 	choices: [{ index: 0, delta, finish_reason: finishReason }],
 })
 
-/** The model-call span's attributes as it ended, for one call answered by `frames`. */
-const endedModelCall = (
-	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
+/** One call answered by `frames`: how it ended, and the model-call span's attributes as it ended. */
+const runModelCall = (
+	request: Parameters<typeof LanguageModel.streamText>[0],
 	frames: ReadonlyArray<unknown>,
 	env: Parameters<typeof resolveTriageModel>[0] = ENV,
 	status = 200,
@@ -95,9 +96,9 @@ const endedModelCall = (
 		const recorder = recordingTracer()
 		const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`
 
-		yield* LanguageModel.streamText({ prompt }).pipe(
+		const exit = yield* LanguageModel.streamText(request).pipe(
 			Stream.runDrain,
-			Effect.ignore,
+			Effect.exit,
 			Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
 			Effect.provideService(FetchHttpClient.Fetch, () =>
 				Promise.resolve(
@@ -111,8 +112,48 @@ const endedModelCall = (
 			(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
 		)
 		assert.isDefined(span, "no model-call span was opened")
-		return span?.endedWith ?? new Map<string, unknown>()
+		return { exit, attributes: span?.endedWith ?? new Map<string, unknown>() }
 	})
+
+/** The model-call span's attributes as it ended, for one call answered by `frames`. */
+const endedModelCall = (
+	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
+	frames: ReadonlyArray<unknown>,
+	env: Parameters<typeof resolveTriageModel>[0] = ENV,
+	status = 200,
+) => Effect.map(runModelCall({ prompt }, frames, env, status), ({ attributes }) => attributes)
+
+/** The one tool the rejection fixtures declare: a parameter the model can get wrong. */
+const submitPlan = Tool.make("submit_plan", { parameters: Schema.Struct({ limit: Schema.Finite }) })
+
+/**
+ * A tool call whose parameter the tool cannot take, then the terminal chunk with the usage — the
+ * order every provider streams them in, so the rejection lands before the usage does.
+ */
+const rejectedToolCallFrames = (usage: Record<string, unknown>) => [
+	chunk(
+		{
+			role: "assistant",
+			tool_calls: [
+				{
+					index: 0,
+					id: "call_1",
+					type: "function",
+					function: { name: "submit_plan", arguments: '{"limit":"ten"}' },
+				},
+			],
+		},
+		null,
+	),
+	{ ...chunk({}, "tool_calls"), usage },
+]
+
+/** The typed failure a call ended with, or nothing when it succeeded or died. */
+const aiFailure = (exit: Exit.Exit<unknown, unknown>): AiError.AiError | undefined => {
+	if (!Exit.isFailure(exit)) return undefined
+	const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+	return AiError.isAiError(error) ? error : undefined
+}
 
 describe("the model-call span", () => {
 	it.live("carries the served response id and model, from the provider itself", () =>
@@ -242,6 +283,99 @@ describe("the model-call span", () => {
 			)
 			assert.isAtLeast(firstChunkMs, 0)
 			assert.isAtMost(firstChunkMs, Number(attributes?.get("maple_ai.model_duration_ms")))
+		}),
+	)
+
+	/**
+	 * Guards the `effect` patch hunk in `patches/` that defers a rejected chunk's failure to the end
+	 * of the provider stream.
+	 *
+	 * The provider emits a `tool-call` part the moment its arguments parse, and the `finish` part —
+	 * the one carrying the usage — from the terminal chunk after it. Effect AI decodes each chunk
+	 * against the toolkit as it arrives, and a rejected chunk used to fail the stream on the spot,
+	 * which cancelled the response body before the terminal chunk was read: the span ended with no
+	 * `gen_ai.usage.*` and no cost for a call the model had run to completion.
+	 */
+	it.live("keeps the usage of a call the run rejects after the model finished", () =>
+		Effect.gen(function* () {
+			const { exit, attributes } = yield* runModelCall(
+				{
+					prompt: "hi",
+					toolkit: Toolkit.make(submitPlan),
+					// What the agent engine sends: the run owns tool execution.
+					disableToolCallResolution: true,
+				},
+				rejectedToolCallFrames({
+					prompt_tokens: 40,
+					completion_tokens: 12,
+					total_tokens: 52,
+					cost: 0.0042,
+				}),
+			)
+
+			// The call still fails the way it always did — a parameter the tool cannot take is the
+			// run's problem to report — just once the stream has been read to its end.
+			assert.strictEqual(aiFailure(exit)?.reason._tag, "InvalidOutputError")
+			assert.strictEqual(attributes.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes.get("gen_ai.usage.output_tokens"), 12)
+			assert.strictEqual(attributes.get("gen_ai.usage.cost"), 0.0042)
+			assert.deepStrictEqual(attributes.get("gen_ai.response.finish_reasons"), ["tool_call"])
+			// The finish part never passed the tap that times it, so the transformer stamps the
+			// duration itself as the drained stream ends.
+			assert.isAtLeast(Number(attributes.get("maple_ai.model_duration_ms")), 0)
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.output.messages"))), [
+				{
+					role: "assistant",
+					parts: [
+						{ type: "tool_call", id: "call_1", name: "submit_plan", arguments: { limit: "ten" } },
+					],
+					finish_reason: "tool_call",
+				},
+			])
+		}),
+	)
+
+	/**
+	 * The withheld parts reach the transformer as the provider emitted them, without the defaults
+	 * decoding fills in — `metadata` on a finish part is one such default, and the OpenAI-compatible
+	 * provider leaves it off. The cost read has to expect that, or the transformer throws in a
+	 * finalizer, the typed failure becomes a defect, and the span ends with nothing on it.
+	 */
+	it.live("keeps the usage of a rejected call whose finish part carries no metadata", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const provider = LanguageModel.make({
+				generateText: () => Effect.succeed([]),
+				streamText: () =>
+					Stream.make(
+						{ type: "tool-call", id: "call_1", name: "submit_plan", params: { limit: "ten" } },
+						{
+							type: "finish",
+							reason: "tool-calls",
+							usage: { inputTokens: { total: 40 }, outputTokens: { total: 12 } },
+						},
+					),
+			})
+			const model = Layer.effect(
+				LanguageModel.LanguageModel,
+				instrumentLanguageModel(provider, { providerName: "fake", sessionAttributes: {} }),
+			)
+
+			const exit = yield* LanguageModel.streamText({
+				prompt: "hi",
+				toolkit: Toolkit.make(submitPlan),
+				disableToolCallResolution: true,
+			}).pipe(Stream.runDrain, Effect.exit, Effect.provide(model), Effect.withTracer(recorder.tracer))
+
+			assert.strictEqual(aiFailure(exit)?.reason._tag, "InvalidOutputError")
+			// A bare provider stamps no `gen_ai.operation.name`; the span is Effect AI's own.
+			const attributes = recorder.spans.find(
+				(span) => span.name === "LanguageModel.streamText",
+			)?.endedWith
+			assert.isDefined(attributes, "no model-call span was opened")
+			assert.strictEqual(attributes?.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes?.get("gen_ai.usage.output_tokens"), 12)
+			assert.isFalse(attributes?.has("gen_ai.usage.cost"))
 		}),
 	)
 

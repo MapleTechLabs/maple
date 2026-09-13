@@ -18,7 +18,7 @@ import {
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
-import { Clock, Effect, Option, Predicate, Stream } from "effect"
+import { Effect, Option, Predicate, Stream } from "effect"
 import type { Tracer } from "effect"
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as Prompt from "effect/unstable/ai/Prompt"
@@ -116,6 +116,12 @@ const systemInstructionsJson = (prompt: Prompt.Prompt): string | undefined => {
 export const semconvFinishReason = (reason: string): string =>
 	reason === "tool-calls" ? "tool_call" : reason === "content-filter" ? "content_filter" : reason
 
+/**
+ * The parts the transformer is handed, typed as the decoded stream. From the chunk the response
+ * schema rejected onwards they are the provider's own, undecoded (see the `deferDecodeFailure`
+ * hunk in `patches/effect@…`): the same shapes, minus what decoding defaults in — `metadata` on a
+ * finish part is the one field read here that a provider may leave out.
+ */
 type ResponseParts = Parameters<Telemetry.SpanTransformer>[0]["response"]
 
 type FinishPart = Extract<ResponseParts[number], { readonly type: "finish" }>
@@ -238,7 +244,8 @@ export const messagesJson = (
  * the raw usage through on the finish part. Maple never prices tokens itself.
  */
 const reportedCost = (finish: FinishPart): number | undefined => {
-	const cost = finish.metadata.openrouter?.usage?.cost
+	const metadata: FinishPart["metadata"] | undefined = finish.metadata
+	const cost = metadata?.openrouter?.usage?.cost
 	return Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0 ? cost : undefined
 }
 
@@ -256,6 +263,8 @@ interface CallTiming {
 	readonly startedMs: number
 	firstChunkMs: number | undefined
 	finishedMs: number | undefined
+	/** The clock the two stamps above are read from, for a finish part that never passed the tap. */
+	readonly now: () => number
 }
 
 const modelCallTransformer =
@@ -265,6 +274,9 @@ const modelCallTransformer =
 		const system = systemInstructionsJson(prompt)
 		const { message, finish, failed } = summarizeResponse(response)
 		const cost = finish === undefined ? undefined : reportedCost(finish)
+		// A finish part the run rejected the response before reaching was withheld from the tap that
+		// stamps `finishedMs`; the transformer runs as the drained stream ends, which is that moment.
+		const finishedMs = timing.finishedMs ?? (finish === undefined ? undefined : timing.now())
 		const attributes = {
 			"gen_ai.provider.name": telemetry.providerName,
 			"gen_ai.request.stream": true,
@@ -299,9 +311,9 @@ const modelCallTransformer =
 			...(timing.firstChunkMs === undefined
 				? undefined
 				: { "gen_ai.response.time_to_first_chunk": (timing.firstChunkMs - timing.startedMs) / 1000 }),
-			...(timing.finishedMs === undefined
+			...(finishedMs === undefined
 				? undefined
-				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: timing.finishedMs - timing.startedMs }),
+				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: finishedMs - timing.startedMs }),
 			...telemetry.sessionAttributes,
 		}
 		for (const [key, value] of Object.entries(attributes)) {
@@ -326,24 +338,28 @@ export const instrumentLanguageModel = <R>(
 			...service,
 			streamText: ((options: Parameters<LanguageModel.Service["streamText"]>[0]) =>
 				Stream.unwrap(
-					Effect.map(Clock.currentTimeMillis, (startedMs) => {
+					Effect.clockWith((clock) => {
+						const now = () => clock.currentTimeMillisUnsafe()
 						const timing: CallTiming = {
-							startedMs,
+							startedMs: now(),
 							firstChunkMs: undefined,
 							finishedMs: undefined,
+							now,
 						}
-						return service.streamText(options).pipe(
-							Stream.tap((part) =>
-								timing.firstChunkMs === undefined || part.type === "finish"
-									? Effect.map(Clock.currentTimeMillis, (now) => {
-											timing.firstChunkMs ??= now
-											if (part.type === "finish") timing.finishedMs = now
-										})
-									: Effect.void,
-							),
-							Stream.provideService(
-								Telemetry.CurrentSpanTransformer,
-								modelCallTransformer(telemetry, timing),
+						return Effect.succeed(
+							service.streamText(options).pipe(
+								Stream.tap((part) =>
+									timing.firstChunkMs === undefined || part.type === "finish"
+										? Effect.sync(() => {
+												timing.firstChunkMs ??= now()
+												if (part.type === "finish") timing.finishedMs = now()
+											})
+										: Effect.void,
+								),
+								Stream.provideService(
+									Telemetry.CurrentSpanTransformer,
+									modelCallTransformer(telemetry, timing),
+								),
 							),
 						)
 					}),
