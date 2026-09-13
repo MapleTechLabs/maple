@@ -43,6 +43,8 @@ interface Layout {
 const NODE_W = 8
 const NODE_GAP = 6
 const HEADER_H = 18
+/** Breathing room under the lowest node, so a terminal never touches the card edge. */
+const FOOTER_H = 4
 const CHAR_W = 6.6
 const TIP_W = 250
 
@@ -106,7 +108,7 @@ function layout(
 		1,
 		...columns.map((column) => nodes.filter((node) => node.column === column).length),
 	)
-	const plotH = Math.max(0, height - HEADER_H - NODE_GAP * (maxNodes - 1))
+	const plotH = Math.max(0, height - HEADER_H - FOOTER_H - NODE_GAP * (maxNodes - 1))
 	const scale = plotH / maxTotal
 
 	const placed = new Map<string, PathNode & { x: number; y: number; h: number }>()
@@ -247,7 +249,10 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 							<path
 								key={`${link.source}->${link.target}-${index}`}
 								d={ribbon(link.x0, link.sy, link.x1, link.ty, link.h)}
+								// Ribbons never take the pointer: hover belongs to the nodes, and a
+								// label sitting over a ribbon must still reach its node.
 								className={cn(
+									"pointer-events-none",
 									kind === "event" && "fill-[var(--chart-2)]",
 									kind === "end" && "fill-foreground",
 									kind === "other" && "fill-foreground",
@@ -279,6 +284,9 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								(link) => isLit(link) && (link.source === node.id || link.target === node.id),
 							)
 						const showText = node.h >= 9 || node.kind !== "event"
+						const hitLabelW = showText
+							? (truncate(labelOf(node)).length + (showCounts ? 7 : 0)) * CHAR_W + 6
+							: 0
 						return (
 							<g
 								key={node.id}
@@ -298,13 +306,15 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 										node.kind === "other" && "fill-foreground/30",
 									)}
 								/>
-								{/* A wider invisible hit target than the 8px node. */}
+								{/* The hit target spans the node AND its label, so hovering the
+								    name lifts the flows too. */}
 								<rect
-									x={node.x - 6}
-									y={node.y}
-									width={NODE_W + 12}
-									height={node.h}
+									x={labelLeft ? node.x - 6 : node.x - 6 - hitLabelW}
+									y={node.y - 2}
+									width={NODE_W + 12 + hitLabelW}
+									height={Math.max(node.h, 12) + 4}
 									fill="transparent"
+									data-slot="paths-node-hit"
 								/>
 								{showText && (
 									<text
