@@ -89,6 +89,26 @@ const MCP_TOOLS = [
 		description:
 			"Create a dashboard from a template (service_health, error_tracking, blank) or custom JSON.",
 	},
+	{
+		name: "list_agent_sessions",
+		description:
+			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, model, tool, errors, or duration/cost ranges.",
+	},
+	{
+		name: "get_agent_session",
+		description:
+			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, failure groups, and turns.",
+	},
+	{
+		name: "get_agent_tools_overview",
+		description:
+			"Show how often each AI agent tool is called, how often it fails, and how slow it is, compared with the previous window. Select a tool to list its failure groups.",
+	},
+	{
+		name: "get_agent_tool_error",
+		description:
+			"Investigate one agent tool failure group: affected sessions, message variants, models and services, and sample calls with their arguments and results.",
+	},
 ] as const
 
 export function McpToolsList() {
