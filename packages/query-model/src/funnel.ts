@@ -136,12 +136,14 @@ export const ProductEventsFunnelWidgetParams = Schema.Struct({
 	keyBy: Schema.optional(FunnelKeyBy),
 	windowSeconds: Schema.optional(Schema.Number),
 	breakdownBy: Schema.optional(FunnelBreakdownBy),
+	/** Also fetch the time between steps and where the leavers went — the drop-off view's extras. */
+	details: Schema.optional(Schema.Boolean),
 	...FunnelPopulationFilters.fields,
 })
 export type ProductEventsFunnelWidgetParams = typeof ProductEventsFunnelWidgetParams.Type
 
 /** A funnel widget's row: one bar. `group` is present only on a breakdown. */
-export interface FunnelWidgetRow {
+export interface FunnelWidgetRow extends FunnelStepDetails {
 	readonly name: string
 	readonly value: number
 	readonly group?: string
@@ -200,4 +202,111 @@ export const funnelWidgetBreakdownRows = (
 			group: group === "" ? FUNNEL_EMPTY_GROUP_LABEL : group,
 		})),
 	)
+}
+
+// Funnel drop-off details
+//
+// A funnel widget drawn as its drop-off variant also asks the route for the
+// time between steps and where the leavers went. Both ride on the same
+// `{ name, value }` rows the plain funnel returns, as optional fields per
+// step, so the wire stays one array and a reader that only knows the bars
+// ignores the extras.
+
+/** How a funnel widget is drawn: descending bars, or the step-by-step drop-off view. */
+export const FunnelVariant = Schema.Literals(["bars", "dropoff"])
+export type FunnelVariant = typeof FunnelVariant.Type
+
+/** One "where the leavers went" entry on a step. `name` is `''` for "nothing followed". */
+export interface FunnelLeaver {
+	readonly name: string
+	readonly count: number
+}
+
+/** A funnel step's timing and leavers, present only when the route was asked for details. */
+export interface FunnelStepDetails {
+	/** Milliseconds from the previous step's event; absent on step 1. */
+	readonly p50Ms?: number
+	readonly p90Ms?: number
+	/** Most common next events of persons who stopped before this step; absent on step 1. */
+	readonly leavers?: ReadonlyArray<FunnelLeaver>
+}
+
+/** Query rows → per-step details keyed by 1-based step. */
+export const funnelStepDetails = (
+	timing: ReadonlyArray<{ readonly step: number; readonly p50Ms: number; readonly p90Ms: number }>,
+	leavers: ReadonlyArray<{ readonly step: number; readonly next: string; readonly count: number }>,
+): ReadonlyMap<number, FunnelStepDetails> => {
+	const byStep = new Map<number, FunnelStepDetails>()
+	for (const row of timing) {
+		byStep.set(row.step, { ...byStep.get(row.step), p50Ms: row.p50Ms, p90Ms: row.p90Ms })
+	}
+	for (const row of leavers) {
+		const current = byStep.get(row.step) ?? {}
+		byStep.set(row.step, {
+			...current,
+			leavers: [...(current.leavers ?? []), { name: row.next, count: row.count }],
+		})
+	}
+	return byStep
+}
+
+/** `funnelWidgetRows` with each step's details merged in. */
+export const funnelWidgetRowsWithDetails = (
+	steps: ReadonlyArray<FunnelStep>,
+	rows: ReadonlyArray<{ readonly step: number; readonly count: number }>,
+	details: ReadonlyMap<number, FunnelStepDetails>,
+): ReadonlyArray<FunnelWidgetRow> =>
+	funnelWidgetRows(steps, rows).map((row, index) => ({ ...row, ...details.get(index + 1) }))
+
+// Paths
+//
+// What people do in the hops after (or before) one anchor event. The
+// definition mirrors `productEventsPathsQuery`'s options; the wire rows are the
+// query's own `{ hop, fromNode, toNode, count }`, with two sentinels the chart
+// labels: `''` for a sequence that ended, `$other` for the folded remainder of
+// a column.
+
+export const PathsDirection = Schema.Literals(["after", "before"])
+export type PathsDirection = typeof PathsDirection.Type
+
+export const PathsInclude = Schema.Literals(["all", "events", "pages"])
+export type PathsInclude = typeof PathsInclude.Type
+
+/** The event or page a path starts (or ends) at. A session step has no place in a sequence. */
+export const PathsAnchor = Schema.Union([FunnelEventStep, FunnelPageStep])
+export type PathsAnchor = typeof PathsAnchor.Type
+
+/** Mirror `PATHS_MAX_DEPTH` / `PATHS_MAX_BRANCHES` in the query engine. */
+export const PATHS_MAX_DEPTH = 5
+export const PATHS_MAX_BRANCHES = 10
+/** The folded remainder of a column, as the query emits it. */
+export const PATHS_OTHER = "$other"
+
+export const DEFAULT_PATHS_DEPTH = 3
+export const DEFAULT_PATHS_BRANCHES = 4
+
+/**
+ * The params bag of the `product_events_paths` widget route — the stored
+ * definition, flat, population filters spread at the top level exactly as the
+ * funnel route takes them.
+ */
+export const ProductEventsPathsWidgetParams = Schema.Struct({
+	anchor: PathsAnchor,
+	direction: Schema.optional(PathsDirection),
+	depth: Schema.optional(Schema.Number),
+	branches: Schema.optional(Schema.Number),
+	keyBy: Schema.optional(FunnelKeyBy),
+	windowSeconds: Schema.optional(Schema.Number),
+	include: Schema.optional(PathsInclude),
+	exclude: Schema.optional(Schema.Array(Schema.String)),
+	...FunnelPopulationFilters.fields,
+})
+export type ProductEventsPathsWidgetParams = typeof ProductEventsPathsWidgetParams.Type
+
+/** A paths widget's row: one hop between two nodes. */
+export interface PathsWidgetRow {
+	readonly hop: number
+	readonly fromNode: string
+	readonly toNode: string
+	readonly count: number
 }

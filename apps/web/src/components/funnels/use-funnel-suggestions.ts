@@ -1,7 +1,8 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import type { FunnelPopulationFilterField } from "@maple/query-model"
 
-import { Result } from "@/lib/effect-atom"
+import * as React from "react"
+import { Atom, Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import {
 	productEventNamesResultAtom,
@@ -22,6 +23,14 @@ const FACET_LIMIT = 50
 
 const SEVEN_DAYS_MS = 7 * 24 * 3_600_000
 
+function useGatedRefreshableAtomValue<A, E>(
+	atom: Atom.Atom<Result.Result<A, E>>,
+	enabled: boolean,
+): Result.Result<A, E> {
+	const idle = React.useMemo(() => Atom.make<Result.Result<A, E>>(Result.initial()), [])
+	return useRefreshableAtomValue(enabled ? atom : idle)
+}
+
 export interface FunnelSuggestions {
 	readonly eventNames: ReadonlyArray<FunnelStepSuggestion>
 	readonly pagePaths: ReadonlyArray<FunnelStepSuggestion>
@@ -36,18 +45,25 @@ export interface FunnelSuggestions {
  */
 export function useFunnelSuggestions(
 	window: { startTime: string; endTime: string } | undefined,
+	options: { enabled?: boolean } = {},
 ): FunnelSuggestions {
+	const enabled = options.enabled ?? true
 	const startTime = window?.startTime ?? formatWarehouseDateTime(Date.now() - SEVEN_DAYS_MS)
 	const endTime = window?.endTime ?? formatWarehouseDateTime(Date.now())
 
-	const eventNamesResult = useRefreshableAtomValue(
+	// `enabled: false` reads an idle atom so a builder with no product-event
+	// query never pays for the three lookups.
+	const eventNamesResult = useGatedRefreshableAtomValue(
 		productEventNamesResultAtom({ data: { startTime, endTime, limit: EVENT_NAME_LIMIT } }),
+		enabled,
 	)
-	const pagesResult = useRefreshableAtomValue(
+	const pagesResult = useGatedRefreshableAtomValue(
 		webAnalyticsPagesResultAtom({ data: { startTime, endTime, limit: PAGE_SUGGESTION_LIMIT } }),
+		enabled,
 	)
-	const facetsResult = useRefreshableAtomValue(
+	const facetsResult = useGatedRefreshableAtomValue(
 		webAnalyticsBreakdownsResultAtom({ data: { startTime, endTime, limitPerDimension: FACET_LIMIT } }),
+		enabled,
 	)
 
 	const eventNames = Result.builder(eventNamesResult)

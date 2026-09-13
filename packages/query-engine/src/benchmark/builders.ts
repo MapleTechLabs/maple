@@ -295,6 +295,74 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// Drop-off details and paths share the funnel's person-key axis; one fixture
+	// per builder plus the direction / include / exclude shapes of the paths one.
+	{
+		module: "product-events",
+		name: "productEventsFunnelTimingQuery",
+		label: "person",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsFunnelTimingQuery({
+					steps: FUNNEL_STEPS,
+					keyBy: "person",
+					windowSeconds: 7 * 86_400,
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelLeaversQuery",
+		label: "visitor-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsFunnelLeaversQuery({
+					steps: FUNNEL_STEPS,
+					keyBy: "visitor",
+					windowSeconds: 7 * 86_400,
+					filters: WEB_ANALYTICS_ALL_FILTERS,
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-paths",
+		name: "productEventsPathsQuery",
+		label: "after-person",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsPathsQuery({
+					anchor: { kind: "event", eventName: "signup_completed" },
+					direction: "after",
+					depth: 3,
+					branches: 4,
+					keyBy: "person",
+					windowSeconds: 86_400,
+					exclude: ["heartbeat", "/"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-paths",
+		name: "productEventsPathsQuery",
+		label: "before-session-pages-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsPathsQuery({
+					anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
+					direction: "before",
+					depth: 2,
+					branches: 3,
+					keyBy: "session",
+					windowSeconds: 3_600,
+					include: "pages",
+					filters: WEB_ANALYTICS_ALL_FILTERS,
+				}),
+				window,
+			),
+	},
 	{
 		module: "product-events",
 		name: "productEventNamesQuery",
@@ -336,8 +404,79 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+// The query-builder source over the same table. Every shape once, plus the
+// session semi-join and attribute group-by variants — each a distinct SQL shape.
+const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "product-events-explore",
+		name: "productEventsTimeseriesQuery",
+		label: "count",
+		compile: () =>
+			CH.compileUnsafe(CH.productEventsTimeseriesQuery({ metric: "count", bucketSeconds: 3600 }), {
+				...window,
+				bucketSeconds: 3600,
+			}),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsTimeseriesQuery",
+		label: "persons-grouped-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsTimeseriesQuery({
+					metric: "persons",
+					groupBy: ["event_name", "attribute"],
+					groupByAttributeKey: "plan",
+					eventNames: ["signup_completed"],
+					attributeFilters: [{ key: "plan", value: "startup", mode: "equals" }],
+					country: "DE",
+					seriesLimit: 5,
+					bucketSeconds: 3600,
+				}),
+				{ ...window, bucketSeconds: 3600 },
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsBreakdownQuery",
+		label: "sessions-by-page",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsBreakdownQuery({
+					metric: "sessions",
+					groupBy: "page_path",
+					hosts: ["maple.dev"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsListQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.productEventsListQuery({ limit: 50, kinds: ["custom"] }), window),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventAttributeKeysQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.productEventAttributeKeysQuery({ limit: 200 }), window),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventAttributeValuesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventAttributeValuesQuery({ attributeKey: "plan", limit: 50 }),
+				window,
+			),
+	},
+]
+
 export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...productEventsFixtures,
+	...productEventsExploreFixtures,
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every
 	// empty state (apps/api/src/services/org/SignalPresenceService.ts). One fixture
 	// suffices: the builder takes no options, so there is only one SQL shape.

@@ -226,9 +226,9 @@ export function normalizeRuleQueryDraft(draft: QueryBuilderQueryDraftPayload | n
 			isMonotonic: draft.isMonotonic ?? draft.metricType === "sum",
 		}
 	}
-	return draft.dataSource === "logs"
-		? { ...shared, dataSource: "logs" }
-		: { ...shared, dataSource: "traces" }
+	if (draft.dataSource === "logs") return { ...shared, dataSource: "logs" }
+	if (draft.dataSource === "product_events") return { ...shared, dataSource: "product_events" }
+	return { ...shared, dataSource: "traces" }
 }
 
 export function defaultRuleForm(serviceName?: string): RuleFormState {

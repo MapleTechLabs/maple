@@ -156,6 +156,67 @@ export const MetricsFilters = Schema.Struct({
 })
 export type MetricsFilters = Schema.Schema.Type<typeof MetricsFilters>
 
+export const ProductEventsMetric = Schema.Literals(["count", "sessions", "persons", "users", "visitors"])
+export type ProductEventsMetric = Schema.Schema.Type<typeof ProductEventsMetric>
+
+export const PRODUCT_EVENTS_GROUP_BY = [
+	"event_name",
+	"kind",
+	"source",
+	"host",
+	"page_path",
+	"service",
+	"group",
+	"attribute",
+] as const
+export const ProductEventsGroupBy = Schema.Literals(PRODUCT_EVENTS_GROUP_BY)
+export type ProductEventsGroupBy = Schema.Schema.Type<typeof ProductEventsGroupBy>
+
+export const ProductEventKind = Schema.Literals(["navigation", "custom", "screen"])
+export type ProductEventKind = Schema.Schema.Type<typeof ProductEventKind>
+
+export const ProductEventSource = Schema.Literals(["browser", "server", "mobile", "trace"])
+export type ProductEventSource = Schema.Schema.Type<typeof ProductEventSource>
+
+/**
+ * Filters over `product_events`. The event-side fields lower to predicates on
+ * the row; the session-side fields (`referrerHost`, `country`, `utm*`, …) are
+ * `session_replays` dimensions and lower to a `SessionId` semi-join, the same
+ * one the `/analytics` page uses, so server rows with no session drop out
+ * whenever one of them is set.
+ */
+export const ProductEventsFilters = Schema.Struct({
+	eventNames: Schema.optional(Schema.Array(Schema.String)),
+	kinds: Schema.optional(Schema.Array(ProductEventKind)),
+	sources: Schema.optional(Schema.Array(ProductEventSource)),
+	hosts: Schema.optional(Schema.Array(Schema.String)),
+	pagePaths: Schema.optional(Schema.Array(Schema.String)),
+	serviceNames: Schema.optional(Schema.Array(Schema.String)),
+	userIds: Schema.optional(Schema.Array(Schema.String)),
+	groupIds: Schema.optional(Schema.Array(Schema.String)),
+	excludedEventNames: Schema.optional(Schema.Array(Schema.String)),
+	excludedKinds: Schema.optional(Schema.Array(ProductEventKind)),
+	excludedSources: Schema.optional(Schema.Array(ProductEventSource)),
+	excludedHosts: Schema.optional(Schema.Array(Schema.String)),
+	excludedPagePaths: Schema.optional(Schema.Array(Schema.String)),
+	excludedServiceNames: Schema.optional(Schema.Array(Schema.String)),
+	/** `track()` props, matched on the `Attributes` map. */
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Required when `groupBy` includes `attribute`. */
+	groupByAttributeKey: Schema.optional(Schema.String),
+	referrerHost: Schema.optional(Schema.String),
+	country: Schema.optional(Schema.String),
+	deviceType: Schema.optional(Schema.String),
+	browserName: Schema.optional(Schema.String),
+	osName: Schema.optional(Schema.String),
+	language: Schema.optional(Schema.String),
+	utmSource: Schema.optional(Schema.String),
+	utmMedium: Schema.optional(Schema.String),
+	utmCampaign: Schema.optional(Schema.String),
+	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
+})
+export type ProductEventsFilters = Schema.Schema.Type<typeof ProductEventsFilters>
+
 export const TracesTimeseriesQuery = Schema.Struct({
 	kind: Schema.Literal("timeseries"),
 	source: Schema.Literal("traces"),
@@ -202,6 +263,17 @@ export const MetricsTimeseriesQuery = Schema.Struct({
 })
 export type MetricsTimeseriesQuery = Schema.Schema.Type<typeof MetricsTimeseriesQuery>
 
+export const ProductEventsTimeseriesQuery = Schema.Struct({
+	kind: Schema.Literal("timeseries"),
+	source: Schema.Literal("product_events"),
+	metric: ProductEventsMetric,
+	groupBy: Schema.optional(Schema.Array(Schema.Literals([...PRODUCT_EVENTS_GROUP_BY, "none"]))),
+	filters: Schema.optional(ProductEventsFilters),
+	bucketSeconds: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+	seriesLimit: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+})
+export type ProductEventsTimeseriesQuery = Schema.Schema.Type<typeof ProductEventsTimeseriesQuery>
+
 export const TracesBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("traces"),
@@ -238,6 +310,18 @@ export const MetricsBreakdownQuery = Schema.Struct({
 	),
 })
 export type MetricsBreakdownQuery = Schema.Schema.Type<typeof MetricsBreakdownQuery>
+
+export const ProductEventsBreakdownQuery = Schema.Struct({
+	kind: Schema.Literal("breakdown"),
+	source: Schema.Literal("product_events"),
+	metric: ProductEventsMetric,
+	groupBy: ProductEventsGroupBy,
+	filters: Schema.optional(ProductEventsFilters),
+	limit: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(100)),
+	),
+})
+export type ProductEventsBreakdownQuery = Schema.Schema.Type<typeof ProductEventsBreakdownQuery>
 
 // Batched preview series for the metrics-explorer browse grid: one query
 // returns a small timeseries per metric name (matched with `MetricName IN`),
@@ -295,9 +379,20 @@ export const LogsListQuery = Schema.Struct({
 })
 export type LogsListQuery = Schema.Schema.Type<typeof LogsListQuery>
 
+export const ProductEventsListQuery = Schema.Struct({
+	kind: Schema.Literal("list"),
+	source: Schema.Literal("product_events"),
+	filters: Schema.optional(ProductEventsFilters),
+	columns: Schema.optional(Schema.Array(Schema.String)),
+	limit: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(200)),
+	),
+})
+export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsListQuery>
+
 export const AttributeKeysQuery = Schema.Struct({
 	kind: Schema.Literal("attributeKeys"),
-	source: Schema.Literals(["traces", "logs", "metrics"]),
+	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 	scope: Schema.optional(Schema.Literals(["span", "resource"])),
 	// Scope metrics-source discovery to a single metric (reads the raw metric
 	// table instead of the org-wide hourly rollup). Both fields must be set.
@@ -362,8 +457,8 @@ export type TracesStatsQuery = Schema.Schema.Type<typeof TracesStatsQuery>
 
 export const AttributeValuesQuery = Schema.Struct({
 	kind: Schema.Literal("attributeValues"),
-	source: Schema.Literals(["traces", "logs", "metrics"]),
-	scope: Schema.Literals(["span", "resource", "log", "metric"]),
+	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
 	attributeKey: Schema.String,
 	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery).
 	metricName: Schema.optional(Schema.String),
@@ -385,12 +480,15 @@ export const QuerySpec = Schema.Union([
 	TracesTimeseriesQuery,
 	LogsTimeseriesQuery,
 	MetricsTimeseriesQuery,
+	ProductEventsTimeseriesQuery,
 	TracesBreakdownQuery,
 	LogsBreakdownQuery,
 	MetricsBreakdownQuery,
+	ProductEventsBreakdownQuery,
 	MetricsSparklinesQuery,
 	TracesListQuery,
 	LogsListQuery,
+	ProductEventsListQuery,
 	AttributeKeysQuery,
 	TracesFacetsQuery,
 	LogsFacetsQuery,
@@ -469,22 +567,22 @@ export type SparklineSeries = Schema.Schema.Type<typeof SparklineSeries>
 export const QueryEngineResult = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("timeseries"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(TimeseriesPoint),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("breakdown"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(BreakdownItem),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("list"),
-		source: Schema.Literals(["traces", "logs"]),
+		source: Schema.Literals(["traces", "logs", "product_events"]),
 		data: Schema.Array(ListRow),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeKeys"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(AttributeKeyItem),
 	}),
 	Schema.Struct({
@@ -499,7 +597,7 @@ export const QueryEngineResult = Schema.Union([
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeValues"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(AttributeValueItem),
 	}),
 	Schema.Struct({
@@ -586,6 +684,7 @@ export const QueryEngineSampleCountStrategy = Schema.Literals([
 	"trace_count",
 	"metric_data_points",
 	"log_count",
+	"product_event_count",
 ]).annotate({
 	identifier: "@maple/QueryEngineSampleCountStrategy",
 })

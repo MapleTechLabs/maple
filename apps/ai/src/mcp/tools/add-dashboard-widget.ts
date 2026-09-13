@@ -21,7 +21,7 @@ import {
 	type DashboardWidget,
 } from "../lib/dashboard-mutations"
 import { buildRawSqlDataSource, validateRawSql, withScalarReduction } from "../lib/raw-sql-widget"
-import { makeProductEventsFunnelDataSource } from "@maple/widgets/dashboard"
+import { makeProductEventsFunnelDataSource, makeProductEventsPathsDataSource } from "@maple/widgets/dashboard"
 import { PANEL_TYPE_LIST_MD, resolvePanelType } from "../lib/panel-type"
 import { formatRenderIssues, validateWidgetRenderability } from "../lib/validate-widget-renderability"
 import {
@@ -124,12 +124,20 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 							windowSeconds: decodedDisplay.funnel?.windowSeconds,
 							breakdownBy: decodedDisplay.funnel?.breakdownBy,
 							filters: decodedDisplay.funnel?.filters,
+							variant: decodedDisplay.funnel?.variant,
 						}
 					: undefined
+			// Likewise a paths widget: `display_json.paths` is the whole definition.
+			const pathsDefinition = decodedDisplay.paths
 
-			if (!useRawSql && funnelDefinition === undefined && (!data_source_json || !display_json)) {
+			if (
+				!useRawSql &&
+				funnelDefinition === undefined &&
+				pathsDefinition === undefined &&
+				(!data_source_json || !display_json)
+			) {
 				return validationError(
-					"add_dashboard_widget requires either `sql` (raw ClickHouse SQL path), both `data_source_json` and `display_json` (structured-query path), or a `display_json.funnel.steps` definition (product-event funnel).",
+					"add_dashboard_widget requires either `sql` (raw ClickHouse SQL path), both `data_source_json` and `display_json` (structured-query path), a `display_json.funnel.steps` definition (product-event funnel), or a `display_json.paths` definition (paths).",
 					'{ "sql": "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)" }',
 				)
 			}
@@ -179,6 +187,28 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 					)
 				}
 				dataSource = makeProductEventsFunnelDataSource(funnelDefinition)
+			} else if (pathsDefinition !== undefined || panel.visualization === "paths") {
+				// A paths panel has exactly one source, derived from its definition.
+				// A caller-supplied one would feed the chart rows it cannot read.
+				if (data_source_json) {
+					return validationError(
+						'`panel_type: "paths"` derives its data source from `display_json.paths`; do not pass `data_source_json`.',
+						'{ "panel_type": "paths", "display_json": "{\\"title\\":\\"After signup\\",\\"paths\\":{\\"anchor\\":{\\"kind\\":\\"event\\",\\"eventName\\":\\"signup_completed\\"}}}" }',
+					)
+				}
+				if (pathsDefinition === undefined) {
+					return validationError(
+						'`panel_type: "paths"` needs `display_json.paths` with an `anchor` (`{ "kind": "event", "eventName": … }` or `{ "kind": "page", "pagePath": … }`).',
+						'{ "panel_type": "paths", "display_json": "{\\"title\\":\\"After signup\\",\\"paths\\":{\\"anchor\\":{\\"kind\\":\\"event\\",\\"eventName\\":\\"signup_completed\\"}}}" }',
+					)
+				}
+				if (panel.visualization !== "paths") {
+					return validationError(
+						`\`display_json.paths\` defines a paths widget, which only \`panel_type: "paths"\` renders (got \`${panel.panelType}\`).`,
+						'{ "panel_type": "paths", "display_json": "{\\"title\\":\\"After signup\\",\\"paths\\":{\\"anchor\\":{\\"kind\\":\\"event\\",\\"eventName\\":\\"signup_completed\\"},\\"depth\\":3}}" }',
+					)
+				}
+				dataSource = makeProductEventsPathsDataSource(pathsDefinition)
 			} else {
 				dataSource = yield* decodeDataSourceJson(data_source_json!, TOOL)
 				// A scalar tile reads `data[0].value`, so without a reduction it

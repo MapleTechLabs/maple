@@ -27,6 +27,12 @@ import {
 	type MetricsTimeseriesQuery,
 	type MetricsBreakdownQuery,
 } from "@maple/query-engine"
+import {
+	ProductEventKind,
+	type ProductEventsBreakdownQuery,
+	type ProductEventsFilters,
+	type ProductEventsTimeseriesQuery,
+} from "@maple/domain/query-engine"
 import { formatQueryResult } from "../lib/format-query-result"
 import { warehouseErrorText, warehouseReadHandlers } from "../lib/map-warehouse-error"
 import {
@@ -44,13 +50,16 @@ const asSpanName = Schema.decodeUnknownSync(SpanName)
 const asDeploymentEnvironment = Schema.decodeUnknownSync(DeploymentEnvironment)
 const asCommitSha = Schema.decodeUnknownSync(CommitSha)
 const asMetricName = Schema.decodeUnknownSync(MetricName)
+const asProductEventKind = Schema.decodeUnknownSync(ProductEventKind)
+const isProductEventKind = Schema.is(ProductEventKind)
 
 const queryDataSchema = Schema.Struct({
 	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES).annotate({
 		description:
 			"Data source. Use 'traces' for request/span analysis (latency, errors, throughput). " +
 			"Use 'logs' for log volume analysis. " +
-			"Use 'metrics' for custom metric aggregation (requires metric_name and metric_type — call list_metrics first).",
+			"Use 'metrics' for custom metric aggregation (requires metric_name and metric_type — call list_metrics first). " +
+			"Use 'product_events' for product analytics — track() events, page views and server events (call list_product_events to discover names).",
 	}),
 	kind: Schema.Literals([
 		"timeseries",
@@ -64,6 +73,7 @@ const queryDataSchema = Schema.Struct({
 	metric: optionalStringParam(
 		"Metric to compute. Traces: count (request volume), avg_duration, p50_duration, p95_duration, p99_duration (latency), " +
 			"error_rate (0-1 ratio), apdex (user satisfaction, requires apdex_threshold_ms). Logs: count only. " +
+			"Product events: count, sessions, persons, users, visitors (distinct sessions / people / identified users / anonymous visitors). " +
 			"Metrics with kind=timeseries: avg, sum, min, max, count, rate, increase; with kind=breakdown ONLY avg, sum, count. " +
 			"For monotonic counters (typically metric_type=sum with isMonotonic=true from list_metrics), prefer rate or increase over raw sum. " +
 			"Default: 'count' for traces/logs, 'avg' for metrics.",
@@ -71,6 +81,7 @@ const queryDataSchema = Schema.Struct({
 	group_by: optionalStringParam(
 		"Grouping dimension. Traces: service, span_name, status_code, http_method, attribute. " +
 			"Logs: service, severity. Metrics: service, attribute, resource_attribute. " +
+			"Product events: event_name, kind, source, host, page_path, service, group, attribute. " +
 			"'none' is additionally valid for kind=timeseries but not for kind=breakdown. " +
 			"Default: 'none' for timeseries, 'service' for breakdown.",
 	),
@@ -91,6 +102,15 @@ const queryDataSchema = Schema.Struct({
 	severity: optionalStringParam(
 		"Filter by log severity: TRACE, DEBUG, INFO, WARN, ERROR, FATAL (logs only)",
 	),
+	// Product-events-specific
+	event_name: optionalStringParam(
+		"Filter by event name, comma-separated for several (product_events only, use list_product_events to discover)",
+	),
+	event_kind: optionalStringParam(
+		"Filter by event kind: navigation, custom or screen (product_events only)",
+	),
+	host: optionalStringParam("Filter by the site host the event fired on (product_events only)"),
+	page_path: optionalStringParam("Filter by the page path the event fired on (product_events only)"),
 	// Metrics-specific
 	metric_name: optionalStringParam(
 		"Metric name — required for source=metrics. Use list_metrics to discover available metrics.",
@@ -109,7 +129,7 @@ const queryDataSchema = Schema.Struct({
 })
 
 const queryDataDescription =
-	"Query timeseries or breakdown data from traces, logs, or metrics. " +
+	"Query timeseries or breakdown data from traces, logs, metrics, or product events. " +
 	"Start here for trend analysis, comparisons, and top-N queries. " +
 	"For error investigation, prefer find_errors and error_detail. " +
 	"For attribute discovery, call explore_attributes first. " +
@@ -143,6 +163,16 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					"`group_by=attribute` requires `attribute_key`. Use explore_attributes to discover available keys.",
 					'group_by="attribute" attribute_key="http.method"',
 				)
+			}
+
+			if (params.source === "product_events" && params.event_kind !== undefined) {
+				const bad = splitCsv(params.event_kind).find((kind) => !isProductEventKind(kind))
+				if (bad !== undefined) {
+					return validationError(
+						`\`event_kind\` must be navigation, custom or screen (got "${bad}").`,
+						'source="product_events" event_kind="custom"',
+					)
+				}
 			}
 
 			if (params.source === "metrics") {
@@ -282,6 +312,73 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						...(params.limit && { limit: params.limit }),
 					} satisfies LogsBreakdownQuery
 				}),
+				Match.when("product_events", (): QuerySpecType => {
+					const attributeFilters: Array<{
+						key: string
+						value?: string
+						mode: "equals" | "exists"
+					}> = []
+					if (params.group_by !== "attribute" && params.attribute_key) {
+						attributeFilters.push({
+							key: params.attribute_key,
+							...(params.attribute_value
+								? { value: params.attribute_value, mode: "equals" as const }
+								: { mode: "exists" as const }),
+						})
+					}
+					const kinds = params.event_kind
+						? splitCsv(params.event_kind).map((kind) => asProductEventKind(kind))
+						: []
+					const filters: ProductEventsFilters = {
+						...(params.event_name && { eventNames: splitCsv(params.event_name) }),
+						...(kinds.length > 0 && { kinds }),
+						...(params.host && { hosts: [params.host] }),
+						...(params.page_path && { pagePaths: [params.page_path] }),
+						...(params.service_name && { serviceNames: [params.service_name] }),
+						...(params.group_by === "attribute" &&
+							params.attribute_key && { groupByAttributeKey: params.attribute_key }),
+						...(attributeFilters.length > 0 && { attributeFilters }),
+					}
+					const hasFilters = Object.keys(filters).length > 0
+
+					const eventsMetric = (params.metric ?? "count") as ProductEventsTimeseriesQuery["metric"]
+					if (!params.metric)
+						decisions.push(
+							`metric: defaulted to "count" (available: count, sessions, persons, users, visitors)`,
+						)
+
+					if (params.kind === "timeseries") {
+						const groupBy = (params.group_by ? [params.group_by] : ["none"]) as NonNullable<
+							ProductEventsTimeseriesQuery["groupBy"]
+						>
+						if (!params.group_by)
+							decisions.push(
+								`group_by: defaulted to "none" (available: event_name, kind, source, host, page_path, service, group, attribute, none)`,
+							)
+						return {
+							kind: "timeseries",
+							source: "product_events",
+							metric: eventsMetric,
+							groupBy,
+							...(hasFilters && { filters }),
+							...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
+						} satisfies ProductEventsTimeseriesQuery
+					}
+					const groupBy = (params.group_by ??
+						"event_name") as ProductEventsBreakdownQuery["groupBy"]
+					if (!params.group_by)
+						decisions.push(
+							`group_by: defaulted to "event_name" (available: event_name, kind, source, host, page_path, service, group, attribute)`,
+						)
+					return {
+						kind: "breakdown",
+						source: "product_events",
+						metric: eventsMetric,
+						groupBy,
+						...(hasFilters && { filters }),
+						...(params.limit && { limit: params.limit }),
+					} satisfies ProductEventsBreakdownQuery
+				}),
 				Match.when("metrics", (): QuerySpecType => {
 					// metric_name presence is enforced by the validation above.
 					const metricName = params.metric_name ?? ""
@@ -417,6 +514,10 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				...(params.environments && { environments: splitCsv(params.environments) }),
 				...(params.commit_shas && { commitShas: splitCsv(params.commit_shas) }),
 				...(params.severity && { severity: params.severity }),
+				...(params.event_name && { eventName: params.event_name }),
+				...(params.event_kind && { eventKind: params.event_kind }),
+				...(params.host && { host: params.host }),
+				...(params.page_path && { pagePath: params.page_path }),
 				...(params.metric_name && { metricName: params.metric_name }),
 				...(params.metric_type && { metricType: params.metric_type }),
 				...(params.apdex_threshold_ms && { apdexThresholdMs: params.apdex_threshold_ms }),

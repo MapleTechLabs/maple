@@ -527,6 +527,14 @@ const FUNNEL_EVENTS: ReadonlyArray<FunnelSeedEvent> = [
 	fev("f2", "v2", "", at(2 * HOUR_MS + MINUTE_MS), 1, "navigation", "https://maple.dev/pricing"),
 	fev("f3", "v3", "", at(3 * HOUR_MS), 0, "navigation", "https://maple.dev/pricing"),
 	fev("f5", "v1", "u1", at(5 * HOUR_MS), 0, "navigation", "https://app.maple.dev/dashboard"),
+	// v6: entry → /docs, no session row. A second first-hop destination after
+	// "/", so the paths suite has a node to fold into `$other`.
+	fev("f6", "v6", "", at(7 * HOUR_MS), 0, "navigation", "https://maple.dev/"),
+	fev("f6", "v6", "", at(7 * HOUR_MS + MINUTE_MS), 1, "navigation", "https://maple.dev/docs"),
+	// v7: a page view and a custom event in the SAME millisecond, told apart by
+	// `Seq` alone. A path ordered by timestamp only could put `scroll` first.
+	fev("f7", "v7", "", at(8 * HOUR_MS), 0, "navigation", "https://maple.dev/"),
+	fev("f7", "v7", "", at(8 * HOUR_MS), 1, "custom", "https://maple.dev/", "scroll"),
 ]
 
 const FUNNEL_SESSIONS: ReadonlyArray<SeedSession> = [
@@ -709,10 +717,196 @@ describe.skipIf(!clickhouseE2eEnabled)("product events funnels", () => {
 				Number(row.persons),
 			]),
 			[
-				["$pageview", "navigation", 6, 4, 4],
+				["$pageview", "navigation", 9, 6, 6],
 				["plan_started", "custom", 2, 0, 2],
+				["scroll", "custom", 1, 1, 1],
 				["signup_started", "custom", 1, 1, 1],
 			],
+		)
+	})
+})
+
+// Funnel drop-off details and paths, over the same funnel seed.
+//
+// Timing walks each person's chain from their first step-1 event; leavers are
+// the first event after the last step a dropped person reached. Paths cut each
+// person's event sequence at the anchor and count hops, folding everything
+// past the top `branches` nodes into `$other`.
+
+const timingRows = async (opts: CH.ProductEventsFunnelOpts) => {
+	const rows = await runJson(CH.compileUnsafe(CH.productEventsFunnelTimingQuery(opts), funnelWindow).sql)
+	return rows.map((row) => [Number(row.step), Number(row.p50Ms), Number(row.p90Ms)])
+}
+
+const leaverRows = async (opts: CH.ProductEventsFunnelOpts) => {
+	const rows = await runJson(CH.compileUnsafe(CH.productEventsFunnelLeaversQuery(opts), funnelWindow).sql)
+	return rows.map((row) => [Number(row.step), row.next, Number(row.count)])
+}
+
+const pathRows = async (opts: CH.ProductEventsPathsOpts) => {
+	const rows = await runJson(CH.compileUnsafe(CH.productEventsPathsQuery(opts), funnelWindow).sql)
+	return rows.map((row) => [Number(row.hop), row.fromNode, row.toNode, Number(row.count)])
+}
+
+describe.skipIf(!clickhouseE2eEnabled)("product events funnel drop-off details", () => {
+	beforeAll(async () => {
+		await seedFunnel()
+	}, 60_000)
+
+	it("measures the time between consecutive steps over persons who reached them", async () => {
+		// u1: /pricing H1+1m → signup_started H1+2m (60s) → plan_started H6 (5h − 2m).
+		assert.deepStrictEqual(
+			await timingRows({ steps: PRODUCT_STEPS, keyBy: "person", windowSeconds: 86_400 }),
+			[
+				[2, 60_000, 60_000],
+				[3, 5 * HOUR_MS - 2 * MINUTE_MS, 5 * HOUR_MS - 2 * MINUTE_MS],
+			],
+		)
+	})
+
+	it("answers zero, not a missing row, for a step nobody reached", async () => {
+		// On a visitor key the server-side plan_started is unreachable.
+		assert.deepStrictEqual(
+			await timingRows({ steps: PRODUCT_STEPS, keyBy: "visitor", windowSeconds: 86_400 }),
+			[
+				[2, 60_000, 60_000],
+				[3, 0, 0],
+			],
+		)
+	})
+
+	it("names the first event after the last step a leaver reached, '' when there was none", async () => {
+		// Visitor key: v2 and v3 stop after /pricing with nothing following;
+		// v1 reaches signup_started, cannot see the server-side step 3, and
+		// went on to /dashboard.
+		assert.deepStrictEqual(
+			await leaverRows({ steps: PRODUCT_STEPS, keyBy: "visitor", windowSeconds: 86_400 }),
+			[
+				[2, "", 2],
+				[3, "/dashboard", 1],
+			],
+		)
+	})
+})
+
+describe.skipIf(!clickhouseE2eEnabled)("product events paths", () => {
+	beforeAll(async () => {
+		await seedFunnel()
+	}, 60_000)
+
+	it("walks forward from the anchor, ending a sequence that stops short", async () => {
+		// v1: /pricing → signup_started → /dashboard. v2, v3: /pricing then nothing.
+		assert.deepStrictEqual(
+			await pathRows({
+				anchor: { kind: "page", pagePath: "/pricing" },
+				direction: "after",
+				depth: 2,
+				branches: 4,
+				keyBy: "visitor",
+				windowSeconds: 86_400,
+			}),
+			[
+				[1, "/pricing", "", 2],
+				[1, "/pricing", "signup_started", 1],
+				[2, "signup_started", "/dashboard", 1],
+			],
+		)
+	})
+
+	it("walks backward from the last anchor occurrence", async () => {
+		// u1 (stitched): / → /pricing → signup_started, read from the anchor back.
+		assert.deepStrictEqual(
+			await pathRows({
+				anchor: { kind: "event", eventName: "signup_started" },
+				direction: "before",
+				depth: 2,
+				branches: 4,
+				keyBy: "person",
+				windowSeconds: 86_400,
+			}),
+			[
+				[1, "signup_started", "/pricing", 1],
+				[2, "/pricing", "/", 1],
+			],
+		)
+	})
+
+	it("folds nodes past the top branches into $other and honours include/exclude", async () => {
+		// After "/": v1 and v2 go to /pricing, v6 to /docs. With one branch, /docs
+		// folds. v1's signup_started is a custom event, dropped by
+		// include: "pages", and its /dashboard view is outside the one-hour
+		// window, so v1 ends after /pricing exactly like v2.
+		assert.deepStrictEqual(
+			await pathRows({
+				anchor: { kind: "page", pagePath: "/" },
+				direction: "after",
+				depth: 2,
+				branches: 1,
+				keyBy: "visitor",
+				windowSeconds: 3_600,
+				include: "pages",
+			}),
+			[
+				[1, "/", "/pricing", 2],
+				[1, "/", "", 1],
+				[1, "/", "$other", 1],
+				[2, "/pricing", "", 2],
+				[2, "$other", "", 1],
+			],
+		)
+		// Excluding /pricing by name makes v1 and v2 end right after "/".
+		assert.deepStrictEqual(
+			await pathRows({
+				anchor: { kind: "page", pagePath: "/" },
+				direction: "after",
+				depth: 1,
+				branches: 4,
+				keyBy: "visitor",
+				windowSeconds: 3_600,
+				include: "pages",
+				exclude: ["/pricing"],
+			}),
+			[
+				[1, "/", "", 3],
+				[1, "/", "/docs", 1],
+			],
+		)
+	})
+
+	it("keeps the anchor row when include or exclude would drop its kind", async () => {
+		// A page anchor with `include: "events"`: the page view still anchors,
+		// and only custom events follow it. v1: / → signup_started; v7: / → scroll.
+		assert.deepStrictEqual(
+			await pathRows({
+				anchor: { kind: "page", pagePath: "/" },
+				direction: "after",
+				depth: 1,
+				branches: 4,
+				keyBy: "visitor",
+				windowSeconds: 86_400,
+				include: "events",
+			}),
+			[
+				[1, "/", "", 2],
+				[1, "/", "scroll", 1],
+				[1, "/", "signup_started", 1],
+			],
+		)
+	})
+
+	it("orders a same-millisecond pair by Seq", async () => {
+		// v7's page view and `scroll` share a timestamp; Seq says the page came first.
+		const rows = await pathRows({
+			anchor: { kind: "page", pagePath: "/" },
+			direction: "after",
+			depth: 1,
+			branches: 4,
+			keyBy: "visitor",
+			windowSeconds: 60,
+		})
+		assert.deepStrictEqual(
+			rows.filter((row) => row[2] === "scroll"),
+			[[1, "/", "scroll", 1]],
 		)
 	})
 })

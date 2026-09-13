@@ -103,7 +103,24 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // time that number has held. The pattern is now the point — a startup addition
 // merged alongside another one needs its ceiling re-measured on the merge, not
 // taken as the larger of the two.
-const maxGzipBytes = 693 * 1024
+// 692 KB from product events as a query-builder source (#877, 2026-09-13):
+// ~1.9 KB of startup measured against main's 689.9 — the fourth source's
+// aggregation, group-by and where-clause vocabularies in the query-builder
+// model every panel reads, the product-event `QuerySpec` arms and filters on
+// the contract every page's client carries, and three gallery tiles in the
+// widget registry. The step editor and the funnel suggestions stay in the
+// editor's route chunk.
+// 693 KB from the funnel drop-off view and the paths widget (#878, 2026-09-13):
+// ~0.3 KB of startup measured in CI against #877's 691.9 — a fourteenth panel
+// type in the widget-type table, the `paths` and `funnel.variant` display
+// blocks on the stored and v2 schemas, two picker presets with their icon,
+// and the paths widget type's lowering. Both charts, the paths query panel
+// and the sample data stay in lazy chunks.
+// 695 KB on merging #877 and #878 with the GA integration (2026-09-13): the
+// stacking once more. Merged measures 694.6 locally; unregistering
+// `V2GoogleAnalyticsIntegrationsApiGroup` puts it at 693.0, exactly main's
+// ceiling, so the GA contract is still the same 1.6 KB. 695 leaves ~0.4 KB.
+const maxGzipBytes = 695 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

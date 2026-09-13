@@ -86,6 +86,10 @@ const panelTypesSection = (): string => {
 		"- **hbar** — a ranked “top N by volume”. Each row is labelled with its share of the **total**.",
 		"- **funnel** — sequential stages with a drop-off. Labels each bar as a share of the *largest*,",
 		"  so an unranked breakdown of four equal things reads “100%” four times. Use `hbar` for that.",
+		'  `display.funnel.variant: "dropoff"` draws the same funnel as one column per step with the',
+		"  loss between steps, the median time between them, and where the leavers went.",
+		"- **paths** — what people do in the steps after (or before) one event or page, as a flow.",
+		"  Defined by `display.paths` alone; no query set.",
 		"- **pie** — composition, few slices. Collapses a long tail into “Other”.",
 		"- **stat / gauge** — one number. A gauge adds an arc; set `display.gauge.min`/`max` to match the unit.",
 		"- **table** — rows and columns; set `display.columns` for headers and per-column units.",
@@ -286,6 +290,29 @@ const dataSourcesSection = (): string =>
 		"",
 		json(exampleFunnelWidget()),
 		"",
+		'`display.funnel.variant: "dropoff"` switches the same widget to the drop-off view, which',
+		"also fetches the time between steps and the most common next event of the persons who",
+		"stopped before each step. Needs at least two steps to say anything; with `breakdownBy` it",
+		"draws one cap per group and no timing or leavers.",
+		"",
+		'### Paths (`panel_type: "paths"` + `display.paths`)',
+		"",
+		'A flow of what people did in the hops after — or, with `direction: "before"`, before —',
+		"one anchor. Product events only; there is no query set. Set the definition on",
+		'`display_json.paths` and `add_dashboard_widget` derives the data source (`kind: "route"`,',
+		'`endpoint: "product_events_paths"`); do not pass `data_source_json`.',
+		"",
+		'- `anchor` — required. `{ kind: "event", eventName, attributeEquals? }` or',
+		'  `{ kind: "page", pagePath, host? }`. A session step cannot anchor a sequence.',
+		'- `direction` — `"after"` (default) or `"before"`.',
+		"- `depth` — hops to draw, 1–5 (default 3). `branches` — nodes named per step, 1–10",
+		"  (default 4); the rest fold into an *Other* node. A sequence that stops short ends in",
+		"  an *Ended* node.",
+		"- `keyBy`, `windowSeconds` (how far from the anchor a hop may be, default 86400) and",
+		"  `filters` — as for funnels.",
+		'- `include` — `"all"` (default), `"events"` or `"pages"`. `exclude` — names (event names',
+		'  or page paths) dropped before sequencing, e.g. `["heartbeat", "/"]`.',
+		"",
 		"### A complete widget",
 		"",
 		"The sections above describe `add_dashboard_widget`'s parameters, which it assembles into a",
@@ -327,14 +354,14 @@ const unitsSection = (): string =>
 // --- queries -------------------------------------------------------------
 
 const queriesSection = (): string => {
-	const aggRows = (["traces", "logs", "metrics"] as const).map(
+	const aggRows = (["traces", "logs", "metrics", "product_events"] as const).map(
 		(source) =>
 			`| \`${source}\` | ${AGGREGATIONS_BY_SOURCE[source]
 				.map((option) => `\`${option.value}\``)
 				.join(", ")} |`,
 	)
 
-	const groupRows = (["traces", "logs", "metrics"] as const).map((source) => {
+	const groupRows = (["traces", "logs", "metrics", "product_events"] as const).map((source) => {
 		const { literals, prefixes } = GROUP_BY_TOKENS[source]
 		return `| \`${source}\` | ${literals.map((token) => `\`${token}\``).join(", ")} | ${
 			prefixes.length > 0 ? prefixes.map((prefix) => `\`${prefix}<key>\``).join(", ") : "**none**"
@@ -344,7 +371,7 @@ const queriesSection = (): string => {
 	return [
 		"## Queries",
 		"",
-		"A query draft is discriminated on `dataSource` (`traces` / `logs` / `metrics`). The",
+		"A query draft is discriminated on `dataSource` (`traces` / `logs` / `metrics` / `product_events`). The",
 		"metric-only fields belong solely to `metrics` queries; do not add them to trace or log",
 		"queries:",
 		"",
@@ -430,7 +457,8 @@ const displaySection = (): string =>
 		"| `gauge` | gauge | `{ min, max }` — defaults to 0–100, which is wrong for a `percent` unit. |",
 		"| `histogram` | histogram | `{ bucketCount, bucketWidth, logScaleY }`. |",
 		"| `heatmap` | heatmap | `{ colorScale, scaleType }`. |",
-		"| `funnel` | funnel | `{ showStepPercent, steps?, keyBy?, windowSeconds?, breakdownBy?, filters? }` — with `steps` it is a product-event funnel (see Data sources). |",
+		'| `funnel` | funnel | `{ showStepPercent, variant?, steps?, keyBy?, windowSeconds?, breakdownBy?, filters? }` — with `steps` it is a product-event funnel (see Data sources); `variant: "dropoff"` is the drop-off view. |',
+		"| `paths` | paths | `{ anchor, direction?, depth?, branches?, keyBy?, windowSeconds?, include?, exclude?, filters? }` — the whole definition (see Data sources). |",
 		"| `markdown` | markdown | `{ content }` — the note body. |",
 		"| `sparkline` | stat | `{ enabled, dataSource? }`; embeds a full nested data source. |",
 		"",
@@ -517,7 +545,7 @@ const SECTION_RENDERERS = {
 } satisfies Record<DashboardSchemaSection, () => string>
 
 const SECTION_SUMMARIES = {
-	panel_types: "The 13 panel types, what each persists as, and which need a group-by or a reduction.",
+	panel_types: "The 14 panel types, what each persists as, and which need a group-by or a reduction.",
 	data_sources: "The four `kind` arms of a widget data source, with a decodable example of each.",
 	units: "The unit vocabulary — and the percent-vs-percent_100 scale rule.",
 	queries: "Aggregations and group-by tokens per source, the whereClause grammar, formulas.",

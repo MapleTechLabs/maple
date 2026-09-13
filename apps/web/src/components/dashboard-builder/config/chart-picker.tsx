@@ -60,8 +60,9 @@ const PRESET_SECTIONS = widgetTypeList
 	.filter((definition) => definition.presets.length > 0 && definition.PresetPreview)
 	.map((definition) => ({
 		id: definition.meta.panelType,
-		// "Pie" → "Pies", "Note" → "Notes".
-		label: `${definition.meta.label}s`,
+		// "Pie" → "Pies", "Note" → "Notes"; a label that is already plural
+		// ("Paths") stays as it is.
+		label: definition.meta.label.endsWith("s") ? definition.meta.label : `${definition.meta.label}s`,
 		presets: definition.presets,
 		Preview: definition.PresetPreview!,
 	}))

@@ -15,6 +15,7 @@ import {
 import { gaugeWidgetType } from "./gauge"
 import { listWidgetType } from "./list"
 import { markdownWidgetType } from "./markdown"
+import { pathsWidgetType } from "./paths"
 import { statWidgetType } from "./stat"
 import { tableWidgetType } from "./table"
 
@@ -40,6 +41,7 @@ export const widgetTypes: Record<PanelType, WidgetTypeDefinition> = {
 	histogram: histogramWidgetType,
 	heatmap: heatmapWidgetType,
 	funnel: funnelWidgetType,
+	paths: pathsWidgetType,
 	markdown: markdownWidgetType,
 } satisfies Record<PanelType, WidgetTypeDefinition>
 
@@ -57,6 +59,7 @@ export const widgetTypeList: ReadonlyArray<WidgetTypeDefinition> = [
 	histogramWidgetType,
 	heatmapWidgetType,
 	funnelWidgetType,
+	pathsWidgetType,
 	markdownWidgetType,
 ]
 

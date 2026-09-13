@@ -6,6 +6,7 @@ import { formatNumber, formatValueByUnit } from "../../../lib/format"
 import { asFiniteNumber, pickValueField, toBreakdownRows, type BreakdownRow } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
+import { FunnelDropoffChart } from "./funnel-dropoff-chart"
 
 interface Stage extends BreakdownRow {
 	color: string
@@ -113,12 +114,14 @@ function toGroupedStages(
 	return { stages, groups }
 }
 
-export function QueryBuilderFunnelChart({
-	data,
-	className,
-	unit,
-	showStepPercent,
-}: QueryBuilderFunnelChartProps) {
+export function QueryBuilderFunnelChart(props: QueryBuilderFunnelChartProps) {
+	// One registry entry, two drawings: the variant is a display setting on the
+	// same widget, so a funnel switches views without changing its chartId.
+	if (props.variant === "dropoff") return <FunnelDropoffChart {...props} />
+	return <FunnelBarsChart {...props} />
+}
+
+function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilderFunnelChartProps) {
 	const source: ReadonlyArray<Record<string, unknown>> = Array.isArray(data) ? data : EMPTY_ROWS
 
 	const valueField = React.useMemo(() => pickValueField(source), [source])

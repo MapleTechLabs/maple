@@ -56,6 +56,12 @@ import {
 	toLogsCountInput,
 	toLogsTimeseriesInput,
 } from "../registry/logs"
+import {
+	productEventsBreakdown,
+	productEventsList,
+	productEventsTimeseries,
+	toProductEventsTimeseriesInput,
+} from "../registry/product-events"
 import { runQueryDefinition } from "./query-definition-runner"
 import { resolveDirectRouteCachePolicy, type DirectRouteCachePolicyInput } from "./cache-policy"
 
@@ -566,6 +572,20 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 	},
 )
 
+const validateProductEventsAttributeGrouping = Effect.fn(
+	"QueryEngineService.validateProductEventsAttributeGrouping",
+)(function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
+	if (query.source !== "product_events" || (query.kind !== "timeseries" && query.kind !== "breakdown"))
+		return
+	const groupBy = query.kind === "timeseries" ? (query.groupBy ?? []) : [query.groupBy]
+	if (!groupBy.includes("attribute")) return
+	if (query.filters?.groupByAttributeKey?.trim()) return
+	return yield* new QueryEngineValidationError({
+		message: "Invalid product events attribute grouping",
+		details: ["groupBy=attribute requires filters.groupByAttributeKey"],
+	})
+})
+
 const validatePointBudget = Effect.fn("QueryEngineService.validatePointBudget")(function* (
 	request: QueryEngineExecuteRequest,
 	range: TimeRangeBounds,
@@ -638,6 +658,11 @@ function hasNarrowingFilter(request: QueryEngineExecuteRequest): boolean {
 	if (Array.isArray(namespaces) && namespaces.length > 0) return true
 	const attributeFilters = filters.attributeFilters
 	if (Array.isArray(attributeFilters) && attributeFilters.length > 0) return true
+	// product_events: any row-side equality narrows the scan the way a service does.
+	for (const key of ["eventNames", "kinds", "sources", "hosts", "pagePaths", "userIds", "groupIds"]) {
+		const values = filters[key]
+		if (Array.isArray(values) && values.length > 0) return true
+	}
 	const resourceAttributeFilters = filters.resourceAttributeFilters
 	if (Array.isArray(resourceAttributeFilters) && resourceAttributeFilters.length > 0) return true
 	return false
@@ -842,6 +867,7 @@ const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function
 	const range = yield* validateTimeRange(request)
 	yield* validateTraceAttributeFilters(request.query)
 	yield* validateMetricsAttributeFilters(request.query)
+	yield* validateProductEventsAttributeGrouping(request.query)
 	yield* validatePointBudget(request, range)
 	yield* validateListQuery(request, range)
 	yield* validateBreakdownQuery(request, range)
@@ -857,6 +883,7 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
 	if (request.source.kind === "spec") {
 		yield* validateTraceAttributeFilters(request.source.query)
 		yield* validateMetricsAttributeFilters(request.source.query)
+		yield* validateProductEventsAttributeGrouping(request.source.query)
 	}
 	return range
 })
@@ -1067,8 +1094,12 @@ const applyAlertReducer = (
 }
 
 /** Map query engine source/scope to the MV's AttributeScope value. */
-function resolveAttributeScope(source: "traces" | "logs" | "metrics", scope?: "span" | "resource"): string {
+function resolveAttributeScope(
+	source: "traces" | "logs" | "metrics" | "product_events",
+	scope?: "span" | "resource",
+): string {
 	if (source === "metrics") return "metric"
+	if (source === "product_events") return "event"
 	if (source === "logs") return scope === "resource" ? "resource" : "log"
 	return scope === "resource" ? "resource" : "span"
 }
@@ -1412,6 +1443,31 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
+		if (request.query.source === "product_events" && request.query.kind === "timeseries") {
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(
+					warehouse,
+					productEventsTimeseries,
+					tenant,
+					toProductEventsTimeseriesInput(
+						request.startTime,
+						request.endTime,
+						request.query,
+						bucketSeconds,
+					),
+				),
+				productEventsTimeseries.id,
+			)
+
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "timeseries",
+					source: "product_events",
+					data: groupTimeSeriesRows(rows, (row) => Number(row.value), fillOptions),
+				},
+			})
+		}
+
 		if (request.query.source === "metrics" && request.query.kind === "timeseries") {
 			const execution = yield* executeMetricsTimeseriesRows(
 				warehouse,
@@ -1609,6 +1665,25 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
+		if (request.query.source === "product_events" && request.query.kind === "breakdown") {
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(warehouse, productEventsBreakdown, tenant, {
+					startTime: request.startTime,
+					endTime: request.endTime,
+					query: request.query,
+				}),
+				productEventsBreakdown.id,
+			)
+
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "breakdown",
+					source: "product_events",
+					data: rows.map((row) => ({ name: row.name, value: Number(row.value) })),
+				},
+			})
+		}
+
 		if (request.query.source === "metrics" && request.query.kind === "breakdown") {
 			const rows = yield* executeCHQuery(
 				warehouse,
@@ -1800,6 +1875,80 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
 					})),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "list") {
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(warehouse, productEventsList, tenant, {
+					startTime: request.startTime,
+					endTime: request.endTime,
+					query: request.query,
+				}),
+				productEventsList.id,
+			)
+
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "list",
+					source: "product_events",
+					data: rows.map((row) => ({
+						timestamp: String(row.timestamp),
+						eventName: row.eventName,
+						kind: row.kind,
+						source: row.source,
+						host: row.host,
+						pagePath: row.pagePath,
+						url: row.url,
+						serviceName: row.serviceName,
+						userId: row.userId,
+						groupId: row.groupId,
+						visitorId: row.visitorId,
+						sessionId: row.sessionId,
+						traceId: row.traceId,
+						spanId: row.spanId,
+						attributes: row.attributes ?? {},
+					})),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "attributeKeys") {
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.productEventAttributeKeysQuery({ limit: request.query.limit }),
+				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+				"attributeKeys:event",
+				"discovery",
+			)
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "attributeKeys",
+					source: "product_events",
+					data: rows.map((row) => ({ key: row.attributeKey, count: Number(row.usageCount) })),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "attributeValues") {
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.productEventAttributeValuesQuery({
+					attributeKey: request.query.attributeKey,
+					limit: request.query.limit,
+				}),
+				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+				"attributeValues:event",
+				"discovery",
+			)
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "attributeValues",
+					source: "product_events",
+					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
 				},
 			})
 		}
@@ -2238,6 +2387,26 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				sampleCount,
 			})
 		}
+	} else if (query.source === "product_events") {
+		const rows = yield* annotateWarehouseError(
+			runQueryDefinition(
+				warehouse,
+				productEventsTimeseries,
+				tenant,
+				toProductEventsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+			),
+			productEventsTimeseries.id,
+		)
+		for (const row of rows) {
+			// `value` may be a uniq; the sample count is the rows behind it.
+			const sampleCount = Number(row.eventCount ?? 0)
+			obs.push({
+				bucket: normalizeBucket(row.bucket),
+				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
+				value: sampleCount > 0 ? Number(row.value ?? 0) : null,
+				sampleCount,
+			})
+		}
 	} else {
 		const execution = yield* executeMetricsTimeseriesRows(
 			warehouse,
@@ -2437,11 +2606,16 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 	const query = request.source.query
 	if (
 		query.kind !== "timeseries" ||
-		(query.source !== "traces" && query.source !== "metrics" && query.source !== "logs")
+		(query.source !== "traces" &&
+			query.source !== "metrics" &&
+			query.source !== "logs" &&
+			query.source !== "product_events")
 	) {
 		return yield* new QueryEngineValidationError({
 			message: "Unsupported alert evaluation query",
-			details: ["Alert evaluation supports traces, logs, and metrics timeseries queries only"],
+			details: [
+				"Alert evaluation supports traces, logs, metrics, and product-event timeseries queries only",
+			],
 		})
 	}
 

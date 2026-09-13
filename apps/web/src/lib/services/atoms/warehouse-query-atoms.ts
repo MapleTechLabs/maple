@@ -139,6 +139,7 @@ import {
 	getWebAnalyticsTimeseries,
 } from "@/api/warehouse/web-analytics"
 import {
+	getProductEventAttributeKeys,
 	getProductEventNames,
 	getProductEventsForTrace,
 	getProductEventTraceSamples,
@@ -437,6 +438,10 @@ export const webAnalyticsBreakdownsResultAtom = makeQueryAtomFamily(getWebAnalyt
 // The event-name list backs the step builder's autocomplete and changes only
 // when someone ships a new `track()` call, so it can sit for a minute.
 export const productEventNamesResultAtom = makeQueryAtomFamily(getProductEventNames, {
+	staleTime: 60_000,
+})
+
+export const getProductEventAttributeKeysResultAtom = makeQueryAtomFamily(getProductEventAttributeKeys, {
 	staleTime: 60_000,
 })
 

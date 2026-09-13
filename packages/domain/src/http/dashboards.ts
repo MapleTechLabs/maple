@@ -292,6 +292,7 @@ export const DashboardTemplatePreviewKind = Schema.Literals([
 	"histogram",
 	"heatmap",
 	"funnel",
+	"paths",
 	"hbar",
 	"markdown",
 ])

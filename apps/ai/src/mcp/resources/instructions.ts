@@ -106,7 +106,7 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - Trend analysis: query_data (timeseries or breakdown)
 - Service discovery: list_services -> diagnose_service
 - Alert management: list_alert_rules -> get_alert_rule -> create_alert_rule / update_alert_rule / delete_alert_rule -> list_alert_incidents
-- Product analytics / conversion: list_product_events -> query_funnel (steps over page views, \`track()\` events and server events, stitched per person; \`breakdown_by\` a UTM/referrer dimension or an event attribute) -> add_dashboard_widget with \`panel_type: "funnel"\` and \`display_json.funnel.steps\` to pin it
+- Product analytics / conversion: list_product_events -> query_funnel (steps over page views, \`track()\` events and server events, stitched per person; \`breakdown_by\` a UTM/referrer dimension or an event attribute) -> add_dashboard_widget with \`panel_type: "funnel"\` and \`display_json.funnel.steps\` to pin it (\`display_json.funnel.variant: "dropoff"\` for the step-by-step drop-off view), or \`panel_type: "paths"\` with \`display_json.paths.anchor\` for what people do after / before one event
 
 ## Dashboards
 
@@ -133,7 +133,7 @@ Three things worth knowing before you get there, because each one fails silently
 - \`create_dashboard\` — a new board, from a template, a simplified \`widgets\` array, or full JSON.
 - \`add_dashboard_widget\` / \`update_dashboard_widget\` / \`remove_dashboard_widget\` — one widget.
   Pass \`panel_type\` (\`line\`, \`bar\`, \`area\`, \`hbar\`, \`pie\`, \`stat\`, \`gauge\`, \`table\`, \`list\`,
-  \`histogram\`, \`heatmap\`, \`funnel\`, \`markdown\`); the \`chartId\` and raw-SQL display type follow.
+  \`histogram\`, \`heatmap\`, \`funnel\`, \`paths\`, \`markdown\`); the \`chartId\` and raw-SQL display type follow.
 - \`replace_dashboard_widgets\` — rebuild the whole widget list atomically. Prefer it over many
   incremental calls or a full \`dashboard_json\` replace.
 - \`reorder_dashboard_widgets\` — layout only.
