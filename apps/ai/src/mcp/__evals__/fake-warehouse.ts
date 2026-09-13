@@ -24,6 +24,10 @@ const defaultTraceFixtures = (): FixtureRule[] => [
  * REAL WarehouseQueryService still runs (OrgId enforcement, CH-DSL compile,
  * pipe-dispatch, row parsing) — only the wire call is faked. Unmatched SQL
  * throws loudly so missing fixtures never look like an empty result.
+ *
+ * The client is built once with the layer and cannot be re-installed for a
+ * single case, but `rules` is consulted on every call: a test that holds the
+ * array can change what one case answers with by changing its contents.
  */
 export const installFakeWarehouse = (
 	rules: FixtureRule[] = defaultTraceFixtures(),

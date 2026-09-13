@@ -613,28 +613,41 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
 // the session list only once a tool is picked. Percentiles are what stops the
 // tiles being folded from the chart client-side — quantiles do not merge.
 
+/**
+ * Ceiling for every selection field of the tools page. Exported because the MCP
+ * tools publish the same bound on their own parameters, which is what makes an
+ * over-long value a parameter error rather than a silently clipped filter.
+ */
+export const AI_TOOLS_SELECTION_MAX_CHARS = 200
+
+/** Every selection field of the tools page carries the same ceiling. */
+const aiToolsSelectionText = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS),
+)
+
 /** The page's selection. `tool`, `model`, `service` and `env` are exact
  *  matches on values the sessions page's facets produced; `search` and
  *  `failingOnly` are the toolbar's own two predicates. */
 const aiToolsSelection = {
 	/** `gen_ai.tool.name`. Absent means "every tool", which is what makes the
 	 *  chart's series per-tool rather than per-model. */
-	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	tool: Schema.optional(aiToolsSelectionText),
 	/**
 	 * The model a tool call is ATTRIBUTED to — its parent model call's, else its
 	 * trace's. Tool spans carry no model of their own; see the query module's
 	 * header for how the two-step attribution works and what it misses.
 	 */
-	model: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
-	service: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	model: Schema.optional(aiToolsSelectionText),
+	service: Schema.optional(aiToolsSelectionText),
 	/** `deployment.environment(.name)` — the MV coalesces both spellings. */
-	env: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	env: Schema.optional(aiToolsSelectionText),
 	/**
 	 * Tool-name substring, case-insensitive. The one field here that is not an
 	 * exact facet value, and it narrows the whole population rather than one
 	 * table — so the tiles cannot describe calls the chart is not drawing.
 	 */
-	search: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	search: Schema.optional(aiToolsSelectionText),
 	/** Keep only calls whose span failed. */
 	failingOnly: Schema.optional(Schema.Boolean),
 }
@@ -822,11 +835,15 @@ export class AiToolsBreakdownsResponse extends Schema.Class<AiToolsBreakdownsRes
 /** The selection with the tool required — the tool detail page's own scope. */
 const aiToolSelectionForTool = {
 	...aiToolsSelection,
-	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+	tool: aiToolsSelectionText,
 }
 
 /** Error groups one breakdown returns, and samples one page holds. */
 export const AI_TOOL_ERRORS_MAX = 100
+
+/** Ceiling for the session a group's samples are narrowed to — a session key,
+ *  which is wider than the rest of the selection. Published by the MCP tool. */
+export const AI_TOOL_ERROR_SESSION_MAX_CHARS = 400
 
 const UINT64_MAX = 18_446_744_073_709_551_615n
 
@@ -846,8 +863,10 @@ export const AiToolErrorFingerprint = Schema.String.check(
 )
 
 export const AiToolErrorTrendPoint = Schema.Struct({
-	/** ISO-8601 with a literal `Z`, like every Maple timeseries bucket. */
-	bucket: Schema.String,
+	/** ISO-8601 with a literal `Z`, like every Maple timeseries bucket — the
+	 *  shape every consumer parses back to an instant, checked so a drift in
+	 *  the read's `ISO_Z_FORMAT` is not a silently unparseable point. */
+	bucket: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/)),
 	calls: Schema.Number,
 })
 
@@ -937,6 +956,9 @@ export const AiToolErrorOccurrence = Schema.Struct({
 	message: Schema.String,
 	/** Nanoseconds, like every other AI duration. */
 	durationNs: Schema.Number,
+	/** Whether the span behind the call was still there to read; without it the
+	 *  payload fields below are empty rather than captured empty. */
+	retained: Schema.Boolean,
 	statusCode: Schema.String,
 	/** Truncated by the read; `*Bytes` is the payload's true size, which is what
 	 *  the modal prints beside the block. */
@@ -987,7 +1009,9 @@ export class AiToolErrorSamplesRequest extends Schema.Class<AiToolErrorSamplesRe
 	...aiToolSelectionForTool,
 	fingerprint: AiToolErrorFingerprint,
 	/** One session's samples — the sessions list's selection. */
-	session: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	session: Schema.optionalKey(
+		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(AI_TOOL_ERROR_SESSION_MAX_CHARS)),
+	),
 	/** One raw text's samples — the variants list's selection. Bounded by what
 	 *  the index keeps of a result, with room for UTF-16. */
 	variant: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),

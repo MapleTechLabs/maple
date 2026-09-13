@@ -1703,6 +1703,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 				occurrences: [
 					{
 						...occurrence,
+						retained: true,
 						statusCode: "Ok",
 						arguments: "{}",
 						argumentsBytes: 2,

@@ -529,12 +529,16 @@ export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
 		[
 			warehouse.compiledQuery(
 				tenant,
-				CH.compileUnion(Integrations.aiToolsTotalsQuery(toolsSelection(payload), periods), {
-					orgId: tenant.orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-					...previous,
-				}),
+				CH.compileUnion(
+					Integrations.aiToolsTotalsQuery(toolsSelection(payload), periods),
+					{
+						orgId: tenant.orgId,
+						startTime: payload.startTime,
+						endTime: payload.endTime,
+						...previous,
+					},
+					{ rowSchema: Integrations.aiToolsTotalsRowSchema },
+				),
 				{ context: "aiToolsTotals" },
 			),
 			// The detail page's header names the tool, so only a selected
@@ -585,11 +589,15 @@ export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(fun
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const rows = yield* warehouse.compiledQuery(
 		tenant,
-		CH.compile(Integrations.aiToolsBreakdownsQuery(toolsSelection(payload)), {
-			orgId: tenant.orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		CH.compile(
+			Integrations.aiToolsBreakdownsQuery(toolsSelection(payload)),
+			{
+				orgId: tenant.orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+			},
+			{ rowSchema: Integrations.aiToolsBreakdownsRowSchema },
+		),
 		{ context: "aiToolsBreakdowns" },
 	)
 	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
@@ -753,6 +761,7 @@ export const readAiToolErrorSamples = Effect.fn("aiSessions.toolErrorSamples")(f
 			const payload = payloadBySpan.get(`${row.traceId}:${row.spanId}`)
 			return {
 				...row,
+				retained: payload !== undefined,
 				statusCode: payload?.statusCode ?? "",
 				arguments: payload?.arguments ?? "",
 				argumentsBytes: payload?.argumentsBytes ?? 0,

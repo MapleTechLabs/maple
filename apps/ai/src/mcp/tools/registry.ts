@@ -56,6 +56,8 @@ import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerListAgentSessionsTool } from "./list-agent-sessions"
 import { registerGetAgentSessionTool } from "./get-agent-session"
+import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
+import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
@@ -196,6 +198,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetSessionTracesTool(registrar)
 	registerListAgentSessionsTool(registrar)
 	registerGetAgentSessionTool(registrar)
+	registerGetAgentToolsOverviewTool(registrar)
+	registerGetAgentToolErrorTool(registrar)
 	registerDiagnoseServiceTool(registrar)
 	registerFindSlowTracesTool(registrar)
 	registerErrorDetailTool(registrar)
