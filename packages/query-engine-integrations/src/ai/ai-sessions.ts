@@ -174,7 +174,7 @@ const ERROR_TYPE_ATTR = "error.type"
 const RESPONSE_STATUS_ATTR = "gen_ai.response.status"
 /** `gen_ai.response.status` values that mean the generation failed — semconv's
  *  `failed` plus the pre-enum `error` dialect. Mirrors `spanFailed` in
- *  `apps/web/src/lib/agent-sessions/session-turns.ts`; the list badge and the
+ *  `@maple/agent-sessions`' `session-turns.ts`; the list badge and the
  *  detail's Failures panel must count the same spans. */
 const FAILED_RESPONSE_STATUSES = ["failed", "error"]
 
@@ -247,7 +247,7 @@ export const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<strin
  * `usageReportersExpr`, for the same reason: a framework that fails the turn
  * span because the call beneath it failed reports one failure as two, and
  * only the deepest span carrying the failure counts — `failureEvents` in
- * `apps/web/src/lib/agent-sessions/session-summary.ts`, one level deep.
+ * `@maple/agent-sessions`' `session-summary.ts`, one level deep.
  */
 const failedSpansExpr = ($: {
 	readonly SpanId: CH.Expr<string>

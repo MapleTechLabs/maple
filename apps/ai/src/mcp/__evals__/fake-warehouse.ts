@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { WarehouseDriverError } from "@maple/query-engine/execution"
+import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
 
@@ -25,12 +25,29 @@ const defaultTraceFixtures = (): FixtureRule[] => [
  * pipe-dispatch, row parsing) — only the wire call is faked. Unmatched SQL
  * throws loudly so missing fixtures never look like an empty result.
  */
-export const installFakeWarehouse = (rules: FixtureRule[] = defaultTraceFixtures()): void => {
+export const installFakeWarehouse = (
+	rules: FixtureRule[] = defaultTraceFixtures(),
+	/** SQL the warehouse aborts on rather than answering with rows. The client is
+	 *  cached for the runtime's lifetime, so a test switches the failure from
+	 *  inside this hook rather than by re-installing. */
+	failWhen?: (sql: string) => boolean,
+): void => {
 	__testables.setClientFactory(() =>
 		Effect.succeed({
 			sql: (statement) =>
-				Effect.suspend(() => {
+				Effect.suspend((): Effect.Effect<
+					{ data: ReadonlyArray<Record<string, unknown>> },
+					WarehouseDriverError | WarehouseResponseLimitError
+				> => {
 					const sql = statement.text
+					if (failWhen?.(sql) === true) {
+						return Effect.fail(
+							new WarehouseResponseLimitError({
+								kind: "bytes",
+								message: "response exceeded the byte limit",
+							}),
+						)
+					}
 					const rule = rules.find((r) => r.match(sql))
 					if (!rule) {
 						return Effect.fail(

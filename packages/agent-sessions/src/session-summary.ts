@@ -13,9 +13,8 @@
 
 import { genAiUsageConvention } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
-import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
 import {
 	classifyAiSpan,
 	isLlmCall,
@@ -301,8 +300,8 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
 	const busy = union(spans.map((span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
 	const gaps: IdleGap[] = []
 	for (let i = 1; i < busy.length; i++) {
-		const startMs = busy[i - 1]!.endMs
-		const endMs = busy[i]!.startMs
+		const startMs = busy[i - 1].endMs
+		const endMs = busy[i].startMs
 		const durationMs = endMs - startMs
 		if (durationMs > IDLE_GAP_MIN_MS) gaps.push({ id: `gap:${startMs}`, startMs, endMs, durationMs })
 	}

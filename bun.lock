@@ -35,11 +35,13 @@
         "@effect/ai-openai-compat": "catalog:effect",
         "@effect/ai-openrouter": "catalog:effect",
         "@maple-dev/effect-sdk": "workspace:*",
+        "@maple/agent-sessions": "workspace:*",
         "@maple/backend": "workspace:*",
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "@maple/query-engine": "workspace:*",
+        "@maple/query-engine-integrations": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/widgets": "workspace:*",
         "drizzle-orm": "^0.45.1",
@@ -292,6 +294,7 @@
         "@fontsource-variable/geist": "^5.2.9",
         "@fontsource-variable/geist-mono": "^5.2.8",
         "@maple-dev/effect-sdk": "workspace:*",
+        "@maple/agent-sessions": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/effect-db": "workspace:*",
         "@maple/infra": "workspace:*",
@@ -520,6 +523,20 @@
       },
       "peerDependencies": {
         "react": "^19.0.0",
+      },
+    },
+    "packages/agent-sessions": {
+      "name": "@maple/agent-sessions",
+      "dependencies": {
+        "@maple/domain": "workspace:*",
+        "@maple/query-engine": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@effect/language-service": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
       },
     },
     "packages/alchemy-maple": {
@@ -1468,6 +1485,8 @@
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 
     "@maple-examples/effect-todo": ["@maple-examples/effect-todo@workspace:examples/effect-todo"],
+
+    "@maple/agent-sessions": ["@maple/agent-sessions@workspace:packages/agent-sessions"],
 
     "@maple/ai": ["@maple/ai@workspace:apps/ai"],
 

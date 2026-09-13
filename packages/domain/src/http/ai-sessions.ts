@@ -33,10 +33,24 @@ export type AiSessionSortKey = Schema.Schema.Type<typeof AiSessionSortKey>
 export const AiSessionSortDir = Schema.Literals(["asc", "desc"])
 export type AiSessionSortDir = Schema.Schema.Type<typeof AiSessionSortDir>
 
-/** A range bound. Every measure the list filters on is non-negative, so a
- *  negative bound is a malformed request rather than an empty page. */
-const RangeBound = Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
-const CountBound = Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
+/**
+ * A range bound. Every measure the list filters on is non-negative, so a
+ * negative bound is a malformed request rather than an empty page.
+ *
+ * `Schema.Finite` rather than `Schema.Number`: the MCP tools publish these as
+ * their own parameters, and `Schema.Number` has to encode `Infinity`/`NaN`, so
+ * it renders as "a number OR one of three magic strings" — a published schema
+ * that invites the input it then refuses.
+ */
+export const RangeBound = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+export const CountBound = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+
+/**
+ * Ceiling for the id prefix the list filters on — it becomes a `LIKE` pattern
+ * against the index, and no id in either column is anywhere near this long.
+ * Exported because the MCP tool publishes the same bound on its own parameter.
+ */
+export const AI_SESSION_SEARCH_MAX_CHARS = 200
 
 /**
  * The counted filters, shared by the list and its details. They land on the
@@ -54,12 +68,11 @@ const aiSessionCountedFilters = {
 	models: Schema.optional(Schema.Array(Schema.String)),
 	agentNames: Schema.optional(Schema.Array(Schema.String)),
 	toolNames: Schema.optional(Schema.Array(Schema.String)),
-	/**
-	 * A session id or trace id, or the leading characters of one, matched as a
-	 * prefix. Bounded because it becomes a `LIKE` pattern against the index —
-	 * no id in either column is anywhere near this long.
-	 */
-	search: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	/** A session id or trace id, or the leading characters of one, matched as a
+	 *  prefix — see {@link AI_SESSION_SEARCH_MAX_CHARS}. */
+	search: Schema.optional(
+		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(AI_SESSION_SEARCH_MAX_CHARS)),
+	),
 }
 
 export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("ListAiSessionsRequest")({
@@ -84,16 +97,16 @@ export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("
 	hasErrors: Schema.optional(Schema.Boolean),
 	/** Drop the `trace:` sessions — traces whose vendor exposes no session key. */
 	excludeTraceSessions: Schema.optional(Schema.Boolean),
-	durationMinMs: RangeBound,
-	durationMaxMs: RangeBound,
-	costMin: RangeBound,
-	costMax: RangeBound,
-	tokensMin: CountBound,
-	tokensMax: CountBound,
-	llmCallsMin: CountBound,
-	llmCallsMax: CountBound,
-	toolCallsMin: CountBound,
-	toolCallsMax: CountBound,
+	durationMinMs: Schema.optional(RangeBound),
+	durationMaxMs: Schema.optional(RangeBound),
+	costMin: Schema.optional(RangeBound),
+	costMax: Schema.optional(RangeBound),
+	tokensMin: Schema.optional(CountBound),
+	tokensMax: Schema.optional(CountBound),
+	llmCallsMin: Schema.optional(CountBound),
+	llmCallsMax: Schema.optional(CountBound),
+	toolCallsMin: Schema.optional(CountBound),
+	toolCallsMax: Schema.optional(CountBound),
 	sortBy: Schema.optional(AiSessionSortKey),
 	sortDir: Schema.optional(AiSessionSortDir),
 }) {}
@@ -337,7 +350,9 @@ export const AiSessionSpanCursor = Schema.Struct({
 })
 export type AiSessionSpanCursor = Schema.Schema.Type<typeof AiSessionSpanCursor>
 
-const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
+/** A trace id as the warehouse stores it. Exported because the MCP span
+ *  inspector validates its `trace_id` parameter against this same shape. */
+export const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
 
 /** Traces one span read may be pinned to — a turn's worth, not a session's. */
 export const AI_SESSION_SPANS_MAX_TRACE_IDS = 100

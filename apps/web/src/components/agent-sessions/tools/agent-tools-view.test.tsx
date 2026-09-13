@@ -14,7 +14,7 @@ import {
 	buildToolDetailFixture,
 	buildToolErrorDetailFixture,
 } from "@/lab/agent-tools-fixture"
-import { sessionRowId } from "@/lib/agent-sessions/session-window"
+import { sessionRowId } from "@maple/agent-sessions"
 import type { ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 

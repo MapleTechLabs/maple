@@ -12,24 +12,22 @@ import { useListNavigation } from "@/hooks/use-list-navigation"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { buildSessionAxis, type AxisTick, type SessionAxis } from "@/lib/agent-sessions/session-axis"
 import {
-	countTurnTokens,
-	spanTokenBuckets,
-	type IdleGap,
-	type SessionSummary,
-	type SessionTokenTotals,
-} from "@/lib/agent-sessions/session-summary"
-import {
 	classifyAiSpan,
+	countTurnTokens,
 	GEN_AI_OPERATIONS,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
 	spanModel,
 	spanStartMs,
+	spanTokenBuckets,
 	spanTtftMs,
-	type SessionTurn,
 	type AiSpanCategory,
-} from "@/lib/agent-sessions/session-turns"
+	type IdleGap,
+	type SessionSummary,
+	type SessionTokenTotals,
+	type SessionTurn,
+} from "@maple/agent-sessions"
 import { filterSpans, isDelegation } from "@/lib/agent-sessions/span-filters"
 import { useDetectedModels, type DetectedModel } from "@/hooks/use-detected-models"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"

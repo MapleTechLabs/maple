@@ -26,16 +26,19 @@ import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import {
+	callMetaLine,
+	classifyAiSpan,
+	formatCost,
+	payload,
+	spanFailed,
 	spanMessages,
 	spanToolCalls,
+	spanTtftMs,
 	type SessionToolResults,
 	type SpanMessage,
 	type SpanMessagePart,
 	type SpanToolCall,
-} from "@/lib/agent-sessions/span-detail"
-import { classifyAiSpan, spanFailed, spanTtftMs } from "@/lib/agent-sessions/session-turns"
-import { callMetaLine, formatCost } from "@/lib/agent-sessions/session-summary"
-import { payload } from "@/lib/agent-sessions/session-transcript"
+} from "@maple/agent-sessions"
 import { ClampedText, type ClampLines, firstLine } from "./clamped-text"
 import { toggled, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"
 import { Pill } from "./pill"

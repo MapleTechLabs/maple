@@ -1,6 +1,5 @@
-import { formatWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import { MAPLE_AI_TRACE_SESSION_PREFIX, traceSessionTraceId } from "@maple/domain/gen-ai"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The bounds a link carries are the session's own — see `sessionLinkWindow` —
 // so the pad covers only what a whole-second warehouse window rounds off and
@@ -15,6 +14,13 @@ const WINDOW_PADDING_MS = 60_000
 // same pad the details fan-out reads with — and only the rows whose details
 // have not landed pay it.
 const UNDETAILED_PADDING_MS = 60 * 60_000
+
+/** What a list row's bounds are widened by before they bound a read: the hour
+ *  that covers the row's agent-only extent plus the minute every link pads. The
+ *  page pays it in two steps (`sessionLinkWindow` then `resolveWindow`); a
+ *  caller holding a row outright pays it in one, through
+ *  {@link padSessionWindow}. */
+const SESSION_ROW_PADDING_MS = UNDETAILED_PADDING_MS + WINDOW_PADDING_MS
 
 export interface SessionWindow {
 	readonly startTime: string
@@ -35,12 +41,12 @@ export interface SessionWindow {
  * that once.
  */
 export function resolveWindow(t: string | undefined, end: string | undefined): SessionWindow | undefined {
-	const startHint = t === undefined ? Number.NaN : toEpochMs(t)
+	const startHint = t === undefined ? Number.NaN : parseWarehouseDateTime(t)
 	if (Number.isNaN(startHint)) return undefined
 
 	// A link carrying only `t` (copied from a trace, say) still narrows the read:
 	// the session started there, so pad around that instant alone.
-	const endHint = end === undefined ? Number.NaN : toEpochMs(end)
+	const endHint = end === undefined ? Number.NaN : parseWarehouseDateTime(end)
 	const endMs = Number.isNaN(endHint) ? startHint : endHint
 
 	return {
@@ -60,8 +66,25 @@ export function sessionLinkWindow(row: {
 }): { t: string; end: string } {
 	if (row.hasDetails === true) return { t: row.startTime, end: row.endTime }
 	return {
-		t: formatWarehouseDateTime(toEpochMs(row.startTime) - UNDETAILED_PADDING_MS),
-		end: formatWarehouseDateTime(toEpochMs(row.endTime) + UNDETAILED_PADDING_MS),
+		t: formatWarehouseDateTime(parseWarehouseDateTime(row.startTime) - UNDETAILED_PADDING_MS),
+		end: formatWarehouseDateTime(parseWarehouseDateTime(row.endTime) + UNDETAILED_PADDING_MS),
+	}
+}
+
+/**
+ * A list row's bounds as the window a span read takes, padded exactly as the
+ * page pads the same row. Both `aiSessionSpansQuery` levels bound on
+ * `Timestamp`, so a verbatim row — the extent of its AGENT spans — drops the
+ * app spans around them, and a session read that way counts fewer spans,
+ * services and failures than the page shows for it.
+ *
+ * Takes epoch milliseconds because both callers have already parsed the pair
+ * they hand over; passing the same instant twice pads around that instant.
+ */
+export function padSessionWindow(startMs: number, endMs: number): SessionWindow {
+	return {
+		startTime: formatWarehouseDateTime(startMs - SESSION_ROW_PADDING_MS),
+		endTime: formatWarehouseDateTime(endMs + SESSION_ROW_PADDING_MS),
 	}
 }
 

@@ -21,7 +21,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { sessionRowId } from "@/lib/agent-sessions/session-window"
+import { sessionRowId } from "@maple/agent-sessions"
 import {
 	formatDurationNs,
 	formatToolCount,

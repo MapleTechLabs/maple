@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest"
 import {
 	breadcrumbSessionId,
 	buildBackToSessionsHref,
+	padSessionWindow,
 	resolveWindow,
 	sessionLinkWindow,
 	sessionRowId,
 	sessionRowIdParts,
-} from "@/lib/agent-sessions/session-window"
+} from "./session-window"
 
 describe("resolveWindow", () => {
 	it("pads a minute either side of the hints the list row carried", () => {
@@ -54,6 +55,20 @@ describe("sessionLinkWindow", () => {
 		expect(sessionLinkWindow({ ...row, hasDetails: true })).toEqual({
 			t: row.startTime,
 			end: row.endTime,
+		})
+	})
+})
+
+describe("padSessionWindow", () => {
+	// The pair a caller holding a list row outright reads with: the same bounds
+	// the page ends up with after `sessionLinkWindow` and `resolveWindow`.
+	it("pads a row's bounds by the hour and the minute the page pads it by", () => {
+		const start = Date.parse("2026-08-19T12:00:00Z")
+		const end = Date.parse("2026-08-19T12:30:00.400Z")
+
+		expect(padSessionWindow(start, end)).toEqual({
+			startTime: "2026-08-19 10:59:00",
+			endTime: "2026-08-19 13:31:00",
 		})
 	})
 })

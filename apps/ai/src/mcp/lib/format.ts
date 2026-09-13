@@ -24,3 +24,19 @@ export function truncate(str: string, maxLen = 80): string {
 	if (str.length <= maxLen) return str
 	return str.slice(0, maxLen - 3) + "..."
 }
+
+/**
+ * Free text as a markdown table cell: collapsed to one line, clipped where the
+ * caller names a ceiling, and its pipes escaped last.
+ *
+ * A captured error message is arbitrary text — an unescaped `|` in one shifts
+ * every column after it, and a payload's newline ends the row. Escaping after
+ * the clip is what keeps a cut from leaving a trailing `\` that would escape
+ * the delimiter itself.
+ */
+export function tableCell(text: string, max?: number): string {
+	const collapsed = text.replace(/\s+/g, " ").trim()
+	return (max === undefined ? collapsed : truncate(collapsed, max))
+		.replace(/\\/g, "\\\\")
+		.replace(/\|/g, "\\|")
+}

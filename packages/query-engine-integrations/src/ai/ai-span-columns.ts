@@ -8,7 +8,7 @@
 //
 // - A wrapper's roll-up: several frameworks stamp `gen_ai.usage.*` on the
 //   model span AND sum it onto the agent span that wraps it.
-//   `countableUsageSpans` in `apps/web/src/lib/agent-sessions/session-summary.ts`
+//   `countableUsageSpans` in `@maple/agent-sessions`' `session-summary.ts`
 //   charges each reporter to its nearest reporting ancestor and keeps only the
 //   excess; {@link sessionUsageSum} is that rule in SQL, one level deep, which
 //   is the shape every roll-up in production has.
