@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { cp, lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises"
@@ -10,6 +10,7 @@ import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
 import { Chdb } from "./chdb"
+import { sha256File } from "./checkpoint-digest"
 import {
 	type DurabilityFaults,
 	durableJson,
@@ -370,8 +371,6 @@ const snapshotControlRelativePath = (checkpointId: CheckpointId): string =>
 	`snapshots/${checkpointId}/control.sqlite`
 const snapshotBackupSqlPath = (checkpointId: CheckpointId): string =>
 	`backups/${snapshotBackupRelativePath(checkpointId)}`
-
-const sha256File = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
 
 const controlValidationMatches = (
 	left: EventingControlSnapshotValidation,
@@ -883,7 +882,7 @@ const resolveCheckpointById = async (
 			throw new Error(
 				`checkpoint control-store size mismatch (manifest: ${manifest.controlBytes}; actual: ${controlBytes})`,
 			)
-		const controlSha256 = sha256File(controlPath)
+		const controlSha256 = await sha256File(controlPath)
 		if (controlSha256 !== manifest.controlSha256)
 			throw new Error("checkpoint control-store digest mismatch")
 		const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
@@ -1712,7 +1711,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						backupBytes: await dirSize(snapshotBackupDir(options.dataDir, checkpointId)),
 						controlRelativePath: snapshotControlRelativePath(checkpointId),
 						controlBytes: (await stat(controlPath)).size,
-						controlSha256: sha256File(controlPath),
+						controlSha256: await sha256File(controlPath),
 						controlValidation,
 						validation: {
 							validatedAt: startedAt,

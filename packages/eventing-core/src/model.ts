@@ -1,7 +1,9 @@
 import { Schema } from "effect"
+import { DECIMAL_INT64_PATTERN, RFC3339_TIMESTAMP_PATTERN } from "./scalar-patterns"
 
 import {
 	MAX_IN_VALUES,
+	MAX_PREDICATE_DEPTH,
 	MAX_PREDICATE_NODES,
 	MAX_DECIMAL_INT64_LENGTH,
 	MAX_STRING_LITERAL_CHARACTERS,
@@ -17,12 +19,10 @@ const NonEmptyIdentifier = Schema.String.check(
 
 const DecimalInt64 = Schema.String.check(
 	Schema.isMaxLength(MAX_DECIMAL_INT64_LENGTH),
-	Schema.isPattern(/^-?(?:0|[1-9][0-9]*)$/),
+	Schema.isPattern(DECIMAL_INT64_PATTERN),
 )
 
-const Rfc3339Timestamp = Schema.String.check(
-	Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/),
-)
+const Rfc3339Timestamp = Schema.String.check(Schema.isPattern(RFC3339_TIMESTAMP_PATTERN))
 
 export const StringSignalScalar = Schema.Struct({
 	type: Schema.Literal("string"),
@@ -176,7 +176,10 @@ const RecursiveSignalPredicateSchema: Schema.Codec<SignalPredicate, SignalPredic
 				),
 			}),
 		]),
-).annotate({ identifier: "SignalPredicate" })
+).annotate({
+	identifier: "SignalPredicate",
+	description: `Consumers MUST enforce a maximum predicate depth of ${MAX_PREDICATE_DEPTH} (root depth 1) and ${MAX_PREDICATE_NODES} total predicate nodes before recursive validation. Count nodes by occurrence, including repeated subtrees. These whole-tree limits are enforced by the shared decoder but are not expressed by JSON Schema validation keywords.`,
+})
 
 /** The topology guard runs before any recursive decoder, including direct schema consumers. */
 export const SignalPredicateSchema = Schema.Unknown.check(

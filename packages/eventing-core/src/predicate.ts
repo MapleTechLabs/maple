@@ -18,9 +18,8 @@ import {
 	MAX_PREDICATE_NODES,
 	MAX_STRING_LITERAL_CHARACTERS,
 } from "./model"
+import { INT64_MIN, INT64_MAX } from "./scalar-patterns"
 
-const INT64_MIN = -(1n << 63n)
-const INT64_MAX = (1n << 63n) - 1n
 const ORDERED_TYPES = new Set<SignalScalarType>(["int64", "float64", "timestamp", "duration"])
 
 export interface ValidationIssue {

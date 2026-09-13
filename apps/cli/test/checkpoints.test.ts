@@ -1,6 +1,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
+import { sha256File } from "../src/server/checkpoint-digest"
 import { Clock, Duration, Effect, Exit, Option } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
@@ -308,6 +309,41 @@ describe("checkpoint IDs and strict parsers", () => {
 				}),
 			/unsupported/,
 		)
+	})
+})
+
+describe("checkpoint snapshot hashing", () => {
+	it("hashes a multi-chunk snapshot while allowing the event loop to progress", async () => {
+		await withDataDir(async (dataDir) => {
+			const path = join(dataDir, "snapshot.bin")
+			const bytes = Buffer.alloc(2 * 1024 * 1024 + 17)
+			for (let index = 0; index < bytes.length; index++) bytes[index] = index % 251
+			writeFileSync(path, bytes)
+			const expected = createHash("sha256").update(bytes).digest("hex")
+			let yielded = false
+			const immediate = setImmediate(() => {
+				yielded = true
+			})
+			try {
+				strictEqual(await sha256File(path), expected)
+				ok(yielded, "snapshot hashing must yield while reading the file")
+			} finally {
+				clearImmediate(immediate)
+			}
+		})
+	})
+
+	it("hashes empty snapshots and propagates file-open/read failures", async () => {
+		await withDataDir(async (dataDir) => {
+			const path = join(dataDir, "empty.bin")
+			writeFileSync(path, "")
+			strictEqual(
+				await sha256File(path),
+				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			)
+			await rejects(sha256File(join(dataDir, "missing.bin")), /ENOENT/)
+			await rejects(sha256File(dataDir), /EISDIR/)
+		})
 	})
 })
 

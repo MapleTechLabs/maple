@@ -20,9 +20,14 @@ wiring patterns, versioning rules, and the required test checklist. Eventing
 extensions are compile-time registered modules, not dynamically loaded plugins.
 
 The versioned interoperability artifacts are generated under `schemas/`, with
-valid comparison and identity vectors in `fixtures/v1.json`. Run `bun test` to
+valid comparison and identity vectors in `fixtures/v1.json`. Run `bun run test` to
 verify generated-schema drift, hostile selector bounds, typed comparison
-semantics, deterministic event IDs, and projector isolation.
+semantics, deterministic event IDs, and projector isolation. Scalar conformance
+checks run the published artifacts through a Draft 2020-12 JSON Schema validator,
+including exact integer bounds and calendar validity. Schema consumers must also
+perform the mandatory predicate depth/node preflight described in the generated
+predicate definition; JSON Schema validation alone does not enforce those
+whole-tree limits.
 
 The first host adapter is Maple Local in `apps/cli/src/server/eventing`. It uses
 an authenticated configuration endpoint, a SQLite projection/outbox store, and

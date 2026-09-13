@@ -209,7 +209,21 @@ type SignalScalar =
 not lose precision. Runtime evaluators may compile them to native `bigint` or the
 equivalent host type. Timestamp values use canonical RFC 3339 with an explicit
 offset in serialized form and compare as UTC instants. Duration values represent
-integer nanoseconds. `float64` values must be finite; `NaN` and infinities are
+integer nanoseconds. Both integer types are bounded to -9223372036854775808 through
+9223372036854775807 inclusive; decimal strings have no leading zeroes or `+`
+prefix (`0` and `-0` are accepted). The shared schemas and generated JSON Schema
+patterns enforce the exact range without converting to floating point.
+
+The v1 timestamp subset uses Gregorian calendar dates in years `0000`–`9999`,
+uppercase `T` and `Z`, zero to nine fractional second digits (a decimal point
+requires at least one digit), and `Z` or an explicit `±HH:MM` offset. Hours are
+`00`–`23`; minutes and seconds are `00`–`59`, including offset components. Leap
+seconds are not accepted. Impossible dates, including February 29 outside leap
+years, are rejected by both the decoder and the generated patterns. This applies
+to scalar timestamps, projection `activeFrom`, and CloudEvent `time`, without
+requiring optional JSON Schema `format` assertions.
+
+`float64` values must be finite; `NaN` and infinities are
 rejected during normalization.
 
 Arrays and objects may be preserved for projector payloads, but selectors operate
@@ -329,7 +343,7 @@ the explicit form that expresses the intended behavior.
 Validation happens before a projection can become active. Version 1 limits a
 selector to:
 
-- nesting depth of 8;
+- nesting depth of 8, counting the selector root as depth 1;
 - 64 total predicate nodes;
 - 100 members in one `in` predicate;
 - 1,024 Unicode code points per string literal (at most 4 KiB UTF-8);
@@ -344,6 +358,16 @@ and the generated JSON Schema enforce a maximum of 1,024. Since a Unicode code
 point requires at most four UTF-8 bytes, this also bounds literals to 4 KiB.
 ASCII literals are therefore limited to 1,024 characters, not 4,096. The shared
 multibyte conformance vectors verify the same boundary.
+
+The generated predicate schema describes two additional mandatory checks:
+consumers must enforce the depth and total-node budgets before recursive
+validation. These whole-tree limits are not expressed by its JSON Schema
+validation keywords, so a successful JSON Schema validation alone is insufficient
+for selector acceptance. The shared decoder performs an iterative preflight.
+Count each predicate occurrence, including repeated subtrees; JavaScript callers
+may reuse a subtree object, and it counts the same as the duplicated JSON value.
+Actual cycles fail the bounded preflight. Field declarations and operator/type
+compatibility also require the semantic validation described above.
 
 ### Signal projection
 

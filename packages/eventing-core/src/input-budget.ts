@@ -17,10 +17,9 @@ const literalIssue = (value: unknown): string | undefined => {
 	)
 		return `${value.type} literal exceeds ${MAX_DECIMAL_INT64_LENGTH} characters`
 }
-/** Iterative pre-decode inspection never traverses more than the accepted budget. */
+/** Count occurrences as serialized JSON would. Depth/node bounds also terminate cycles. */
 export const predicateInputBudgetIssue = (candidate: unknown): string | undefined => {
 	const stack = [{ value: candidate, depth: 1 }]
-	const seen = new Set<object>()
 	let nodes = 0
 	while (stack.length > 0) {
 		const current = stack.pop()
@@ -28,8 +27,6 @@ export const predicateInputBudgetIssue = (candidate: unknown): string | undefine
 		if (current.depth > MAX_PREDICATE_DEPTH) return `predicate depth exceeds ${MAX_PREDICATE_DEPTH}`
 		if (++nodes > MAX_PREDICATE_NODES) return `predicate exceeds ${MAX_PREDICATE_NODES} nodes`
 		if (!record(current.value)) continue
-		if (seen.has(current.value)) return "predicate must be acyclic JSON"
-		seen.add(current.value)
 		const node = current.value
 		if (node.op === "all" || node.op === "any") {
 			if (!Array.isArray(node.clauses)) continue
