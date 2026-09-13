@@ -41,8 +41,12 @@ export interface WhereClauseAutocompleteValues {
 	resourceAttributeValues?: string[]
 	/** Dashboard variable names — suggested as `$name` in every value position. */
 	variables?: string[]
-	/** Per-field values for the `product_events` scope (the web-analytics facets). */
+	/** Per-field values for the session dimensions (the web-analytics facets). */
 	productEventFacets?: Partial<Record<FunnelPopulationFilterField, string[]>>
+	/** `product_events` source: the event names, hosts and page paths seen in the window. */
+	eventNames?: string[]
+	hosts?: string[]
+	pagePaths?: string[]
 }
 
 export interface WhereClauseAutocompleteSuggestion {
@@ -743,6 +747,40 @@ function buildVariableSuggestions(
 	}))
 }
 
+const PRODUCT_EVENT_KINDS = ["navigation", "custom", "screen"]
+const PRODUCT_EVENT_SOURCES = ["browser", "server", "mobile", "trace"]
+
+/** Values for the `product_events` source's own keys; `undefined` when the key is not one of them. */
+function buildProductEventValueSuggestions(
+	normalizedKey: string,
+	values: WhereClauseAutocompleteValues | undefined,
+): WhereClauseAutocompleteSuggestion[] | undefined {
+	const fixed = {
+		"event.name": uniqueValues(values?.eventNames ?? []),
+		event: uniqueValues(values?.eventNames ?? []),
+		"event.kind": PRODUCT_EVENT_KINDS,
+		kind: PRODUCT_EVENT_KINDS,
+		source: PRODUCT_EVENT_SOURCES,
+		host: uniqueValues(values?.hosts ?? []),
+		"page.path": uniqueValues(values?.pagePaths ?? []),
+		path: uniqueValues(values?.pagePaths ?? []),
+		"service.name": uniqueValues(values?.services ?? []),
+	} satisfies Record<string, string[]>
+	if (Object.hasOwn(fixed, normalizedKey)) {
+		const own: string[] = fixed[normalizedKey as keyof typeof fixed]
+		return own.map((value) => toStringValueSuggestion(value, normalizedKey))
+	}
+
+	const field = productEventsFilterField(normalizedKey)
+	if (field === undefined) return undefined
+	if (field === "visitorType") {
+		return ["new", "returning"].map((value) => toStringValueSuggestion(value, "visitor_type"))
+	}
+	return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
+		toStringValueSuggestion(value, normalizedKey),
+	)
+}
+
 function buildValueSuggestions(
 	key: string | null,
 	dataSource: QueryBuilderDataSource,
@@ -761,6 +799,11 @@ function buildValueSuggestions(
 		return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
 			toStringValueSuggestion(value, normalizedKey),
 		)
+	}
+
+	if (dataSource === "product_events") {
+		const eventValues = buildProductEventValueSuggestions(normalizedKey, values)
+		if (eventValues !== undefined) return eventValues
 	}
 
 	if (normalizedKey === "root_only") {

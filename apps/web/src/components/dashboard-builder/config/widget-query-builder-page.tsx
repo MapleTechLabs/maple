@@ -45,7 +45,7 @@ import {
 	inferDefaultUnitForQueries,
 } from "@/lib/query-builder/widget-builder-utils"
 import { isProductEventsFunnel } from "@/lib/query-builder/widget-builder-shared"
-import { emptyEventStep } from "@/components/funnels/definition"
+import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
 export interface WidgetQueryBuilderPageHandle {
@@ -364,33 +364,23 @@ export function WidgetQueryBuilderPage({
 				)
 				const nextUnit = inferDefaultUnitForQueries(queries)
 
-				return {
+				// On a funnel, "Product events" on query A means the step editor.
+				return reconcileFunnelSource({
 					...current,
 					queries,
 					unit: nextUnit ?? current.unit,
-				}
+				})
 			})
 		},
 		[setState],
 	)
 
-	// A funnel's one panel offers "Product events" beside the three query
-	// sources. Choosing it swaps the query panels for the funnel panel; choosing
-	// a query source from the funnel panel brings the query set back, retargeted
-	// to that source.
-	const isFunnel = state.visualization === "funnel"
+	// A funnel on Product events shows the step editor instead of the query
+	// panels; choosing another source from it brings the query set back,
+	// retargeted to that source.
 	const showFunnelPanel = isProductEventsFunnel(state)
 	const handleFunnelSourceChange = React.useCallback(
-		(source: QueryBuilderDataSource | "product_events") => {
-			if (source === "product_events") {
-				updateFunnel((current) => ({
-					...current,
-					source: "product_events",
-					// Open on a step to fill in rather than an empty list.
-					steps: current.steps.length > 0 ? current.steps : [emptyEventStep()],
-				}))
-				return
-			}
+		(source: Exclude<QueryBuilderDataSource, "product_events">) => {
 			updateFunnel((current) => ({ ...current, source: "query_set" }))
 			const first = state.queries[0]
 			if (first) handleDataSourceChange(first.id, source)
@@ -542,10 +532,6 @@ export function WidgetQueryBuilderPage({
 												onDataSourceChange={(ds) =>
 													handleDataSourceChange(query.id, ds)
 												}
-												extraSourceOptions={
-													isFunnel && index === 0 ? ["product_events"] : undefined
-												}
-												onExtraSourceChange={handleFunnelSourceChange}
 												autoIntervalLabel={autoIntervalLabel}
 											/>
 										))}

@@ -98,37 +98,11 @@ describe("QueryPanel metric combobox", () => {
 })
 
 describe("QueryPanel source select", () => {
-	it("offers an extra source only when asked", () => {
-		render(
-			<QueryPanel
-				query={prefilled}
-				index={0}
-				canRemove={false}
-				metricSelectionOptions={[]}
-				autocompleteValues={{
-					traces: emptyAutocomplete,
-					logs: emptyAutocomplete,
-					metrics: emptyAutocomplete,
-					product_events: emptyAutocomplete,
-				}}
-				onUpdate={vi.fn()}
-				onAggregationChange={vi.fn()}
-				onMetricSelectionChange={vi.fn()}
-				onClone={vi.fn()}
-				onRemove={vi.fn()}
-				onDataSourceChange={vi.fn()}
-				extraSourceOptions={["product_events"]}
-				onExtraSourceChange={vi.fn()}
-			/>,
-		)
-		fireEvent.click(screen.getByRole("combobox", { name: "Query source" }))
-		expect(screen.getByRole("option", { name: "Product events" })).toBeTruthy()
-		expect(screen.getByRole("option", { name: "Traces" })).toBeTruthy()
-	})
-
-	it("does not offer Product events to an ordinary query", () => {
+	it("offers every query-builder source, product events included", () => {
 		renderPanel([])
 		fireEvent.click(screen.getByRole("combobox", { name: "Query source" }))
-		expect(screen.queryByRole("option", { name: "Product events" })).toBeNull()
+		for (const name of ["Traces", "Logs", "Metrics", "Product events"]) {
+			expect(screen.getByRole("option", { name })).toBeTruthy()
+		}
 	})
 })

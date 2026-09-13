@@ -3,8 +3,8 @@ import { makeQueryDataSource, makeRouteDataSource } from "@maple/widgets/dashboa
 
 import { MenuIcon } from "@/components/icons"
 import {
-	LOG_DEFAULT_COLUMNS,
-	TRACE_DEFAULT_COLUMNS,
+	DEFAULT_LIST_COLUMNS,
+	toListDataSource,
 	type ListColumnDraft,
 } from "@/lib/query-builder/list-widget-config"
 import { ListWidget } from "@/components/dashboard-builder/widgets/list-widget"
@@ -49,16 +49,38 @@ export const listWidgetType: WidgetTypeDefinition = {
 			{ timestamp: "12:04:21", severityText: "WARN", serviceName: "user-svc", body: "Slow query" },
 			{ timestamp: "12:04:19", severityText: "INFO", serviceName: "api-gw", body: "Request handled" },
 		],
+		"list-product-events": [
+			{
+				timestamp: "12:04:23",
+				eventName: "signup_completed",
+				userId: "user_8f2",
+				pagePath: "/signup",
+				source: "browser",
+			},
+			{
+				timestamp: "12:04:21",
+				eventName: "plan_started",
+				userId: "user_8f2",
+				pagePath: "",
+				source: "server",
+			},
+			{
+				timestamp: "12:04:19",
+				eventName: "$pageview",
+				userId: "",
+				pagePath: "/pricing",
+				source: "browser",
+			},
+		],
 	}),
 
 	initialState: (widget) => {
-		const source = widget.display.listDataSource === "logs" ? "logs" : "traces"
+		const source = toListDataSource(widget.display.listDataSource)
 		return {
 			listDataSource: source,
 			listWhereClause: widget.display.listWhereClause ?? "",
 			listLimit: typeof widget.display.listLimit === "number" ? String(widget.display.listLimit) : "",
-			listColumns: (widget.display.columns ??
-				(source === "logs" ? LOG_DEFAULT_COLUMNS : TRACE_DEFAULT_COLUMNS)) as ListColumnDraft[],
+			listColumns: (widget.display.columns ?? DEFAULT_LIST_COLUMNS[source]) as ListColumnDraft[],
 			listRootOnly: widget.display.listRootOnly ?? true,
 		}
 	},
@@ -74,14 +96,15 @@ export const listWidgetType: WidgetTypeDefinition = {
 			)
 		}
 
-		// Traces go through the query engine, which supports full attr.* filtering.
-		// `root_only` is injected as a filter rather than a param so the query can
-		// use the root-span MV.
-		const effectiveWhereClause = state.listRootOnly
-			? state.listWhereClause.trim()
-				? `root_only = true AND ${state.listWhereClause}`
-				: "root_only = true"
-			: state.listWhereClause
+		// Traces and product events go through the query engine, which supports
+		// full attr.* filtering. `root_only` is injected as a filter rather than a
+		// param so a traces query can use the root-span MV.
+		const effectiveWhereClause =
+			state.listDataSource === "traces" && state.listRootOnly
+				? state.listWhereClause.trim()
+					? `root_only = true AND ${state.listWhereClause}`
+					: "root_only = true"
+				: state.listWhereClause
 
 		const queryForEngine: QueryBuilderQueryDraft = {
 			...createQueryDraft(0),

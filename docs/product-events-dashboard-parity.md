@@ -1,9 +1,11 @@
 # Product events as a first-class dashboard source — plan
 
-Status: **phases 1 and 2 built 2026-09-13** (engine + draft model, plus the backend half of
-phase 4 and the `query_data` half of phase 5, which the shared source list dragged in). Phase 3,
-the builder UI, is the next PR: the source select still offers three sources, and a
-`product_events` draft only reaches a dashboard through the MCP tools or a stored document.
+Status: **phases 1 through 5 built 2026-09-13** on `feat/product-events-query-source`
+(PR #877). Verified end to end against a seeded local Tinybird: the Top Events, Events by Page and
+Recent Events tiles, a four-step person-stitched funnel built in the step editor, and an alert rule
+prefilled from a product-event widget all ran through the real stack. Phase 6 (deleting the last
+funnel special cases: `FunnelSource: "query_set"`, `isProductEventsFunnel` as a gate) is still open;
+so is the `SignalEmptyState` wiring, which cannot be exercised on an org that has events.
 
 ## Where it stands today
 

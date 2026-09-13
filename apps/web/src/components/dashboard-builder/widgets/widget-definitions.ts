@@ -1,5 +1,6 @@
 import {
 	ArrowTrendDownIcon,
+	ConnectionIcon,
 	PulseIcon,
 	FileIcon,
 	AlertWarningIcon,
@@ -252,12 +253,46 @@ export const listPresets: WidgetPresetDefinition[] = [
 			],
 		},
 	},
+	{
+		id: "list-product-events",
+		name: "Recent Events",
+		description: "Latest track() calls, page views and server events",
+		icon: ConnectionIcon,
+		visualization: "list",
+		dataSource: makeQueryDataSource({
+			resultShape: "list",
+			queries: [
+				{
+					...createQueryDraft(0),
+					id: "preset-list-product-events",
+					dataSource: "product_events",
+					aggregation: "count",
+					whereClause: 'event.kind != "navigation"',
+				},
+			],
+			limit: 25,
+			columns: ["timestamp", "eventName", "userId", "pagePath", "source"],
+		}),
+		display: {
+			title: "Recent Events",
+			listDataSource: "product_events",
+			listWhereClause: 'event.kind != "navigation"',
+			listLimit: 25,
+			columns: [
+				{ field: "timestamp", header: "Time" },
+				{ field: "eventName", header: "Event" },
+				{ field: "userId", header: "User" },
+				{ field: "pagePath", header: "Page" },
+				{ field: "source", header: "Source" },
+			],
+		},
+	},
 ]
 
 function buildBreakdownQuery(
 	index: number,
 	overrides: {
-		dataSource: "traces" | "logs"
+		dataSource: "traces" | "logs" | "product_events"
 		whereClause: string
 		aggregation: string
 		groupBy: string[]
@@ -277,9 +312,9 @@ function buildBreakdownQuery(
 		limit: "10",
 		legend: overrides.legend ?? draft.legend,
 	}
-	return overrides.dataSource === "logs"
-		? { ...base, dataSource: "logs" }
-		: { ...base, dataSource: "traces" }
+	if (overrides.dataSource === "logs") return { ...base, dataSource: "logs" }
+	if (overrides.dataSource === "product_events") return { ...base, dataSource: "product_events" }
+	return { ...base, dataSource: "traces" }
 }
 
 export const piePresets: WidgetPresetDefinition[] = [
@@ -333,6 +368,32 @@ export const piePresets: WidgetPresetDefinition[] = [
 			chartId: "query-builder-pie",
 			unit: "number",
 			pie: { donut: false, showLabels: true, showPercent: true },
+		},
+	},
+	{
+		id: "pie-events-by-page",
+		name: "Events by Page",
+		description: "Where track() events fire, by page path",
+		icon: ConnectionIcon,
+		visualization: "pie",
+		dataSource: makeQueryDataSource({
+			resultShape: "breakdown",
+			queries: [
+				buildBreakdownQuery(0, {
+					dataSource: "product_events",
+					whereClause: 'event.kind = "custom"',
+					aggregation: "count",
+					groupBy: ["page.path"],
+				}),
+			],
+			formulas: [],
+			comparison: { mode: "none", includePercentChange: false },
+		}),
+		display: {
+			title: "Events by Page",
+			chartId: "query-builder-pie",
+			unit: "number",
+			pie: { donut: true, showLabels: false, showPercent: true },
 		},
 	},
 	{
@@ -456,6 +517,31 @@ export const hbarPresets: WidgetPresetDefinition[] = [
 		}),
 		display: {
 			title: "Busiest Operations",
+			chartId: "query-builder-hbar",
+			unit: "number",
+		},
+	},
+	{
+		id: "hbar-top-events",
+		name: "Top Events",
+		description: "Most-fired product events, by distinct persons",
+		icon: ConnectionIcon,
+		visualization: "hbar",
+		dataSource: makeQueryDataSource({
+			resultShape: "breakdown",
+			queries: [
+				buildBreakdownQuery(0, {
+					dataSource: "product_events",
+					whereClause: 'event.kind != "navigation"',
+					aggregation: "persons",
+					groupBy: ["event.name"],
+				}),
+			],
+			formulas: [],
+			comparison: { mode: "none", includePercentChange: false },
+		}),
+		display: {
+			title: "Top Events",
 			chartId: "query-builder-hbar",
 			unit: "number",
 		},

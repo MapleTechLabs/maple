@@ -15,7 +15,6 @@ import {
 	AddOnToggleBar,
 	QUERY_BUILDER_PANEL_SOURCES,
 	QueryPanelShell,
-	isQueryBuilderDataSource,
 } from "@/components/dashboard-builder/config/query-panel-shell"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { parseProductEventsFilterClause } from "@/lib/query-builder/funnel-filters"
@@ -38,8 +37,8 @@ const ADD_ONS: ReadonlyArray<{ key: FunnelAddOnKey; label: string }> = [
 interface FunnelQueryPanelViewProps {
 	funnel: FunnelWidgetDraft
 	onUpdate: (updater: (funnel: FunnelWidgetDraft) => FunnelWidgetDraft) => void
-	/** The user picked Traces / Logs / Metrics: the widget goes back to its query set. */
-	onSourceChange: (source: QueryBuilderDataSource) => void
+	/** The user picked another source: the widget goes back to its query set on it. */
+	onSourceChange: (source: Exclude<QueryBuilderDataSource, "product_events">) => void
 	/** What the inputs complete from; `useFunnelSuggestions` is the one real source. */
 	suggestions: FunnelSuggestions
 }
@@ -91,9 +90,9 @@ export function FunnelQueryPanelView({
 			name="A"
 			index={0}
 			source="product_events"
-			sourceOptions={[...QUERY_BUILDER_PANEL_SOURCES, "product_events"]}
+			sourceOptions={QUERY_BUILDER_PANEL_SOURCES}
 			onSourceChange={(source) => {
-				if (isQueryBuilderDataSource(source)) onSourceChange(source)
+				if (source !== "product_events") onSourceChange(source)
 			}}
 			headerActions={
 				<Button variant="ghost" size="xs" disabled>

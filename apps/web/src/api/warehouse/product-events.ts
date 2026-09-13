@@ -20,8 +20,14 @@ import {
 	funnelWidgetRows,
 	type FunnelWidgetRow,
 } from "@maple/query-model"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
-import { decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
+import {
+	WarehouseDateTimeString,
+	decodeInput,
+	executeQueryEngine,
+	runWarehouseQuery,
+} from "@/api/warehouse/effect-utils"
 import { TimeWindowFields, WebAnalyticsFilterFields } from "@/api/warehouse/web-analytics"
 
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
@@ -225,4 +231,43 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 		}),
 	)
 	return { data: funnelWidgetRows(input.steps, result.data) }
+})
+
+// The `track()` prop keys in use — what the query builder's `attr.` completion
+// offers for a product_events query. Same shape as the span/log key lookups.
+const GetProductEventAttributeKeysInputSchema = Schema.Struct({
+	startTime: WarehouseDateTimeString,
+	endTime: WarehouseDateTimeString,
+	limit: Schema.optional(PositiveInt),
+})
+
+export type GetProductEventAttributeKeysInput = (typeof GetProductEventAttributeKeysInputSchema)["Encoded"]
+
+export function getProductEventAttributeKeys({ data }: { data: GetProductEventAttributeKeysInput }) {
+	return getProductEventAttributeKeysEffect({ data })
+}
+
+const getProductEventAttributeKeysEffect = Effect.fn("QueryEngine.getProductEventAttributeKeys")(function* ({
+	data,
+}: {
+	data: GetProductEventAttributeKeysInput
+}) {
+	const input = yield* decodeInput(
+		GetProductEventAttributeKeysInputSchema,
+		data,
+		"getProductEventAttributeKeys",
+	)
+	const response = yield* executeQueryEngine(
+		"queryEngine.getProductEventAttributeKeys",
+		new QueryEngineExecuteRequest({
+			startTime: input.startTime,
+			endTime: input.endTime,
+			query: { kind: "attributeKeys", source: "product_events", limit: input.limit },
+		}),
+	)
+	const result = response.result
+	if (result.kind !== "attributeKeys") return { data: [] }
+	return {
+		data: result.data.map((row) => ({ attributeKey: row.key, usageCount: Number(row.count) })),
+	}
 })

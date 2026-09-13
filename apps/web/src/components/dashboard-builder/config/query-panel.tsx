@@ -14,10 +14,10 @@ import {
 	AddOnToggleBar,
 	QUERY_BUILDER_PANEL_SOURCES,
 	QueryPanelShell,
-	isQueryBuilderDataSource,
-	type QueryPanelSource,
 } from "@/components/dashboard-builder/config/query-panel-shell"
 import { GroupByMultiSelect } from "@/components/query-builder/group-by-multi-select"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
 import type { WhereClauseAutocompleteValues } from "@/lib/query-builder/where-clause-autocomplete"
@@ -68,9 +68,6 @@ interface QueryPanelProps {
 	 * one does. Only the funnel widget passes these — picking "Product events"
 	 * swaps this panel for the funnel's.
 	 */
-	/** Sources offered beyond `QUERY_BUILDER_PANEL_SOURCES`; today only the funnel's step editor. */
-	extraSourceOptions?: ReadonlyArray<QueryPanelSource>
-	onExtraSourceChange?: (source: QueryPanelSource) => void
 	showHeaderActions?: boolean
 	showVisibilityToggle?: boolean
 	/**
@@ -115,8 +112,6 @@ export function QueryPanel({
 	onClone,
 	onRemove,
 	onDataSourceChange,
-	extraSourceOptions = [],
-	onExtraSourceChange,
 	showHeaderActions = true,
 	showVisibilityToggle = true,
 	autoIntervalLabel,
@@ -139,12 +134,8 @@ export function QueryPanel({
 			name={query.name}
 			index={index}
 			source={query.dataSource}
-			sourceOptions={[...QUERY_BUILDER_PANEL_SOURCES, ...extraSourceOptions]}
-			onSourceChange={(source) => {
-				// The funnel's extra option wins: "Product events" there means the step editor, not a count query.
-				if (extraSourceOptions.includes(source)) onExtraSourceChange?.(source)
-				else if (isQueryBuilderDataSource(source)) onDataSourceChange(source)
-			}}
+			sourceOptions={QUERY_BUILDER_PANEL_SOURCES}
+			onSourceChange={onDataSourceChange}
 			visibility={
 				showVisibilityToggle
 					? {
@@ -195,6 +186,8 @@ export function QueryPanel({
 				/>
 			)}
 
+			{query.dataSource === "product_events" && <ProductEventsAbsentHint />}
+
 			{/* Add-on toggle bar */}
 			<AddOnToggleBar
 				items={ADD_ON_KEYS}
@@ -215,6 +208,20 @@ export function QueryPanel({
 		</QueryPanelShell>
 	)
 }
+
+/** The setup pointer an org that has never sent a product event sees under its panel. */
+function ProductEventsAbsentHint() {
+	const presence = useSignalPresence("product_events")
+	if (presence.status !== "absent") return null
+	return <SignalEmptyState signal="product_events" className="py-3" />
+}
+
+const WHERE_PLACEHOLDER = {
+	traces: 'service.name = "checkout" AND status.code = "Error"',
+	logs: 'service.name = "checkout" AND severity = "ERROR"',
+	metrics: 'service.name = "checkout"',
+	product_events: 'event.name = "signup_completed" AND country = "DE"',
+} satisfies Record<QueryBuilderDataSource, string>
 
 // TracesLogsBody
 
@@ -249,7 +256,7 @@ function TracesLogsBody({
 							whereClause: nextWhereClause,
 						}))
 					}
-					placeholder='service.name = "checkout" AND status.code = "Error"'
+					placeholder={WHERE_PLACEHOLDER[query.dataSource]}
 					textareaClassName="min-h-[32px] resize-y text-xs"
 					ariaLabel={`Where clause for query ${query.name}`}
 				/>

@@ -18,6 +18,7 @@ import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
 import { WidgetBuilderForm } from "@/atoms/widget-query-builder-atoms"
 import { useAtom } from "@/lib/effect-atom"
 import { PANEL_TYPES, fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
+import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import {
 	STAT_AGGREGATES,
 	toSeriesFieldOptions,
@@ -57,7 +58,7 @@ function useSettings() {
 		seriesFieldOptions: toSeriesFieldOptions(state),
 		sourceMode: use(SourceModeContext),
 		set: (updates: Partial<QueryBuilderWidgetState>) =>
-			setState((current) => ({ ...current, ...updates })),
+			setState((current) => reconcileFunnelSource({ ...current, ...updates })),
 	}
 }
 

@@ -9,18 +9,12 @@ import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 
 // The chrome every query panel shares — the collapsible header with the
 // query's badge, its source select and its actions — and the add-on toggle
-// bar under a panel's body. `QueryPanel` (traces / logs / metrics) and the
-// funnel widget's `FunnelQueryPanel` (product events) both render through
-// these, which is what makes the funnel read as one more query rather than a
-// sidebar of its own.
+// bar under a panel's body. `QueryPanel` and the funnel widget's
+// `FunnelQueryPanel` (the step editor a funnel shows for Product events) both
+// render through these, so the funnel reads as one more query.
 
-/**
- * What a panel's source select offers. The three query-builder data sources
- * lower to the query set; `product_events` is the funnel widget's own source,
- * answered by the funnel route. It is NOT a `QueryBuilderDataSource`: nothing
- * else in the builder (alerts, formulas, the list panel) can target it.
- */
-export type QueryPanelSource = QueryBuilderDataSource | "product_events"
+/** What a panel's source select offers: every query-builder data source. */
+export type QueryPanelSource = QueryBuilderDataSource
 
 export const QUERY_PANEL_SOURCE_LABEL = {
 	traces: "Traces",
@@ -33,7 +27,7 @@ export const isQueryBuilderDataSource = (source: string): source is QueryBuilder
 	QUERY_BUILDER_DATA_SOURCES.some((candidate) => candidate === source)
 
 /** The query-builder sources, in the order the select shows them. */
-export const QUERY_BUILDER_PANEL_SOURCES: ReadonlyArray<QueryPanelSource> = ["traces", "logs", "metrics"]
+export const QUERY_BUILDER_PANEL_SOURCES: ReadonlyArray<QueryPanelSource> = QUERY_BUILDER_DATA_SOURCES
 
 interface QueryPanelShellProps {
 	/** The query's letter — "A", "B", … */
