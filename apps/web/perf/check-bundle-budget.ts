@@ -84,7 +84,13 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // the contract every page's client carries, and three gallery tiles in the
 // widget registry. The step editor and the funnel suggestions stay in the
 // editor's route chunk.
-const maxGzipBytes = 692 * 1024
+// 693 KB from the funnel drop-off view and the paths widget (#878, 2026-09-13):
+// ~0.3 KB of startup measured in CI against #877's 691.9 — a fourteenth panel
+// type in the widget-type table, the `paths` and `funnel.variant` display
+// blocks on the stored and v2 schemas, two picker presets with their icon,
+// and the paths widget type's lowering. Both charts, the paths query panel
+// and the sample data stay in lazy chunks.
+const maxGzipBytes = 693 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

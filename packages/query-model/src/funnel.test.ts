@@ -127,7 +127,7 @@ describe("ProductEventsPathsWidgetParams", () => {
 
 	it("refuses a session step as the anchor", () => {
 		expect(() =>
-			Schema.decodeSync(ProductEventsPathsWidgetParams)({
+			Schema.decodeUnknownSync(ProductEventsPathsWidgetParams)({
 				anchor: { kind: "session", dimension: "utmSource", value: "twitter" },
 			}),
 		).toThrow()
