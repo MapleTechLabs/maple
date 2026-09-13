@@ -521,6 +521,16 @@ describe("product_events clause edge cases", () => {
 		})
 	})
 
+	it("slices the prop key at the prefix even when lowercasing changes its length", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.İstanbul"],
+			}),
+		)
+		expect(result.query).toMatchObject({ filters: { groupByAttributeKey: "İstanbul" } })
+	})
+
 	it("rejects != on visitor.type instead of selecting the negated value", () => {
 		const result = buildTimeseriesQuerySpec(draft({ whereClause: 'visitor.type != "new"' }))
 		expect(result.query).toMatchObject({ filters: undefined })

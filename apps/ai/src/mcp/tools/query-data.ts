@@ -165,7 +165,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				)
 			}
 
-			if (params.event_kind !== undefined) {
+			if (params.source === "product_events" && params.event_kind !== undefined) {
 				const bad = splitCsv(params.event_kind).find((kind) => !isProductEventKind(kind))
 				if (bad !== undefined) {
 					return validationError(

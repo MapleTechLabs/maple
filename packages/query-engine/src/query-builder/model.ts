@@ -684,7 +684,7 @@ function resolveProductEventsGroupByToken(
 			return resolution.token
 		case "Prefixed": {
 			// The shared resolver lowercases the token; the prop key keeps the case it was typed with.
-			const key = raw.trim().slice(raw.trim().length - resolution.key.length)
+			const key = raw.trim().slice(ATTRIBUTE_PREFIX.prefix.length)
 			// One attribute group column, as on metrics.
 			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== key) {
 				warnings.push(`Product events queries support a single attr.* group by; ignoring attr.${key}`)
