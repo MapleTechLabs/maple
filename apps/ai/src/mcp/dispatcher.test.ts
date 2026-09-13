@@ -5,8 +5,8 @@ import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
 import { mapleToolCatalog, toInputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { AuditLogService, makeMemoryAuditLog } from "@/services/audit/AuditLogService"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 
 const TENANT: TenantContext = {
 	orgId: "org_test" as TenantContext["orgId"],

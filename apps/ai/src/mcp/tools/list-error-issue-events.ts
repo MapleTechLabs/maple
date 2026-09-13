@@ -6,10 +6,10 @@ import {
 	type McpToolRegistrar,
 } from "./types"
 import { Effect, Option, Schema } from "effect"
-import { formatTable } from "@ai/mcp/lib/format"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { ErrorIssueWorkflowService } from "@/services/errors/ErrorIssueWorkflowService"
+import { formatTable } from "../lib/format"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorIssueId } from "@maple/domain/http"
 
 const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)

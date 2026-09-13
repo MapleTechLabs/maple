@@ -9,7 +9,7 @@ import {
 	UNBOUNDED_FOCUS_DISTANCE,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	linearYDomain,
 	minBarLength,
 	niceLinearDomain,
@@ -180,7 +180,6 @@ export function ToolSeriesChart({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				barY(cells, {
 					x: (cell: ToolBarCell) => cell.row.date,
 					y: (cell: ToolBarCell) => lift(valueAt(cell.row, cell.key)),
@@ -201,6 +200,7 @@ export function ToolSeriesChart({
 			scales: {
 				x: axis.xBand,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

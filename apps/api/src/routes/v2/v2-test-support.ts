@@ -1,35 +1,34 @@
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+export { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { Effect, Layer } from "effect"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
-import { AlertsService } from "@/services/alerts/AlertsService"
-import { AlertDestinationsService } from "@/services/alerts/AlertDestinationsService"
-import { AlertReadModelsService } from "@/services/alerts/AlertReadModelsService"
-import { AlertRulesService } from "@/services/alerts/AlertRulesService"
-import { AnomalyDetectionService } from "@/services/alerts/AnomalyDetectionService"
-import { ErrorsService } from "@/services/errors/ErrorsService"
-import { ErrorActorsService } from "@/services/errors/ErrorActorsService"
-import { ErrorIssueReadModelsService } from "@/services/errors/ErrorIssueReadModelsService"
-import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
-import { InvestigationService } from "@/services/errors/InvestigationService"
-import { OrganizationService } from "@/services/org/OrganizationService"
-import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
-import { MobileDevicesService } from "@/services/push/MobileDevicesService"
-import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
-import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
-import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { GoogleAnalyticsOAuthService } from "@/services/auth/GoogleAnalyticsOAuthService"
-import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
-import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
-import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
-import { SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
-import { SetupAuditService } from "@/services/org/SetupAuditService"
-import { SignalPresenceService } from "@/services/org/SignalPresenceService"
-import { ApiV2RateLimiter } from "@/services/auth/ApiV2RateLimiter"
-import {
-	WarehouseQueryService,
-	type WarehouseQueryServiceApi,
-} from "@/services/warehouse/WarehouseQueryService"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
+import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
+import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { GoogleAnalyticsOAuthService } from "@maple/backend/services/auth/GoogleAnalyticsOAuthService"
+import { GoogleAnalyticsService } from "@maple/backend/services/integrations/GoogleAnalyticsService"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
+import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
@@ -50,14 +49,14 @@ import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
 import { HttpV2OrganizationLive } from "./organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "./recommendations.http"
 import { HttpV2AuditLogLive } from "./audit-log.http"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { OrgMembersService } from "@/services/org/OrgMembersService"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
 import { HttpV2TelemetrySignalsLive } from "./telemetry-signals.http"
 import { HttpV2SharePublicLive } from "./share.http"
-import { DashboardWidgetDataService } from "@/services/dashboards/DashboardWidgetDataService"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import {
 	HttpV2EnvironmentsLive,
 	HttpV2LogsLive,
@@ -221,25 +220,6 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		delete: die,
 	}),
 )
-
-/** Inert WarehouseQueryService for harnesses that never touch warehouse-backed groups. */
-export const makeWarehouseServiceStub = (
-	overrides: Partial<WarehouseQueryServiceApi> = {},
-): WarehouseQueryServiceApi => ({
-	query: die,
-	crossOrgQuery: die,
-	rawSqlQuery: die,
-	compiledQuery: die,
-	compiledQueryBounded: die,
-	compiledQueryWithCapabilities: die,
-	compiledQueryFirst: die,
-	// Not `die`: warming is best-effort and silent by contract, so a stub that
-	// throws would fail a path that only tried to warm up.
-	warmRoute: () => Effect.void,
-	ingest: die,
-	asExecutor: dieSync,
-	...overrides,
-})
 
 export const WarehouseServiceStubLayer = Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub())
 

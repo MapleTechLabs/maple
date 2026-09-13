@@ -16,30 +16,33 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { AuditLogService } from "@/services/audit/AuditLogService"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
 	SLACK_CALLBACK_PATH,
 	SlackIntegrationService,
 	type SlackIntegrationServiceApi,
-} from "@/services/integrations/SlackIntegrationService"
+} from "@maple/backend/services/integrations/SlackIntegrationService"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import {
 	PLANETSCALE_CALLBACK_PATH,
 	PlanetScaleOAuthService,
 	type PlanetScaleOAuthServiceApi,
-} from "@/services/auth/PlanetScaleOAuthService"
+} from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import {
 	PlanetScaleConnectionService,
 	type PlanetScaleConnectionServiceApi,
-} from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleService, type PlanetScaleServiceApi } from "@/services/integrations/PlanetScaleService"
+} from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import {
+	PlanetScaleService,
+	type PlanetScaleServiceApi,
+} from "@maple/backend/services/integrations/PlanetScaleService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,

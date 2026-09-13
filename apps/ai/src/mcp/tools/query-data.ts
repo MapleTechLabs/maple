@@ -8,11 +8,11 @@ import {
 	type McpToolRegistrar,
 	type McpToolResult,
 } from "./types"
-import { resolveTimeRange } from "@ai/mcp/lib/time"
-import { describeInvalidQuerySpec } from "@ai/mcp/lib/query-spec-tokens"
+import { resolveTimeRange } from "../lib/time"
+import { describeInvalidQuerySpec } from "../lib/query-spec-tokens"
 import { Effect, Match, Schema } from "effect"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	MetricType,
 	QuerySpec,
@@ -27,8 +27,8 @@ import {
 	type MetricsTimeseriesQuery,
 	type MetricsBreakdownQuery,
 } from "@maple/query-engine"
-import { formatQueryResult } from "@ai/mcp/lib/format-query-result"
-import { warehouseErrorText, warehouseReadHandlers } from "@ai/mcp/lib/map-warehouse-error"
+import { formatQueryResult } from "../lib/format-query-result"
+import { warehouseErrorText, warehouseReadHandlers } from "../lib/map-warehouse-error"
 import {
 	CommitSha,
 	DeploymentEnvironment,

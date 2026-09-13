@@ -43,4 +43,20 @@ describe("MCP expected failures", () => {
 
 		expect(offenders.map((path) => path.slice(SRC_ROOT.length))).toEqual([])
 	})
+
+	// The check above only sees a tracer built through `MapleCloudflareSDK.make`.
+	// This Worker's request-facing tracer is built by `WorkerTelemetry` in the
+	// init instead, and it is the one serving the PUBLIC `/mcp` transport — the
+	// surface these identifiers were written for. It lost them once already, in
+	// the move out of apps/api, because nothing tied the two files together.
+	it("spreads the MCP identifiers into this Worker's own telemetry", () => {
+		const offenders = sourceFiles(SRC_ROOT).filter((path) => {
+			const source = readFileSync(path, "utf8")
+			return (
+				source.includes("WorkerTelemetry({") && !source.includes("MCP_ANTICIPATED_ERROR_IDENTIFIERS")
+			)
+		})
+
+		expect(offenders.map((path) => path.slice(SRC_ROOT.length))).toEqual([])
+	})
 })

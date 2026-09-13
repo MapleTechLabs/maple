@@ -1,6 +1,5 @@
 import {
 	McpQueryError,
-	optionalStringParam,
 	optionalTimeParam,
 	requiredStringParam,
 	type McpToolRegistrar,
@@ -8,20 +7,13 @@ import {
 } from "./types"
 import { Effect, Schema } from "effect"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import {
-	inspectWidget,
-	type InspectWidgetTimeRange,
-	type RawSqlInspectionData,
-} from "@ai/mcp/lib/inspect-widget"
-import { formatTable, truncate } from "@ai/mcp/lib/format"
-import {
-	resolveDashboardTimeRange,
-	type DashboardTimeRangeInput,
-} from "@ai/mcp/lib/resolve-dashboard-time-range"
-import { resolveTimeRange } from "@ai/mcp/lib/time"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { createDualContent } from "../lib/structured-output"
+import { inspectWidget, type InspectWidgetTimeRange, type RawSqlInspectionData } from "../lib/inspect-widget"
+import { formatTable, truncate } from "../lib/format"
+import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "../lib/resolve-dashboard-time-range"
+import { resolveTimeRange } from "../lib/time"
 import type { InspectChartDataData, InspectChartQueryResult } from "@maple/domain"
 
 function formatNumber(value: number | null): string {

@@ -19,9 +19,9 @@ import {
 } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
 import { Effect, Schema } from "effect"
-import { ErrorIssueReadModelsService } from "@/services/errors/ErrorIssueReadModelsService"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { toService, type ServiceBaselines } from "./telemetry.http"
 
 /**

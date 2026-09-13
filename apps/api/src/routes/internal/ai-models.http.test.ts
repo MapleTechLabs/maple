@@ -9,7 +9,7 @@ import {
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
-import { V1ErrorBoundaryLive } from "../v1/error-boundary"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiModelsInternalLive } from "./ai-models.http"
 
 // The wire shape is a hand-written mirror of the resolver's. Assignability at

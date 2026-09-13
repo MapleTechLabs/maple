@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { CH } from "@maple/query-engine"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 

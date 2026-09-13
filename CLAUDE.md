@@ -63,9 +63,22 @@ issuer and the RFC 8707 resource identifiers on api's origin. OAuth itself (`Mcp
 discovery and consent endpoints) stays in `apps/api`; maple-ai validates the ordinary API key it
 mints.
 
-**The alias convention is the opposite of what it looks like.** In `apps/ai`, `@/` is *apps/api's*
-source and `@ai/` is its own. This program compiles api's modules too, and those spell their
-internal imports `@/` — point it at `apps/ai` and every one resolves into the wrong tree.
+Shared backend services and adapters live in `packages/backend`, imported through explicit
+`@maple/backend/*` subpaths. API, AI, and alerting own their entrypoints, routes, and resource
+bindings. `@/` resolves to each app's own source.
+
+## Service ownership
+
+Service constructors acquire their implementation dependencies; public methods close over them.
+A method leaking an implementation service in its Effect requirements is a bug. Explicit
+invocation-owned context (request scopes, transactions, tenant/actor context) must remain on the
+current invocation rather than being captured at isolate construction.
+
+Each service owns its `static readonly layer`: `Layer.effect(this, this.make)` with internal
+service dependencies supplied through `Layer.provide`. The layer exports only its own service;
+`Env`, `Database`, cache backends, and binding ports are supplied by the application root.
+Tests inject substitutes through `Layer.effect(Service, Service.make)`. Application roots merge
+only the services their consumers need; they do not reconstruct service dependency chains.
 
 ## Warehouse queries
 
@@ -80,7 +93,7 @@ Subpath exports: `./ch` (DSL + `compile`), `./runtime` (dashboard/alert lowering
 cache keys), `./execution` (`makeWarehouseExecutor` — retry, error mapping, OrgId scoping, spans),
 `./caching` (edge/bucket caches behind a `CacheBackend` port), `./profiles` (cost profiles →
 `SETTINGS`), `./observability` (MCP/agent helpers). The **root barrel stays driver-free** so web/cli
-can import it; only `apps/api` touches the other subpaths (`WarehouseQueryService.ts` injects the
+can import it; the shared backend touches the other subpaths (`WarehouseQueryService.ts` injects the
 drivers, `QueryEngineService.ts` the caches).
 
 To add a query: define it in `packages/query-engine/src/ch/queries/*.ts` with
@@ -139,14 +152,14 @@ Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/
 Workers via the Hyperdrive binding `MAPLE_DB`.
 
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
-  `dateToMs` from `apps/api/src/platform/time.ts` rather than bare `new Date(ms)` /
+  `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare `new Date(ms)` /
   `.getTime()`, including inside Promise-land helpers. Never read driver write-result shapes
   — use `.returning()` + length. `count(*)` needs `::int` (bigint → string).
 - Layers: `DatabasePgLive` (Workers) and `DatabasePgliteLive` (tests/local; `createTestDb()` in
-  `apps/api/src/platform/test-pglite.ts`).
+  `packages/backend/src/platform/test-pglite.ts`).
 - One Postgres connection per invocation — request, cron tick, or Workflow run — created lazily and
   closed at the boundary, which is Cloudflare's documented Hyperdrive shape. The single primitive is
-  `makePgConnectionScope` in `apps/api/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
+  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
   installs it for HTTP, `withPgConnectionScope` for cron. Sockets are request-bound on Workers, so a
   connection may be reused freely WITHIN an invocation but must never outlive it. `max` is 5
   (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost 3–6x on p50) and the
@@ -229,7 +242,7 @@ checkout has real interpreters, so treat it as general code execution inside tha
 The port is effect-agent's `Sandbox` contract (`@effect-agent/sandbox/Sandbox`): one
 `SandboxRequest` per command, the repository named as the single read-only mount
 `maple-vcs://<orgId>/<owner>/<name>@<ref>`, and an implementation that rejects any feature it
-cannot enforce (`admit` in `apps/api/src/services/sandbox/CloudflareRepoSandbox.ts`). Swapping the
+cannot enforce (`admit` in `packages/backend/src/services/sandbox/CloudflareRepoSandbox.ts`). Swapping the
 container out again is a change below that port and nothing above it.
 
 Two rules worth keeping: a **ref reaching the provider is validated** (`unsafeRef`) and encoded at
@@ -241,7 +254,7 @@ Testing it has three layers, and the top one is the only one that catches the im
 
 ```bash
 bun run --cwd apps/ai test src/mcp/tools/sandbox                 # the tools
-bun run --cwd apps/api test src/services/sandbox                 # argument vectors, real git
+bun run --cwd packages/backend test src/services/sandbox                 # argument vectors, real git
 bun run --cwd apps/sandbox test                                          # the generated scripts, as text
 bun run --cwd apps/sandbox verify:image                                  # the scripts, inside the image
 ```
@@ -284,7 +297,7 @@ there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER
 ## Docs (`docs/`)
 
 `api-v2.md` (v2 public API spec) · `error-issue-lifecycle.md` (how an error becomes an issue,
-gets diagnosed, fixed and verified — read before touching `apps/api/src/services/errors/`) ·
+gets diagnosed, fixed and verified — read before touching `packages/backend/src/services/errors/`) ·
 `sampling-throughput.md` · `persistence.md` ·
 `ingest-wal-durability.md` (WAL segments, the S3 tier, and what survives a task dying) ·
 `docker-container-monitoring.md` (Docker agent → `/infra/containers` lifecycle + its invariants) ·

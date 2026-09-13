@@ -1,29 +1,23 @@
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
-import { EventBaseLive } from "@/platform/DatabasePgLive"
-import { AuditLogLive } from "@/runtime/warehouse-layer"
-import { VcsProviderRegistryLive as VcsProviderRegistryLayer } from "@/runtime/vcs-source-layer"
-import { Env } from "@/platform/Env"
-import { VcsRepository } from "./services/integrations/vcs/VcsRepository"
-import { VcsScheduledSyncService } from "./services/integrations/vcs/VcsScheduledSyncService"
+import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+
+import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
 import {
 	clampQueueDelaySeconds,
 	MESSAGING_DESTINATION,
 	MESSAGING_SYSTEM,
-	VcsSyncQueue,
-} from "./services/integrations/vcs/VcsSyncQueue"
-import { VcsSyncService } from "./services/integrations/vcs/VcsSyncService"
-import { ErrorActorsService } from "./services/errors/ErrorActorsService"
-import { ErrorIssueWorkflowService } from "./services/errors/ErrorIssueWorkflowService"
-import { IssueFixVerificationService } from "./services/errors/IssueFixVerificationService"
-import { PullRequestLookup } from "./services/errors/PullRequestLookup"
-import { PullRequestEventSinkLive } from "./services/errors/pull-request-sink-live"
-import { summarizeCause } from "@/platform/describe-cause"
-import type { QueueBatch } from "@/platform/queue-batch"
+} from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 
-// Per-invocation runtime for the `vcs-sync` queue consumer. Mirrors the
-// alerting worker's `buildLayer`: its own light layer graph (NOT the fetch
-// path's MainLive) so the queue invocation stays within the startup CPU budget.
+import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
+import { PullRequestLookup } from "@maple/backend/services/errors/PullRequestLookup"
+import { PullRequestEventSinkLive } from "@maple/backend/services/errors/pull-request-sink-live"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import type { QueueBatch } from "@maple/backend/platform/queue-batch"
+
+// Per-invocation runtime for the VCS sync queue, independent of the HTTP graph.
 // No tracer or logger of its own: the Worker provides `vcsSyncTelemetry` around
 // the event, and a layer here that carried one would shadow it. The Worker env,
 // its `ConfigProvider` and the binding ports come from the Worker too
@@ -35,64 +29,17 @@ import type { QueueBatch } from "@/platform/queue-batch"
  */
 export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" })
 
-export const VcsSyncLive = (() => {
-	const EnvLive = Env.layer
-	const Base = EventBaseLive
-
-	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const VcsProviderRegistryLive = VcsProviderRegistryLayer.pipe(Layer.provide(EnvLive))
-	// `VcsSyncQueueProducer` is the Worker's port, provided around the event.
-	const VcsSyncQueueLive = VcsSyncQueue.layer
-	// The issue side of a pull-request webhook. Only the queue consumer needs it —
-	// the scheduled producer below never sees a PR event — so it is built here
-	// rather than in `Base`, keeping the cron layer as light as it was.
-	const ErrorActorsServiceLive = ErrorActorsService.layer.pipe(Layer.provide(Base))
-	// Issue events from a PR webhook are audited, and audit entries are warehouse
-	// rows — so the consumer carries the (Tinybird-pinned) ingest path as well.
-	const AuditLogServiceLive = AuditLogLive.pipe(Layer.provide(Base))
-	const ErrorIssueWorkflowServiceLive = ErrorIssueWorkflowService.layer.pipe(
-		Layer.provide(Layer.mergeAll(Base, ErrorActorsServiceLive, AuditLogServiceLive)),
-	)
-	const IssueFixVerificationServiceLive = IssueFixVerificationService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				Base,
-				ErrorActorsServiceLive,
-				ErrorIssueWorkflowServiceLive,
-				// This runtime only ever handles webhook deliveries, which arrive with
-				// the PR's title, state and merge already in the payload — nothing here
-				// reaches the link path that asks a provider what a PR is. Binding the
-				// real lookup would pull the whole VCS read surface in to answer a
-				// question that is never asked.
-				PullRequestLookup.none,
-			),
+export const VcsSyncLive = VcsSyncService.layer.pipe(
+	Layer.provide(
+		PullRequestEventSinkLive.pipe(
+			Layer.provide(IssueFixVerificationService.layer),
+			Layer.provide(PullRequestLookup.none),
 		),
-	)
-	const PullRequestSinkLive = PullRequestEventSinkLive.pipe(Layer.provide(IssueFixVerificationServiceLive))
+	),
+	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
+)
 
-	const VcsSyncServiceLive = VcsSyncService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(VcsRepositoryLive, VcsProviderRegistryLive, VcsSyncQueueLive, PullRequestSinkLive),
-		),
-	)
-
-	return VcsSyncServiceLive
-})()
-
-// The periodic (cron) producer's layer graph. Deliberately lighter than the
-// consumer's: enqueuing installation-sync jobs needs only storage + the queue —
-// NOT the provider registry (the consumer does all provider work).
-export const VcsScheduledLive = (() => {
-	const Base = EventBaseLive
-
-	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const VcsSyncQueueLive = VcsSyncQueue.layer
-	const VcsScheduledSyncServiceLive = VcsScheduledSyncService.layer.pipe(
-		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsSyncQueueLive)),
-	)
-
-	return VcsScheduledSyncServiceLive
-})()
+export const VcsScheduledLive = VcsScheduledSyncService.layer.pipe(Layer.provide(EventBaseLive))
 
 // The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {

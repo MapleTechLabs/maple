@@ -1,3 +1,30 @@
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { SandboxClient } from "@maple/backend/sandbox/client"
+import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
+import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+
+import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+
+import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
+import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
+import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
+import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
+
+import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
+
+import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -7,8 +34,8 @@ import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpTenant } from "./lib/query-warehouse"
 import { recordExpectedMcpFailure } from "./expected-failures"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { recordMcpToolAudit } from "@/services/audit/audit-access"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
 
 /**
  * Built on first use, not at module scope.
@@ -139,6 +166,33 @@ export interface McpToolExecutorApi {
  * must then supply its authenticated tenant explicitly, so no transport can
  * accidentally execute a raw handler without CurrentMcpTenant.
  */
+const McpRuntimeServicesLive = Layer.mergeAll(
+	AlertReadModelsService.layer,
+	AlertRulesService.layer,
+	AlertsService.layer,
+	AuditLogService.layer,
+	DashboardPersistenceService.layer,
+	ErrorActorsService.layer,
+	ErrorIssueReadModelsService.layer,
+	ErrorIssueWorkflowService.layer,
+	ErrorPolicyService.layer,
+	ErrorsService.layer,
+	IssueFixVerificationService.layer,
+	QueryEngineService.layer,
+	RecommendationIssueService.layer,
+	RepoSandboxService.layer,
+	SetupAuditService.layer,
+	VcsSourceService.layer,
+	WarehouseQueryService.layer,
+).pipe(
+	Layer.provide(
+		CloudflareRepoSandboxLive.pipe(
+			Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)),
+		),
+	),
+	Layer.provide(PullRequestLookupLive),
+)
+
 export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExecutorApi>()(
 	"@maple/api/mcp/McpToolExecutor",
 	{
@@ -175,5 +229,5 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(McpRuntimeServicesLive))
 }

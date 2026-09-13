@@ -1,9 +1,9 @@
 import { McpQueryError, optionalStringParam, validationError, type McpToolRegistrar } from "./types"
-import { formatTable } from "@ai/mcp/lib/format"
+import { formatTable } from "../lib/format"
 import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { ErrorIssueReadModelsService } from "@/services/errors/ErrorIssueReadModelsService"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueId } from "@maple/domain/http"
 
 const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)

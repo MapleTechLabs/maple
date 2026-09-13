@@ -13,8 +13,8 @@ import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OpenAiClient } from "@effect/ai-openai-compat"
 import { OpenRouterClient } from "@effect/ai-openrouter"
-import { McpToolExecutor } from "@ai/mcp/dispatcher"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { McpToolExecutor } from "../mcp/dispatcher"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	runInvestigationFanout,
 	type InvestigationFanoutDeps,

@@ -1,14 +1,21 @@
+import { FetchHttpClient } from "effect/unstable/http"
 import { createCipheriv, randomBytes } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } from "@/platform/test-pglite"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { OAuthStateRepository } from "@/services/auth/OAuthStateRepository"
-import { SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
-import { slackSecretAad } from "@/services/integrations/slack-bot-token"
+import { Env } from "@maple/backend/platform/Env"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
+import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
+import { slackSecretAad } from "@maple/backend/services/integrations/slack-bot-token"
 import { SlackInternalRouter } from "./slack-integration.http"
 
 const trackedDbs: TestDb[] = []
@@ -103,7 +110,11 @@ const makeRouterLayer = (
 	workerEnv?: Record<string, unknown>,
 ) => {
 	const layer = SlackInternalRouter.pipe(
-		Layer.provide(SlackIntegrationService.layer),
+		Layer.provide(
+			Layer.effect(SlackIntegrationService, SlackIntegrationService.make).pipe(
+				Layer.provide(FetchHttpClient.layer),
+			),
+		),
 		Layer.provide(Layer.mergeAll(ApiKeysService.layer, OAuthStateRepository.layer)),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),

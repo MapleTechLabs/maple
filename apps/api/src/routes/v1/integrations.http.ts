@@ -25,14 +25,6 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	MapleApi,
-	PlanetScaleDatabasesResponse,
-	PlanetScaleDisconnectResponse,
-	PlanetScaleEventsResponse,
-	PlanetScaleOrganizationsResponse,
-	PlanetScaleOrganizationSummary,
-	PlanetScaleQueryInsightsResponse,
-	PlanetScaleStartConnectResponse,
-	PlanetScaleWebhookConfigResponse,
 	RoleName,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
@@ -46,12 +38,12 @@ import { cloudflareAnalyticsState } from "@maple/db"
 import { EdgeCacheService } from "@maple/cache"
 import { and, desc, eq, ne } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
-import { Database } from "@/platform/DatabaseLive"
-import { Env } from "@/platform/Env"
-import { graphqlQuery } from "@/services/integrations/CloudflareApi"
-import { CloudflareAnalyticsService } from "@/services/integrations/CloudflareAnalyticsService"
-import { CloudflareOAuthService } from "@/services/auth/CloudflareOAuthService"
-import { abrCount } from "@/services/integrations/cloudflare-analytics/mapping"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Env } from "@maple/backend/platform/Env"
+import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
+import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { abrCount } from "@maple/backend/services/integrations/cloudflare-analytics/mapping"
 import {
 	decodeTopTrafficResponse,
 	HTTP_DATASET,
@@ -59,21 +51,23 @@ import {
 	topTrafficFilterVariables,
 	topTrafficQuery,
 	type TopTrafficGroupDefinition,
-} from "@/services/integrations/cloudflare-analytics/queries"
-import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
+} from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import {
 	GOOGLE_ANALYTICS_CALLBACK_PATH,
 	GoogleAnalyticsOAuthService,
-} from "@/services/auth/GoogleAnalyticsOAuthService"
-import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
-import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
-import { VcsCommitService } from "@/services/integrations/vcs/VcsCommitService"
-import { VcsSourceService } from "@/services/integrations/vcs/VcsSourceService"
-import { HazelOAuthService } from "@/services/auth/HazelOAuthService"
-import { requireAdmin as requireAdminRole } from "@/services/auth/auth"
-import { summarizeCause } from "@/platform/describe-cause"
+} from "@maple/backend/services/auth/GoogleAnalyticsOAuthService"
+import {
+	PLANETSCALE_CALLBACK_PATH,
+	PlanetScaleOAuthService,
+} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
+import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
+import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -838,7 +832,6 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const planetscaleOAuth = yield* PlanetScaleOAuthService
 		const planetscaleConnection = yield* PlanetScaleConnectionService
 		const googleAnalyticsOAuth = yield* GoogleAnalyticsOAuthService
-		const googleAnalytics = yield* GoogleAnalyticsService
 		const env = yield* Env
 
 		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
@@ -1341,7 +1334,8 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 					htmlResponse(
 						googleAnalyticsCallbackPage({
 							status: "success",
-							message: "Google Analytics connected. You can close this window and return to Maple.",
+							message:
+								"Google Analytics connected. You can close this window and return to Maple.",
 							returnTo: result.returnTo,
 						}),
 					),
@@ -1361,12 +1355,13 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 							),
 						),
 					"@maple/http/errors/IntegrationsPersistenceError": () =>
-						Effect.succeed(googleAnalyticsErrorPage("Failed to complete Google Analytics connection")),
+						Effect.succeed(
+							googleAnalyticsErrorPage("Failed to complete Google Analytics connection"),
+						),
 				}),
 			)
 		})
 
 		yield* router.add("GET", GOOGLE_ANALYTICS_CALLBACK_PATH, handleGoogleAnalytics)
-
 	}),
 )

@@ -8,9 +8,9 @@ import {
 	V2UnexpectedFailure,
 	V2UnexpectedErrors,
 } from "@maple/domain/http/v2"
-import { failureStackOf, failureTypeOf, recordRenderedFailure } from "@/routes/rendered-failure"
-import { describeSchemaIssue } from "@/routes/schema-error-detail"
-import { observeServerError } from "@/routes/server-error-observability"
+import { failureStackOf, failureTypeOf, recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { describeSchemaIssue } from "@maple/backend/http/schema-error-detail"
+import { observeServerError } from "@maple/backend/http/server-error-observability"
 
 type V2SchemaBoundaryError =
 	| ReturnType<typeof V2InvalidRequest.make>

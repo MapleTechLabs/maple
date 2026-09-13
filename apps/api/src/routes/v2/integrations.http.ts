@@ -35,21 +35,30 @@ import {
 	V2TimeRangeInvalid,
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { requireAdmin } from "@/services/auth/auth"
-import { Env } from "@/platform/Env"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheService } from "@maple/cache"
 import {
 	GOOGLE_ANALYTICS_CALLBACK_PATH,
 	GoogleAnalyticsOAuthService,
-} from "@/services/auth/GoogleAnalyticsOAuthService"
-import type { GoogleAnalyticsIntegrationStatus } from "@/services/integrations/GoogleAnalyticsService"
-import { GoogleAnalyticsService } from "@/services/integrations/GoogleAnalyticsService"
-import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
-import type { SlackChannelList, SlackInstallStatus } from "@/services/integrations/SlackIntegrationService"
-import { SLACK_CALLBACK_PATH, SlackIntegrationService } from "@/services/integrations/SlackIntegrationService"
+} from "@maple/backend/services/auth/GoogleAnalyticsOAuthService"
+import type { GoogleAnalyticsIntegrationStatus } from "@maple/backend/services/integrations/GoogleAnalyticsService"
+import { GoogleAnalyticsService } from "@maple/backend/services/integrations/GoogleAnalyticsService"
+import {
+	PLANETSCALE_CALLBACK_PATH,
+	PlanetScaleOAuthService,
+} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import type {
+	SlackChannelList,
+	SlackInstallStatus,
+} from "@maple/backend/services/integrations/SlackIntegrationService"
+import {
+	SLACK_CALLBACK_PATH,
+	SlackIntegrationService,
+} from "@maple/backend/services/integrations/SlackIntegrationService"
 
 /**
  * How long `prime` spends on the post-connect poll. Long enough for property discovery plus a

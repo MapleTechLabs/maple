@@ -5,9 +5,9 @@
  * Maple's ClickHouse schema to a customer's BYO cluster, chunking heavy
  * backfills across durable steps so they never hit the Worker request budget.
  */
-import { layerPg } from "@/platform/DatabasePgLive"
-import { withPgConnectionScope } from "@/platform/pg-connection-scope"
-import { mapleDbConnectionLayer } from "@/platform/pg-connection-source"
+import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
+import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import { MapleDb } from "@maple/infra/cloudflare"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"

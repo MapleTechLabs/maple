@@ -13,14 +13,14 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { decodeDataSourceJson, decodeWidgetJson, withDashboardMutation } from "./dashboard-mutations"
 import { CurrentMcpTenant } from "./query-warehouse"
-import { registerUpdateDashboardTool } from "@ai/mcp/tools/update-dashboard"
-import type { McpToolError, McpToolRegistrar, McpToolResult } from "@ai/mcp/tools/types"
+import { registerUpdateDashboardTool } from "../tools/update-dashboard"
+import type { McpToolError, McpToolRegistrar, McpToolResult } from "../tools/types"
 
 const trackedDbs: TestDb[] = []
 

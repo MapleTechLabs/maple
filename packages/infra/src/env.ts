@@ -296,7 +296,7 @@ export const googleAnalyticsOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_GOOGLE_ANALYTICS_ADMIN_API_BASE_URL"),
 )
 
-/** Apple push (iOS app) — token auth; see `apps/api/src/platform/Apns.ts`. */
+/** Apple push (iOS app) — token auth; see `packages/backend/src/platform/Apns.ts`. */
 export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),

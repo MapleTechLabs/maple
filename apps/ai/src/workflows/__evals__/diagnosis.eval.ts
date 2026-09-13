@@ -25,9 +25,9 @@
 import { generateObject, jsonSchema } from "ai"
 import { describe, it } from "vitest"
 import { describeEval, type TaskResult } from "vitest-evals"
-import { INVESTIGATE_SYSTEM_PROMPT } from "@ai/chat/prompts"
-import { PLANNER_SYSTEM_PROMPT } from "@ai/workflows/planner-prompt"
-import { createEvalModel, hasEvalCredentials } from "@ai/mcp/__evals__/model"
+import { INVESTIGATE_SYSTEM_PROMPT } from "../../chat/prompts"
+import { PLANNER_SYSTEM_PROMPT } from "../planner-prompt"
+import { createEvalModel, hasEvalCredentials } from "../../mcp/__evals__/model"
 import { DIAGNOSIS_FIXTURES, type DiagnosisFixture } from "./diagnosis-fixtures"
 import {
 	scoreCauseMatch,

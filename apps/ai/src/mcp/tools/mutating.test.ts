@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { mapleToolCatalog } from "./registry"
 import { MUTATING_TOOL_NAMES } from "./mutating"
 import { evaluatePermission, isToolVisible } from "@maple/domain/permission"
-import { DEFAULT_RULESET, READ_ONLY_RULESET } from "@ai/chat/permissions"
+import { DEFAULT_RULESET, READ_ONLY_RULESET } from "../../chat/permissions"
 
 describe("MUTATING_TOOL_NAMES", () => {
 	it("every approval-gated tool exists in the registry", () => {

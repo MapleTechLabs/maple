@@ -15,6 +15,7 @@ import { cn } from "../../lib/utils"
 import type { ChartLegendMode } from "../charts/_shared/chart-types"
 import { QueryBuilderLegend } from "../charts/_shared/query-builder-legend"
 import { hasOnlyIntegerValues } from "../charts/_shared/sparse-series"
+import { DASHED_Y_GRID } from "./plot-grid"
 import { findFirstPartialIndex } from "./partial-buckets"
 import { usePlotTimeZone } from "./time-zone-context"
 import { PlotFrame, usePlotLegendSlot, type PlotFrameProps, type PlotLegendItem } from "./plot-frame"
@@ -632,6 +633,9 @@ export function timeseriesYAxis(options: TimeseriesYAxisOptions) {
 	return {
 		domain,
 		y: {
+			// Dashed, which the built-in grid could not be until `grid` took a
+			// `ChartGuideLineStyle` — see `plot-grid.ts`.
+			grid: DASHED_Y_GRID,
 			// The domain lives on the SCALE — `ChartAxisOptions` has no `domain`
 			// field, and an instance is what pins it (a bare factory infers, which
 			// is how the zero anchor gets lost).
@@ -640,9 +644,6 @@ export function timeseriesYAxis(options: TimeseriesYAxisOptions) {
 			// from the plot's pixel height, so the domain computed above and the
 			// axis drawn would agree only at some window sizes.
 			nice: logScale ? false : NICE_TICK_COUNT,
-			// No `grid` — the built-in one is solid and nothing dashes it. Every
-			// chart on this axis emits `dashedGridY()` as its first mark instead;
-			// see `plot-grid.ts`.
 			axis: {
 				line: false,
 				// There is no `allowDecimals`; integer-only data supplies its tick

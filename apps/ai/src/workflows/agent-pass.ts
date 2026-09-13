@@ -28,20 +28,20 @@ import { ThreadId } from "@effect-agent/core/Identifiers"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
-import { agentPolicyFor, buildSystemPrompt, type AgentDefinition } from "@ai/chat/agents"
-import { buildMapleToolkit } from "@ai/mcp/tools/llm-tools"
+import { agentPolicyFor, buildSystemPrompt, type AgentDefinition } from "../chat/agents"
+import { buildMapleToolkit } from "../mcp/tools/llm-tools"
 import { evaluatePermission } from "@maple/domain/permission"
-import { accumulateUsage, makeRunUsage, type RunUsage } from "@ai/chat/tools"
+import { accumulateUsage, makeRunUsage, type RunUsage } from "../chat/tools"
 import {
 	type LlmClients,
 	type ResolvedModel,
 	agentSessionSpanAttributes,
 	genAiProviderName,
-} from "@ai/platform/Llm"
-import { invokeAgentAttributes } from "@ai/platform/genai-spans"
-import { McpToolExecutor } from "@ai/mcp/dispatcher"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { summarizeCause } from "@/platform/describe-cause"
+} from "../platform/Llm"
+import { invokeAgentAttributes } from "../platform/genai-spans"
+import { McpToolExecutor } from "../mcp/dispatcher"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 /**
  * The answer's schema must decode *and* encode without services.

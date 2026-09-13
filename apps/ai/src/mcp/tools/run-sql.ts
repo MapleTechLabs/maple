@@ -1,20 +1,22 @@
 import {
 	optionalNumberParam,
-	optionalStringParam,
 	optionalTimeParam,
 	requiredStringParam,
 	type McpToolRegistrar,
 	type McpToolResult,
 } from "./types"
 import { Effect, Schema } from "effect"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { resolveTimeRange } from "@ai/mcp/lib/time"
-import { autoBucketSeconds, runRawSql } from "@ai/mcp/lib/run-raw-sql"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { formatTable, truncate } from "@ai/mcp/lib/format"
-import { toMcpQueryError } from "@ai/mcp/lib/map-warehouse-error"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { resolveTimeRange } from "../lib/time"
+import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
+import { createDualContent } from "../lib/structured-output"
+import { formatTable, truncate } from "../lib/format"
+import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { McpQueryError } from "./types"
-import { describeWarehouseTable, listWarehouseTables } from "@/services/warehouse/warehouse-catalog"
+import {
+	describeWarehouseTable,
+	listWarehouseTables,
+} from "@maple/backend/services/warehouse/warehouse-catalog"
 
 // Rows returned to the model are capped so a wide/long result doesn't blow the
 // context. The full count is always reported via meta.rowCount.

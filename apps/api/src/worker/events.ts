@@ -2,7 +2,7 @@
  * What a background event (a cron fire, a queue batch) shares.
  */
 import { Cause, Effect, type Layer } from "effect"
-import { withPgConnectionScope } from "../platform/pg-connection-scope"
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 
 /**
  * One background event: its program on one Postgres socket, over the layer it

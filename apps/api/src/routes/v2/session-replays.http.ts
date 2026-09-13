@@ -26,8 +26,8 @@ import type {
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Layer, Option, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { ReplayBlobStore } from "@/platform/ReplayBlobStore"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 
 const decodeSessionId = Schema.decodeSync(SessionId)
 const decodeTraceId = Schema.decodeSync(TraceId)

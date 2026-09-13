@@ -8,8 +8,8 @@
  * cannot drift by accident.
  */
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
-import { MUTATING_TOOL_NAMES } from "@ai/mcp/tools/mutating"
-import { mapleToolCatalog } from "@ai/mcp/tools/registry"
+import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
+import { mapleToolCatalog } from "../mcp/tools/registry"
 
 /**
  * Today's behaviour, expressed as data: everything runs, mutations stop and ask.

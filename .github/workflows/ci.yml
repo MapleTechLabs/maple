@@ -113,7 +113,8 @@ jobs:
                       clickhouse:
                         - *base
                         - 'lib/effect-clickhouse-http/**'
-                        - 'apps/api/src/services/warehouse/**'
+                        - 'apps/api/scripts/query-bench/**'
+                        - 'packages/backend/src/services/warehouse/**'
                         - 'packages/db/**'
                         - 'scripts/*clickhouse*'
                         # The SQL catalog sweep lives in this job, so a change to a
@@ -140,7 +141,7 @@ jobs:
                         # so this job is the ONLY place `layerPg` meets a real
                         # server — narrow these and the per-request socket
                         # guarantee stops being checked.
-                        - 'apps/api/src/platform/**'
+                        - 'packages/backend/src/platform/**'
                         - 'apps/api/test/integration/**'
                         - 'apps/api/vitest.integration.config.ts'
                         - 'packages/db/**'
@@ -548,7 +549,7 @@ jobs:
                   CLICKHOUSE_E2E_USER: maple
                   CLICKHOUSE_E2E_PASSWORD: maple
               run: >-
-                  bun run --filter=@maple/api test --
+                  bun run --filter=@maple/backend test --
                   src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts
 
             # Type-checks every SQL shape the product can emit against the real
@@ -562,7 +563,7 @@ jobs:
                   CLICKHOUSE_E2E_PASSWORD: maple
               run: >-
                   bun run --filter=@maple/api test --
-                  src/services/warehouse/query-benchmark.clickhouse.e2e.test.ts
+                  scripts/query-bench/catalog.clickhouse.e2e.test.ts
 
             # The catalog sweep proves the rollup SQL parses; this proves it
             # AGREES with the raw path it replaced. A divergence here renders as a
@@ -574,7 +575,7 @@ jobs:
                   CLICKHOUSE_E2E_USER: maple
                   CLICKHOUSE_E2E_PASSWORD: maple
               run: >-
-                  bun run --filter=@maple/api test --
+                  bun run --filter=@maple/backend test --
                   src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
 
     local-checkpoint-native:

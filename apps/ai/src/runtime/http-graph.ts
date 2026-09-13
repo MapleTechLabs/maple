@@ -1,3 +1,4 @@
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 /**
  * Every route the AI Worker serves, as one layer.
  *
@@ -20,19 +21,19 @@ import { MapleAiApi } from "@maple/domain/http"
 import { Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { McpLive } from "@ai/mcp/app"
-import { HttpChatLive } from "@ai/routes/internal/chat.http"
-import { ChatSessionsRouter } from "@ai/routes/v1/chat-sessions.http"
-import { HealthRouter } from "@ai/routes/health"
-import { API_CORS_OPTIONS } from "@/http/api-cors"
-import { Env } from "@/platform/Env"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { AuditLogLive } from "@/runtime/warehouse-layer"
-import { McpToolRateLimiter } from "@/services/auth/McpToolRateLimiter"
-import { SessionAuthorizationLayer } from "@/services/auth/SessionAuthorizationLayer"
-import { V1ErrorBoundaryLive } from "@/routes/v1/error-boundary"
-import type { AiPortsLayer } from "@ai/worker/bindings"
+import { McpLive } from "../mcp/app"
+import { HttpChatLive } from "../routes/internal/chat.http"
+import { ChatSessionsRouter } from "../routes/v1/chat-sessions.http"
+import { HealthRouter } from "../routes/health"
+import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
+import { Env } from "@maple/backend/platform/Env"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
+import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import type { AiPortsLayer } from "../worker/bindings"
 
 /**
  * Services a raw router's handlers still expect from the request context, beyond the Worker's
@@ -92,6 +93,6 @@ export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLayer).pipe(
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
-	Layer.provideMerge(AuditLogLive.pipe(Layer.provide(Env.layer))),
-	Layer.provideMerge(Env.layer),
+	Layer.provideMerge(AuditLogService.layer.pipe(Layer.provide(Env.layer))),
+	Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

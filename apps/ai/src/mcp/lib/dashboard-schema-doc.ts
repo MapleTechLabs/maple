@@ -1,10 +1,4 @@
-import {
-	PANEL_TYPES,
-	WIDGET_TYPES,
-	WIDGET_UNITS,
-	type PanelType,
-	type WidgetTypeMeta,
-} from "@maple/domain/http"
+import { PANEL_TYPES, WIDGET_TYPES, WIDGET_UNITS, type WidgetTypeMeta } from "@maple/domain/http"
 import {
 	makeProductEventsFunnelDataSource,
 	makeQueryDataSource,
@@ -15,7 +9,7 @@ import {
 import { AGGREGATIONS_BY_SOURCE, GROUP_BY_TOKENS } from "@maple/query-engine/query-builder"
 import { QUERY_BUILDER_METRIC_TYPES, QUERY_BUILDER_SIGNAL_SOURCES } from "@maple/query-model"
 import { TRACES_NUMERIC_AGGREGATIONS } from "@maple/query-engine/query-builder"
-import { makeQueryDraft } from "@/dashboard-templates/helpers"
+import { makeQueryDraft } from "@maple/backend/dashboard-templates/helpers"
 
 /**
  * The agent-facing description of what a dashboard widget can be.

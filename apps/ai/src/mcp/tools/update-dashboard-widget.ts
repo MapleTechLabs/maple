@@ -1,16 +1,16 @@
 import { McpQueryError, requiredStringParam, validationError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { decodeWidgetJson, withDashboardMutation } from "@ai/mcp/lib/dashboard-mutations"
-import { formatRenderIssues, validateWidgetRenderability } from "@ai/mcp/lib/validate-widget-renderability"
-import { resolvePanelType } from "@ai/mcp/lib/panel-type"
-import { withScalarReduction } from "@ai/mcp/lib/raw-sql-widget"
+import { createDualContent } from "../lib/structured-output"
+import { decodeWidgetJson, withDashboardMutation } from "../lib/dashboard-mutations"
+import { formatRenderIssues, validateWidgetRenderability } from "../lib/validate-widget-renderability"
+import { resolvePanelType } from "../lib/panel-type"
+import { withScalarReduction } from "../lib/raw-sql-widget"
 import {
 	collectBlockingBuilderWarnings,
 	formatValidationSummary,
 	inspectWidgetsAfterMutation,
-} from "@ai/mcp/lib/inspect-widget"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
+} from "../lib/inspect-widget"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 
 const TOOL = "update_dashboard_widget"
 

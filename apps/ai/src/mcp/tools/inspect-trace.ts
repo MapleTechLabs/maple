@@ -5,13 +5,13 @@ import {
 	requiredStringParam,
 	type McpToolRegistrar,
 } from "./types"
-import { clampLimit } from "@ai/mcp/lib/limits"
-import { warehouseToMcpHandlers } from "@ai/mcp/lib/map-warehouse-error"
-import { withTenantExecutor } from "@ai/mcp/lib/query-warehouse"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { clampLimit } from "../lib/limits"
+import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { renderTraceOverview } from "@ai/mcp/lib/render-trace"
+import { createDualContent } from "../lib/structured-output"
+import { renderTraceOverview } from "../lib/render-trace"
 import { inspectTrace, type SpanNode } from "@maple/query-engine/observability"
 
 /**

@@ -1,12 +1,12 @@
 import { Effect, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { Env } from "@/platform/Env"
+import { Env } from "@maple/backend/platform/Env"
 import {
 	MCP_OAUTH_SCOPE,
 	McpOAuthProtocolError,
 	McpOAuthRateLimitError,
 	McpOAuthService,
-} from "@/services/auth/McpOAuthService"
+} from "@maple/backend/services/auth/McpOAuthService"
 
 const RegistrationRequest = Schema.Struct({
 	client_name: Schema.String,

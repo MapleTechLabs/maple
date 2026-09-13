@@ -11,16 +11,16 @@ import { IncidentTriagePrompt } from "./prompts/incident-triage"
 import { InstructionsResource } from "./resources/instructions"
 import type { McpToolExecutor } from "./dispatcher"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
-import { type AuditActorInfo, CurrentAuditActor } from "@/services/auth/audit-actor"
+import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
 	McpToolRateLimiter,
-} from "@/services/auth/McpToolRateLimiter"
-import { Env } from "@/platform/Env"
+} from "@maple/backend/services/auth/McpToolRateLimiter"
+import { Env } from "@maple/backend/platform/Env"
 
 const MCP_PROTOCOL_VERSION_HEADER = "mcp-protocol-version"
 

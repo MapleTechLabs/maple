@@ -10,10 +10,10 @@ import {
 } from "@maple/domain/http/v2"
 import type { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { requireAdmin } from "@/services/auth/auth"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 
 const adminOnly = (action: string) => () =>
 	V2InsufficientPermissions.make(`Only org admins can ${action} API keys`)

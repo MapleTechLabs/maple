@@ -9,10 +9,10 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { CliDeviceAuthService } from "@/services/auth/CliDeviceAuthService"
-import { McpOAuthService } from "@/services/auth/McpOAuthService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
+import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 
 const bearerToken = (header: string | undefined) => {
 	if (!header) return undefined

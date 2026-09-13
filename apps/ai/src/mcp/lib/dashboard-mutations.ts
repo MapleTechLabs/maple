@@ -15,9 +15,9 @@ import {
 	widgetTypeByVisualization,
 	withWidgets,
 } from "@maple/domain/http"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { McpQueryError } from "@ai/mcp/tools/types"
+import { CurrentMcpTenant } from "./query-warehouse"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { McpQueryError } from "../tools/types"
 
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
@@ -183,12 +183,12 @@ export { findNextPosition as findNextWidgetPosition }
  * receives a `DashboardConcurrencyError` (mapped here to `McpQueryError`),
  * which is preferable to a silent lost update.
  */
-export const withDashboardMutation = Effect.fn("withDashboardMutation")(function* <R>(
+export const withDashboardMutation = Effect.fn("withDashboardMutation")(function* (
 	dashboardId: string,
 	tool: string,
 	transform: (
 		existingWidgets: ReadonlyArray<DashboardWidget>,
-	) => Effect.Effect<ReadonlyArray<DashboardWidget>, McpQueryError, R>,
+	) => Effect.Effect<ReadonlyArray<DashboardWidget>, McpQueryError>,
 ) {
 	const tenant = yield* CurrentMcpTenant
 	const persistence = yield* DashboardPersistenceService

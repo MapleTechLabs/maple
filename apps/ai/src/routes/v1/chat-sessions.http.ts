@@ -34,11 +34,11 @@ import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-sessio
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { AuthService } from "@/services/auth/AuthService"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { Env } from "@/platform/Env"
-import { resolveHttpMcpTenant } from "@ai/mcp/lib/query-warehouse"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { Env } from "@maple/backend/platform/Env"
+import { resolveHttpMcpTenant } from "../../mcp/lib/query-warehouse"
 
 const json = (body: unknown, status = 200) =>
 	HttpServerResponse.text(JSON.stringify(body), {

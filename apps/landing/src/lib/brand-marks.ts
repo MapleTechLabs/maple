@@ -1,6 +1,6 @@
 /**
  * Brand marks, mostly simple-icons paths (CC0); WarpStream is the chevron from
- * warpstream.com's own header lockup. The four observability vendors at the
+ * warpstream.com's own header lockup. The observability vendors at the
  * end are for /compare: their marks sit beside Maple's in the hero and on the
  * hub cards, in their own brand colours (a vs-pairing is the one place two
  * brand colours belong side by side). Rendered via
@@ -181,6 +181,13 @@ export const BRAND_MARKS = {
 			fill: "#FFFFFF",
 			fillRule: "evenodd",
 		},
+	},
+	axiom: {
+		name: "Axiom",
+		hex: "#000000",
+		// axiom.co's own mark-only lockup: one path on an 13×11 grid.
+		path: "m12.12 7.27-2.48-4.3a.8.8 0 0 0-.62-.37H7.48c-.36 0-.5-.25-.33-.56L8 .57A.38.38 0 0 0 7.67 0H5.52a.8.8 0 0 0-.62.36L.7 7.6a.8.8 0 0 0 0 .72l1.08 1.86c.18.31.47.32.65 0l.84-1.44c.18-.31.48-.31.66 0l.76 1.32c.11.2.4.36.62.36h4.98a.8.8 0 0 0 .62-.36l1.2-2.07a.8.8 0 0 0 0-.72m-3.34-.2c.18.3.03.56-.33.56H4.58c-.36 0-.5-.26-.33-.57L6.2 3.71c.18-.31.47-.31.65 0z",
+		viewBox: "0 0 13 11",
 	},
 } as const satisfies Record<string, BrandMark>
 

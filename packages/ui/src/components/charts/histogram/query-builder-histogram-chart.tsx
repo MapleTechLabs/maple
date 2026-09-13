@@ -9,7 +9,7 @@ import {
 	PlotFrame,
 	UNBOUNDED_FOCUS_DISTANCE,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	integerTickValues,
 	logYScale,
 	minBarLength,
@@ -172,6 +172,7 @@ function useCountAxis(maxCount: number, useLogY: boolean) {
 				// the answer to "the small bins vanish" — see `minBarLength`.
 				liftCount: (value: number) => value,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: logYScale(maxCount),
 					axis: { line: false, ticks: { size: 0, padding: 6, format: formatNumber } },
 				},
@@ -188,6 +189,7 @@ function useCountAxis(maxCount: number, useLogY: boolean) {
 			// thousands is the whole point of a distribution — see `minBarLength`.
 			liftCount: (value: number) => lift(value) ?? value,
 			y: {
+				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(domain),
 				axis: {
 					line: false,
@@ -251,7 +253,6 @@ function NumericHistogram({
 		() =>
 			defineChart({
 				marks: [
-					dashedGridY(),
 					// `rectY` does not exist at 0.16.0 — `@tanstack/charts/rect` exports
 					// only `rect` and `cell` — so the baseline is an explicit `y1`
 					// channel rather than an implied zero. Not a downgrade here: a log
@@ -364,7 +365,6 @@ function CategoricalHistogram({
 		() =>
 			defineChart({
 				marks: [
-					dashedGridY(),
 					barY(bins, {
 						x: (bin: PrebucketedBin) => bin.name,
 						// An EXPLICIT baseline, not the implied `y` one. `barY`'s implicit

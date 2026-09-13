@@ -20,10 +20,10 @@ import { PermissionRule } from "@maple/domain/permission"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
 import { MAX_TOOL_CALLS, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY, TURN_MAX_DURATION } from "./budgets"
-import { buildHypothesisSystemPrompt, hypothesisRuleset } from "@ai/workflows/hypothesis-catalogue"
-import { PLANNER_MAX_STEPS, PLANNER_SYSTEM_PROMPT, PLANNER_TOOL_NAMES } from "@ai/workflows/planner-prompt"
+import { buildHypothesisSystemPrompt, hypothesisRuleset } from "../workflows/hypothesis-catalogue"
+import { PLANNER_MAX_STEPS, PLANNER_SYSTEM_PROMPT, PLANNER_TOOL_NAMES } from "../workflows/planner-prompt"
 import type { PermissionRuleset } from "@maple/domain/permission"
-import type { ResolvedModel } from "@ai/platform/Llm"
+import type { ResolvedModel } from "../platform/Llm"
 import { DEFAULT_RULESET, READ_ONLY_RULESET } from "./permissions"
 import {
 	EXPLORE_SYSTEM_PROMPT,

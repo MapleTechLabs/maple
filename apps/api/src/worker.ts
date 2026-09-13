@@ -14,7 +14,6 @@
  * from those yields.
  */
 import {
-	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
 	MapleStack,
@@ -36,7 +35,7 @@ import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
-import { buildApp, makeFetch } from "./worker/http"
+import { makeAppGraphs, makeFetch } from "./worker/http"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
 
 /**
@@ -145,10 +144,10 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 			Cloudflare.WorkerExecutionContext,
 			Layer.CurrentMemoMap,
 		)(yield* Effect.context())
-		const app = yield* cachedRecoverable(buildApp(isolate, ports))
+		const { app, queryApp } = yield* makeAppGraphs(isolate, ports)
 		yield* registerCrons(ports)
 		yield* registerQueueConsumers(ports)
-		return { fetch: makeFetch(app, ports) }
+		return { fetch: makeFetch(app, ports, queryApp) }
 	}).pipe(
 		// The init IS the entry point: the cron and queue sources need the host
 		// Worker, which exists only here.
@@ -158,10 +157,9 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 				ApiBindingLayers,
 				Cloudflare.Workers.CronEventSourceLive,
 				Cloudflare.Queues.EventSourceLive,
-				WorkerTelemetry({
-					serviceName: "maple-api",
-					dropSpanNames: ["McpServer/Notifications."],
-				}),
+				// No `dropSpanNames`: the MCP server's notification spans are maple-ai's
+				// to drop now, and its telemetry config is where that option lives.
+				WorkerTelemetry({ serviceName: "maple-api" }),
 				// The references the bridge's `HttpMiddleware.tracer` reads, built into
 				// every event beside the SDK; they cannot live in the app graph.
 				AlchemyTelemetry.layer(ApiObservabilityLive),

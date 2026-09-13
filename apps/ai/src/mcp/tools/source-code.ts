@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { VcsSourceService } from "@/services/integrations/vcs/VcsSourceService"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { optionalNumberParam, optionalStringParam, requiredStringParam, type McpToolRegistrar } from "./types"
 import { McpQueryError, validationError } from "./types"
 

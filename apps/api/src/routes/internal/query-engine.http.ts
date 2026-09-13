@@ -91,21 +91,23 @@ import {
 	SpanId,
 } from "@maple/domain/http"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { Clock, Effect, Match, Option, Schema } from "effect"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { isMissingProductEvents, isMissingServiceOperationsRollup } from "@/services/warehouse/missing-table"
-import { makeDirectRouteCachePolicy, makeExecuteRawSql } from "@maple/query-engine/runtime"
-import { describeFailure, recordRawSqlAudit } from "@/services/audit/audit-access"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { traceCacheTtlSeconds } from "@/services/warehouse/trace-detail-cache"
+import { Clock, Effect, Option, Schema } from "effect"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import {
+	isMissingProductEvents,
+	isMissingServiceOperationsRollup,
+} from "@maple/backend/services/warehouse/missing-table"
+import { makeExecuteRawSql } from "@maple/query-engine/runtime"
+import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import {
 	CH,
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
-	parseWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
 } from "@maple/query-engine"
-import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
+
 import {
 	containerMetricSpec,
 	hostMetricSpec,
@@ -115,13 +117,13 @@ import {
 	toCloudflareFilters,
 	validateFunnelDefinition,
 	workloadMetricSpec,
-} from "@/routes/query-helpers"
+} from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
 import { productEventsFunnelOpts, type QueryDefinition } from "@maple/query-engine/registry"
-import { makeQueryRunners } from "@/routes/query-runner"
+import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
-import type { TenantContext } from "@/services/auth/AuthService"
+import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 // `warehouse.sqlQuery` fails with the warehouse error union (distinct tagged

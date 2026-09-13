@@ -1,85 +1,20 @@
+import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
  * first request, and the `fetch` handler the bridge serves around it.
  *
- * Copied from apps/api rather than imported. The two diverge in what they carry
- * around a request — api's has the v2 fallback, the isolate-age instrumentation
- * and the CORS preflight it answers for the whole origin — and a shared version
- * would have to grow a flag for each. What must not diverge is the isolate
- * context handling below, so that comment is carried over verbatim.
+ * Request handling belongs to this Worker; platform and isolate context ownership
+ * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { type Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
+import { type Context, Effect, Exit, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
-import { withPgConnectionScope } from "@/platform/pg-connection-scope"
-import { layerPg } from "@/platform/DatabasePgLive"
-import type { AiPortsLayer } from "@ai/worker/bindings"
-
-const WorkerFileSystemLive = FileSystem.layerNoop({})
-
-const WorkerHttpPlatformLive = Layer.effect(
-	HttpPlatform.HttpPlatform,
-	HttpPlatform.make({
-		platform: "web",
-		compression: HttpPlatform.makeCompressionWeb({
-			algorithms: ["gzip", "deflate"],
-			transform: (algorithm) => HttpPlatform.compressionTransformWeb(algorithm),
-		}),
-		fileResponse: (_path, status, statusText, headers) =>
-			HttpServerResponse.text("File responses are unavailable in the worker runtime", {
-				status,
-				statusText,
-				headers,
-			}),
-		fileWebResponse: (_file, status, statusText, headers) =>
-			HttpServerResponse.text("File responses are unavailable in the worker runtime", {
-				status,
-				statusText,
-				headers,
-			}),
-	}),
-).pipe(Layer.provideMerge(WorkerFileSystemLive), Layer.provideMerge(Etag.layer))
-
-export const WorkerPlatformLive = Layer.mergeAll(Path.layer, WorkerHttpPlatformLive)
-
-/**
- * A build run under the isolate's context — never the first event's fiber — on a
- * scope closed only if the build fails (workerd has no teardown).
- *
- * The builds run lazily on the first event, inside that event's fiber, and the
- * HttpApi group layers capture the fiber context they are built in and wrap
- * every route handler in it, overriding the per-request one: a graph built
- * inside request A served every later request with A's `HttpServerRequest` (its
- * bearer, its content-type, its body), A's execution context and A's
- * already-flushed span exporter. `isolate` is the context the init captured
- * before any event existed.
- */
-export const forIsolate =
-	(isolate: Context.Context<never>) =>
-	<A, E>(build: Effect.Effect<A, E, Scope.Scope>): Effect.Effect<A, E> =>
-		Effect.gen(function* () {
-			const scope = yield* Scope.make()
-			return yield* build.pipe(
-				Scope.provide(scope),
-				Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
-			)
-		}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
-
-/**
- * SAFETY: `toHttpEffect` keeps the routes' error and requirement markers in the
- * handler's type; the bridge's `safeHttpEffect` renders any escaping cause, so
- * the markers are discharged here, once.
- */
-const bridgeHandler = <E, R>(
-	handler: Effect.Effect<
-		HttpServerResponse.HttpServerResponse,
-		E,
-		R | Scope.Scope | HttpServerRequest.HttpServerRequest
-	>,
-): HttpEffect => handler as HttpEffect
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
+import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import type { AiPortsLayer } from "./bindings"
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -102,8 +37,8 @@ export const buildIsolateHandler = <ROut, E>(
 export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =>
 	Effect.gen(function* () {
 		const [{ McpServicesLive }, { AllRoutes, AiAuthLive }] = yield* Effect.all([
-			Effect.promise(() => import("@ai/runtime/mcp-service-graph")),
-			Effect.promise(() => import("@ai/runtime/http-graph")),
+			Effect.promise(() => import("../runtime/mcp-service-graph")),
+			Effect.promise(() => import("../runtime/http-graph")),
 		])
 		return yield* buildIsolateHandler(
 			isolate,

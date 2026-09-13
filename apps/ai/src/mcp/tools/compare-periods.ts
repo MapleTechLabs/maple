@@ -1,11 +1,11 @@
 import { McpQueryError, optionalStringParam, optionalTimeParam, type McpToolRegistrar } from "./types"
-import { queryWarehouse } from "@ai/mcp/lib/query-warehouse"
-import { getSpamPatternsParam } from "@/services/errors/spam-patterns"
-import { resolveTimeRange } from "@ai/mcp/lib/time"
-import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "@ai/mcp/lib/format"
+import { queryWarehouse } from "../lib/query-warehouse"
+import { getSpamPatternsParam } from "@maple/backend/services/errors/spam-patterns"
+import { resolveTimeRange } from "../lib/time"
+import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "../lib/format"
 import { Array as Arr, Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
+import { createDualContent } from "../lib/structured-output"
+import { formatNextSteps } from "../lib/next-steps"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 export function registerComparePeriodsTool(server: McpToolRegistrar) {

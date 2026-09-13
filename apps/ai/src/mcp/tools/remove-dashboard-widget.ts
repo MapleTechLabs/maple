@@ -1,7 +1,7 @@
 import { McpQueryError, requiredStringParam, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { withDashboardMutation } from "@ai/mcp/lib/dashboard-mutations"
+import { createDualContent } from "../lib/structured-output"
+import { withDashboardMutation } from "../lib/dashboard-mutations"
 
 const TOOL = "remove_dashboard_widget"
 

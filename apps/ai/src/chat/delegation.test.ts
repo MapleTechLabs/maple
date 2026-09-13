@@ -12,9 +12,9 @@ import { Effect, Schema } from "effect"
 import { Model } from "effect/unstable/ai"
 import { ScriptedModel } from "@effect-agent/testing/ScriptedModel"
 import { assert, describe, it } from "vitest"
-import type { McpToolExecutorApi } from "@ai/mcp/dispatcher"
-import type { ResolvedModel } from "@ai/platform/Llm"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import type { ResolvedModel } from "../platform/Llm"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeChatSessionId } from "@maple/domain/chat-session"
 import type { ScriptedStreamPart, ScriptedTurnInput } from "@effect-agent/testing/ScriptedModel"
 import { AGENTS, buildSystemPrompt, delegationToolName, spawnableFor } from "./agents"
@@ -75,7 +75,7 @@ describe("buildDelegation", () => {
 	})
 
 	it("names delegation tools apart from every Maple tool", async () => {
-		const { mapleToolCatalog } = await import("@ai/mcp/tools/registry")
+		const { mapleToolCatalog } = await import("../mcp/tools/registry")
 		const registry = new Set(mapleToolCatalog.map((definition) => definition.name))
 
 		for (const agent of spawners) {

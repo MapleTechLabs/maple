@@ -1,10 +1,10 @@
 /**
  * The investigation fan-out Workflow's contract, as its two callers see it.
  *
- * The api Worker hosts the Workflow as an alchemy class and binds it under
- * the class name; the alerting Worker binds the same physical workflow
+ * The AI Worker hosts the Workflow as an alchemy class and binds it under the
+ * class name; the api and alerting Workers bind the same physical workflow
  * cross-script under the SAME key, because the services that start
- * investigations (`AlertsService`, `ErrorsService`, …) run in both Workers and
+ * investigations (`AlertsService`, `ErrorsService`, …) run in those Workers and
  * read the binding by this one name.
  */
 import type { IssueSeverity } from "./http/errors"

@@ -3,7 +3,7 @@
 How an error goes from "something threw in production" to "fixed, and we checked".
 
 This is the flow both humans and agents are meant to follow. If you are changing anything under
-`apps/api/src/services/errors/`, this page is the contract you are changing.
+`packages/backend/src/services/errors/`, this page is the contract you are changing.
 
 ## The pieces
 
@@ -177,15 +177,15 @@ loop in verification without a human ever seeing it.
 
 ## The files
 
-| Concern                                 | File                                                          |
-| --------------------------------------- | ------------------------------------------------------------- |
-| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                          |
-| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                |
-| Transitions, leases, timeline events    | `apps/api/src/services/errors/ErrorIssueWorkflowService.ts`   |
-| The errors tick (incidents, regression) | `apps/api/src/services/errors/error-tick-persistence.ts`      |
-| Starting an investigation               | `apps/api/src/services/errors/ai-triage-enqueue.ts`           |
-| Planner / lenses / validator            | `apps/api/src/workflows/`                                     |
-| Writing a diagnosis back                | `apps/api/src/services/errors/apply-diagnosis.ts`             |
-| PR links and verification windows       | `apps/api/src/services/errors/IssueFixVerificationService.ts` |
-| The verification tick                   | `apps/api/src/services/errors/FixVerificationTickService.ts`  |
-| What agents are told                    | `apps/api/src/mcp/resources/instructions.ts`                  |
+| Concern                                 | File                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                  |
+| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                        |
+| Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`   |
+| The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`      |
+| Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`           |
+| Planner / lenses / validator            | `apps/api/src/workflows/`                                             |
+| Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`             |
+| PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts` |
+| The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`  |
+| What agents are told                    | `apps/api/src/mcp/resources/instructions.ts`                          |

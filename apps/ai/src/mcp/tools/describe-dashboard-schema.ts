@@ -5,7 +5,7 @@ import {
 	isDashboardSchemaSection,
 	renderDashboardSchemaIndex,
 	renderDashboardSchemaSection,
-} from "@ai/mcp/lib/dashboard-schema-doc"
+} from "../lib/dashboard-schema-doc"
 
 const TOOL = "describe_dashboard_schema"
 

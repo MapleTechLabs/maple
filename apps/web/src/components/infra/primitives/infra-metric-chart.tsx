@@ -8,7 +8,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -291,7 +291,6 @@ export function InfraMetricChart({
 				? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
 				: [],
 			marks: [
-				dashedGridY(),
 				// Labels sit at the domain's right end, whether that is the last row
 				// or a shared domain that outruns this chart's rows.
 				...thresholdRules(thresholds, {
@@ -304,6 +303,7 @@ export function InfraMetricChart({
 			scales: {
 				x: axis.x,
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: { line: false, ticks: { size: 0, padding: 8, format: tickFormatter } },
 				},

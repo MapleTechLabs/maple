@@ -1,12 +1,12 @@
 import { Effect, Schema } from "effect"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	RepoSandboxService,
 	SANDBOX_DEFAULT_TIMEOUT_SECONDS,
 	SANDBOX_MAX_OUTPUT_BYTES,
 	SANDBOX_MAX_TIMEOUT_SECONDS,
 	type SandboxCommandResult,
-} from "@/services/sandbox/RepoSandboxService"
+} from "@maple/backend/services/sandbox/RepoSandboxService"
 import type { SandboxError } from "@effect-agent/sandbox/Sandbox"
 import {
 	optionalBooleanParam,

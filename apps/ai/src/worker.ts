@@ -46,11 +46,14 @@ import {
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
+import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Context, Effect, Layer } from "effect"
-import { ChatSessionLive, ChatSessionObject } from "@ai/chat/ChatSession"
-import InvestigationFanoutWorkflow from "@ai/workflows/InvestigationFanoutWorkflow"
-import { aiPorts, AiBindingLayers, bindAiClients } from "@ai/worker/bindings"
-import { buildApp, makeFetch } from "@ai/worker/http"
+import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
+import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
+import { aiPorts, AiBindingLayers, bindAiClients } from "./worker/bindings"
+import { buildApp, makeFetch } from "./worker/http"
+import { AiObservabilityLive } from "./worker/observability"
 
 /**
  * The AI worker's resource bindings, split from the `Config`-sourced env so
@@ -95,7 +98,7 @@ const configuredEnv = (stage: MapleStage) =>
 		ingestKeyCryptoEnv,
 		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
 		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
-		// See `@ai/platform/Llm` for the provider-scoped model overrides.
+		// See `@/platform/Llm` for the provider-scoped model overrides.
 		optionalPlain("MAPLE_LLM_PROVIDER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
@@ -169,7 +172,22 @@ export default MapleAi.make(
 				// implementation; yielding the class above is what forces this to run,
 				// so the class reaches the generated entry's exports.
 				ChatSessionLive,
-				WorkerTelemetry({ serviceName: "maple-ai" }),
+				WorkerTelemetry({
+					serviceName: "maple-ai",
+					// Both carried over from apps/api with the surfaces they describe.
+					// `dropSpanNames` keeps the MCP server's notification spans out of
+					// export; the MCP identifiers are what keep an expected 400/401 —
+					// a tool call that does not decode, a missing credential — exporting
+					// with an `Ok` status and no exception event, per CLAUDE.md's rule
+					// that only 5xx is an `Error` span. `chat/turn-runner.ts` and the
+					// fan-out Workflow pass the same set to their own tracers; this is
+					// the public `/mcp` transport's.
+					dropSpanNames: ["McpServer/Notifications."],
+					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+				}),
+				// The references the bridge's `HttpMiddleware.tracer` reads, built into
+				// every event beside the SDK; they cannot live in the app graph.
+				AlchemyTelemetry.layer(AiObservabilityLive),
 			),
 		),
 	),

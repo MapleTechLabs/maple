@@ -1,6 +1,6 @@
 import { Effect, Exit, Option, Result, Schema } from "effect"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	QuerySpec,
 	type QueryEngineResult,
@@ -44,8 +44,8 @@ import {
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 } from "@maple/widgets/dashboard"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { summarizeCause } from "@/platform/describe-cause"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 // `RAW_SQL_ENDPOINT` and `QUERY_SHAPE_ENDPOINTS` are used here as LABELS, not as
 // dispatch keys — dispatch goes through `dataSourceRawSql` / `dataSourceQuerySet`,

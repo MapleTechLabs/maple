@@ -1,8 +1,8 @@
 import { Effect } from "effect"
 import { isReservedAgentName } from "@maple/domain/system-agents"
-import type { TenantContext } from "@/services/auth/tenant-context"
-import { ErrorActorsService } from "@/services/errors/ErrorActorsService"
-import { McpQueryError } from "@ai/mcp/tools/types"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { McpQueryError } from "../tools/types"
 
 /**
  * Agent-actor name derived from an MCP client's `initialize` clientInfo.name.

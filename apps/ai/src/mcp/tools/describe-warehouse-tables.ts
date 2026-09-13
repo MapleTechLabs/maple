@@ -1,6 +1,9 @@
 import { optionalStringParam, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { describeWarehouseTable, listWarehouseTables } from "@/services/warehouse/warehouse-catalog"
+import {
+	describeWarehouseTable,
+	listWarehouseTables,
+} from "@maple/backend/services/warehouse/warehouse-catalog"
 
 const TOOL = "describe_warehouse_tables"
 

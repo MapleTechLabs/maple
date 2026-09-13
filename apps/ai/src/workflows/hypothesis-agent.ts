@@ -15,10 +15,10 @@ import type {
 	InvestigationSubjectSnapshot,
 	LensCandidate,
 } from "@maple/domain/http"
-import type { ResolvedModel } from "@ai/platform/Llm"
+import type { ResolvedModel } from "../platform/Llm"
 import { Effect, Option } from "effect"
-import { hypothesisAgent } from "@ai/chat/agents"
-import type { TenantContext } from "@/services/auth/tenant-context"
+import { hypothesisAgent } from "../chat/agents"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { runAgentPass } from "./agent-pass"
 import { submitCandidate, submitDiagnosis } from "./submit-tools"
 import { buildIncidentContextMessage } from "@maple/domain/incident-context"

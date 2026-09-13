@@ -3,8 +3,8 @@ import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { V2TelemetrySignal, V2TelemetrySignals } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import type { SignalPresence, SignalPresenceReport } from "@/services/org/SignalPresenceService"
-import { SignalPresenceService } from "@/services/org/SignalPresenceService"
+import type { SignalPresence, SignalPresenceReport } from "@maple/backend/services/org/SignalPresenceService"
+import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 
 const toV2Signal = (presence: SignalPresence): V2TelemetrySignal => ({
 	object: "telemetry_signal",

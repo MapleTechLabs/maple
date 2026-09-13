@@ -30,13 +30,13 @@ import type {
 import type { DashboardShare, DashboardShareMode } from "@maple/domain/http"
 import type { DashboardId } from "@maple/domain/primitives"
 import { Clock, Effect, Option, Schema } from "effect"
-import { getTemplateById, listTemplateMetadata } from "@/dashboard-templates"
-import type { TemplateParameterValues } from "@/dashboard-templates"
+import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
+import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { convertPersesDashboardToPortable } from "@/services/dashboards/perses-dashboard-import"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
 
 const toV2Dashboard = (dashboard: DashboardDocument): V2Dashboard => ({
 	id: dashboard.id,

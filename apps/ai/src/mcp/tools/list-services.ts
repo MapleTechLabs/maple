@@ -1,13 +1,13 @@
 import { optionalStringParam, optionalTimeParam, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { resolveTimeRange } from "@ai/mcp/lib/time"
-import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "@ai/mcp/lib/format"
-import { formatNextSteps } from "@ai/mcp/lib/next-steps"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { toMcpQueryError } from "@ai/mcp/lib/map-warehouse-error"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { resolveTimeRange } from "../lib/time"
+import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "../lib/format"
+import { formatNextSteps } from "../lib/next-steps"
+import { createDualContent } from "../lib/structured-output"
+import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Array as Arr, Effect, Schema } from "effect"
 import { listServices } from "@maple/query-engine/observability"
-import { provideWarehouseExecutorFromTenant } from "@/services/warehouse/WarehouseQueryService"
+import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 export function registerListServicesTool(server: McpToolRegistrar) {
 	server.tool(

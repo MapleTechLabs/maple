@@ -10,7 +10,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	integerTickValues,
 	linearYDomain,
 	minBarLength,
@@ -122,7 +122,6 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 		() =>
 			defineChart({
 				marks: [
-					dashedGridY(),
 					barY(sorted, {
 						x: (point: TimeseriesPoint) => point.bucket,
 						y: (point: TimeseriesPoint) => liftCount(point.count),
@@ -144,6 +143,7 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 						},
 					},
 					y: {
+						grid: DASHED_Y_GRID,
 						scale: scaleLinear().domain(yDomain),
 						axis: {
 							line: false,

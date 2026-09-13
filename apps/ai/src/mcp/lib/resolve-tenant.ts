@@ -1,17 +1,17 @@
 import { timingSafeEqual } from "node:crypto"
 import { Effect, Option, Redacted, Schema } from "effect"
-import type { TenantContext as McpTenantContext } from "@/services/auth/tenant-context"
-import { AuthService } from "@/services/auth/AuthService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { Env } from "@/platform/Env"
+import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { Env } from "@maple/backend/platform/Env"
 import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
 import {
 	McpAuthInvalidError,
 	McpAuthMissingError,
 	McpAuthUnavailableError,
 	McpInvalidTenantError,
-} from "@ai/mcp/tools/types"
-import { recordExpectedMcpFailure } from "@ai/mcp/expected-failures"
+} from "../tools/types"
+import { recordExpectedMcpFailure } from "../expected-failures"
 
 /** Exported so the audit layer classifies the same token the same way. */
 export const INTERNAL_SERVICE_PREFIX = "maple_svc_"

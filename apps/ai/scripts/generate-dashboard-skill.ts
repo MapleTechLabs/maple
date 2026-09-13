@@ -15,7 +15,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { DASHBOARD_SCHEMA_SECTIONS, renderDashboardSchemaSection } from "@ai/mcp/lib/dashboard-schema-doc"
+import { DASHBOARD_SCHEMA_SECTIONS, renderDashboardSchemaSection } from "@/mcp/lib/dashboard-schema-doc"
 
 const SKILL_PATH = resolve(import.meta.dirname, "../../../skills/maple-dashboard-widgets/SKILL.md")
 

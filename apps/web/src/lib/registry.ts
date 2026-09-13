@@ -53,6 +53,8 @@ export const mapleAiClientLayer: Layer.Layer<MapleAiAtomClient> = appRegistry.ge
 // Sharing the registry memo map is load-bearing: nested `Effect.provide` calls
 // reuse the atom-owned client and tracer instances instead of rebuilding them.
 export const mapleRuntime = makeAppRuntime(
-	Layer.mergeAll(mapleApiClientLayer, mapleApiV2ClientLayer, mapleInternalClientLayer),
+	Layer.mergeAll(mapleApiClientLayer, mapleApiV2ClientLayer, mapleInternalClientLayer).pipe(
+		Layer.provideMerge(mapleOtelLayer),
+	),
 	appMemoMap,
 )

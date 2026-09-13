@@ -1,3 +1,4 @@
+import { WorkerPlatformLive } from "@maple/infra/worker-http"
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
@@ -7,10 +8,10 @@ import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { MapleDbConnection } from "./platform/bindings"
+import { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { recordRenderedFailure } from "./routes/rendered-failure"
-import { buildIsolateHandler, makeFetch, WorkerPlatformLive } from "./worker/http"
+import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { buildIsolateHandler, makeFetch } from "./worker/http"
 
 /**
  * One request the way alchemy's bridge runs it — `makeRequestHandler` is the
@@ -215,7 +216,10 @@ const event = (
 			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
 			request,
 		)
-		const fetchEvent = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
+		// Alchemy currently erases this helper's return type to any. Restore its boundary contract.
+		const fetchEvent:
+			| Effect.Effect<Response, never, Scope.Scope | Cloudflare.WorkerEnvironment>
+			| undefined = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
 			kind: "Cloudflare.Workers.WorkerEvent",
 			type: "fetch",
 			input: new Request(`http://api.maple.test${path}`, { method, headers }),
@@ -229,6 +233,64 @@ const event = (
 	}).pipe(Effect.scoped)
 
 describe("the api Worker through alchemy's bridge", () => {
+	it.effect("records isolate age for successful requests and graph-build failures", () =>
+		Effect.gen(function* () {
+			const success = yield* event(
+				"GET",
+				"/ok",
+				Effect.succeed(Effect.succeed(HttpServerResponse.text("ok"))),
+			)
+			const failed = yield* event(
+				"GET",
+				"/broken",
+				Effect.fail(new GraphBuildFailure({ message: "fixture" })),
+			)
+			assert.strictEqual(success.response.status, 200)
+			assert.strictEqual(failed.response.status, 504)
+			for (const result of [success, failed]) {
+				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.request_ordinal"), "1")
+				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.age_ms"), "0")
+			}
+		}),
+	)
+
+	it.effect("shares dependency instances without sharing routers between graphs", () =>
+		Effect.gen(function* () {
+			let acquisitions = 0
+			const dependency = Layer.effectDiscard(
+				Effect.sync(() => {
+					acquisitions++
+				}),
+			)
+			const memo = yield* Layer.makeMemoMap
+			const echo = yield* buildIsolateHandler(
+				Context.empty(),
+				HttpApiBuilder.layer(EchoApi).pipe(
+					Layer.provide(EchoHandlersLive),
+					Layer.provide(WorkerPlatformLive),
+					Layer.provide(dependency),
+				),
+				memo,
+			)
+			const logging = yield* buildIsolateHandler(
+				Context.empty(),
+				HttpApiBuilder.layer(LoggingApi).pipe(
+					Layer.provide(LoggingHandlersLive),
+					Layer.provide(WorkerPlatformLive),
+					Layer.provide(dependency),
+				),
+				memo,
+			)
+			assert.strictEqual(acquisitions, 1)
+			const own = yield* event("GET", "/echo", Effect.succeed(echo), { authorization: "first" })
+			const other = yield* event("GET", "/echo", Effect.succeed(logging))
+			const fresh = yield* event("GET", "/echo", Effect.succeed(echo), { authorization: "second" })
+			assert.strictEqual(own.response.status, 200)
+			assert.strictEqual(other.response.status, 404)
+			assert.strictEqual(fresh.body, '"second"')
+		}),
+	)
+
 	it.effect("answers liveness without the route graph", () =>
 		Effect.gen(function* () {
 			const { response, body } = yield* event(

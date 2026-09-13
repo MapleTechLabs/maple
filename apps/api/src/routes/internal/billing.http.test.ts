@@ -8,7 +8,7 @@ import {
 	makeEdgeCacheService,
 	makeMemoryBackend,
 } from "@maple/cache"
-import { Env } from "@/platform/Env"
+import { Env } from "@maple/backend/platform/Env"
 import {
 	CUSTOMER_CACHE_BUCKET,
 	CUSTOMER_CACHE_TTL_SECONDS,
@@ -19,8 +19,8 @@ import {
 	responseHasActivePlan,
 	responseHasPlanHistory,
 	summariseSubscriptions,
-} from "@/services/billing/autumn-client"
-import { AutumnClient, type AutumnResult } from "@/services/billing/autumn-http"
+} from "@maple/backend/services/billing/autumn-client"
+import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import {
 	BillingApiGroup,
 	BillingConflictError,
@@ -32,11 +32,11 @@ import {
 	UpdateBillingSpendLimit,
 	UpdateBillingUsageAlert,
 } from "@maple/domain/http"
-import { DailySpendService } from "@/services/billing/DailySpendService"
-import { ProductEventsService } from "@/services/product-events/ProductEventsService"
-import { StripeClient } from "@/services/billing/stripe-http"
+import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
+import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import { decodeInvoices, HttpBillingLive, resolveCycleWindow } from "./billing.http"
-import { V1ErrorBoundaryLive } from "../v1/error-boundary"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
 

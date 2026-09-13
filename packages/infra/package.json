@@ -14,7 +14,8 @@
 		"./env": "./src/env.ts",
 		"./worker-runtime": "./src/cloudflare/worker-runtime.ts",
 		"./worker-telemetry": "./src/cloudflare/worker-telemetry.ts",
-		"./workers-cache": "./src/cloudflare/workers-cache.ts"
+		"./workers-cache": "./src/cloudflare/workers-cache.ts",
+		"./worker-http": "./src/cloudflare/worker-http.ts"
 	},
 	"scripts": {
 		"test": "vitest run",

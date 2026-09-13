@@ -6,15 +6,6 @@ const readModule = (path: string): string => readFileSync(new URL(path, import.m
 const importSpecifiers = (source: string): ReadonlyArray<string> =>
 	Array.from(source.matchAll(/(?:from\s+|import\s*\()["']([^"']+)["']/g), (match) => match[1]!)
 
-const layerMembers = (source: string, name: string): ReadonlyArray<string> => {
-	const block = new RegExp(`const ${name} = Layer\\.mergeAll\\(([\\s\\S]*?)\\n\\)`).exec(source)?.[1]
-	if (block === undefined) throw new Error(`Layer ${name} was not found`)
-	return block
-		.split("\n")
-		.map((line) => line.trim().replace(/,$/, ""))
-		.filter((line) => line !== "")
-}
-
 describe("API runtime graph boundaries", () => {
 	it("keeps the service composition root free of HTTP routes and schemas", () => {
 		const imports = importSpecifiers(readModule("./service-graph.ts"))

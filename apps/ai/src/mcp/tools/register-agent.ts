@@ -6,10 +6,10 @@ import {
 	type McpToolRegistrar,
 } from "./types"
 import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "@ai/mcp/lib/structured-output"
-import { CurrentMcpTenant } from "@ai/mcp/lib/query-warehouse"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { ErrorActorsService } from "@/services/errors/ErrorActorsService"
+import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 
 const decodeStringArray = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
 

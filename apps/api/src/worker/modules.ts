@@ -1,7 +1,7 @@
 /**
  * The heavy modules the Worker reaches on the first event, never at module
  * scope. The static import graph behind the HTTP graph eagerly builds hundreds
- * of Effect Schema ASTs (`@maple/domain` + 47 MCP tool schemas) at
+ * of Effect Schema ASTs (`@maple/domain` and HTTP schemas) at
  * module-evaluation time. Cloudflare runs only the top-level module scope
  * during upload validation, so pulling that work in statically blew the fixed
  * ~1s startup CPU budget (error 10021). Behind `import()` the top level stays

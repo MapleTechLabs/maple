@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
-import { DemoService } from "@/services/org/DemoService"
+import { DemoService } from "@maple/backend/services/org/DemoService"
 
 export const HttpDemoLive = HttpApiBuilder.group(MapleInternalApi, "demo", (handlers) =>
 	Effect.gen(function* () {

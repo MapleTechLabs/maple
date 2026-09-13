@@ -65,9 +65,9 @@ jobs:
                   # The agent Worker did not exist before the split, so on an older
                   # base both the pathspec and the script are absent. Either way the
                   # base reads 0 and the delta is the whole cost, once.
-                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/ai/src apps/api/src packages/domain/src || true
+                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/ai/src apps/api/src packages/backend/src packages/domain/src || true
                   bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
-                  git checkout HEAD -- apps/ai/src apps/api/src packages/domain/src || true
+                  git checkout HEAD -- apps/ai/src apps/api/src packages/backend/src packages/domain/src || true
 
             - name: Summary
               run: |

@@ -41,24 +41,24 @@ import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-en
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyShareOgId } from "@maple/db"
 import { redactForShare } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema } from "effect"
-import { Env } from "@/platform/Env"
-import { AuthService } from "@/services/auth/AuthService"
+import { Env } from "@maple/backend/platform/Env"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
 import {
 	ApiV2RateLimiter,
 	shareIpRateLimitKey,
 	shareOgRateLimitKey,
 	shareTokenRateLimitKey,
-} from "@/services/auth/ApiV2RateLimiter"
-import { loadChartSeries } from "@/services/alerts/alert-chart-series"
-import { systemTenant } from "@/services/alerts/system-tenant"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { DashboardWidgetDataService } from "@/services/dashboards/DashboardWidgetDataService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { ogDescription, ogSubtitle, ogTiles, ogTitle } from "@/services/dashboards/share-og-card"
-import { OrganizationService } from "@/services/org/OrganizationService"
-import { resolveShareVariables } from "@/services/dashboards/share-variables"
-import { resolveShareWindow } from "@/services/dashboards/share-window"
+} from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { loadChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
+import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { ogDescription, ogSubtitle, ogTiles, ogTitle } from "@maple/backend/services/dashboards/share-og-card"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { resolveShareVariables } from "@maple/backend/services/dashboards/share-variables"
+import { resolveShareWindow } from "@maple/backend/services/dashboards/share-window"
 
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
 const decodeAlertRuleId = Schema.decodeUnknownEffect(AlertRuleId)

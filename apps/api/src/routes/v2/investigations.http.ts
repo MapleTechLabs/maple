@@ -21,8 +21,8 @@ import type {
 	V2InvestigationSubject,
 } from "@maple/domain/http/v2"
 import { Effect, Match, Schema } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { InvestigationService } from "@/services/errors/InvestigationService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 
 const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* (
 	investigationId: InvestigationId,

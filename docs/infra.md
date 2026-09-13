@@ -19,11 +19,11 @@ identifiers never move off api's origin.
 Measured before committing to the split (rolldown, unminified, same tree),
 dropping the MCP registry, the chat routes and the two hosted classes from api:
 
-| | with AI | without |
-| --- | --- | --- |
-| worker bundle | 11.74 MB | 9.34 MB |
-| bundle chunks | 85 | 50 |
-| module evaluation | ~336 ms | ~278 ms |
+|                   | with AI  | without |
+| ----------------- | -------- | ------- |
+| worker bundle     | 11.74 MB | 9.34 MB |
+| bundle chunks     | 85       | 50      |
+| module evaluation | ~336 ms  | ~278 ms |
 
 The per-request half is not in that table: a `/mcp` call no longer builds
 `AllRoutes` and `ApiAuthLive`, and a `/v2` call no longer builds 47 tool schemas.
@@ -243,32 +243,33 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   request carries `SANDBOX_INTERNAL_SERVICE_TOKEN` — deliberately not the shared
   `INTERNAL_SERVICE_TOKEN`, which lets its holder act as any organization.
 
-  Only `prd` and `stg` get one (`stageDeploysSandbox`). A PR preview has no application
-  database, so no repository resolves there; and on a dev stage `alchemy dev` would put a
-  multi-gigabyte `docker pull` between every developer and `bun dev`.
+    Only `prd` and `stg` get one (`stageDeploysSandbox`). A PR preview has no application
+    database, so no repository resolves there; and on a dev stage `alchemy dev` would put a
+    multi-gigabyte `docker pull` between every developer and `bun dev`.
 
-  What runs inside is one full `git clone` per commit under `/workspace/maple/<sha>`, kept
-  to the newest three. The clone is a **background process** the Worker polls, because a
-  container request is capped well below what a cold clone of a real repository takes; a
-  call that arrives first gets `SandboxRunCheckoutPending` and retries. The credential is a
-  GitHub token minted for that one repository with read-only contents, staged through the
-  container's file API into a root-only path and read by a git credential helper — never
-  put in a command, because every process's arguments are readable by the account the
-  agent's own commands run as. Commands run through a wrapper (`wrapCommand`): `env -i`
-  with a fixed environment, `runuser` to an unprivileged account that does not own the
-  tree, `unshare -n` for a network namespace with no egress, and each stream cut to the
-  request's bound where it is produced. The command's real exit status and whether the
-  namespace opened travel in a trailer, so a command exiting 97 is not mistaken for one
-  that never ran.
+    What runs inside is one full `git clone` per commit under `/workspace/maple/<sha>`, kept
+    to the newest three. The clone is a **background process** the Worker polls, because a
+    container request is capped well below what a cold clone of a real repository takes; a
+    call that arrives first gets `SandboxRunCheckoutPending` and retries. The credential is a
+    GitHub token minted for that one repository with read-only contents, staged through the
+    container's file API into a root-only path and read by a git credential helper — never
+    put in a command, because every process's arguments are readable by the account the
+    agent's own commands run as. Commands run through a wrapper (`wrapCommand`): `env -i`
+    with a fixed environment, `runuser` to an unprivileged account that does not own the
+    tree, `unshare -n` for a network namespace with no egress, and each stream cut to the
+    request's bound where it is produced. The command's real exit status and whether the
+    namespace opened travel in a trailer, so a command exiting 97 is not mistaken for one
+    that never ran.
 
-  **`unshare -n` needs `CAP_SYS_ADMIN`, and whether Cloudflare's container runtime grants
-  it is unverified.** Measured against the published image: under default container
-  capabilities it fails and the wrapper refuses to run the command; with the capability
-  added, the namespace opens and a lookup inside it is denied while the same lookup outside
-  succeeds. If the platform withholds it, every sandbox command returns
-  `SandboxRunIsolationUnavailable` and the tools are dead until the request stops asking
-  for isolation. It fails closed, which is the intended direction, but it needs proving on
-  a real deploy.
+    **`unshare -n` needs `CAP_SYS_ADMIN`, and whether Cloudflare's container runtime grants
+    it is unverified.** Measured against the published image: under default container
+    capabilities it fails and the wrapper refuses to run the command; with the capability
+    added, the namespace opens and a lookup inside it is denied while the same lookup outside
+    succeeds. If the platform withholds it, every sandbox command returns
+    `SandboxRunIsolationUnavailable` and the tools are dead until the request stops asking
+    for isolation. It fails closed, which is the intended direction, but it needs proving on
+    a real deploy.
+
 - **Assets** (`landing`, `local-ui`): the handler reads `Cloudflare.Workers.Request` and
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.
@@ -279,7 +280,7 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   metadata), nothing on previews. The api's Workflows yield it too, from their outer phase.
   The root yields `ManagedMapleDb` first on dev stages so its `MAPLE_PG_URL` read happens
   outside any init, where alchemy's plan-time ConfigProvider would bind it as a secret. Every
-  Postgres layer reads the `MapleDbConnection` port (`apps/api/src/platform/bindings.ts`),
+  Postgres layer reads the `MapleDbConnection` port (`packages/backend/src/platform/bindings.ts`),
   never the env.
 
 Still a factory: `web` (takes `api`, for the service binding); `ingest` and `electric` are
