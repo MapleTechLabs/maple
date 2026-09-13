@@ -51,6 +51,7 @@ const asDeploymentEnvironment = Schema.decodeUnknownSync(DeploymentEnvironment)
 const asCommitSha = Schema.decodeUnknownSync(CommitSha)
 const asMetricName = Schema.decodeUnknownSync(MetricName)
 const asProductEventKind = Schema.decodeUnknownSync(ProductEventKind)
+const isProductEventKind = Schema.is(ProductEventKind)
 
 const queryDataSchema = Schema.Struct({
 	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES).annotate({
@@ -128,7 +129,7 @@ const queryDataSchema = Schema.Struct({
 })
 
 const queryDataDescription =
-	"Query timeseries or breakdown data from traces, logs, or metrics. " +
+	"Query timeseries or breakdown data from traces, logs, metrics, or product events. " +
 	"Start here for trend analysis, comparisons, and top-N queries. " +
 	"For error investigation, prefer find_errors and error_detail. " +
 	"For attribute discovery, call explore_attributes first. " +
@@ -162,6 +163,16 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					"`group_by=attribute` requires `attribute_key`. Use explore_attributes to discover available keys.",
 					'group_by="attribute" attribute_key="http.method"',
 				)
+			}
+
+			if (params.event_kind !== undefined) {
+				const bad = splitCsv(params.event_kind).find((kind) => !isProductEventKind(kind))
+				if (bad !== undefined) {
+					return validationError(
+						`\`event_kind\` must be navigation, custom or screen (got "${bad}").`,
+						'source="product_events" event_kind="custom"',
+					)
+				}
 			}
 
 			if (params.source === "metrics") {

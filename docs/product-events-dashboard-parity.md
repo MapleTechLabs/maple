@@ -7,20 +7,20 @@ prefilled from a product-event widget all ran through the real stack. Phase 6 (d
 funnel special cases: `FunnelSource: "query_set"`, `isProductEventsFunnel` as a gate) is still open;
 so is the `SignalEmptyState` wiring, which cannot be exercised on an org that has events.
 
-## Where it stands today
+## Where it stood before this PR
 
-Dashboards know three query-builder sources: `traces`, `logs`, `metrics`
+Dashboards knew three query-builder sources: `traces`, `logs`, `metrics`
 (`QUERY_BUILDER_DATA_SOURCES` in `packages/query-model/src/query-draft.ts`). Each is a
 `QueryBuilderQueryDraft` variant that lowers to a `QuerySpec` (`packages/domain/src/query-engine.ts`)
 and runs through the query set (`packages/query-engine/src/query-set/*`), so every panel type,
 formula, comparison, alert rule, template and MCP tool gets it for free.
 
-Product events are not one of those. They reach dashboards through exactly one door: the funnel
+Product events were not one of those. They reached dashboards through exactly one door: the funnel
 widget's own `product_events_funnel` route (`PRODUCT_EVENTS_FUNNEL_ENDPOINT` in
 `packages/widgets/src/dashboard/construct.ts`), edited by `FunnelQueryPanel`, which the query
 panel shell explicitly documents as NOT a `QueryBuilderDataSource`
-(`apps/web/src/components/dashboard-builder/config/query-panel-shell.tsx`). Concretely, today you
-cannot:
+(`apps/web/src/components/dashboard-builder/config/query-panel-shell.tsx`). Concretely, you could
+not:
 
 - chart `signup_completed` per day as a line, stat, bar or pie;
 - break events down by name, host, page path, country, service or a `track()` prop;
@@ -38,19 +38,19 @@ props, so `attr.<key>` filters and group-bys matter more than they do for logs.
 
 ## Target: what "the same" means
 
-| Capability               | traces / logs / metrics                       | product_events after this plan                                                                      |
-| ------------------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Source select            | every panel                                   | every panel; funnel keeps its dedicated step editor as a second mode                                |
-| Aggregations             | per-source list                               | `count`, `uniq(sessions)`, `uniq(persons)`, `uniq(users)`, `uniq(visitors)`                          |
-| Where clause             | `service.name`, `attr.*`, `resource.*`, …     | `event.name`, `event.kind`, `source`, `host`, `page.path`, `service.name`, `user.id`, `group.id`, `attr.*` plus the session dimensions (`country`, `referrer.host`, `utm.*`, `device.type`, `browser`, `os`) |
-| Group by                 | closed set + `attr.` / `resource.`            | `event.name`, `event.kind`, `source`, `host`, `page.path`, `service.name`, `group.id`, `attr.<key>`   |
-| Shapes                   | timeseries, breakdown, list                   | all three                                                                                           |
-| Formulas / comparisons   | yes                                           | yes (falls out of the query set)                                                                    |
-| Alerts                   | yes                                           | yes, `sampleCountStrategy: "product_event_count"`                                                    |
-| MCP `query_data`         | yes                                           | yes                                                                                                 |
-| `create_dashboard` spec  | yes                                           | yes                                                                                                 |
-| Templates / gallery      | per-source tiles                              | "Events over time", "Top events", "Events by page", "Recent events" tiles                            |
-| Empty state              | `SignalEmptyState` per signal                 | already exists for `product_events`; wire it to the panel                                          |
+| Capability              | traces / logs / metrics                   | product_events after this plan                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Source select           | every panel                               | every panel; funnel keeps its dedicated step editor as a second mode                                                                                                                                         |
+| Aggregations            | per-source list                           | `count`, `uniq(sessions)`, `uniq(persons)`, `uniq(users)`, `uniq(visitors)`                                                                                                                                  |
+| Where clause            | `service.name`, `attr.*`, `resource.*`, … | `event.name`, `event.kind`, `source`, `host`, `page.path`, `service.name`, `user.id`, `group.id`, `attr.*` plus the session dimensions (`country`, `referrer.host`, `utm.*`, `device.type`, `browser`, `os`) |
+| Group by                | closed set + `attr.` / `resource.`        | `event.name`, `event.kind`, `source`, `host`, `page.path`, `service.name`, `group.id`, `attr.<key>`                                                                                                          |
+| Shapes                  | timeseries, breakdown, list               | all three                                                                                                                                                                                                    |
+| Formulas / comparisons  | yes                                       | yes (falls out of the query set)                                                                                                                                                                             |
+| Alerts                  | yes                                       | yes, `sampleCountStrategy: "product_event_count"`                                                                                                                                                            |
+| MCP `query_data`        | yes                                       | yes                                                                                                                                                                                                          |
+| `create_dashboard` spec | yes                                       | yes                                                                                                                                                                                                          |
+| Templates / gallery     | per-source tiles                          | "Events over time", "Top events", "Events by page", "Recent events" tiles                                                                                                                                    |
+| Empty state             | `SignalEmptyState` per signal             | already exists for `product_events`; wire it to the panel                                                                                                                                                    |
 
 Out of scope: retention/cohort charts, per-person timelines, session step semantics outside the
 funnel. The funnel's `keyBy` / `identity_links` person stitching stays funnel-only; the query-set
@@ -123,17 +123,17 @@ hangs off the `QuerySpec` arms from phase 1.
   `dataSource: Schema.Literal("product_events")`. Union it in. This is the persisted shape for
   BOTH widgets and `alert_rules.query_builder_draft_json`, so it is additive only.
 - `packages/query-engine/src/query-builder/model.ts`:
-  - `AGGREGATIONS_BY_SOURCE.product_events` = count, sessions, persons, users, visitors.
-  - `GROUP_BY_OPTIONS.product_events` and `GROUP_BY_TOKENS.product_events`
-    (`event.name`, `event.kind`, `source`, `host`, `page.path`, `service.name`, `group.id`, `attr.`, `none`).
-  - `applyProductEventsClause` mirrors `applyLogsClause`: `event.name`, `event.kind`, `source`,
-    `host`, `page.path`, `service.name`, `user.id`, `group.id`, `attr.<key>`, and the session keys
-    the funnel population filter already parses (`country`, `referrer.host`, `utm.source`, …,
-    reuse `productEventsFilterField` from `apps/web/src/lib/query-builder/funnel-filters.ts` by
-    lifting it into `@maple/query-model` where `FUNNEL_POPULATION_FILTER_FIELDS` already lives).
-  - `buildTimeseriesQuerySpec` gains the `product_events` branch; `buildBreakdownQuerySpec` and
-    `buildListQuerySpec` fall out.
-  - `resetQueryForDataSource` handles it (nothing metric-specific to carry).
+    - `AGGREGATIONS_BY_SOURCE.product_events` = count, sessions, persons, users, visitors.
+    - `GROUP_BY_OPTIONS.product_events` and `GROUP_BY_TOKENS.product_events`
+      (`event.name`, `event.kind`, `source`, `host`, `page.path`, `service.name`, `group.id`, `attr.`, `none`).
+    - `applyProductEventsClause` mirrors `applyLogsClause`: `event.name`, `event.kind`, `source`,
+      `host`, `page.path`, `service.name`, `user.id`, `group.id`, `attr.<key>`, and the session keys
+      the funnel population filter already parses (`country`, `referrer.host`, `utm.source`, …,
+      reuse `productEventsFilterField` from `apps/web/src/lib/query-builder/funnel-filters.ts` by
+      lifting it into `@maple/query-model` where `FUNNEL_POPULATION_FILTER_FIELDS` already lives).
+    - `buildTimeseriesQuerySpec` gains the `product_events` branch; `buildBreakdownQuerySpec` and
+      `buildListQuerySpec` fall out.
+    - `resetQueryForDataSource` handles it (nothing metric-specific to carry).
 - `packages/backend/src/dashboard-templates/helpers.ts`: accept the new source in `makeQuerySpec`.
 - Tests in `model.test.ts`: clause parsing table, group-by resolution, aggregation guard.
 
@@ -206,14 +206,14 @@ hangs off the `QuerySpec` arms from phase 1.
 
 ## Sizing
 
-| Phase | Est. | Notes                                                                                    |
-| ----- | ---- | ---------------------------------------------------------------------------------------- |
+| Phase | Est. | Notes                                                                                     |
+| ----- | ---- | ----------------------------------------------------------------------------------------- |
 | 1     | 2d   | Largest; the three CH builders + parity e2e. Benchmark before/after with `bench:queries`. |
-| 2     | 0.5d | Mostly tables and one clause parser.                                                     |
+| 2     | 0.5d | Mostly tables and one clause parser.                                                      |
 | 3     | 2d   | Builder UI, list widget, autocomplete, gallery, empty state.                              |
-| 4     | 0.5d | Two branches and copy.                                                                   |
-| 5     | 0.5d | Param plumbing and doc strings.                                                          |
-| 6     | 0.5d | Deletions + docs.                                                                        |
+| 4     | 0.5d | Two branches and copy.                                                                    |
+| 5     | 0.5d | Param plumbing and doc strings.                                                           |
+| 6     | 0.5d | Deletions + docs.                                                                         |
 
 Phases 1 and 2 can go in one PR (engine + model, no UI). Phase 3 is its own PR. 4 and 5 can ride
 together. 6 closes it out.

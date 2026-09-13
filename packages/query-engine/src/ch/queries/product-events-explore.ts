@@ -14,6 +14,7 @@ import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
 import { soleValue } from "./query-helpers"
 import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./web-analytics"
+import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 
 type EventsAccessor = ColumnAccessor<typeof ProductEvents.columns>
 
@@ -60,6 +61,8 @@ export interface ProductEventsTimeseriesOutput {
 	readonly bucket: string
 	readonly groupName: string
 	readonly value: number
+	/** Rows behind `value` — the alert sample count, which a `uniq` metric cannot stand in for. */
+	readonly eventCount: number
 }
 
 export interface ProductEventsBreakdownOpts extends ProductEventsQueryOpts {
@@ -75,7 +78,6 @@ export interface ProductEventsBreakdownOutput {
 
 export interface ProductEventsListOpts extends ProductEventsQueryOpts {
 	limit?: number
-	cursor?: string
 }
 
 export interface ProductEventsListOutput {
@@ -94,6 +96,7 @@ export interface ProductEventsListOutput {
 	readonly traceId: string
 	readonly spanId: string
 	readonly attributes: Record<string, string>
+	readonly seq: number
 }
 
 const inListOpt = (column: CH.Expr<string>, values: readonly string[] | undefined) =>
@@ -198,20 +201,27 @@ function dimensionColumn(
 	}
 }
 
+// Every dimension keeps its position, an empty one shown as `(none)`, so
+// `browser · (none)` and `(none) · browser` stay two groups.
 function groupNameExpr($: EventsAccessor, opts: ProductEventsTimeseriesOpts): CH.Expr<string> {
 	const keys = (opts.groupBy ?? []).filter((key): key is ProductEventsGroupBy => key !== "none")
 	if (keys.length === 0) return CH.lit("all")
-	const parts = keys.map((key) => CH.toString_(dimensionColumn($, key, opts.groupByAttributeKey)))
+	const parts = keys.map((key) =>
+		CH.coalesce(
+			CH.nullIf(dimensionColumn($, key, opts.groupByAttributeKey), ""),
+			CH.lit(WEB_ANALYTICS_UNSET),
+		),
+	)
 	const onlyPart = soleValue(parts)
-	if (onlyPart !== undefined) return CH.coalesce(CH.nullIf(onlyPart, ""), CH.lit("all"))
-	const filtered = CH.arrayFilter("x -> x != ''", CH.arrayOf(...parts))
-	return CH.coalesce(CH.nullIf(CH.arrayStringConcat(filtered, " · "), ""), CH.lit("all"))
+	if (onlyPart !== undefined) return onlyPart
+	return CH.arrayStringConcat(CH.arrayOf(...parts), " · ")
 }
 
 const TS_COLUMNS: ColumnDefs = {
 	bucket: T.string,
 	groupName: T.string,
 	value: T.float64,
+	eventCount: T.float64,
 }
 
 export function productEventsTimeseriesQuery(
@@ -222,6 +232,7 @@ export function productEventsTimeseriesQuery(
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			groupName: groupNameExpr($, opts),
 			value: metricExpr($, opts.metric),
+			eventCount: CH.count(),
 		}))
 		.where(($) => eventConditions($, opts))
 		.groupBy("bucket", "groupName")
@@ -268,9 +279,10 @@ export function productEventsListQuery(
 			traceId: $.TraceId,
 			spanId: $.SpanId,
 			attributes: $.Attributes,
+			seq: $.Seq,
 		}))
-		.where(($) => [...eventConditions($, opts), CH.when(opts.cursor, (v: string) => $.Timestamp.lt(v))])
-		.orderBy(["timestamp", "desc"], ["sessionId", "asc"], ["spanId", "asc"])
+		.where(($) => eventConditions($, opts))
+		.orderBy(["timestamp", "desc"], ["seq", "desc"])
 		.limit(opts.limit ?? 50)
 		.format("JSON")
 }

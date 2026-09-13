@@ -572,6 +572,20 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 	},
 )
 
+const validateProductEventsAttributeGrouping = Effect.fn(
+	"QueryEngineService.validateProductEventsAttributeGrouping",
+)(function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
+	if (query.source !== "product_events" || (query.kind !== "timeseries" && query.kind !== "breakdown"))
+		return
+	const groupBy = query.kind === "timeseries" ? (query.groupBy ?? []) : [query.groupBy]
+	if (!groupBy.includes("attribute")) return
+	if (query.filters?.groupByAttributeKey?.trim()) return
+	return yield* new QueryEngineValidationError({
+		message: "Invalid product events attribute grouping",
+		details: ["groupBy=attribute requires filters.groupByAttributeKey"],
+	})
+})
+
 const validatePointBudget = Effect.fn("QueryEngineService.validatePointBudget")(function* (
 	request: QueryEngineExecuteRequest,
 	range: TimeRangeBounds,
@@ -645,7 +659,7 @@ function hasNarrowingFilter(request: QueryEngineExecuteRequest): boolean {
 	const attributeFilters = filters.attributeFilters
 	if (Array.isArray(attributeFilters) && attributeFilters.length > 0) return true
 	// product_events: any row-side equality narrows the scan the way a service does.
-	for (const key of ["eventNames", "hosts", "pagePaths", "userIds", "groupIds"]) {
+	for (const key of ["eventNames", "kinds", "sources", "hosts", "pagePaths", "userIds", "groupIds"]) {
 		const values = filters[key]
 		if (Array.isArray(values) && values.length > 0) return true
 	}
@@ -853,6 +867,7 @@ const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function
 	const range = yield* validateTimeRange(request)
 	yield* validateTraceAttributeFilters(request.query)
 	yield* validateMetricsAttributeFilters(request.query)
+	yield* validateProductEventsAttributeGrouping(request.query)
 	yield* validatePointBudget(request, range)
 	yield* validateListQuery(request, range)
 	yield* validateBreakdownQuery(request, range)
@@ -868,6 +883,7 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
 	if (request.source.kind === "spec") {
 		yield* validateTraceAttributeFilters(request.source.query)
 		yield* validateMetricsAttributeFilters(request.source.query)
+		yield* validateProductEventsAttributeGrouping(request.source.query)
 	}
 	return range
 })
@@ -2382,12 +2398,13 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			productEventsTimeseries.id,
 		)
 		for (const row of rows) {
-			const value = Number(row.value ?? 0)
+			// `value` may be a uniq; the sample count is the rows behind it.
+			const sampleCount = Number(row.eventCount ?? 0)
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
-				value: value > 0 ? value : null,
-				sampleCount: value,
+				value: sampleCount > 0 ? Number(row.value ?? 0) : null,
+				sampleCount,
 			})
 		}
 	} else {

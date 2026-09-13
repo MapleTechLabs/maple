@@ -236,7 +236,6 @@ export const productEventsList = defineQuery({
 			CH.productEventsListQuery({
 				...productEventsQueryOptions(input.query.filters),
 				limit: input.query.limit,
-				cursor: input.query.cursor,
 			}),
 			{ orgId, startTime: input.startTime, endTime: input.endTime },
 		),

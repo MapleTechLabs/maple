@@ -256,7 +256,7 @@ export const listPresets: WidgetPresetDefinition[] = [
 	{
 		id: "list-product-events",
 		name: "Recent Events",
-		description: "Latest track() calls, page views and server events",
+		description: "Latest track() calls and server-side events",
 		icon: ConnectionIcon,
 		visualization: "list",
 		dataSource: makeQueryDataSource({

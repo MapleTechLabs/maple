@@ -387,8 +387,6 @@ export const ProductEventsListQuery = Schema.Struct({
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(200)),
 	),
-	/** A `Timestamp` to page past, newest first. */
-	cursor: Schema.optional(Schema.String),
 })
 export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsListQuery>
 

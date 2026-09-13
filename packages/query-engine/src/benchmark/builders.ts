@@ -386,11 +386,7 @@ const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "product-events-explore",
 		name: "productEventsListQuery",
 		label: "default",
-		compile: () =>
-			CH.compileUnsafe(
-				CH.productEventsListQuery({ limit: 50, cursor: "2026-01-03 12:00:00", kinds: ["custom"] }),
-				window,
-			),
+		compile: () => CH.compileUnsafe(CH.productEventsListQuery({ limit: 50, kinds: ["custom"] }), window),
 	},
 	{
 		module: "product-events-explore",

@@ -12,7 +12,12 @@ import type { QueryBuilderWidgetState } from "@/lib/query-builder/widget-builder
 export function reconcileFunnelSource(state: QueryBuilderWidgetState): QueryBuilderWidgetState {
 	const first = state.queries[0]
 	if (state.visualization === "funnel") {
-		if (first?.dataSource !== "product_events" || state.funnel.source === "product_events") return state
+		if (first?.dataSource !== "product_events") {
+			return state.funnel.source === "product_events"
+				? { ...state, funnel: { ...state.funnel, source: "query_set" } }
+				: state
+		}
+		if (state.funnel.source === "product_events") return state
 		return {
 			...state,
 			funnel: {

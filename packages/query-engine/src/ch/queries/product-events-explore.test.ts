@@ -26,6 +26,7 @@ describe("productEventsTimeseriesQuery", () => {
 		expect(compiled.sql).toContain("toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket")
 		expect(compiled.sql).toContain("'all' AS groupName")
 		expect(compiled.sql).toContain("count() AS value")
+		expect(compiled.sql).toContain("count() AS eventCount")
 		expect(compiled.rowSchemaSource).toBe("derived")
 	})
 
@@ -49,8 +50,8 @@ describe("productEventsTimeseriesQuery", () => {
 			}),
 			params,
 		)
-		expect(oneLine(sql)).toContain("toString(EventName)")
-		expect(oneLine(sql)).toContain("toString(Attributes['plan'])")
+		expect(oneLine(sql)).toContain("coalesce(nullIf(EventName, ''), '(none)')")
+		expect(oneLine(sql)).toContain("coalesce(nullIf(Attributes['plan'], ''), '(none)')")
 		expect(sql).toContain("GROUP BY bucket, groupName")
 	})
 
@@ -106,16 +107,15 @@ describe("productEventsBreakdownQuery", () => {
 })
 
 describe("productEventsListQuery", () => {
-	it("returns the row columns newest first and pages on the cursor", () => {
+	it("returns the row columns newest first, seq breaking ties", () => {
 		const { sql } = compileUnsafe(
-			productEventsListQuery({ limit: 20, cursor: "2026-06-25 05:00:00", serviceNames: ["maple-api"] }),
+			productEventsListQuery({ limit: 20, serviceNames: ["maple-api"] }),
 			params,
 		)
 		expect(sql).toContain("Attributes AS attributes")
 		expect(sql).toContain("TraceId AS traceId")
-		expect(sql).toContain("Timestamp < '2026-06-25 05:00:00'")
 		expect(sql).toContain("ServiceName IN ('maple-api')")
-		expect(sql).toContain("ORDER BY timestamp DESC")
+		expect(sql).toContain("ORDER BY timestamp DESC, seq DESC")
 		expect(sql).toContain("LIMIT 20")
 	})
 })

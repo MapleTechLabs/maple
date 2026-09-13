@@ -497,3 +497,33 @@ describe("product_events drafts", () => {
 		})
 	})
 })
+
+describe("product_events clause edge cases", () => {
+	const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}) =>
+		({ ...tracesDraft(), dataSource: "product_events", ...overrides }) as QueryBuilderQueryDraftPayload
+
+	it("keeps the case of prop keys in filters and group-bys", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				whereClause: 'attr.planTier = "pro" AND Channel = "cli"',
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.planTier"],
+			}),
+		)
+		expect(result.query).toMatchObject({
+			filters: {
+				groupByAttributeKey: "planTier",
+				attributeFilters: [
+					{ key: "planTier", mode: "equals", value: "pro" },
+					{ key: "Channel", mode: "equals", value: "cli" },
+				],
+			},
+		})
+	})
+
+	it("rejects != on visitor.type instead of selecting the negated value", () => {
+		const result = buildTimeseriesQuerySpec(draft({ whereClause: 'visitor.type != "new"' }))
+		expect(result.query).toMatchObject({ filters: undefined })
+		expect(result.warnings.join(" ")).toContain("supports only =")
+	})
+})

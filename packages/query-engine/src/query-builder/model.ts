@@ -604,11 +604,13 @@ const PRODUCT_EVENT_SESSION_FIELDS = {
 
 function applyProductEventsClause(
 	filters: ProductEventsFilterAccumulator,
-	clause: { key: string; operator: string; value: string },
+	clause: { key: string; rawKey?: string; operator: string; value: string },
 	warnings: string[],
 ): ProductEventsFilterAccumulator {
 	const key = normalizeKey(clause.key)
-	const attributeKey = key.startsWith("attr.") ? key.slice(5) : undefined
+	// Prop keys keep their case: `Attributes` is a case-sensitive Map of the customer's own names.
+	const rawKey = (clause.rawKey ?? clause.key).trim()
+	const attributeKey = key.startsWith("attr.") ? rawKey.slice(5) : undefined
 
 	if (attributeKey === undefined && Object.hasOwn(PRODUCT_EVENT_LIST_FIELDS, key)) {
 		const [positive, negative] = PRODUCT_EVENT_LIST_FIELDS[key as keyof typeof PRODUCT_EVENT_LIST_FIELDS]
@@ -636,6 +638,10 @@ function applyProductEventsClause(
 	}
 
 	if (attributeKey === undefined && (key === "visitor.type" || key === "visitor_type")) {
+		if (clause.operator !== "=") {
+			warnings.push(`Product events filter ${clause.key} supports only =; ignoring ${clause.operator}`)
+			return filters
+		}
 		if (clause.value !== "new" && clause.value !== "returning") {
 			warnings.push(`Invalid visitor.type value ignored: ${clause.value}`)
 			return filters
@@ -644,7 +650,7 @@ function applyProductEventsClause(
 	}
 
 	// Anything else is a `track()` prop, prefixed or bare — same rule as traces.
-	const propKey = attributeKey ?? key
+	const propKey = attributeKey ?? rawKey
 	if (!propKey) {
 		warnings.push(`Invalid attr.* filter ignored: ${clause.key}`)
 		return filters
@@ -676,16 +682,17 @@ function resolveProductEventsGroupByToken(
 			return null
 		case "Literal":
 			return resolution.token
-		case "Prefixed":
+		case "Prefixed": {
+			// The shared resolver lowercases the token; the prop key keeps the case it was typed with.
+			const key = raw.trim().slice(raw.trim().length - resolution.key.length)
 			// One attribute group column, as on metrics.
-			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== resolution.key) {
-				warnings.push(
-					`Product events queries support a single attr.* group by; ignoring attr.${resolution.key}`,
-				)
+			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== key) {
+				warnings.push(`Product events queries support a single attr.* group by; ignoring attr.${key}`)
 				return null
 			}
-			filters.groupByAttributeKey = resolution.key
+			filters.groupByAttributeKey = key
 			return resolution.token
+		}
 	}
 }
 

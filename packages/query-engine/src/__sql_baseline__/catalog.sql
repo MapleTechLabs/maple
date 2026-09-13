@@ -1149,7 +1149,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:product-events-explore:productEventsListQuery:default  [e6dcd1d1]
+-- builder:product-events-explore:productEventsListQuery:default  [e832cab5]
 SELECT
           Timestamp AS timestamp,
           EventName AS eventName,
@@ -1165,22 +1165,23 @@ SELECT
           SessionId AS sessionId,
           TraceId AS traceId,
           SpanId AS spanId,
-          Attributes AS attributes
+          Attributes AS attributes,
+          Seq AS seq
         FROM product_events
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Kind IN ('custom')
-          AND Timestamp < '2026-01-03 12:00:00'
-        ORDER BY timestamp DESC, sessionId ASC, spanId ASC
+        ORDER BY timestamp DESC, seq DESC
         LIMIT 50
         FORMAT JSON
 
--- builder:product-events-explore:productEventsTimeseriesQuery:count  [239d041a]
+-- builder:product-events-explore:productEventsTimeseriesQuery:count  [e8e63fa5]
 SELECT
           toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket,
           'all' AS groupName,
-          count() AS value
+          count() AS value,
+          count() AS eventCount
         FROM product_events
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -1189,25 +1190,29 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [23a2bfdd]
+-- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [61a30d0b]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
-          value AS value
+          value AS value,
+          eventCount AS eventCount
         FROM (SELECT
           bucket AS bucket,
           groupName AS groupName,
           value AS value,
+          eventCount AS eventCount,
           dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
         FROM (SELECT
           bucket AS bucket,
           groupName AS groupName,
           value AS value,
+          eventCount AS eventCount,
           max(value) OVER (PARTITION BY groupName) AS __series_peak
         FROM (SELECT
           toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket,
-          coalesce(nullIf(arrayStringConcat(arrayFilter(x -> x != '', [toString(EventName), toString(Attributes['plan'])]), ' · '), ''), 'all') AS groupName,
-          uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value
+          arrayStringConcat([coalesce(nullIf(EventName, ''), '(none)'), coalesce(nullIf(Attributes['plan'], ''), '(none)')], ' · ') AS groupName,
+          uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value,
+          count() AS eventCount
         FROM product_events
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -10431,7 +10436,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- spec:product-events-list:baseline  [6722dfd5]
+-- spec:product-events-list:baseline  [e832cab5]
 SELECT
           Timestamp AS timestamp,
           EventName AS eventName,
@@ -10447,35 +10452,40 @@ SELECT
           SessionId AS sessionId,
           TraceId AS traceId,
           SpanId AS spanId,
-          Attributes AS attributes
+          Attributes AS attributes,
+          Seq AS seq
         FROM product_events
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND Kind IN ('custom')
-        ORDER BY timestamp DESC, sessionId ASC, spanId ASC
+        ORDER BY timestamp DESC, seq DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:product-events-timeseries-grouped:baseline  [35c4fef7]
+-- spec:product-events-timeseries-grouped:baseline  [95396e8d]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
-          value AS value
+          value AS value,
+          eventCount AS eventCount
         FROM (SELECT
           bucket AS bucket,
           groupName AS groupName,
           value AS value,
+          eventCount AS eventCount,
           dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
         FROM (SELECT
           bucket AS bucket,
           groupName AS groupName,
           value AS value,
+          eventCount AS eventCount,
           max(value) OVER (PARTITION BY groupName) AS __series_peak
         FROM (SELECT
           toStartOfInterval(Timestamp, INTERVAL 60 SECOND) AS bucket,
-          coalesce(nullIf(arrayStringConcat(arrayFilter(x -> x != '', [toString(EventName), toString(Attributes['plan'])]), ' · '), ''), 'all') AS groupName,
-          uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value
+          arrayStringConcat([coalesce(nullIf(EventName, ''), '(none)'), coalesce(nullIf(Attributes['plan'], ''), '(none)')], ' · ') AS groupName,
+          uniqIf(if(UserId != '', UserId, VisitorId), (UserId != '' OR VisitorId != '')) AS value,
+          count() AS eventCount
         FROM product_events
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-03 10:30:00'
@@ -10493,11 +10503,12 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:product-events-timeseries:baseline  [86a2373f]
+-- spec:product-events-timeseries:baseline  [03adb16e]
 SELECT
           toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket,
           'all' AS groupName,
-          count() AS value
+          count() AS value,
+          count() AS eventCount
         FROM product_events
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'

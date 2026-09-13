@@ -63,11 +63,6 @@ interface QueryPanelProps {
 	onClone: () => void
 	onRemove: () => void
 	onDataSourceChange: (ds: QueryBuilderDataSource) => void
-	/**
-	 * Sources beyond traces/logs/metrics the select offers, and what choosing
-	 * one does. Only the funnel widget passes these — picking "Product events"
-	 * swaps this panel for the funnel's.
-	 */
 	showHeaderActions?: boolean
 	showVisibilityToggle?: boolean
 	/**

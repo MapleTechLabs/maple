@@ -66,9 +66,9 @@ export const listWidgetType: WidgetTypeDefinition = {
 			},
 			{
 				timestamp: "12:04:19",
-				eventName: "$pageview",
-				userId: "",
-				pagePath: "/pricing",
+				eventName: "dashboard_created",
+				userId: "user_2c1",
+				pagePath: "/dashboards",
 				source: "browser",
 			},
 		],
