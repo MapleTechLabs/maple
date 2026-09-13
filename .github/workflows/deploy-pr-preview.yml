@@ -126,8 +126,8 @@ jobs:
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
                   ingest-binary: ${{ env.TEARDOWN != 'true' }}
 
-            # Create/refresh an ephemeral Tinybird branch `pr_<n>` seeded with the
-            # latest prod partition, deploy this PR's schema into it, and override
+            # Create/refresh an EMPTY ephemeral Tinybird branch `pr_<n>` (no production
+            # data — see docs/tinybird-pr-branches.md), deploy this PR's schema into it, and override
             # TINYBIRD_HOST/TINYBIRD_TOKEN (from Infisical `dev`) with the branch's
             # values so the Alchemy deploy below binds the whole stack to the branch.
             - name: Create/refresh Tinybird PR branch
