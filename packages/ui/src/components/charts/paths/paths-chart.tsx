@@ -40,8 +40,22 @@ interface Layout {
 	columns: number[]
 }
 
-const NODE_W = 8
-const NODE_GAP = 6
+const NODE_W = 10
+const NODE_GAP = 8
+/** A node this tall carries its count on a second line instead of after the name. */
+const TWO_LINE_H = 26
+
+/**
+ * Labels sit over the ribbons, so they wear a halo in the card colour: the text
+ * stays legible where two flows cross behind it, and a name can run further
+ * into the span than a bare label safely could.
+ */
+const HALO: React.CSSProperties = {
+	paintOrder: "stroke",
+	stroke: "var(--card)",
+	strokeWidth: 3,
+	strokeLinejoin: "round",
+}
 const HEADER_H = 18
 /** Breathing room under the lowest node, so a terminal never touches the card edge. */
 const FOOTER_H = 4
@@ -198,11 +212,13 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 	const columnSpan =
 		graph && graph.columns.length > 1 ? (width - NODE_W) / (graph.columns.length - 1) : width
 	// Two labels share every span (the left column's to the right of its node,
-	// the right column's to the left of its), so each gets half of it. When
-	// that half cannot hold a name AND a count, the count moves to the tooltip.
-	const halfChars = Math.floor((columnSpan / 2 - 24) / CHAR_W)
-	const showCounts = halfChars >= 14
-	const maxChars = Math.max(5, showCounts ? halfChars - 6 : halfChars)
+	// the right column's to the left of its). Their halos let each run a little
+	// past the midpoint, since the two rarely sit on the same row. When the room
+	// cannot hold a name AND a count, the count moves under the name on tall
+	// nodes and into the tooltip on short ones.
+	const roomChars = Math.floor((columnSpan * 0.7 - 20) / CHAR_W)
+	const showCounts = roomChars >= 14
+	const maxChars = Math.max(6, showCounts ? roomChars - 6 : roomChars)
 	const truncate = (label: string) => (label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label)
 
 	const hoveredNode = hover ? graph?.nodes.get(hover) : undefined
@@ -234,7 +250,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								x={atRightEdge ? x + NODE_W : x}
 								y={10}
 								textAnchor={atRightEdge ? "end" : "start"}
-								className="fill-muted-foreground text-[10px] uppercase tracking-wider"
+								className="fill-muted-foreground text-[10px] font-medium uppercase tracking-wider"
 							>
 								{label}
 							</text>
@@ -259,14 +275,18 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								)}
 								style={{
 									fillOpacity: dim
-										? 0.06
+										? 0.05
 										: kind === "event"
 											? lit
-												? 0.6
-												: 0.22
+												? 0.65
+												: 0.2
 											: kind === "end"
-												? 0.12
-												: 0.22,
+												? lit
+													? 0.3
+													: 0.07
+												: lit
+													? 0.4
+													: 0.12,
 									transition: "fill-opacity 140ms ease",
 								}}
 							/>
@@ -284,8 +304,10 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								(link) => isLit(link) && (link.source === node.id || link.target === node.id),
 							)
 						const showText = node.h >= 9 || node.kind !== "event"
+						const twoLine = node.h >= TWO_LINE_H
+						const countInline = showCounts && !twoLine
 						const hitLabelW = showText
-							? (truncate(labelOf(node)).length + (showCounts ? 7 : 0)) * CHAR_W + 6
+							? (truncate(labelOf(node)).length + (countInline ? 7 : 0)) * CHAR_W + 6
 							: 0
 						return (
 							<g
@@ -302,8 +324,8 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 									rx={2}
 									className={cn(
 										node.kind === "event" && "fill-[var(--chart-2)]",
-										node.kind === "end" && "fill-foreground/15",
-										node.kind === "other" && "fill-foreground/30",
+										node.kind === "end" && "fill-foreground/20",
+										node.kind === "other" && "fill-foreground/35",
 									)}
 								/>
 								{/* The hit target spans the node AND its label, so hovering the
@@ -322,17 +344,22 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 										y={node.y + Math.min(node.h, 12) / 2 + 3.5}
 										textAnchor={labelLeft ? "start" : "end"}
 										className={cn(
-											"text-[11px]",
+											"text-[11px] font-medium",
 											node.kind === "event"
-												? "fill-foreground/90"
+												? "fill-foreground"
 												: "fill-muted-foreground",
 										)}
+										style={HALO}
 									>
 										{truncate(labelOf(node))}
-										{showCounts && (
+										{(countInline || twoLine) && (
 											<>
 												{" "}
-												<tspan className="fill-muted-foreground text-[10px]">
+												<tspan
+													x={twoLine ? textX : undefined}
+													dy={twoLine ? 13 : undefined}
+													className="fill-muted-foreground text-[10px] font-normal tabular-nums"
+												>
 													{formatNumber(node.count)}
 												</tspan>
 											</>

@@ -6,14 +6,15 @@ import { formatNumber, formatValueByUnit } from "../../../lib/format"
 import { asFiniteNumber, pickValueField, toBreakdownRows } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
+import { ArrowDownIcon, ArrowRightIcon, CircleCheckIcon } from "../../icons"
 
 // The funnel's drop-off view: one column per step, read left to right.
 //
-// The solid bar is who reached the step; the hatched cap above it is who left
-// since the previous one, so every column's top lines up with the previous
-// column's bar and the gap between them IS the drop-off. The connector carries
-// the step-to-step conversion and the median time between the two events, and
-// hovering a step opens where its leavers went next. All of that arrives on
+// Each column is headed by its share of the first step and its count. The
+// solid bar is who reached the step; the faint block above it is the previous
+// step's level, so the gap between them IS the drop-off. A pill at the foot of
+// the bar carries the step-to-step conversion, the loss, and the median time
+// between the two events, and hovering a step opens where its leavers went. All of that arrives on
 // the same `{ name, value }` rows the bar funnel draws, as optional per-step
 // fields (`p50Ms`, `p90Ms`, `leavers`) the route adds only for this view.
 
@@ -42,8 +43,7 @@ interface Step {
 /** How many leavers the tooltip names; the remainder folds into "Other". */
 const LEAVERS_SHOWN = 4
 /** Narrowest useful step column; past that the tail folds into "+N more". */
-const STEP_MIN_W = 64
-const CONNECTOR_W = 60
+const STEP_MIN_W = 76
 const TIP_W = 264
 const ENDED_LABEL = "Nothing after"
 
@@ -163,12 +163,15 @@ function toSteps(
 	}
 }
 
-/** The hatched "who left" cap: absence, drawn as texture rather than a colour. */
-const LOST_STYLE: React.CSSProperties = {
-	backgroundImage:
-		"repeating-linear-gradient(135deg, color-mix(in oklab, currentColor 12%, transparent) 0 1px, transparent 1px 6px)",
-	backgroundColor: "color-mix(in oklab, currentColor 3%, transparent)",
-}
+/** The ghost of the previous step's level: what was here, drawn as absence. */
+const LOST_CLASS = "bg-foreground/[0.06]"
+
+/** Narrowest useful step column; past that the tail folds into "+N more". */
+const STEP_GAP = 12
+// The pill sheds segments before it clips: the median time goes first, then
+// the loss, so a narrow column still states the conversion whole.
+const PILL_TIME_MIN_W = 150
+const PILL_LOSS_MIN_W = 104
 
 export function FunnelDropoffChart({ data, className, unit, showStepPercent }: QueryBuilderFunnelChartProps) {
 	const source: ReadonlyArray<Record<string, unknown>> = Array.isArray(data) ? data : EMPTY_ROWS
@@ -179,13 +182,14 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 	const { width } = useContainerSize(containerRef)
 	const [hover, setHover] = React.useState<number | null>(null)
 
-	// Columns that fit: each step past the first costs a connector too.
-	const maxSteps =
-		width > 0 ? Math.max(1, Math.floor((width + CONNECTOR_W) / (STEP_MIN_W + CONNECTOR_W))) : steps.length
-	const visible = steps.slice(0, maxSteps)
-	const hidden = steps.length - visible.length
 	const isGrouped = legend.length > 0
 	const showPercent = showStepPercent !== false
+
+	// Columns that fit: each step past the first costs a gap too.
+	const maxSteps =
+		width > 0 ? Math.max(1, Math.floor((width + STEP_GAP) / (STEP_MIN_W + STEP_GAP))) : steps.length
+	const visible = steps.slice(0, maxSteps)
+	const hidden = steps.length - visible.length
 
 	if (steps.length === 0 || (steps[0]?.value ?? 0) <= 0) {
 		return (
@@ -195,21 +199,21 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 		)
 	}
 
+	const first = steps[0]
+	const last = steps[steps.length - 1]
 	const hovered = hover !== null && hover > 0 ? visible[hover] : undefined
 	const hoveredPrev = hover !== null && hover > 0 ? visible[hover - 1] : undefined
 	// The tooltip sits right of the hovered column, or left of it near the edge.
-	const columnW = width > 0 ? (width - CONNECTOR_W * (visible.length - 1)) / visible.length : 0
-	const hoverLeft = hover === null ? 0 : hover * (columnW + CONNECTOR_W)
+	const columnW = width > 0 ? (width - STEP_GAP * (visible.length - 1)) / visible.length : 0
+	const hoverLeft = hover === null ? 0 : hover * (columnW + STEP_GAP)
 	const tipLeft =
 		hover === null
 			? 0
 			: hoverLeft + columnW + 8 + TIP_W <= width
 				? hoverLeft + columnW + 8
 				: Math.max(0, hoverLeft - TIP_W - 8)
-
-	const gridTemplateColumns = visible
-		.map((_, index) => (index === 0 ? "minmax(0, 1fr)" : `${CONNECTOR_W}px minmax(0, 1fr)`))
-		.join(" ")
+	const pillTime = columnW === 0 || columnW >= PILL_TIME_MIN_W
+	const pillLoss = columnW === 0 || columnW >= PILL_LOSS_MIN_W
 
 	return (
 		<div
@@ -218,151 +222,176 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 			onPointerLeave={() => setHover(null)}
 			data-slot="funnel-dropoff"
 		>
-			{isGrouped && (
-				<div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 pb-1 text-[10px] leading-none text-muted-foreground">
-					{legend.map((entry) => (
-						<span key={entry.name} className="flex min-w-0 items-center gap-1" title={entry.name}>
+			<div className="flex shrink-0 items-baseline justify-between gap-3 pb-2 text-[10px] leading-none">
+				{isGrouped ? (
+					<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground">
+						{legend.map((entry) => (
 							<span
-								className="size-2 shrink-0 rounded-[2px]"
-								style={{ backgroundColor: entry.color }}
-							/>
-							<span className="truncate">{entry.name}</span>
+								key={entry.name}
+								className="flex min-w-0 items-center gap-1"
+								title={entry.name}
+							>
+								<span
+									className="size-2 shrink-0 rounded-[2px]"
+									style={{ backgroundColor: entry.color }}
+								/>
+								<span className="truncate">{entry.name}</span>
+							</span>
+						))}
+					</div>
+				) : (
+					<span />
+				)}
+				{first && last && steps.length > 1 && (
+					<span
+						className="flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap"
+						data-slot="funnel-dropoff-summary"
+					>
+						<span className="text-muted-foreground">
+							{showPercent ? "Conversion rate" : "Converted"}
 						</span>
-					))}
-				</div>
-			)}
-			<div className="grid min-h-0 flex-1" style={{ gridTemplateColumns }}>
+						<span className="text-[11px] font-semibold text-foreground">
+							{showPercent
+								? fmtPct(last.ofFirst)
+								: `${fmtValue(last.value, unit)} of ${fmtValue(first.value, unit)}`}
+						</span>
+					</span>
+				)}
+			</div>
+			<div
+				className="grid min-h-0 flex-1"
+				style={{
+					gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
+					columnGap: STEP_GAP,
+				}}
+			>
 				{visible.map((step, index) => {
 					const prev = visible[index - 1]
 					const isHover = hover === index
-					const fade = hover !== null && !isHover ? 0.55 : 1
+					const fade = hover !== null && !isHover ? 0.6 : 1
+					const capH = prev ? Math.max(0, prev.ofFirst - step.ofFirst) : 0
+					const lostShare = prev && prev.value > 0 ? step.dropped / prev.value : 0
+					const isLast = index === steps.length - 1
 					return (
-						<React.Fragment key={`${step.name}-${index}`}>
-							{index > 0 && (
-								<div className="flex min-w-0 flex-col items-center justify-end overflow-hidden px-1 pb-[42px] whitespace-nowrap">
-									{showPercent && step.ofPrev !== null && (
-										<span className="text-[11px] font-semibold leading-none tabular-nums text-foreground/90">
-											{fmtPct(step.ofPrev)}
-										</span>
+						<div
+							key={`${step.name}-${index}`}
+							className="flex min-w-0 flex-col"
+							onPointerEnter={() => setHover(index)}
+							data-slot="funnel-dropoff-step"
+						>
+							<div className="flex flex-col gap-1 leading-none">
+								<span
+									className={cn(
+										"truncate text-[11px] font-medium",
+										step.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
 									)}
-									<span className="relative my-1 h-px w-full bg-border">
-										<span className="absolute -top-[2.5px] right-0 size-[5px] rotate-45 border-t border-r border-muted-foreground" />
-									</span>
-									{step.p50Ms !== undefined && (
-										<span
-											className="text-[10px] leading-none tabular-nums text-muted-foreground"
-											title="Median time from the previous step"
-										>
-											{fmtSpan(step.p50Ms)}
-										</span>
-									)}
-								</div>
-							)}
-							<div
-								className="flex min-w-0 flex-col"
-								onPointerEnter={() => setHover(index)}
-								data-slot="funnel-dropoff-step"
-							>
-								<div className="flex h-4 items-baseline gap-1.5 text-[11px] leading-none">
-									<span className="text-[10px] text-muted-foreground">{index + 1}</span>
-									<span
-										className={cn(
-											"truncate",
-											step.unnamed
-												? "italic text-muted-foreground"
-												: "text-foreground/90",
-										)}
-										title={step.name}
-									>
-										{step.name}
-									</span>
-								</div>
-								<div
-									className="relative mt-1.5 min-h-0 flex-1"
-									style={{ opacity: fade, transition: "opacity 140ms ease" }}
+									title={step.name}
 								>
-									{isGrouped ? (
-										<div className="flex h-full items-end gap-0.5">
-											{step.groups.map((group) => {
-												const max = steps[0]?.value ?? 1
-												const h = group.value / max
-												const capH = Math.max(0, (group.prev - group.value) / max)
-												return (
-													<div
-														key={group.name}
-														className="relative h-full flex-1"
-														title={`${group.name} · ${fmtValue(group.value, unit)}`}
-													>
-														{index > 0 && capH > 0 && (
-															<div
-																className="absolute inset-x-0 rounded-t-[3px] text-foreground"
-																style={{
-																	...LOST_STYLE,
-																	bottom: `${h * 100}%`,
-																	height: `${capH * 100}%`,
-																}}
-															/>
-														)}
+									{step.name}
+								</span>
+								<span className="truncate text-base font-semibold tabular-nums text-foreground">
+									{showPercent ? fmtPct(step.ofFirst) : fmtValue(step.value, unit)}
+								</span>
+								<span className="truncate text-[11px] tabular-nums text-muted-foreground">
+									{showPercent
+										? fmtValue(step.value, unit)
+										: index === 0
+											? "entered"
+											: "reached"}
+								</span>
+							</div>
+							<div
+								className="relative mt-2.5 min-h-0 flex-1"
+								style={{ opacity: fade, transition: "opacity 140ms ease" }}
+							>
+								{isGrouped ? (
+									<div className="flex h-full items-end gap-0.5">
+										{step.groups.map((group) => {
+											const max = steps[0]?.value ?? 1
+											const h = group.value / max
+											const groupCapH = Math.max(0, (group.prev - group.value) / max)
+											return (
+												<div
+													key={group.name}
+													className="relative h-full flex-1"
+													title={`${group.name} · ${fmtValue(group.value, unit)}`}
+												>
+													{index > 0 && groupCapH > 0 && (
 														<div
-															className="absolute inset-x-0 bottom-0 rounded-t-[3px]"
+															className={cn(
+																"absolute inset-x-0 rounded-[3px]",
+																LOST_CLASS,
+															)}
 															style={{
-																height: `${h * 100}%`,
-																backgroundColor: group.color,
+																bottom: `${h * 100}%`,
+																height: `${groupCapH * 100}%`,
 															}}
 														/>
-													</div>
-												)
-											})}
-										</div>
-									) : (
-										<>
-											{prev && step.ofFirst < prev.ofFirst && (
-												<div
-													className="absolute inset-x-0 rounded-t-[4px] text-foreground"
-													style={{
-														...LOST_STYLE,
-														bottom: `${step.ofFirst * 100}%`,
-														height: `${(prev.ofFirst - step.ofFirst) * 100}%`,
-													}}
-													data-slot="funnel-dropoff-lost"
-												/>
-											)}
+													)}
+													<div
+														className="absolute inset-x-0 bottom-0 rounded-[3px]"
+														style={{
+															height: `${h * 100}%`,
+															backgroundColor: group.color,
+														}}
+													/>
+												</div>
+											)
+										})}
+									</div>
+								) : (
+									<>
+										{prev && capH > 0 && (
 											<div
-												className="absolute inset-x-0 bottom-0 rounded-t-[4px] bg-[var(--chart-2)]"
+												className={cn("absolute inset-x-0 rounded-[4px]", LOST_CLASS)}
 												style={{
-													height: `${Math.max(step.ofFirst * 100, step.value > 0 ? 1.5 : 0)}%`,
-													transition: "height 220ms ease",
+													bottom: `${step.ofFirst * 100}%`,
+													height: `${capH * 100}%`,
 												}}
-												data-slot="funnel-dropoff-bar"
+												data-slot="funnel-dropoff-lost"
 											/>
-											{prev && step.ofFirst < prev.ofFirst && (
-												<div
-													className="absolute inset-x-0 h-0.5 bg-card"
-													style={{ bottom: `${step.ofFirst * 100}%` }}
-												/>
+										)}
+										<div
+											className="absolute inset-x-0 bottom-0 rounded-[4px] bg-[var(--chart-2)]"
+											style={{
+												height: `${Math.max(step.ofFirst * 100, step.value > 0 ? 1.5 : 0)}%`,
+												transition: "height 220ms ease",
+											}}
+											data-slot="funnel-dropoff-bar"
+										/>
+									</>
+								)}
+								{prev && showPercent && step.ofPrev !== null && (
+									<span
+										className="absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-[11px] leading-none tabular-nums whitespace-nowrap shadow-xs ring-1 ring-border/60"
+										data-slot="funnel-dropoff-pill"
+									>
+										<span className="flex items-center gap-1 font-semibold text-foreground">
+											{isLast ? (
+												<CircleCheckIcon size={12} className="text-success" />
+											) : (
+												<ArrowRightIcon size={12} className="text-success" />
 											)}
-										</>
-									)}
-								</div>
-								<div className="mt-1.5 flex flex-col gap-px text-[11px] leading-tight">
-									<div className="truncate tabular-nums">
-										<span className="font-medium text-foreground/90">
-											{fmtValue(step.value, unit)}
+											{fmtPct(step.ofPrev)}
 										</span>
-										{showPercent && (
-											<span className="ml-1.5 text-muted-foreground">
-												{fmtPct(step.ofFirst)}
+										{pillLoss && lostShare > 0 && (
+											<span className="flex items-center gap-1 text-foreground/80">
+												<ArrowDownIcon size={12} className="text-destructive" />
+												{fmtPct(lostShare)}
 											</span>
 										)}
-									</div>
-									<div className="truncate text-[10px] tabular-nums text-muted-foreground">
-										{prev
-											? `−${fmtValue(step.dropped, unit)} dropped${showPercent && prev.value > 0 ? ` · ${fmtPct(step.dropped / prev.value)}` : ""}`
-											: "entered"}
-									</div>
-								</div>
+										{pillTime && step.p50Ms !== undefined && (
+											<span
+												className="text-muted-foreground"
+												title="Median time from the previous step"
+											>
+												{fmtSpan(step.p50Ms)}
+											</span>
+										)}
+									</span>
+								)}
 							</div>
-						</React.Fragment>
+						</div>
 					)
 				})}
 			</div>
@@ -378,7 +407,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 					data-slot="funnel-dropoff-tooltip"
 				>
 					<div className="mb-1 truncate text-muted-foreground">
-						{hoveredPrev.name} → {hoveredPrev && hovered.name}
+						{hoveredPrev.name} → {hovered.name}
 					</div>
 					<Row
 						label="converted"
