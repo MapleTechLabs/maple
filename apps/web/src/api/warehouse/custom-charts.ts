@@ -313,6 +313,10 @@ const metricsMetrics = new Set<MetricsMetric>(["avg", "sum", "min", "max", "coun
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
 
 function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec | string {
+	// The legacy chart route predates the query set; product events only lower through it.
+	if (data.source === "product_events") {
+		return "product_events is only available through the query builder"
+	}
 	if (data.source === "traces") {
 		if (!tracesMetrics.has(data.metric as TracesMetric)) {
 			return `Unknown trace metric: ${data.metric}`

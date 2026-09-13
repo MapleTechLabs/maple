@@ -30,10 +30,12 @@ import {
 	isTimeBucketQueryCachePolicy,
 	logsCount,
 	logsTimeseries,
+	productEventsTimeseries,
 	queryDefinitionCacheIdentity,
 	resolveQueryDefinitionCache,
 	toLogsCountInput,
 	toLogsTimeseriesInput,
+	toProductEventsTimeseriesInput,
 	type QueryDefinition,
 } from "@maple/query-engine/registry"
 import { EdgeCacheService } from "@maple/cache"
@@ -97,29 +99,60 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const evaluateImpl = makeQueryEngineEvaluate(warehouse)
 			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse)
 
-			const migratedDefinitionFor = (request: QueryEngineExecuteRequest, bucketSeconds?: number) => {
+			// A request that has moved onto a registry definition. `apply` keeps the
+			// definition and its input paired under one type parameter, so the cache
+			// helpers see a matching `QueryDefinition<P, R>` / `P` rather than a union.
+			interface MigratedDefinition {
+				readonly kind: "count" | "time-buckets"
+				readonly apply: <Out>(
+					f: <Payload, Row>(definition: QueryDefinition<Payload, Row>, input: Payload) => Out,
+				) => Out
+			}
+			const migrated = <Payload, Row>(
+				kind: MigratedDefinition["kind"],
+				definition: QueryDefinition<Payload, Row>,
+				input: Payload,
+			): MigratedDefinition => ({ kind, apply: (f) => f(definition, input) })
+
+			const migratedDefinitionFor = (
+				request: QueryEngineExecuteRequest,
+				bucketSeconds?: number,
+			): MigratedDefinition | undefined => {
 				if (request.query.source === "logs" && request.query.kind === "count") {
-					return {
-						kind: "count" as const,
-						definition: logsCount,
-						input: toLogsCountInput(request.startTime, request.endTime, request.query),
-					}
+					return migrated(
+						"count",
+						logsCount,
+						toLogsCountInput(request.startTime, request.endTime, request.query),
+					)
 				}
-				if (request.query.source === "logs" && request.query.kind === "timeseries") {
-					const resolvedBucketSeconds =
-						bucketSeconds ??
-						request.query.bucketSeconds ??
-						computeBucketSeconds(toEpochMs(request.startTime), toEpochMs(request.endTime))
-					return {
-						kind: "time-buckets" as const,
-						definition: logsTimeseries,
-						input: toLogsTimeseriesInput(
+				if (request.query.kind !== "timeseries") return undefined
+				const resolvedBucketSeconds =
+					bucketSeconds ??
+					request.query.bucketSeconds ??
+					computeBucketSeconds(toEpochMs(request.startTime), toEpochMs(request.endTime))
+				if (request.query.source === "product_events") {
+					return migrated(
+						"time-buckets",
+						productEventsTimeseries,
+						toProductEventsTimeseriesInput(
 							request.startTime,
 							request.endTime,
 							request.query,
 							resolvedBucketSeconds,
 						),
-					}
+					)
+				}
+				if (request.query.source === "logs") {
+					return migrated(
+						"time-buckets",
+						logsTimeseries,
+						toLogsTimeseriesInput(
+							request.startTime,
+							request.endTime,
+							request.query,
+							resolvedBucketSeconds,
+						),
+					)
 				}
 				return undefined
 			}
@@ -175,13 +208,9 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const legacyBlobCachedExecute = Effect.fn("QueryEngineService.legacyBlobCachedExecute")(
 				function* (tenant: TenantContext, request: QueryEngineExecuteRequest) {
 					const startMs = yield* Clock.currentTimeMillis
-					const migrated = migratedDefinitionFor(request)
-					const canonical =
-						migrated?.kind === "count"
-							? canonicalResultCache(tenant, migrated.definition, migrated.input, startMs)
-							: migrated?.kind === "time-buckets"
-								? canonicalResultCache(tenant, migrated.definition, migrated.input, startMs)
-								: undefined
+					const canonical = migratedDefinitionFor(request)?.apply((definition, input) =>
+						canonicalResultCache(tenant, definition, input, startMs),
+					)
 					const key = canonical?.key ?? buildCacheKey(tenant.orgId, request)
 					const ttlSeconds =
 						canonical?.policy.ttlSeconds ?? cacheTtlForQueryKind(request.query.kind)
@@ -220,18 +249,15 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				// don't let validateExecute recompute a smaller step — buckets must
 				// match the outer cache's step exactly.
 				const pinnedQuery = { ...request.query, bucketSeconds }
-				const migrated = migratedDefinitionFor(request, bucketSeconds)
-				const migratedPolicy =
-					migrated?.kind === "time-buckets"
-						? resolveQueryDefinitionCache(migrated.definition, migrated.input, 0)
-						: undefined
+				const migratedQuery = migratedDefinitionFor(request, bucketSeconds)
 				const cacheQuery =
-					migrated?.kind === "time-buckets" && isTimeBucketQueryCachePolicy(migratedPolicy)
-						? queryDefinitionCacheIdentity(
-								migrated.definition,
-								migrated.input,
-								migratedPolicy.identity(migrated.input),
-							)
+					migratedQuery?.kind === "time-buckets"
+						? migratedQuery.apply((definition, input) => {
+								const policy = resolveQueryDefinitionCache(definition, input, 0)
+								return isTimeBucketQueryCachePolicy(policy)
+									? queryDefinitionCacheIdentity(definition, input, policy.identity(input))
+									: pinnedQuery
+							})
 						: pinnedQuery
 
 				const outcome = yield* bucketCache.getOrComputeBuckets(

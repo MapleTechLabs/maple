@@ -44,6 +44,7 @@ import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
 import * as productEventQueries from "../ch/queries/product-events"
+import * as productEventExploreQueries from "../ch/queries/product-events-explore"
 import * as topOperationQueries from "../ch/queries/top-operations"
 import * as traceQueries from "../ch/queries/traces"
 
@@ -278,6 +279,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"top-operations": topOperationQueries,
 	"web-analytics": webAnalyticsQueries,
 	"product-events": productEventQueries,
+	"product-events-explore": productEventExploreQueries,
 	traces: traceQueries,
 } satisfies Record<string, Record<string, unknown>>
 

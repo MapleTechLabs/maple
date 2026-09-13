@@ -210,6 +210,27 @@ export {
 	type ProductEventNamesOutput,
 } from "./queries/product-events"
 
+// Queries — Product events as a query-builder source (timeseries / breakdown / list)
+export {
+	productEventsTimeseriesQuery,
+	productEventsBreakdownQuery,
+	productEventsListQuery,
+	productEventAttributeKeysQuery,
+	productEventAttributeValuesQuery,
+	type ProductEventsQueryOpts,
+	type ProductEventsGroupByKey,
+	type ProductEventsTimeseriesOpts,
+	type ProductEventsTimeseriesOutput,
+	type ProductEventsBreakdownOpts,
+	type ProductEventsBreakdownOutput,
+	type ProductEventsListOpts,
+	type ProductEventsListOutput,
+	type ProductEventAttributeKeysOpts,
+	type ProductEventAttributeKeysOutput,
+	type ProductEventAttributeValuesOpts,
+	type ProductEventAttributeValuesOutput,
+} from "./queries/product-events-explore"
+
 // Queries — Services
 export {
 	serviceOverviewQuery,

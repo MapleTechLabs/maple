@@ -43,6 +43,7 @@ interface AutocompleteValues {
 	traces: WhereClauseAutocompleteValues
 	logs: WhereClauseAutocompleteValues
 	metrics: WhereClauseAutocompleteValues
+	product_events: WhereClauseAutocompleteValues
 }
 
 interface QueryPanelProps {
@@ -67,8 +68,9 @@ interface QueryPanelProps {
 	 * one does. Only the funnel widget passes these — picking "Product events"
 	 * swaps this panel for the funnel's.
 	 */
-	extraSourceOptions?: ReadonlyArray<Exclude<QueryPanelSource, QueryBuilderDataSource>>
-	onExtraSourceChange?: (source: Exclude<QueryPanelSource, QueryBuilderDataSource>) => void
+	/** Sources offered beyond `QUERY_BUILDER_PANEL_SOURCES`; today only the funnel's step editor. */
+	extraSourceOptions?: ReadonlyArray<QueryPanelSource>
+	onExtraSourceChange?: (source: QueryPanelSource) => void
 	showHeaderActions?: boolean
 	showVisibilityToggle?: boolean
 	/**
@@ -139,8 +141,9 @@ export function QueryPanel({
 			source={query.dataSource}
 			sourceOptions={[...QUERY_BUILDER_PANEL_SOURCES, ...extraSourceOptions]}
 			onSourceChange={(source) => {
-				if (isQueryBuilderDataSource(source)) onDataSourceChange(source)
-				else onExtraSourceChange?.(source)
+				// The funnel's extra option wins: "Product events" there means the step editor, not a count query.
+				if (extraSourceOptions.includes(source)) onExtraSourceChange?.(source)
+				else if (isQueryBuilderDataSource(source)) onDataSourceChange(source)
 			}}
 			visibility={
 				showVisibilityToggle

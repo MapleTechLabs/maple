@@ -169,6 +169,74 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	it.effect("executes product-event timeseries and breakdowns through their definitions", () =>
+		Effect.gen(function* () {
+			const calls: Array<{ context?: string; profile?: string; sql: string }> = []
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, sql, options) => {
+						calls.push({ context: options.context, profile: options.profile, sql })
+						return Effect.succeed(
+							sql.includes("AS bucket")
+								? [{ bucket: "2026-01-01 00:00:00", groupName: "signup_completed", value: 3 }]
+								: [{ name: "/pricing", value: 12 }],
+						)
+					},
+				}),
+			)
+
+			const series = yield* execute(tenant, {
+				startTime: "2026-01-01 00:00:00",
+				endTime: "2026-01-01 00:05:00",
+				query: {
+					kind: "timeseries",
+					source: "product_events",
+					metric: "persons",
+					groupBy: ["event_name"],
+					filters: { eventNames: ["signup_completed"], country: "DE" },
+					bucketSeconds: 300,
+				},
+			})
+			assert.deepStrictEqual(series.result, {
+				kind: "timeseries",
+				source: "product_events",
+				data: [
+					{ bucket: "2026-01-01T00:00:00.000Z", series: { signup_completed: 3 } },
+					{ bucket: "2026-01-01T00:05:00.000Z", series: {} },
+				],
+			})
+
+			const breakdown = yield* execute(tenant, {
+				startTime: "2026-01-01 00:00:00",
+				endTime: "2026-01-01 00:05:00",
+				query: {
+					kind: "breakdown",
+					source: "product_events",
+					metric: "sessions",
+					groupBy: "page_path",
+					filters: { hosts: ["maple.dev"] },
+					limit: 5,
+				},
+			})
+			assert.deepStrictEqual(breakdown.result, {
+				kind: "breakdown",
+				source: "product_events",
+				data: [{ name: "/pricing", value: 12 }],
+			})
+
+			assert.deepStrictEqual(
+				calls.map((call) => [call.context, call.profile]),
+				[
+					["productEventsTimeseries", "aggregation"],
+					["productEventsBreakdown", "aggregation"],
+				],
+			)
+			assert.include(calls[0]?.sql, "OrgId = 'org_test'")
+			assert.include(calls[0]?.sql, "session_replays")
+			assert.include(calls[1]?.sql, "Host IN ('maple.dev')")
+		}),
+	)
+
 	it.effect("keeps log count execution policy on the definition", () =>
 		Effect.gen(function* () {
 			let context: string | undefined

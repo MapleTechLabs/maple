@@ -239,8 +239,12 @@ export interface ListMetricsData {
 }
 
 export interface QueryDataQueryContext {
-	source: "traces" | "logs" | "metrics"
+	source: "traces" | "logs" | "metrics" | "product_events"
 	serviceName?: string
+	eventName?: string
+	eventKind?: string
+	host?: string
+	pagePath?: string
 	spanName?: string
 	rootSpansOnly?: boolean
 	environments?: string[]

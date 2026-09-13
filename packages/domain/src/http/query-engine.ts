@@ -2216,6 +2216,7 @@ export class WorkloadInfraTimeseriesResponse extends Schema.Class<WorkloadInfraT
 export {
 	LogsQueryDraftSchema,
 	MetricsQueryDraftSchema,
+	ProductEventsQueryDraftSchema,
 	QueryBuilderAddOnsSchema,
 	QueryBuilderFormulaSchema,
 	type QueryBuilderFormulaPayload,

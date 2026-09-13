@@ -28,6 +28,7 @@ const renderPanel = (
 				traces: emptyAutocomplete,
 				logs: emptyAutocomplete,
 				metrics: emptyAutocomplete,
+				product_events: emptyAutocomplete,
 			}}
 			onUpdate={vi.fn()}
 			onAggregationChange={vi.fn()}
@@ -80,6 +81,7 @@ describe("QueryPanel metric combobox", () => {
 					traces: emptyAutocomplete,
 					logs: emptyAutocomplete,
 					metrics: emptyAutocomplete,
+					product_events: emptyAutocomplete,
 				}}
 				onUpdate={vi.fn()}
 				onAggregationChange={vi.fn()}
@@ -107,6 +109,7 @@ describe("QueryPanel source select", () => {
 					traces: emptyAutocomplete,
 					logs: emptyAutocomplete,
 					metrics: emptyAutocomplete,
+					product_events: emptyAutocomplete,
 				}}
 				onUpdate={vi.fn()}
 				onAggregationChange={vi.fn()}

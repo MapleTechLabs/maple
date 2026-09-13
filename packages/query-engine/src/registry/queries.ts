@@ -64,6 +64,9 @@ export {
 	productEventNames,
 	productEventsForTrace,
 	productEventTraceSamples,
+	productEventsTimeseries,
+	productEventsBreakdown,
+	productEventsList,
 } from "./product-events"
 
 /**

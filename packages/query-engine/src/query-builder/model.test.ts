@@ -307,7 +307,7 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 		return base as QueryBuilderQueryDraftPayload
 	}
 
-	for (const source of ["traces", "logs", "metrics"] as const) {
+	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
 		for (const token of GROUP_BY_TOKENS[source].literals) {
 			it(`${source}: "${token}" resolves without a warning`, () => {
 				const result = buildTimeseriesQuerySpec(draftFor(source, [token]))
@@ -336,7 +336,7 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 	// (alert compilation). Before these were generated from one alias map the
 	// alert side silently omitted every snake_case alias, so a token an agent
 	// read out of the docs and saved in a widget hard-failed alert validation.
-	for (const source of ["traces", "logs", "metrics"] as const) {
+	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
 		for (const token of GROUP_BY_TOKENS[source].literals) {
 			it(`${source}: "${token}" resolves through resolveGroupBy too`, () => {
 				const resolved = resolveGroupBy(source, [token])
@@ -356,7 +356,7 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 
 	// Same token, same meaning on both sides — not merely "both accept it".
 	it("builder and resolveGroupBy agree on the canonical token for every alias", () => {
-		for (const source of ["traces", "logs", "metrics"] as const) {
+		for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
 			for (const token of GROUP_BY_TOKENS[source].literals) {
 				const built = buildTimeseriesQuerySpec(draftFor(source, [token]))
 				const spec = built.query as { groupBy?: ReadonlyArray<string> } | null
@@ -375,7 +375,7 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 // Aggregation enforcement now reads `AGGREGATIONS_BY_SOURCE`, the same array the
 // builder UI and the MCP schema doc render. These pin the two together.
 describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
-	for (const source of ["traces", "logs", "metrics"] as const) {
+	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
 		for (const option of AGGREGATIONS_BY_SOURCE[source]) {
 			it(`${source}: "${option.value}" is accepted`, () => {
 				const draft = {
@@ -413,5 +413,87 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 		} as QueryBuilderQueryDraftPayload)
 		expect(result.error).toContain("Unsupported metrics aggregation")
 		expect(result.error).toContain("rate")
+	})
+})
+
+describe("product_events drafts", () => {
+	const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}) =>
+		({ ...tracesDraft(), dataSource: "product_events", ...overrides }) as QueryBuilderQueryDraftPayload
+
+	const filtersOf = (whereClause: string) => {
+		const result = buildTimeseriesQuerySpec(draft({ whereClause }))
+		return {
+			warnings: result.warnings,
+			filters: (result.query as { filters?: Record<string, unknown> } | null)?.filters,
+		}
+	}
+
+	it("lowers row columns to list filters and != to the excluded list", () => {
+		const { filters, warnings } = filtersOf(
+			'event.name = "signup_completed, plan_started" AND host != "localhost" AND service.name = "maple-api"',
+		)
+		expect(warnings).toEqual([])
+		expect(filters).toEqual({
+			eventNames: ["signup_completed", "plan_started"],
+			excludedHosts: ["localhost"],
+			serviceNames: ["maple-api"],
+		})
+	})
+
+	it("lowers session dimensions to the semi-join fields", () => {
+		const { filters } = filtersOf('country = "DE" AND utm.source = "twitter" AND visitor.type = "new"')
+		expect(filters).toEqual({ country: "DE", utmSource: "twitter", visitorType: "new" })
+	})
+
+	it("treats bare and attr.-prefixed keys as track() props", () => {
+		const { filters } = filtersOf('plan = "startup" AND attr.seats > 5')
+		expect(filters?.attributeFilters).toEqual([
+			{ key: "plan", mode: "equals", value: "startup" },
+			{ key: "seats", mode: "gt", value: "5" },
+		])
+	})
+
+	it("warns on an operator a row column cannot take", () => {
+		const { filters, warnings } = filtersOf('event.name contains "signup"')
+		expect(filters).toBeUndefined()
+		expect(warnings.join(" ")).toContain("supports only = and !=")
+	})
+
+	it("carries a single attr.* group-by key on the filters", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["event.name", "attr.plan"],
+			}),
+		)
+		expect(result.error).toBeNull()
+		expect(result.query).toMatchObject({
+			source: "product_events",
+			metric: "count",
+			groupBy: ["event_name", "attribute"],
+			filters: { groupByAttributeKey: "plan" },
+		})
+	})
+
+	it("rejects an aggregation from another source", () => {
+		const result = buildTimeseriesQuerySpec(draft({ aggregation: "p95_duration" }))
+		expect(result.error).toContain("Unsupported product events aggregation")
+		expect(result.error).toContain("persons")
+	})
+
+	it("builds a breakdown from the first real group-by", () => {
+		const result = buildBreakdownQuerySpec(
+			draft({
+				aggregation: "sessions",
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["page.path"],
+			}),
+		)
+		expect(result.query).toMatchObject({
+			kind: "breakdown",
+			source: "product_events",
+			metric: "sessions",
+			groupBy: "page_path",
+		})
 	})
 })

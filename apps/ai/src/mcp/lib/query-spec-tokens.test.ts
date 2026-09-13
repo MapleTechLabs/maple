@@ -46,6 +46,8 @@ const COMBOS: ReadonlyArray<readonly [QuerySpecSource, QuerySpecKind]> = [
 	["logs", "breakdown"],
 	["metrics", "timeseries"],
 	["metrics", "breakdown"],
+	["product_events", "timeseries"],
+	["product_events", "breakdown"],
 ]
 
 describe("query-spec token table matches the domain schemas", () => {

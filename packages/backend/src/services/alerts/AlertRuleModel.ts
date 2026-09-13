@@ -32,7 +32,7 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import type { AlertRuleRow } from "@maple/db"
-import { Array as Arr, Effect, Result, Schema } from "effect"
+import { Array as Arr, Effect, Match, Result, Schema } from "effect"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
@@ -363,12 +363,13 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			)
 		}
 		query = decodeQuerySpecSync({ ...built.query, bucketSeconds })
-		sampleCountStrategy =
-			rule.queryBuilderDraft.dataSource === "logs"
-				? "log_count"
-				: rule.queryBuilderDraft.dataSource === "metrics"
-					? "metric_data_points"
-					: "trace_count"
+		sampleCountStrategy = Match.value(rule.queryBuilderDraft.dataSource).pipe(
+			Match.when("logs", (): QueryEngineSampleCountStrategy => "log_count"),
+			Match.when("metrics", (): QueryEngineSampleCountStrategy => "metric_data_points"),
+			Match.when("product_events", (): QueryEngineSampleCountStrategy => "product_event_count"),
+			Match.when("traces", (): QueryEngineSampleCountStrategy => "trace_count"),
+			Match.exhaustive,
+		)
 	} else if (rule.signalType === "raw_query") {
 		const sql = rule.rawQuerySql?.trim() ?? ""
 		if (sql.length === 0) {

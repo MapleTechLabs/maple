@@ -54,6 +54,13 @@ const TRACES_AGGREGATION_LABELS = new Map(
 	AGGREGATIONS_BY_SOURCE.traces.map((option) => [option.value, option.label]),
 )
 
+const PRODUCT_EVENTS_AGGREGATION_LABELS = new Map([
+	["count", "Event count"],
+	...AGGREGATIONS_BY_SOURCE.product_events
+		.filter((option) => option.value !== "count")
+		.map((option) => [option.value, option.label] as const),
+])
+
 const tracesAggregationUnit = (aggregation: string): SignalUnit => {
 	if (aggregation.endsWith("_duration")) return "ms"
 	if (aggregation === "error_rate") return "ratio"
@@ -82,6 +89,9 @@ const builderQueryDisplay = (draft: QueryBuilderQueryDraftPayload): SignalDispla
 	}
 	if (draft.dataSource === "logs") {
 		return named(aggregation === "count" ? "Log count" : aggregation, "count")
+	}
+	if (draft.dataSource === "product_events") {
+		return named(PRODUCT_EVENTS_AGGREGATION_LABELS.get(aggregation) ?? aggregation, "count")
 	}
 	// Traces. A non-empty `valueField` switches the query into numeric-attribute
 	// aggregation, so the attribute — not "duration" — is what is being measured.

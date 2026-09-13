@@ -15,7 +15,7 @@
  * decoding, so this table cannot drift from `@maple/domain/query-engine`.
  */
 
-export type QuerySpecSource = "traces" | "logs" | "metrics"
+export type QuerySpecSource = "traces" | "logs" | "metrics" | "product_events"
 export type QuerySpecKind = "timeseries" | "breakdown"
 
 interface TokenSet {
@@ -65,6 +65,24 @@ const TOKENS = {
 	"metrics:timeseries": {
 		metrics: ["avg", "sum", "min", "max", "count", "rate", "increase"],
 		groupBys: ["service", "attribute", "resource_attribute", "none"],
+	},
+	"product_events:timeseries": {
+		metrics: ["count", "sessions", "persons", "users", "visitors"],
+		groupBys: [
+			"event_name",
+			"kind",
+			"source",
+			"host",
+			"page_path",
+			"service",
+			"group",
+			"attribute",
+			"none",
+		],
+	},
+	"product_events:breakdown": {
+		metrics: ["count", "sessions", "persons", "users", "visitors"],
+		groupBys: ["event_name", "kind", "source", "host", "page_path", "service", "group", "attribute"],
 	},
 	// `satisfies` rather than an annotation: it checks every combination is present
 	// and well-shaped while keeping the literal token types visible to callers.

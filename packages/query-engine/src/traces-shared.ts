@@ -106,9 +106,11 @@ export function httpDisplaySpanName(
 
 export function buildAttrFilterCondition(
 	af: AttributeFilter,
-	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes",
-	indexMode: AttributeIndexMode = "none",
+	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes" | "Attributes",
+	requestedIndexMode: AttributeIndexMode = "none",
 ): CH.Condition {
+	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
+	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)
 	// Attributes renamed across OTel semconv versions match either spelling,
 	// mirroring trace_list_mv (span attributes) and the MVs' pre-extracted
@@ -187,6 +189,7 @@ export function buildAttrFilterCondition(
 				LogAttributes: "LogAttributeItems",
 				ResourceAttributes: "ResourceAttributeItems",
 			} as const
+			if (mapName === "Attributes") return exact
 			const items = CH.dynamicColumn<ReadonlyArray<string>>(itemColumnByMap[mapName])
 			const candidate = orOverKeys((key) =>
 				CH.has(items, CH.concat(key, CH.rawExpr("char(31)", T.string), value)),

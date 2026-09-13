@@ -89,6 +89,7 @@ export function useWidgetBuilderData() {
 				services: metricServices,
 				variables: variableNames,
 			},
+			product_events: { ...baseAutocompleteValues.product_events, variables: variableNames },
 		}
 	}, [baseAutocompleteValues, metricRows, variableNames])
 

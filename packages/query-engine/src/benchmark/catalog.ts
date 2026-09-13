@@ -701,6 +701,50 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 		endTime: SHORT_END_TIME,
 	},
 	{
+		label: "product-events-timeseries",
+		query: {
+			kind: "timeseries",
+			source: "product_events",
+			metric: "count",
+			bucketSeconds: 3600,
+			filters: { eventNames: ["signup_completed"] },
+		},
+	},
+	{
+		label: "product-events-timeseries-grouped",
+		query: {
+			kind: "timeseries",
+			source: "product_events",
+			metric: "persons",
+			bucketSeconds: 60,
+			groupBy: ["event_name", "attribute"],
+			filters: { groupByAttributeKey: "plan", country: "DE" },
+			seriesLimit: 5,
+		},
+		startTime: SHORT_START_TIME,
+		endTime: SHORT_END_TIME,
+	},
+	{
+		label: "product-events-breakdown",
+		query: {
+			kind: "breakdown",
+			source: "product_events",
+			metric: "sessions",
+			groupBy: "page_path",
+			filters: { hosts: ["maple.dev"] },
+			limit: 25,
+		},
+	},
+	{
+		label: "product-events-list",
+		query: { kind: "list", source: "product_events", filters: { kinds: ["custom"] }, limit: 50 },
+	},
+	{ label: "attribute-keys-product-events", query: { kind: "attributeKeys", source: "product_events" } },
+	{
+		label: "attribute-values-product-events",
+		query: { kind: "attributeValues", source: "product_events", scope: "event", attributeKey: "plan" },
+	},
+	{
 		label: "metrics-timeseries",
 		query: {
 			kind: "timeseries",

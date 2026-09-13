@@ -20,6 +20,7 @@ export interface AutocompleteValuesContextType {
 	traces: WhereClauseAutocompleteValues
 	logs: WhereClauseAutocompleteValues
 	metrics: WhereClauseAutocompleteValues
+	product_events: WhereClauseAutocompleteValues
 	/** Raw span attribute keys for GroupBy, column selectors, etc. */
 	attributeKeys: string[]
 	resourceAttributeKeys: string[]
@@ -195,6 +196,8 @@ function AutocompleteValuesInner({
 				metricTypes: [...QUERY_BUILDER_METRIC_TYPES],
 				attributeKeys: metricAttributeKeys,
 			},
+			// Event names and track() prop keys arrive with the builder's own fetch (phase 3).
+			product_events: {},
 			attributeKeys,
 			resourceAttributeKeys,
 			metricAttributeKeys,

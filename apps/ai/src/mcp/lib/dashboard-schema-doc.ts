@@ -327,14 +327,14 @@ const unitsSection = (): string =>
 // --- queries -------------------------------------------------------------
 
 const queriesSection = (): string => {
-	const aggRows = (["traces", "logs", "metrics"] as const).map(
+	const aggRows = (["traces", "logs", "metrics", "product_events"] as const).map(
 		(source) =>
 			`| \`${source}\` | ${AGGREGATIONS_BY_SOURCE[source]
 				.map((option) => `\`${option.value}\``)
 				.join(", ")} |`,
 	)
 
-	const groupRows = (["traces", "logs", "metrics"] as const).map((source) => {
+	const groupRows = (["traces", "logs", "metrics", "product_events"] as const).map((source) => {
 		const { literals, prefixes } = GROUP_BY_TOKENS[source]
 		return `| \`${source}\` | ${literals.map((token) => `\`${token}\``).join(", ")} | ${
 			prefixes.length > 0 ? prefixes.map((prefix) => `\`${prefix}<key>\``).join(", ") : "**none**"
@@ -344,7 +344,7 @@ const queriesSection = (): string => {
 	return [
 		"## Queries",
 		"",
-		"A query draft is discriminated on `dataSource` (`traces` / `logs` / `metrics`). The",
+		"A query draft is discriminated on `dataSource` (`traces` / `logs` / `metrics` / `product_events`). The",
 		"metric-only fields belong solely to `metrics` queries; do not add them to trace or log",
 		"queries:",
 		"",
