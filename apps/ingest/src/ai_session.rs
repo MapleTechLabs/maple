@@ -182,6 +182,7 @@ fn string_attribute(key: &str, value: &str) -> KeyValue {
 fn owned_string_attribute(key: &str, value: String) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
             value: Some(any_value::Value::StringValue(value)),
         }),
@@ -1458,6 +1459,7 @@ mod tests {
     fn integer_session_ids_are_stringified() {
         let span_attrs = vec![KeyValue {
             key: "session.id".to_owned(),
+            key_strindex: 0,
             value: Some(AnyValue {
                 value: Some(any_value::Value::IntValue(4211)),
             }),
