@@ -11,6 +11,12 @@ describe("parseMapleStage", () => {
 		expect(() => stage(" STG ")).toThrow(/"stg" stage was removed/)
 	})
 
+	it("rejects the spellings someone types from memory, which match the same pattern", () => {
+		expect(() => stage("staging")).toThrow(/"staging" stage was removed/)
+		expect(() => stage("Staging")).toThrow(/"staging" stage was removed/)
+		expect(() => stage("stage")).toThrow(/"stage" stage was removed/)
+	})
+
 	it("still parses the stages that remain", () => {
 		expect(stage("prd")).toEqual({ kind: "prd" })
 		expect(stage("pr-123")).toEqual({ kind: "pr", prNumber: 123 })

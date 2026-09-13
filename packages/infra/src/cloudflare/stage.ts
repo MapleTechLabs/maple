@@ -1,6 +1,8 @@
 export type MapleStage = { kind: "prd" } | { kind: "pr"; prNumber: number } | { kind: "dev"; name: string }
 
 const PR_STAGE_RE = /^pr-(\d+)$/
+/** Names of the removed staging stage, in the spellings someone would actually type. */
+const REMOVED_STAGE_NAMES = new Set(["stg", "stage", "staging"])
 // Underscores allowed so alchemy's default `dev_${USER}` stage parses as a dev stage.
 const DEV_STAGE_RE = /^[a-z0-9][a-z0-9_-]*$/
 
@@ -40,14 +42,15 @@ export function parseMapleStage(stage: string): MapleStage {
 		return { kind: "prd" }
 	}
 
-	// `stg` is rejected rather than left to fall through to the dev-stage
-	// pattern, which it matches. The staging stage was removed (2026-09) after
+	// These are rejected rather than left to fall through to the dev-stage
+	// pattern, which they all match. The staging stage was removed (2026-09) after
 	// sitting disabled and unreachable with its Hyperdrive ref pointed at the
 	// production database; a `--stage stg` that quietly built a dev stack named
-	// `maple-*-dev-stg` is not the failure anyone typing it wants.
-	if (normalized === "stg") {
+	// `maple-*-dev-stg` is not the failure anyone typing it wants — and someone
+	// typing it from memory is as likely to write `staging`.
+	if (REMOVED_STAGE_NAMES.has(normalized)) {
 		throw new Error(
-			'The "stg" stage was removed. Deploy prd, a pr-<number> preview, or a dev stage name.',
+			`The "${normalized}" stage was removed. Deploy prd, a pr-<number> preview, or a dev stage name.`,
 		)
 	}
 
