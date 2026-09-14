@@ -8,7 +8,7 @@ Written 2026-09-15 against `main` (`0bfb54137c`). Maple is on `drizzle-orm@0.45.
 
 | Fact | Value | Consequence |
 | --- | --- | --- |
-| Newest drizzle 1.0 build | `1.0.0-rc.4`, published 2026-06-27; `latest` is still `0.45.2` | No GA. Nothing on the rc line for 11 weeks. Adopting means pinning an RC in prod. |
+| Newest drizzle 1.0 build | Tagged: `1.0.0-rc.4` (2026-06-27). Snapshot: `1.0.0-rc.5-5935859` (2026-09-09) off the `rc5` branch; `latest` is still `0.45.2` | No GA. Adopting means pinning an RC in prod. Only the rc.5 line runs on current effect (see below). |
 | rc.4 effect peer range | `effect >=4.0.0-beta.83`, same for `@effect/sql-pg` and `@effect/sql-pglite` | Our rc.112 pin satisfies it. Also covers the blocked rc.115 branch. |
 | `@effect/sql-pg@4.0.0-rc.112` | node-postgres (`pg@^8.23`, `pg-pool`, `pg-types`, `pg-cursor`) | Driver swap from postgres.js. Cloudflare needs `pg >= 8.16.3` and `nodejs_compat`, and calls pg the recommended Hyperdrive driver. |
 | `@effect/sql-pglite@4.0.0-rc.112` | needs `@electric-sql/pglite ^0.5.6`; accepts `liveClient` | We are on 0.5.4, bump. The test harness can keep its snapshot-restored instance and the Date-param proxy. |
@@ -28,18 +28,17 @@ effect line". The second condition is met. The first is not, and nothing suggest
 
 Split the work so the ORM major and the driver swap never land in the same deploy:
 
-1. **Phase 0, spike (done, see results below).** rc.4's effect driver runs on rc.112 only with one
-   rename patched into the package; upstream has not re-targeted current effect.
+1. **Phase 0, spike (done, see results below).** rc.4's effect driver does not import on effect
+   rc.112; the `rc5` branch fixed that in August and the `1.0.0-rc.5-5935859` snapshot runs the
+   spike unpatched.
 2. **Phase A, drizzle 1.0 on the existing drivers (done on `chore/drizzle-v1-rc4`).** Version bump,
    `drizzle-kit up`, the `getColumns` sites, the migration-folder readers. Behaviour-neutral for
    the Workers: still postgres.js, still Promise-land call sites.
-3. **Phase B, the Effect driver (4 to 6 days, blocked).** Rebuild `DatabaseLive` and the
-   connection scope over `PgClient` + `PgDrizzle`, then sweep the call sites to `yield*`. Needs
-   either a drizzle build compiled against effect rc (none exists as of 2026-09-15; the `beta`
-   branch still calls `Schema.TaggedErrorClass`) or a repo-owned bun patch of `drizzle-orm`
-   renaming that one symbol in `effect-core/errors` and `cache/core/cache-effect`. The patch is
-   two files and the spike found nothing else missing, but it is a third patched package on
-   the effect treadmill; that is the owner's call.
+3. **Phase B, the Effect driver (4 to 6 days).** Rebuild `DatabaseLive` and the connection
+   scope over `PgClient` + `PgDrizzle`, then sweep the call sites to `yield*`. Needs drizzle
+   `>= 1.0.0-rc.5`: either the tagged rc.5 once it is cut, or the `1.0.0-rc.5-5935859` snapshot
+   now. Pinning a commit-suffixed snapshot in prod is the owner's call; the kit in that snapshot
+   reads the converted folder unchanged, so bumping from rc.4 is a manifest change only.
 
 Gate B on A having soaked in prod for at least a week, because A already moves the migration
 table and the query compiler, and B moves the wire driver. If one of them regresses, we want to
@@ -188,9 +187,12 @@ Run in the same worktree on top of Phase A, with `@effect/sql-pg@4.0.0-rc.112` a
 
 - **rc.4's effect layer does not import on effect rc.112.** `effect-core/errors.js` and
   `cache/core/cache-effect.js` call `Schema.TaggedErrorClass()`, which is the beta.83 name;
-  rc.112 and rc.115 export `Schema.TaggedError`. Drizzle's `beta` branch (last effect-core commit
-  2026-06-03) still uses the old name, so no upstream build fixes this yet. With that one symbol
-  renamed in the installed copy, everything below ran.
+  rc.112 and rc.115 export `Schema.TaggedError`. Upstream fixed this on the `rc5` branch
+  (PR #6108, merged 2026-08-12, effect peer now `>=4.0.0-beta.105`), and the npm snapshot
+  `1.0.0-rc.5-5935859` (2026-09-09) carries it. On rc.4 the results below were obtained with that
+  one symbol renamed in the installed copy; on the rc.5 snapshot the same spike passed unpatched,
+  `tsc` was clean in db, backend, api and ai, `drizzle-kit check` and `generate` were no-ops on the
+  converted folder, and the db (43) and backend platform + org (171) tests passed.
 - **Typechecks against rc.112** for `drizzle-orm/effect-pglite`, `drizzle-orm/effect-postgres`,
   `PgClient.fromPool` + `PgClient.layerFrom`, `PgliteClient.layer({ liveClient })`, and a
   `Layer.succeed(EffectLogger, …)` logger. The `.d.ts` surface is fine; only the runtime rename bit.
