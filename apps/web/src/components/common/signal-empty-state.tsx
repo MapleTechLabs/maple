@@ -91,7 +91,7 @@ export const SIGNAL_COPY = {
 		icon: ConnectionIcon,
 		source: "Product events come from track() calls in the browser SDK.",
 		action: "Set up product analytics",
-		docs: "/docs/session-replay/product-events-api",
+		docs: "/docs/product-events/overview",
 	},
 } satisfies Record<TelemetrySignalKind, SignalCopy>
 
