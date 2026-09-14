@@ -4,12 +4,10 @@ import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { SEVERITY_LABEL } from "@/components/errors/severity-badge"
-import { CheckIcon, CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
+import { CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
 import { useTickingNow } from "@/hooks/use-ticking-now"
 import { type Elapsed, splitDuration } from "./investigation-display"
 import { ConfidenceMeter } from "./confidence-meter"
-import { lensCopy } from "./lens-catalogue"
-import { type LensRun, hasFanout, lensTally } from "./lens-derive"
 
 /**
  * What the investigation concluded, or how far it has got trying. One card, four
@@ -122,9 +120,6 @@ function Eyebrow({ children, tone }: { children: ReactNode; tone: string }) {
 
 function DiagnosedVerdict({ investigation }: { investigation: V2Investigation }) {
 	const report = investigation.report
-	const promoted = hasFanout(investigation)
-		? investigation.lens_runs.find((lens) => lens.verdict === "promoted")
-		: undefined
 
 	if (!report) {
 		return (
@@ -177,30 +172,7 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">
-				Suspected cause
-				{promoted ? (
-					<>
-						<span aria-hidden className="text-muted-foreground/40">
-							·
-						</span>
-						<span className="flex items-center gap-1 rounded-sm bg-success/12 px-1.5 py-0.5 text-success">
-							<CheckIcon size={9} />
-							Validated
-						</span>
-						{/*
-							Quoted verbatim, not lowercased into a sentence. That read fine
-							against a four-word catalogue label ("the deploy correlation
-							lens"); a planner writes "The 14:02 payments-api rollout", and
-							"promoted from the the 14:02 payments-api rollout lens" is not a
-							sentence at all.
-						*/}
-						<span className="normal-case tracking-normal text-muted-foreground">
-							promoted from “{lensCopy(promoted).name}”
-						</span>
-					</>
-				) : null}
-			</Eyebrow>
+			<Eyebrow tone="text-primary">Suspected cause</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				{report.suspectedCause}
 			</h2>
@@ -222,15 +194,7 @@ const SEVERITY_TEXT_TONE: Record<string, string> = {
  * Investigating
  * -----------------------------------------------------------------------------------------------*/
 
-const COUNT_WORD = ["No", "One", "Two", "Three", "Four", "Five"] as const
-const countWord = (n: number) => COUNT_WORD[n] ?? String(n)
-
 function InvestigatingVerdict({ investigation }: { investigation: V2Investigation }) {
-	const lenses = investigation.lens_runs
-	const tally = lensTally(lenses)
-	const validator = investigation.validator
-	const fanned = hasFanout(investigation)
-
 	return (
 		<VerdictShell
 			accent="bg-primary"
@@ -239,18 +203,6 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 					<Stat label="Elapsed">
 						<LiveElapsedStat from={investigation.created_at} />
 					</Stat>
-					{fanned ? (
-						<Stat label="Lenses reported">
-							<span className="text-foreground tabular-nums">
-								{tally.reported} of {tally.total}
-							</span>
-						</Stat>
-					) : null}
-					{validator ? (
-						<Stat label="Validation">
-							<span className="text-foreground">Blocked</span>
-						</Stat>
-					) : null}
 					<Stat label="Confidence" last>
 						<span className="text-muted-foreground">Pending</span>
 					</Stat>
@@ -262,27 +214,14 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 					<span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary" />
 					Investigating
 				</span>
-				{fanned ? (
-					<>
-						<span aria-hidden className="text-muted-foreground/40">
-							·
-						</span>
-						<span>{tally.total} lenses in flight</span>
-					</>
-				) : null}
 			</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
-				{fanned
-					? `${countWord(tally.total)} agents are attacking this from different angles. ${countWord(tally.reported)} ${tally.reported === 1 ? "has" : "have"} reported.`
-					: "Maple is gathering evidence."}
+				Maple is gathering evidence.
 			</h2>
-			{fanned ? (
-				<LensLanes lenses={lenses} validator={validator} />
-			) : (
-				<p className="text-sm leading-6 text-muted-foreground">
-					One agent is working this question. The transcript shows what it is doing as it goes.
-				</p>
-			)}
+			<p className="text-sm leading-6 text-muted-foreground">
+				One agent is working this question: reading the traces, logs and metrics around it and testing
+				the likely explanations. The transcript shows what it is doing as it goes.
+			</p>
 		</VerdictShell>
 	)
 }
@@ -292,10 +231,6 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
  * -----------------------------------------------------------------------------------------------*/
 
 function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
-	const lenses = investigation.lens_runs
-	const tally = lensTally(lenses)
-	const fanned = hasFanout(investigation)
-	const validator = investigation.validator
 	// From `started_at`, not `created_at`: a restart re-stamps the former, and
 	// measuring from the latter reported a 20-day-old investigation as a
 	// 480-hour run.
@@ -303,12 +238,6 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 		investigation.started_at ?? investigation.created_at,
 		investigation.updated_at,
 	)
-	// A fan-out can fail two ways, and they are not the same claim. The validator
-	// ranking every candidate down is a *finding*. Dying before the validator ran
-	// — a stalled workflow swept by the timeout — is not, and saying "rejected
-	// every candidate" there states a ruling nobody made, beside a validator lane
-	// that still reads "blocked" and a `diagnosis_timeout` error box.
-	const rejectedAll = fanned && validator?.status === "rejected_all"
 
 	return (
 		<VerdictShell
@@ -322,48 +251,19 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 							<span className="text-muted-foreground">—</span>
 						)}
 					</Stat>
-					{fanned ? (
-						<Stat label="Lenses reported">
-							<span className="text-foreground tabular-nums">
-								{tally.reported} of {tally.total}
-							</span>
-						</Stat>
-					) : null}
-					<Stat label="Validation">
-						<span className="text-foreground">
-							{rejectedAll ? "Rejected all" : fanned ? "Never ran" : "None"}
-						</span>
-					</Stat>
 					<Stat label="Confidence" last>
 						<span className="text-muted-foreground">None</span>
 					</Stat>
 				</>
 			}
 		>
-			<Eyebrow tone="text-destructive">
-				No diagnosis
-				{rejectedAll ? (
-					<>
-						<span aria-hidden className="text-muted-foreground/40">
-							·
-						</span>
-						<span>Validator rejected every candidate</span>
-					</>
-				) : null}
-			</Eyebrow>
+			<Eyebrow tone="text-destructive">No diagnosis</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
-				{rejectedAll
-					? `${countWord(tally.reported)} ${tally.reported === 1 ? "lens" : "lenses"} reported, and none of them held up`
-					: fanned
-						? "The fan-out ended before the validator could rank it"
-						: "The pass ended without a diagnosis"}
+				The pass ended without a diagnosis
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
-				{rejectedAll
-					? "The candidates contradicted each other, so Maple promoted nothing rather than guess. What each lens did gather is kept below — a retry re-runs the fan-out with a wider evidence budget."
-					: fanned
-						? "Whatever the lenses gathered is kept below, but nothing ranked them. A retry re-runs the fan-out."
-						: "Nothing was promoted. Retry to run the pass again."}
+				Nothing was recorded. The transcript keeps whatever the agent gathered; retry to run the pass
+				again.
 			</p>
 			{/* The raw error was on the wire and rendered nowhere but a toast. */}
 			{investigation.error ? (
@@ -376,7 +276,6 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 					</code>
 				</div>
 			) : null}
-			{fanned ? <LensLanes lenses={lenses} validator={validator} /> : null}
 		</VerdictShell>
 	)
 }
@@ -385,7 +284,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
  * Inconclusive
  * -----------------------------------------------------------------------------------------------*/
 
-/** Above this the lists collapse; the rest is one click away on the Hypotheses tab. */
+/** Above this the lists fold; the whole list is in the report on the Evidence tab. */
 const PARTIAL_VISIBLE_MAX = 5
 
 /**
@@ -401,10 +300,6 @@ const PARTIAL_VISIBLE_MAX = 5
  * `unchecked`.
  */
 function InconclusiveVerdict({ investigation }: { investigation: V2Investigation }) {
-	const lenses = investigation.lens_runs
-	const tally = lensTally(lenses)
-	const validator = investigation.validator
-	const fanned = hasFanout(investigation)
 	const report = investigation.report
 	// From `started_at` for the same reason the failed card is: a restart
 	// re-stamps it, and measuring from `created_at` reports a 20-day-old
@@ -415,12 +310,8 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 	)
 	const ruledOut = report?.ruledOut ?? []
 	const unchecked = report?.unchecked ?? []
-	// Legacy rows backfilled to `inconclusive` have no report at all. The
-	// validator's note is the only sentence they carry.
-	const headline =
-		report?.suspectedCause ??
-		validator?.note ??
-		"No cause was established, and this run recorded no partial."
+	// Legacy rows backfilled to `inconclusive` have no report at all.
+	const headline = report?.suspectedCause ?? "No cause was established, and this run recorded no partial."
 
 	return (
 		<VerdictShell
@@ -436,16 +327,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 							<span className="text-muted-foreground">—</span>
 						)}
 					</Stat>
-					{fanned ? (
-						<Stat label="Lenses reported">
-							<span className="text-foreground tabular-nums">
-								{tally.reported} of {tally.total}
-							</span>
-						</Stat>
-					) : null}
-					{/* Replaces the failed card's "Validation: Rejected all", which said
-					    the same thing in a way that sounded like a defect. What was
-					    eliminated is the run's actual output, so it gets the stat. */}
+					{/* What was eliminated is the run's actual output, so it gets the stat. */}
 					<Stat label="Ruled out">
 						<span className="text-foreground tabular-nums">{ruledOut.length}</span>
 					</Stat>
@@ -467,17 +349,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 				<span aria-hidden className="text-muted-foreground/40">
 					·
 				</span>
-				<span>Nothing promoted</span>
-				{fanned ? (
-					<>
-						<span aria-hidden className="text-muted-foreground/40">
-							·
-						</span>
-						<span className="normal-case tracking-normal text-muted-foreground">
-							{tally.reported} of {tally.total} lenses reported
-						</span>
-					</>
-				) : null}
+				<span>No cause established</span>
 			</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				{headline}
@@ -494,8 +366,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 						icon={
 							<CircleXmarkIcon size={13} className="mt-0.5 shrink-0 text-muted-foreground/70" />
 						}
-						// Not struck through. These are conclusions the run reached, which
-						// is the opposite of the dead lanes the failed card strikes out.
+						// Not struck through: these are conclusions the run reached.
 						tone="text-foreground"
 					/>
 					<PartialList
@@ -511,8 +382,6 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 					/>
 				</div>
 			) : null}
-
-			{fanned ? <LensLanes lenses={lenses} validator={validator} /> : null}
 		</VerdictShell>
 	)
 }
@@ -545,122 +414,9 @@ function PartialList({
 				))}
 			</ul>
 			{hidden > 0 ? (
-				<span className="text-xs text-muted-foreground">+{hidden} more on the Hypotheses tab</span>
+				<span className="text-xs text-muted-foreground">+{hidden} more in the report</span>
 			) : null}
 		</div>
-	)
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Lens lanes
- * -----------------------------------------------------------------------------------------------*/
-
-const LANE_DOT: Record<LensRun["status"], string> = {
-	reported: "bg-success",
-	checking: "bg-primary animate-pulse",
-	queued: "border border-muted-foreground/40",
-	no_finding: "bg-muted-foreground/40",
-} satisfies Record<LensRun["status"], string>
-
-const LANE_NOTE: Record<LensRun["status"], string> = {
-	reported: "reported a candidate",
-	checking: "checking",
-	queued: "queued",
-	no_finding: "no finding",
-} satisfies Record<LensRun["status"], string>
-
-/**
- * One row per dispatched lens: where it got to, what it claimed, how long it
- * took. On a failed run the claims are struck through — they were reported and
- * then rejected, which is different from never having been made.
- */
-function LensLanes({
-	lenses,
-	validator,
-}: {
-	lenses: ReadonlyArray<LensRun>
-	validator: V2Investigation["validator"]
-}) {
-	// `flex-wrap` + a `min-w-*` floor on the claim: with the rail open and the
-	// stat column showing, a fixed three-column lane crushes the claim to a
-	// five-word-per-line ribbon. Below the floor the claim drops to its own line
-	// at full width instead.
-	return (
-		<ul className="mt-1 flex flex-col">
-			{lenses.map((entry) => (
-				<li
-					key={entry.lensId}
-					className="flex flex-wrap items-start gap-x-4 gap-y-1 border-t py-3 first:border-t-0 first:pt-1"
-				>
-					<span
-						aria-hidden
-						className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", LANE_DOT[entry.status])}
-					/>
-					<span className="w-40 shrink-0">
-						<span className="block text-sm text-foreground">{lensCopy(entry).name}</span>
-						<span
-							className={cn(
-								"block text-xs",
-								entry.status === "checking" ? "text-primary" : "text-muted-foreground",
-							)}
-						>
-							{entry.progressNote ?? LANE_NOTE[entry.status]}
-						</span>
-					</span>
-					<span
-						className={cn(
-							"min-w-56 flex-1 text-sm",
-							entry.verdict === "rejected"
-								? "text-muted-foreground line-through"
-								: entry.claim
-									? "text-muted-foreground"
-									: "text-muted-foreground/70",
-						)}
-					>
-						{entry.claim ?? entry.reason ?? "—"}
-					</span>
-					<span className="ml-auto w-12 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">
-						{entry.elapsedSeconds === null ? "—" : `${entry.elapsedSeconds.toFixed(1)}s`}
-					</span>
-				</li>
-			))}
-			{validator ? (
-				<li className="flex flex-wrap items-start gap-x-4 gap-y-1 border-t py-3">
-					<span
-						aria-hidden
-						className={cn(
-							"mt-1.5 size-1.5 shrink-0 rounded-full",
-							validator.status === "blocked"
-								? "border border-muted-foreground/40"
-								: validator.status === "rejected_all"
-									? "bg-destructive"
-									: "bg-success",
-						)}
-					/>
-					<span className="w-40 shrink-0">
-						<span
-							className={cn(
-								"block text-sm",
-								validator.status === "rejected_all" ? "text-destructive" : "text-foreground",
-							)}
-						>
-							Validator
-						</span>
-						<span className="block text-xs text-muted-foreground">
-							{validator.status === "blocked"
-								? "blocked"
-								: validator.status === "rejected_all"
-									? "rejected all"
-									: "ranked"}
-						</span>
-					</span>
-					<span className="min-w-56 flex-1 text-sm text-muted-foreground">{validator.note}</span>
-					<span className="ml-auto w-12 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">
-						{validator.elapsedSeconds === null ? "—" : `${validator.elapsedSeconds.toFixed(1)}s`}
-					</span>
-				</li>
-			) : null}
-		</ul>
 	)
 }
 
@@ -678,8 +434,7 @@ function elapsedBetween(from: string, to: string | null): Elapsed | null {
 
 /**
  * The one live number on the page. Its own component so the 1s tick re-renders
- * four characters rather than the whole verdict card — the card holds the lens
- * lanes, and rebuilding those every second is wasted work.
+ * four characters rather than the whole verdict card.
  */
 function LiveElapsedStat({ from }: { from: string }) {
 	const now = useTickingNow(true)

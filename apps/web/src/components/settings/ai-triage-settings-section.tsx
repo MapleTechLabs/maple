@@ -190,7 +190,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 								max={2000}
 								disabled={isSaving}
 								spent={current.usage.passes}
-								help="The spend ceiling. A planned investigation spends four to seven passes — planner, hypotheses, validator — so this is usually what stops triage first, whichever ceiling is reached first. Three tenths of it is reserved for high and critical incidents."
+								help="The spend ceiling. An investigation is one model pass, so this and the run ceiling count the same thing. Three tenths of it is reserved for high and critical incidents."
 								onCommit={(parsed) =>
 									save(
 										new AiTriageSettingsUpdateRequest({ maxPassesPerDay: parsed }),

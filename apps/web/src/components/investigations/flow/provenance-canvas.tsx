@@ -32,8 +32,6 @@ import {
 	FlowActionGhostNode,
 	FlowActionNode,
 	FlowHeadingNode,
-	FlowLensNode,
-	FlowLensOverflowNode,
 	FlowPendingVerdictNode,
 	FlowSpineNode,
 } from "./flow-nodes"
@@ -49,8 +47,6 @@ import { buildProvenanceGraph, type ProvenanceGraph } from "./provenance-graph"
  */
 export const nodeTypes = {
 	spine: FlowSpineNode,
-	lens: FlowLensNode,
-	lensOverflow: FlowLensOverflowNode,
 	pendingVerdict: FlowPendingVerdictNode,
 	action: FlowActionNode,
 	actionGhost: FlowActionGhostNode,
@@ -273,7 +269,7 @@ function Canvas({
 		return () => observer.disconnect()
 	}, [place])
 
-	// New graph (a lens reported, the verdict landed) — replace it at whatever it grew into.
+	// New graph (the verdict landed) — replace it at whatever it grew into.
 	useEffect(() => {
 		userMovedRef.current = false
 		place()
@@ -384,10 +380,6 @@ function GraphOutline({
 					<li key={node.id}>
 						{node.type === "spine" ? (
 							`${node.data.eyebrow}: ${node.data.title}${node.data.status ? ` — ${node.data.status}` : ""}${node.data.phase ? ` — ${node.data.phase}` : ""}`
-						) : node.type === "lens" ? (
-							`Lens ${node.data.title} — ${node.data.state.word}${node.data.state.icon === "running" && node.data.progressNote ? `, ${node.data.progressNote}` : ""}`
-						) : node.type === "lensOverflow" ? (
-							`${node.data.hidden} further lenses`
 						) : node.type === "pendingVerdict" ? (
 							`${node.data.word}${node.data.note ? `: ${node.data.note}` : ""}`
 						) : node.type === "actionGhost" ? (
