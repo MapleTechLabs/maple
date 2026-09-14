@@ -1,6 +1,5 @@
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
-import * as schema from "./schema"
 
 /** The raw postgres.js client — one TCP socket's worth of connection state. */
 export type MaplePgSocket = ReturnType<typeof postgres>
@@ -99,22 +98,24 @@ export const createMaplePgSocket = (
 /**
  * Bind a drizzle client to an already-dialed socket.
  *
- * Cheap enough to call per logical DB call — it only re-derives drizzle's
- * relational config, it does not touch the network. Calling it per call is what
- * keeps each call's `onQuery` collector isolated while they share one socket;
- * `DatabasePgliteLive` does the same thing over a shared PGlite instance for
- * exactly this reason.
+ * Cheap enough to call per logical DB call — it builds a session object and
+ * does not touch the network. Calling it per call is what keeps each call's
+ * `onQuery` collector isolated while they share one socket; `DatabasePgliteLive`
+ * does the same thing over a shared PGlite instance for exactly this reason.
+ *
+ * No `relations` are registered: Maple uses the SQL-like query builder only,
+ * never `db.query.*`.
  */
 export const wrapMaplePgClient = (
 	sql: MaplePgSocket,
 	options?: Pick<MaplePgClientOptions, "onQuery">,
-): MaplePgClient => drizzlePostgres(sql, { schema, logger: toDrizzleLogger(options?.onQuery) })
+): MaplePgClient => drizzlePostgres({ client: sql, logger: toDrizzleLogger(options?.onQuery) })
 
 /**
  * The canonical client type the app codes against. PostgresJsDatabase and
  * PgliteDatabase share the PgDatabase core; the PGlite layer casts into this.
  */
-export type MaplePgClient = ReturnType<typeof drizzlePostgres<typeof schema>>
+export type MaplePgClient = ReturnType<typeof drizzlePostgres>
 
 /** Drizzle over an embedded PGlite instance — local dev and vitest. */
 

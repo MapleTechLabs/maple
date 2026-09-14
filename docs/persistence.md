@@ -61,9 +61,12 @@ Change the Drizzle schema, then generate the SQL and metadata together:
 bun run --cwd packages/db db:generate
 ```
 
-Review the generated file in `packages/db/drizzle/` and its matching journal/snapshot changes.
-Do not hand-create a migration without also updating `drizzle/meta/_journal.json`; both deployed
-Postgres and PGlite use Drizzle's journal ordering.
+Review the generated folder in `packages/db/drizzle/`: one `<timestamp>_<name>/` per migration
+holding `migration.sql` and the DDL `snapshot.json` (drizzle-kit v1 layout, no journal). The
+migrator orders folders by name and applies every folder the database has not recorded. A
+hand-authored migration (data backfill, publication change) still needs a folder with both
+files: run `drizzle-kit generate --custom --name <name>` to scaffold it rather than creating the
+folder by hand, so the snapshot chain stays intact.
 
 Useful local commands:
 

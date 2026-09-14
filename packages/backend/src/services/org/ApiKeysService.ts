@@ -14,7 +14,7 @@ import {
 	RoleName,
 } from "@maple/domain/http"
 import { API_KEY_PREFIX, apiKeys, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
-import { and, desc, eq, getTableColumns, gt, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, getColumns, gt, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
@@ -502,7 +502,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 									eq(apiKeys.revoked, false),
 								),
 							)
-							.returning({ ...getTableColumns(apiKeys), ...txidColumn })
+							.returning({ ...getColumns(apiKeys), ...txidColumn })
 						if (claimed.length === 0) return undefined
 						const source = claimed[0]
 
@@ -580,7 +580,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 									eq(apiKeys.revoked, false),
 								),
 							)
-							.returning({ ...getTableColumns(apiKeys), ...txidColumn })
+							.returning({ ...getColumns(apiKeys), ...txidColumn })
 						// An MCP key is the visible face of an OAuth grant whose refresh
 						// family re-mints it hourly. Flipping `revoked` here alone was a
 						// no-op the next rotation undid, so the family goes with it.

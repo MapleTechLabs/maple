@@ -1,48 +1,42 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { readdirSync, readFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { readFileSync } from "node:fs"
 import { PGlite } from "@electric-sql/pglite"
 import { describe, expect, it } from "vitest"
-import { readBundledMigrationsSql } from "./migrate"
+import { listBundledMigrations, readBundledMigrationsSql } from "./migrate"
 
-type MigrationJournal = {
-	readonly entries: ReadonlyArray<{
-		readonly idx: number
-		readonly tag: string
-		readonly when: number
-	}>
+/** The folder for a migration by its name (the part after the kit's timestamp prefix). */
+const migrationNamed = (name: string) => {
+	const matches = listBundledMigrations().filter((migration) => migration.name.endsWith(`_${name}`))
+	if (matches.length !== 1)
+		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
+	return matches[0]!
 }
 
-const readJournal = (): MigrationJournal => {
-	const path = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle/meta/_journal.json")
-	return JSON.parse(readFileSync(path, "utf8")) as MigrationJournal
-}
+const readMigrationSql = (name: string): string => readFileSync(migrationNamed(name).sqlPath, "utf8")
 
-const migrationsDir = () => resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle")
-
-const readMigrationSqlBefore = (tag: string): string =>
-	readdirSync(migrationsDir())
-		.filter((file) => file.endsWith(".sql") && file < `${tag}.sql`)
-		.sort()
-		.map((file) => readFileSync(resolve(migrationsDir(), file), "utf8"))
+const readMigrationSqlBefore = (name: string): string => {
+	const stop = migrationNamed(name).name
+	return listBundledMigrations()
+		.filter((migration) => migration.name < stop)
+		.map((migration) => readFileSync(migration.sqlPath, "utf8"))
 		.join("\n")
+}
 
 describe("drizzle migrations", () => {
-	it("keeps journal timestamps increasing in migration order", () => {
-		const { entries } = readJournal()
+	it("keeps migration folders in a strictly increasing timestamp order", () => {
+		const migrations = listBundledMigrations()
+		expect(migrations.length).toBeGreaterThan(0)
 
-		for (let i = 0; i < entries.length; i++) {
-			expect(entries[i]!.idx).toBe(i)
-			if (i === 0) continue
-
-			// Drizzle only compares each journal timestamp against the highest
-			// created_at already recorded in the DB. A lower timestamp after a
-			// deployed migration is silently skipped on the next migrate.
+		for (let i = 1; i < migrations.length; i++) {
+			// The v1 migrator orders folders by name, and the kit derives the
+			// 14-digit prefix from the migration timestamp. A folder that sorts
+			// before an already-deployed one still applies (v1 applies every missing
+			// migration), but the replay order in fresh databases would differ from
+			// production's, which is how a dependency between two migrations hides.
 			expect(
-				entries[i]!.when,
-				`${entries[i]!.tag} must be newer than ${entries[i - 1]!.tag}`,
-			).toBeGreaterThan(entries[i - 1]!.when)
+				migrations[i]!.name.slice(0, 14) >= migrations[i - 1]!.name.slice(0, 14),
+				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
+			).toBe(true)
 		}
 	})
 
@@ -50,7 +44,7 @@ describe("drizzle migrations", () => {
 	 * A migration is only recorded in `drizzle.__drizzle_migrations` after the
 	 * whole file succeeds, so one that dies halfway leaves the branch with some of
 	 * its DDL applied and no record of it — and every retry replays from the top
-	 * and fails on what it already created. `0035` hit exactly that on `main`
+	 * and fails on what it already created. `planned_investigations` (0035) hit exactly that on `main`
 	 * (`42701 duplicate_column` on `lens_name`), and the only fixes that do not
 	 * involve hand-writing production state are idempotent DDL.
 	 *
@@ -59,13 +53,15 @@ describe("drizzle migrations", () => {
 	 * would pass for a file that says the words and still is not re-runnable.
 	 */
 	it("re-applies the idempotent migrations without error", async () => {
-		const idempotent = ["0035_planned_investigations"]
+		const idempotent = ["planned_investigations"]
 		const pg = new PGlite()
 		await pg.exec(readBundledMigrationsSql())
 
-		for (const tag of idempotent) {
-			const sql = readFileSync(resolve(migrationsDir(), `${tag}.sql`), "utf8")
-			await expect(pg.exec(sql), `${tag} must be re-runnable`).resolves.toBeDefined()
+		for (const name of idempotent) {
+			await expect(
+				pg.exec(readMigrationSql(name)),
+				`${name} must be re-runnable`,
+			).resolves.toBeDefined()
 		}
 		await pg.close()
 	}, 30_000)
@@ -159,7 +155,7 @@ describe("bundled migrations", () => {
 
 	it("deletes metric rules and removes retired destinations", async () => {
 		const pg = new PGlite()
-		await pg.exec(readMigrationSqlBefore("0026_windy_bromley"))
+		await pg.exec(readMigrationSqlBefore("windy_bromley"))
 
 		const now = "2026-07-31T00:00:00.000Z"
 		await pg.query(
@@ -220,7 +216,7 @@ describe("bundled migrations", () => {
 			[now],
 		)
 
-		await pg.exec(readFileSync(resolve(migrationsDir(), "0026_windy_bromley.sql"), "utf8"))
+		await pg.exec(readMigrationSql("windy_bromley"))
 
 		for (const table of [
 			"alert_delivery_events",

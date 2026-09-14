@@ -28,7 +28,7 @@
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"drizzle-orm": "^0.45.1",
+		"drizzle-orm": "1.0.0-rc.4",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
