@@ -23,10 +23,7 @@ import {
 	type SubmitDiagnosisRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { ErrorIssueId, InvestigationId, UserId as UserIdSchema } from "@maple/domain/primitives"
-import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
+import { ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
 
 import {
 	investigationLensRuns,
@@ -36,14 +33,9 @@ import {
 } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
-import { Clock, Context, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { applyDiagnosisWrites, subjectTypeOf } from "@maple/backend/services/errors/apply-diagnosis"
-import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/incident-context"
-import {
-	routeInvestigation,
-	type InvestigationRoute,
-} from "@maple/backend/services/errors/investigation-route"
-import { FanoutStartError } from "@maple/backend/services/errors/investigation-fanout-error"
+import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
 	STALE_BUDGETS,
 	isInvestigationStale,
@@ -52,19 +44,6 @@ import {
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
-
-/**
- * Cloudflare Workflow binding that runs a fan-out. Named here rather than read
- * off `Env` because the binding is only present inside a Worker isolate — the
- * same reason `ChatSession` is resolved this way.
- */
-import { INVESTIGATION_FANOUT_BINDING as FANOUT_WORKFLOW_BINDING } from "@maple/domain/investigation-fanout"
-
-interface FanoutWorkflowBinding {
-	readonly create: (options: { id: string; params: unknown }) => Promise<{ id: string }>
-	readonly get?: (id: string) => Promise<{ terminate: () => Promise<unknown> }>
-}
 
 const decodeIdSync = Schema.decodeUnknownSync(InvestigationId)
 const decodeIsoSync = Schema.decodeUnknownSync(InvestigationDocument.fields.createdAt)
@@ -216,10 +195,16 @@ export interface InvestigationServiceApi {
 		InvestigationDocument,
 		InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 	>
+	/**
+	 * Record that the autonomous pass ended without a diagnosis. Only a row still
+	 * `investigating` moves; a diagnosis that landed meanwhile is never overwritten.
+	 */
+	readonly failInvestigation: (
+		orgId: OrgId,
+		id: InvestigationId,
+		error: string,
+	) => Effect.Effect<void, InvestigationPersistenceError>
 }
-
-/** Identity an autonomous investigation turn runs as — the same one the internal MCP RPC uses. */
-const internalServiceUserId = Schema.decodeSync(UserIdSchema)("internal-service")
 
 export class InvestigationService extends Context.Service<InvestigationService, InvestigationServiceApi>()(
 	"@maple/api/services/InvestigationService",
@@ -458,203 +443,40 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				}
 			})
 
-			const markStartFailed = Effect.fnUntraced(function* (
-				orgId: OrgId,
-				id: InvestigationId,
-				reason: string,
-				nowMs: number,
-			) {
-				yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({ status: "failed", error: reason, updatedAt: new Date(nowMs) })
-						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, id))),
-				).pipe(Effect.asVoid)
-			})
-
 			/**
-			 * Kick off a fan-out run on the Cloudflare Workflow.
-			 *
-			 * Mirrors `sendAutonomousTurn`'s failure discipline exactly, because the
-			 * caller cannot tell which path it took: a missing binding writes
-			 * `agent_unavailable` onto the row and fails retryably, and a duplicate
-			 * instance id (Cloudflare throws on collision) becomes `start_failed` —
-			 * the same signal `beginTurn` returning `undefined` produces.
-			 *
-			 * The instance id carries the attempt so a restart can claim a fresh one;
-			 * without it Cloudflare would reject every retry of a finished run.
-			 */
-			const startFanout = Effect.fnUntraced(function* (
-				orgId: OrgId,
-				doc: InvestigationDocument,
-				route: Extract<InvestigationRoute, { kind: "planned" }>,
-				attempt: number,
-				nowMs: number,
-			) {
-				const env = Option.getOrUndefined(workerEnv)
-				const binding = env?.[FANOUT_WORKFLOW_BINDING] as FanoutWorkflowBinding | undefined
-				if (!binding || typeof binding.create !== "function") {
-					yield* markStartFailed(
-						orgId,
-						doc.id,
-						"agent_unavailable: the investigation fan-out workflow is not configured; retry",
-						nowMs,
-					)
-					return yield* Effect.fail(
-						new InvestigationAgentUnavailableError({
-							message: "The investigation fan-out workflow is not configured.",
-						}),
-					)
-				}
-
-				// Cloudflare rejects a colon in an instance id ("Workflow instance has
-				// invalid id"), so the attempt is appended with a dash. Attempt 0 keeps
-				// the bare investigation id, which is what gives a first start free
-				// duplicate-detection against a live instance.
-				const instanceId = attempt === 0 ? doc.id : `${doc.id}-a${attempt}`
-				yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({
-							fanoutState: "queued",
-							// Provisional. The planner may return fewer hypotheses than the
-							// ceiling, and the workflow's `plan` step corrects this — along with
-							// the reservation — once the real width exists.
-							fanoutSize: route.maxWidth,
-							workflowInstanceId: instanceId,
-							updatedAt: new Date(nowMs),
-						})
-						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, doc.id))),
-				)
-
-				// `Exit`, not `Effect.option`: the reason matters and used to be dropped
-				// on the floor. An id collision means a live instance already owns this
-				// investigation — a bug signal — while a network error means retry, and
-				// both used to produce the same unlogged `start_failed`.
-				const started = yield* Effect.exit(
-					Effect.tryPromise({
-						try: () =>
-							binding.create({
-								id: instanceId,
-								params: {
-									orgId,
-									investigationId: doc.id,
-									maxWidth: route.maxWidth,
-									reservedPasses: route.reservedPasses,
-									attempt,
-								},
-							}),
-						catch: FanoutStartError.fromCause,
-					}),
-				)
-
-				if (Exit.isFailure(started)) {
-					yield* Effect.logWarning("Investigation fan-out could not be started").pipe(
-						Effect.annotateLogs({
-							orgId,
-							investigationId: doc.id,
-							instanceId,
-							error: summarizeCause(started.cause),
-						}),
-					)
-					yield* markStartFailed(
-						orgId,
-						doc.id,
-						"start_failed: the investigation fan-out could not be started; retry",
-						nowMs,
-					)
-					return yield* Effect.fail(
-						new InvestigationStartFailedError({
-							message: "The investigation fan-out could not be started.",
-							cause: started.cause,
-						}),
-					)
-				}
-
-				yield* Effect.annotateCurrentSpan({
-					"maple.investigation.id": doc.id,
-					"maple.investigation.start_result": "fanout_started",
-					"maple.investigation.fanout_max_width": route.maxWidth,
-				})
-			})
-
-			/**
-			 * Kick off the investigation's autonomous first turn.
-			 *
-			 * This used to POST `/agents/maple-chat/<orgId>:inv-<id>` back out over the `CHAT_FLUE`
-			 * service binding with an internal service token — a Worker-to-Worker round trip that
-			 * existed only because the agent lived in another Worker. The agent runs here now, so
-			 * this claims the turn on the `ChatSession` Durable Object, which runs it inside itself
-			 * — the same path `POST /api/chat/sessions/:id/messages` takes. Nothing here keeps the
-			 * turn alive, which is what makes it survive: this call is often reached from a cron
-			 * tick under `runScheduledEffect`, whose runtime is disposed as soon as the tick ends.
+			 * Kick off the investigation's autonomous pass: one turn on the `ChatSession`
+			 * Durable Object, which runs it inside itself. Nothing here keeps the turn
+			 * alive, which is what makes it survive a cron tick's runtime being disposed.
 			 */
 			const sendAutonomousTurn = Effect.fnUntraced(function* (
 				orgId: OrgId,
 				doc: InvestigationDocument,
 				nowMs: number,
 			) {
-				const env = Option.getOrUndefined(workerEnv)
-				const sessionId = `${orgId}:inv-${doc.id}`
-				const stub = env ? chatSessionStub(env, sessionId) : undefined
-				if (!stub) {
-					yield* markStartFailed(
-						orgId,
-						doc.id,
-						"agent_unavailable: the investigation agent is not configured; retry",
-						nowMs,
-					)
+				const started = yield* startInvestigationTurn({
+					orgId,
+					investigationId: doc.id,
+					subject: doc.subject,
+					snapshot: doc.snapshot,
+					workerEnv: Option.getOrUndefined(workerEnv),
+					nowMs,
+				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
+				if (started.started) return
+				if (started.reason === "no_binding") {
 					return yield* Effect.fail(
 						new InvestigationAgentUnavailableError({
 							message: "The investigation agent is temporarily unavailable.",
 						}),
 					)
 				}
-
-				// Fenced in full: this prompt is machine-written, and the transcript replays user
-				// turns to everyone who opens the investigation. Unfenced it renders as a wall of
-				// JSON attributed to whoever started the thread.
-				const message = wrapChatContext(
-					buildIncidentContextMessage(AUTONOMOUS_KICKOFF_LEAD, doc.subject, doc.snapshot),
-					"",
+				return yield* Effect.fail(
+					new InvestigationStartFailedError({
+						message:
+							started.reason === "busy"
+								? "This investigation already has a turn in flight."
+								: "The investigation agent could not start a turn.",
+					}),
 				)
-
-				const messageId = crypto.randomUUID()
-				const claimed = yield* Effect.tryPromise({
-					try: () =>
-						stub.beginTurn({
-							sessionId,
-							messageId,
-							text: message,
-							tenant: encodeChatTurnTenant({
-								orgId,
-								userId: internalServiceUserId,
-								roles: [],
-								authMode: "self_hosted",
-							}),
-						}),
-					catch: (cause) =>
-						new InvestigationStartFailedError({
-							message: "The investigation agent could not start a turn.",
-							cause,
-						}),
-				})
-
-				if (!claimed) {
-					// Either a turn is already running for this session — which for an investigation
-					// means the pass is already under way — or the Durable Object could not be
-					// reached. Both are retryable: the caller's restart path sees the row next time.
-					return yield* Effect.fail(
-						new InvestigationStartFailedError({
-							message: "This investigation already has a turn in flight.",
-						}),
-					)
-				}
-
-				yield* Effect.annotateCurrentSpan({
-					"maple.investigation.start_result": "started",
-					"maple.investigation.id": doc.id,
-				})
 			})
 
 			const listInvestigations: InvestigationServiceApi["listInvestigations"] = Effect.fn(
@@ -816,25 +638,13 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								return yield* documentFor(orgId, existing)
 							}
 						}
-						// The route decides the cost, so it has to be known before the quota
-						// check and before the claim increments the counter.
-						const route = routeInvestigation({
-							subject: request.subject,
-							snapshot: request.snapshot ?? null,
-						})
-						const reservedPasses = route.kind === "planned" ? route.reservedPasses : 1
 						const doc = yield* createInvestigation(orgId, userId, request)
 						const claimed = yield* dbExecute((db) =>
 							db
 								.update(investigations)
 								.set({
 									startedAt: new Date(nowMs),
-									// Counted in passes, not runs: a planned investigation costs
-									// planner + N + validator model calls and must burn that many units
-									// of the daily budget. Reserved high here and reconciled downward by
-									// the workflow, because the real width is not knowable until the
-									// planner has run.
-									autonomousTurns: sql`${investigations.autonomousTurns} + ${reservedPasses}`,
+									autonomousTurns: sql`${investigations.autonomousTurns} + 1`,
 									updatedAt: new Date(nowMs),
 								})
 								.where(
@@ -848,8 +658,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								.returning({ id: investigations.id }),
 						)
 						if (claimed.length === 0) return doc
-						if (route.kind === "planned") yield* startFanout(orgId, doc, route, 0, nowMs)
-						else yield* sendAutonomousTurn(orgId, doc, nowMs)
+						yield* sendAutonomousTurn(orgId, doc, nowMs)
 						return yield* getInvestigation(orgId, doc.id).pipe(
 							Effect.catchTag("@maple/http/investigations/InvestigationNotFoundError", () =>
 								Effect.fail(
@@ -869,50 +678,9 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
 				const row = yield* loadRow(orgId, id)
-				const route = routeInvestigation({
-					subject: existing.subject,
-					snapshot: existing.snapshot,
-				})
-				const reservedPasses = route.kind === "planned" ? route.reservedPasses : 1
-				const attempt = (row?.fanoutAttempt ?? 0) + 1
-
-				// Stop the run we are replacing. Without this the old instance keeps
-				// going and can publish a diagnosis over a live run — a board assembled
-				// from two interleaved attempts.
-				if (row?.workflowInstanceId) {
-					const env = Option.getOrUndefined(workerEnv)
-					const binding = env?.[FANOUT_WORKFLOW_BINDING] as FanoutWorkflowBinding | undefined
-					if (binding?.get) {
-						yield* Effect.exit(
-							Effect.tryPromise({
-								try: async () => {
-									const instance = await binding.get!(row.workflowInstanceId!)
-									await instance.terminate()
-								},
-								catch: FanoutStartError.fromCause,
-							}),
-						).pipe(
-							// An instance that already finished cannot be terminated, and
-							// that is the common case — never fail a restart over it.
-							Effect.tap((exit) =>
-								Exit.isFailure(exit)
-									? Effect.logDebug(
-											"Previous fan-out instance could not be terminated",
-										).pipe(
-											Effect.annotateLogs({
-												investigationId: id,
-												instanceId: row.workflowInstanceId,
-											}),
-										)
-									: Effect.void,
-							),
-						)
-					}
-				}
 				// Prior lanes are NOT deleted. They are scoped by `attempt` and the reads
-				// filter to the row's current one, so the retry starts clean while a
-				// straggler from the terminated instance can only write into its own
-				// attempt's rows — where nothing renders them.
+				// filter to the row's current one, so a restarted run starts clean.
+				const attempt = (row?.fanoutAttempt ?? 0) + 1
 				yield* dbExecute((db) =>
 					db
 						.update(investigations)
@@ -920,9 +688,9 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							status: "investigating",
 							error: null,
 							startedAt: new Date(nowMs),
-							autonomousTurns: sql`${investigations.autonomousTurns} + ${reservedPasses}`,
+							autonomousTurns: sql`${investigations.autonomousTurns} + 1`,
 							fanoutState: "none",
-							fanoutSize: route.kind === "planned" ? route.maxWidth : 1,
+							fanoutSize: 1,
 							fanoutAttempt: attempt,
 							validatorNote: null,
 							validatorElapsedMs: null,
@@ -936,8 +704,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					error: null,
 					updatedAt: decodeIsoSync(new Date(nowMs).toISOString()),
 				})
-				if (route.kind === "planned") yield* startFanout(orgId, restarting, route, attempt, nowMs)
-				else yield* sendAutonomousTurn(orgId, restarting, nowMs)
+				yield* sendAutonomousTurn(orgId, restarting, nowMs)
 				return yield* getInvestigation(orgId, id)
 			})
 
@@ -1029,6 +796,25 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				return yield* documentFor(orgId, updated ?? row)
 			})
 
+			const failInvestigation: InvestigationServiceApi["failInvestigation"] = Effect.fn(
+				"InvestigationService.failInvestigation",
+			)(function* (orgId, id, error) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
+				const nowMs = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db
+						.update(investigations)
+						.set({ status: "failed", error, updatedAt: new Date(nowMs) })
+						.where(
+							and(
+								eq(investigations.orgId, orgId),
+								eq(investigations.id, id),
+								eq(investigations.status, "investigating"),
+							),
+						),
+				)
+			})
+
 			return {
 				listInvestigations,
 				getInvestigation,
@@ -1037,6 +823,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				restartInvestigation,
 				updateStatus,
 				submitDiagnosis,
+				failInvestigation,
 			} satisfies InvestigationServiceApi
 		}),
 	},
