@@ -1,19 +1,25 @@
 import {
-	createMaplePgSocket,
-	type MaplePgSocketHandle,
-	type MaplePgSocketOptions,
-	wrapMaplePgClient,
+	createMaplePgPool,
+	type MapleDb,
+	type MaplePgPool,
+	type MaplePgPoolOptions,
+	makeMapleEffectDb,
 } from "@maple/db/client"
 import { trackOutboundSlot } from "@maple/cache"
-import { Context, Effect, Option, Schema } from "effect"
+import { Context, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
 import { MapleDbConnection } from "./bindings"
-import type { DatabaseClient, DatabaseError } from "./DatabaseLive"
-import { executeWithSpan, failExecuteWithSpan, toDatabaseError } from "./DatabaseLive"
+import {
+	type DatabaseError,
+	type ExecuteError,
+	executeWithSpan,
+	failExecuteWithSpan,
+	toDatabaseError,
+} from "./DatabaseLive"
 
 /**
- * Cloudflare's documented value for postgres.js behind Hyperdrive.
+ * Cloudflare's documented value for a pool behind Hyperdrive.
  *
- * `max` is a CEILING, not an allocation: postgres.js opens a second socket only
+ * `max` is a CEILING, not an allocation: the pool opens a second socket only
  * when a second statement is genuinely in flight, so a request that makes one
  * DB call still costs one connection. That is why a single value serves both
  * the request path (mostly one call per invocation) and the cron path (a tick
@@ -31,10 +37,8 @@ export const MAX_CONNECTIONS = 5
 /**
  * One dial attempt, bounded. No retry, no ladder.
  *
- * The bound exists for diagnosis as much as for latency: postgres.js only
- * raises `CONNECT_TIMEOUT` from `connectTimedOut()`, and its `timer()` is a
- * no-op when `connect_timeout` is unset — so with no bound a stalled dial hangs
- * for the whole invocation and lands with no `error.type` at all.
+ * The bound exists for diagnosis as much as for latency: unset, a stalled dial
+ * hangs for the whole invocation and lands with no `error.type` at all.
  *
  * 10s rather than the 2s that shipped briefly: 2s alone took production 5xx
  * from 0.06% to 5.01%, and the retry that followed existed only to compensate
@@ -50,13 +54,15 @@ const CONNECT_TIMEOUT_SECONDS = 10
  * This is the one primitive. `Database.execute` reaches it through
  * `PgConnectionScope`; `executeOnFreshPgClient` is it with a scope of one call;
  * the Workflow entrypoints hold one directly. There is no second implementation
- * of "open a socket, wrap it per call, put a span around it".
+ * of "open a pool, build the database over it, put a span around each call".
  */
 export interface PgConnectionScopeApi {
 	/** Run one logical DB call on the scope's connection, inside the standard client span. */
-	readonly run: <T>(fn: (db: DatabaseClient) => Promise<T>) => Effect.Effect<T, DatabaseError>
-	/** Release the connection. Safe when nothing was ever created, and safe to call twice. */
-	readonly close: () => Promise<void>
+	readonly run: <A, E, R>(
+		fn: (db: MapleDb) => Effect.Effect<A, E, R>,
+	) => Effect.Effect<A, ExecuteError<E>, R>
+	/** Release the connection. Safe when nothing was ever created, and safe to run twice. */
+	readonly close: Effect.Effect<void>
 }
 
 /**
@@ -89,40 +95,40 @@ const CLOSED_MESSAGE =
 	"Postgres connection scope is already closed — this call outlived the request, cron tick or Workflow run that owned the connection"
 
 /**
- * Test seam: how to create the scope's socket. Real callers pass nothing.
+ * Test seam: how to create the scope's pool. Real callers pass nothing.
  *
  * It receives the options the real factory would have been given, so a test can
  * assert the pool ceiling and the dial bound without dialing anything. Both
  * have regressed in production before.
  */
 export interface PgConnectionScopeSeams {
-	readonly openSocket?: (options: MaplePgSocketOptions) => MaplePgSocketHandle
+	readonly openPool?: (options: MaplePgPoolOptions) => MaplePgPool
 }
 
 /**
  * Build a scope over one connection string.
  *
- * Cloudflare's documented Hyperdrive shape — one client per invocation, created
- * lazily, closed at the boundary — reached through a `Context.Reference`
+ * Cloudflare's documented Hyperdrive shape — one pool per invocation, created
+ * lazily, ended at the boundary — reached through a `Context.Reference`
  * because `Database.execute` is called from ~200 places that cannot each be
- * handed the client.
+ * handed the database.
  *
- * There is no dial step and no retry. postgres.js connects on the first query,
- * so creating the client is synchronous and cannot fail; a connection problem
- * surfaces as that query's error, classified by `postgres-errors.ts`.
+ * There is no dial step and no retry. The pool connects on the first
+ * statement, so building the database cannot fail for want of a server; a
+ * connection problem surfaces as that statement's error, classified by
+ * `postgres-errors.ts`.
  */
 export const makePgConnectionScope = (
 	connectionString: string,
 	extraAttributes?: Record<string, unknown>,
 	seams?: PgConnectionScopeSeams,
 ): PgConnectionScopeApi => {
-	const options: MaplePgSocketOptions = {
+	const options: MaplePgPoolOptions = {
 		maxConnections: MAX_CONNECTIONS,
 		connectTimeoutSeconds: CONNECT_TIMEOUT_SECONDS,
 	}
-	const create =
-		seams?.openSocket ?? ((opts: MaplePgSocketOptions) => createMaplePgSocket(connectionString, opts))
-	const openSocket = () => create(options)
+	const openPool =
+		seams?.openPool ?? ((opts: MaplePgPoolOptions) => createMaplePgPool(connectionString, opts))
 
 	// Three states, not a nullable handle. Cold and Closed both used to be
 	// `undefined`, which made "never dialed" and "already released" the same
@@ -131,75 +137,96 @@ export const makePgConnectionScope = (
 	// sockets to the invocation that opened them, and the call sites that do
 	// this are `Effect.ignore`d (see `fork-request-scoped.ts`), so the failure
 	// never surfaced. Closed is now terminal and refuses instead of reopening.
-	let state: { _tag: "Cold" } | { _tag: "Open"; handle: MaplePgSocketHandle } | { _tag: "Closed" } = {
-		_tag: "Cold",
-	}
+	let state: { _tag: "Cold" } | { _tag: "Open"; scope: Scope.Closeable; db: MapleDb } | { _tag: "Closed" } =
+		{
+			_tag: "Cold",
+		}
+	// One permit orders the first open against a concurrent close, so a
+	// teardown racing the first call can neither orphan a pool nor hand the
+	// caller one that is being ended underneath it.
+	const gate = Semaphore.makeUnsafe(1)
+	const closedFailure = () => toDatabaseError(new PgConnectionScopeClosedError({ message: CLOSED_MESSAGE }))
+
+	// Never let a pool-teardown error shadow the real DB error from the call.
+	const acquirePool = Effect.acquireRelease(
+		Effect.sync(() => openPool(options)),
+		(pool) => Effect.promise(() => pool.end().catch(() => undefined)),
+	)
+
+	// Lazy: an invocation that never touches the database never creates one.
+	const open: Effect.Effect<MapleDb, DatabaseError> = gate.withPermits(1)(
+		Effect.suspend(() => {
+			if (state._tag === "Open") return Effect.succeed(state.db)
+			if (state._tag === "Closed") return Effect.fail(closedFailure())
+			return Effect.gen(function* () {
+				const scope = yield* Scope.make()
+				const db = yield* makeMapleEffectDb(acquirePool).pipe(
+					Scope.provide(scope),
+					Effect.mapError(toDatabaseError),
+				)
+				state = { _tag: "Open", scope, db }
+				return db
+			})
+		}),
+	)
 
 	return {
 		// `suspend` so the state is read when the effect runs, not when it is built
-		// — a call constructed before teardown must still be refused after it. It
-		// also settles the connection decision in one place: the promise body below
-		// receives a handle, so it can no longer reach a state that says Closed.
-		run: <T>(fn: (db: DatabaseClient) => Promise<T>): Effect.Effect<T, DatabaseError> =>
+		// — a call constructed before teardown must still be refused after it.
+		run: <A, E, R>(fn: (db: MapleDb) => Effect.Effect<A, E, R>): Effect.Effect<A, ExecuteError<E>, R> =>
 			Effect.suspend(() => {
 				if (state._tag === "Closed") {
-					return failExecuteWithSpan(
-						toDatabaseError(new PgConnectionScopeClosedError({ message: CLOSED_MESSAGE })),
-						{
-							...extraAttributes,
-							"db.connect.scope_state": "closed",
-							// `error.type` because `postgresErrorType` has nothing to classify
-							// here: no driver was involved, so without this the span would land
-							// as an unlabelled database error next to real ones.
-							"error.type": "SCOPE_CLOSED",
-						},
-					)
+					return failExecuteWithSpan(closedFailure(), {
+						...extraAttributes,
+						"db.connect.scope_state": "closed",
+						// `error.type` because `postgresErrorType` has nothing to classify
+						// here: no driver was involved, so without this the span would land
+						// as an unlabelled database error next to real ones.
+						"error.type": "SCOPE_CLOSED",
+					})
 				}
-				// Lazy: an invocation that never touches the database never creates one.
 				const reused = state._tag === "Open"
-				const open = state._tag === "Open" ? state.handle : openSocket()
-				state = { _tag: "Open", handle: open }
 				// `trackOutboundSlot` scopes to the statement, not the socket: an idle
 				// kept-open connection doesn't starve `cache.match()`, an in-flight
 				// statement does.
 				return trackOutboundSlot(
-					executeWithSpan(async (hooks) => {
+					executeWithSpan((hooks) => {
 						hooks.record({ "db.connect.reused": reused })
-						// Wrapped per call so each call's statements land in its own span.
-						// One shared wrapper would cross-attribute `db.query.text` between
-						// concurrent calls; the wrapper is cheap (relational config only).
-						return await fn(wrapMaplePgClient(open.sql, { onQuery: hooks.collect }))
+						return Effect.flatMap(open, fn)
 					}, extraAttributes),
 				)
 			}),
 
 		// Closed first, then release: a call racing the teardown is refused
-		// rather than handed a socket that is being ended underneath it.
-		close: async () => {
-			const previous = state
-			state = { _tag: "Closed" }
-			if (previous._tag === "Open") await previous.handle.end().catch(() => undefined)
-		},
+		// rather than handed a pool that is being ended underneath it.
+		close: gate.withPermits(1)(
+			Effect.suspend(() => {
+				const previous = state
+				state = { _tag: "Closed" }
+				return previous._tag === "Open" ? Scope.close(previous.scope, Exit.void) : Effect.void
+			}),
+		),
 	}
 }
 
 /**
- * A scope over a client someone else owns — the Workflow test seams pass a
- * PGlite-backed drizzle. No statement collector is available, so spans carry
- * kind, identity and timing but no `db.query.text`; `close` is a no-op because
- * the caller owns the connection.
+ * A scope over a database someone else owns — the Workflow test seams pass a
+ * PGlite-backed one. Spans carry kind, identity, timing and the statements
+ * (the collector is a fiber reference, so it works over any database built
+ * with Maple's logger); `close` is a no-op because the caller owns the
+ * connection.
  */
 export const pgConnectionScopeFrom = (
-	db: DatabaseClient,
+	db: MapleDb,
 	extraAttributes?: Record<string, unknown>,
 ): PgConnectionScopeApi => ({
 	run: (fn) => executeWithSpan(() => fn(db), extraAttributes),
-	close: () => Promise.resolve(),
+	close: Effect.void,
 })
 
 /**
  * Run one callback against its own connection, for callers with no scope
- * installed. A scope of exactly one call — same span, same socket handling,
+ * installed. A scope of exactly one call — same span, same pool handling,
  * released immediately.
  *
  * A connection per call is correct but wasteful, so entry points should install
@@ -207,15 +234,14 @@ export const pgConnectionScopeFrom = (
  * that opened them, so a connection may be reused freely WITHIN one but must
  * never outlive it.
  */
-export const executeOnFreshPgClient = <T>(
+export const executeOnFreshPgClient = <A, E, R>(
 	connectionString: string,
-	fn: (db: DatabaseClient) => Promise<T>,
+	fn: (db: MapleDb) => Effect.Effect<A, E, R>,
 	extraAttributes?: Record<string, unknown>,
-): Effect.Effect<T, DatabaseError> =>
+): Effect.Effect<A, ExecuteError<E>, R> =>
 	Effect.suspend(() => {
 		const scope = makePgConnectionScope(connectionString, extraAttributes)
-		// Never let a socket-teardown error shadow the real DB error from fn(db).
-		return scope.run(fn).pipe(Effect.ensuring(Effect.promise(() => scope.close())))
+		return scope.run(fn).pipe(Effect.ensuring(scope.close))
 	})
 
 /**
@@ -228,10 +254,7 @@ export const withPgConnectionScopeOf = <A, E, R>(
 	scope: PgConnectionScopeApi,
 	program: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-	program.pipe(
-		Effect.provideService(PgConnectionScope, scope),
-		Effect.ensuring(Effect.promise(() => scope.close())),
-	)
+	program.pipe(Effect.provideService(PgConnectionScope, scope), Effect.ensuring(scope.close))
 
 /**
  * Install a connection scope for the duration of `program`.

@@ -3,7 +3,7 @@ import { PGlite, type Transaction } from "@electric-sql/pglite"
 import { Effect, Layer } from "effect"
 import { snapshotPath } from "../../test/pglite-snapshot"
 import { Database } from "./DatabaseLive"
-import { databaseFromInstance } from "./DatabasePgliteLive"
+import { makeDatabaseFromInstance } from "./DatabasePgliteLive"
 
 // The post-migration data directory, read once per worker process and shared by
 // every instance it creates. The vitest globalSetup guarantees it exists before
@@ -26,18 +26,17 @@ export interface TestDb {
 }
 
 /**
- * Reject a bound `Date`, which PGlite accepts and the deployed driver does not.
+ * Reject a bound `Date`.
  *
- * Production runs `drizzle-orm/postgres-js` → `client.unsafe(sql, params)`, which
- * refuses a `Date` param outright ("Received an instance of Date"). PGlite
- * serializes one happily, so without this the difference is invisible to the
- * suite — which is how a raw `sql` template binding a `Date` reached production
- * and stalled the error tick for 25 hours.
- *
- * There is no legitimate `Date` param: every timestamptz column is
- * `mode: "date"`, whose `mapToDriverValue` already returns an ISO string. A
- * `Date` surviving into the param array therefore always means a raw `sql`
- * fragment with no column type behind it — use `msToSqlTimestamp` there.
+ * The postgres.js driver this suite used to model refused a `Date` param
+ * outright, and a raw `sql` template binding one reached production and
+ * stalled the error tick for 25 hours because PGlite serializes it happily.
+ * node-postgres accepts a `Date` too, so the guard no longer mirrors a driver
+ * difference; it enforces the convention that outlived it. There is no
+ * legitimate `Date` param: every timestamptz column is `mode: "date"`, whose
+ * `mapToDriverValue` already returns an ISO string. A `Date` surviving into the
+ * param array therefore always means a raw `sql` fragment with no column type
+ * behind it — use `msToSqlTimestamp` there.
  */
 const assertNoDateParams = (sql: string, params: unknown[] | undefined): void => {
 	const index = params?.findIndex((param) => param instanceof Date) ?? -1
@@ -88,7 +87,8 @@ export const createTestDb = (track?: TestDb[]): TestDb => {
 			yield* Effect.promise(() => pglite.waitReady)
 			// The raw instance stays on `TestDb.pglite` for executeSql/queryFirstRow —
 			// those are test fixtures writing their own SQL, not the app's write path.
-			return databaseFromInstance(withDateParamGuard(pglite))
+			// A database that cannot be built over a ready PGlite is a harness defect.
+			return yield* makeDatabaseFromInstance(withDateParamGuard(pglite)).pipe(Effect.orDie)
 		}),
 	)
 	const db: TestDb = {

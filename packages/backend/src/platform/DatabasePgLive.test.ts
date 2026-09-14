@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { sql } from "drizzle-orm"
 import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
 import { type DatabaseConnection, MapleDbConnection } from "./bindings"
-import { Database, type DatabaseClient } from "./DatabaseLive"
+import { Database } from "./DatabaseLive"
 import { layerPg } from "./DatabasePgLive"
 import { PgConnectionScope, type PgConnectionScopeApi } from "./pg-connection-scope"
 
@@ -45,7 +45,7 @@ describe("layerPg", () => {
 		Effect.gen(function* () {
 			const database = yield* databaseFor(Option.none())
 
-			const exit = yield* Effect.exit(database.execute(() => Promise.resolve("unreachable")))
+			const exit = yield* Effect.exit(database.execute(() => Effect.succeed("unreachable")))
 
 			// Deliberately a per-call failure, not a layer-build failure: dying at
 			// construction would 504 every route including /health, whereas this
@@ -60,7 +60,7 @@ describe("layerPg", () => {
 			const { spans, tracer } = makeRecordingTracer()
 			const database = yield* databaseFor(closedPortBinding)
 
-			// The callback must issue a statement: the client is lazy, so a callback
+			// The callback must issue a statement: the pool is lazy, so a callback
 			// that never queries would never reach the closed port and would succeed.
 			const exit = yield* Effect.exit(
 				database.execute((db) => db.execute(sql`select 1`)).pipe(Effect.withTracer(tracer)),
@@ -82,17 +82,19 @@ describe("layerPg", () => {
 	it.effect("uses the installed scope instead of dialing", () =>
 		Effect.gen(function* () {
 			let calls = 0
+			// The binding points at a closed port, so the scope hands over nothing
+			// and the callback must not touch it.
 			const scope: PgConnectionScopeApi = {
-				run: <T>(fn: (db: DatabaseClient) => Promise<T>) => {
+				run: (fn) => {
 					calls += 1
-					return Effect.promise(() => fn(undefined as DatabaseClient))
+					return fn(undefined as never)
 				},
-				close: () => Promise.resolve(),
+				close: Effect.void,
 			}
 			const database = yield* databaseFor(closedPortBinding)
 
 			const result = yield* database
-				.execute(() => Promise.resolve("from the scope"))
+				.execute(() => Effect.succeed("from the scope"))
 				.pipe(Effect.provideService(PgConnectionScope, scope))
 
 			// The binding points at a closed port, so a success here can only mean

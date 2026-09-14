@@ -1,7 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { orgOnboardingState } from "@maple/db"
 import { eq, sql } from "drizzle-orm"
-import { Effect, Exit, Tracer } from "effect"
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import { Cause, Effect, Exit, Tracer } from "effect"
+import { ConnectionError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError"
 import { Database, executeWithSpan } from "./DatabaseLive"
 import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
@@ -33,6 +35,9 @@ const makeRecordingTracer = () => {
 const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
 	spans.filter((span) => span.attributes.get("db.system.name") === "postgresql")
 
+/** A pg error the way node-postgres raises it: the class hangs off `code`. */
+const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
+
 describe("Database execute span instrumentation", () => {
 	it.effect("emits a Client-kind span with DB semconv attributes on success", () =>
 		Effect.gen(function* () {
@@ -48,6 +53,7 @@ describe("Database execute span instrumentation", () => {
 			assert.deepStrictEqual(rows, [])
 			const [span, ...rest] = dbSpans(spans)
 			assert.isDefined(span)
+			// One span per call: the driver's own per-statement spans are suppressed.
 			assert.deepStrictEqual(rest, [])
 			assert.strictEqual(span.kind, "client")
 			assert.strictEqual(span.attributes.get("db.system.name"), "postgresql")
@@ -93,9 +99,31 @@ describe("Database execute span instrumentation", () => {
 			assert.include(span.attributes.get("db.query.text") as string, "select broken from nowhere")
 			assert.strictEqual(span.name, "SELECT nowhere")
 			assert.strictEqual(span.attributes.get("db.operation.name"), "SELECT")
+			// `undefined_table`, straight from the driver's SQLSTATE.
+			assert.strictEqual(span.attributes.get("error.type"), "42P01")
+			assert.strictEqual(span.attributes.get("db.response.status_code"), "42P01")
 			assert.isNumber(span.attributes.get("db.duration_ms"))
 			assert.strictEqual(span.status._tag, "Ended")
 			assert.isTrue(span.status._tag === "Ended" && Exit.isFailure(span.status.exit))
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("absorbs the driver failure into DatabaseError, root cause first", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+
+			const error = yield* database
+				.execute((db) => db.execute(sql`select broken from nowhere`))
+				.pipe(Effect.flip)
+
+			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			// The Postgres diagnostic leads; the statement follows so a truncated
+			// log line still says what went wrong.
+			assert.match(
+				error.message,
+				/^relation "nowhere" does not exist \[while: select broken from nowhere\]/,
+			)
+			assert.instanceOf(error.cause, EffectDrizzleQueryError)
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
 	)
 
@@ -107,15 +135,17 @@ describe("Database execute span instrumentation", () => {
 
 			yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						await tx
-							.insert(orgOnboardingState)
-							.values({ orgId: "org_tx_test", createdAt: now, updatedAt: now })
-						await tx
-							.select()
-							.from(orgOnboardingState)
-							.where(eq(orgOnboardingState.orgId, "org_tx_test"))
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx
+								.insert(orgOnboardingState)
+								.values({ orgId: "org_tx_test", createdAt: now, updatedAt: now })
+							yield* tx
+								.select()
+								.from(orgOnboardingState)
+								.where(eq(orgOnboardingState.orgId, "org_tx_test"))
+						}),
+					),
 				)
 				.pipe(Effect.withTracer(tracer))
 
@@ -134,13 +164,35 @@ describe("Database execute span instrumentation", () => {
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
 	)
 
+	it.effect("passes a domain failure raised inside the callback through untouched", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			const rollback = new Error("business rule violated")
+
+			const error = yield* database
+				.execute((db) =>
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx.select().from(orgOnboardingState)
+							return yield* Effect.fail(rollback)
+						}),
+					),
+				)
+				.pipe(Effect.flip)
+
+			// Not a database failure, so not a DatabaseError: the callback's own
+			// error is what rolled the transaction back and what the caller sees.
+			assert.strictEqual(error, rollback)
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
 	it.effect("keeps the placeholder name when the call fails before any statement", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
 			const database = yield* Database
 
 			const exit = yield* database
-				.execute(() => Promise.reject(new Error("connection refused")))
+				.execute(() => Effect.fail(new Error("connection refused")))
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -188,24 +240,30 @@ describe("Database execute span instrumentation", () => {
  * guesswork. These cover the split that resolves it.
  */
 describe("Database execute failure classification", () => {
-	// There is no connect/query split any more. postgres.js connects on the first
-	// statement, so the split could only ever be synthesized by a `select 1` probe
-	// that cost a round trip on every request. What it was used to infer — is this
-	// a connection problem or a query problem — `error.type` states outright.
+	// There is no connect/query split. The pool connects on the first statement,
+	// so the split could only ever be synthesized by a `select 1` probe that cost
+	// a round trip on every request. What it was used to infer — is this a
+	// connection problem or a query problem — `error.type` states outright.
 	it.effect("classifies a connection failure by class rather than by duration", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
+			const failure = new SqlError({
+				reason: new ConnectionError({
+					cause: pgError("ECONNREFUSED", "connect ECONNREFUSED 10.0.0.1:5432"),
+					message: "Connection error",
+					operation: "acquireConnection",
+				}),
+			})
 
-			const exit = yield* executeWithSpan(() =>
-				Promise.reject(
-					Object.assign(new Error("write CONNECT_TIMEOUT"), { code: "CONNECT_TIMEOUT" }),
-				),
-			).pipe(Effect.withTracer(tracer), Effect.exit)
+			const exit = yield* executeWithSpan(() => Effect.fail(failure)).pipe(
+				Effect.withTracer(tracer),
+				Effect.exit,
+			)
 
 			assert.isTrue(Exit.isFailure(exit))
 			const [span] = dbSpans(spans)
 			assert.isDefined(span)
-			assert.strictEqual(span.attributes.get("error.type"), "CONNECT_TIMEOUT")
+			assert.strictEqual(span.attributes.get("error.type"), "ECONNREFUSED")
 			assert.strictEqual(span.attributes.get("db.connect.failed"), true)
 			assert.isNumber(span.attributes.get("db.duration_ms"))
 		}),
@@ -214,10 +272,26 @@ describe("Database execute failure classification", () => {
 	it.effect("classifies a statement failure separately, with its SQLSTATE", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
+			const failure = new EffectDrizzleQueryError({
+				query: 'insert into "api_keys" …',
+				params: [],
+				cause: Cause.fail(
+					new SqlError({
+						reason: new UniqueViolation({
+							cause: pgError(
+								"23505",
+								'duplicate key value violates unique constraint "api_keys_pkey"',
+							),
+							constraint: "api_keys_pkey",
+						}),
+					}),
+				),
+			})
 
-			const exit = yield* executeWithSpan(() =>
-				Promise.reject(Object.assign(new Error("duplicate key"), { code: "23505" })),
-			).pipe(Effect.withTracer(tracer), Effect.exit)
+			const exit = yield* executeWithSpan(() => Effect.fail(failure)).pipe(
+				Effect.withTracer(tracer),
+				Effect.exit,
+			)
 
 			assert.isTrue(Exit.isFailure(exit))
 			const [span] = dbSpans(spans)
@@ -234,7 +308,7 @@ describe("Database execute failure classification", () => {
 
 			yield* executeWithSpan((hooks) => {
 				hooks.record({ "db.connect.reused": true })
-				return Promise.resolve("ok")
+				return Effect.succeed("ok")
 			}).pipe(Effect.withTracer(tracer))
 
 			const [span] = dbSpans(spans)

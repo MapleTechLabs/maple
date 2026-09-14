@@ -39,7 +39,7 @@
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"@typeonce/effect-machine": "0.24.0",
 		"alchemy": "catalog:alchemy",
-		"drizzle-orm": "1.0.0-rc.4",
+		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

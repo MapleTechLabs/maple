@@ -1,122 +1,139 @@
-import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js"
-import postgres from "postgres"
-
-/** The raw postgres.js client — one TCP socket's worth of connection state. */
-export type MaplePgSocket = ReturnType<typeof postgres>
-
-/**
- * One client, without any drizzle wrapper bound to it.
- *
- * A caller holds ONE of these across many logical calls while still giving each
- * call its own `onQuery` collector — drizzle fixes its logger at construction,
- * so collector isolation has to come from a per-call `wrapMaplePgClient`, not
- * from a per-call client.
- *
- * There is deliberately no "wait until connected" member. postgres.js connects
- * lazily on the first query, so a separate connect step can only be synthesized
- * with a `select 1`, and that round trip bought nothing but a telemetry split.
- * Its absence is what lets the request path create a client synchronously.
- */
-export interface MaplePgSocketHandle {
-	/** The raw postgres.js client. Wrap it per call with `wrapMaplePgClient`. */
-	readonly sql: MaplePgSocket
-	/** Closes the underlying postgres.js connection pool. */
-	readonly end: () => Promise<void>
-}
-
-export interface MaplePgSocketOptions {
-	readonly maxConnections?: number
-	/**
-	 * postgres.js `connect_timeout`, in SECONDS. Unset, the driver default of 30s
-	 * applies — but worse, postgres.js's `timer()` is a no-op when the option is
-	 * absent, so `connectTimedOut()` never fires and a stalled dial has no bound
-	 * at all and produces no `CONNECT_TIMEOUT` to classify. Always pass this; see
-	 * `CONNECT_TIMEOUT_SECONDS` in apps/api/src/platform/pg-connection-scope.ts.
-	 *
-	 * This is the driver option rather than an `Effect.timeout` on purpose:
-	 * interrupting the fiber does not cancel the underlying promise, so the socket
-	 * would keep dialing and keep holding its connection slot. Only
-	 * `connect_timeout` calls `socket.destroy()` and frees the slot.
-	 */
-	readonly connectTimeoutSeconds?: number
-}
-
-export interface MaplePgClientOptions extends MaplePgSocketOptions {
-	/**
-	 * Called once per executed statement with the parameterized SQL ($1
-	 * placeholders — params are never inlined). Fires for statements inside
-	 * `db.transaction` callbacks too; `BEGIN`/`COMMIT` are issued below drizzle
-	 * and are not reported.
-	 */
-	readonly onQuery?: (query: string) => void
-}
-
-export const toDrizzleLogger = (onQuery: ((query: string) => void) | undefined) =>
-	onQuery ? { logQuery: (query: string, _params: unknown[]) => onQuery(query) } : undefined
+import * as PgClient from "@effect/sql-pg/PgClient"
+import { EffectCache } from "drizzle-orm/cache/core/cache-effect"
+import { EffectDrizzleQueryError, EffectLogger } from "drizzle-orm/effect-core"
+import * as PgDrizzle from "drizzle-orm/effect-postgres"
+import type { EffectPgQueryEffectHKT, EffectPgQueryResultHKT } from "drizzle-orm/effect-postgres"
+import type { PgEffectDatabase } from "drizzle-orm/pg-core/effect"
+import { Context, Effect, Layer, type Scope } from "effect"
+import { SqlError } from "effect/unstable/sql/SqlError"
+import { Pool } from "pg"
 
 /**
- * Create one postgres.js client, for real Postgres (PlanetScale via Hyperdrive
- * in Workers, docker-compose Postgres under `alchemy dev`, direct URLs in
- * scripts).
- *
- * Creating one costs nothing: postgres.js connects lazily on the first query,
- * so this is synchronous and does not touch the network.
- *
- * Workers note: TCP sockets are tied to the request that opened them, so a
- * client may be reused freely WITHIN a request but must never outlive it. The
- * request path holds one of these per request (`maxConnections: 1`) and `end()`s
- * it at the boundary — see apps/api/src/platform/pg-connection-scope.ts.
- * `fetch_types: false` skips the pg_types round-trip (we only use built-in
- * types).
- *
- * `prepare: false` because the named-statement cache is per connection: a
- * request-lived client would have to re-issue every statement's Parse on the
- * next request anyway, and named statements are the classic way to pin a
- * connection in a pooler. Hyperdrive multiplexes client connections over its
- * origin pool, so the unnamed extended protocol is the safer default.
- * Cloudflare's own example now suggests `prepare: true`; that only pays off
- * across reuse of one long-lived connection, which a request-lived client by
- * definition does not have. Do not flip it back without measuring.
- */
-export const createMaplePgSocket = (
-	connectionString: string,
-	options?: MaplePgSocketOptions,
-): MaplePgSocketHandle => {
-	const connectTimeoutSeconds = options?.connectTimeoutSeconds
-	const sql = postgres(connectionString, {
-		max: options?.maxConnections ?? 5,
-		fetch_types: false,
-		prepare: false,
-		// Spread rather than pass `undefined`: postgres.js coerces the option
-		// through its integer parser, and an explicit undefined would not fall
-		// back to the driver default.
-		...(!(connectTimeoutSeconds === undefined) ? { connect_timeout: connectTimeoutSeconds } : undefined),
-	})
-	return { sql, end: () => sql.end() }
-}
-
-/**
- * Bind a drizzle client to an already-dialed socket.
- *
- * Cheap enough to call per logical DB call — it builds a session object and
- * does not touch the network. Calling it per call is what keeps each call's
- * `onQuery` collector isolated while they share one socket; `DatabasePgliteLive`
- * does the same thing over a shared PGlite instance for exactly this reason.
+ * The drizzle database every Maple service codes against: Effect-native, over
+ * `@effect/sql-pg` on Workers and `@effect/sql-pglite` in tests. Queries are
+ * Effects (`yield* db.select()…`), transactions take an Effect callback, and
+ * every failure lands in the typed channel as a `MapleDbError`.
  *
  * No `relations` are registered: Maple uses the SQL-like query builder only,
  * never `db.query.*`.
  */
-export const wrapMaplePgClient = (
-	sql: MaplePgSocket,
-	options?: Pick<MaplePgClientOptions, "onQuery">,
-): MaplePgClient => drizzlePostgres({ client: sql, logger: toDrizzleLogger(options?.onQuery) })
+export type MapleDb = PgDrizzle.EffectPgDatabase
+
+/** The `tx` handed to a `db.transaction` callback. */
+export type MapleTx = Parameters<Parameters<MapleDb["transaction"]>[0]>[0]
+
+/** Either a database or a transaction — for helpers that run inside or outside one. */
+export type MapleDbLike = PgEffectDatabase<EffectPgQueryEffectHKT, EffectPgQueryResultHKT>
 
 /**
- * The canonical client type the app codes against. PostgresJsDatabase and
- * PgliteDatabase share the PgDatabase core; the PGlite layer casts into this.
+ * What a query or transaction fails with below the `Database` service.
+ * `EffectDrizzleQueryError` wraps a statement failure (its `cause` is the
+ * `SqlError`, whose `reason` is `@effect/sql`'s classification of the pg error);
+ * `SqlError` on its own comes from transaction control (`BEGIN`, `COMMIT`).
  */
-export type MaplePgClient = ReturnType<typeof drizzlePostgres>
+export type MapleDbError = EffectDrizzleQueryError | SqlError
 
-/** Drizzle over an embedded PGlite instance — local dev and vitest. */
+export const isMapleDbError = (value: unknown): value is MapleDbError =>
+	value instanceof EffectDrizzleQueryError || value instanceof SqlError
 
-export type MapleDatabaseTransaction = Parameters<Parameters<MaplePgClient["transaction"]>[0]>[0]
+/**
+ * The per-call statement collector. `Database.execute` provides one around
+ * each call; the drizzle logger below reads it when a statement runs, so every
+ * parameterized statement (including inside a transaction) lands on that
+ * call's span as `db.query.text`. A reference rather than a per-call drizzle
+ * wrapper: the logger is fixed when the database is built, but `logQuery`
+ * returns an Effect and therefore sees the calling fiber's context.
+ */
+export class MapleStatementCollector extends Context.Reference<((query: string) => void) | undefined>(
+	"@maple/db/MapleStatementCollector",
+	{ defaultValue: () => undefined },
+) {}
+
+const mapleDrizzleLogger = Layer.succeed(EffectLogger, {
+	logQuery: (query) =>
+		Effect.gen(function* () {
+			const collect = yield* MapleStatementCollector
+			collect?.(query)
+		}),
+})
+
+/**
+ * Drizzle's default no-op cache plus Maple's collecting logger. Not
+ * `PgDrizzle.DefaultServices`, which bundles a no-op logger that would shadow
+ * this one.
+ */
+export const mapleDrizzleServices = Layer.merge(mapleDrizzleLogger, EffectCache.Default)
+
+/** A node-postgres pool — one per invocation on Workers, dialed lazily on the first statement. */
+export type MaplePgPool = Pool
+
+export interface MaplePgPoolOptions {
+	readonly maxConnections?: number
+	/**
+	 * node-postgres `connectionTimeoutMillis`, in SECONDS. Unset, a stalled dial
+	 * has no bound at all. Always pass this; see `CONNECT_TIMEOUT_SECONDS` in
+	 * packages/backend/src/platform/pg-connection-scope.ts.
+	 *
+	 * The driver option rather than an `Effect.timeout` on purpose: interrupting
+	 * the fiber does not cancel the socket, so only the driver's own timer frees
+	 * the connection slot.
+	 */
+	readonly connectTimeoutSeconds?: number
+}
+
+/**
+ * Create one node-postgres pool, for real Postgres (PlanetScale via Hyperdrive
+ * in Workers, docker-compose Postgres under `alchemy dev`, direct URLs in
+ * scripts).
+ *
+ * Creating one costs nothing: the pool dials on the first statement, so this is
+ * synchronous and does not touch the network. There is deliberately no probe
+ * (`PgClient.make` runs `SELECT 1` at acquire); a round trip on every request
+ * bought nothing but a telemetry split, which `error.type` now states outright.
+ *
+ * Workers note: TCP sockets are tied to the request that opened them, so a pool
+ * may be reused freely WITHIN a request but must never outlive it. The request
+ * path holds one of these per request and ends it at the boundary.
+ *
+ * Unnamed statements only (node-postgres prepares nothing unless a statement
+ * is given a `name`), which is what a pooler-fronted, request-lived connection
+ * wants: a named statement is per connection and the classic way to pin one.
+ */
+export const createMaplePgPool = (connectionString: string, options?: MaplePgPoolOptions): MaplePgPool => {
+	const connectTimeoutSeconds = options?.connectTimeoutSeconds
+	const pool = new Pool({
+		connectionString,
+		max: options?.maxConnections ?? 5,
+		...(!(connectTimeoutSeconds === undefined)
+			? { connectionTimeoutMillis: connectTimeoutSeconds * 1000 }
+			: undefined),
+	})
+	// An idle client's socket error is emitted on the pool; unhandled, it is an
+	// uncaught exception rather than the next statement's failure.
+	pool.on("error", () => undefined)
+	return pool
+}
+
+/**
+ * Build the drizzle database over a pool the caller acquires.
+ *
+ * `acquire` runs inside the given Scope, and the pool is ended when that Scope
+ * closes — the invocation-scope machinery in `pg-connection-scope.ts` owns
+ * both. The client layer is built with `Layer.build` rather than
+ * `Effect.provide` for exactly that reason: `provide` scopes the layer to the
+ * effect it wraps and would end the pool the moment the database was built.
+ * `PgClient.fromPool` rather than `PgClient.make` because `make` probes with
+ * `SELECT 1` at acquire and caps `pool.end()` at one second.
+ */
+export const makeMapleEffectDb = (
+	acquire: Effect.Effect<MaplePgPool, SqlError, Scope.Scope>,
+): Effect.Effect<MapleDb, SqlError, Scope.Scope> =>
+	Effect.gen(function* () {
+		const client = yield* Layer.build(
+			PgClient.layerFrom(PgClient.fromPool({ acquire, applicationName: "maple" })),
+		)
+		return yield* PgDrizzle.make().pipe(
+			Effect.provide(mapleDrizzleServices),
+			Effect.provideContext(client),
+		)
+	})

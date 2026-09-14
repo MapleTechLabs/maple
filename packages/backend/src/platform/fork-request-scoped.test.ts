@@ -18,26 +18,24 @@ const refusingScope = () => {
 	let closed = false
 	let runs = 0
 	const scope: PgConnectionScopeApi = {
-		run: <T>(fn: (db: never) => Promise<T>) =>
+		run: (fn) =>
 			Effect.suspend(() => {
 				if (closed) {
-					return Effect.fail(
-						toDatabaseError(new PgConnectionScopeClosedError({ message: "closed" })),
-					)
+					return Effect.fail(toDatabaseError(new PgConnectionScopeClosedError({ message: "closed" })))
 				}
 				runs += 1
-				return Effect.promise(() => fn(undefined as never))
+				return fn(undefined as never)
 			}),
-		close: async () => {
+		close: Effect.sync(() => {
 			closed = true
-		},
+		}),
 	}
 	return { scope, runs: () => runs }
 }
 
 const dbCall = Effect.gen(function* () {
 	const scope = yield* PgConnectionScope
-	return yield* scope!.run(() => Promise.resolve("touched"))
+	return yield* scope!.run(() => Effect.succeed("touched"))
 })
 
 describe("forkRequestScoped", () => {
