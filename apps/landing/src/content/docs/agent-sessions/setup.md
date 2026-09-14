@@ -6,7 +6,7 @@ order: 0
 navLabel: "Overview & setup"
 ---
 
-Below is one conversation from a support agent instrumented with the OpenTelemetry GenAI conventions. Three turns: the customer asks whether they can change a delivery address, gives one in Paris, and ends up cancelling the order. This is what Maple recorded, and how much of the debugging is done before you open a trace.
+One conversation from a support agent instrumented with the OpenTelemetry GenAI conventions: the customer asks to change a delivery address, gives one in Paris, and ends up cancelling the order. This is what Maple recorded.
 
 <div class="flex flex-wrap gap-2 mb-8 not-prose">
     <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">No extra SDK</span>
@@ -17,45 +17,29 @@ Below is one conversation from a support agent instrumented with the OpenTelemet
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-02-overview.webp" alt="A session's overview page: a time breakdown bar, a findings list with a failed tool call, a tools table with calls, failures and a timeline, and a right column with cost by model and token buckets." loading="lazy" />
-  <figcaption>The session's overview. The failed tool call is the first thing on the page, with the tool, the error type and the message it returned.</figcaption>
+  <figcaption>The session overview. The failed tool call leads the page: <code>update_shipping_address</code> returned <code>unsupported_destination</code> in turn 2.</figcaption>
 </figure>
 
-The finding at the top says what went wrong: in turn 2, `update_shipping_address` failed with `unsupported_destination`, because the order region is US. Around it, the page has already answered the questions you would otherwise ask the trace. The agent was busy for 14 seconds of a 2 minute 25 second wall clock, and the other 90% was the customer typing. Claude Sonnet did the work for four cents across six calls, and a mini model classified each message for a fraction of that. Three tools ran; one failed; the timeline on the right of the tools table says when.
+The overview also splits the wall clock into model time, tool time and idle, and rolls cost and tokens up per model. Here the agent was busy for 14 seconds of 2 minutes 25; the rest was the customer typing.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-03-transcript.webp" alt="The transcript view of a session: system instructions, user and assistant messages in sequence, each model call annotated with its model, tokens, cost and finish reason, and a tool call row with its latency and payload sizes." loading="lazy" />
-  <figcaption>The same session as a transcript. Turn 1: the classifier's one-word answer, the collapsed system prompt, the order lookup, and the reply the customer saw.</figcaption>
+  <figcaption>The transcript. Each model call carries its model, tokens, cost and finish reason; tool calls sit where the model made them.</figcaption>
 </figure>
-
-The transcript is the conversation as the model saw it. Each model call is labelled with its model, tokens in and out, cost, time to first token and finish reason, so a slow or expensive turn is visible in the margin before you read it. A system prompt that repeats is collapsed to one line, and a tool call sits between the model turn that requested it and the one that reacted to it, with its arguments and result one click away.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-05-trace.webp" alt="The trace view of a session: three turns, each with an invoke_agent span, chat spans labelled with their model and token counts, and execute_tool spans, on a time axis with the idle gaps between turns removed. One tool span is marked with its error type." loading="lazy" />
-  <figcaption>The same session as a trace. 2m 10s of idle time between turns is cut from the axis; the failed tool span carries its <code>error.type</code> inline.</figcaption>
+  <figcaption>The trace. Spans grouped by turn, 2m 10s of idle cut from the axis, the failed tool span flagged with its <code>error.type</code>.</figcaption>
 </figure>
-
-The trace is where the timing lives. Spans are grouped by turn, the idle gaps between turns are removed from the axis so the calls stay readable, and the failed tool is marked where it happened: 210 ms, between a 2.18 second model call and the 2.35 second one that handled the failure. Your HTTP, database and queue spans are in the same trace, so a slow tool leads to the query behind it.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-01-list.webp" alt="The Agent Sessions list in Maple, one row per session with services, model, duration, LLM call and tool call counts, tokens, cost, errors and start time, and a filter sidebar on the left." loading="lazy" />
-  <figcaption>Where the session came from. One row per conversation for your retention period, with the failed ones marked.</figcaption>
+  <figcaption>The list. One row per conversation for your retention period, filterable by framework, service, model, agent and tool; failed ones marked.</figcaption>
 </figure>
 
-The list holds every session in your retention period, one row per conversation, with its services, models, duration, model and tool call counts, tokens, cost and errors. The sidebar filters by framework, service, environment, model, agent and tool; **With errors** narrows it to the sessions with a failed call. This session's row is the one with the **1 tool** badge.
+Tools get the same treatment across sessions: ranked by volume, failure rate and latency, with each failure grouped by error type and the arguments and results that produced it. See [Debug and monitor tools](#debug-and-monitor-tools).
 
-Tools get the same treatment across sessions: the Tools tab ranks every tool by volume, failure rate and latency, and each tool's page groups its failures by error type with the arguments and results that produced them. [Debug and monitor tools](#debug-and-monitor-tools) walks through it.
-
-All of it is also on the [MCP server](/docs/mcp): `list_agent_sessions`, `get_agent_session`, `get_agent_tools_overview` and `get_agent_tool_error` let an assistant do the same reading without opening the dashboard.
-
-## How a session is built
-
-There is no separate SDK. Maple reads three things off the spans you already export, and that is the whole contract:
-
-- **Which spans are AI spans.** Any span with `gen_ai.operation.name`: `chat` and `text_completion` are model calls, `execute_tool` is a tool call, `invoke_agent` is one pass of the agent.
-- **Which traces belong together.** Traces that carry the same session id form one session. Once any span in a trace names the session, every span of that trace joins it, which is how your HTTP and database spans end up in the waterfall.
-- **Where one turn ends and the next begins.** Each `invoke_agent` span with no agent above it opens a turn. A session with no agent spans gets one turn per trace.
-
-Everything else on the pages above, the models, the token buckets, the messages, the tool arguments and results, the errors, comes from the rest of the `gen_ai.*` attributes, and the [attribute table](#the-attributes-maple-reads) says which ones do what.
+The same data is on the [MCP server](/docs/mcp) as `list_agent_sessions`, `get_agent_session`, `get_agent_tools_overview` and `get_agent_tool_error`.
 
 ## Connect your agent
 
