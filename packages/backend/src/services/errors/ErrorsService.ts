@@ -42,10 +42,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "driz
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import {
-	INVESTIGATION_FANOUT_BINDING,
-	maybeEnqueueTriage,
-} from "@maple/backend/services/errors/ai-triage-enqueue"
+import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import {
 	isErrorTickClaimLost,
 	persistErrorTickWindow,
@@ -248,13 +245,9 @@ const make: Effect.Effect<
 	const edgeCache = yield* EdgeCacheService
 	const env = yield* Env
 	const dispatcher = yield* NotificationDispatcher
-	// Optional: present only inside a Worker isolate. Used to kick off the
-	// AI triage Workflow when an incident opens (org opt-in).
-	const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-	const investigationFanoutBinding = Option.match(workerEnv, {
-		onNone: () => undefined,
-		onSome: (e) => e[INVESTIGATION_FANOUT_BINDING],
-	})
+	// Optional: present only inside a Worker isolate. Used to start the
+	// investigation agent when an incident opens (org opt-in).
+	const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -1326,7 +1319,7 @@ const make: Effect.Effect<
 		}
 
 		// The authoritative state and notification outbox are committed above.
-		// Workflow fan-out remains best-effort and runs only after that commit.
+		// Starting the agent remains best-effort and runs only after that commit.
 		yield* Effect.forEach(persistence.pendingTriages, (pending) =>
 			maybeEnqueueTriage({
 				orgId,
@@ -1348,7 +1341,7 @@ const make: Effect.Effect<
 					lastSeen: formatWarehouseDateTime(pending.row.lastSeenMs),
 					issueId: pending.issueId,
 				},
-				fanoutBinding: investigationFanoutBinding,
+				workerEnv,
 			}).pipe(Effect.provideService(Database, database)),
 		)
 

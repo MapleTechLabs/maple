@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
-import { ErrorIssueId, ErrorIssuePullRequestId, ErrorIssueVerificationId } from "@maple/domain/primitives"
+import {
+	ErrorIssueId,
+	ErrorIssuePullRequestId,
+	ErrorIssueVerificationId,
+	InvestigationId,
+} from "@maple/domain/primitives"
 import {
 	aiTriageSettings,
 	errorIssues,
@@ -46,17 +51,19 @@ const makeLayer = () => {
 	return testDb.layer.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 }
 
-const fakeFanoutWorkflow = () => {
-	const created: Array<{ id: string; params: Record<string, unknown> }> = []
-	return {
-		created,
-		binding: {
-			create: async (input: { id: string; params: Record<string, unknown> }) => {
-				created.push(input)
-				return { id: input.id }
+/** Stub `ChatSession` namespace: a start is one `beginTurn` on the investigation's session. */
+const fakeChatSession = () => {
+	const turns: Array<{ sessionId: string; text: string }> = []
+	const namespace = {
+		idFromName: (name: string) => name,
+		get: () => ({
+			beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
+				turns.push({ sessionId: input.sessionId, text: input.text })
+				return { cursor: 0, messageId: input.messageId }
 			},
-		},
+		}),
 	}
+	return { turns, env: { ChatSession: namespace } }
 }
 
 const enableAutomation = (maxRunsPerDay = 20, maxPassesPerDay = 200) =>
@@ -129,12 +136,12 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 		return { issueId, verification }
 	})
 
-const input = (verification: ErrorIssueVerificationRow, fanoutBinding?: unknown) => ({
+const input = (verification: ErrorIssueVerificationRow, workerEnv?: Record<string, unknown>) => ({
 	verification,
 	pullRequestUrl: PR_URL,
 	postMergeOccurrences: 0,
 	staleClientOccurrences: 3,
-	fanoutBinding,
+	workerEnv,
 })
 
 /**
@@ -144,33 +151,30 @@ const input = (verification: ErrorIssueVerificationRow, fanoutBinding?: unknown)
  * and whether an investigation row was left behind — is load-bearing.
  */
 describe("enqueueFixVerification", () => {
-	it.effect("starts the fan-out and records the investigation", () =>
+	it.effect("starts the agent turn and records the investigation", () =>
 		Effect.gen(function* () {
 			yield* enableAutomation()
 			const { verification } = yield* seedVerification()
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
 
-			const result = yield* enqueueFixVerification(input(verification, workflow.binding))
+			const result = yield* enqueueFixVerification(input(verification, chat.env))
 
 			assert.strictEqual(result.enqueued, true)
-			assert.strictEqual(workflow.created.length, 1)
+			if (!result.enqueued) return
+			assert.strictEqual(chat.turns.length, 1)
+			assert.strictEqual(chat.turns[0]?.sessionId, `${ORG}:inv-${result.investigationId}`)
+			assert.include(chat.turns[0]?.text ?? "", PR_URL)
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db
-					.select()
-					.from(investigations)
-					.where(eq(investigations.id, workflow.created[0]?.id ?? "")),
+				db.select().from(investigations).where(eq(investigations.id, result.investigationId)),
 			)
 			assert.strictEqual(rows.length, 1)
 			assert.strictEqual(rows[0]?.status, "investigating")
-			// The fence a restart needs: `restartInvestigation` terminates the prior
-			// workflow only when this column is populated. Left null, the old
-			// instance survives every restart and publishes over the new attempt.
-			assert.strictEqual(rows[0]?.workflowInstanceId, workflow.created[0]?.id)
+			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("reports no_binding, and marks the run failed, when the workflow is unwired", () =>
+	it.effect("reports no_binding, and marks the run failed, when the chat session is unwired", () =>
 		Effect.gen(function* () {
 			yield* enableAutomation()
 			const { verification } = yield* seedVerification()
@@ -196,17 +200,32 @@ describe("enqueueFixVerification", () => {
 
 	it.effect("reports daily_cap without starting anything once the quota is spent", () =>
 		Effect.gen(function* () {
-			// One run allowed, and the reserve for a verification exceeds one pass.
+			// One pass allowed, and one already spent today.
 			yield* enableAutomation(1, 1)
 			const { verification } = yield* seedVerification()
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
+			const database = yield* Database
+			const now = new Date()
+			yield* database.execute((db) =>
+				db.insert(investigations).values({
+					id: Schema.decodeSync(InvestigationId)(randomUUID()),
+					orgId: ORG,
+					status: "investigating",
+					seededBy: "system",
+					subjectJson: { type: "freeform", title: "spent", prompt: "spent", contextRefs: [] },
+					startedAt: now,
+					autonomousTurns: 1,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			)
 
-			const result = yield* enqueueFixVerification(input(verification, workflow.binding))
+			const result = yield* enqueueFixVerification(input(verification, chat.env))
 
 			assert.strictEqual(result.enqueued, false)
 			if (result.enqueued) return
 			assert.strictEqual(result.reason, "daily_cap")
-			assert.strictEqual(workflow.created.length, 0)
+			assert.strictEqual(chat.turns.length, 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -214,14 +233,14 @@ describe("enqueueFixVerification", () => {
 		Effect.gen(function* () {
 			yield* enableAutomation()
 			const { verification } = yield* seedVerification({ withIssue: false })
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
 
-			const result = yield* enqueueFixVerification(input(verification, workflow.binding))
+			const result = yield* enqueueFixVerification(input(verification, chat.env))
 
 			assert.strictEqual(result.enqueued, false)
 			if (result.enqueued) return
 			assert.strictEqual(result.reason, "error")
-			assert.strictEqual(workflow.created.length, 0)
+			assert.strictEqual(chat.turns.length, 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

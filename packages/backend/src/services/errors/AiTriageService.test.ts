@@ -55,9 +55,9 @@ const seedSettings = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 	})
 
 /**
- * Usage is counted from started rows as `fanoutSize + 1`, so a width-3 row is
- * worth 4 passes. Seeding rows rather than driving the enqueue path keeps the
- * arithmetic under the test's control instead of the planner's.
+ * Usage is counted from started rows as `fanoutSize + 1` for legacy fan-out rows
+ * and 1 for a single-agent run. Seeding rows rather than driving the enqueue path
+ * keeps the arithmetic under the test's control.
  */
 const seedStartedRuns = (count: number, fanoutSize: number, idOffset = 0) =>
 	Effect.gen(function* () {
@@ -94,22 +94,16 @@ describe("AiTriageService.getSettings pause state", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	/**
-	 * The probe has to cost what a start *reserves* (`width + 2` = 6 for a medium
-	 * incident), not what a settled run consumes. Probing with 4 left the banner
-	 * hidden across the last two passes of the slice — exactly the window where
-	 * ordinary starts were already being refused.
-	 */
-	it.effect("pauses ordinary triage at the reservation, not at the settled cost", () =>
+	/** The probe costs what a start spends: one pass. */
+	it.effect("pauses ordinary triage once the ordinary slice is spent", () =>
 		Effect.gen(function* () {
-			// Ordinary slice of a 100-pass ceiling is 70. Land usage on 65 — the one
-			// window that separates the two probes: 65 + 6 > 70 refuses a real start,
-			// while the old 65 + 4 <= 70 reported triage as healthy.
+			// Ordinary slice of a 100-pass ceiling is 70. Land usage exactly on it:
+			// 70 + 1 > 70 refuses an ordinary start while 70 + 1 <= 100 lets a critical through.
 			yield* seedSettings(500, 100)
-			yield* seedStartedRuns(16, 3) // 16 x 4 = 64
-			yield* seedStartedRuns(1, 1, 100) // a single-pass run is worth 1
+			yield* seedStartedRuns(17, 3) // 17 x 4 = 68, legacy fan-out rows
+			yield* seedStartedRuns(2, 1, 100) // a single-agent run is worth 1
 			const doc = yield* (yield* AiTriageService).getSettings(ORG)
-			assert.strictEqual(doc.usage.passes, 65)
+			assert.strictEqual(doc.usage.passes, 70)
 			assert.isTrue(doc.ordinaryPaused)
 			assert.strictEqual(doc.pausedDimension, "passes_reserved")
 			// The reserve is the whole point: criticals are still starting here.
@@ -121,7 +115,7 @@ describe("AiTriageService.getSettings pause state", () => {
 	it.effect("pauses priority triage too once the full ceiling is spent", () =>
 		Effect.gen(function* () {
 			yield* seedSettings(500, 100)
-			yield* seedStartedRuns(24, 3) // 96 passes; 96 + 7 > 100
+			yield* seedStartedRuns(25, 3) // 100 passes; 100 + 1 > 100
 			const doc = yield* (yield* AiTriageService).getSettings(ORG)
 			assert.isTrue(doc.ordinaryPaused)
 			assert.isTrue(doc.priorityPaused)
