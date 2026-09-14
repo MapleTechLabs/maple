@@ -361,6 +361,9 @@ export interface AlertIncidentRow {
 	signalType: string
 	severity: string
 	status: string
+	/** Set while an open incident is waiting on telemetry rather than observing a breach. */
+	holdReason: string | null
+	heldSince: string | null
 	threshold: number
 	comparator: string
 	firstTriggeredAt: string

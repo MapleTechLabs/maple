@@ -1,11 +1,11 @@
-import { WorkerPlatformLive } from "@maple/infra/worker-http"
+import { WorkerPlatformLive, isolateContext } from "@maple/infra/worker-http"
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Context, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Option, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { MapleDbConnection } from "@maple/backend/platform/bindings"
@@ -372,6 +372,36 @@ describe("the api Worker through alchemy's bridge", () => {
 			const { response, logs } = yield* event("GET", "/logging", app)
 			assert.strictEqual(response.status, 200)
 			assert.include(logs, "boundary answered with a server error")
+		}),
+	)
+
+	it.effect("a log emitted inside a route handler is exported when the init installed a logger", () =>
+		Effect.gen(function* () {
+			// Alchemy's init runs under its own console logger, and the graph is
+			// built under the init's context. `isolateContext` is what keeps that
+			// logger out of the captured context; without it every handler's log
+			// line went to the console and never to the event's exporter.
+			const initLogs: Array<unknown> = []
+			const init = yield* Layer.build(
+				Logger.layer([
+					Logger.make(({ message }) => {
+						initLogs.push(message)
+					}),
+				]),
+			)
+			const app = yield* cachedRecoverable(
+				buildIsolateHandler(
+					isolateContext(init),
+					HttpApiBuilder.layer(LoggingApi).pipe(
+						Layer.provide(LoggingHandlersLive),
+						Layer.provide(WorkerPlatformLive),
+					),
+				),
+			)
+			const { response, logs } = yield* event("GET", "/logging", app)
+			assert.strictEqual(response.status, 200)
+			assert.include(logs, "boundary answered with a server error")
+			assert.deepStrictEqual(initLogs, [])
 		}),
 	)
 

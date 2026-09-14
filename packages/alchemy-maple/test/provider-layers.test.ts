@@ -1,4 +1,4 @@
-import type { ScopedPlanStatusSession } from "alchemy/Cli/Cli"
+import type { ScopedPlanStatusSession } from "alchemy/Report"
 import { ConfigProvider, Effect, Layer, Redacted } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"

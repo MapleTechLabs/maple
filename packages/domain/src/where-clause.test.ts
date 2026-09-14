@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { normalizeKey, parseBoolean, parseNumber, parseWhereClause, splitCsv } from "./where-clause"
+import {
+	normalizeKey,
+	parseBoolean,
+	parseNumber,
+	parseWhereClause,
+	quoteWhereValue,
+	splitCsv,
+} from "./where-clause"
 
 describe("normalizeKey", () => {
 	it("normalizes service alias", () => {
@@ -280,5 +287,21 @@ describe("parseWhereClause", () => {
 			{ key: "attr.user_id", rawKey: "attr.user_id", operator: "!exists", value: "" },
 		])
 		expect(result.warnings).toEqual([])
+	})
+})
+
+describe("quoteWhereValue", () => {
+	it("picks the quote the value does not contain, so the parser reads it back verbatim", () => {
+		for (const value of ["plain", "it's", 'say "hi"', "%a_b%", "back\\slash"]) {
+			const result = parseWhereClause(`k = ${quoteWhereValue(value)}`)
+			expect(result.warnings).toEqual([])
+			expect(result.clauses[0]?.value).toBe(value)
+		}
+	})
+
+	it("leaves a value carrying both quote kinds for the parser to reject, never altered", () => {
+		const result = parseWhereClause(`k = ${quoteWhereValue(`it's "x"`)}`)
+		expect(result.clauses).toEqual([])
+		expect(result.warnings).toHaveLength(1)
 	})
 })

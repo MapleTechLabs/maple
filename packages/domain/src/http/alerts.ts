@@ -106,6 +106,24 @@ export const AlertIncidentStatus = Schema.Literals(["open", "resolved"]).annotat
 })
 export type AlertIncidentStatus = Schema.Schema.Type<typeof AlertIncidentStatus>
 
+/**
+ * Why an open incident is waiting on telemetry instead of resolving. The
+ * breach stopped appearing in evaluations, but the liveness probe could not
+ * prove the service's data was still flowing, so the all-clear is deferred.
+ * `status` stays `"open"` while held — a hold is a sub-state of open, not a
+ * third status, so every consumer of `open`/`resolved` keeps working.
+ */
+export const AlertIncidentHoldReason = Schema.Literals([
+	"no_data",
+	"volume_collapsed",
+	"sampling_changed",
+	"probe_failed",
+]).annotate({
+	identifier: "@maple/AlertIncidentHoldReason",
+	title: "Alert Incident Hold Reason",
+})
+export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
+
 export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
@@ -639,6 +657,9 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	dedupeKey: Schema.String,
 	lastDeliveredEventType: Schema.NullOr(AlertEventType),
 	lastNotifiedAt: Schema.NullOr(IsoDateTimeString),
+	/** Set while the incident is open but waiting on telemetry; see {@link AlertIncidentHoldReason}. */
+	holdReason: Schema.NullOr(AlertIncidentHoldReason),
+	heldSince: Schema.NullOr(IsoDateTimeString),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
 }) {}
 

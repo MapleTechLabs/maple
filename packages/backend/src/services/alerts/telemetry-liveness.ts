@@ -100,6 +100,16 @@ export interface LivenessProbeInput {
 	/** Same-length window ending at incident onset. */
 	readonly baselineStartMs: number
 	readonly baselineEndMs: number
+	/**
+	 * A same-length window one day before the quiet window, preferred over the
+	 * onset baseline whenever it carried traffic. Incidents disproportionately
+	 * open at peak — that is when error rates spike — so a baseline anchored at
+	 * onset reads every evening as an outage. Yesterday's same window is the
+	 * shape the traffic normally has at this hour; onset is only the fallback
+	 * for a service too young to have one.
+	 */
+	readonly priorDayBaselineStartMs?: number
+	readonly priorDayBaselineEndMs?: number
 }
 
 const EMPTY_TOTALS: ServiceWindowTotals = { spanCount: 0, estimatedSpanCount: 0 }
@@ -179,13 +189,26 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 	// `warmRoute` never fails, which keeps this probe's `never` error channel.
 	yield* warehouse.warmRoute(tenant)
 
+	const priorDay =
+		input.priorDayBaselineStartMs !== undefined && input.priorDayBaselineEndMs !== undefined
+			? { startMs: input.priorDayBaselineStartMs, endMs: input.priorDayBaselineEndMs }
+			: null
+
 	const result =
 		serviceNames.length === 0
 			? verdictForOrgTotals(
 					...(yield* Effect.all(
 						[
 							probeOrgWindow(warehouse, tenant, windowStartMs, windowEndMs),
-							probeOrgWindow(warehouse, tenant, baselineStartMs, baselineEndMs),
+							Effect.all(
+								[
+									probeOrgWindow(warehouse, tenant, baselineStartMs, baselineEndMs),
+									priorDay === null
+										? Effect.succeed(null)
+										: probeOrgWindow(warehouse, tenant, priorDay.startMs, priorDay.endMs),
+								],
+								{ concurrency: 2 },
+							).pipe(Effect.map(([onset, prior]) => pickOrgBaseline(onset, prior))),
 						],
 						{ concurrency: 2 },
 					)),
@@ -221,14 +244,29 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 										windowStartMs,
 										windowEndMs,
 									),
-									probeServiceWindow(
-										warehouse,
-										tenant,
-										serviceName,
-										deploymentEnv,
-										baselineStartMs,
-										baselineEndMs,
-									),
+									Effect.all(
+										[
+											probeServiceWindow(
+												warehouse,
+												tenant,
+												serviceName,
+												deploymentEnv,
+												baselineStartMs,
+												baselineEndMs,
+											),
+											priorDay === null
+												? Effect.succeed(null)
+												: probeServiceWindow(
+														warehouse,
+														tenant,
+														serviceName,
+														deploymentEnv,
+														priorDay.startMs,
+														priorDay.endMs,
+													),
+										],
+										{ concurrency: 2 },
+									).pipe(Effect.map(([onset, prior]) => pickServiceBaseline(onset, prior))),
 								],
 								{ concurrency: 2 },
 							),
@@ -251,6 +289,46 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 })
 
 // Pure verdict logic
+
+/**
+ * Yesterday's window wins when it carried traffic; a service too young for a
+ * prior day (or one that was dark then) falls back to the onset window. A
+ * failed onset probe stays a failure — the fallback is for absence, not errors.
+ */
+export const pickServiceBaseline = (
+	onset: ServiceWindowTotals | null,
+	priorDay: ServiceWindowTotals | null,
+): ServiceWindowTotals | null => (priorDay !== null && priorDay.estimatedSpanCount > 0 ? priorDay : onset)
+
+export const pickOrgBaseline = (onset: number | null, priorDay: number | null): number | null =>
+	priorDay !== null && priorDay > 0 ? priorDay : onset
+
+/**
+ * How long an incident may sit held on a given reason before the absence is
+ * believed anyway and the incident resolves. `null` means no ceiling.
+ *
+ * `volume_collapsed` is the diurnal case — traffic thinned, the breach stopped
+ * showing up — and a few windows of that is evidence enough. `no_data` and
+ * `sampling_changed` are the outage signatures the hold exists for, so they
+ * wait much longer but still not forever: an incident nobody can act on is
+ * not made truer by staying open. `probe_failed` is our own warehouse failing
+ * and carries no information about the customer's traffic, so it never
+ * resolves on the clock; the next successful probe decides.
+ */
+export const holdCeilingMs = (reason: LivenessReason, windowMinutes: number): number | null => {
+	switch (reason) {
+		case "volume_collapsed":
+			return Math.max(3 * windowMinutes, 30) * 60_000
+		case "no_data":
+		case "sampling_changed":
+			return 6 * 60 * 60_000
+		case "probe_failed":
+			return null
+		case "ok":
+		case "no_baseline":
+			return 0
+	}
+}
 
 const verdict = (
 	dataFlowing: boolean,

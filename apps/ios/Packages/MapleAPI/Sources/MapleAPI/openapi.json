@@ -295,6 +295,8 @@
             "error_issue_id": null,
             "first_triggered_at": "2026-07-15T09:10:00.000Z",
             "group_key": null,
+            "held_since": null,
+            "hold_reason": null,
             "id": "inc_tC4d9V79DCDzgbGKhAnff9",
             "last_delivered_event_type": "trigger",
             "last_notified_at": "2026-07-15T09:10:05.000Z",
@@ -330,6 +332,14 @@
           "group_key": {
             "description": "The breaching group for grouped rules, or `null` for ungrouped rules.",
             "type": "string"
+          },
+          "held_since": {
+            "description": "When the current hold began, or `null` when the incident is not held.",
+            "type": "string"
+          },
+          "hold_reason": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentHoldReason",
+            "description": "Set while an open incident is waiting on telemetry: the breach stopped appearing, but the service's data could not be proven to still be flowing. `volume_collapsed`, `no_data` and `sampling_changed` resolve once telemetry resumes or their hold ceiling elapses; `probe_failed` (Maple could not run the check) has no ceiling and resolves on the next successful check. `null` while firing or once resolved."
           },
           "id": {
             "$ref": "#/components/schemas/_maple_AlertIncidentId"
@@ -3132,6 +3142,16 @@
           "test"
         ],
         "title": "Alert Event Type",
+        "type": "string"
+      },
+      "_maple_AlertIncidentHoldReason": {
+        "enum": [
+          "no_data",
+          "volume_collapsed",
+          "sampling_changed",
+          "probe_failed"
+        ],
+        "title": "Alert Incident Hold Reason",
         "type": "string"
       },
       "_maple_AlertIncidentId": {

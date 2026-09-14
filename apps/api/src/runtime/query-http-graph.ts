@@ -26,9 +26,14 @@ export const QueryRoutes = Layer.mergeAll(
 	Layer.fresh(NotFoundRouter),
 ).pipe(
 	Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)),
+	Layer.provideMerge(SessionAuthorizationLayer),
+	// `provideMerge`, not `provide`: the raw-SQL handler records its own audit
+	// entry, and a handler's requirement is a phantom `Request<"Requires">`
+	// marker the build cannot refuse. Hidden behind the auth layer, the service
+	// was missing from every handler this graph built first, and
+	// `execute-raw-sql` answered 500 "Service not found" for that isolate's life.
 	Layer.provideMerge(
-		SessionAuthorizationLayer.pipe(Layer.provide(AuditLogService.layer), Layer.provide(Env.layer)),
+		Layer.mergeAll(QueryEngineService.layer, WarehouseQueryService.layer, AuditLogService.layer),
 	),
-	Layer.provideMerge(Layer.mergeAll(QueryEngineService.layer, WarehouseQueryService.layer)),
 	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

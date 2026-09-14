@@ -11,6 +11,7 @@ import {
 	AlertEventType as AlertEventTypeSchema,
 	AlertIncidentDocument,
 	AlertIncidentsListResponse,
+	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertIncidentTransition as AlertIncidentTransitionSchema,
 	AlertIncidentNotFoundError,
@@ -136,6 +137,7 @@ const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema
 const decodeAlertCheckStatusSync = Schema.decodeUnknownSync(AlertCheckStatusSchema)
 const decodeAlertIncidentTransitionSync = Schema.decodeUnknownSync(AlertIncidentTransitionSchema)
 const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStatus)
+const decodeAlertIncidentHoldReasonSync = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.errorIssueId)
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
@@ -168,6 +170,8 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		lastDeliveredEventType:
 			row.lastDeliveredEventType != null ? decodeAlertEventTypeSync(row.lastDeliveredEventType) : null,
 		lastNotifiedAt: toIso(row.lastNotifiedAt),
+		holdReason: row.holdReason != null ? decodeAlertIncidentHoldReasonSync(row.holdReason) : null,
+		heldSince: toIso(row.heldSince),
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
 	})
 

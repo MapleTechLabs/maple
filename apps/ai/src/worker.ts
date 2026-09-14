@@ -44,10 +44,11 @@ import {
 	selfObservabilityEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
+import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Context, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
@@ -154,11 +155,8 @@ export default MapleAi.make(
 		const ports = aiPorts(clients, env)
 		// Captured before any event exists, so a graph built inside the first
 		// request cannot leak that request's context into every later one. See
-		// `forIsolate`.
-		const isolate = Context.omit(
-			Cloudflare.WorkerExecutionContext,
-			Layer.CurrentMemoMap,
-		)(yield* Effect.context())
+		// `forIsolate`; `isolateContext` says what the capture must not carry.
+		const isolate = isolateContext(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
 		return { fetch: makeFetch(app, ports) }
 	}).pipe(

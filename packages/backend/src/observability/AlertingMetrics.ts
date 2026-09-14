@@ -40,6 +40,20 @@ export const staleIncidentsResolvedTotal = Metric.counter("alerting.stale_incide
 	incremental: true,
 })
 
+export const incidentsHeldTotal = Metric.counter("alerting.incidents_held_total", {
+	description:
+		"Open incidents put on hold because the breach vanished but telemetry could not be proven live",
+	incremental: true,
+})
+
+export const incidentsResolvedAfterHoldTotal = Metric.counter(
+	"alerting.incidents_resolved_after_hold_total",
+	{
+		description: "Held incidents resolved, either because telemetry resumed or the hold ceiling elapsed",
+		incremental: true,
+	},
+)
+
 export const deliveriesAttemptedTotal = Metric.counter("alerting.deliveries_attempted_total", {
 	description: "Total number of delivery attempts",
 	incremental: true,

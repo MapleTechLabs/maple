@@ -11,6 +11,7 @@ import {
 	AlertEventType as AlertEventTypeSchema,
 	AlertForbiddenError,
 	AlertIncidentDocument,
+	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	type AlertDestinationNotFoundError,
 	type AlertRuleDestinationNotFoundError,
@@ -78,7 +79,12 @@ import {
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
 import { INVESTIGATION_FANOUT_BINDING } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
-import { probeLiveness } from "@maple/backend/services/alerts/telemetry-liveness"
+import {
+	holdCeilingMs,
+	type LivenessReason,
+	type LivenessVerdict,
+	probeLiveness,
+} from "@maple/backend/services/alerts/telemetry-liveness"
 import { simulateFiringSpans } from "./alert-firing-spans"
 import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./incident-hysteresis"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
@@ -99,7 +105,7 @@ import { systemTenant } from "./system-tenant"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
 
-import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
 import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
 import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
@@ -135,6 +141,13 @@ interface EvaluatedRule {
 	 * resolving an open incident) must prove telemetry is still flowing first.
 	 */
 	readonly derivedFromNoData: boolean
+	/**
+	 * The window returned nothing and `noDataBehavior: "skip"` declined to
+	 * judge. For an OPEN incident this is the same question `derivedFromNoData`
+	 * asks of a healthy value — did the breach end, or did the data? — and it
+	 * goes through the same liveness gate rather than freezing forever.
+	 */
+	readonly skippedForNoData?: boolean
 }
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
@@ -146,6 +159,43 @@ interface DeliveryAttemptFailure {
 }
 
 const MAX_DELIVERY_ATTEMPTS = 5
+
+/** What the liveness gate decided for an incident whose breach stopped appearing. */
+type LivenessGateDecision =
+	| {
+			readonly kind: "resolve"
+			/** Overrides the caller's resolve reason when the incident was held first. */
+			readonly reason: string | null
+			readonly heldForMs: number
+	  }
+	| {
+			readonly kind: "hold"
+			readonly reason: Exclude<LivenessReason, "ok" | "no_baseline">
+			readonly heldSinceMs: number
+			readonly ceilingMs: number | null
+	  }
+
+/** The hold a resolve is ending, or null when the incident was never held. */
+const afterHold = (
+	incident: Pick<AlertIncidentRow, "holdReason">,
+	heldForMs: number,
+): ResolvedAfterHold | null =>
+	incident.holdReason === null
+		? null
+		: { reason: decodeAlertIncidentHoldReasonSync(incident.holdReason), heldForMs }
+
+const describeHold = (reason: Exclude<LivenessReason, "ok" | "no_baseline">): string => {
+	switch (reason) {
+		case "volume_collapsed":
+			return "reduced"
+		case "no_data":
+			return "absent"
+		case "sampling_changed":
+			return "resampled"
+		case "probe_failed":
+			return "unverifiable"
+	}
+}
 /**
  * Consecutive *terminal* delivery failures after which a destination is
  * auto-disabled.
@@ -227,6 +277,7 @@ const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
 const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
 const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema)
 const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStatus)
+const decodeAlertIncidentHoldReasonSync = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
 
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
@@ -465,24 +516,148 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * observation? Compares the window that looks recovered against the
 			 * equivalent window before the incident opened.
 			 */
+			/**
+			 * The services an incident's silence has to be checked against. A rule
+			 * grouped by service names the service in the group key, so a quiet
+			 * group is probed on its own rather than against the rule's whole scope
+			 * — otherwise one loud sibling service would satisfy the probe for a
+			 * group that went dark.
+			 */
+			const livenessServicesForIncident = (
+				rule: NormalizedRule,
+				groupKey: string | null,
+			): ReadonlyArray<string> =>
+				groupKey != null &&
+				groupKey !== UNGROUPED_GROUP_KEY &&
+				// Service-grouped rules and multi-service rules both key incidents by
+				// service name; in either case the quiet service is probed alone, so
+				// a loud sibling cannot vouch for it.
+				(isServiceGroupBy(rule.groupBy) || rule.serviceNames.includes(groupKey))
+					? [groupKey]
+					: livenessServicesFor(rule)
+
 			const telemetryStillFlowing = Effect.fn("AlertsService.telemetryStillFlowing")(function* (
 				orgId: OrgId,
 				normalized: NormalizedRule,
 				incidentOpenedAtMs: number,
 				timestamp: number,
+				serviceNames: ReadonlyArray<string> = livenessServicesFor(normalized),
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				const windowMs = Math.max(normalized.windowMinutes, 1) * 60_000
+				const dayMs = 24 * 60 * 60_000
 				return yield* probeLiveness({
 					warehouse,
 					tenant: systemTenant(orgId),
-					serviceNames: livenessServicesFor(normalized),
+					serviceNames,
 					environments: normalized.environments,
 					windowStartMs: timestamp - windowMs,
 					windowEndMs: timestamp,
 					baselineStartMs: incidentOpenedAtMs - windowMs,
 					baselineEndMs: incidentOpenedAtMs,
+					// Yesterday, same clock time: the traffic this hour normally has.
+					// The onset window above is only the fallback for a service that
+					// did not exist a day ago.
+					priorDayBaselineStartMs: timestamp - dayMs - windowMs,
+					priorDayBaselineEndMs: timestamp - dayMs,
 				})
+			})
+
+			/**
+			 * The one decision both resolve paths make when a breach stops showing
+			 * up: believe the absence and resolve, or hold the incident open because
+			 * the telemetry it needs may have stopped too.
+			 *
+			 * A hold is a sub-state of `open` (`holdReason` + `heldSince` on the
+			 * row), bounded by `holdCeilingMs` per reason: past the ceiling the
+			 * absence is believed anyway, with a resolve reason that says so. The
+			 * clock starts at the first held tick and survives reason changes, so a
+			 * probe flipping between `volume_collapsed` and `no_data` cannot reset it.
+			 *
+			 * Never decides on a stale hold: an incident that re-breached since it
+			 * was last held arrives here with the hold already cleared by the
+			 * breach path, so `heldSince` always dates the current quiet spell.
+			 */
+			const decideLivenessGate = (
+				incident: Pick<AlertIncidentRow, "holdReason" | "heldSince">,
+				liveness: LivenessVerdict,
+				windowMinutes: number,
+				timestamp: number,
+			): LivenessGateDecision => {
+				if (liveness.dataFlowing) {
+					return {
+						kind: "resolve",
+						reason:
+							incident.holdReason === null
+								? null
+								: "Auto-resolved: telemetry resumed and the breach did not",
+						heldForMs: incident.heldSince === null ? 0 : timestamp - dateToMs(incident.heldSince),
+					}
+				}
+				const reason = liveness.reason
+				if (reason === "ok" || reason === "no_baseline") {
+					// `dataFlowing` false only pairs with a hold reason; the exhaustive
+					// switch in `holdCeilingMs` keeps the type honest here.
+					return { kind: "resolve", reason: null, heldForMs: 0 }
+				}
+				const heldSinceMs = incident.heldSince === null ? timestamp : dateToMs(incident.heldSince)
+				const ceiling = holdCeilingMs(reason, windowMinutes)
+				if (ceiling !== null && timestamp - heldSinceMs >= ceiling) {
+					return {
+						kind: "resolve",
+						reason: `Auto-resolved: no breach observed for ${Math.round(
+							(timestamp - heldSinceMs) / 60_000,
+						)} minutes while telemetry was ${describeHold(reason)}`,
+						heldForMs: timestamp - heldSinceMs,
+					}
+				}
+				return { kind: "hold", reason, heldSinceMs, ceilingMs: ceiling }
+			}
+
+			/**
+			 * Persist a hold on an open incident. Idempotent: an incident already held
+			 * for the same reason writes nothing, so a long hold stays quiet on the
+			 * Electric shape; a reason change updates the reason but keeps the clock.
+			 */
+			const recordHold = Effect.fn("AlertsService.recordHold")(function* (
+				incident: AlertIncidentRow,
+				decision: Extract<LivenessGateDecision, { kind: "hold" }>,
+				liveness: LivenessVerdict,
+				timestamp: number,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"maple.alert.incident_id": incident.id,
+					"maple.alert.hold_reason": decision.reason,
+				})
+				if (incident.holdReason === null) {
+					yield* Effect.logInfo(
+						"Incident held: breach absent but telemetry not provably flowing",
+					).pipe(
+						Effect.annotateLogs({
+							orgId: incident.orgId,
+							ruleId: incident.ruleId,
+							incidentId: incident.id,
+							groupKey: incident.groupKey,
+							holdReason: decision.reason,
+							holdCeilingMinutes:
+								decision.ceilingMs === null ? null : decision.ceilingMs / 60_000,
+							observedCount: liveness.observedCount,
+							baselineCount: liveness.baselineCount,
+						}),
+					)
+					yield* Metric.update(AlertingMetrics.incidentsHeldTotal, 1)
+				}
+				if (incident.holdReason === decision.reason) return
+				yield* dbExecute((db) =>
+					db
+						.update(alertIncidents)
+						.set({
+							holdReason: decision.reason,
+							heldSince: incident.heldSince ?? msToDate(decision.heldSinceMs),
+							updatedAt: msToDate(timestamp),
+						})
+						.where(and(eq(alertIncidents.id, incident.id), eq(alertIncidents.status, "open"))),
+				)
 			})
 
 			/**
@@ -553,9 +728,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						thresholdUpper: rule.thresholdUpper,
 						comparator: rule.comparator,
 						reason: "No data in the selected window",
-						// Inert: `skipped` never resolves an incident, so this branch
-						// short-circuits before any status is derived from a synthesized value.
+						// Inert: `skipped` never resolves an incident on its own, so this
+						// branch short-circuits before any status is derived from a
+						// synthesized value. An open incident still runs the liveness gate
+						// on it — see `skippedForNoData`.
 						derivedFromNoData: false,
+						skippedForNoData: true,
 					}
 				}
 
@@ -710,6 +888,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// Null on the ad-hoc paths (a rule edit resolving its own
 					// incidents): those are one user action, not a storm.
 					pushBudget: IncidentPushBudget | null,
+					// Set on a resolve that ends a hold: the phone copy says the
+					// breach stopped while telemetry was reduced, not "back to X".
+					resolvedAfterHold: ResolvedAfterHold | null = null,
 				) {
 					// Phones first, and regardless of destinations: push is per person,
 					// not per rule, and a rule with no Slack channel still has people
@@ -764,6 +945,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												dateToMs(incident.lastNotifiedAt) -
 													dateToMs(incident.firstTriggeredAt),
 											),
+								resolvedAfterHold,
 								linkUrl,
 								// Unevaluated: the Lock Screen sparkline is the only
 								// consumer, so this warehouse read happens for a critical
@@ -1870,6 +2052,78 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						lastResolvedAtMs: null,
 					}
 
+					/**
+					 * Close `openIncident` and notify, unless the incident was a
+					 * suppressed flap that never notified in the first place.
+					 */
+					const resolveOpenIncident = (
+						openIncident: AlertIncidentRow,
+						resolveEvaluation: EvaluatedRule,
+						gate: Extract<LivenessGateDecision, { kind: "resolve" }>,
+					) =>
+						Effect.gen(function* () {
+							const resolvedIncident = {
+								...openIncident,
+								status: "resolved" as const,
+								resolvedAt: new Date(timestamp),
+								lastObservedValue: resolveEvaluation.value,
+								lastSampleCount: resolveEvaluation.sampleCount,
+								lastEvaluatedAt: new Date(timestamp),
+								holdReason: null,
+								heldSince: null,
+								updatedAt: new Date(timestamp),
+							}
+
+							yield* dbExecute((db) =>
+								db
+									.update(alertIncidents)
+									.set({
+										status: "resolved",
+										resolvedAt: new Date(timestamp),
+										lastObservedValue: resolveEvaluation.value,
+										lastSampleCount: resolveEvaluation.sampleCount,
+										lastEvaluatedAt: new Date(timestamp),
+										holdReason: null,
+										heldSince: null,
+										updatedAt: new Date(timestamp),
+									})
+									.where(eq(alertIncidents.id, openIncident.id)),
+							)
+							if (openIncident.holdReason !== null) {
+								yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
+							}
+
+							// A flap-suppressed incident (notify anchor inherited, nothing ever
+							// delivered for it) resolves silently too — pairing every silent
+							// open with a resolve email would spam just as hard as the
+							// triggers we suppressed.
+							const resolveSuppressed =
+								openIncident.lastDeliveredEventType == null &&
+								openIncident.lastNotifiedAt != null
+							if (resolveSuppressed) {
+								yield* Effect.logInfo(
+									"Skipping resolve notification for flapping incident",
+								).pipe(
+									Effect.annotateLogs({
+										ruleId: row.id,
+										incidentId: openIncident.id,
+										groupKey,
+									}),
+								)
+							} else {
+								yield* queueIncidentNotifications(
+									row.orgId,
+									normalized,
+									resolvedIncident,
+									resolveEvaluation,
+									"resolve",
+									timestamp,
+									pushBudget,
+									afterHold(openIncident, gate.heldForMs),
+								)
+							}
+						})
+
 					if (evaluation.status === "skipped") {
 						// Freezing both counters is the machine's rule, not a local one.
 						const { consecutiveBreaches, consecutiveHealthy } = yield* foldObservation(
@@ -1885,6 +2139,47 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lastValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
 						})
+
+						// An open incident whose window came back EMPTY is the ungrouped
+						// twin of an orphaned group: the breach is not being observed, and
+						// whether that means recovered or dark is the liveness gate's
+						// question. A skip for too few samples is not this — the data is
+						// there, just thin — and keeps the incident frozen as before.
+						if (openIncident != null && evaluation.skippedForNoData === true) {
+							const liveness = yield* telemetryStillFlowing(
+								row.orgId,
+								normalized,
+								openIncident.firstTriggeredAt.getTime(),
+								timestamp,
+								livenessServicesForIncident(normalized, groupKey),
+							)
+							const gate = decideLivenessGate(
+								openIncident,
+								liveness,
+								normalized.windowMinutes,
+								timestamp,
+							)
+							if (gate.kind === "hold") {
+								yield* recordHold(openIncident, gate, liveness, timestamp)
+							} else {
+								yield* resolveOpenIncident(
+									openIncident,
+									makeSyntheticResolveEvaluation(
+										normalized,
+										gate.reason ??
+											"Auto-resolved: no data for this group while telemetry kept flowing",
+									),
+									gate,
+								)
+								return {
+									transition: "resolved" as const,
+									incidentId: openIncident.id,
+									openedIncidentId: null,
+									consecutiveBreaches,
+									consecutiveHealthy,
+								}
+							}
+						}
 						return {
 							transition: "none" as const,
 							incidentId: carriedIncidentId,
@@ -1972,6 +2267,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							// the renotify gate spaces the next email a full interval from
 							// the last one the user actually received.
 							lastNotifiedAt: flapSuppressedAt,
+							holdReason: null,
+							heldSince: null,
 							errorIssueId: null,
 							createdAt: new Date(timestamp),
 							updatedAt: new Date(timestamp),
@@ -2030,12 +2327,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}
 
 					if (evaluation.status === "breached" && openIncident != null) {
+						// A breach ends any hold: the incident is firing again, so the
+						// quiet spell the hold was waiting out is over.
 						const refreshedIncident = {
 							...openIncident,
 							lastTriggeredAt: new Date(timestamp),
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
 							lastEvaluatedAt: new Date(timestamp),
+							holdReason: null,
+							heldSince: null,
 							updatedAt: new Date(timestamp),
 						}
 
@@ -2059,6 +2360,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									lastObservedValue: evaluation.value,
 									lastSampleCount: evaluation.sampleCount,
 									lastEvaluatedAt: new Date(timestamp),
+									holdReason: null,
+									heldSince: null,
 									updatedAt: new Date(timestamp),
 									...(renotifyDue ? { lastNotifiedAt: new Date(timestamp) } : undefined),
 								})
@@ -2096,27 +2399,32 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// threshold and would resolve every incident it touches, paging
 						// out a wave of false all-clears. Believe it only once telemetry
 						// is provably still arriving.
+						// A healthy observation with real data ends a hold too, and the
+						// resolve copy should say how long the incident waited.
+						let gate: LivenessGateDecision = {
+							kind: "resolve",
+							reason: null,
+							heldForMs:
+								openIncident.heldSince === null
+									? 0
+									: timestamp - dateToMs(openIncident.heldSince),
+						}
 						if (evaluation.derivedFromNoData) {
 							const liveness = yield* telemetryStillFlowing(
 								row.orgId,
 								normalized,
 								openIncident.firstTriggeredAt.getTime(),
 								timestamp,
+								livenessServicesForIncident(normalized, groupKey),
 							)
-							if (!liveness.dataFlowing) {
-								yield* Effect.logWarning(
-									"Holding incident open: healthy evaluation came from missing telemetry",
-								).pipe(
-									Effect.annotateLogs({
-										orgId: row.orgId,
-										ruleId: row.id,
-										incidentId: openIncident.id,
-										groupKey,
-										livenessReason: liveness.reason,
-										observedCount: liveness.observedCount,
-										baselineCount: liveness.baselineCount,
-									}),
-								)
+							gate = decideLivenessGate(
+								openIncident,
+								liveness,
+								normalized.windowMinutes,
+								timestamp,
+							)
+							if (gate.kind === "hold") {
+								yield* recordHold(openIncident, gate, liveness, timestamp)
 								return {
 									transition: "none" as const,
 									incidentId: carriedIncidentId,
@@ -2127,55 +2435,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							}
 						}
 
-						const resolvedIncident = {
-							...openIncident,
-							status: "resolved" as const,
-							resolvedAt: new Date(timestamp),
-							lastObservedValue: evaluation.value,
-							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: new Date(timestamp),
-							updatedAt: new Date(timestamp),
-						}
-
-						yield* dbExecute((db) =>
-							db
-								.update(alertIncidents)
-								.set({
-									status: "resolved",
-									resolvedAt: new Date(timestamp),
-									lastObservedValue: evaluation.value,
-									lastSampleCount: evaluation.sampleCount,
-									lastEvaluatedAt: new Date(timestamp),
-									updatedAt: new Date(timestamp),
-								})
-								.where(eq(alertIncidents.id, openIncident.id)),
+						yield* resolveOpenIncident(
+							openIncident,
+							gate.reason === null ? evaluation : { ...evaluation, reason: gate.reason },
+							gate,
 						)
-
-						// A flap-suppressed incident (notify anchor inherited, nothing ever
-						// delivered for it) resolves silently too — pairing every silent
-						// open with a resolve email would spam just as hard as the
-						// triggers we suppressed.
-						const resolveSuppressed =
-							openIncident.lastDeliveredEventType == null && openIncident.lastNotifiedAt != null
-						if (resolveSuppressed) {
-							yield* Effect.logInfo("Skipping resolve notification for flapping incident").pipe(
-								Effect.annotateLogs({
-									ruleId: row.id,
-									incidentId: openIncident.id,
-									groupKey,
-								}),
-							)
-						} else {
-							yield* queueIncidentNotifications(
-								row.orgId,
-								normalized,
-								resolvedIncident,
-								evaluation,
-								"resolve",
-								timestamp,
-								pushBudget,
-							)
-						}
 						return {
 							transition: "resolved" as const,
 							incidentId: openIncident.id,
@@ -2394,19 +2658,31 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// (incident status update converges; delivery events onConflictDoNothing).
 				yield* Effect.forEach(toResolve, (incident) =>
 					Effect.gen(function* () {
+						// A held incident resolved by a rule edit still tells the phone it
+						// was waiting on data, not that a value recovered.
+						const heldForMs =
+							incident.heldSince === null ? 0 : timestamp - dateToMs(incident.heldSince)
+						if (incident.holdReason !== null) {
+							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
+						}
 						const resolvedIncident = {
 							...incident,
 							status: "resolved" as const,
 							resolvedAt: new Date(timestamp),
+							holdReason: null,
+							heldSince: null,
 							updatedAt: new Date(timestamp),
 						}
 
+						// A hold is a sub-state of open; a config-driven resolve ends it too.
 						yield* dbExecute((db) =>
 							db
 								.update(alertIncidents)
 								.set({
 									status: "resolved",
 									resolvedAt: new Date(timestamp),
+									holdReason: null,
+									heldSince: null,
 									updatedAt: new Date(timestamp),
 								})
 								.where(eq(alertIncidents.id, incident.id)),
@@ -2420,6 +2696,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							"resolve",
 							timestamp,
 							opts.pushBudget ?? null,
+							afterHold(incident, heldForMs),
 						)
 					}),
 				)
@@ -2481,43 +2758,53 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// genuinely went away, or because the service stopped reporting — and
 					// this path closes the incident AND fires a resolve notification, so
 					// getting it wrong pages an all-clear in the middle of an ingest
-					// outage. Anchor the baseline at the oldest orphan: whatever traffic
-					// existed when these incidents opened should still be there.
-					const oldestOpenedAtMs = orphaned.reduce(
-						(oldest, incident) => Math.min(oldest, incident.firstTriggeredAt.getTime()),
-						Number.POSITIVE_INFINITY,
-					)
-					const liveness = yield* telemetryStillFlowing(
-						orgId,
-						normalized,
-						oldestOpenedAtMs,
-						timestamp,
-					)
-					if (!liveness.dataFlowing) {
-						yield* Effect.logWarning(
-							"Holding orphaned-group incidents open: telemetry gap, not a vanished group",
-						).pipe(
-							Effect.annotateLogs({
+					// outage.
+					//
+					// One probe per distinct (service scope, onset), one decision per
+					// incident. A service-grouped rule probes each quiet service on its
+					// own, and each incident's onset anchors its own fallback baseline: a
+					// group that opened at noon must not be compared against the traffic
+					// it had at 10:00, before it existed. Each orphan also carries its own
+					// hold clock, so two groups that went quiet an hour apart reach their
+					// ceilings an hour apart.
+					const probes = new Map<string, LivenessVerdict>()
+					const livenessFor = (services: ReadonlyArray<string>, openedAtMs: number) =>
+						Effect.gen(function* () {
+							const key = `${openedAtMs}\u0000${services.join("\u0000")}`
+							const cached = probes.get(key)
+							if (cached !== undefined) return cached
+							const verdict = yield* telemetryStillFlowing(
 								orgId,
-								ruleId,
-								orphanedCount: orphaned.length,
-								livenessReason: liveness.reason,
-								observedCount: liveness.observedCount,
-								baselineCount: liveness.baselineCount,
-							}),
-						)
-						return
-					}
+								normalized,
+								openedAtMs,
+								timestamp,
+								services,
+							)
+							probes.set(key, verdict)
+							return verdict
+						})
 
-					const syntheticEvaluation = makeSyntheticResolveEvaluation(
-						normalized,
-						"Auto-resolved: group no longer appears in evaluation results",
-					)
-
-					// Serialized per rule via claim lock + idempotent writes.
 					const resolveOutcomes = yield* Effect.forEach(orphaned, (incident) => {
 						const groupKey = incident.groupKey ?? UNGROUPED_GROUP_KEY
 						return Effect.gen(function* () {
+							const liveness = yield* livenessFor(
+								livenessServicesForIncident(normalized, incident.groupKey),
+								incident.firstTriggeredAt.getTime(),
+							)
+							const gate = decideLivenessGate(
+								incident,
+								liveness,
+								normalized.windowMinutes,
+								timestamp,
+							)
+							if (gate.kind === "hold") {
+								yield* recordHold(incident, gate, liveness, timestamp)
+								return false
+							}
+							const syntheticEvaluation = makeSyntheticResolveEvaluation(
+								normalized,
+								gate.reason ?? "Auto-resolved: group no longer appears in evaluation results",
+							)
 							// `status = 'open'` in the predicate, plus RETURNING, is what makes
 							// the prefetched snapshot safe: if this incident was resolved
 							// out-of-band since the tick began, zero rows come back and we skip
@@ -2530,6 +2817,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									.set({
 										status: "resolved",
 										resolvedAt: new Date(timestamp),
+										holdReason: null,
+										heldSince: null,
 										updatedAt: new Date(timestamp),
 									})
 									.where(
@@ -2541,6 +2830,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									.returning({ id: alertIncidents.id }),
 							)
 							if (resolved.length === 0) return false
+							if (incident.holdReason !== null) {
+								yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
+							}
 
 							yield* queueIncidentNotifications(
 								orgId,
@@ -2549,12 +2841,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									...incident,
 									status: "resolved",
 									resolvedAt: new Date(timestamp),
+									holdReason: null,
+									heldSince: null,
 									updatedAt: new Date(timestamp),
 								},
 								syntheticEvaluation,
 								"resolve",
 								timestamp,
 								pushBudget,
+								afterHold(incident, gate.heldForMs),
 							)
 
 							yield* dbExecute((db) =>
@@ -3155,8 +3450,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 															row.orgId,
 															rule,
 														)
-														const evaluation = observations[0]?.evaluation
-														if (evaluation == null) return
+														// A service with no rows at all used to be dropped here,
+														// which left its open incident frozen for as long as it
+														// stayed quiet. An empty window is an observation too —
+														// the same one the ungrouped path derives — and its open
+														// incident goes through the liveness gate like any other.
+														const evaluation =
+															observations[0]?.evaluation ??
+															applyEvaluationLogic(rule, {
+																value: null,
+																sampleCount: 0,
+																hasData: false,
+															})
 														yield* recordEvaluationStatus(evaluation)
 														yield* processEvaluation(
 															row,

@@ -41,11 +41,7 @@ function parse(ua: string): ParsedUserAgent {
 					: /linux/i.test(ua)
 						? "Linux"
 						: "Unknown"
-	const deviceType = /mobile|iphone|android.*mobile/i.test(ua)
-		? "mobile"
-		: /ipad|tablet/i.test(ua)
-			? "tablet"
-			: "desktop"
+	const deviceType = /mobile|iphone/i.test(ua) ? "mobile" : /ipad|tablet/i.test(ua) ? "tablet" : "desktop"
 	return { browserName, osName, deviceType }
 }
 
