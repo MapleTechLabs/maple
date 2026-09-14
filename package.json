@@ -70,7 +70,8 @@
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.0-rc.112"
+		"@effect/sql-d1": "4.0.0-rc.112",
+		"@effect/sql-sqlite-do": "4.0.0-rc.112"
 	},
 	"packageManager": "bun@1.4.0",
 	"catalog": {
@@ -80,7 +81,7 @@
 	"catalogs": {
 		"alchemy": {
 			"@cloudflare/workers-types": "4.20260603.1",
-			"alchemy": "2.0.0-beta.74"
+			"alchemy": "2.0.0-beta.77"
 		},
 		"charts": {
 			"@tanstack/charts": "0.18.0",
