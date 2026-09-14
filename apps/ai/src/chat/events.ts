@@ -98,6 +98,9 @@ export const toChatEvents = (
 		case "RunStarted":
 			return [tagged(context, { type: "turn-start", messageId: context.messageId })]
 		case "TextDelta":
+			// Some providers stream an empty delta per reasoning token; a run wrote two thousand of
+			// them into the session log in a minute, and the log is what every reconnect replays.
+			if (event.text === "") return []
 			return [tagged(context, { type: "text-delta", messageId: context.messageId, text: event.text })]
 		case "ToolCallDeclared":
 			return [

@@ -20,6 +20,7 @@ import {
 } from "@maple/domain/gen-ai"
 import { Effect, Option, Predicate, Stream } from "effect"
 import type { Tracer } from "effect"
+import * as AiError from "effect/unstable/ai/AiError"
 import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as Prompt from "effect/unstable/ai/Prompt"
 import * as Telemetry from "effect/unstable/ai/Telemetry"
@@ -338,6 +339,23 @@ const modelCallTransformer =
 	}
 
 /**
+ * A model stream that produces nothing for this long is dead. Failing it hands the run to the
+ * close-out; left alone, a stalled stream sat past the engine's duration rail until the
+ * 15-minute stale sweep marked the investigation failed with nothing filed (seen 2026-09-14).
+ * Generous, because a reasoning burst before the first token can run long.
+ */
+const MODEL_STREAM_IDLE_TIMEOUT = "2 minutes"
+
+const idleTimeout = (): AiError.AiError =>
+	new AiError.AiError({
+		module: "Maple",
+		method: "streamText",
+		reason: new AiError.UnknownError({
+			description: `Model stream produced nothing for ${MODEL_STREAM_IDLE_TIMEOUT}`,
+		}),
+	})
+
+/**
  * Build a provider's language model so that every `streamText` call — the only call Maple makes, and
  * the only one effect-agent makes — annotates its own span.
  *
@@ -372,6 +390,10 @@ export const instrumentLanguageModel = <R>(
 											})
 										: Effect.void,
 								),
+								Stream.timeoutOrElse({
+									duration: MODEL_STREAM_IDLE_TIMEOUT,
+									orElse: () => Stream.fail(idleTimeout()),
+								}),
 								Stream.provideService(
 									Telemetry.CurrentSpanTransformer,
 									modelCallTransformer(telemetry, timing),

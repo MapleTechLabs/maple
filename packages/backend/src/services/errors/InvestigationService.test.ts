@@ -172,6 +172,25 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("files a close-out's partial report as inconclusive, at low confidence", () =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("cut short"))
+
+			const partial = yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport(), model: "test-model", partial: true }),
+			)
+			assert.strictEqual(partial.status, "inconclusive")
+			assert.strictEqual(partial.confidence, "low")
+			// The hub shows the incident's own severity; a partial assessed none.
+			assert.isNull(partial.severity)
+			assert.isNull(partial.diagnosedAt)
+			assert.strictEqual(partial.report?.suspectedCause, sampleReport().suspectedCause)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("submit_diagnosis records the turn's tokens on the row without metering them", () => {
 		// The chat-session runner meters that turn in full, keyed on the turn. A second
 		// meter here billed the same tokens twice; billing here *instead* lost the charge

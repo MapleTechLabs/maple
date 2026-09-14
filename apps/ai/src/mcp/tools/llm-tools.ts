@@ -82,10 +82,12 @@ export interface BuildMapleToolsOptions {
 }
 
 /**
- * A tool's failure as the model sees it: one line of text, never a cause.
+ * A tool call the run must stop on: an approval-gated mutation the model proposed.
  *
- * Declared rather than thrown so the runtime records a tool failure the model can route around,
- * instead of the failure ending the run.
+ * The engine ends the run on a declared failure (that is how a proposal becomes the turn's last
+ * word and reaches the approval card), so this is NOT how an ordinary tool error is reported.
+ * Those are handed back as the call's text — see `dispatch` below — so the model can route
+ * around them; every one of them used to end the whole pass.
  */
 export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 	"@maple/api/mcp/MapleToolFailure",
@@ -155,21 +157,20 @@ export const buildMapleToolkit = (
 	const handlers = Object.fromEntries(
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
+			// A tool that fails — a rejected query, an unknown tool, a tenant error — answers with its
+			// message as an ordinary result. A declared failure ends the run, which is right for a
+			// proposal and wrong for a bad SQL statement the model can simply rewrite.
 			const dispatch = (params: unknown) =>
 				executor.execute(tenant, definition.name, params, options.surface ?? "chat").pipe(
-					Effect.flatMap((result) =>
-						result.isError
-							? fail(toolResultText(result))
-							: Effect.succeed(toolResultText(result)),
+					Effect.map((result) => toolResultText(result)),
+					Effect.catchCause((cause) =>
+						Effect.succeed(`Tool failed: ${summarizeToolFailure(cause)}`),
 					),
-					// A tool that fails outright (unknown tool, tenant error) must not kill the run —
-					// hand the model the message and let it route around.
-					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 				)
 			const handle = (params: unknown) => {
 				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
 				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
-					return fail(
+					return Effect.succeed(
 						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
 							"exact arguments in this turn. Read the result you already have, or call it differently.",
 					)
