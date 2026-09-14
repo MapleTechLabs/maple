@@ -156,7 +156,7 @@ function RewardCallout({
 	return (
 		<div
 			role="status"
-			className="absolute top-full right-0 z-40 mt-3 w-max max-w-[16rem] rounded-lg border border-primary/40 bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-top-1"
+			className="absolute top-full right-0 z-40 mt-3 w-max max-w-[calc(100vw-1rem)] rounded-lg border border-primary/40 bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-top-1"
 		>
 			<span
 				className="absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary/40 bg-popover"
@@ -164,7 +164,9 @@ function RewardCallout({
 			/>
 			<div className="flex items-start gap-2 p-3 pr-2">
 				<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left outline-none">
-					<span className="block text-sm font-semibold">Finish the onboarding list</span>
+					<span className="block whitespace-nowrap text-sm font-semibold">
+						Finish the onboarding list
+					</span>
 					<span className="mt-0.5 block text-xs text-muted-foreground">
 						and get {credits} in credits.
 					</span>
