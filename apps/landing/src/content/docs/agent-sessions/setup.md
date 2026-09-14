@@ -41,7 +41,7 @@ The trace is where the timing lives. Spans are grouped by turn, the idle gaps be
   <figcaption>Where the session came from. One row per conversation from the last seven days, with the failed ones marked.</figcaption>
 </figure>
 
-The list is where you find this session tomorrow, among the others: one row per conversation with its services, models, duration, model and tool call counts, tokens, cost and errors, filterable by framework, service, environment, model, agent and tool. The **1 tool** badge is what led here. Flip **With errors** and only the sessions that broke remain.
+The list holds every session from the last seven days, one row per conversation, with its services, models, duration, model and tool call counts, tokens, cost and errors. The sidebar filters by framework, service, environment, model, agent and tool; **With errors** narrows it to the sessions with a failed call. This session's row is the one with the **1 tool** badge.
 
 Tools get the same treatment across sessions: the Tools tab ranks every tool by volume, failure rate and latency, and each tool's page groups its failures by error type with the arguments and results that produced them. [Debug and monitor tools](#debug-and-monitor-tools) walks through it.
 
