@@ -28,13 +28,19 @@ export interface OnboardingChecklistState {
 }
 
 export function useOnboardingChecklist(): OnboardingChecklistState {
-	const { orgId } = useAuth()
+	const { orgId, userId } = useAuth()
 	const isAdmin = useIsOrgAdmin()
 	const router = useRouter()
 
-	const result = useAtomValue(onboardingChecklistAtom)
-	const refresh = useAtomRefresh(onboardingChecklistAtom)
-	const [seen, setSeen] = useAtom(onboardingRewardSeenAtomFamily(orgId ?? "default"))
+	// Built per render, not at module load: the retained identity carries the active org, so
+	// switching orgs inside the persistent layout reads the new org's checklist rather than
+	// the one the module captured on first load.
+	const checklistAtom = onboardingChecklistAtom()
+	const result = useAtomValue(checklistAtom)
+	const refresh = useAtomRefresh(checklistAtom)
+	const [seen, setSeen] = useAtom(
+		onboardingRewardSeenAtomFamily(`${orgId ?? "no-org"}:${userId ?? "no-user"}`),
+	)
 	const runClaim = useAtomSet(claimOnboardingRewardMutation, { mode: "promiseExit" })
 	const [claimPending, setClaimPending] = useState(false)
 	const [claimError, setClaimError] = useState<string | null>(null)

@@ -52,7 +52,9 @@ function OnboardingChecklistPill() {
 	const active = checklist.status === "in_progress" || checklist.status === "claimable"
 	const deadlineMs = checklist.deadline_at === null ? null : Date.parse(checklist.deadline_at)
 	// A session that crosses the deadline hides the pill on its next tick, without a timer of its own.
-	const windowOpen = deadlineMs !== null && deadlineMs >= nowMs
+	// The server decided `claimable` against its own clock; the browser's only closes the
+	// window for an in-progress session that ticks past the deadline.
+	const windowOpen = checklist.status === "claimable" || (deadlineMs !== null && deadlineMs >= nowMs)
 	if (!justClaimed && !(active && windowOpen)) return null
 
 	const claimable = checklist.status === "claimable"
@@ -163,7 +165,11 @@ function RewardCallout({
 				aria-hidden
 			/>
 			<div className="flex items-start gap-2 p-3 pr-2">
-				<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left outline-none">
+				<button
+					type="button"
+					onClick={onOpen}
+					className="min-w-0 flex-1 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
 					<span className="block whitespace-nowrap text-sm font-semibold">
 						Finish the onboarding list
 					</span>
