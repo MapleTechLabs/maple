@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { Popover, PopoverPopup, PopoverTrigger } from "@maple/ui/components/ui/popover"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	ArrowRightIcon,
@@ -39,27 +38,17 @@ export function OnboardingChecklistButton() {
 }
 
 function OnboardingChecklistPill() {
-	const {
-		checklist,
-		isAdmin,
-		dismissed,
-		dismiss,
-		seen,
-		markSeen,
-		refresh,
-		claim,
-		claimPending,
-		claimError,
-	} = useOnboardingChecklist()
+	const { checklist, isAdmin, seen, markSeen, refresh, claim, claimPending, claimError } =
+		useOnboardingChecklist()
 	const [open, setOpen] = useState(false)
 	// Keeps the popover up through the "credits added" beat: the refreshed checklist reads
 	// `claimed`, which would otherwise unmount the pill mid-sentence. Cleared on close.
 	const [justClaimed, setJustClaimed] = useState(false)
 	// The pill is a countdown, so it ticks every second while there is one to show.
-	const counting = checklist !== null && !dismissed && checklist.status === "in_progress"
+	const counting = checklist !== null && checklist.status === "in_progress"
 	const nowMs = useLiveClock({ intervalMs: 1000, enabled: counting })
 
-	if (checklist === null || dismissed) return null
+	if (checklist === null) return null
 	const active = checklist.status === "in_progress" || checklist.status === "claimable"
 	const deadlineMs = checklist.deadline_at === null ? null : Date.parse(checklist.deadline_at)
 	// A session that crosses the deadline hides the pill on its next tick, without a timer of its own.
@@ -129,10 +118,6 @@ function OnboardingChecklistPill() {
 						claimPending={claimPending}
 						claimError={claimError}
 						onClaim={handleClaim}
-						onDismiss={() => {
-							dismiss()
-							setOpen(false)
-						}}
 						onClose={() => handleOpenChange(false)}
 						nowMs={nowMs}
 					/>
@@ -209,7 +194,6 @@ export interface OnboardingChecklistPanelProps {
 	readonly claimPending: boolean
 	readonly claimError: string | null
 	readonly onClaim: () => void
-	readonly onDismiss: () => void
 	readonly onClose: () => void
 	/** The live clock from the pill; tests inject a fixed one. */
 	readonly nowMs?: number
@@ -222,7 +206,6 @@ export function OnboardingChecklistPanel({
 	claimPending,
 	claimError,
 	onClaim,
-	onDismiss,
 	onClose,
 	nowMs,
 }: OnboardingChecklistPanelProps) {
@@ -234,7 +217,7 @@ export function OnboardingChecklistPanel({
 	return (
 		<div>
 			<div className="relative space-y-3 border-b bg-primary/[0.06] px-4 pt-4 pb-3">
-				<div className="flex items-start gap-3 pr-8">
+				<div className="flex items-start gap-3">
 					<span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary">
 						{claimed ? <CircleCheckIcon size={18} /> : <RocketIcon size={18} />}
 					</span>
@@ -251,22 +234,6 @@ export function OnboardingChecklistPanel({
 						</p>
 					</div>
 				</div>
-				<Tooltip>
-					<TooltipTrigger
-						render={
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								aria-label="Hide"
-								onClick={onDismiss}
-								className="absolute top-2 right-2 text-muted-foreground"
-							/>
-						}
-					>
-						<XmarkIcon size={14} />
-					</TooltipTrigger>
-					<TooltipContent>Hide</TooltipContent>
-				</Tooltip>
 				<div className="h-1 overflow-hidden rounded-full bg-primary/15" aria-hidden>
 					<div
 						className="h-full rounded-full bg-primary transition-[width] duration-500"

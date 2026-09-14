@@ -54,7 +54,6 @@ async function renderPanel(props: Partial<OnboardingChecklistPanelProps> = {}) {
 		claimPending: false,
 		claimError: null,
 		onClaim: () => {},
-		onDismiss: () => {},
 		onClose: () => {},
 		nowMs: NOW,
 		...props,

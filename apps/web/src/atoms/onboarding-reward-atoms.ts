@@ -3,30 +3,18 @@ import { Schema } from "effect"
 import { localStorageRuntime } from "@/lib/services/common/storage-runtime"
 
 /**
- * This viewer's relationship to the onboarding reward pill for one org. A per-viewer
- * preference, not org state: a teammate should not lose the pill because an admin closed
- * it, and the reward window is a day, so cross-device persistence would buy nothing.
+ * Whether this viewer has already met the onboarding reward pill for one org: the first
+ * time, a pointer under the pill explains the timer; opening the checklist or closing the
+ * pointer retires it. Per viewer, not org state, so every teammate gets their own first look.
  *
- * `seen` flips the first time the popover closes; until then it opens by itself once and
- * the pill carries an attention marker.
+ * Deliberately NOT a dismissal. The pill itself stays until the credit is claimed or the
+ * window closes — a reward with a deadline should not vanish on a misclick.
  */
-export interface OnboardingRewardViewState {
-	readonly dismissed: boolean
-	readonly seen: boolean
-}
-
-const OnboardingRewardViewStateSchema = Schema.Struct({
-	dismissed: Schema.Boolean,
-	seen: Schema.Boolean,
-}) as Schema.Codec<OnboardingRewardViewState>
-
-const DEFAULT: OnboardingRewardViewState = { dismissed: false, seen: false }
-
-export const onboardingRewardViewAtomFamily = Atom.family((orgId: string) =>
+export const onboardingRewardSeenAtomFamily = Atom.family((orgId: string) =>
 	Atom.kvs({
 		runtime: localStorageRuntime,
-		key: `maple-onboarding-reward-v2-${orgId}`,
-		schema: OnboardingRewardViewStateSchema,
-		defaultValue: () => DEFAULT,
+		key: `maple-onboarding-reward-seen-v3-${orgId}`,
+		schema: Schema.Boolean,
+		defaultValue: () => false,
 	}),
 )

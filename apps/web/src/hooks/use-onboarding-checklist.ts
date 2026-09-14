@@ -8,7 +8,7 @@ import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { trackProduct } from "@/lib/analytics"
 import { displayError } from "@/lib/error-messages"
-import { onboardingRewardViewAtomFamily } from "@/atoms/onboarding-reward-atoms"
+import { onboardingRewardSeenAtomFamily } from "@/atoms/onboarding-reward-atoms"
 import {
 	claimOnboardingRewardMutation,
 	onboardingChecklistAtom,
@@ -18,9 +18,7 @@ export interface OnboardingChecklistState {
 	/** `null` until the first fetch lands, or when the org cannot be resolved. */
 	readonly checklist: V2OnboardingChecklist | null
 	readonly isAdmin: boolean
-	readonly dismissed: boolean
-	readonly dismiss: () => void
-	/** False until the popover has been closed once; drives the one-time auto-open. */
+	/** False until the checklist has been opened once; drives the one-time pointer. */
 	readonly seen: boolean
 	readonly markSeen: () => void
 	readonly refresh: () => void
@@ -36,7 +34,7 @@ export function useOnboardingChecklist(): OnboardingChecklistState {
 
 	const result = useAtomValue(onboardingChecklistAtom)
 	const refresh = useAtomRefresh(onboardingChecklistAtom)
-	const [view, setView] = useAtom(onboardingRewardViewAtomFamily(orgId ?? "default"))
+	const [seen, setSeen] = useAtom(onboardingRewardSeenAtomFamily(orgId ?? "default"))
 	const runClaim = useAtomSet(claimOnboardingRewardMutation, { mode: "promiseExit" })
 	const [claimPending, setClaimPending] = useState(false)
 	const [claimError, setClaimError] = useState<string | null>(null)
@@ -45,14 +43,9 @@ export function useOnboardingChecklist(): OnboardingChecklistState {
 	// from one. One subscription for the lifetime of the layout; no polling.
 	useMountEffect(() => router.subscribe("onResolved", () => refresh()))
 
-	const dismiss = useCallback(() => {
-		trackProduct("onboarding_reward_dismissed")
-		setView((prev) => ({ ...prev, dismissed: true, seen: true }))
-	}, [setView])
-
 	const markSeen = useCallback(() => {
-		setView((prev) => (prev.seen ? prev : { ...prev, seen: true }))
-	}, [setView])
+		setSeen(true)
+	}, [setSeen])
 
 	const claim = useCallback(async () => {
 		setClaimPending(true)
@@ -71,9 +64,7 @@ export function useOnboardingChecklist(): OnboardingChecklistState {
 	return {
 		checklist: Result.isSuccess(result) ? result.value : null,
 		isAdmin,
-		dismissed: view.dismissed,
-		dismiss,
-		seen: view.seen,
+		seen,
 		markSeen,
 		refresh,
 		claim,
