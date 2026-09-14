@@ -94,7 +94,7 @@ import {
 	SpanId,
 } from "@maple/domain/http"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Cause, Clock, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
@@ -137,11 +137,15 @@ import * as Integrations from "@maple/query-engine-integrations"
 // `warehouse.sqlQuery` fails with the warehouse error union (distinct tagged
 // classes per failure mode). The typed error channel threads through unchanged
 // so HTTP status mapping stays accurate — every endpoint declares the full set
-// via `warehouseHttpErrors`; on failure the context string lands on the route
-// span so a failed request names which sub-query broke.
+// via `warehouseHttpErrors`; on any failure, defects included, the context
+// string lands on the route span so a failed request names which step broke.
 const mapExecError = <A, E, R>(effect: Effect.Effect<A, E, R>, context: string): Effect.Effect<A, E, R> =>
 	effect.pipe(
-		Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.query_engine.failed_step": context })),
+		Effect.tapCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.void
+				: Effect.annotateCurrentSpan({ "maple.query_engine.failed_step": context }),
+		),
 	)
 
 /**

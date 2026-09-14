@@ -1,5 +1,6 @@
+import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
+import { Context, Effect, Exit, FileSystem, Layer, Logger, Path, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
@@ -30,6 +31,20 @@ const WorkerHttpPlatformLive = Layer.effect(
 ).pipe(Layer.provideMerge(WorkerFileSystemLive), Layer.provideMerge(Etag.layer))
 
 export const WorkerPlatformLive = Layer.mergeAll(Path.layer, WorkerHttpPlatformLive)
+
+/**
+ * The init's context, reduced to what a route graph may be built under.
+ *
+ * `HttpApiBuilder.group` captures the context it is built in and wraps every
+ * handler in it, and that captured context wins over the event's. So beside
+ * the init's deferred execution context (a handler must see the event's own)
+ * and its memo map, the loggers go too: alchemy's init installs a console
+ * logger, and a graph built under it sent every handler's and boundary's log
+ * line to the console instead of the event's exporter: seven days of
+ * query-engine 500s without one log line in Maple.
+ */
+export const isolateContext = (context: Context.Context<never>): Context.Context<never> =>
+	Context.omit(Cloudflare.WorkerExecutionContext, Layer.CurrentMemoMap, Logger.CurrentLoggers)(context)
 
 /**
  * A build run under the isolate's context — never the first event's fiber —
