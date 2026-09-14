@@ -6,7 +6,7 @@ import {
 	IsoDateTimeString,
 	UserId,
 } from "../primitives"
-import { AiTriageEvidence, AiTriageIncidentKind, AiTriageResult } from "./ai-triage"
+import { AiTriageIncidentKind, AiTriageResult } from "./ai-triage"
 import { HttpTaggedError } from "./error-policy"
 import { IssueSeverity } from "./errors"
 
@@ -175,59 +175,6 @@ export class InvestigationFanout extends Schema.Class<InvestigationFanout>("Inve
 	size: Schema.Number,
 }) {}
 
-/**
- * What a lens agent returns. Deliberately *not* `AiTriageResult`: a lens produces
- * a candidate to be ranked, not a diagnosis to be published, and conflating the
- * two is how five rivals end up each looking like a finished verdict.
- */
-export class LensCandidate extends Schema.Class<LensCandidate>("LensCandidate")({
-	/** One sentence: the cause this lens is putting forward. */
-	claim: Schema.String,
-	/** How it would produce the observed symptoms — the causal chain, not a restatement. */
-	mechanism: Schema.String,
-	confidence: InvestigationConfidence,
-	evidence: Schema.Array(AiTriageEvidence),
-	/**
-	 * What would falsify this claim, in the lens's own words. The validator reads
-	 * it, and a candidate that cannot say what would disprove it should lose.
-	 */
-	selfDoubt: Schema.String,
-	/** Concrete steps a human should take. Text today; actionable later. */
-	suggestedActions: Schema.Array(Schema.String),
-}) {}
-
-/** The validator's ruling on one rival it did not promote. */
-export class LensRival extends Schema.Class<LensRival>("LensRival")({
-	lensId: LensId,
-	verdict: Schema.Literals(["merged", "ruled_out", "rejected"]),
-	/** One sentence saying why it lost. A verdict without one proves nothing. */
-	reason: Schema.String,
-}) {}
-
-/**
- * The validator's output.
- *
- * The invariant is one-directional: `promotedLensId !== null` implies
- * `report !== null`, never the reverse. A promoted lens with nothing to publish
- * would show a diagnosis-shaped page with no diagnosis on it, so that pairing is
- * coerced away. A **null lens with a report** is the opposite and is the point:
- * it is the partial — nothing held up, and the report says what was ruled out,
- * what could not be checked, and the strongest remaining lead at low confidence.
- *
- * That asymmetry is new. Both-null used to be the only way to promote nothing,
- * which meant the honest outcome carried no information at all and reached the
- * user as `validation_inconclusive: …` in an error box. Both-null is still
- * accepted — a validator that dies mid-pass produces it — but the workflow then
- * synthesises the partial from the lane rows rather than publishing nothing.
- */
-export class ValidatorVerdict extends Schema.Class<ValidatorVerdict>("ValidatorVerdict")({
-	promotedLensId: Schema.NullOr(LensId),
-	report: Schema.NullOr(AiTriageResult),
-	rivals: Schema.Array(LensRival),
-	/** One line summarising the ranking, shown on the validator lane. */
-	note: Schema.String,
-}) {}
-
 // The plan (what the planner decided is worth testing)
 
 /**
@@ -301,21 +248,9 @@ const planFields = {
 	collapseReason: Schema.NullOr(Schema.String),
 } as const
 
-export class InvestigationPlan extends Schema.Class<InvestigationPlan>("InvestigationPlan")(planFields) {}
-
 /**
- * The plan as *stored*, which is the plan plus what normalization did to it.
- *
- * A separate class rather than three more fields on {@link InvestigationPlan},
- * because that one is the planner's submit-tool parameter schema: every field
- * added there becomes a field the model can set, and "did we fall back to the
- * seed catalogue" is precisely the fact the model must not be able to author.
- * The forgiving schema sits at the model boundary and the fuller one at the
- * storage boundary — the same split that already separates
- * `InvestigationHypothesis.id` from {@link LensId}.
- *
- * All three additions are `optionalKey` so every plan stored before they existed
- * still decodes.
+ * The plan as the fan-out era stored it, kept so `investigations.plan_json` on
+ * rows from that era still decodes. Nothing writes it any more.
  */
 export class InvestigationPlanRecord extends Schema.Class<InvestigationPlanRecord>("InvestigationPlanRecord")(
 	{
