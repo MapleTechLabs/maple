@@ -1,5 +1,7 @@
 import { dark } from "@clerk/themes"
 
+// Provider-wide theme: every Clerk surface (user button popover, re-verification
+// modal, organization switcher) keeps its own card chrome on top of these tokens.
 export const clerkAppearance = {
 	baseTheme: dark,
 	variables: {
@@ -13,18 +15,21 @@ export const clerkAppearance = {
 		borderRadius: "0px",
 		fontFamily: "'Geist Mono Variable', monospace",
 	},
+}
+
+// <SignIn> / <SignUp> render inside AuthLayout, which already draws the card and
+// wordmark. Clerk's card is a fixed 25rem with its own padding, shadow and logo,
+// so it overflowed the wrapper on every viewport and doubled up on phones.
+// Object styles are required here: class strings lose to Clerk's runtime CSS.
+export const clerkAuthCardAppearance = {
+	...clerkAppearance,
+	layout: {
+		logoPlacement: "none" as const,
+	},
 	elements: {
-		cardBox: "bg-transparent shadow-none border-none",
-		card: "bg-transparent shadow-none border-none p-0",
-		headerTitle: "text-foreground",
-		headerSubtitle: "text-muted-foreground",
-		socialButtonsBlockButton: "border-border bg-transparent text-foreground hover:bg-muted",
-		formFieldLabel: "text-foreground",
-		formFieldInput: "border-border bg-input text-foreground",
-		footerActionLink: "text-primary",
-		dividerLine: "bg-border",
-		dividerText: "text-muted-foreground",
-		formButtonPrimary: "bg-primary text-primary-foreground hover:opacity-90",
-		footer: "text-muted-foreground [&_a]:text-primary",
+		rootBox: { width: "100%" },
+		cardBox: { width: "100%", maxWidth: "none", boxShadow: "none" },
+		card: { width: "100%", padding: 0, background: "transparent", boxShadow: "none" },
+		footer: { background: "transparent" },
 	},
 }

@@ -10,7 +10,7 @@ import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { setSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
 import { AuthLayout } from "@/components/layout/auth-layout"
-import { clerkAppearance } from "@/lib/clerk-appearance"
+import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 import { tracedFetch } from "@/lib/services/common/telemetry"
 
 const SignInSearch = Schema.Struct({
@@ -116,7 +116,7 @@ function SignInPage() {
 	if (isClerkAuthEnabled) {
 		return (
 			<AuthLayout>
-				<SignIn appearance={clerkAppearance} forceRedirectUrl={target ?? undefined} />
+				<SignIn appearance={clerkAuthCardAppearance} forceRedirectUrl={target ?? undefined} />
 			</AuthLayout>
 		)
 	}

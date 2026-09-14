@@ -2,10 +2,10 @@ import type { ReactNode } from "react"
 
 export function AuthLayout({ children, maxWidth = "max-w-sm" }: { children: ReactNode; maxWidth?: string }) {
 	return (
-		<main className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden">
-			{/* Grid pattern — stronger lines, radial fade */}
+		<main className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-4 py-10 sm:p-6">
+			{/* Grid pattern — stronger lines, radial fade. Desktop only: on phones the form sits straight on the page and the lines run through it. */}
 			<div
-				className="absolute inset-0 -z-10 pointer-events-none"
+				className="pointer-events-none absolute inset-0 -z-10 hidden sm:block"
 				style={{
 					backgroundImage: [
 						"linear-gradient(to right, oklch(0.91 0.016 74 / 8%) 1px, transparent 1px)",
@@ -31,7 +31,10 @@ export function AuthLayout({ children, maxWidth = "max-w-sm" }: { children: Reac
 			/>
 
 			<p className="mb-6 text-lg font-semibold tracking-tight text-foreground">maple</p>
-			<div className={`relative w-full ${maxWidth} border border-border bg-card p-6`}>{children}</div>
+			{/* Phones get the form straight on the page; the card chrome only earns its space from sm: up. */}
+			<div className={`relative w-full ${maxWidth} sm:border sm:border-border sm:bg-card sm:p-6`}>
+				{children}
+			</div>
 		</main>
 	)
 }
