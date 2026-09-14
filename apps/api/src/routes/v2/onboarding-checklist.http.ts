@@ -35,6 +35,7 @@ export const toV2OnboardingChecklist = (report: OnboardingChecklistReport): V2On
 		object: "onboarding_checklist_step",
 		id: step.id,
 		completed: step.completed,
+		optional: step.optional,
 		...STEP_PRESENTATION[step.id],
 	})),
 })

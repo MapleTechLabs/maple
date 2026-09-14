@@ -19,12 +19,32 @@ const checklist = (
 	overrides: Partial<V2OnboardingChecklist> & { readonly done?: ReadonlyArray<string> } = {},
 ): V2OnboardingChecklist => {
 	const done = new Set(overrides.done ?? [])
-	const catalog: ReadonlyArray<Pick<V2OnboardingChecklistStep, "id" | "title" | "href">> = [
-		{ id: "send_telemetry", title: "Send your first telemetry", href: "/settings?tab=ingestion" },
-		{ id: "connect_github", title: "Connect GitHub", href: "/integrations?integration=github" },
-		{ id: "create_alert_rule", title: "Create an alert with a destination", href: "/alerts" },
-		{ id: "invite_teammate", title: "Invite a teammate", href: "/settings?tab=members" },
-		{ id: "connect_mcp_agent", title: "Connect an MCP agent", href: "/settings?tab=mcp" },
+	const catalog: ReadonlyArray<Pick<V2OnboardingChecklistStep, "id" | "title" | "href" | "optional">> = [
+		{
+			id: "send_telemetry",
+			title: "Send your first telemetry",
+			href: "/settings?tab=ingestion",
+			optional: false,
+		},
+		{
+			id: "connect_github",
+			title: "Connect GitHub",
+			href: "/integrations?integration=github",
+			optional: false,
+		},
+		{
+			id: "create_alert_rule",
+			title: "Create an alert with a destination",
+			href: "/alerts",
+			optional: false,
+		},
+		{
+			id: "connect_mcp_agent",
+			title: "Connect an MCP agent",
+			href: "/settings?tab=mcp",
+			optional: false,
+		},
+		{ id: "invite_teammate", title: "Invite a teammate", href: "/settings?tab=members", optional: true },
 	]
 	const steps: V2OnboardingChecklist["steps"] = catalog.map((step) => ({
 		object: "onboarding_checklist_step",
@@ -38,8 +58,8 @@ const checklist = (
 		reward_amount_usd: 30,
 		deadline_at: new Date(NOW + 19 * 60 * 60 * 1000).toISOString(),
 		claimed_at: null,
-		completed_count: done.size,
-		total_count: steps.length,
+		completed_count: steps.filter((step) => !step.optional && step.completed).length,
+		total_count: steps.filter((step) => !step.optional).length,
 		steps,
 		...rest,
 	}
@@ -77,7 +97,8 @@ it("links every undone step to where it is done and leaves done steps as plain r
 	const mcp = screen.getByRole("link", { name: /Connect an MCP agent/ })
 	expect(mcp.getAttribute("href")).toBe("/settings?tab=mcp")
 
-	expect(screen.getByText("2 of 5 done")).toBeTruthy()
+	expect(screen.getByText("2 of 4 done")).toBeTruthy()
+	expect(screen.getByText("Optional")).toBeTruthy()
 	expect(screen.getByText("19:00:00")).toBeTruthy()
 })
 

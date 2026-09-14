@@ -30,7 +30,7 @@ describe("evaluateOnboardingChecklist", () => {
 		expect(report.steps.map((step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
 		expect(report.status).toBe("in_progress")
 		expect(report.completedCount).toBe(0)
-		expect(report.totalCount).toBe(5)
+		expect(report.totalCount).toBe(4)
 		expect(report.deadlineAtMs).toBe(CREATED + ONBOARDING_REWARD_WINDOW_MS)
 	})
 

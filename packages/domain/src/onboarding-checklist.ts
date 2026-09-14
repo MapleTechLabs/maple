@@ -17,10 +17,15 @@ export const ONBOARDING_CHECKLIST_STEP_IDS = [
 	"send_telemetry",
 	"connect_github",
 	"create_alert_rule",
-	"invite_teammate",
 	"connect_mcp_agent",
+	"invite_teammate",
 ] as const
 export type OnboardingChecklistStepId = (typeof ONBOARDING_CHECKLIST_STEP_IDS)[number]
+
+/** Shown and tracked, but never required for the reward; excluded from the counts. */
+export const ONBOARDING_OPTIONAL_STEP_IDS: ReadonlySet<OnboardingChecklistStepId> = new Set([
+	"invite_teammate",
+])
 
 export type OnboardingChecklistStatus = "in_progress" | "claimable" | "claimed" | "expired"
 
@@ -40,6 +45,7 @@ export interface OnboardingChecklistInputs {
 export interface OnboardingChecklistStep {
 	readonly id: OnboardingChecklistStepId
 	readonly completed: boolean
+	readonly optional: boolean
 }
 
 export interface OnboardingChecklistEvaluation {
@@ -48,6 +54,7 @@ export interface OnboardingChecklistEvaluation {
 	readonly deadlineAtMs: number | null
 	readonly claimedAtMs: number | null
 	readonly steps: ReadonlyArray<OnboardingChecklistStep>
+	/** Required steps only — optional ones neither count nor block. */
 	readonly completedCount: number
 	readonly totalCount: number
 }
@@ -88,8 +95,14 @@ export const evaluateOnboardingChecklist = (
 	inputs: OnboardingChecklistInputs,
 	nowMs: number,
 ): OnboardingChecklistEvaluation => {
-	const steps = ONBOARDING_CHECKLIST_STEP_IDS.map((id) => ({ id, completed: stepCompleted(id, inputs) }))
-	const completedCount = steps.filter((step) => step.completed).length
+	const steps = ONBOARDING_CHECKLIST_STEP_IDS.map((id) => ({
+		id,
+		completed: stepCompleted(id, inputs),
+		optional: ONBOARDING_OPTIONAL_STEP_IDS.has(id),
+	}))
+	const required = steps.filter((step) => !step.optional)
+	const completedCount = required.filter((step) => step.completed).length
+	const totalCount = required.length
 	const deadlineAtMs =
 		inputs.orgCreatedAtMs === null ? null : inputs.orgCreatedAtMs + ONBOARDING_REWARD_WINDOW_MS
 
@@ -100,7 +113,7 @@ export const evaluateOnboardingChecklist = (
 			? "claimed"
 			: !onboardingRewardWindowOpen(inputs.orgCreatedAtMs, nowMs)
 				? "expired"
-				: completedCount === steps.length
+				: completedCount === totalCount
 					? "claimable"
 					: "in_progress"
 
@@ -110,7 +123,7 @@ export const evaluateOnboardingChecklist = (
 		claimedAtMs: inputs.rewardClaimedAtMs,
 		steps,
 		completedCount,
-		totalCount: steps.length,
+		totalCount,
 	}
 }
 

@@ -36,6 +36,11 @@ export const V2OnboardingChecklistStep = Schema.Struct({
 		description: "App-relative path of the page where the step is done.",
 		examples: ["/integrations?integration=github"],
 	}),
+	optional: Schema.Boolean.annotate({
+		description:
+			"Optional steps are shown but never required for the reward, and are excluded from `completed_count` and `total_count`.",
+		examples: [false],
+	}),
 }).annotate({
 	identifier: "OnboardingChecklistStep",
 	title: "Onboarding checklist step",
@@ -67,8 +72,11 @@ export const V2OnboardingChecklist = Schema.Struct({
 	claimed_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the credit was redeemed, or `null`.",
 	}),
-	completed_count: Schema.Number.annotate({ examples: [2] }),
-	total_count: Schema.Number.annotate({ examples: [5] }),
+	completed_count: Schema.Number.annotate({
+		description: "Required steps done so far.",
+		examples: [2],
+	}),
+	total_count: Schema.Number.annotate({ description: "Required steps in total.", examples: [4] }),
 	steps: Schema.Array(V2OnboardingChecklistStep).annotate({
 		description: "Every step, in display order, always the full set.",
 	}),
@@ -85,7 +93,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 			deadline_at: "2026-07-28T12:00:00.000Z",
 			claimed_at: null,
 			completed_count: 2,
-			total_count: 5,
+			total_count: 4,
 			steps: [
 				{
 					object: "onboarding_checklist_step",
@@ -93,6 +101,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 					title: "Send your first telemetry",
 					completed: true,
 					href: "/settings?tab=ingestion",
+					optional: false,
 				},
 				{
 					object: "onboarding_checklist_step",
@@ -100,6 +109,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 					title: "Connect GitHub",
 					completed: true,
 					href: "/integrations?integration=github",
+					optional: false,
 				},
 				{
 					object: "onboarding_checklist_step",
@@ -107,13 +117,7 @@ export const V2OnboardingChecklist = Schema.Struct({
 					title: "Create an alert with a destination",
 					completed: false,
 					href: "/alerts",
-				},
-				{
-					object: "onboarding_checklist_step",
-					id: "invite_teammate",
-					title: "Invite a teammate",
-					completed: false,
-					href: "/settings?tab=members",
+					optional: false,
 				},
 				{
 					object: "onboarding_checklist_step",
@@ -121,6 +125,15 @@ export const V2OnboardingChecklist = Schema.Struct({
 					title: "Connect an MCP agent",
 					completed: false,
 					href: "/settings?tab=mcp",
+					optional: false,
+				},
+				{
+					object: "onboarding_checklist_step",
+					id: "invite_teammate",
+					title: "Invite a teammate",
+					completed: false,
+					href: "/settings?tab=members",
+					optional: true,
 				},
 			],
 		}),

@@ -293,6 +293,14 @@ export function OnboardingChecklistPanel({
 	)
 }
 
+function OptionalTag() {
+	return (
+		<span className="shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+			Optional
+		</span>
+	)
+}
+
 function StepRow({ step, index }: { step: V2OnboardingChecklistStep; index: number }) {
 	if (step.completed) {
 		return (
@@ -301,6 +309,7 @@ function StepRow({ step, index }: { step: V2OnboardingChecklistStep; index: numb
 				<span className="min-w-0 flex-1 truncate line-through decoration-muted-foreground/40">
 					{step.title}
 				</span>
+				{step.optional && <OptionalTag />}
 			</li>
 		)
 	}
@@ -319,6 +328,7 @@ function StepRow({ step, index }: { step: V2OnboardingChecklistStep; index: numb
 					{index}
 				</span>
 				<span className="min-w-0 flex-1 truncate">{step.title}</span>
+				{step.optional && <OptionalTag />}
 				<ArrowRightIcon
 					size={14}
 					className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"

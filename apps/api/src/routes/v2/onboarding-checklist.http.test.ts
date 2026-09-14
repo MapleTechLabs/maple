@@ -68,14 +68,14 @@ const report = (status: OnboardingChecklistEvaluation["status"]): OnboardingChec
 	deadlineAtMs: Date.parse("2026-07-28T12:00:00.000Z"),
 	claimedAtMs: status === "claimed" ? Date.parse("2026-07-27T18:00:00.000Z") : null,
 	steps: [
-		{ id: "send_telemetry", completed: true },
-		{ id: "connect_github", completed: true },
-		{ id: "create_alert_rule", completed: status !== "in_progress" },
-		{ id: "invite_teammate", completed: status !== "in_progress" },
-		{ id: "connect_mcp_agent", completed: status !== "in_progress" },
+		{ id: "send_telemetry", completed: true, optional: false },
+		{ id: "connect_github", completed: true, optional: false },
+		{ id: "create_alert_rule", completed: status !== "in_progress", optional: false },
+		{ id: "connect_mcp_agent", completed: status !== "in_progress", optional: false },
+		{ id: "invite_teammate", completed: false, optional: true },
 	],
-	completedCount: status === "in_progress" ? 2 : 5,
-	totalCount: 5,
+	completedCount: status === "in_progress" ? 2 : 4,
+	totalCount: 4,
 })
 
 const makeHarness = (status: OnboardingChecklistEvaluation["status"]) => {
@@ -192,8 +192,8 @@ describe("GET /v2/onboarding/checklist", () => {
 				"send_telemetry",
 				"connect_github",
 				"create_alert_rule",
-				"invite_teammate",
 				"connect_mcp_agent",
+				"invite_teammate",
 			])
 			expect(checklist.steps[1]).toEqual({
 				object: "onboarding_checklist_step",
@@ -201,7 +201,9 @@ describe("GET /v2/onboarding/checklist", () => {
 				title: "Connect GitHub",
 				completed: true,
 				href: "/integrations?integration=github",
+				optional: false,
 			})
+			expect(checklist.steps[4]?.optional).toBe(true)
 		} finally {
 			await harness.dispose()
 		}

@@ -45,6 +45,7 @@ interface World {
 	destinationCount: number
 	memberCount: number
 	membersFail: boolean
+	rulesFail: boolean
 	redeemStatus: number
 	orgLookups: number
 	redeems: Array<{ customerId: string; code: string }>
@@ -59,6 +60,7 @@ const freshWorld = (): World => ({
 	destinationCount: 1,
 	memberCount: 2,
 	membersFail: false,
+	rulesFail: false,
 	redeemStatus: 200,
 	orgLookups: 0,
 	redeems: [],
@@ -105,7 +107,13 @@ const stubs = (world: World) =>
 		}),
 		Layer.succeed(AlertRulesService, {
 			listRules: () =>
-				Effect.sync(() => ({ rules: Array.from({ length: world.ruleCount }, () => ({}) as never) })),
+				Effect.suspend(() =>
+					world.rulesFail
+						? Effect.die(new Error("rules table unreadable"))
+						: Effect.succeed({
+								rules: Array.from({ length: world.ruleCount }, () => ({}) as never),
+							}),
+				),
 			createRule: die,
 			deleteRule: die,
 		}),
@@ -235,7 +243,7 @@ describe("OnboardingChecklistService.read", () => {
 			const service = yield* OnboardingChecklistService
 			const report = yield* service.read(tenant)
 			assert.strictEqual(report.status, "claimable")
-			assert.strictEqual(report.completedCount, 5)
+			assert.strictEqual(report.completedCount, 4)
 			assert.strictEqual(report.deadlineAtMs, ONBOARDING_REWARD_WINDOW_MS)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
@@ -257,7 +265,7 @@ describe("OnboardingChecklistService.read", () => {
 		return Effect.gen(function* () {
 			const service = yield* OnboardingChecklistService
 			yield* TestClock.adjust(`${25 * 60 * 60 * 1000} millis`)
-			world.membersFail = true // would defect if reached
+			world.rulesFail = true // would defect if reached
 			const report = yield* service.read(tenant)
 			assert.strictEqual(report.status, "expired")
 			assert.strictEqual(report.completedCount, 0)
@@ -266,7 +274,7 @@ describe("OnboardingChecklistService.read", () => {
 
 	it.effect("leaves a step undone when its read fails rather than guessing it done", () => {
 		const world = freshWorld()
-		world.membersFail = true
+		world.rulesFail = true
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* useMcpKey
@@ -274,8 +282,8 @@ describe("OnboardingChecklistService.read", () => {
 			const service = yield* OnboardingChecklistService
 			const report = yield* service.read(tenant)
 			assert.strictEqual(report.status, "in_progress")
-			assert.strictEqual(report.steps.find((step) => step.id === "invite_teammate")?.completed, false)
-			assert.strictEqual(report.completedCount, 4)
+			assert.strictEqual(report.steps.find((step) => step.id === "create_alert_rule")?.completed, false)
+			assert.strictEqual(report.completedCount, 3)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
