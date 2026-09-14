@@ -1,7 +1,7 @@
 ---
 title: "Product events API"
 description: "Post product events from a backend or mobile app to POST /v1/events on the Maple ingest gateway — the raw NDJSON contract every server-side track() call uses."
-group: "Session Replay"
+group: "Product Events"
 order: 3
 ---
 
