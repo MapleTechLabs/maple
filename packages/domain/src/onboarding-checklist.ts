@@ -145,7 +145,7 @@ export class OnboardingChecklistUnavailableError extends HttpTaggedError<Onboard
 	},
 ) {}
 
-export const OnboardingRewardNotClaimableReason = Schema.Literals(["incomplete", "expired"])
+export const OnboardingRewardNotClaimableReason = Schema.Literals(["incomplete", "expired", "in_progress"])
 export type OnboardingRewardNotClaimableReason = Schema.Schema.Type<typeof OnboardingRewardNotClaimableReason>
 
 export class OnboardingRewardNotClaimableError extends HttpTaggedError<OnboardingRewardNotClaimableError>()(

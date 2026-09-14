@@ -90,7 +90,7 @@ const makeHarness = (status: OnboardingChecklistEvaluation["status"]) => {
 			Effect.suspend(() => {
 				claims.push(tenant.userId)
 				return status === "claimable" || status === "claimed"
-					? Effect.succeed(report("claimed"))
+					? Effect.succeed({ report: report("claimed"), newlyClaimed: status === "claimable" })
 					: Effect.fail(
 							new OnboardingRewardNotClaimableError({
 								message: "Finish every step of the checklist before claiming the reward.",

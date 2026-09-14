@@ -336,13 +336,15 @@ describe("OnboardingChecklistService.claim", () => {
 			yield* useMcpKey
 			yield* connectGithub(testDb)
 			const service = yield* OnboardingChecklistService
-			const report = yield* service.claim(tenant)
-			assert.strictEqual(report.status, "claimed")
+			const first = yield* service.claim(tenant)
+			assert.strictEqual(first.report.status, "claimed")
+			assert.strictEqual(first.newlyClaimed, true)
 			assert.deepStrictEqual(world.redeems, [{ customerId: ORG, code: "ONBOARD30" }])
 			assert.notStrictEqual(yield* claimedAtInDb(testDb), null)
 
 			const again = yield* service.claim(tenant)
-			assert.strictEqual(again.status, "claimed")
+			assert.strictEqual(again.report.status, "claimed")
+			assert.strictEqual(again.newlyClaimed, false)
 			assert.strictEqual(world.redeems.length, 1)
 		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
 	})
@@ -377,9 +379,9 @@ describe("OnboardingChecklistService.claim", () => {
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
-	it.effect("rolls the reservation back when Autumn refuses, so the org can retry", () => {
+	it.effect("rolls the reservation back when Autumn refuses outright, so the org can retry", () => {
 		const world = freshWorld()
-		world.redeemStatus = 500
+		world.redeemStatus = 400
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* useMcpKey
@@ -391,24 +393,57 @@ describe("OnboardingChecklistService.claim", () => {
 			assert.strictEqual(yield* claimedAtInDb(testDb), null)
 
 			world.redeemStatus = 200
-			const report = yield* service.claim(tenant)
-			assert.strictEqual(report.status, "claimed")
+			const result = yield* service.claim(tenant)
+			assert.strictEqual(result.report.status, "claimed")
 		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
 	})
 
-	it.effect("lets exactly one of two concurrent claims reach Autumn", () => {
+	it.effect(
+		"keeps the reservation when Autumn fails ambiguously, so the credit cannot double-apply",
+		() => {
+			const world = freshWorld()
+			world.redeemStatus = 500
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* useMcpKey
+				yield* connectGithub(testDb)
+				const service = yield* OnboardingChecklistService
+				const error = yield* Effect.flip(service.claim(tenant))
+				assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
+				assert.strictEqual(world.redeems.length, 1)
+				// Stamped: the response was lost, not refused, so a retry must not redeem again.
+				assert.notStrictEqual(yield* claimedAtInDb(testDb), null)
+				assert.strictEqual((yield* service.read(tenant)).status, "claimed")
+			}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		},
+	)
+
+	it.effect("lets exactly one of two concurrent claims reach Autumn; the other is told to retry", () => {
 		const world = freshWorld()
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* useMcpKey
 			yield* connectGithub(testDb)
 			const service = yield* OnboardingChecklistService
-			const [a, b] = yield* Effect.all([service.claim(tenant), service.claim(tenant)], {
-				concurrency: 2,
-			})
-			assert.strictEqual(a.status, "claimed")
-			assert.strictEqual(b.status, "claimed")
+			const outcomes = yield* Effect.all(
+				[Effect.result(service.claim(tenant)), Effect.result(service.claim(tenant))],
+				{ concurrency: 2 },
+			)
+			const won = outcomes.filter((outcome) => outcome._tag === "Success")
+			const lost = outcomes.filter((outcome) => outcome._tag === "Failure")
+			assert.strictEqual(won.length, 1)
+			assert.strictEqual(lost.length, 1)
+			const loser = lost[0]
+			assert(loser !== undefined && loser._tag === "Failure")
+			assert.strictEqual(loser.failure._tag, "@maple/http/errors/OnboardingRewardNotClaimableError")
+			assert.strictEqual(
+				loser.failure._tag === "@maple/http/errors/OnboardingRewardNotClaimableError"
+					? loser.failure.reason
+					: null,
+				"in_progress",
+			)
 			assert.strictEqual(world.redeems.length, 1)
+			assert.strictEqual((yield* service.read(tenant)).status, "claimed")
 		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
 	})
 

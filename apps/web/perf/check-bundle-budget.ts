@@ -90,7 +90,13 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // blocks on the stored and v2 schemas, two picker presets with their icon,
 // and the paths widget type's lowering. Both charts, the paths query panel
 // and the sample data stay in lazy chunks.
-const maxGzipBytes = 693 * 1024
+// 695 KB from the onboarding reward checklist (#890, 2026-09-14): ~1.2 KB of
+// startup measured in CI against #878's 693.0 — the checklist group's two
+// endpoints and step/status schemas on the contract every page's client
+// carries, the pill in the persistent top bar with its live clock, and the
+// hook's query and seen-flag atoms. The popover's panel and pointer are small
+// and render only while open, so nothing there is worth a lazy chunk.
+const maxGzipBytes = 695 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

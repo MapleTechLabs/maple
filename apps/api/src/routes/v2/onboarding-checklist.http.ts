@@ -60,10 +60,13 @@ export const HttpV2OnboardingChecklistLive = HttpApiBuilder.group(
 						yield* requireAdmin(tenant.roles, () =>
 							V2InsufficientPermissions.make("Only org admins can claim the onboarding reward"),
 						)
-						const report = yield* service.claim(tenant)
-						yield* recordHttpAudit("onboarding_reward.claimed", {
-							metadata: { amount_usd: ONBOARDING_REWARD_AMOUNT_USD },
-						})
+						const { report, newlyClaimed } = yield* service.claim(tenant)
+						// A repeat of an idempotent claim is not a second credit; audit the redemption once.
+						if (newlyClaimed) {
+							yield* recordHttpAudit("onboarding_reward.claimed", {
+								metadata: { amount_usd: ONBOARDING_REWARD_AMOUNT_USD },
+							})
+						}
 						return toV2OnboardingChecklist(report)
 					}),
 				)

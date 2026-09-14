@@ -7368,6 +7368,10 @@
       "name": "Organization"
     },
     {
+      "description": "Activation steps a new org completes to earn a credit, and the claim that applies it.",
+      "name": "Onboarding Checklist"
+    },
+    {
       "description": "Push-notification registrations for the native apps. Per user, per organization.",
       "name": "Mobile Devices"
     },

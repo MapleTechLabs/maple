@@ -16,7 +16,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
-import { CUSTOMER_CACHE_BUCKET, ensureOk } from "@maple/backend/services/billing/autumn-client"
+import { CUSTOMER_CACHE_BUCKET, classifyAutumn } from "@maple/backend/services/billing/autumn-client"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -25,6 +25,24 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 
 export type OnboardingChecklistReport = OnboardingChecklistEvaluation
+
+export interface OnboardingClaimResult {
+	readonly report: OnboardingChecklistReport
+	/** True only for the call that performed the redemption; a repeat returns the report with `false`. */
+	readonly newlyClaimed: boolean
+}
+
+/** Same shape `ensureOk` gives a refused request, so the route's public error set is unchanged. */
+const collapseToUpstream = (error: {
+	readonly message: string
+	readonly code: string
+	readonly upstreamStatus: number
+}) =>
+	Effect.fail(
+		new BillingUpstreamError({
+			message: `Autumn rejected our request (HTTP ${error.upstreamStatus}, ${error.code}): ${error.message}`,
+		}),
+	)
 
 export interface OnboardingChecklistServiceApi {
 	/** Evaluate every step against the org's current state. Never marks a step done on a failed read. */
@@ -39,7 +57,7 @@ export interface OnboardingChecklistServiceApi {
 	readonly claim: (
 		tenant: TenantContext,
 	) => Effect.Effect<
-		OnboardingChecklistReport,
+		OnboardingClaimResult,
 		| OnboardingChecklistUnavailableError
 		| OnboardingRewardNotClaimableError
 		| BillingNotConfiguredError
@@ -216,7 +234,7 @@ const make = Effect.gen(function* () {
 	const claim = Effect.fn("OnboardingChecklistService.claim")(function* (tenant: TenantContext) {
 		const orgId = tenant.orgId
 		const report = yield* read(tenant)
-		if (report.status === "claimed") return report
+		if (report.status === "claimed") return { report, newlyClaimed: false }
 		if (report.status !== "claimable") {
 			return yield* new OnboardingRewardNotClaimableError({
 				message:
@@ -236,31 +254,53 @@ const make = Effect.gen(function* () {
 			onSome: (value) => Effect.succeed(Redacted.value(value)),
 		})
 
-		// Reserve first: a lost race means another admin's click is mid-redeem.
+		// Reserve first: a lost race means another admin's click is mid-redeem. That caller
+		// gets a retryable refusal rather than a "claimed" the winner may still roll back.
 		const reserved = yield* unavailable("markRewardClaimed", onboarding.markRewardClaimed(orgId))
-		if (!reserved) return yield* read(tenant)
+		if (!reserved) {
+			return yield* new OnboardingRewardNotClaimableError({
+				message: "Another admin is claiming the reward right now. Try again in a moment.",
+				reason: "in_progress",
+			})
+		}
 
-		const redeem = Effect.gen(function* () {
-			yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(Effect.flatMap(ensureOk))
-			yield* autumn.redeemReward(orgId, { code }).pipe(Effect.flatMap(ensureOk))
-		})
-		yield* redeem.pipe(
-			Effect.tapCause(() =>
-				onboarding
-					.clearRewardClaim(orgId)
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logError("Onboarding reward reservation could not be rolled back").pipe(
-								Effect.annotateLogs({ orgId, cause }),
-							),
-						),
+		const rollback = onboarding
+			.clearRewardClaim(orgId)
+			.pipe(
+				Effect.catchCause((cause) =>
+					Effect.logError("Onboarding reward reservation could not be rolled back").pipe(
+						Effect.annotateLogs({ orgId, cause }),
 					),
-			),
+				),
+			)
+		// Only a definite refusal reopens the claim: Autumn answered 4xx, so nothing was
+		// applied. A 5xx or a lost response may have applied the credit, so the reservation
+		// stands and the failure is logged for reconciliation rather than risking a second
+		// redemption. `classifyAutumn` keeps the 4xx/5xx split that `ensureOk` collapses.
+		const redeem = Effect.gen(function* () {
+			yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(Effect.flatMap(classifyAutumn))
+			yield* autumn.redeemReward(orgId, { code }).pipe(Effect.flatMap(classifyAutumn))
+		}).pipe(
+			Effect.catchTags({
+				"@maple/http/errors/BillingPaymentRequiredError": (error) =>
+					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
+				"@maple/http/errors/BillingConflictError": (error) =>
+					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
+				"@maple/http/errors/BillingRateLimitedError": (error) =>
+					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
+				"@maple/http/errors/BillingRequestError": (error) =>
+					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
+				"@maple/http/errors/BillingUpstreamError": (error) =>
+					Effect.logError(
+						"Onboarding reward redeem failed after reservation; needs reconciliation",
+					).pipe(Effect.annotateLogs({ orgId, error }), Effect.andThen(Effect.fail(error))),
+			}),
 		)
+		yield* redeem
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 		yield* Effect.annotateCurrentSpan({ orgId, "onboarding.rewardClaimed": true })
 
-		return yield* read(tenant)
+		return { report: yield* read(tenant), newlyClaimed: true }
 	})
 
 	return { read, claim } satisfies OnboardingChecklistServiceApi
