@@ -4084,16 +4084,19 @@ describe("AlertsService held incidents", () => {
 	 * observed window is exactly one rule window (5m) back from the tick; the
 	 * onset baseline ends at incident onset, which is at least a minute earlier.
 	 */
-	const probeCount = (liveness: LivenessState, startMs: number): number =>
+	const probeCount = (liveness: LivenessState, startMs: number, service?: string): number =>
 		startMs <= liveness.nowMs - 23 * 60 * 60_000
 			? liveness.priorDay
 			: startMs >= liveness.nowMs - 5 * 60_000 - 1_000
-				? liveness.observed
+				? ((service === undefined ? undefined : liveness.observedByService?.[service]) ??
+					liveness.observed)
 				: liveness.onset
 
 	interface LivenessState {
 		/** Span count for the quiet window ending at the tick. */
 		observed: number
+		/** Per-service override of `observed`, for a loud sibling next to a dark service. */
+		observedByService?: Record<string, number>
 		/** Span count for the window ending at incident onset. */
 		onset: number
 		/** Span count for the same window yesterday; 0 for a service with no prior day. */
@@ -4158,8 +4161,9 @@ describe("AlertsService held incidents", () => {
 						)
 					}
 					const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
+					const service = /ServiceName = '([^']+)'/.exec(query.sql)?.[1]
 					return yield* query
-						.decodeFirstRow([livenessRow(probeCount(state.liveness, startMs))])
+						.decodeFirstRow([livenessRow(probeCount(state.liveness, startMs, service))])
 						.pipe(Effect.orDie)
 				}),
 		}
@@ -4393,9 +4397,19 @@ describe("AlertsService held incidents", () => {
 		// `serviceNames` rules evaluate each service on its own, so a silent
 		// service is a `skipped` evaluation on an open incident rather than an
 		// orphan. Before the gate that froze the incident forever.
+		// checkout stays loud throughout; only payments thins out. The probe must
+		// scope to the quiet service: summed with checkout the ratio is 189/344 and
+		// checkout's traffic would vouch for payments.
 		const state = {
 			rows: [breaching("checkout"), breaching("payments")],
-			liveness: { observed: 0, onset: 172, priorDay: 0, failProbe: false, nowMs: 0 },
+			liveness: {
+				observed: 19,
+				observedByService: { checkout: 170 },
+				onset: 172,
+				priorDay: 0,
+				failProbe: false,
+				nowMs: 0,
+			},
 		}
 
 		return Effect.gen(function* () {
@@ -4415,9 +4429,9 @@ describe("AlertsService held incidents", () => {
 			yield* tickAfter(state, alerts, 1)
 			const held = yield* paymentsIncident(alerts, orgId)
 			assert.strictEqual(held.status, "open")
-			assert.strictEqual(held.holdReason, "no_data")
+			assert.strictEqual(held.holdReason, "volume_collapsed")
 
-			state.liveness.observed = 170
+			state.liveness.observedByService = { checkout: 170, payments: 170 }
 			yield* tickAfter(state, alerts, 1)
 			const resolved = yield* paymentsIncident(alerts, orgId)
 			assert.strictEqual(resolved.status, "resolved")

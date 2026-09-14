@@ -527,7 +527,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				rule: NormalizedRule,
 				groupKey: string | null,
 			): ReadonlyArray<string> =>
-				groupKey != null && groupKey !== UNGROUPED_GROUP_KEY && isServiceGroupBy(rule.groupBy)
+				groupKey != null &&
+				groupKey !== UNGROUPED_GROUP_KEY &&
+				// Service-grouped rules and multi-service rules both key incidents by
+				// service name; in either case the quiet service is probed alone, so
+				// a loud sibling cannot vouch for it.
+				(isServiceGroupBy(rule.groupBy) || rule.serviceNames.includes(groupKey))
 					? [groupKey]
 					: livenessServicesFor(rule)
 
@@ -2653,6 +2658,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// (incident status update converges; delivery events onConflictDoNothing).
 				yield* Effect.forEach(toResolve, (incident) =>
 					Effect.gen(function* () {
+						// A held incident resolved by a rule edit still tells the phone it
+						// was waiting on data, not that a value recovered.
+						const heldForMs =
+							incident.heldSince === null ? 0 : timestamp - dateToMs(incident.heldSince)
+						if (incident.holdReason !== null) {
+							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
+						}
 						const resolvedIncident = {
 							...incident,
 							status: "resolved" as const,
@@ -2684,6 +2696,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							"resolve",
 							timestamp,
 							opts.pushBudget ?? null,
+							afterHold(incident, heldForMs),
 						)
 					}),
 				)
