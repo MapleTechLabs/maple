@@ -1,4 +1,4 @@
-import { feature, plan } from "atmn"
+import { feature, plan, reward } from "atmn"
 
 // Features
 export const logs = feature({
@@ -138,4 +138,19 @@ export const bringYourOwnCloudAddOn = plan({
 			featureId: "bringyourowncloud",
 		},
 	],
+})
+
+// The onboarding checklist's reward: $30 off the next invoice, once, redeemed by
+// the API with the promo code (`AUTUMN_ONBOARDING_REWARD_CODE`, see
+// `OnboardingChecklistService.claim`). A `fixed_discount` is the closest thing the
+// config builder has to an invoice credit; the API-only `invoice_credits` reward
+// type would carry an unused remainder forward, this one does not. The claim
+// row in Postgres is what makes it once per org — the code itself is unlimited.
+export const onboardingChecklistReward = reward({
+	id: "onboarding_checklist",
+	name: "Onboarding checklist credit",
+	type: "fixed_discount",
+	value: 30,
+	duration: { type: "one_off" },
+	promoCodes: [{ code: "ONBOARD30" }],
 })

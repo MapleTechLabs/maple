@@ -228,7 +228,7 @@ export function OnboardingChecklistPanel({
 						</h3>
 						<p className="text-xs leading-relaxed text-muted-foreground">
 							{claimed
-								? `${credits} was added to your balance. It applies to your next invoices.`
+								? `${credits} in credits applied. It comes off your next invoice.`
 								: `Finish these steps within 24 hours of creating your org and we'll credit your balance.`}
 						</p>
 					</div>
