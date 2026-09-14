@@ -58,7 +58,7 @@ The conventions live at [opentelemetry.io/docs/specs/semconv/gen-ai](https://ope
 - [Message content](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-events/): the `{role, parts}` shape of `gen_ai.input.messages`, `gen_ai.output.messages` and `gen_ai.system_instructions`.
 - [Attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/): every `gen_ai.*` key with its type and examples.
 
-One attribute is Maple's own: `maple_ai.session.id`, the same value on every span of a conversation, is what groups its traces into one session when no framework is recognised. Everything else Maple reads is in [the attribute table](#the-attributes-maple-reads) below.
+The session id is `gen_ai.conversation.id`: put the same value on every span of a conversation and its traces become one session. Everything else Maple reads is in [the attribute table](#the-attributes-maple-reads) below.
 
 ### Step 3: open Explore → Agent Sessions
 
@@ -66,13 +66,12 @@ Run one conversation and open the list. The session appears as soon as its first
 
 ### The attributes Maple reads
 
-You do not need all of these. The first two rows make a span show up at all; the rest make it useful.
+You do not need all of these. The first two rows make a session; the rest make it useful.
 
 | Attribute                                                                                                                                                                             | Used for                                                                                                                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `gen_ai.operation.name`                                                                                                                                                               | Marks the span as AI and says what kind: `chat`, `text_completion`, `embeddings`, `execute_tool`, `invoke_agent`, `create_agent`, `invoke_workflow`.                                                                         |
-| `maple_ai.session.id`                                                                                                                                                                 | Groups traces into one session. Maple's own key, the opt-in for emitters no framework predicate recognises.                                                                                                                  |
-| `gen_ai.conversation.id`                                                                                                                                                              | The conversation or thread id. It is the session id for the frameworks that emit it, and set on the transcript's messages so they correlate.                                                                                 |
+| `gen_ai.conversation.id`                                                                                                                                                              | Groups traces into one session: the same value on every span of a conversation.                                                                                                                                              |
 | `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`                                                                                                               | Provider and model facets, per-model token and cost roll-ups. The older `gen_ai.system` is accepted too.                                                                                                                     |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.usage.reasoning.output_tokens` | The five token buckets. Maple knows which providers nest one bucket inside another and does not double count.                                                                                                                |
 | `gen_ai.usage.cost`                                                                                                                                                                   | Cost in USD, if your instrumentation prices calls. The conventions define no cost attribute, so Maple does not price semconv calls itself; this is the OpenLLMetry key, and `llm.cost.total` from OpenInference is read too. |
@@ -112,7 +111,7 @@ If your agent runs on one of these, use the framework's own OpenTelemetry export
 | Effect AI                        | `@effect/opentelemetry`                             | One per trace                                             |
 | OpenAI SDK via OpenInference     | OpenInference `openai` instrumentation              | `session.id`                                              |
 
-For the frameworks that give you one session per trace, stamp `maple_ai.session.id` on every span of the conversation (a span processor is the usual place) and Maple groups them into one session.
+For the frameworks that give you one session per trace, stamp `gen_ai.conversation.id` on every span of the conversation (a span processor is the usual place) and Maple groups them into one session.
 
 Two dialects that are not frameworks are recognised as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached.
 
@@ -146,8 +145,8 @@ A tool span needs `gen_ai.operation.name` of `execute_tool`, `gen_ai.tool.name`,
 
 ## When it does not look right
 
-- **Every turn is its own session.** No span carried a session id Maple recognises. Add `maple_ai.session.id` to every span of the conversation, or check the framework table for the key your framework is expected to emit.
+- **Every turn is its own session.** No span carried a session id Maple recognises. Add `gen_ai.conversation.id` to every span of the conversation, or check the framework table for the key your framework is expected to emit.
 - **The transcript is empty.** Message content is not on the spans. Most official instrumentations leave it off by default, and some only ever write it to log events, which Maple does not read. If content is on the spans and still missing, check that the attribute holds a JSON array of `{role, parts}` objects rather than a plain string.
-- **The framework shows as "Unidentified" or "Maple".** Unidentified means the spans carry `gen_ai.*` attributes but no fingerprint of a known framework; Maple means they carry `maple_ai.session.id`, which takes precedence over framework detection. Sessions, transcripts and tool pages work either way; only the framework facet differs. Tell us which framework it is and we will add the rule.
+- **The framework shows as "Unidentified".** The spans carry `gen_ai.*` attributes but no fingerprint of a known framework. Sessions, transcripts and tool pages all work; only the framework facet is missing. Tell us which framework it is and we will add the rule.
 - **Token totals look too high or too low.** Providers disagree on whether cached and reasoning tokens are included in the input and output counts. Maple resolves that per `gen_ai.provider.name`, so if the provider name is missing or unexpected, set it and the totals correct themselves.
 - **Nothing appears at all.** Confirm ordinary traces from the service show under **Explore → Traces** first. If they do, no span in them carries `gen_ai.operation.name`; if they do not, the problem is the exporter, and the [instrumentation guide](/docs/instrumentation) for your language covers it.
