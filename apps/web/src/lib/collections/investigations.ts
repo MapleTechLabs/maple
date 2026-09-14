@@ -71,11 +71,6 @@ export const InvestigationRowSchema = Schema.Struct({
 	input_tokens: Schema.NullOr(Schema.Number),
 	output_tokens: Schema.NullOr(Schema.Number),
 	error: Schema.NullOr(Schema.String),
-	fanout_state: Schema.String,
-	fanout_size: Schema.Number,
-	fanout_attempt: Schema.Number,
-	validator_note: Schema.NullOr(Schema.String),
-	validator_elapsed_ms: Schema.NullOr(Schema.Number),
 	created_by: Schema.NullOr(Schema.String),
 	created_at: Schema.String,
 	started_at: Schema.NullOr(Schema.String),
@@ -212,11 +207,6 @@ export const rowsToInvestigation = (row: InvestigationRow): V2Investigation | nu
 		started_at: row.started_at,
 		diagnosed_at: row.diagnosed_at,
 		updated_at: row.updated_at,
-		// Fan-out bookkeeping is still on the wire for rows written before the
-		// single-agent rework; nothing renders it any more.
-		lens_runs: [],
-		validator: null,
-		fanout: { state: row.fanout_state, size: row.fanout_size },
 	}
 	return Option.getOrNull(decodeInvestigation(candidate))
 }

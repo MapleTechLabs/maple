@@ -43,9 +43,6 @@ const make = (overrides: Partial<V2Investigation> = {}): V2Investigation =>
 		started_at: "2026-08-01T14:02:00.000Z",
 		diagnosed_at: "2026-08-01T14:02:38.000Z",
 		updated_at: "2026-08-01T14:02:38.000Z",
-		lens_runs: [],
-		validator: null,
-		fanout: { state: "none", size: 0 },
 		...overrides,
 	}) as V2Investigation
 

@@ -93,13 +93,6 @@ export interface ApplyDiagnosisInput {
 	 * lifecycle and can move the issue through the workflow state machine.
 	 */
 	readonly subjectType: Option.Option<InvestigationSubjectType>
-	/**
-	 * Fan-out bookkeeping written in the same statement as the report, so the row
-	 * can never say `diagnosed` while still claiming the validator is running.
-	 */
-	readonly fanoutState?: "none" | "ranked" | "superseded"
-	readonly validatorNote?: string | null
-	readonly validatorElapsedMs?: number | null
 }
 
 /**
@@ -128,13 +121,6 @@ const writeDiagnosis = async (db: MaplePgClient, input: ApplyDiagnosisInput): Pr
 			error: null,
 			diagnosedAt: now,
 			updatedAt: now,
-			...(!(input.fanoutState === undefined) ? { fanoutState: input.fanoutState } : undefined),
-			...(!(input.validatorNote === undefined) ? { validatorNote: input.validatorNote } : undefined),
-			...(!(input.validatorElapsedMs === undefined)
-				? {
-						validatorElapsedMs: input.validatorElapsedMs,
-					}
-				: undefined),
 		})
 		.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
 
@@ -212,12 +198,10 @@ export interface ApplyInconclusiveInput {
 	readonly inputTokens: number | null
 	readonly outputTokens: number | null
 	readonly nowMs: number
-	readonly validatorNote: string | null
-	readonly validatorElapsedMs: number | null
 }
 
 /**
- * Publish a partial result: nothing was promoted, but the run still has
+ * Publish a partial result: nothing was established, but the run still has
  * something to say.
  *
  * A sibling of {@link applyDiagnosisWrites} rather than a flag on it, because
@@ -235,8 +219,8 @@ export interface ApplyInconclusiveInput {
  *   than an AI severity assessment of a cause nobody established.
  * - `diagnosedAt: null` — "time to diagnosis" keys off it, and a timestamp there
  *   claims a diagnosis happened.
- * - `error: null` — the raw `validation_inconclusive: …` string in that column
- *   is what the UI used to render in a destructive box. The report replaces it.
+ * - `error: null` — the raw error string in that column is what the UI used to
+ *   render in a destructive box. The report replaces it.
  */
 const writeInconclusive = async (db: MaplePgClient, input: ApplyInconclusiveInput): Promise<void> => {
 	const now = new Date(input.nowMs)
@@ -247,18 +231,14 @@ const writeInconclusive = async (db: MaplePgClient, input: ApplyInconclusiveInpu
 			reportJson: input.report,
 			severity: null,
 			// Always low, whatever the report says. Nothing was established, and a
-			// partial that claims medium confidence in a lead is the "least-bad
-			// option promoted to avoid an empty answer" the validator is told to
-			// refuse — reintroduced one layer down.
+			// partial that claims medium confidence in a lead is a promotion nobody
+			// made, reintroduced one layer down.
 			confidence: "low",
 			model: input.model,
 			inputTokens: input.inputTokens,
 			outputTokens: input.outputTokens,
 			error: null,
 			diagnosedAt: null,
-			fanoutState: "rejected_all",
-			validatorNote: input.validatorNote,
-			validatorElapsedMs: input.validatorElapsedMs,
 			updatedAt: now,
 		})
 		.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))

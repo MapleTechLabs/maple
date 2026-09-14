@@ -135,8 +135,6 @@ describe("maybeEnqueueTriage", () => {
 			const rows = yield* database.execute((db) =>
 				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
 			)
-			assert.strictEqual(rows[0]?.fanoutState, "none")
-			assert.strictEqual(rows[0]?.fanoutSize, 1)
 			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
