@@ -58,74 +58,7 @@ The conventions live at [opentelemetry.io/docs/specs/semconv/gen-ai](https://ope
 - [Message content](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-events/): the `{role, parts}` shape of `gen_ai.input.messages`, `gen_ai.output.messages` and `gen_ai.system_instructions`.
 - [Attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/): every `gen_ai.*` key with its type and examples.
 
-The spans look the same in every language. Below is one complete agent turn, in Python; the attribute names are identical in every OpenTelemetry SDK, and the same code in your language is a matter of syntax. Official GenAI instrumentations exist for the OpenAI, Google, Vertex AI and Bedrock clients in several languages and produce the model-call spans on their own; per-language guides with the exact packages and content-capture switches are coming. Two things no instrumentation does for you: the tool spans and the session id.
-
-```python
-import json
-from opentelemetry import trace
-
-tracer = trace.get_tracer("acme.support_agent", "1.14.2")
-
-def run_turn(session_id: str, history: list[dict]) -> str:
-    with tracer.start_as_current_span("invoke_agent support-agent") as agent_span:
-        agent_span.set_attributes({
-            "gen_ai.operation.name": "invoke_agent",
-            "gen_ai.agent.name": "support-agent",
-            "gen_ai.conversation.id": session_id,
-            "maple_ai.session.id": session_id,      # the same value on every span
-        })
-
-        while True:
-            with tracer.start_as_current_span("chat claude-sonnet-4-5") as span:
-                span.set_attributes({
-                    "gen_ai.operation.name": "chat",
-                    "gen_ai.provider.name": "anthropic",
-                    "gen_ai.request.model": "claude-sonnet-4-5",
-                    "gen_ai.conversation.id": session_id,
-                    "maple_ai.session.id": session_id,
-                    "gen_ai.input.messages": json.dumps(history),
-                })
-                response = call_model(history)          # your provider call
-                span.set_attributes({
-                    "gen_ai.response.model": response.model,
-                    "gen_ai.response.id": response.id,
-                    "gen_ai.response.finish_reasons": [response.stop_reason],
-                    "gen_ai.usage.input_tokens": response.usage.input_tokens,
-                    "gen_ai.usage.output_tokens": response.usage.output_tokens,
-                    "gen_ai.output.messages": json.dumps(response.messages),
-                })
-
-            history.extend(response.messages)
-            if not response.tool_calls:
-                return response.text
-
-            for call in response.tool_calls:
-                with tracer.start_as_current_span(f"execute_tool {call.name}") as tool:
-                    tool.set_attributes({
-                        "gen_ai.operation.name": "execute_tool",
-                        "gen_ai.tool.name": call.name,
-                        "gen_ai.tool.call.id": call.id,
-                        "gen_ai.tool.call.arguments": json.dumps(call.arguments),
-                        "gen_ai.conversation.id": session_id,
-                        "maple_ai.session.id": session_id,
-                    })
-                    try:
-                        result = run_tool(call)
-                    except Exception as error:
-                        tool.set_attribute("error.type", type(error).__name__)
-                        tool.set_status(trace.StatusCode.ERROR, str(error))
-                        result = {"error": str(error)}
-                    tool.set_attribute("gen_ai.tool.call.result", json.dumps(result))
-                    part = {"type": "tool_call_response", "id": call.id, "response": result}
-                    history.append({"role": "tool", "parts": [part]})
-```
-
-Four details in that code are worth knowing about:
-
-- **`maple_ai.session.id` is the session key for plain semconv spans.** The conventions define a conversation id, but no framework emits it the same way, so a session built from bare `gen_ai.*` spans would otherwise be one trace long. Set it to the same value as `gen_ai.conversation.id`. Any string works; Maple stores it verbatim. A span processor that stamps it on every span is the usual place for it.
-- **`invoke_agent` is what makes a turn.** Wrap each pass of the loop in one and the session reads as one turn per user message. Without it every trace is a turn, which is fine for one request per message and wrong for anything batched.
-- **Messages are JSON arrays of `{role, parts}`**, the shape the conventions specify for `gen_ai.input.messages`, `gen_ai.output.messages` and `gen_ai.system_instructions`. A part is `{"type": "text", "content": "…"}`, `{"type": "tool_call", "id", "name", "arguments"}` or `{"type": "tool_call_response", "id", "response"}`. The transcript is built from these, so a plain string in that attribute renders as nothing.
-- **Tool failures are span errors.** Set the span status to `ERROR` and put a stable category in `error.type`. That is what the tool pages group on. A tool that quietly returns `{"error": ...}` with an `OK` status counts as a success there.
+One attribute is Maple's own: `maple_ai.session.id`, the same value on every span of a conversation, is what groups its traces into one session when no framework is recognised. Everything else Maple reads is in [the attribute table](#the-attributes-maple-reads) below.
 
 ### Step 3: open Explore → Agent Sessions
 
@@ -179,7 +112,7 @@ If your agent runs on one of these, use the framework's own OpenTelemetry export
 | Effect AI                        | `@effect/opentelemetry`                             | One per trace                                             |
 | OpenAI SDK via OpenInference     | OpenInference `openai` instrumentation              | `session.id`                                              |
 
-For the frameworks that give you one session per trace, stamp `maple_ai.session.id` on every span of the conversation (a span processor is the usual place) and Maple groups them the same way it does for the manual example above.
+For the frameworks that give you one session per trace, stamp `maple_ai.session.id` on every span of the conversation (a span processor is the usual place) and Maple groups them into one session.
 
 Two dialects that are not frameworks are recognised as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached.
 
@@ -217,14 +150,14 @@ Tools are where agents actually break. The model is rarely the thing that timed 
   <figcaption>A failed tool call opened from the overview: error, result, timing and the attributes behind them, with a jump into the trace.</figcaption>
 </figure>
 
-To get all of this, a tool span needs four attributes and a status: `gen_ai.operation.name` of `execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, and on failure a span status of `ERROR` with a stable `error.type`. The manual example above does exactly that; the framework integrations do it for you. The error groups are keyed on `error.type` first, so a tool that raises `TimeoutError` and a tool that returns `{"error": "timeout"}` land in different groups, and the fingerprint masks ids, timestamps and other volatile tokens so one failure is one row rather than a hundred.
+To get all of this, a tool span needs four attributes and a status: `gen_ai.operation.name` of `execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, and on failure a span status of `ERROR` with a stable `error.type`. The framework integrations do this for you. The error groups are keyed on `error.type` first, so a tool that raises `TimeoutError` and a tool that returns `{"error": "timeout"}` land in different groups, and the fingerprint masks ids, timestamps and other volatile tokens so one failure is one row rather than a hundred.
 
 Ask the same questions from an assistant with the MCP server: `get_agent_tools_overview` returns the ranked table for a window, and `get_agent_tool_error` returns a group with its samples. The [MCP page](/docs/mcp) has the setup.
 
 ## When it does not look right
 
 - **Every turn is its own session.** No span carried a session id Maple recognises. Add `maple_ai.session.id` to every span of the conversation, or check the framework table for the key your framework is expected to emit.
-- **The transcript is empty.** Message content is not on the spans. Most official instrumentations leave it off by default, and some only ever write it to log events, which Maple does not read; the spans above put it where Maple looks. If content is on the spans and still missing, check that the attribute holds a JSON array of `{role, parts}` objects rather than a plain string.
+- **The transcript is empty.** Message content is not on the spans. Most official instrumentations leave it off by default, and some only ever write it to log events, which Maple does not read. If content is on the spans and still missing, check that the attribute holds a JSON array of `{role, parts}` objects rather than a plain string.
 - **The framework shows as "Unidentified" or "Maple".** Unidentified means the spans carry `gen_ai.*` attributes but no fingerprint of a known framework; Maple means they carry `maple_ai.session.id`, which takes precedence over framework detection. Sessions, transcripts and tool pages work either way; only the framework facet differs. Tell us which framework it is and we will add the rule.
 - **Token totals look too high or too low.** Providers disagree on whether cached and reasoning tokens are included in the input and output counts. Maple resolves that per `gen_ai.provider.name`, so if the provider name is missing or unexpected, set it and the totals correct themselves.
 - **Nothing appears at all.** Confirm ordinary traces from the service show under **Explore → Traces** first. If they do, no span in them carries `gen_ai.operation.name`; if they do not, the problem is the exporter, and the [instrumentation guide](/docs/instrumentation) for your language covers it.
