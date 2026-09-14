@@ -4,10 +4,7 @@ import { Schema } from "effect"
 import { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import {
-	AgentSessionsList,
-	AgentSessionsListSkeleton,
-} from "@/components/agent-sessions/agent-sessions-list"
+import { AgentSessionsList, AgentSessionsListSkeleton } from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsFilterSidebar } from "@/components/agent-sessions/agent-sessions-filter-sidebar"
 import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
@@ -16,7 +13,6 @@ import {
 	agentSessionsSort,
 	agentSessionsSortPatch,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
-import { NotFoundError } from "@/components/route-error"
 import {
 	PageRefreshProvider,
 	usePageRefreshContext,
@@ -31,7 +27,6 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { resolveEffectiveTimeRange, useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteAiSessions } from "@/hooks/use-infinite-ai-sessions"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useAgentSessionsTabCounts } from "@/lib/agent-sessions/use-tool-analytics"
 
@@ -80,25 +75,7 @@ export const Route = createFileRoute("/agent-sessions/")({
 	validateSearch: Schema.toStandardSchemaV1(agentSessionsSearchSchema),
 })
 
-/**
- * Behind the `agent_tracing` org rollout flag. The gate lives in the component
- * (not `beforeLoad`) because router context carries no flags, and it checks
- * `isLoaded` first so an entitled org doesn't get a not-found flash while Clerk
- * answers. The warehouse read lives in the gated content component, so an
- * unflagged org never fires the query — which is also why there is no route
- * `loader` warming the atom the way `/replays` does: a loader runs regardless
- * of the flag, so the prefetch-on-hover win would cost every unflagged org a
- * warehouse query. Entitled orgs pay full latency on mount instead; revisit
- * when the flag retires.
- */
 function AgentSessionsPage() {
-	const { flags, isLoaded } = useOrganizationFeatureFlags()
-	if (!isLoaded) return null
-	if (!flags.agentTracing) return <NotFoundError />
-	return <AgentSessionsPageContent />
-}
-
-function AgentSessionsPageContent() {
 	return (
 		<PageRefreshProvider>
 			<DashboardLayout.Root>

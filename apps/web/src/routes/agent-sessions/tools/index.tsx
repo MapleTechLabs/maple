@@ -9,7 +9,6 @@ import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-vi
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { NotFoundError } from "@/components/route-error"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import {
 	TimeRangeSearchFields,
@@ -19,7 +18,6 @@ import {
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	TOOL_ANALYTICS_DEFAULT_PRESET,
@@ -40,21 +38,7 @@ export const Route = createFileRoute("/agent-sessions/tools/")({
 	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
-/**
- * Behind the `agent_tracing` org rollout flag, gated exactly as the list and
- * detail pages are: in the component rather than `beforeLoad` (router context
- * carries no flags), `isLoaded` first so an entitled org gets no not-found
- * flash, and no route `loader` — a loader would fire six warehouse reads for
- * orgs that are not entitled to the page at all.
- */
 function AgentToolsPage() {
-	const { flags, isLoaded } = useOrganizationFeatureFlags()
-	if (!isLoaded) return null
-	if (!flags.agentTracing) return <NotFoundError />
-	return <AgentToolsPageContent />
-}
-
-function AgentToolsPageContent() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? TOOL_ANALYTICS_DEFAULT_PRESET

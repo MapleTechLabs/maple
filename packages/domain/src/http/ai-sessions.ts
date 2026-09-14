@@ -13,9 +13,9 @@ import { warehouseReadHttpErrors } from "./warehouse"
 // decode time; a session is resolved at trace granularity by
 // `aiSessionPageQuery` (which ranks a page and measures it off the index) and
 // `aiSessionDetailsQuery` (which adds what only the traces' other spans can
-// answer) in the query-engine integrations layer. The Agent Sessions page is
-// behind the `agent_tracing` org rollout flag and these shapes exist for it
-// alone, so they live in the internal tier where they can follow the UI.
+// answer) in the query-engine integrations layer. These shapes exist for
+// the Agent Sessions page alone, so they live in the internal tier where they
+// can follow the UI.
 
 /** The measures the list can be ordered by; `startTime` is the default. */
 export const AI_SESSION_SORT_KEYS = [
