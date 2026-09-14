@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { orgOnboardingState } from "@maple/db"
 import { eq, sql } from "drizzle-orm"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
-import { Cause, Effect, Exit, Tracer } from "effect"
+import { Cause, Effect, Exit, Schema, Tracer } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError"
 import { Database, executeWithSpan } from "./DatabaseLive"
 import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
@@ -34,6 +34,11 @@ const makeRecordingTracer = () => {
  */
 const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
 	spans.filter((span) => span.attributes.get("db.system.name") === "postgresql")
+
+/** A failure the callback raises on its own — not the driver's, so it must pass through untouched. */
+class CallbackFailure extends Schema.TaggedError<CallbackFailure>()("@maple/test/CallbackFailure", {
+	message: Schema.String,
+}) {}
 
 /** A pg error the way node-postgres raises it: the class hangs off `code`. */
 const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
@@ -167,7 +172,7 @@ describe("Database execute span instrumentation", () => {
 	it.effect("passes a domain failure raised inside the callback through untouched", () =>
 		Effect.gen(function* () {
 			const database = yield* Database
-			const rollback = new Error("business rule violated")
+			const rollback = new CallbackFailure({ message: "business rule violated" })
 
 			const error = yield* database
 				.execute((db) =>
@@ -192,7 +197,7 @@ describe("Database execute span instrumentation", () => {
 			const database = yield* Database
 
 			const exit = yield* database
-				.execute(() => Effect.fail(new Error("connection refused")))
+				.execute(() => Effect.fail(new CallbackFailure({ message: "connection refused" })))
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
 			assert.isTrue(Exit.isFailure(exit))

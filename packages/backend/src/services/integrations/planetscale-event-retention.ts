@@ -33,46 +33,46 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 	const cutoff = new Date(now - EVENT_RETENTION_MS)
 	const database = yield* Database
 
-	const { orgs, deletedByAge } = yield* database.execute(async (db) => {
-		const aged = await db
-			.delete(planetscaleEvents)
-			.where(lt(planetscaleEvents.occurredAt, cutoff))
-			.returning({ id: planetscaleEvents.id })
+	const { orgs, deletedByAge } = yield* database.execute((db) =>
+		Effect.gen(function* () {
+			const aged = yield* db
+				.delete(planetscaleEvents)
+				.where(lt(planetscaleEvents.occurredAt, cutoff))
+				.returning({ id: planetscaleEvents.id })
 
-		// Only orgs that could still be over the cap after the age delete are
-		// probed — the OFFSET probe walks up to EVENT_MAX_ROWS_PER_ORG index
-		// entries, so running it for every org would cost far more than it saves.
-		const overCap = await db
-			.select({ orgId: planetscaleEvents.orgId, total: sql<number>`count(*)::int` })
-			.from(planetscaleEvents)
-			.groupBy(planetscaleEvents.orgId)
-			.having(sql`count(*) > ${EVENT_MAX_ROWS_PER_ORG}`)
+			// Only orgs that could still be over the cap after the age delete are
+			// probed — the OFFSET probe walks up to EVENT_MAX_ROWS_PER_ORG index
+			// entries, so running it for every org would cost far more than it saves.
+			const overCap = yield* db
+				.select({ orgId: planetscaleEvents.orgId, total: sql<number>`count(*)::int` })
+				.from(planetscaleEvents)
+				.groupBy(planetscaleEvents.orgId)
+				.having(sql`count(*) > ${EVENT_MAX_ROWS_PER_ORG}`)
 
-		for (const org of overCap) {
-			// Drop everything older than the Nth-newest row. The probe rides the
-			// (org_id, occurred_at) index.
-			const boundary = (
-				await db
+			for (const org of overCap) {
+				// Drop everything older than the Nth-newest row. The probe rides the
+				// (org_id, occurred_at) index.
+				const boundary = (yield* db
 					.select({ occurredAt: planetscaleEvents.occurredAt })
 					.from(planetscaleEvents)
 					.where(eq(planetscaleEvents.orgId, org.orgId))
 					.orderBy(desc(planetscaleEvents.occurredAt))
 					.limit(1)
-					.offset(EVENT_MAX_ROWS_PER_ORG - 1)
-			)[0]
-			if (boundary === undefined) continue
-			await db
-				.delete(planetscaleEvents)
-				.where(
-					and(
-						eq(planetscaleEvents.orgId, org.orgId),
-						lt(planetscaleEvents.occurredAt, boundary.occurredAt),
-					),
-				)
-		}
+					.offset(EVENT_MAX_ROWS_PER_ORG - 1))[0]
+				if (boundary === undefined) continue
+				yield* db
+					.delete(planetscaleEvents)
+					.where(
+						and(
+							eq(planetscaleEvents.orgId, org.orgId),
+							lt(planetscaleEvents.occurredAt, boundary.occurredAt),
+						),
+					)
+			}
 
-		return { orgs: overCap.length, deletedByAge: aged.length }
-	})
+			return { orgs: overCap.length, deletedByAge: aged.length }
+		}),
+	)
 
 	yield* Effect.annotateCurrentSpan({
 		"planetscale.event_retention.deleted_by_age": deletedByAge,

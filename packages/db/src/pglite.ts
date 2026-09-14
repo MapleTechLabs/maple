@@ -20,9 +20,8 @@ export const makeMaplePgliteDb = (
 	Effect.gen(function* () {
 		// Built into the caller's Scope, as `makeMapleEffectDb` does, so the client
 		// lives as long as the database that was built over it.
-		const client = yield* Layer.build(PgliteClient.layer({ liveClient: pglite }))
-		return yield* PgliteDrizzle.make().pipe(
-			Effect.provide(mapleDrizzleServices),
-			Effect.provideContext(client),
+		const services = yield* Layer.build(
+			Layer.merge(mapleDrizzleServices, PgliteClient.layer({ liveClient: pglite })),
 		)
+		return yield* PgliteDrizzle.make().pipe(Effect.provideContext(services))
 	})

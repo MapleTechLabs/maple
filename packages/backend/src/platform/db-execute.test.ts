@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Schema } from "effect"
 import { makeDbExecute, makePersistenceErrorMapper } from "./db-execute"
-import { DatabaseError, type DatabaseApi } from "./DatabaseLive"
+import { DatabaseError, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
 
 class TestPersistenceError extends Schema.TaggedError<TestPersistenceError>()(
 	"@maple/api/test/TestPersistenceError",
@@ -34,7 +34,7 @@ const failingDatabase = (error: DatabaseError) => {
 
 /** A `Database` whose callback runs against nothing — for what the callback itself fails with. */
 const passthroughDatabase: DatabaseApi = {
-	execute: (fn) => fn(undefined as never),
+	execute: (fn) => executeWithSpan(() => fn(undefined as never)),
 }
 
 const contentionError = new DatabaseError({

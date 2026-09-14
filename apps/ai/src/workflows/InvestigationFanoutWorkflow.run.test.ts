@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { errorIssueEvents, errorIssues, investigationLensRuns, investigations } from "@maple/db"
 import { runMigrations } from "@maple/db/migrate"
-import { createMaplePgliteClient, type MaplePgliteClient } from "@maple/db/pglite"
+import type { MapleDb } from "@maple/db/client"
 import type { ChatEventInput } from "@maple/domain/chat-session"
 import type { AiTriageResult } from "@maple/domain/http"
 import { ErrorIssueId, InvestigationId, OrgId } from "@maple/domain/primitives"
@@ -14,6 +14,7 @@ import { TestClock } from "effect/testing"
 import { OpenAiClient } from "@effect/ai-openai-compat"
 import { OpenRouterClient } from "@effect/ai-openrouter"
 import { McpToolExecutor } from "../mcp/dispatcher"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	runInvestigationFanout,
@@ -100,8 +101,18 @@ const hypothesisOutput = (id: string) => ({
 	deadlineHit: false,
 })
 
+/** Fixture writes and reads go through `Database.execute` like the run itself does. */
+type Query = <A, E>(fn: (db: MapleDb) => Effect.Effect<A, E>) => Promise<A>
+
+const queryOn =
+	(testDb: TestDb): Query =>
+	(fn) =>
+		Effect.runPromise(
+			Effect.flatMap(Database, (database) => database.execute(fn)).pipe(Effect.provide(testDb.layer)),
+		)
+
 interface Harness {
-	readonly db: MaplePgliteClient
+	readonly query: Query
 	readonly testDb: TestDb
 	readonly investigationId: InvestigationId
 	readonly issueId: ErrorIssueId
@@ -113,55 +124,59 @@ let harness: Harness
 beforeEach(async () => {
 	const testDb = createTestDb(createdDbs)
 	await runMigrations(testDb.pglite)
-	const db = createMaplePgliteClient(testDb.pglite)
+	const query = queryOn(testDb)
 	const investigationId = asInvestigationId(randomUUID())
 	const issueId = asIssueId(randomUUID())
 	const now = new Date(FIXED_NOW)
 
-	await db.insert(errorIssues).values({
-		id: issueId,
-		orgId: ORG,
-		fingerprintHash: "98765432109876543210",
-		serviceName: "checkout-api",
-		exceptionType: "TimeoutError",
-		exceptionMessage: "upstream timed out",
-		topFrame: "",
-		firstSeenAt: now,
-		lastSeenAt: now,
-		createdAt: now,
-		updatedAt: now,
-	} as never)
+	await query((db) =>
+		Effect.gen(function* () {
+			yield* db.insert(errorIssues).values({
+				id: issueId,
+				orgId: ORG,
+				fingerprintHash: "98765432109876543210",
+				serviceName: "checkout-api",
+				exceptionType: "TimeoutError",
+				exceptionMessage: "upstream timed out",
+				topFrame: "",
+				firstSeenAt: now,
+				lastSeenAt: now,
+				createdAt: now,
+				updatedAt: now,
+			} as never)
 
-	await db.insert(investigations).values({
-		id: investigationId,
-		orgId: ORG,
-		status: "investigating",
-		seededBy: "user",
-		subjectJson: { type: "incident", incidentKind: "error", incidentId: randomUUID(), issueId },
-		snapshotJson: {
-			title: "Checkout timeouts",
-			scope: "checkout-api",
-			status: "open",
-			severity: "critical",
-			facts: [],
-			references: [],
-			incidentStartedAt: null,
-			incidentEndedAt: null,
-		},
-		issueId,
-		severity: "critical",
-		incidentKind: "error",
-		fanoutState: "queued",
-		// What the caller reserved before the planner could know the real width.
-		fanoutSize: 5,
-		startedAt: now,
-		autonomousTurns: 7,
-		createdAt: now,
-		updatedAt: now,
-	} as never)
+			yield* db.insert(investigations).values({
+				id: investigationId,
+				orgId: ORG,
+				status: "investigating",
+				seededBy: "user",
+				subjectJson: { type: "incident", incidentKind: "error", incidentId: randomUUID(), issueId },
+				snapshotJson: {
+					title: "Checkout timeouts",
+					scope: "checkout-api",
+					status: "open",
+					severity: "critical",
+					facts: [],
+					references: [],
+					incidentStartedAt: null,
+					incidentEndedAt: null,
+				},
+				issueId,
+				severity: "critical",
+				incidentKind: "error",
+				fanoutState: "queued",
+				// What the caller reserved before the planner could know the real width.
+				fanoutSize: 5,
+				startedAt: now,
+				autonomousTurns: 7,
+				createdAt: now,
+				updatedAt: now,
+			} as never)
+		}),
+	)
 
 	harness = {
-		db,
+		query,
 		testDb,
 		investigationId,
 		issueId,
@@ -229,19 +244,20 @@ const run = (deps: InvestigationFanoutDeps, step: Cloudflare.WorkflowStep["Servi
 	)
 
 const loadInvestigation = async () => {
-	const rows = await harness.db
-		.select()
-		.from(investigations)
-		.where(eq(investigations.id, harness.investigationId))
+	const rows = await harness.query((db) =>
+		db.select().from(investigations).where(eq(investigations.id, harness.investigationId)),
+	)
 	return rows[0]!
 }
 
 const loadLanes = async () =>
-	harness.db
-		.select()
-		.from(investigationLensRuns)
-		.where(eq(investigationLensRuns.investigationId, harness.investigationId))
-		.orderBy(investigationLensRuns.ordinal)
+	harness.query((db) =>
+		db
+			.select()
+			.from(investigationLensRuns)
+			.where(eq(investigationLensRuns.investigationId, harness.investigationId))
+			.orderBy(investigationLensRuns.ordinal),
+	)
 
 describe("runInvestigationFanout", () => {
 	it("dispatches the planner's hypotheses, with its names on the lanes", async () => {
@@ -585,13 +601,14 @@ describe("runInvestigationFanout", () => {
 			}),
 		)
 
-		const events = await harness.db
-			.select()
-			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, harness.issueId))
+		const events = await harness.query((db) =>
+			db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, harness.issueId)),
+		)
 		expect(events).toHaveLength(0)
 
-		const [issue] = await harness.db.select().from(errorIssues).where(eq(errorIssues.id, harness.issueId))
+		const [issue] = await harness.query((db) =>
+			db.select().from(errorIssues).where(eq(errorIssues.id, harness.issueId)),
+		)
 		expect(issue?.severity ?? null).toBeNull()
 	})
 
@@ -629,10 +646,9 @@ describe("runInvestigationFanout", () => {
 	it("writes the issue-linked ai_triage event exactly once across a retried persist", async () => {
 		await run(baseDeps())
 		await run(baseDeps())
-		const events = await harness.db
-			.select()
-			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, harness.issueId))
+		const events = await harness.query((db) =>
+			db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, harness.issueId)),
+		)
 		expect(events.filter((event) => event.type === "ai_triage")).toHaveLength(1)
 	})
 
@@ -695,10 +711,12 @@ describe("runInvestigationFanout", () => {
 	})
 
 	it("skips a run whose investigation is no longer investigating", async () => {
-		await harness.db
-			.update(investigations)
-			.set({ status: "resolved" })
-			.where(eq(investigations.id, harness.investigationId))
+		await harness.query((db) =>
+			db
+				.update(investigations)
+				.set({ status: "resolved" })
+				.where(eq(investigations.id, harness.investigationId)),
+		)
 		expect((await run(baseDeps())).status).toBe("skipped")
 		expect(await loadLanes()).toHaveLength(0)
 	})
@@ -708,10 +726,12 @@ describe("runInvestigationFanout", () => {
 		// attempt-0 instance replays its claim. Termination is best-effort, so this
 		// check is the only thing keeping the old workflow from overwriting the new
 		// attempt's status, report, and lanes' parent state.
-		await harness.db
-			.update(investigations)
-			.set({ fanoutAttempt: 1, fanoutState: "queued" })
-			.where(eq(investigations.id, harness.investigationId))
+		await harness.query((db) =>
+			db
+				.update(investigations)
+				.set({ fanoutAttempt: 1, fanoutState: "queued" })
+				.where(eq(investigations.id, harness.investigationId)),
+		)
 		expect((await run(baseDeps())).status).toBe("skipped")
 		const row = await loadInvestigation()
 		expect(row.status).toBe("investigating")

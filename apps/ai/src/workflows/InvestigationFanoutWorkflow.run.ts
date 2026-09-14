@@ -782,60 +782,62 @@ export const runInvestigationFanout = (
 				// width was knowable, and it reserved *high* on purpose — under-reserving
 				// lets a burst of incidents blow the daily pass budget with no signal.
 				const actualPasses = plan.collapsed ? 2 : plan.hypotheses.length + 2
-				yield* database.execute(async (db) => {
-					await db
-						.update(investigations)
-						.set({
-							fanoutSize: plan.collapsed ? 1 : plan.hypotheses.length,
-							autonomousTurns: sql`greatest(0, ${investigations.autonomousTurns} - ${Math.max(0, reservedPasses - actualPasses)})`,
-							// `usedSeedFallback` / `plannerSubmitted` / `notes` are the whole
-							// reason this is `InvestigationPlanRecord`. Without them the row
-							// cannot answer "did we actually plan this incident?", and the
-							// only way anyone found out the answer was usually no was by
-							// reading `investigation.hypothesis` spans by hand.
-							//
-							// SAFETY: the `jsonb` column is typed as the `Schema.Class`; the row holds its plain JSON form.
-							planJson: {
-								scopeSummary: plan.scopeSummary,
-								incidentStartedAt: plan.incidentStartedAt,
-								incidentEndedAt: plan.incidentEndedAt,
-								hypotheses: plan.hypotheses,
-								collapseReason: plan.collapseReason,
-								usedSeedFallback: plan.usedSeedFallback,
-								plannerSubmitted: plan.plannerSubmitted,
-								notes: plan.notes,
-							} as never,
-							plannerModel: output.model === "" ? null : output.model,
-							plannerElapsedMs: finishedAt - startedAt,
-							updatedAt: msToDate(finishedAt),
-						})
-						.where(fencedParentRow())
-
-					for (const [ordinal, hypothesis] of plan.hypotheses.entries()) {
-						await db
-							.insert(investigationLensRuns)
-							.values({
-								id: randomUUID(),
-								orgId: orgIdTyped,
-								investigationId: idTyped,
-								attempt,
-								lensId: hypothesis.id,
-								lensName: hypothesis.name,
-								lensQuestion: hypothesis.question,
-								priority: hypothesis.priority,
-								// SAFETY: same `jsonb`-typed-as-class column as `planJson` above.
-								hypothesisJson: hypothesis as never,
-								ordinal,
-								status: "queued",
-								verdict: "pending",
-								createdAt: msToDate(finishedAt),
+				yield* database.execute((db) =>
+					Effect.gen(function* () {
+						yield* db
+							.update(investigations)
+							.set({
+								fanoutSize: plan.collapsed ? 1 : plan.hypotheses.length,
+								autonomousTurns: sql`greatest(0, ${investigations.autonomousTurns} - ${Math.max(0, reservedPasses - actualPasses)})`,
+								// `usedSeedFallback` / `plannerSubmitted` / `notes` are the whole
+								// reason this is `InvestigationPlanRecord`. Without them the row
+								// cannot answer "did we actually plan this incident?", and the
+								// only way anyone found out the answer was usually no was by
+								// reading `investigation.hypothesis` spans by hand.
+								//
+								// SAFETY: the `jsonb` column is typed as the `Schema.Class`; the row holds its plain JSON form.
+								planJson: {
+									scopeSummary: plan.scopeSummary,
+									incidentStartedAt: plan.incidentStartedAt,
+									incidentEndedAt: plan.incidentEndedAt,
+									hypotheses: plan.hypotheses,
+									collapseReason: plan.collapseReason,
+									usedSeedFallback: plan.usedSeedFallback,
+									plannerSubmitted: plan.plannerSubmitted,
+									notes: plan.notes,
+								} as never,
+								plannerModel: output.model === "" ? null : output.model,
+								plannerElapsedMs: finishedAt - startedAt,
 								updatedAt: msToDate(finishedAt),
 							})
-							// The unique index on (investigation_id, attempt, lens_id) makes a
-							// replayed plan idempotent rather than growing a second lane each time.
-							.onConflictDoNothing()
-					}
-				})
+							.where(fencedParentRow())
+
+						for (const [ordinal, hypothesis] of plan.hypotheses.entries()) {
+							yield* db
+								.insert(investigationLensRuns)
+								.values({
+									id: randomUUID(),
+									orgId: orgIdTyped,
+									investigationId: idTyped,
+									attempt,
+									lensId: hypothesis.id,
+									lensName: hypothesis.name,
+									lensQuestion: hypothesis.question,
+									priority: hypothesis.priority,
+									// SAFETY: same `jsonb`-typed-as-class column as `planJson` above.
+									hypothesisJson: hypothesis as never,
+									ordinal,
+									status: "queued",
+									verdict: "pending",
+									createdAt: msToDate(finishedAt),
+									updatedAt: msToDate(finishedAt),
+								})
+								// The unique index on (investigation_id, attempt, lens_id) makes a
+								// replayed plan idempotent rather than growing a second lane each time.
+								.onConflictDoNothing()
+						}
+					}),
+				)
 
 				return {
 					scopeSummary: plan.scopeSummary,
@@ -1120,27 +1122,29 @@ export const runInvestigationFanout = (
 
 					const finishedAt = yield* Clock.currentTimeMillis
 					const byLens = new Map(output.rivals.map((rival) => [rival.lensId, rival]))
-					yield* database.execute(async (db) => {
-						for (const lane of lanes) {
-							const promoted = output.promotedLensId === lane.lensId
-							const rival = byLens.get(lane.lensId)
-							const nextVerdict: LensVerdict = promoted
-								? "promoted"
-								: (rival?.verdict ?? "rejected")
-							await db
-								.update(investigationLensRuns)
-								.set({
-									verdict: nextVerdict,
-									reason: promoted
-										? "Promoted — the candidate that best explains the incident."
-										: (rival?.reason ??
-											"The validator did not rank this hypothesis; treated as rejected."),
-									rankedAt: msToDate(finishedAt),
-									updatedAt: msToDate(finishedAt),
-								})
-								.where(eq(investigationLensRuns.id, lane.id))
-						}
-					})
+					yield* database.execute((db) =>
+						Effect.gen(function* () {
+							for (const lane of lanes) {
+								const promoted = output.promotedLensId === lane.lensId
+								const rival = byLens.get(lane.lensId)
+								const nextVerdict: LensVerdict = promoted
+									? "promoted"
+									: (rival?.verdict ?? "rejected")
+								yield* db
+									.update(investigationLensRuns)
+									.set({
+										verdict: nextVerdict,
+										reason: promoted
+											? "Promoted — the candidate that best explains the incident."
+											: (rival?.reason ??
+												"The validator did not rank this hypothesis; treated as rejected."),
+										rankedAt: msToDate(finishedAt),
+										updatedAt: msToDate(finishedAt),
+									})
+									.where(eq(investigationLensRuns.id, lane.id))
+							}
+						}),
+					)
 
 					return {
 						promotedLensId: output.promotedLensId,

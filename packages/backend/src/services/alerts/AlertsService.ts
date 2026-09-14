@@ -57,6 +57,7 @@ import {
 	alertRuleStates,
 	type AlertRuleStateRow,
 } from "@maple/db"
+import type { MapleDbLike } from "@maple/db/client"
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm"
 import {
 	Array as Arr,
@@ -88,7 +89,7 @@ import {
 import { simulateFiringSpans } from "./alert-firing-spans"
 import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./incident-hysteresis"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { Database, type DatabaseClient } from "@maple/backend/platform/DatabaseLive"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -226,9 +227,6 @@ const ISSUE_UPSERTS_PER_TICK = 50
  */
 const LIVE_ACTIVITY_CHECK_HISTORY = 30
 const DELIVERY_LEASE_TTL_MS = 30_000
-
-type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0]
-type DatabaseExecutor = DatabaseClient | DatabaseTransaction
 
 /* -------------------------------------------------------------------------- */
 /*  Schemas for stored JSON formats                                           */
@@ -789,7 +787,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) => [incidentId, destinationId, eventType, scheduledAt].join(":")
 
 			const insertDeliveryEventRecord = (
-				db: DatabaseExecutor,
+				db: MapleDbLike,
 				orgId: OrgId,
 				incidentId: AlertIncidentId | null,
 				ruleId: AlertRuleId,
@@ -2933,30 +2931,32 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * is cosmetic.
 			 */
 			const claimRuleChunk = (chunk: ReadonlyArray<AlertRuleRow>, timestamp: number) =>
-				dbExecute(async (db) => {
-					const claimed = await db
-						.insert(alertRuleClaims)
-						.values(
-							chunk.map((row) => ({
-								ruleId: row.id,
-								orgId: row.orgId,
-								lastScheduledAt: new Date(timestamp),
-							})),
-						)
-						.onConflictDoUpdate({
-							target: alertRuleClaims.ruleId,
-							set: { lastScheduledAt: new Date(timestamp) },
-							setWhere: lt(
-								alertRuleClaims.lastScheduledAt,
-								new Date(timestamp - SCHEDULER_LOCK_TTL_MS),
-							),
-						})
-						.returning({ id: alertRuleClaims.ruleId })
+				dbExecute((db) =>
+					Effect.gen(function* () {
+						const claimed = yield* db
+							.insert(alertRuleClaims)
+							.values(
+								chunk.map((row) => ({
+									ruleId: row.id,
+									orgId: row.orgId,
+									lastScheduledAt: new Date(timestamp),
+								})),
+							)
+							.onConflictDoUpdate({
+								target: alertRuleClaims.ruleId,
+								set: { lastScheduledAt: new Date(timestamp) },
+								setWhere: lt(
+									alertRuleClaims.lastScheduledAt,
+									new Date(timestamp - SCHEDULER_LOCK_TTL_MS),
+								),
+							})
+							.returning({ id: alertRuleClaims.ruleId })
 
-					if (claimed.length === 0) return claimed
+						if (claimed.length === 0) return claimed
 
-					try {
-						await db
+						// Matches the `Effect.ignore` this call carried when it was a
+						// separate execute.
+						yield* db
 							.update(alertRules)
 							.set({ lastScheduledAt: new Date(timestamp) })
 							.where(
@@ -2974,13 +2974,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									),
 								),
 							)
-					} catch {
-						// Matches the `Effect.ignore` this call carried when it was a
-						// separate execute.
-					}
+							.pipe(Effect.ignore)
 
-					return claimed
-				})
+						return claimed
+					}),
+				)
 
 			/**
 			 * The two per-rule reads the scheduler used to issue inside its loop,
@@ -3044,30 +3042,32 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const ruleIds = Arr.map(rows, (row) => row.id)
 				const orgIds = Arr.dedupe(Arr.map(rows, (row) => row.orgId))
 
-				const { stateRows, incidentRows } = yield* dbExecute(async (db) => {
-					const [stateRows, incidentRows] = await Promise.all([
-						db
-							.select()
-							.from(alertRuleStates)
-							.where(
-								and(
-									inArray(alertRuleStates.orgId, orgIds),
-									inArray(alertRuleStates.ruleId, ruleIds),
+				const { stateRows, incidentRows } = yield* dbExecute((db) =>
+					Effect.all(
+						{
+							stateRows: db
+								.select()
+								.from(alertRuleStates)
+								.where(
+									and(
+										inArray(alertRuleStates.orgId, orgIds),
+										inArray(alertRuleStates.ruleId, ruleIds),
+									),
 								),
-							),
-						db
-							.select()
-							.from(alertIncidents)
-							.where(
-								and(
-									inArray(alertIncidents.orgId, orgIds),
-									inArray(alertIncidents.ruleId, ruleIds),
-									eq(alertIncidents.status, "open"),
+							incidentRows: db
+								.select()
+								.from(alertIncidents)
+								.where(
+									and(
+										inArray(alertIncidents.orgId, orgIds),
+										inArray(alertIncidents.ruleId, ruleIds),
+										eq(alertIncidents.status, "open"),
+									),
 								),
-							),
-					])
-					return { stateRows, incidentRows }
-				})
+						},
+						{ concurrency: "unbounded" },
+					),
+				)
 
 				const stateByGroup = MutableHashMap.fromIterable(
 					Arr.map(

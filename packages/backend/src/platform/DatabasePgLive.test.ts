@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { sql } from "drizzle-orm"
 import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
 import { type DatabaseConnection, MapleDbConnection } from "./bindings"
-import { Database } from "./DatabaseLive"
+import { Database, executeWithSpan } from "./DatabaseLive"
 import { layerPg } from "./DatabasePgLive"
 import { PgConnectionScope, type PgConnectionScopeApi } from "./pg-connection-scope"
 
@@ -87,7 +87,7 @@ describe("layerPg", () => {
 			const scope: PgConnectionScopeApi = {
 				run: (fn) => {
 					calls += 1
-					return fn(undefined as never)
+					return executeWithSpan(() => fn(undefined as never))
 				},
 				close: Effect.void,
 			}

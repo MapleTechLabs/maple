@@ -1102,63 +1102,65 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				// writes that were never atomic before (they ran on separate
 				// connections), and wrapping them would add lock scope for no benefit.
 				yield* database
-					.execute(async (db) => {
-						for (const [targetId, outcome] of outcomeByTarget) {
-							const reportedAt = reportedAtByTarget.get(targetId) ?? outcome.updatedAt
-							// Apply only if nothing newer has touched the row. Results reach
-							// this method from two independent producers — the scraper loop,
-							// and the probe `create()` forks in the background — so a batch
-							// can land after a newer one has already been recorded. Without
-							// the guard the late writer wins: the target reports a stale
-							// `lastScrapeAt`, or resurrects an error a newer scrape cleared.
-							// `updatedAt` (not `lastScrapeAt`) is the comparison because a
-							// failing batch leaves `lastScrapeAt` untouched and so cannot
-							// order itself. Equal timestamps still apply, so re-reporting a
-							// batch stays a no-op rather than a drop, and a config edit at
-							// most costs the one in-flight scrape reported before it.
-							await db
-								.update(scrapeTargets)
-								.set(outcome)
-								.where(
-									and(
-										eq(scrapeTargets.id, targetId),
-										lte(scrapeTargets.updatedAt, reportedAt),
-									),
-								)
-						}
+					.execute((db) =>
+						Effect.gen(function* () {
+							for (const [targetId, outcome] of outcomeByTarget) {
+								const reportedAt = reportedAtByTarget.get(targetId) ?? outcome.updatedAt
+								// Apply only if nothing newer has touched the row. Results reach
+								// this method from two independent producers — the scraper loop,
+								// and the probe `create()` forks in the background — so a batch
+								// can land after a newer one has already been recorded. Without
+								// the guard the late writer wins: the target reports a stale
+								// `lastScrapeAt`, or resurrects an error a newer scrape cleared.
+								// `updatedAt` (not `lastScrapeAt`) is the comparison because a
+								// failing batch leaves `lastScrapeAt` untouched and so cannot
+								// order itself. Equal timestamps still apply, so re-reporting a
+								// batch stays a no-op rather than a drop, and a config edit at
+								// most costs the one in-flight scrape reported before it.
+								yield* db
+									.update(scrapeTargets)
+									.set(outcome)
+									.where(
+										and(
+											eq(scrapeTargets.id, targetId),
+											lte(scrapeTargets.updatedAt, reportedAt),
+										),
+									)
+							}
 
-						if (!recordChecks) return
+							if (!recordChecks) return
 
-						// Durable check history: one row per scheduled scrape attempt.
-						// Resolve orgIds on the same connection; results for deleted
-						// targets are skipped (the FK would reject them anyway).
-						const targetRows = await db
-							.select({ id: scrapeTargets.id, orgId: scrapeTargets.orgId })
-							.from(scrapeTargets)
-							.where(inArray(scrapeTargets.id, [...outcomeByTarget.keys()]))
-						const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
+							// Durable check history: one row per scheduled scrape attempt.
+							// Resolve orgIds on the same connection; results for deleted
+							// targets are skipped (the FK would reject them anyway).
+							const targetRows = yield* db
+								.select({ id: scrapeTargets.id, orgId: scrapeTargets.orgId })
+								.from(scrapeTargets)
+								.where(inArray(scrapeTargets.id, [...outcomeByTarget.keys()]))
+							const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
 
-						const checkRows = results.flatMap((result) => {
-							const orgId = orgIdByTarget.get(result.targetId)
-							if (orgId === undefined) return []
-							return [
-								{
-									targetId: result.targetId,
-									orgId,
-									subTargetKey: result.subTargetKey ?? "",
-									checkedAt: new Date(result.scrapedAt),
-									error: result.error,
-									durationMs: result.durationMs ?? null,
-									samplesScraped: result.samplesScraped ?? null,
-									samplesPostRelabel: result.samplesPostMetricRelabeling ?? null,
-								},
-							]
-						})
+							const checkRows = results.flatMap((result) => {
+								const orgId = orgIdByTarget.get(result.targetId)
+								if (orgId === undefined) return []
+								return [
+									{
+										targetId: result.targetId,
+										orgId,
+										subTargetKey: result.subTargetKey ?? "",
+										checkedAt: new Date(result.scrapedAt),
+										error: result.error,
+										durationMs: result.durationMs ?? null,
+										samplesScraped: result.samplesScraped ?? null,
+										samplesPostRelabel: result.samplesPostMetricRelabeling ?? null,
+									},
+								]
+							})
 
-						if (checkRows.length > 0) {
-							await db.insert(scrapeTargetChecks).values(checkRows)
-						}
-					})
+							if (checkRows.length > 0) {
+								yield* db.insert(scrapeTargetChecks).values(checkRows)
+							}
+						}),
+					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 

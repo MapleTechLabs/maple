@@ -162,11 +162,10 @@ export const missingBotScopes = (grantedScope: string | null): ReadonlyArray<str
 }
 
 /**
- * Thrown inside the install transaction (throwing is the only way to make a
- * drizzle transaction roll back) when the same-team upsert is blocked by an
- * active binding owned by another org. It escapes as the `cause` of the
- * `DatabaseError` wrapping the failed `execute`, where `completeInstall`
- * branches on it — it never leaves `completeInstall`.
+ * Failed inside the install transaction (rolling it back) when the same-team
+ * upsert is blocked by an active binding owned by another org. It reaches
+ * `completeInstall` as itself through the typed channel, where it is remapped —
+ * it never leaves `completeInstall`.
  */
 class SlackCrossOrgConflict extends Schema.TaggedError<SlackCrossOrgConflict>()(
 	"@maple/api/integrations/SlackCrossOrgConflict",
@@ -737,80 +736,83 @@ const make: Effect.Effect<
 		// same-org install of a different team replaces the old one), then upsert
 		// the new/refreshed row. The `setWhere` guard makes the cross-org rejection
 		// race-safe: a concurrent install of the same team by a different org can't
-		// clobber the existing binding — the update is skipped and we abort the
-		// transaction (throwing is the only way to make drizzle roll back), and the
-		// sentinel resurfaces as the `cause` of the wrapping DatabaseError. The
-		// partial unique index on (org_id) is the backstop that ultimately enforces
-		// the single-active-row invariant.
+		// clobber the existing binding — the update is skipped and we fail the
+		// transaction so it rolls back, and the sentinel reaches the mapper below as
+		// itself. The partial unique index on (org_id) is the backstop that
+		// ultimately enforces the single-active-row invariant.
 		const writeResult = yield* database
-			.execute(async (db) =>
-				db.transaction(async (tx) => {
-					const revokedOthers = await tx
-						.update(slackWorkspaces)
-						.set({
-							revokedAt: new Date(now),
-							revokedReason: "superseded",
-							updatedAt: new Date(now),
-						})
-						.where(
-							and(
-								eq(slackWorkspaces.orgId, orgId),
-								isNull(slackWorkspaces.revokedAt),
-								ne(slackWorkspaces.teamId, teamId),
-							),
-						)
-						.returning({ apiKeyId: slackWorkspaces.apiKeyId })
+			.execute((db) =>
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						const revokedOthers = yield* tx
+							.update(slackWorkspaces)
+							.set({
+								revokedAt: new Date(now),
+								revokedReason: "superseded",
+								updatedAt: new Date(now),
+							})
+							.where(
+								and(
+									eq(slackWorkspaces.orgId, orgId),
+									isNull(slackWorkspaces.revokedAt),
+									ne(slackWorkspaces.teamId, teamId),
+								),
+							)
+							.returning({ apiKeyId: slackWorkspaces.apiKeyId })
 
-					const upserted = await tx
-						.insert(slackWorkspaces)
-						.values(values)
-						.onConflictDoUpdate({
-							target: slackWorkspaces.teamId,
-							// Only allow overwriting a same-team row that belongs to this
-							// org or has already been revoked — never an active binding
-							// owned by another org.
-							setWhere: or(
-								eq(slackWorkspaces.orgId, orgId),
-								isNotNull(slackWorkspaces.revokedAt),
-							),
-							set: {
-								orgId: values.orgId,
-								teamName: values.teamName,
-								botUserId: values.botUserId,
-								scope: values.scope,
-								botTokenCiphertext: values.botTokenCiphertext,
-								botTokenIv: values.botTokenIv,
-								botTokenTag: values.botTokenTag,
-								apiKeyId: values.apiKeyId,
-								apiKeySecretCiphertext: values.apiKeySecretCiphertext,
-								apiKeySecretIv: values.apiKeySecretIv,
-								apiKeySecretTag: values.apiKeySecretTag,
-								installedByUserId: values.installedByUserId,
-								createdAt: values.createdAt,
-								updatedAt: values.updatedAt,
-								revokedAt: null,
-								revokedReason: null,
-							},
-						})
-						.returning({ id: slackWorkspaces.id })
+						const upserted = yield* tx
+							.insert(slackWorkspaces)
+							.values(values)
+							.onConflictDoUpdate({
+								target: slackWorkspaces.teamId,
+								// Only allow overwriting a same-team row that belongs to this
+								// org or has already been revoked — never an active binding
+								// owned by another org.
+								setWhere: or(
+									eq(slackWorkspaces.orgId, orgId),
+									isNotNull(slackWorkspaces.revokedAt),
+								),
+								set: {
+									orgId: values.orgId,
+									teamName: values.teamName,
+									botUserId: values.botUserId,
+									scope: values.scope,
+									botTokenCiphertext: values.botTokenCiphertext,
+									botTokenIv: values.botTokenIv,
+									botTokenTag: values.botTokenTag,
+									apiKeyId: values.apiKeyId,
+									apiKeySecretCiphertext: values.apiKeySecretCiphertext,
+									apiKeySecretIv: values.apiKeySecretIv,
+									apiKeySecretTag: values.apiKeySecretTag,
+									installedByUserId: values.installedByUserId,
+									createdAt: values.createdAt,
+									updatedAt: values.updatedAt,
+									revokedAt: null,
+									revokedReason: null,
+								},
+							})
+							.returning({ id: slackWorkspaces.id })
 
-					// Zero rows means the same-team conflict hit an active row owned by a
-					// different org (the setWhere blocked it) — abort so revoke-others
-					// rolls back too.
-					if (upserted.length === 0) {
-						throw new SlackCrossOrgConflict({
-							teamId,
-							orgId,
-							message: `Slack team ${teamId} is already connected to org ${orgId}`,
-						})
-					}
+						// Zero rows means the same-team conflict hit an active row owned by a
+						// different org (the setWhere blocked it) — abort so revoke-others
+						// rolls back too.
+						if (upserted.length === 0) {
+							return yield* Effect.fail(
+								new SlackCrossOrgConflict({
+									teamId,
+									orgId,
+									message: `Slack team ${teamId} is already connected to org ${orgId}`,
+								}),
+							)
+						}
 
-					return { revokedOtherKeyIds: revokedOthers.map((r) => r.apiKeyId) }
-				}),
+						return { revokedOtherKeyIds: revokedOthers.map((r) => r.apiKeyId) }
+					}),
+				),
 			)
 			.pipe(
 				Effect.mapError((error) =>
-					error.cause instanceof SlackCrossOrgConflict
+					error instanceof SlackCrossOrgConflict
 						? new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE })
 						: toPersistenceError(error),
 				),

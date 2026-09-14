@@ -129,11 +129,11 @@ export const makeMapleEffectDb = (
 	acquire: Effect.Effect<MaplePgPool, SqlError, Scope.Scope>,
 ): Effect.Effect<MapleDb, SqlError, Scope.Scope> =>
 	Effect.gen(function* () {
-		const client = yield* Layer.build(
-			PgClient.layerFrom(PgClient.fromPool({ acquire, applicationName: "maple" })),
+		const services = yield* Layer.build(
+			Layer.merge(
+				mapleDrizzleServices,
+				PgClient.layerFrom(PgClient.fromPool({ acquire, applicationName: "maple" })),
+			),
 		)
-		return yield* PgDrizzle.make().pipe(
-			Effect.provide(mapleDrizzleServices),
-			Effect.provideContext(client),
-		)
+		return yield* PgDrizzle.make().pipe(Effect.provideContext(services))
 	})

@@ -11,7 +11,7 @@ import {
 } from "@maple/db"
 import { and, eq, sql } from "drizzle-orm"
 import { Clock, Effect, Schema } from "effect"
-import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 
 /**
  * PlanetScale webhook event handling: signature verification, payload decode,
@@ -258,43 +258,45 @@ export const insertPlanetScaleEvent: (
 	"planetscaleWebhook.insertEvent",
 )(function* (input: InsertPlanetScaleEventInput) {
 	const database = yield* Database
-	return yield* database.execute(async (db) => {
-		const known = await db
-			.select({ databaseId: planetscaleDatabases.databaseId })
-			.from(planetscaleDatabases)
-			.where(
-				and(
-					eq(planetscaleDatabases.orgId, input.orgId),
-					eq(planetscaleDatabases.name, input.databaseName),
-				),
-			)
-			.limit(1)
+	return yield* database.execute((db) =>
+		Effect.gen(function* () {
+			const known = yield* db
+				.select({ databaseId: planetscaleDatabases.databaseId })
+				.from(planetscaleDatabases)
+				.where(
+					and(
+						eq(planetscaleDatabases.orgId, input.orgId),
+						eq(planetscaleDatabases.name, input.databaseName),
+					),
+				)
+				.limit(1)
 
-		const rows = await db
-			.insert(planetscaleEvents)
-			.values({
-				id: randomUUID(),
-				orgId: input.orgId,
-				databaseId: known[0]?.databaseId ?? "",
-				databaseName: input.databaseName,
-				branchName: input.branchName,
-				category: input.category,
-				eventType: input.eventType,
-				state: input.state,
-				externalId: input.externalId,
-				title: input.title,
-				source: input.source,
-				actorLogin: input.actorLogin ?? null,
-				url: input.url ?? null,
-				payloadJson: input.payload ?? null,
-				occurredAt: truncateToSecond(input.occurredAtMs),
-				createdAt: new Date(input.createdAtMs),
-			})
-			.onConflictDoNothing()
-			.returning({ id: planetscaleEvents.id })
+			const rows = yield* db
+				.insert(planetscaleEvents)
+				.values({
+					id: randomUUID(),
+					orgId: input.orgId,
+					databaseId: known[0]?.databaseId ?? "",
+					databaseName: input.databaseName,
+					branchName: input.branchName,
+					category: input.category,
+					eventType: input.eventType,
+					state: input.state,
+					externalId: input.externalId,
+					title: input.title,
+					source: input.source,
+					actorLogin: input.actorLogin ?? null,
+					url: input.url ?? null,
+					payloadJson: input.payload ?? null,
+					occurredAt: truncateToSecond(input.occurredAtMs),
+					createdAt: new Date(input.createdAtMs),
+				})
+				.onConflictDoNothing()
+				.returning({ id: planetscaleEvents.id })
 
-		return { inserted: rows.length > 0 }
-	})
+			return { inserted: rows.length > 0 }
+		}),
+	)
 })
 
 // Issue upsert (kind="integration")
@@ -351,66 +353,75 @@ export const upsertPlanetScaleIssue: (
 	}
 
 	return yield* database.execute((db) =>
-		db.transaction(async (tx) => {
-			const ensureActor = async (): Promise<ActorId> => {
-				const selectActor = () =>
-					tx
-						.select()
-						.from(actors)
-						.where(
-							and(
-								eq(actors.orgId, input.orgId),
-								eq(actors.type, "agent"),
-								eq(actors.agentName, SYSTEM_INTEGRATIONS_AGENT_NAME),
-							),
+		db.transaction((tx) =>
+			Effect.gen(function* () {
+				const ensureActor = Effect.gen(function* () {
+					const selectActor = () =>
+						tx
+							.select()
+							.from(actors)
+							.where(
+								and(
+									eq(actors.orgId, input.orgId),
+									eq(actors.type, "agent"),
+									eq(actors.agentName, SYSTEM_INTEGRATIONS_AGENT_NAME),
+								),
+							)
+							.limit(1)
+					const existing = yield* selectActor()
+					if (existing[0]) return existing[0].id
+					yield* tx
+						.insert(actors)
+						.values({
+							id: decodeActorId(randomUUID()),
+							orgId: input.orgId,
+							type: "agent",
+							userId: null,
+							agentName: SYSTEM_INTEGRATIONS_AGENT_NAME,
+							model: null,
+							capabilitiesJson: ["system", "integration-issues"],
+							createdBy: null,
+							createdAt: new Date(actorTimestamp),
+							lastActiveAt: new Date(actorTimestamp),
+						})
+						.onConflictDoNothing()
+					const row = (yield* selectActor())[0]
+					// The queue consumer (apps/api) retries on `DatabaseError`, so this
+					// unreachable state keeps the failure class it always surfaced as.
+					if (!row) {
+						return yield* Effect.fail(
+							new DatabaseError({
+								message: "Failed to ensure system-integrations actor row",
+								cause: undefined,
+							}),
 						)
-						.limit(1)
-				const existing = await selectActor()
-				if (existing[0]) return existing[0].id
-				await tx
-					.insert(actors)
-					.values({
-						id: decodeActorId(randomUUID()),
-						orgId: input.orgId,
-						type: "agent",
-						userId: null,
-						agentName: SYSTEM_INTEGRATIONS_AGENT_NAME,
-						model: null,
-						capabilitiesJson: ["system", "integration-issues"],
-						createdBy: null,
-						createdAt: new Date(actorTimestamp),
-						lastActiveAt: new Date(actorTimestamp),
-					})
-					.onConflictDoNothing()
-				const row = (await selectActor())[0]
-				if (!row) throw new Error("Failed to ensure system-integrations actor row")
-				return row.id
-			}
-
-			const recordEvent = (
-				issueId: ErrorIssueId,
-				actorId: ActorId,
-				type: "created" | "state_change" | "regression",
-				opts: {
-					readonly fromState?: WorkflowState
-					readonly toState?: WorkflowState
-					readonly payload?: Record<string, unknown>
-				},
-			) =>
-				tx.insert(errorIssueEvents).values({
-					id: decodeEventId(randomUUID()),
-					orgId: input.orgId,
-					issueId,
-					actorId,
-					type,
-					fromState: opts.fromState ?? null,
-					toState: opts.toState ?? null,
-					payloadJson: opts.payload ?? {},
-					createdAt: new Date(input.timestamp),
+					}
+					return row.id
 				})
 
-			const prior: ErrorIssueRow | undefined = (
-				await tx
+				const recordEvent = (
+					issueId: ErrorIssueId,
+					actorId: ActorId,
+					type: "created" | "state_change" | "regression",
+					opts: {
+						readonly fromState?: WorkflowState
+						readonly toState?: WorkflowState
+						readonly payload?: Record<string, unknown>
+					},
+				) =>
+					tx.insert(errorIssueEvents).values({
+						id: decodeEventId(randomUUID()),
+						orgId: input.orgId,
+						issueId,
+						actorId,
+						type,
+						fromState: opts.fromState ?? null,
+						toState: opts.toState ?? null,
+						payloadJson: opts.payload ?? {},
+						createdAt: new Date(input.timestamp),
+					})
+
+				const prior: ErrorIssueRow | undefined = (yield* tx
 					.select()
 					.from(errorIssues)
 					.where(
@@ -419,64 +430,62 @@ export const upsertPlanetScaleIssue: (
 							eq(errorIssues.fingerprintHash, fingerprintHash),
 						),
 					)
-					.limit(1)
-			)[0]
+					.limit(1))[0]
 
-			if (prior === undefined) {
-				const candidateId = decodeIssueId(randomUUID())
-				// READ COMMITTED does not hold the gap between the select above and
-				// this insert, so a concurrent webhook for the same event can slip in
-				// and raise `error_issues_org_fp_idx`.
-				const claimed = await tx
-					.insert(errorIssues)
-					.values({
-						id: candidateId,
-						orgId: input.orgId,
-						kind: "integration",
-						sourceRefJson,
-						fingerprintHash,
-						serviceName,
-						exceptionType: input.title,
-						exceptionMessage: input.description,
-						errorLabel: input.title,
-						topFrame: "",
-						workflowState: "triage",
-						priority: 3,
-						severity: input.severity,
-						severitySource: "detector",
-						assignedActorId: null,
-						leaseHolderActorId: null,
-						leaseExpiresAt: null,
-						claimedAt: null,
-						notes: null,
-						firstSeenAt: new Date(input.timestamp),
-						lastSeenAt: new Date(input.timestamp),
-						occurrenceCount: 1,
-						resolvedAt: null,
-						resolvedByActorId: null,
-						snoozeUntil: null,
-						archivedAt: null,
-						createdAt: new Date(input.timestamp),
-						updatedAt: new Date(input.timestamp),
-					})
-					.onConflictDoNothing({
-						target: [errorIssues.orgId, errorIssues.fingerprintHash],
-					})
-					.returning({ id: errorIssues.id })
+				if (prior === undefined) {
+					const candidateId = decodeIssueId(randomUUID())
+					// READ COMMITTED does not hold the gap between the select above and
+					// this insert, so a concurrent webhook for the same event can slip in
+					// and raise `error_issues_org_fp_idx`.
+					const claimed = yield* tx
+						.insert(errorIssues)
+						.values({
+							id: candidateId,
+							orgId: input.orgId,
+							kind: "integration",
+							sourceRefJson,
+							fingerprintHash,
+							serviceName,
+							exceptionType: input.title,
+							exceptionMessage: input.description,
+							errorLabel: input.title,
+							topFrame: "",
+							workflowState: "triage",
+							priority: 3,
+							severity: input.severity,
+							severitySource: "detector",
+							assignedActorId: null,
+							leaseHolderActorId: null,
+							leaseExpiresAt: null,
+							claimedAt: null,
+							notes: null,
+							firstSeenAt: new Date(input.timestamp),
+							lastSeenAt: new Date(input.timestamp),
+							occurrenceCount: 1,
+							resolvedAt: null,
+							resolvedByActorId: null,
+							snoozeUntil: null,
+							archivedAt: null,
+							createdAt: new Date(input.timestamp),
+							updatedAt: new Date(input.timestamp),
+						})
+						.onConflictDoNothing({
+							target: [errorIssues.orgId, errorIssues.fingerprintHash],
+						})
+						.returning({ id: errorIssues.id })
 
-				const insertedId = claimed[0]?.id
-				if (insertedId !== undefined) {
-					const actorId = await ensureActor()
-					await recordEvent(insertedId, actorId, "created", {
-						toState: "triage",
-						payload: sourceRefJson,
-					})
-					return { issueId: insertedId, action: "created" as const }
-				}
-				// The concurrent writer won and already emitted `created`; report the
-				// sighting against their issue rather than duplicating the history.
-				const winner = (
-					await tx
+					const insertedId = claimed[0]?.id
+					if (insertedId !== undefined) {
+						const actorId = yield* ensureActor
+						yield* recordEvent(insertedId, actorId, "created", {
+							toState: "triage",
+							payload: sourceRefJson,
+						})
+						return { issueId: insertedId, action: "created" as const }
+					}
+					// The concurrent writer won and already emitted `created`; report the
+					// sighting against their issue rather than duplicating the history.
+					const winner = (yield* tx
 						.select({ id: errorIssues.id })
 						.from(errorIssues)
 						.where(
@@ -485,55 +494,55 @@ export const upsertPlanetScaleIssue: (
 								eq(errorIssues.fingerprintHash, fingerprintHash),
 							),
 						)
-						.limit(1)
-				)[0]
-				return { issueId: winner?.id ?? candidateId, action: "skipped" as const }
-			}
+						.limit(1))[0]
+					return { issueId: winner?.id ?? candidateId, action: "skipped" as const }
+				}
 
-			const issueId = prior.id
-			// A wontfix issue with an active or indefinite snooze stays untouched.
-			const snoozeActive =
-				prior.workflowState === "wontfix" &&
-				(prior.snoozeUntil == null || prior.snoozeUntil.getTime() > input.timestamp)
-			if (snoozeActive) return { issueId, action: "skipped" as const }
+				const issueId = prior.id
+				// A wontfix issue with an active or indefinite snooze stays untouched.
+				const snoozeActive =
+					prior.workflowState === "wontfix" &&
+					(prior.snoozeUntil == null || prior.snoozeUntil.getTime() > input.timestamp)
+				if (snoozeActive) return { issueId, action: "skipped" as const }
 
-			await tx
-				.update(errorIssues)
-				.set({
-					lastSeenAt: new Date(input.timestamp),
-					occurrenceCount: sql`${errorIssues.occurrenceCount} + 1`,
-					exceptionMessage: input.description,
-					sourceRefJson,
-					updatedAt: new Date(input.timestamp),
+				yield* tx
+					.update(errorIssues)
+					.set({
+						lastSeenAt: new Date(input.timestamp),
+						occurrenceCount: sql`${errorIssues.occurrenceCount} + 1`,
+						exceptionMessage: input.description,
+						sourceRefJson,
+						updatedAt: new Date(input.timestamp),
+					})
+					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
+
+				const reopenFrom: WorkflowState | null =
+					prior.workflowState === "done" || prior.workflowState === "wontfix"
+						? prior.workflowState
+						: null
+				if (reopenFrom === null) return { issueId, action: "refreshed" as const }
+
+				yield* tx
+					.update(errorIssues)
+					.set({
+						workflowState: "triage",
+						resolvedAt: null,
+						resolvedByActorId: null,
+						snoozeUntil: null,
+						updatedAt: new Date(input.timestamp),
+					})
+					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
+				const actorId = yield* ensureActor
+				yield* recordEvent(issueId, actorId, "state_change", {
+					fromState: reopenFrom,
+					toState: "triage",
+					payload: { viaRegression: true, event: input.payload.event },
 				})
-				.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
-
-			const reopenFrom: WorkflowState | null =
-				prior.workflowState === "done" || prior.workflowState === "wontfix"
-					? prior.workflowState
-					: null
-			if (reopenFrom === null) return { issueId, action: "refreshed" as const }
-
-			await tx
-				.update(errorIssues)
-				.set({
-					workflowState: "triage",
-					resolvedAt: null,
-					resolvedByActorId: null,
-					snoozeUntil: null,
-					updatedAt: new Date(input.timestamp),
+				yield* recordEvent(issueId, actorId, "regression", {
+					payload: { event: input.payload.event, database: databaseName },
 				})
-				.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
-			const actorId = await ensureActor()
-			await recordEvent(issueId, actorId, "state_change", {
-				fromState: reopenFrom,
-				toState: "triage",
-				payload: { viaRegression: true, event: input.payload.event },
-			})
-			await recordEvent(issueId, actorId, "regression", {
-				payload: { event: input.payload.event, database: databaseName },
-			})
-			return { issueId, action: "reopened" as const }
-		}),
+				return { issueId, action: "reopened" as const }
+			}),
+		),
 	)
 })

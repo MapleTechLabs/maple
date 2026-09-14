@@ -24,7 +24,7 @@ import {
 	alertRuleStates,
 } from "@maple/db"
 import { and, desc, eq, inArray, sql } from "drizzle-orm"
-import { Array as Arr, Context, Effect, HashSet, Layer, Match, Schema } from "effect"
+import { Array as Arr, Context, Effect, HashSet, Layer, Schema } from "effect"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
@@ -187,44 +187,55 @@ export const makeAlertRulePersistence = (options: {
 			updatedBy: userId,
 		} as const
 
-		const writeResult = yield* dbExecute((db) =>
-			db.transaction(async (tx) => {
-				await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
-				// Destination existence is checked INSIDE the lock: destination
-				// deletion takes the same per-org advisory lock around its reference
-				// scan, so a rule can no longer commit a reference to a destination
-				// whose deletion validated "unreferenced" concurrently.
-				if (normalized.destinationIds.length > 0) {
-					const destinationRows = await tx
-						.select({ id: alertDestinations.id })
-						.from(alertDestinations)
-						.where(
-							and(
-								eq(alertDestinations.orgId, orgId),
-								inArray(alertDestinations.id, [...normalized.destinationIds]),
-							),
+		const writeRows = yield* dbExecute((db) =>
+			db.transaction((tx) =>
+				Effect.gen(function* () {
+					yield* tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+					// Destination existence is checked INSIDE the lock: destination
+					// deletion takes the same per-org advisory lock around its reference
+					// scan, so a rule can no longer commit a reference to a destination
+					// whose deletion validated "unreferenced" concurrently.
+					if (normalized.destinationIds.length > 0) {
+						const destinationRows = yield* tx
+							.select({ id: alertDestinations.id })
+							.from(alertDestinations)
+							.where(
+								and(
+									eq(alertDestinations.orgId, orgId),
+									inArray(alertDestinations.id, [...normalized.destinationIds]),
+								),
+							)
+						const existingIds = new Set(destinationRows.map((destination) => destination.id))
+						const missingDestinationId = normalized.destinationIds.find(
+							(id) => !existingIds.has(id),
 						)
-					const existingIds = new Set(destinationRows.map((destination) => destination.id))
-					const missingDestinationId = normalized.destinationIds.find((id) => !existingIds.has(id))
-					if (missingDestinationId !== undefined) {
-						return { _tag: "MissingDestination" as const, destinationId: missingDestinationId }
+						if (missingDestinationId !== undefined) {
+							return yield* Effect.fail(
+								new AlertRuleDestinationNotFoundError({
+									message: "Alert rule references an unknown destination",
+									destinationId: missingDestinationId,
+								}),
+							)
+						}
 					}
-				}
-				if (normalized.enabled) {
-					const activeRows = await tx
-						.select({ id: alertRules.id })
-						.from(alertRules)
-						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.enabled, true)))
-					const alreadyActive =
-						existingId != null && activeRows.some((row) => row.id === existingId)
-					if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
-						return { _tag: "LimitExceeded" as const }
+					if (normalized.enabled) {
+						const activeRows = yield* tx
+							.select({ id: alertRules.id })
+							.from(alertRules)
+							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.enabled, true)))
+						const alreadyActive =
+							existingId != null && activeRows.some((row) => row.id === existingId)
+						if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
+							return yield* Effect.fail(
+								makeAlertValidationError(
+									`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,
+								),
+							)
+						}
 					}
-				}
 
-				const writeRows =
-					existingId == null
-						? await tx
+					return existingId == null
+						? yield* tx
 								.insert(alertRules)
 								.values({
 									id: ruleId,
@@ -234,43 +245,20 @@ export const makeAlertRulePersistence = (options: {
 									createdBy: userId,
 								})
 								.returning(txidColumn)
-						: await tx
+						: yield* tx
 								.update(alertRules)
 								.set(ruleFields)
 								.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, existingId)))
 								.returning(txidColumn)
-				return { _tag: "Written" as const, writeRows }
-			}),
-		)
-		// The transaction runs in Promise-land, so it reports its outcome as a tagged
-		// value and the failures are raised out here — `Match.exhaustive` is what makes
-		// a fourth outcome a compile error rather than a silently ignored branch.
-		return yield* Match.value(writeResult).pipe(
-			Match.tag("MissingDestination", (outcome) =>
-				Effect.fail(
-					new AlertRuleDestinationNotFoundError({
-						message: "Alert rule references an unknown destination",
-						destinationId: outcome.destinationId,
-					}),
-				),
-			),
-			Match.tag("LimitExceeded", () =>
-				Effect.fail(
-					makeAlertValidationError(
-						`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,
-					),
-				),
-			),
-			Match.tag("Written", (outcome) =>
-				Effect.succeed({
-					normalized,
-					ruleId,
-					timestamp,
-					txid: readTxid(outcome.writeRows),
 				}),
 			),
-			Match.exhaustive,
 		)
+		return {
+			normalized,
+			ruleId,
+			timestamp,
+			txid: readTxid(writeRows),
+		}
 	})
 
 	const upsertRuleRow = Effect.fn("AlertsService.upsertRuleRow")(function* (
@@ -349,22 +337,26 @@ export const makeAlertRulePersistence = (options: {
 		yield* requireAdmin(roles)
 		yield* requireRuleRow(orgId, ruleId)
 		const deleted = yield* dbExecute((db) =>
-			db.transaction(async (tx) => {
-				await tx
-					.delete(alertDeliveryEvents)
-					.where(and(eq(alertDeliveryEvents.orgId, orgId), eq(alertDeliveryEvents.ruleId, ruleId)))
-				await tx
-					.delete(alertIncidents)
-					.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId)))
-				await tx
-					.delete(alertRuleStates)
-					.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId)))
-				await tx.delete(alertRuleClaims).where(eq(alertRuleClaims.ruleId, ruleId))
-				return tx
-					.delete(alertRules)
-					.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-					.returning(txidColumn)
-			}),
+			db.transaction((tx) =>
+				Effect.gen(function* () {
+					yield* tx
+						.delete(alertDeliveryEvents)
+						.where(
+							and(eq(alertDeliveryEvents.orgId, orgId), eq(alertDeliveryEvents.ruleId, ruleId)),
+						)
+					yield* tx
+						.delete(alertIncidents)
+						.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId)))
+					yield* tx
+						.delete(alertRuleStates)
+						.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId)))
+					yield* tx.delete(alertRuleClaims).where(eq(alertRuleClaims.ruleId, ruleId))
+					return yield* tx
+						.delete(alertRules)
+						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
+						.returning(txidColumn)
+				}),
+			),
 		)
 		const txid = readTxid(deleted)
 		return new AlertRuleDeleteResponse({

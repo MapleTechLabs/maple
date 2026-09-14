@@ -14,9 +14,10 @@ import {
 	OrgId,
 } from "@maple/domain/primitives"
 import { actors, errorIssues, errorIssueEvents, issueEscalations } from "@maple/db"
-import type { MapleDatabaseTransaction, MaplePgClient } from "@maple/db/client"
+import type { MapleDbLike } from "@maple/db/client"
 import { and, eq, ne, isNull, or } from "drizzle-orm"
-import { Schema } from "effect"
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import { Effect, Schema } from "effect"
 import { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 
 export { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
@@ -26,7 +27,16 @@ export { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
  * the severity write atomically alongside their own writes (e.g. the
  * `submit_diagnosis` timeline event) in a single transaction.
  */
-export type TriageSeverityDb = MaplePgClient | MapleDatabaseTransaction
+export type TriageSeverityDb = MapleDbLike
+
+/**
+ * The triage-agent actor row was neither found nor insertable. Only reachable
+ * if the row is deleted between the guarded insert and the re-read.
+ */
+export class TriageActorMissingError extends Schema.TaggedError<TriageActorMissingError>()(
+	"@maple/api/services/TriageActorMissingError",
+	{ message: Schema.String, orgId: OrgId },
+) {}
 
 const decodeActorId = Schema.decodeUnknownSync(ActorId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
@@ -75,45 +85,53 @@ export const escalationReasonFor = (
 	return severityRank(to) > severityRank(from) ? "severity_escalated" : null
 }
 
-const ensureTriageAgentActor = async (
+const ensureTriageAgentActor = (
 	db: TriageSeverityDb,
 	orgId: OrgId,
 	timestamp: number,
-): Promise<ActorId> => {
-	const select = () =>
-		db
-			.select()
-			.from(actors)
-			.where(
-				and(
-					eq(actors.orgId, orgId),
-					eq(actors.type, "agent"),
-					eq(actors.agentName, TRIAGE_AGENT_NAME),
-				),
+): Effect.Effect<ActorId, EffectDrizzleQueryError | TriageActorMissingError> =>
+	Effect.gen(function* () {
+		const select = () =>
+			db
+				.select()
+				.from(actors)
+				.where(
+					and(
+						eq(actors.orgId, orgId),
+						eq(actors.type, "agent"),
+						eq(actors.agentName, TRIAGE_AGENT_NAME),
+					),
+				)
+				.limit(1)
+		const existing = yield* select()
+		if (existing[0]) return existing[0].id
+		yield* db
+			.insert(actors)
+			.values({
+				id: decodeActorId(randomUUID()),
+				orgId,
+				type: "agent",
+				userId: null,
+				agentName: TRIAGE_AGENT_NAME,
+				model: null,
+				capabilitiesJson: ["auto-triage"],
+				createdBy: null,
+				createdAt: new Date(timestamp),
+				lastActiveAt: new Date(timestamp),
+			})
+			.onConflictDoNothing()
+		const after = yield* select()
+		const row = after[0]
+		if (!row) {
+			return yield* Effect.fail(
+				new TriageActorMissingError({
+					message: "Failed to ensure maple-triage-agent actor row",
+					orgId,
+				}),
 			)
-			.limit(1)
-	const existing = await select()
-	if (existing[0]) return existing[0].id
-	await db
-		.insert(actors)
-		.values({
-			id: decodeActorId(randomUUID()),
-			orgId,
-			type: "agent",
-			userId: null,
-			agentName: TRIAGE_AGENT_NAME,
-			model: null,
-			capabilitiesJson: ["auto-triage"],
-			createdBy: null,
-			createdAt: new Date(timestamp),
-			lastActiveAt: new Date(timestamp),
-		})
-		.onConflictDoNothing()
-	const after = await select()
-	const row = after[0]
-	if (!row) throw new Error("Failed to ensure maple-triage-agent actor row")
-	return row.id
-}
+		}
+		return row.id
+	})
 
 export interface ApplyTriageSeverityInput {
 	readonly orgId: OrgId
@@ -142,106 +160,107 @@ export interface ApplyTriageSeverityOutcome {
  * (manual override always wins), `severity_change` timeline event, and an
  * escalation-outbox row when the severity newly sets or strictly escalates.
  */
-export const applyTriageSeverity = async (
+export const applyTriageSeverity = (
 	db: TriageSeverityDb,
 	input: ApplyTriageSeverityInput,
-): Promise<ApplyTriageSeverityOutcome> => {
-	const issueRows = await db
-		.select()
-		.from(errorIssues)
-		.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, input.issueId)))
-		.limit(1)
-	const issue = issueRows[0]
-	if (!issue) return { applied: false, actorId: null }
+): Effect.Effect<ApplyTriageSeverityOutcome, EffectDrizzleQueryError | TriageActorMissingError> =>
+	Effect.gen(function* () {
+		const issueRows = yield* db
+			.select()
+			.from(errorIssues)
+			.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, input.issueId)))
+			.limit(1)
+		const issue = issueRows[0]
+		if (!issue) return { applied: false, actorId: null }
 
-	const actorId = await ensureTriageAgentActor(db, input.orgId, input.timestamp)
+		const actorId = yield* ensureTriageAgentActor(db, input.orgId, input.timestamp)
 
-	// No assessment, no re-rank: a report that did not judge the severity must not
-	// overwrite one that was. The actor is still returned so the caller can record
-	// that triage ran on the issue's timeline.
-	const severity = input.severity
-	if (severity === undefined) return { applied: false, actorId }
+		// No assessment, no re-rank: a report that did not judge the severity must not
+		// overwrite one that was. The actor is still returned so the caller can record
+		// that triage ran on the issue's timeline.
+		const severity = input.severity
+		if (severity === undefined) return { applied: false, actorId }
 
-	const from = issue.severity ?? null
+		const from = issue.severity ?? null
 
-	if (issue.severitySource === "manual") {
-		return { applied: false, actorId }
-	}
+		if (issue.severitySource === "manual") {
+			return { applied: false, actorId }
+		}
 
-	// Guard repeated in SQL so a concurrent manual write between the read above
-	// and this update still wins.
-	const updated = await db
-		.update(errorIssues)
-		.set({ severity, severitySource: "ai", updatedAt: new Date(input.timestamp) })
-		.where(
-			and(
-				eq(errorIssues.orgId, input.orgId),
-				eq(errorIssues.id, input.issueId),
-				or(isNull(errorIssues.severitySource), ne(errorIssues.severitySource, "manual")),
-			),
-		)
-		// The returned row is the guard outcome: empty means a concurrent
-		// manual severity write won.
-		.returning({ id: errorIssues.id })
-	if (updated.length === 0) {
-		return { applied: false, actorId }
-	}
+		// Guard repeated in SQL so a concurrent manual write between the read above
+		// and this update still wins.
+		const updated = yield* db
+			.update(errorIssues)
+			.set({ severity, severitySource: "ai", updatedAt: new Date(input.timestamp) })
+			.where(
+				and(
+					eq(errorIssues.orgId, input.orgId),
+					eq(errorIssues.id, input.issueId),
+					or(isNull(errorIssues.severitySource), ne(errorIssues.severitySource, "manual")),
+				),
+			)
+			// The returned row is the guard outcome: empty means a concurrent
+			// manual severity write won.
+			.returning({ id: errorIssues.id })
+		if (updated.length === 0) {
+			return { applied: false, actorId }
+		}
 
-	if (from !== severity) {
-		await db
-			.insert(errorIssueEvents)
-			.values({
-				id: decodeEventId(deterministicUuid(`ai-triage-severity:${input.runId}`)),
-				orgId: input.orgId,
-				issueId: input.issueId,
-				actorId,
-				type: "severity_change",
-				fromState: null,
-				toState: null,
-				payloadJson: {
-					from,
-					to: severity,
+		if (from !== severity) {
+			yield* db
+				.insert(errorIssueEvents)
+				.values({
+					id: decodeEventId(deterministicUuid(`ai-triage-severity:${input.runId}`)),
+					orgId: input.orgId,
+					issueId: input.issueId,
+					actorId,
+					type: "severity_change",
+					fromState: null,
+					toState: null,
+					payloadJson: {
+						from,
+						to: severity,
+						source: "ai",
+						runId: input.runId,
+						confidence: input.confidence,
+					},
+					createdAt: new Date(input.timestamp),
+				})
+				.onConflictDoNothing()
+		}
+
+		const reason = escalationReasonFor(from, severity)
+		if (reason !== null) {
+			yield* db
+				.insert(issueEscalations)
+				.values({
+					id: decodeEscalationId(deterministicUuid(`ai-triage-escalation:${input.runId}`)),
+					orgId: input.orgId,
+					issueId: input.issueId,
+					severity,
 					source: "ai",
+					reason,
 					runId: input.runId,
-					confidence: input.confidence,
-				},
-				createdAt: new Date(input.timestamp),
-			})
-			.onConflictDoNothing()
-	}
+					investigationId: input.investigationId ?? null,
+					payloadJson: {
+						confidence: input.confidence,
+						...(input.result ? { triage: input.result } : undefined),
+					},
+					deliveryResultsJson: [],
+					status: "queued",
+					attempts: 0,
+					dedupeKey: escalationDedupeKey(input.orgId, input.issueId, severity),
+					error: null,
+					createdAt: new Date(input.timestamp),
+					processedAt: null,
+				})
+				.onConflictDoNothing()
+		}
 
-	const reason = escalationReasonFor(from, severity)
-	if (reason !== null) {
-		await db
-			.insert(issueEscalations)
-			.values({
-				id: decodeEscalationId(deterministicUuid(`ai-triage-escalation:${input.runId}`)),
-				orgId: input.orgId,
-				issueId: input.issueId,
-				severity,
-				source: "ai",
-				reason,
-				runId: input.runId,
-				investigationId: input.investigationId ?? null,
-				payloadJson: {
-					confidence: input.confidence,
-					...(input.result ? { triage: input.result } : undefined),
-				},
-				deliveryResultsJson: [],
-				status: "queued",
-				attempts: 0,
-				dedupeKey: escalationDedupeKey(input.orgId, input.issueId, severity),
-				error: null,
-				createdAt: new Date(input.timestamp),
-				processedAt: null,
-			})
-			.onConflictDoNothing()
-	}
+		yield* db
+			.update(actors)
+			.set({ lastActiveAt: new Date(input.timestamp) })
+			.where(eq(actors.id, actorId))
 
-	await db
-		.update(actors)
-		.set({ lastActiveAt: new Date(input.timestamp) })
-		.where(eq(actors.id, actorId))
-
-	return { applied: true, actorId }
-}
+		return { applied: true, actorId }
+	})

@@ -24,8 +24,6 @@ import {
 	investigationLensRuns,
 	investigations,
 } from "@maple/db"
-import type { MaplePgClient } from "@maple/db/client"
-import { createMaplePgliteClient } from "@maple/db/pglite"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { eq } from "drizzle-orm"
 import { Env } from "@maple/backend/platform/Env"
@@ -581,15 +579,13 @@ describe("InvestigationService", () => {
 		"submit_diagnosis writes the issue-linked ai_triage event exactly once across re-diagnosis",
 		() => {
 			const harness = makeHarness()
-			const raw = createMaplePgliteClient(harness.testDb.pglite) as MaplePgClient
 			const issueId = asIssueId(randomUUID())
 			return Effect.gen(function* () {
 				const service = yield* InvestigationService
-				// Forcing the service (above) builds the DB layer + runs migrations on the
-				// shared PGlite, so the raw client can now seed the linked error issue.
+				const database = yield* Database
 				const now = new Date()
-				yield* Effect.promise(() =>
-					raw.insert(errorIssues).values({
+				yield* database.execute((db) =>
+					db.insert(errorIssues).values({
 						id: issueId,
 						orgId: ORG,
 						fingerprintHash: "98765432109876543210",
@@ -630,8 +626,8 @@ describe("InvestigationService", () => {
 					new SubmitDiagnosisRequest({ report: sampleReport() }),
 				)
 
-				const events = yield* Effect.promise(() =>
-					raw.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+				const events = yield* database.execute((db) =>
+					db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
 				)
 				const aiTriageEvents = events.filter((e) => e.type === "ai_triage")
 				assert.strictEqual(aiTriageEvents.length, 1)

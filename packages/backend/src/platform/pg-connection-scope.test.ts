@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { createMaplePgPool, type MapleDb, type MaplePgPool, type MaplePgPoolOptions } from "@maple/db/client"
-import { Effect, Exit, Fiber, Option, Tracer } from "effect"
+import { Effect, Exit, Fiber, Option, Schema, Tracer } from "effect"
 import { MapleDbConnection } from "./bindings"
 import {
 	executeOnFreshPgClient,
@@ -56,6 +56,11 @@ const recorder = (): Recorder => {
 }
 
 const noop = () => Effect.succeed("ok")
+
+class CallbackFailure extends Schema.TaggedError<CallbackFailure>()("@maple/test/CallbackFailure", {
+	message: Schema.String,
+}) {}
+const boom = () => Effect.fail(new CallbackFailure({ message: "boom" }))
 
 const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []
@@ -179,7 +184,7 @@ describe("PgConnectionScope", () => {
 			// arrives as the statement's own error, which is what `postgres-errors`
 			// classifies. Here the callback itself fails; the pool was still opened
 			// for it.
-			const exit = yield* Effect.exit(scope.run(() => Effect.fail(new Error("boom"))))
+			const exit = yield* Effect.exit(scope.run(boom))
 
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(rec.creations(), 1)
@@ -336,9 +341,7 @@ describe("executeOnFreshPgClient", () => {
 	it.effect("releases its connection when the callback fails, and preserves the error", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				executeOnFreshPgClient("postgres://maple:maple@127.0.0.1:1/never", () =>
-					Effect.fail(new Error("boom")),
-				),
+				executeOnFreshPgClient("postgres://maple:maple@127.0.0.1:1/never", boom),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))

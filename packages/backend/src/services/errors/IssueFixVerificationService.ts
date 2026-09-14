@@ -1113,24 +1113,26 @@ const make: Effect.Effect<
 				},
 			)
 			const landed = yield* dbExecute((db) =>
-				db.transaction(async (tx) => {
-					const updated = await tx
-						.update(errorIssueVerifications)
-						.set({
-							status: "waiting",
-							attempt: row.attempt + 1,
-							verifyAfter: msToDate(nowMs + extendedMs),
-							verdict: null,
-							verdictNote: note,
-							investigationId: null,
-							updatedAt: msToDate(nowMs),
-						})
-						.where(guard())
-						.returning({ id: errorIssueVerifications.id })
-					if (updated.length === 0) return false
-					await tx.insert(errorIssueEvents).values(retryEvent)
-					return true
-				}),
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						const updated = yield* tx
+							.update(errorIssueVerifications)
+							.set({
+								status: "waiting",
+								attempt: row.attempt + 1,
+								verifyAfter: msToDate(nowMs + extendedMs),
+								verdict: null,
+								verdictNote: note,
+								investigationId: null,
+								updatedAt: msToDate(nowMs),
+							})
+							.where(guard())
+							.returning({ id: errorIssueVerifications.id })
+						if (updated.length === 0) return false
+						yield* tx.insert(errorIssueEvents).values(retryEvent)
+						return true
+					}),
+				),
 			)
 			if (!landed) yield* lostRace
 			return
@@ -1170,21 +1172,24 @@ const make: Effect.Effect<
 		)
 
 		const landed = yield* dbExecute((db) =>
-			db.transaction(async (tx) => {
-				const updated = await tx
-					.update(errorIssueVerifications)
-					.set({
-						status,
-						verdict,
-						verdictNote: note,
-						updatedAt: msToDate(nowMs),
-					})
-					.where(guard())
-					.returning({ id: errorIssueVerifications.id })
-				if (updated.length === 0) return false
-				if (Option.isSome(verdictEvent)) await tx.insert(errorIssueEvents).values(verdictEvent.value)
-				return true
-			}),
+			db.transaction((tx) =>
+				Effect.gen(function* () {
+					const updated = yield* tx
+						.update(errorIssueVerifications)
+						.set({
+							status,
+							verdict,
+							verdictNote: note,
+							updatedAt: msToDate(nowMs),
+						})
+						.where(guard())
+						.returning({ id: errorIssueVerifications.id })
+					if (updated.length === 0) return false
+					if (Option.isSome(verdictEvent))
+						yield* tx.insert(errorIssueEvents).values(verdictEvent.value)
+					return true
+				}),
+			),
 		)
 		if (!landed) {
 			yield* lostRace
