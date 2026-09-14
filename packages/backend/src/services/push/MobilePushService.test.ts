@@ -173,6 +173,23 @@ describe("renderIncidentPush", () => {
 		expect(resolved.sound).toBe(null)
 	})
 
+	it("says what the telemetry did when a resolve ends a hold, not 'back to'", () => {
+		// No recovered value was ever measured: the breach stopped showing up
+		// while traffic was thin, and the hold ceiling elapsed. "Back to 0%"
+		// would be a claim the data never made.
+		const resolved = renderIncidentPush(
+			event({
+				eventType: "resolve",
+				value: null,
+				openForMs: 6 * 60 * 60_000,
+				resolvedAfterHold: { reason: "volume_collapsed", heldForMs: 32 * 60_000 },
+			}),
+		)
+		expect(resolved.alert.title).toBe("Resolved · Checkout error rate")
+		expect(resolved.alert.body).toBe("Traffic dropped for 32m; no breach seen since after 6h.")
+		expect(resolved.interruptionLevel).toBe("passive")
+	})
+
 	it("says how long a repeat has been going on", () => {
 		const rendered = renderIncidentPush(event({ eventType: "renotify", openForMs: 2 * 3_600_000 }))
 		expect(rendered.alert.title).toBe("Still critical · Checkout error rate")

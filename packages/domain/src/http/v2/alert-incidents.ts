@@ -4,6 +4,7 @@ import { AlertIncidentNotFoundError, AlertPersistenceError } from "../alerts"
 import {
 	AlertComparator,
 	AlertEventType,
+	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertSeverity,
 	AlertSignalType,
@@ -34,6 +35,8 @@ const alertIncidentExample = {
 	dedupe_key: "alrt_gU26thvJECdQvu54Ad9jiz:__total__",
 	last_delivered_event_type: "trigger",
 	last_notified_at: "2026-07-15T09:10:05.000Z",
+	hold_reason: null,
+	held_since: null,
 	error_issue_id: null,
 } as const
 
@@ -96,6 +99,13 @@ export const V2AlertIncident = Schema.Struct({
 	}),
 	last_notified_at: Schema.NullOr(Timestamp).annotate({
 		description: "When a notification was last delivered for this incident, or `null`.",
+	}),
+	hold_reason: Schema.NullOr(AlertIncidentHoldReason).annotate({
+		description:
+			"Set while an open incident is waiting on telemetry: the breach stopped appearing, but the service's data could not be proven to still be flowing (`volume_collapsed`, `no_data`, `sampling_changed`, `probe_failed`). The incident resolves once telemetry resumes or the hold ceiling elapses. `null` while firing or once resolved.",
+	}),
+	held_since: Schema.NullOr(Timestamp).annotate({
+		description: "When the current hold began, or `null` when the incident is not held.",
 	}),
 	error_issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({
 		description: "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`.",

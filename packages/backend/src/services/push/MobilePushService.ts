@@ -1,6 +1,7 @@
 import type {
 	AlertComparator,
 	AlertEventType,
+	AlertIncidentHoldReason,
 	AlertSeverity,
 	AlertSignalType,
 	OrgId,
@@ -59,6 +60,11 @@ const ignoreLogged =
 			Effect.ignore,
 		)
 
+export interface ResolvedAfterHold {
+	readonly reason: AlertIncidentHoldReason
+	readonly heldForMs: number
+}
+
 export interface IncidentPushEvent {
 	readonly orgId: OrgId
 	readonly eventType: AlertEventType
@@ -85,6 +91,13 @@ export interface IncidentPushEvent {
 	 * ladder below is a function of — see `shouldPushRenotify`.
 	 */
 	readonly previousNotifiedOpenForMs?: number | null
+	/**
+	 * On a resolve: the hold this resolve ends, when the incident spent its
+	 * last stretch waiting on telemetry rather than observing recovery. The
+	 * banner then says the breach stopped appearing rather than "back to X",
+	 * because no recovered value was ever measured.
+	 */
+	readonly resolvedAfterHold?: ResolvedAfterHold | null
 	/**
 	 * Recent observed values for this rule and group, newest first — the shape
 	 * the Lock Screen sparkline draws.
@@ -211,6 +224,20 @@ export const shouldPushRenotify = (event: IncidentPushEvent): boolean => {
 	return escalationRungsBelow(event.openForMs) > escalationRungsBelow(event.previousNotifiedOpenForMs ?? 0)
 }
 
+/** Leads the resolve body after a hold: what the telemetry did while we waited. */
+const describeHoldForPush = (reason: AlertIncidentHoldReason): string => {
+	switch (reason) {
+		case "volume_collapsed":
+			return "Traffic dropped"
+		case "no_data":
+			return "Telemetry stopped"
+		case "sampling_changed":
+			return "Sampling changed"
+		case "probe_failed":
+			return "Telemetry unverifiable"
+	}
+}
+
 const humanDuration = (ms: number): string => {
 	const minutes = Math.max(1, Math.round(ms / 60_000))
 	if (minutes < 60) return `${minutes}m`
@@ -260,11 +287,16 @@ export const renderIncidentPush = (
 		case "resolve": {
 			const now = formatSignalMetric(event.value, event.signalDisplay)
 			const after = openFor === null ? "" : ` after ${openFor}`
+			const held = event.resolvedAfterHold ?? null
+			const body =
+				held === null
+					? `${label} back to ${now}${after}.`
+					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)}; no breach seen since${after}.`
 			return {
 				alert: {
 					title: `Resolved · ${rule}`,
 					subtitle: service ?? undefined,
-					body: `${label} back to ${now}${after}.`,
+					body,
 				},
 				interruptionLevel: "passive",
 				priority: 5,

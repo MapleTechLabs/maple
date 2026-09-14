@@ -172,6 +172,8 @@ describe("rowToAlertIncidentDocument", () => {
 			dedupe_key: "dk-1",
 			last_delivered_event_type: "trigger",
 			last_notified_at: "2026-07-04T01:00:00.000Z",
+			hold_reason: null,
+			held_since: null,
 			error_issue_id: null,
 			created_at: "2026-07-04T00:00:00.000Z",
 			updated_at: "2026-07-04T01:00:00.000Z",

@@ -4059,3 +4059,407 @@ describe("alert incident open uniqueness", () => {
 		})
 	})
 })
+
+describe("AlertsService held incidents", () => {
+	const DAY_MS = 24 * 60 * 60_000
+
+	/** A `service_operations_minutely` liveness row for one probe window. */
+	const livenessRow = (spanCount: number): Record<string, unknown> => ({
+		minutesWithData: spanCount > 0 ? 5 : 0,
+		spanCount,
+		estimatedSpanCount: spanCount,
+		errorCount: 0,
+		estimatedErrorCount: 0,
+		lastSeen: "2023-11-14 22:13:00",
+	})
+
+	/** The `startTime` literal of a compiled liveness query, as epoch ms. */
+	const probeWindowStartMs = (sql: string): number | null => {
+		const match = />= '(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'/.exec(sql)
+		return match?.[1] === undefined ? null : Date.parse(`${match[1].replace(" ", "T")}Z`)
+	}
+
+	/**
+	 * Which of the three probe windows a start time names, and its count. The
+	 * observed window is exactly one rule window (5m) back from the tick; the
+	 * onset baseline ends at incident onset, which is at least a minute earlier.
+	 */
+	const probeCount = (liveness: LivenessState, startMs: number): number =>
+		startMs <= liveness.nowMs - 23 * 60 * 60_000
+			? liveness.priorDay
+			: startMs >= liveness.nowMs - 5 * 60_000 - 1_000
+				? liveness.observed
+				: liveness.onset
+
+	interface LivenessState {
+		/** Span count for the quiet window ending at the tick. */
+		observed: number
+		/** Span count for the window ending at incident onset. */
+		onset: number
+		/** Span count for the same window yesterday; 0 for a service with no prior day. */
+		priorDay: number
+		/** Make every liveness probe fail, so the verdict is `probe_failed`. */
+		failProbe: boolean
+		/** The test clock, mirrored so the stub can tell the three windows apart. */
+		nowMs: number
+	}
+
+	/**
+	 * Routes the rule's own evaluation to `rows` and every liveness probe to the
+	 * window-specific counts in `liveness`, telling the windows apart by their
+	 * start time: yesterday is a day back, observed ends at the tick, and
+	 * anything else is the onset baseline.
+	 */
+	const makeLivenessStub = (state: {
+		rows: ReadonlyArray<Record<string, unknown>>
+		liveness: LivenessState
+	}): WarehouseQueryServiceApi => {
+		const evaluationRows = () => Effect.succeed(state.rows)
+		// A `serviceNames` rule evaluates one service-filtered plan per service;
+		// honour that filter so a silent service really sees an empty window.
+		const rowsForQuery = (sql: string) => {
+			const scoped = /ServiceName (?:= '([^']+)'|IN \('([^']+)'\))/.exec(sql)
+			const service = scoped?.[1] ?? scoped?.[2]
+			return service === undefined ? state.rows : state.rows.filter((row) => row.groupName === service)
+		}
+		return {
+			...makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
+			warmRoute: () => Effect.void,
+			sqlQuery: evaluationRows,
+			rawSqlQuery: evaluationRows,
+			compiledQuery: (_tenant, compiled) =>
+				Effect.gen(function* () {
+					const query = compiledQueryOf(compiled)
+					// The org-wide pulse (a rule with no service scope): same counts,
+					// union shape.
+					if (query.sql.includes("service_overview_spans")) {
+						const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
+						return yield* query
+							.decodeRows([
+								{ signal: "spans", count: probeCount(state.liveness, startMs), lastSeen: "" },
+							])
+							.pipe(Effect.orDie)
+					}
+					return yield* query.decodeRows(rowsForQuery(query.sql)).pipe(Effect.orDie)
+				}),
+			compiledQueryWithCapabilities: (_tenant, compile) => {
+				const query = Effect.runSync(compile(baselineWarehouseCapabilities()))
+				return query.decodeRows(rowsForQuery(query.sql)).pipe(Effect.orDie)
+			},
+			compiledQueryFirst: (_tenant, compiled) =>
+				Effect.gen(function* () {
+					const query = compiledQueryOf(compiled)
+					if (!query.sql.includes("service_operations_minutely")) {
+						return yield* query.decodeFirstRow(state.rows).pipe(Effect.orDie)
+					}
+					if (state.liveness.failProbe) {
+						return yield* Effect.fail(
+							new WarehouseQueryError({ message: "probe failed", pipeName: "liveness" }),
+						)
+					}
+					const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
+					return yield* query
+						.decodeFirstRow([livenessRow(probeCount(state.liveness, startMs))])
+						.pipe(Effect.orDie)
+				}),
+		}
+	}
+
+	const breaching = (groupName: string) =>
+		tracesRow({ groupName, count: 500, errorRate: 42, estimatedSpanCount: 500 })
+
+	/**
+	 * Grouped by service, both groups breaching, one incident each after a
+	 * single tick. A group that drops out of the results is an orphan; a
+	 * `serviceNames` rule evaluates each service on its own instead and lands
+	 * in the skipped path — see the multi-service test below.
+	 */
+	const createTwoServiceRule = (
+		alerts: AlertsServiceApi,
+		orgId: ReturnType<typeof asOrgId>,
+		userId: ReturnType<typeof asUserId>,
+		destinationId: AlertDestinationId,
+		scope: { groupBy: ["service.name"] } | { serviceNames: ["checkout", "payments"] } = {
+			groupBy: ["service.name"],
+		},
+	) =>
+		alerts.createRule(
+			orgId,
+			userId,
+			adminRoles,
+			new AlertRuleUpsertRequest({
+				name: "Grouped error rate",
+				severity: "critical",
+				enabled: true,
+				...scope,
+				signalType: "error_rate",
+				comparator: "gt",
+				threshold: 5,
+				windowMinutes: 5,
+				minimumSampleCount: 10,
+				consecutiveBreachesRequired: 1,
+				consecutiveHealthyRequired: 1,
+				renotifyIntervalMinutes: 30,
+				destinationIds: [destinationId],
+			}),
+		)
+
+	const tickAfter = (state: { liveness: LivenessState }, alerts: AlertsServiceApi, minutes: number) =>
+		Effect.gen(function* () {
+			yield* TestClock.adjust(Duration.minutes(minutes))
+			state.liveness.nowMs = yield* Clock.currentTimeMillis
+			yield* alerts.runSchedulerTick()
+		})
+
+	const paymentsIncident = (alerts: AlertsServiceApi, orgId: ReturnType<typeof asOrgId>) =>
+		Effect.map(alerts.listIncidents(orgId), (list) => {
+			const incident = list.incidents.find((i) => i.groupKey === "payments")
+			assert.ok(incident, "payments incident missing")
+			return incident
+		})
+
+	it.effect("holds an orphaned group whose traffic collapsed, then resolves at the ceiling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			// Peak at onset, a thin evening now, no prior day to compare against.
+			liveness: { observed: 19, onset: 172, priorDay: 0, failProbe: false, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_hold_ceiling")
+			const userId = asUserId("user_hold_ceiling")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 2)
+
+			// payments vanishes from the results while its traffic is at 11% of onset.
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+
+			const held = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(held.status, "open")
+			assert.strictEqual(held.holdReason, "volume_collapsed")
+			assert.strictEqual(held.heldSince, new Date(DEFAULT_CLOCK_EPOCH_MS + 60_000).toISOString())
+			assert.strictEqual(held.resolvedAt, null)
+			const eventsWhileHeld = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				eventsWhileHeld.events.map((e) => e.eventType),
+				["trigger", "trigger"],
+				"a hold must not notify",
+			)
+
+			// Still held short of the ceiling (max(3 × 5m, 30m) = 30m): same reason,
+			// same clock.
+			yield* tickAfter(state, alerts, 20)
+			const stillHeld = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(stillHeld.status, "open")
+			assert.strictEqual(stillHeld.heldSince, held.heldSince)
+
+			// Past the ceiling the absence is believed and the incident resolves,
+			// telling the destination why.
+			yield* tickAfter(state, alerts, 10)
+			const resolved = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(resolved.status, "resolved")
+			assert.strictEqual(resolved.holdReason, null)
+			assert.strictEqual(resolved.heldSince, null)
+			// One resolve, for payments; checkout's 30-minute renotify is the only
+			// other event in the meantime.
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				events.events.map((e) => e.eventType).filter((type) => type !== "renotify"),
+				["resolve", "trigger", "trigger"],
+			)
+
+			// The still-breaching group was never touched.
+			const checkout = (yield* alerts.listIncidents(orgId)).incidents.find(
+				(i) => i.groupKey === "checkout",
+			)
+			assert.strictEqual(checkout?.status, "open")
+			assert.strictEqual(checkout?.holdReason, null)
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("resolves a held incident as soon as telemetry is back", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			liveness: { observed: 0, onset: 172, priorDay: 0, failProbe: false, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_hold_return")
+			const userId = asUserId("user_hold_return")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			// The service went completely dark: an outage, held for up to six hours.
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).holdReason, "no_data")
+
+			// Traffic returns at its usual level and the group is still absent from
+			// the results: the breach really is over.
+			state.liveness.observed = 170
+			yield* tickAfter(state, alerts, 1)
+			const resolved = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(resolved.status, "resolved")
+			assert.strictEqual(resolved.holdReason, null)
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("reads a nightly dip against yesterday night and resolves without a hold", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			// 19 now against 172 at onset would collapse; against 22 this hour
+			// yesterday it is a normal night.
+			liveness: { observed: 19, onset: 172, priorDay: 22, failProbe: false, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + DAY_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS + DAY_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_hold_prior_day")
+			const userId = asUserId("user_hold_prior_day")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+			const resolved = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(resolved.status, "resolved")
+			assert.strictEqual(resolved.holdReason, null)
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("a breach ends the hold and a later hold starts a fresh clock", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			liveness: { observed: 19, onset: 172, priorDay: 0, failProbe: false, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_hold_rebreach")
+			const userId = asUserId("user_hold_rebreach")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+			const firstHold = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(firstHold.holdReason, "volume_collapsed")
+
+			// The breach comes back: same incident, hold cleared, no new trigger.
+			state.rows = [breaching("checkout"), breaching("payments")]
+			yield* tickAfter(state, alerts, 1)
+			const rebreached = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(rebreached.id, firstHold.id)
+			assert.strictEqual(rebreached.status, "open")
+			assert.strictEqual(rebreached.holdReason, null)
+			assert.strictEqual(rebreached.heldSince, null)
+			assert.lengthOf((yield* alerts.listDeliveryEvents(orgId)).events, 2)
+
+			// Quiet again 25 minutes later: the clock starts now, not at the first
+			// hold, so this is nowhere near the 30-minute ceiling.
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 25)
+			const secondHold = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(secondHold.status, "open")
+			assert.strictEqual(secondHold.heldSince, new Date(state.liveness.nowMs).toISOString())
+			yield* tickAfter(state, alerts, 5)
+			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "open")
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("gates a multi-service rule's silent service the same way as an orphaned group", () => {
+		const testDb = createTestDb(trackedDbs)
+		// `serviceNames` rules evaluate each service on its own, so a silent
+		// service is a `skipped` evaluation on an open incident rather than an
+		// orphan. Before the gate that froze the incident forever.
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			liveness: { observed: 0, onset: 172, priorDay: 0, failProbe: false, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_hold_multi_service")
+			const userId = asUserId("user_hold_multi_service")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id, {
+				serviceNames: ["checkout", "payments"],
+			})
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 2)
+
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+			const held = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(held.status, "open")
+			assert.strictEqual(held.holdReason, "no_data")
+
+			state.liveness.observed = 170
+			yield* tickAfter(state, alerts, 1)
+			const resolved = yield* paymentsIncident(alerts, orgId)
+			assert.strictEqual(resolved.status, "resolved")
+			assert.strictEqual(resolved.holdReason, null)
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				events.events.map((e) => e.eventType),
+				["resolve", "trigger", "trigger"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("never resolves on the clock while the probe itself is failing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			liveness: { observed: 172, onset: 172, priorDay: 0, failProbe: true, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_hold_probe_failed")
+			const userId = asUserId("user_hold_probe_failed")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).holdReason, "probe_failed")
+
+			// Seven hours of our own warehouse failing says nothing about their
+			// traffic: still held.
+			yield* tickAfter(state, alerts, 7 * 60)
+			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "open")
+
+			// The first successful probe decides.
+			state.liveness.failProbe = false
+			yield* tickAfter(state, alerts, 1)
+			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "resolved")
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+})

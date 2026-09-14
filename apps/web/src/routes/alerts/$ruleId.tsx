@@ -596,7 +596,13 @@ function RuleDetailContent() {
 										<DashboardLayout.Title>{rule.name}</DashboardLayout.Title>
 										<AlertSeverityBadge severity={rule.severity} />
 										{isFiring ? (
-											<AlertStatusBadge state="firing" />
+											<AlertStatusBadge
+												state={
+													openRuleIncidents.every((i) => i.holdReason != null)
+														? "held"
+														: "firing"
+												}
+											/>
 										) : rule.enabled ? (
 											<AlertStatusBadge state="ok" />
 										) : (
@@ -1053,7 +1059,13 @@ function RuleDetailContent() {
 															<TableRow key={incident.id}>
 																<TableCell>
 																	<AlertStatusBadge
-																		state={isOpen ? "firing" : "resolved"}
+																		state={
+																			isOpen
+																				? incident.holdReason != null
+																					? "held"
+																					: "firing"
+																				: "resolved"
+																		}
 																	/>
 																</TableCell>
 																<TableCell>

@@ -6,6 +6,7 @@ import {
 	AlertEventType,
 	AlertGroupBy,
 	AlertIncidentDocument,
+	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertNotificationTemplate,
 	AlertRuleDocument,
@@ -34,6 +35,7 @@ const asSeverity = Schema.decodeUnknownSync(AlertSeverity)
 const asSignalType = Schema.decodeUnknownSync(AlertSignalType)
 const asComparator = Schema.decodeUnknownSync(AlertComparator)
 const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
+const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
 const asReducer = Schema.decodeUnknownSync(QueryEngineAlertReducer)
 const asNoDataBehavior = Schema.decodeUnknownSync(QueryEngineNoDataBehavior)
@@ -140,6 +142,8 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	dedupe_key: Schema.String,
 	last_delivered_event_type: Schema.NullOr(Schema.String),
 	last_notified_at: Schema.NullOr(Schema.String),
+	hold_reason: Schema.NullOr(Schema.String),
+	held_since: Schema.NullOr(Schema.String),
 	error_issue_id: Schema.NullOr(Schema.String),
 	created_at: Schema.String,
 	updated_at: Schema.String,
@@ -246,6 +250,8 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		lastDeliveredEventType:
 			row.last_delivered_event_type != null ? asEventType(row.last_delivered_event_type) : null,
 		lastNotifiedAt: row.last_notified_at != null ? decodeIso(row.last_notified_at) : null,
+		holdReason: row.hold_reason != null ? asHoldReason(row.hold_reason) : null,
+		heldSince: row.held_since != null ? decodeIso(row.held_since) : null,
 		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
 	})
 

@@ -393,6 +393,13 @@
       "when": 1789390722895,
       "tag": "0056_onboarding_reward_reserved",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789408571778,
+      "tag": "0057_alert_incident_hold",
+      "breakpoints": true
     }
   ]
 }

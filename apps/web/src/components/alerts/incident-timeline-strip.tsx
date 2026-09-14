@@ -39,6 +39,17 @@ export function IncidentTimelineStrip({
 			})),
 		[incidents, range.max],
 	)
+	// The tail of an open incident that is waiting on telemetry: still open,
+	// but not observed breaching since `heldSince`. Drawn hatched over the red.
+	const heldSegments = useMemo(
+		() =>
+			incidents.flatMap((incident) =>
+				incident.status === "open" && incident.heldSince
+					? [{ start: new Date(incident.heldSince).getTime(), end: range.max }]
+					: [],
+			),
+		[incidents, range.max],
+	)
 
 	const totalRange = Math.max(1, range.max - range.min)
 
@@ -49,6 +60,9 @@ export function IncidentTimelineStrip({
 					const bucketStart = range.min + (i / buckets) * totalRange
 					const bucketEnd = range.min + ((i + 1) / buckets) * totalRange
 					const hit = segments.find((seg) => seg.end > bucketStart && seg.start < bucketEnd)
+					const held =
+						hit?.status === "open" &&
+						heldSegments.some((seg) => seg.end > bucketStart && seg.start < bucketEnd)
 					return (
 						<div
 							// biome-ignore lint/suspicious/noArrayIndexKey: fixed-length positional strip
@@ -57,9 +71,11 @@ export function IncidentTimelineStrip({
 								"flex-1 rounded-[2px]",
 								compact ? "h-2" : "h-3",
 								hit
-									? hit.status === "open"
-										? "bg-destructive"
-										: "bg-destructive/50"
+									? held
+										? "bg-[repeating-linear-gradient(135deg,var(--destructive)_0_2px,transparent_2px_5px)] bg-warning/30"
+										: hit.status === "open"
+											? "bg-destructive"
+											: "bg-destructive/50"
 									: "bg-chart-apdex/60",
 							)}
 						/>
