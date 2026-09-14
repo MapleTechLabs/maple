@@ -13,6 +13,7 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { GoogleAnalyticsOAuthService } from "@maple/backend/services/auth/GoogleAnalyticsOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 
@@ -34,6 +35,7 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { GoogleAnalyticsService } from "@maple/backend/services/integrations/GoogleAnalyticsService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
@@ -78,6 +80,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CliDeviceAuthService.layer,
 	McpOAuthService.layer,
 	CloudflareOAuthService.layer,
+	GoogleAnalyticsOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
 	HazelOAuthService.layer,
@@ -99,6 +102,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ProductEventsService.layer,
 	DailySpendService.layer,
 	CloudflareAnalyticsService.layer,
+	GoogleAnalyticsService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,

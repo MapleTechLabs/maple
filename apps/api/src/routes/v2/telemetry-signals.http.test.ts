@@ -25,6 +25,7 @@ import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenc
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
+	GoogleAnalyticsServiceStubsLayer,
 	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
 	makeWarehouseServiceStub,
@@ -129,6 +130,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
