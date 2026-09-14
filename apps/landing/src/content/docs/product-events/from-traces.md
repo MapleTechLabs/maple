@@ -39,14 +39,14 @@ yield *
 Any OpenTelemetry SDK works, in any language: the contract is attribute keys on the span, not an
 API.
 
-| Attribute                        | Notes                                                                                         |
-| -------------------------------- | --------------------------------------------------------------------------------------------- |
-| `maple.product_event.name`       | **Required.** The event name. Names starting with `$` are reserved.                           |
-| `maple.product_event.user_id`    | The signed-in user, matching what you pass to `identify()` in the browser.                    |
-| `maple.product_event.group_id`   | Account, workspace or org id.                                                                 |
-| `maple.product_event.visitor_id` | The browser visitor cookie value, when the backend has it.                                    |
-| `maple.product_event.url`        | Page the step happened on. `host` and `page_path` are derived from it.                        |
-| `session.id`                     | OpenTelemetry's own session key. Read so a browser-originated trace joins its replay session. |
+| Attribute                        | Notes                                                                                                                                                                                                                                  |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maple.product_event.name`       | **Required.** The event name. Names starting with `$` are reserved.                                                                                                                                                                    |
+| `maple.product_event.user_id`    | The signed-in user, matching what you pass to `identify()` in the browser.                                                                                                                                                             |
+| `maple.product_event.group_id`   | Account, workspace or org id.                                                                                                                                                                                                          |
+| `maple.product_event.visitor_id` | The browser visitor cookie value, when the backend has it.                                                                                                                                                                             |
+| `maple.product_event.url`        | Page the step happened on. `host` and `page_path` are derived from it.                                                                                                                                                                 |
+| `session.id`                     | OpenTelemetry's own session key. When the span carries one, it becomes the event's session id, so a browser-originated trace joins its replay session. Without it the event has no session and takes no part in session-keyed funnels. |
 
 The `service_name` of the event is the span's service, and its timestamp is the span's start time.
 
