@@ -2,11 +2,9 @@
  * The investigation detail page's data, live.
  *
  * This replaced `MapleApiV2AtomClient.query("investigations", "retrieve")` plus a
- * 3s `useIntervalRefresh`. Two Electric shapes — the investigation row and its
- * lens lanes — are recombined into the same `V2Investigation` the page already
- * rendered, so every consumer below it is unchanged; what changed is that a lane
- * reaching `checking`, a progress note, or the verdict landing now arrives when
- * it happens rather than on the next tick.
+ * 3s `useIntervalRefresh`: the investigation row is an Electric shape rebuilt
+ * into the same `V2Investigation` the page already rendered, so the verdict
+ * landing arrives when it happens rather than on the next tick.
  */
 import { useLiveQuery } from "@tanstack/react-db"
 import { useMemo } from "react"
@@ -34,29 +32,24 @@ export function useInvestigation(investigationId: string): InvestigationSync {
 		[orgKey, generation, investigationId],
 	)
 
-	const { data: rows, isLoading: rowLoading } = useLiveQuery({
+	const { data: rows, isLoading } = useLiveQuery({
 		query: (q) => q.from({ i: collections.investigation }),
 	})
-	const { data: lenses, isLoading: lensLoading } = useLiveQuery({
-		query: (q) => q.from({ l: collections.lensRuns }),
-	})
 
-	const isLoading = rowLoading || lensLoading
-	const rowFailed = useCollectionLoadFailed(collections.investigation.id, rowLoading)
-	const lensFailed = useCollectionLoadFailed(collections.lensRuns.id, lensLoading)
+	const rowFailed = useCollectionLoadFailed(collections.investigation.id, isLoading)
 
 	return useMemo((): InvestigationSync => {
-		if (rowFailed || lensFailed) return { state: "failed" }
+		if (rowFailed) return { state: "failed" }
 		if (isLoading) return { state: "loading" }
 		// The shape is already narrowed to this id server-side, so this is a
 		// presence check rather than a lookup — but it stays a `find` so a stale
 		// row from a previous scope could never be rendered as this one.
 		const row = (rows ?? []).find((candidate) => candidate.id === investigationId)
 		if (!row) return { state: "missing" }
-		const investigation = rowsToInvestigation(row, lenses ?? [])
+		const investigation = rowsToInvestigation(row)
 		// A row that will not decode is a data problem, not a missing investigation
 		// — "failed" keeps the retry affordance instead of claiming it is gone.
 		if (investigation === null) return { state: "failed" }
 		return { state: "ready", investigation }
-	}, [rows, lenses, isLoading, rowFailed, lensFailed, investigationId])
+	}, [rows, isLoading, rowFailed, investigationId])
 }

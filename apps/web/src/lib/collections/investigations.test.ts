@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-	deriveValidator,
-	liveLensRuns,
-	rowsToInvestigation,
-	type InvestigationLensRunRow,
-	type InvestigationRow,
-} from "./investigations"
+import { rowsToInvestigation, type InvestigationRow } from "./investigations"
 
 const row = (overrides: Partial<InvestigationRow> = {}): InvestigationRow => ({
 	id: "88888888-8888-4888-8888-888888888888",
@@ -57,32 +51,9 @@ const row = (overrides: Partial<InvestigationRow> = {}): InvestigationRow => ({
 	...overrides,
 })
 
-const lens = (overrides: Partial<InvestigationLensRunRow> = {}): InvestigationLensRunRow => ({
-	id: "lens-row-1",
-	org_id: "org_1",
-	investigation_id: "88888888-8888-4888-8888-888888888888",
-	lens_id: "deploy_correlation",
-	attempt: 1,
-	ordinal: 0,
-	status: "reported",
-	verdict: "promoted",
-	claim: "a deploy landed before the onset",
-	reason: null,
-	progress_note: null,
-	confidence: "high",
-	tool_count: 3,
-	elapsed_ms: 9400,
-	lens_name: null,
-	lens_question: null,
-	priority: null,
-	deadline_hit: false,
-	started_at: "2026-08-01T14:02:04.000Z",
-	...overrides,
-})
-
 describe("rowsToInvestigation", () => {
 	it("rebuilds the object the page renders", () => {
-		const investigation = rowsToInvestigation(row(), [lens()])
+		const investigation = rowsToInvestigation(row())
 		expect(investigation).not.toBeNull()
 		expect(investigation).toMatchObject({
 			object: "investigation",
@@ -124,7 +95,6 @@ describe("rowsToInvestigation", () => {
 					unchecked: ["Pool depth: payments-api emits no connection metrics"],
 				},
 			}),
-			[lens()],
 		)
 		expect(investigation?.status).toBe("inconclusive")
 		expect(investigation?.report?.ruledOut).toEqual([
@@ -141,7 +111,7 @@ describe("rowsToInvestigation", () => {
 	 * cast hid; the server has had `fallbackSnapshot` for this all along.
 	 */
 	it("substitutes a snapshot for an investigation opened without one", () => {
-		const investigation = rowsToInvestigation(row({ snapshot_json: null }), [])
+		const investigation = rowsToInvestigation(row({ snapshot_json: null }))
 		expect(investigation?.snapshot).toMatchObject({
 			title: "Error incident",
 			facts: [{ label: "Incident", value: "018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8" }],
@@ -159,7 +129,6 @@ describe("rowsToInvestigation", () => {
 				},
 				snapshot_json: null,
 			}),
-			[],
 		)
 		expect(investigation?.subject).toMatchObject({ type: "freeform", title: "why is checkout slow" })
 		expect(investigation?.snapshot.title).toBe("why is checkout slow")
@@ -172,61 +141,8 @@ describe("rowsToInvestigation", () => {
 	 */
 	it("returns null rather than a half-built object when the subject will not decode", () => {
 		expect(
-			rowsToInvestigation(row({ subject_json: { type: "incident", incidentKind: "error" } }), []),
+			rowsToInvestigation(row({ subject_json: { type: "incident", incidentKind: "error" } })),
 		).toBeNull()
-		expect(rowsToInvestigation(row({ status: "not-a-status" }), [])).toBeNull()
-	})
-})
-
-describe("liveLensRuns", () => {
-	/**
-	 * A retried run leaves the previous attempt's lanes in the table. Rendering
-	 * them beside the attempt that superseded them shows one run assembled from
-	 * two — the same filter the service applies.
-	 */
-	it("keeps only the current attempt, in dispatch order", () => {
-		const lanes = liveLensRuns(row({ fanout_attempt: 2 }), [
-			lens({ id: "b", attempt: 2, ordinal: 1, lens_id: "second" }),
-			lens({ id: "stale", attempt: 1, ordinal: 0, lens_id: "previous" }),
-			lens({ id: "a", attempt: 2, ordinal: 0, lens_id: "first" }),
-		])
-		expect(lanes.map((lane) => lane.lens_id)).toEqual(["first", "second"])
-	})
-
-	it("ignores lanes belonging to another investigation", () => {
-		expect(liveLensRuns(row(), [lens({ investigation_id: "other" })])).toHaveLength(0)
-	})
-})
-
-describe("deriveValidator", () => {
-	it("is absent before the fan-out has anything to validate", () => {
-		expect(deriveValidator(row({ fanout_state: "none" }), [])).toBeNull()
-		expect(deriveValidator(row({ fanout_state: "queued" }), [])).toBeNull()
-	})
-
-	it("blocks while the lanes are still reporting", () => {
-		expect(
-			deriveValidator(row({ fanout_state: "running" }), [lens({ status: "checking" })]),
-		).toMatchObject({ status: "blocked" })
-	})
-
-	/** Mirrors `validatorFor`: an unwritten note falls back to the lane tally. */
-	it("tallies the lanes when the run ranked without writing a note", () => {
-		expect(
-			deriveValidator(row({ fanout_state: "ranked", validator_note: null }), [
-				lens({ verdict: "promoted" }),
-				lens({ verdict: "ruled_out" }),
-			]),
-		).toMatchObject({
-			status: "ranked",
-			note: "1 promoted · 0 merged · 1 ruled out",
-			elapsedSeconds: 8.2,
-		})
-	})
-
-	it("prefers the stored note when there is one", () => {
-		expect(
-			deriveValidator(row({ fanout_state: "rejected_all", validator_note: "nothing survived" }), []),
-		).toMatchObject({ status: "rejected_all", note: "nothing survived" })
+		expect(rowsToInvestigation(row({ status: "not-a-status" }))).toBeNull()
 	})
 })
