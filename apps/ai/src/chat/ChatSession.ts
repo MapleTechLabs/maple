@@ -47,9 +47,12 @@ import {
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
 
-/** What the class reads off its Durable Object state: the SQLite handle and the object's own `waitUntil`. */
+/** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
 interface ChatSessionState {
-	readonly storage: { readonly sql: SqlStorage }
+	readonly storage: {
+		readonly sql: SqlStorage
+		setAlarm(scheduledTime: number): Promise<void>
+	}
 	waitUntil(promise: Promise<unknown>): void
 }
 
@@ -118,6 +121,16 @@ const RETRY_HINT = "retry: 1000\n\n"
 const TURN_STALE_MS = 15 * 60 * 1000
 const CHAT_TURN_FAILED = "Maple couldn't complete this response."
 
+/**
+ * How often a running turn re-arms the object's alarm.
+ *
+ * An outbound `fetch` never keeps a Durable Object alive, even while the response streams, and an
+ * object with no incoming request or event for 70-140 seconds is evicted. A chat turn survives
+ * because the open page holds a subscription; an autonomous investigation nobody is watching was
+ * evicted about two minutes in, mid-run (seen 2026-09-15). The alarm is the event that prevents it.
+ */
+const TURN_HEARTBEAT_MS = 30 * 1000
+
 export class ChatSession {
 	private readonly sql: SqlStorage
 
@@ -131,6 +144,12 @@ export class ChatSession {
 	 * tap the reader on the shoulder.
 	 */
 	private waiters = new Set<() => void>()
+
+	/**
+	 * The turn this activation is actually running. SQL says which turn holds the slot; only this
+	 * says its fiber still exists — an evicted object comes back with the claim and without the turn.
+	 */
+	private liveTurn: string | undefined
 
 	constructor(
 		private readonly ctx: ChatSessionState,
@@ -364,8 +383,11 @@ export class ChatSession {
 			turnId,
 		)
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
+		this.liveTurn = turnId
+		this.armHeartbeat()
 		// `waitUntil` on the DO's own context: the turn is now this object's work, and it outlives
-		// whatever request asked for it.
+		// whatever request asked for it. `waitUntil` alone does not keep the object in memory — the
+		// heartbeat alarm does.
 		this.ctx.waitUntil(this.runTurn(input.sessionId, turnId, input.tenant))
 		return { cursor, messageId: input.messageId }
 	}
@@ -413,6 +435,28 @@ export class ChatSession {
 	}
 
 	/**
+	 * The heartbeat. Re-arms while this activation runs the turn that holds the slot.
+	 *
+	 * A slot held by a turn this activation is not running means the object was evicted mid-turn (a
+	 * deploy, or eviction before the heartbeat existed): the fiber is gone, so the slot is released
+	 * with a terminal event now rather than when the 15-minute watchdog expires it.
+	 */
+	alarm(): void {
+		const messageId = this.runningTurn()
+		if (messageId === undefined) return
+		if (messageId !== null && this.liveTurn !== messageId) {
+			this.clearRunning()
+			this.append({ type: "turn-end", messageId, reason: "error", error: CHAT_TURN_FAILED })
+			return
+		}
+		this.armHeartbeat()
+	}
+
+	private armHeartbeat(): void {
+		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + TURN_HEARTBEAT_MS).catch(() => undefined))
+	}
+
+	/**
 	 * Drive one turn to completion, appending events as they are produced.
 	 *
 	 * Everything heavy — the Effect runtime, the service graph, the agent engine — is behind this
@@ -439,6 +483,7 @@ export class ChatSession {
 				})
 			}
 		} finally {
+			if (this.liveTurn === messageId) this.liveTurn = undefined
 			this.endTurn(messageId)
 		}
 	}
@@ -643,6 +688,9 @@ type EffectRpc<Stub> = {
 		: never
 }
 
+/** The RPC surface plus the heartbeat alarm, which alchemy's bridge dispatches as the object's `alarm`. */
+type ChatSessionObjectApi = EffectRpc<ChatSessionStub> & { readonly alarm: () => Effect.Effect<void> }
+
 /**
  * The session's methods, one Effect each. alchemy runs the Effect per RPC call and hands its value
  * back as-is — a `ReadableStream` included, which Workers RPC carries by reference — so
@@ -660,7 +708,8 @@ export const chatSessionRpc = (session: ChatSession) =>
 		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
 		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
 		abort: () => Effect.sync(() => session.abort()),
-	}) satisfies EffectRpc<ChatSessionStub>
+		alarm: () => Effect.sync(() => session.alarm()),
+	}) satisfies ChatSessionObjectApi
 
 /**
  * One activation, in alchemy's two phases: the outer Effect resolves the state and env (it also
@@ -690,10 +739,10 @@ export const activateChatSession = Effect.map(
  * The props-carrying class form is what makes room for that: the single-argument overload takes an
  * implementation and no props, so the implementation moves to `ChatSessionLive` below.
  */
-export class ChatSessionObject extends Cloudflare.DurableObject<
-	ChatSessionObject,
-	EffectRpc<ChatSessionStub>
->()("ChatSession", { transferredFrom: "api" }) {}
+export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionObjectApi>()(
+	"ChatSession",
+	{ transferredFrom: "api" },
+) {}
 
 /** The activation, as the layer the host Worker provides. */
 // `<never>` pinned: the activation's requirements are all `DurableObjectServices`,
