@@ -38,10 +38,10 @@ The trace is where the timing lives. Spans are grouped by turn, the idle gaps be
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-01-list.webp" alt="The Agent Sessions list in Maple, one row per session with services, model, duration, LLM call and tool call counts, tokens, cost, errors and start time, and a filter sidebar on the left." loading="lazy" />
-  <figcaption>Where the session came from. One row per conversation from the last seven days, with the failed ones marked.</figcaption>
+  <figcaption>Where the session came from. One row per conversation for your retention period, with the failed ones marked.</figcaption>
 </figure>
 
-The list holds every session from the last seven days, one row per conversation, with its services, models, duration, model and tool call counts, tokens, cost and errors. The sidebar filters by framework, service, environment, model, agent and tool; **With errors** narrows it to the sessions with a failed call. This session's row is the one with the **1 tool** badge.
+The list holds every session in your retention period, one row per conversation, with its services, models, duration, model and tool call counts, tokens, cost and errors. The sidebar filters by framework, service, environment, model, agent and tool; **With errors** narrows it to the sessions with a failed call. This session's row is the one with the **1 tool** badge.
 
 Tools get the same treatment across sessions: the Tools tab ranks every tool by volume, failure rate and latency, and each tool's page groups its failures by error type with the arguments and results that produced them. [Debug and monitor tools](#debug-and-monitor-tools) walks through it.
 
