@@ -28,17 +28,22 @@ effect line". The second condition is met. The first is not, and nothing suggest
 
 Split the work so the ORM major and the driver swap never land in the same deploy:
 
-1. **Phase 0, spike (1 day, worktree, no merge).** Prove the rc.4 effect driver typechecks
-   and runs on rc.112, and measure what the driver swap costs on Workers.
-2. **Phase A, drizzle 1.0 on the existing drivers (1 to 2 days).** Version bump, `drizzle-kit up`,
-   the three `getColumns` sites, the migration-folder readers. Behaviour-neutral for the
-   Workers: still postgres.js, still Promise-land call sites.
-3. **Phase B, the Effect driver (4 to 6 days).** Rebuild `DatabaseLive` and the connection
-   scope over `PgClient` + `PgDrizzle`, then sweep the call sites to `yield*`.
+1. **Phase 0, spike (done, see results below).** rc.4's effect driver runs on rc.112 only with one
+   rename patched into the package; upstream has not re-targeted current effect.
+2. **Phase A, drizzle 1.0 on the existing drivers (done on `chore/drizzle-v1-rc4`).** Version bump,
+   `drizzle-kit up`, the `getColumns` sites, the migration-folder readers. Behaviour-neutral for
+   the Workers: still postgres.js, still Promise-land call sites.
+3. **Phase B, the Effect driver (4 to 6 days, blocked).** Rebuild `DatabaseLive` and the
+   connection scope over `PgClient` + `PgDrizzle`, then sweep the call sites to `yield*`. Needs
+   either a drizzle build compiled against effect rc (none exists as of 2026-09-15; the `beta`
+   branch still calls `Schema.TaggedErrorClass`) or a repo-owned bun patch of `drizzle-orm`
+   renaming that one symbol in `effect-core/errors` and `cache/core/cache-effect`. The patch is
+   two files and the spike found nothing else missing, but it is a third patched package on
+   the effect treadmill; that is the owner's call.
 
-Gate A on the spike being green. Gate B on A having soaked in prod for at least a week, because
-A already moves the migration table and the query compiler, and B moves the wire driver. If
-one of them regresses, we want to know which.
+Gate B on A having soaked in prod for at least a week, because A already moves the migration
+table and the query compiler, and B moves the wire driver. If one of them regresses, we want to
+know which.
 
 ## Phase 0: spike
 
@@ -175,6 +180,39 @@ no `tryPromise` in these services).
   `SCOPE_CLOSED` (the fork-request-scoped regression test covers the mechanism, prod covers
   the timing).
 - Rollback is a revert of the Worker deploy. The migration table is untouched by B.
+
+## Phase 0 results (2026-09-15)
+
+Run in the same worktree on top of Phase A, with `@effect/sql-pg@4.0.0-rc.112` and
+`@effect/sql-pglite@4.0.0-rc.112` added temporarily. The spike file is not kept; what it showed:
+
+- **rc.4's effect layer does not import on effect rc.112.** `effect-core/errors.js` and
+  `cache/core/cache-effect.js` call `Schema.TaggedErrorClass()`, which is the beta.83 name;
+  rc.112 and rc.115 export `Schema.TaggedError`. Drizzle's `beta` branch (last effect-core commit
+  2026-06-03) still uses the old name, so no upstream build fixes this yet. With that one symbol
+  renamed in the installed copy, everything below ran.
+- **Typechecks against rc.112** for `drizzle-orm/effect-pglite`, `drizzle-orm/effect-postgres`,
+  `PgClient.fromPool` + `PgClient.layerFrom`, `PgliteClient.layer({ liveClient })`, and a
+  `Layer.succeed(EffectLogger, …)` logger. The `.d.ts` surface is fine; only the runtime rename bit.
+- **Per-call statement collector works as a `Context.Reference`.** A logger whose `logQuery`
+  reads the reference saw the `select … from "api_keys"` and the `pg_advisory_xact_lock` statement
+  inside a `db.transaction`, with the reference provided around the caller's program. One db per
+  invocation with a per-call collector is viable; no per-call drizzle wrapper needed.
+- **Transactions**: `db.transaction((tx) => Effect.gen(...))` with `yield* tx.execute(sql…)`
+  works; the error channel is `E | SqlError`.
+- **Errors** arrive as `EffectDrizzleQueryError { query, params, cause: Cause<SqlError> }`;
+  `Cause.findErrorOption(cause)` yields the `SqlError`, whose `reason` was `SqlSyntaxError` with the
+  pg error (code `42P01`) as `reason.cause`. That is enough for `postgres-errors.ts` to classify
+  on the tag and fall back to SQLSTATE.
+- **Raw `execute` returns the driver's result object, not rows.** Both effect sessions map
+  `mode === "raw"` to the statement's `.raw`, so `db.execute(sql…)` yields PGlite's
+  `{ rows, fields, affectedRows }` (and node-postgres's `QueryResult` under `sql-pg`) while the
+  type claims `readonly Row[]`. The five raw sites need a `.rows` normaliser in Phase B, and the
+  declared type cannot be trusted for them.
+- `PgliteClient.layer` and `PgClient` need `Reactivity.layer` and a `Scope`; the platform layer
+  provides both inside the invocation scope.
+- Not measured: Workers bundle delta and Hyperdrive dial latency for `pg`. Those stay on the
+  checklist for when Phase B is unblocked.
 
 ## Phase A results (2026-09-15, branch `chore/drizzle-v1-rc4`)
 
