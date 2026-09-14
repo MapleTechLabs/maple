@@ -11,20 +11,18 @@ import { cn } from "@maple/ui/lib/utils"
 
 import {
 	buildSessionFindings,
+	formatCost,
 	type FindingSeverity,
 	type SessionFinding,
-	type SessionVerdict,
-} from "@/lib/agent-sessions/session-findings"
-import {
-	formatCost,
 	type SessionSummary,
 	type SessionToolCall,
+	type SessionToolResults,
 	type SessionToolUsage,
-} from "@/lib/agent-sessions/session-summary"
+	type SessionTurn,
+	type SessionVerdict,
+} from "@maple/agent-sessions"
 import { buildSessionAxis, type SessionAxis } from "@/lib/agent-sessions/session-axis"
-import type { SessionTurn } from "@/lib/agent-sessions/session-turns"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
-import type { SessionToolResults } from "@/lib/agent-sessions/span-detail"
 import { useDetectedModels } from "@/hooks/use-detected-models"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { SessionLoadIndicator } from "./session-load-indicator"

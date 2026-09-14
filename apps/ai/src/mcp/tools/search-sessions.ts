@@ -18,7 +18,7 @@ import { searchSessions } from "@maple/query-engine/observability"
 export function registerSearchSessionsTool(server: McpToolRegistrar) {
 	server.tool(
 		"search_sessions",
-		"List and filter browser session replays. Filter by WHO (user_id — the app's end-user id; user_search — their name or email; group_name — their company/team), by client (browser, country, device_type), by whether the session errored (has_errors), by how long it lasted (duration/active bounds), and/or by WHAT HAPPENED inside it (event_type, level, http_status_min, url_contains, message_contains, trace_id). Returns each session's metadata including the end-user id. All filters are ANDed. Follow up with `get_session_transcript` to read a session's events or `get_session_traces` to see the backend traces it produced.",
+		"Browser session replays (end-user web sessions), not AI agent sessions — for those use `list_agent_sessions`. List and filter browser session replays. Filter by WHO (user_id — the app's end-user id; user_search — their name or email; group_name — their company/team), by client (browser, country, device_type), by whether the session errored (has_errors), by how long it lasted (duration/active bounds), and/or by WHAT HAPPENED inside it (event_type, level, http_status_min, url_contains, message_contains, trace_id). Returns each session's metadata including the end-user id. All filters are ANDed. Follow up with `get_session_transcript` to read a session's events or `get_session_traces` to see the backend traces it produced.",
 		Schema.Struct({
 			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
 			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),

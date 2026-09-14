@@ -30,16 +30,12 @@ jobs:
         # One leg per long-lived Tinybird workspace. Each GitHub Environment supplies
         # its own TINYBIRD_HOST/TINYBIRD_TOKEN, so the matching workspace admin token
         # scopes each deploy to that workspace — no `--branch`/`__tb__` params needed.
-        # Staging is a separate workspace (Tinybird's documented long-lived pattern;
-        # branches are ephemeral and share prod compute, so they're unsuitable here).
         strategy:
             fail-fast: false
             matrix:
                 target:
                     - label: production
                       environment: tinybird-cd
-                    - label: staging
-                      environment: tinybird-cd-stg
                     # The us-east-1 workspace being migrated to. Both production
                     # legs must receive every schema deploy for the whole
                     # dual-emit window — a month of drift between the two
@@ -61,7 +57,7 @@ jobs:
                   ALLOW_DESTRUCTIVE: ${{ github.event.inputs.allow_destructive }}
               run: |
                   set -euo pipefail
-                  # Graceful no-op until an environment is provisioned: lets the staging
+                  # Graceful no-op until an environment is provisioned: lets a new
                   # leg stay green before its workspace/secrets exist, without ever
                   # affecting the production leg (whose token is always set).
                   if [ -z "${TINYBIRD_TOKEN:-}" ]; then

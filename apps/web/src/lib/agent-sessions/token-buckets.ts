@@ -7,7 +7,7 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 
-import type { SessionTokenTotals } from "./session-summary"
+import type { SessionTokenTotals } from "@maple/agent-sessions"
 
 /**
  * The five disjoint usage buckets, each with the fill its bar segment draws

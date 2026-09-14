@@ -144,7 +144,7 @@ a build-time constant, so a Vite restart is needed after changing it.
 ## Production (PlanetScale + self-hosted Electric on ECS)
 
 Electric Cloud is gone. `apps/electric` runs the upstream `electricsql/electric`
-image on ECS Fargate at `electric.maple.dev` / `electric-staging.maple.dev`, with
+image on ECS Fargate at `electric.maple.dev`, with
 its own cluster, ALB, security groups and certificate **inside the ingest fleet's
 VPC**. The shared VPC is forced, not an economy: two `AWS.EC2.Network`s in one
 alchemy stack fight over the internet gateway — under `--adopt` the second one's

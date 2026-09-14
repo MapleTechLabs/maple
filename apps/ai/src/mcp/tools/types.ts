@@ -104,6 +104,20 @@ const NumericString = Schema.String.check(
 export const optionalNumberParam = (description: string) =>
 	Schema.optional(Schema.Union([Schema.Finite, NumericString])).annotate({ description })
 
+/**
+ * The same, for a parameter whose values are bounded by a domain schema (the
+ * request's own `RangeBound`/`CountBound`). Published as a raw number the bound
+ * would tell a model the parameter is number-only, and the model's `"1500"`
+ * would come back as a parameter error — see {@link optionalNumberParam}.
+ */
+export const optionalNumericParam = <Bound extends Schema.Codec<number, number>>(
+	bound: Bound,
+	description: string,
+) =>
+	Schema.optional(Schema.Union([bound, NumericString.pipe(Schema.decodeTo(bound))])).annotate({
+		description,
+	})
+
 export const optionalBooleanParam = (description: string) =>
 	Schema.optional(Schema.Boolean).annotate({ description })
 

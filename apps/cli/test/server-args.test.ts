@@ -45,8 +45,8 @@ describe("local server bind host", () => {
 
 	it("marks custom hosted dashboards as loopback clients without discarding their URL", () => {
 		strictEqual(
-			hostedDashboardUrl("https://local-staging.maple.dev/preview?channel=next", 4418),
-			"https://local-staging.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
+			hostedDashboardUrl("https://local-preview.maple.dev/preview?channel=next", 4418),
+			"https://local-preview.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
 		)
 	})
 

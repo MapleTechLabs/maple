@@ -147,10 +147,10 @@ const props = Effect.gen(function* () {
 const ALERTING_CRONS = ["* * * * *", "*/5 * * * *", "*/15 * * * *", "0 * * * *"] as const
 
 /**
- * Non-prod stages (stg, PR previews) share live org data — stg's Hyperdrive
- * points at the prod database — so their crons would iterate real orgs with
- * stage-local Tinybird/Clerk credentials: every tick fails per-org and floods
- * the error dashboards (and historically sent duplicate emails, see #237).
+ * Non-prod stages (PR previews, dev) share live org data, so their crons would
+ * iterate real orgs with stage-local Tinybird/Clerk credentials: every tick
+ * fails per-org and floods the error dashboards (and historically sent
+ * duplicate emails, see #237).
  * Same gating philosophy as the prd-only EMAIL binding, with an explicit
  * override for deliberately exercising crons on a non-prod stage.
  */
@@ -168,7 +168,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// validation or in the deploy process. A rejected import is retried on
 		// the next fire rather than pinned (`Effect.cached` keeps the failure).
 		const scheduled = yield* cachedRecoverable(Effect.promise(() => import("./scheduled")))
-		// `MAPLE_DB` in the stage's flavor — on stg/prd its own dashboard-managed
+		// `MAPLE_DB` in the stage's flavor — on prd its own dashboard-managed
 		// config: `alerting` issues ~97% of the workers' Postgres traffic and was
 		// starving the api's connection pool when the two shared one. The ticks
 		// read it off the fire's env.

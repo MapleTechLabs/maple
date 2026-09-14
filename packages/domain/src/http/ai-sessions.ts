@@ -13,9 +13,9 @@ import { warehouseReadHttpErrors } from "./warehouse"
 // decode time; a session is resolved at trace granularity by
 // `aiSessionPageQuery` (which ranks a page and measures it off the index) and
 // `aiSessionDetailsQuery` (which adds what only the traces' other spans can
-// answer) in the query-engine integrations layer. The Agent Sessions page is
-// behind the `agent_tracing` org rollout flag and these shapes exist for it
-// alone, so they live in the internal tier where they can follow the UI.
+// answer) in the query-engine integrations layer. These shapes exist for
+// the Agent Sessions page alone, so they live in the internal tier where they
+// can follow the UI.
 
 /** The measures the list can be ordered by; `startTime` is the default. */
 export const AI_SESSION_SORT_KEYS = [
@@ -33,10 +33,24 @@ export type AiSessionSortKey = Schema.Schema.Type<typeof AiSessionSortKey>
 export const AiSessionSortDir = Schema.Literals(["asc", "desc"])
 export type AiSessionSortDir = Schema.Schema.Type<typeof AiSessionSortDir>
 
-/** A range bound. Every measure the list filters on is non-negative, so a
- *  negative bound is a malformed request rather than an empty page. */
-const RangeBound = Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
-const CountBound = Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
+/**
+ * A range bound. Every measure the list filters on is non-negative, so a
+ * negative bound is a malformed request rather than an empty page.
+ *
+ * `Schema.Finite` rather than `Schema.Number`: the MCP tools publish these as
+ * their own parameters, and `Schema.Number` has to encode `Infinity`/`NaN`, so
+ * it renders as "a number OR one of three magic strings" — a published schema
+ * that invites the input it then refuses.
+ */
+export const RangeBound = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+export const CountBound = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+
+/**
+ * Ceiling for the id prefix the list filters on — it becomes a `LIKE` pattern
+ * against the index, and no id in either column is anywhere near this long.
+ * Exported because the MCP tool publishes the same bound on its own parameter.
+ */
+export const AI_SESSION_SEARCH_MAX_CHARS = 200
 
 /**
  * The counted filters, shared by the list and its details. They land on the
@@ -54,12 +68,11 @@ const aiSessionCountedFilters = {
 	models: Schema.optional(Schema.Array(Schema.String)),
 	agentNames: Schema.optional(Schema.Array(Schema.String)),
 	toolNames: Schema.optional(Schema.Array(Schema.String)),
-	/**
-	 * A session id or trace id, or the leading characters of one, matched as a
-	 * prefix. Bounded because it becomes a `LIKE` pattern against the index —
-	 * no id in either column is anywhere near this long.
-	 */
-	search: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	/** A session id or trace id, or the leading characters of one, matched as a
+	 *  prefix — see {@link AI_SESSION_SEARCH_MAX_CHARS}. */
+	search: Schema.optional(
+		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(AI_SESSION_SEARCH_MAX_CHARS)),
+	),
 }
 
 export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("ListAiSessionsRequest")({
@@ -84,16 +97,16 @@ export class ListAiSessionsRequest extends Schema.Class<ListAiSessionsRequest>("
 	hasErrors: Schema.optional(Schema.Boolean),
 	/** Drop the `trace:` sessions — traces whose vendor exposes no session key. */
 	excludeTraceSessions: Schema.optional(Schema.Boolean),
-	durationMinMs: RangeBound,
-	durationMaxMs: RangeBound,
-	costMin: RangeBound,
-	costMax: RangeBound,
-	tokensMin: CountBound,
-	tokensMax: CountBound,
-	llmCallsMin: CountBound,
-	llmCallsMax: CountBound,
-	toolCallsMin: CountBound,
-	toolCallsMax: CountBound,
+	durationMinMs: Schema.optional(RangeBound),
+	durationMaxMs: Schema.optional(RangeBound),
+	costMin: Schema.optional(RangeBound),
+	costMax: Schema.optional(RangeBound),
+	tokensMin: Schema.optional(CountBound),
+	tokensMax: Schema.optional(CountBound),
+	llmCallsMin: Schema.optional(CountBound),
+	llmCallsMax: Schema.optional(CountBound),
+	toolCallsMin: Schema.optional(CountBound),
+	toolCallsMax: Schema.optional(CountBound),
 	sortBy: Schema.optional(AiSessionSortKey),
 	sortDir: Schema.optional(AiSessionSortDir),
 }) {}
@@ -337,7 +350,9 @@ export const AiSessionSpanCursor = Schema.Struct({
 })
 export type AiSessionSpanCursor = Schema.Schema.Type<typeof AiSessionSpanCursor>
 
-const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
+/** A trace id as the warehouse stores it. Exported because the MCP span
+ *  inspector validates its `trace_id` parameter against this same shape. */
+export const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
 
 /** Traces one span read may be pinned to — a turn's worth, not a session's. */
 export const AI_SESSION_SPANS_MAX_TRACE_IDS = 100
@@ -598,28 +613,41 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
 // the session list only once a tool is picked. Percentiles are what stops the
 // tiles being folded from the chart client-side — quantiles do not merge.
 
+/**
+ * Ceiling for every selection field of the tools page. Exported because the MCP
+ * tools publish the same bound on their own parameters, which is what makes an
+ * over-long value a parameter error rather than a silently clipped filter.
+ */
+export const AI_TOOLS_SELECTION_MAX_CHARS = 200
+
+/** Every selection field of the tools page carries the same ceiling. */
+const aiToolsSelectionText = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS),
+)
+
 /** The page's selection. `tool`, `model`, `service` and `env` are exact
  *  matches on values the sessions page's facets produced; `search` and
  *  `failingOnly` are the toolbar's own two predicates. */
 const aiToolsSelection = {
 	/** `gen_ai.tool.name`. Absent means "every tool", which is what makes the
 	 *  chart's series per-tool rather than per-model. */
-	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	tool: Schema.optional(aiToolsSelectionText),
 	/**
 	 * The model a tool call is ATTRIBUTED to — its parent model call's, else its
 	 * trace's. Tool spans carry no model of their own; see the query module's
 	 * header for how the two-step attribution works and what it misses.
 	 */
-	model: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
-	service: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	model: Schema.optional(aiToolsSelectionText),
+	service: Schema.optional(aiToolsSelectionText),
 	/** `deployment.environment(.name)` — the MV coalesces both spellings. */
-	env: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	env: Schema.optional(aiToolsSelectionText),
 	/**
 	 * Tool-name substring, case-insensitive. The one field here that is not an
 	 * exact facet value, and it narrows the whole population rather than one
 	 * table — so the tiles cannot describe calls the chart is not drawing.
 	 */
-	search: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
+	search: Schema.optional(aiToolsSelectionText),
 	/** Keep only calls whose span failed. */
 	failingOnly: Schema.optional(Schema.Boolean),
 }
@@ -807,11 +835,15 @@ export class AiToolsBreakdownsResponse extends Schema.Class<AiToolsBreakdownsRes
 /** The selection with the tool required — the tool detail page's own scope. */
 const aiToolSelectionForTool = {
 	...aiToolsSelection,
-	tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+	tool: aiToolsSelectionText,
 }
 
 /** Error groups one breakdown returns, and samples one page holds. */
 export const AI_TOOL_ERRORS_MAX = 100
+
+/** Ceiling for the session a group's samples are narrowed to — a session key,
+ *  which is wider than the rest of the selection. Published by the MCP tool. */
+export const AI_TOOL_ERROR_SESSION_MAX_CHARS = 400
 
 const UINT64_MAX = 18_446_744_073_709_551_615n
 
@@ -831,8 +863,10 @@ export const AiToolErrorFingerprint = Schema.String.check(
 )
 
 export const AiToolErrorTrendPoint = Schema.Struct({
-	/** ISO-8601 with a literal `Z`, like every Maple timeseries bucket. */
-	bucket: Schema.String,
+	/** ISO-8601 with a literal `Z`, like every Maple timeseries bucket — the
+	 *  shape every consumer parses back to an instant, checked so a drift in
+	 *  the read's `ISO_Z_FORMAT` is not a silently unparseable point. */
+	bucket: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/)),
 	calls: Schema.Number,
 })
 
@@ -922,6 +956,9 @@ export const AiToolErrorOccurrence = Schema.Struct({
 	message: Schema.String,
 	/** Nanoseconds, like every other AI duration. */
 	durationNs: Schema.Number,
+	/** Whether the span behind the call was still there to read; without it the
+	 *  payload fields below are empty rather than captured empty. */
+	retained: Schema.Boolean,
 	statusCode: Schema.String,
 	/** Truncated by the read; `*Bytes` is the payload's true size, which is what
 	 *  the modal prints beside the block. */
@@ -972,7 +1009,9 @@ export class AiToolErrorSamplesRequest extends Schema.Class<AiToolErrorSamplesRe
 	...aiToolSelectionForTool,
 	fingerprint: AiToolErrorFingerprint,
 	/** One session's samples — the sessions list's selection. */
-	session: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(400))),
+	session: Schema.optionalKey(
+		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(AI_TOOL_ERROR_SESSION_MAX_CHARS)),
+	),
 	/** One raw text's samples — the variants list's selection. Bounded by what
 	 *  the index keeps of a result, with room for UTF-16. */
 	variant: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),

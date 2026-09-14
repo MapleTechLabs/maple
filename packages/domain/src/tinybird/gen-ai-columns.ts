@@ -13,7 +13,7 @@
 // The key lists mirror the sources the integrations layer decodes (its default
 // `gen_ai.*` keys plus the Vercel AI SDK and OpenInference dialects), and the
 // classification rules transcribe `classifyAiSpan`/`isLlmCall`
-// (`apps/web/src/lib/agent-sessions/session-turns.ts`) and `spanTokenBuckets`
+// (`packages/agent-sessions/src/session-turns.ts`) and `spanTokenBuckets`
 // (`session-summary.ts`) — so a session's "12 calls · $0.40" in the list agrees
 // with its own overview. `ai-span-columns.test.ts` in the integrations package
 // pins every key list to that layer's own alias tables, so a key added on one

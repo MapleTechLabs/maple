@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { clampLimit, clampOffset } from "./limits"
+import { clampLimit, clampOffset, optionalText } from "./limits"
 
 describe("clampLimit", () => {
 	it("returns the default when undefined", () => {
@@ -16,6 +16,13 @@ describe("clampLimit", () => {
 
 	it("floors fractional values", () => {
 		expect(clampLimit(17.9, { defaultValue: 20, max: 200 })).toBe(17)
+	})
+
+	// A fraction under one floors to zero, and a request class that checks
+	// `minimum: 1` answers that by throwing — a defect rather than a parameter
+	// error the model can fix.
+	it("keeps a positive fraction at one", () => {
+		expect(clampLimit(0.5, { defaultValue: 20, max: 200 })).toBe(1)
 	})
 
 	it("falls back to default for non-finite or <= 0", () => {
@@ -46,5 +53,17 @@ describe("clampOffset", () => {
 	it("returns 0 for negative or non-finite values", () => {
 		expect(clampOffset(-1, { max: 10_000 })).toBe(0)
 		expect(clampOffset(NaN, { max: 10_000 })).toBe(0)
+	})
+})
+
+describe("optionalText", () => {
+	it("reads a blank value as no filter", () => {
+		expect(optionalText("")).toBeUndefined()
+		expect(optionalText("   ")).toBeUndefined()
+		expect(optionalText(undefined)).toBeUndefined()
+	})
+
+	it("trims what it keeps", () => {
+		expect(optionalText("  x ")).toBe("x")
 	})
 })

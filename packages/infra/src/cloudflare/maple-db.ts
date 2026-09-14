@@ -5,7 +5,7 @@
  *
  * - `"managed"` (dev stages): `ManagedMapleDb`, the alchemy-managed Hyperdrive
  *   below, bound through `Hyperdrive.Connect`.
- * - `"ref"` (stg/prd): a dashboard-managed config, attached by id. Alchemy has
+ * - `"ref"` (prd): a dashboard-managed config, attached by id. Alchemy has
  *   no `env` form for a Hyperdrive it did not create; its own `ConnectBinding`
  *   attaches the same raw metadata with `host.bind`, so this does too. The
  *   origin and credentials live only in the Cloudflare dashboard.

@@ -4,7 +4,7 @@ import type { MapleStage } from "../cloudflare/stage.ts"
 /**
  * Geographic instance a deployment belongs to.
  *
- * Orthogonal to `MapleStage`: stage is prd/stg/pr/dev, region is which
+ * Orthogonal to `MapleStage`: stage is prd/pr/dev, region is which
  * geographic instance. A full EU instance is `region: "eu"` at every stage,
  * with its OWN Tinybird workspace, application database, and ingest fleet —
  * telemetry that lands in `eu` must never transit `us`, which is the whole
@@ -87,8 +87,6 @@ export function resolveAwsResourceName(
 	switch (stage.kind) {
 		case "prd":
 			return `maple-${base}${suffix}`
-		case "stg":
-			return `maple-${base}${suffix}-stg`
 		case "pr":
 			return `maple-${base}${suffix}-pr-${stage.prNumber}`
 		case "dev":
@@ -118,7 +116,7 @@ export function resolveIngestDesiredCount(stage: MapleStage): number {
  * into 5xx at the edge; scale-in is lazy (5 min) so a lull does not thrash.
  * Note the per-org replay byte budget is process-local, so the effective
  * ceiling scales with the task count (see `resolveIngestDesiredCount`).
- * Other stages stay fixed: nothing bursts at staging or a preview.
+ * Other stages stay fixed: nothing bursts at a preview.
  */
 export interface IngestScaling {
 	min: number
@@ -158,8 +156,8 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
 /**
  * Whether a stage gets an AWS ingest deployment at all.
  *
- * Every deployed stage does — prd, stg and PR previews. Dev stages run the
- * gateway through docker-compose instead and never reach AWS.
+ * Every deployed stage does — prd and PR previews. Dev stages run the gateway
+ * through docker-compose instead and never reach AWS.
  *
  * A VPC + ALB + ECS cluster per preview is real money, so the spend gate is not
  * here: previews only deploy at all when the PR carries the `preview` label
@@ -173,13 +171,14 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
  * skew" alert rule depends on. `env.test.ts` fails if the two disagree.
  */
 export function stageDeploysIngest(stage: MapleStage): boolean {
-	return stage.kind === "prd" || stage.kind === "stg" || stage.kind === "pr"
+	return stage.kind === "prd" || stage.kind === "pr"
 }
 
 /**
  * Cloud Map private DNS namespace the ingest fleet's internal services live
- * in — one per stage VPC (`maple-ingest.internal`, `maple-ingest-stg.internal`,
- * …). `.internal` is the TLD ICANN reserved for exactly this. The name follows
+ * in — one per stage VPC (`maple-ingest.internal`,
+ * `maple-ingest-pr-12.internal`, …). `.internal` is the TLD ICANN reserved for
+ * exactly this. The name follows
  * `resolveAwsResourceName` so the two read the same in a console; changing it
  * replaces the namespace and every service registered in it.
  */
@@ -213,8 +212,8 @@ export function resolveCollectorEndpoint(
  * Whether a stage gets the OTel collector beside its gateway.
  *
  * prd only for now — a cash-flow call, not a design one. The intent is every
- * stage that deploys the gateway (`stageDeploysIngest`), so stg and previews
- * carry their own self-telemetry too; flip this to `stageDeploysIngest(stage)`
+ * stage that deploys the gateway (`stageDeploysIngest`), so previews carry
+ * their own self-telemetry too; flip this to `stageDeploysIngest(stage)`
  * when the budget allows (~$13.5/mo per stage at the non-prd size). Until
  * then a preview can opt in by also carrying the `preview:collector` label,
  * which sets MAPLE_DEPLOY_AWS_COLLECTOR=1 for that deploy — this is how the
@@ -235,14 +234,14 @@ export function stageDeploysCollector(stage: MapleStage): boolean {
  * only rollback lever, which was "unset the secret and redeploy". Flipping this
  * function is now that lever.
  *
- * stg + prd. Deliberately NOT prd-only like `stageDeploysCollector`: that gate
- * is a cash-flow call and R2 costs pennies here, whereas gating this to prd
- * would make production the first place the write path ever runs. Previews stay
- * off — a PR preview writing real objects into its own bucket buys nothing and
- * leaves more to reap.
+ * prd only, which is where it has run since staging was removed — staging was
+ * the other stage on this gate, and the argument for it was that production
+ * should not be the first place the write path ever runs. Previews stay off: a
+ * PR preview writing real objects into its own bucket buys nothing and leaves
+ * more to reap.
  */
 export function stageEnablesReplayBlobs(stage: MapleStage): boolean {
-	return stage.kind === "prd" || stage.kind === "stg"
+	return stage.kind === "prd"
 }
 
 /**
@@ -270,7 +269,7 @@ export function resolveCollectorTaskSize(stage: MapleStage): IngestTaskSize {
  * skew" alert rule depends on. `env.test.ts` fails if the two disagree.
  */
 export function stageDeploysElectric(stage: MapleStage): boolean {
-	return stage.kind === "prd" || stage.kind === "stg"
+	return stage.kind === "prd"
 }
 
 /**

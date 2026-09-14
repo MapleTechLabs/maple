@@ -8,7 +8,7 @@
 import type { ReactNode } from "react"
 import { cleanup, fireEvent, render, within } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { sessionLinkWindow } from "@/lib/agent-sessions/session-window"
+import { sessionLinkWindow } from "@maple/agent-sessions"
 import { AgentSessionsList, type AgentSessionRow } from "./agent-sessions-list"
 
 const navigate = vi.fn()

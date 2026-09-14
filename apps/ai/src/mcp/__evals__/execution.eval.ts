@@ -5,7 +5,7 @@ import { describeMapleEval, FIXTURES } from "./utils"
 import { createEvalModel, hasEvalCredentials } from "./model"
 import { buildExecutionToolSet } from "./tools"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
-import { makeEvalRuntime, type EvalRuntime } from "./eval-runtime"
+import { makeEvalRuntime, markdown, type EvalRuntime } from "./eval-runtime"
 import { OutputContainsScorer } from "./scorers"
 import { LARGE_TRACE_SPAN_COUNT } from "./fixtures"
 
@@ -25,12 +25,9 @@ afterAll(async () => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const extractText = (toolResult: any): string => {
 	const out = toolResult?.output ?? toolResult?.result
-	const content = out?.content
-	if (Array.isArray(content)) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		return content.map((c: any) => c?.text ?? "").join("\n")
-	}
-	return typeof out === "string" ? out : ""
+	// `markdown` takes the FIRST text block: the `__maple_ui` mirror a dual-content
+	// tool writes as a second block would otherwise satisfy a markdown assertion.
+	return typeof out === "string" ? out : markdown(out)
 }
 
 // Full-execution eval: the model actually calls inspect_trace, which runs end

@@ -71,8 +71,8 @@ const prettyPath = (p: string): string => {
 	return p.startsWith(home) ? `~${p.slice(home.length)}` : p
 }
 
-/** Public origin of the deployed local-mode dashboard SPA. Overridable for
- *  testing against staging (`local-staging.maple.dev`). */
+/** Public origin of the deployed local-mode dashboard SPA. Overridable
+ *  (`MAPLE_LOCAL_UI_URL`) for testing against another build of it. */
 const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
 
 const remoteUiUrl = (): Effect.Effect<string, ServerOptionError> => {

@@ -5,7 +5,7 @@ Maple stores relational application state in PostgreSQL with a schema defined by
 
 ## Runtime modes
 
-- **Production and staging:** one PlanetScale Postgres branch per stage. Cloudflare Workers
+- **Production:** the PlanetScale Postgres `main` branch. Cloudflare Workers
   connect through the `MAPLE_DB` Hyperdrive binding; the application never opens the direct
   administrative connection.
 - **Wrangler development:** Docker Postgres on port 5499 through Hyperdrive's

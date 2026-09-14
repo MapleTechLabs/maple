@@ -1200,6 +1200,11 @@ const funnelManyStages = [
 
 export const funnelScenarios: WidgetScenario[] = [
 	{
+		label: "Loading",
+		dataState: loadingState,
+		display: { title: "Signup conversion", unit: "number", funnel: {} },
+	},
+	{
 		label: "4 stages (% of first)",
 		dataState: ready(funnelStages),
 		display: { title: "Signup conversion", unit: "number", funnel: {} },
@@ -1306,6 +1311,11 @@ const hbarTopOperations = [
 
 export const funnelDropoffScenarios: WidgetScenario[] = [
 	{
+		label: "Loading",
+		dataState: loadingState,
+		display: { title: "Signup → first trace", unit: "number", funnel: { variant: "dropoff" } },
+	},
+	{
 		label: "Drop-off with timing + leavers (hover a step)",
 		dataState: ready(funnelDropoffSampleData),
 		display: {
@@ -1358,6 +1368,14 @@ export const funnelDropoffScenarios: WidgetScenario[] = [
 // Paths
 
 export const pathsScenarios: WidgetScenario[] = [
+	{
+		label: "Loading",
+		dataState: loadingState,
+		display: {
+			title: "Paths after Signed up",
+			paths: { anchor: { kind: "event", eventName: "Signed up" } },
+		},
+	},
 	{
 		label: "After an event, 3 steps, top 4 (hover a node)",
 		dataState: ready(pathsSampleData),
@@ -1421,6 +1439,11 @@ export const pathsScenarios: WidgetScenario[] = [
 ]
 
 export const hbarScenarios: WidgetScenario[] = [
+	{
+		label: "Loading",
+		dataState: loadingState,
+		display: { title: "Busiest Operations", unit: "number" },
+	},
 	{
 		label: "Top operations (% of total)",
 		dataState: ready(hbarTopOperations),

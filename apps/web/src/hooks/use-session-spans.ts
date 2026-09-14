@@ -7,7 +7,7 @@ import {
 	type AiSessionSpansInput,
 	type AiSessionSpansPage,
 } from "@/api/warehouse/ai-sessions"
-import type { SessionWindow } from "@/lib/agent-sessions/session-window"
+import type { SessionWindow } from "@maple/agent-sessions"
 import { Result, useAtomValue, type Atom } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
 import { mapleRuntime } from "@/lib/registry"

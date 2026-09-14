@@ -10,7 +10,8 @@ interface GaugeWidgetProps {
 	mode: WidgetMode
 }
 
-// Geometry for a 270° segmented gauge drawn in a 240×212 viewBox.
+// Geometry for a 270° segmented gauge. The viewBox is fitted to the drawn
+// content per render (see `bounds` below), so these are dial-local units.
 const CX = 120
 const CY = 118
 const R_OUTER = 88
@@ -21,16 +22,27 @@ const R_TICK_INNER = 89
 const R_TICK_OUTER = 96
 const START_ANGLE = 135
 const SWEEP = 270
+const END_ANGLE = START_ANGLE + SWEEP
 const SEGMENT_COUNT = 56
 const RIM_SEGMENT_COUNT = 96
 const GAP_RATIO = 0.32
 const VALUE_Y = 108
+const VALUE_FONT_SIZE = 28
+const LABEL_FONT_SIZE = 9
+// Geist Mono: every glyph is 0.6em wide, so text extents are exact, not guessed.
+const MONO_ADVANCE = 0.6
+// Widest a value may render before it shrinks: the hole is 2·R_INNER across and
+// the value should not touch the blades.
+const VALUE_MAX_WIDTH = R_INNER * 2 - 12
+// The range bounds sit in the bottom opening, just under the blade ends.
+const BOUND_LABEL_DROP = 14
+const BOX_PAD = 3
 /**
  * Minimum arc separation between two rim *labels*, in degrees.
  *
  * Labels are horizontal and centred on their tick, so the binding case is two
- * of them side by side near the bottom of the arc: at R_LABEL a 9px-font value
- * like "100.0%" is ~27px wide, which is ~15° of arc. Anything closer overlaps.
+ * of them side by side: at R_LABEL a 9px-font value like "100%" is ~22px wide,
+ * which is ~12° of arc. Anything closer overlaps.
  *
  * Thresholds bunched against a bound (0/95/99/100 on a 0–100 gauge — the whole
  * top 5% of the range lands within 13° of the max) therefore keep their tick and
@@ -82,6 +94,14 @@ function toNumber(value: unknown): number | null {
 	return Number.isFinite(num) ? num : null
 }
 
+// Scale labels drop the forced decimal ("100.0%" → "100%", "420.0ms" → "420ms"):
+// they mark positions, and the precision belongs to the value in the centre.
+function scaleLabel(value: number, unit: string | undefined): string {
+	return formatValueByUnit(value, unit).replace(/\.0(?=\D*$)/, "")
+}
+
+const textWidth = (text: string, fontSize: number) => text.length * fontSize * MONO_ADVANCE
+
 export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode }: GaugeWidgetProps) {
 	const glowId = useId().replace(/:/g, "")
 	const rawValue = dataState.status === "ready" ? dataState.data : undefined
@@ -96,6 +116,9 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 		value !== null
 			? `${display.prefix ?? ""}${formatValueByUnit(value, display.unit)}${display.suffix ?? ""}`
 			: "—"
+	// "1,240.5ms" at full size is wider than the hole; scale the font down rather
+	// than let the value run into the blades.
+	const valueFontSize = Math.min(VALUE_FONT_SIZE, VALUE_MAX_WIDTH / (formattedValue.length * MONO_ADVANCE))
 
 	const slotAngle = SWEEP / SEGMENT_COUNT
 	const gapAngle = slotAngle * GAP_RATIO
@@ -135,12 +158,26 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 		})
 		.map((tickValue) => ({ value: tickValue, angle: angleFor(tickValue) }))
 
-	// Label only the ticks that clear MIN_LABEL_GAP_DEG from every already-placed
-	// label. Horizontal, centred on the tick — the previous tangent rotation made
-	// crowded end-of-arc labels illegible even before they collided.
-	const placedAngles: number[] = []
+	// The bounds label the two blade ends from inside the bottom opening, where
+	// the dial has room to spare. Outside the rim they were the widest and lowest
+	// points of the drawing, and cost every gauge a margin it used for nothing.
+	const boundLabels = [min, max].map((boundValue, index) => {
+		const end = polar((R_INNER + R_OUTER) / 2, index === 0 ? START_ANGLE : END_ANGLE)
+		return {
+			value: boundValue,
+			text: scaleLabel(boundValue, display.unit),
+			x: end.x,
+			y: end.y + BOUND_LABEL_DROP,
+		}
+	})
+
+	// Threshold labels sit outside the rim, horizontal and centred on their tick.
+	// Only those that clear MIN_LABEL_GAP_DEG from the bounds and from every
+	// already-placed label get text.
+	const placedAngles = [START_ANGLE, END_ANGLE]
 	const labels = ticks
 		.filter((tick) => {
+			if (tick.value === min || tick.value === max) return false
 			if (placedAngles.some((angle) => Math.abs(angle - tick.angle) < MIN_LABEL_GAP_DEG)) {
 				return false
 			}
@@ -149,8 +186,31 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 		})
 		.map((tick) => {
 			const point = polar(R_LABEL, tick.angle)
-			return { value: tick.value, x: point.x, y: point.y }
+			return { value: tick.value, text: scaleLabel(tick.value, display.unit), x: point.x, y: point.y }
 		})
+
+	// Fit the viewBox to what is drawn, so the dial takes the whole tile rather
+	// than a fixed box padded for the widest label any gauge might ever show. The
+	// width is reserved for the widest label at the rim's horizontal extreme
+	// regardless of where the label actually sits, so moving a threshold does
+	// not resize the dial — only the unit's label width does.
+	const widestLabel = labels.reduce(
+		(width, label) => Math.max(width, textWidth(label.text, LABEL_FONT_SIZE)),
+		0,
+	)
+	const halfWidth = Math.max(
+		R_TICK_OUTER,
+		labels.length > 0 ? R_LABEL + widestLabel / 2 : 0,
+		textWidth(formattedValue, valueFontSize) / 2,
+	)
+	const top = Math.min(CY - R_TICK_OUTER, labels.length > 0 ? CY - R_LABEL - LABEL_FONT_SIZE * 0.7 : CY)
+	const bottom = boundLabels[0].y + LABEL_FONT_SIZE * 0.7
+	const box = {
+		x: CX - halfWidth - BOX_PAD,
+		y: top - BOX_PAD,
+		width: halfWidth * 2 + BOX_PAD * 2,
+		height: bottom - top + BOX_PAD * 2,
+	}
 
 	return (
 		<WidgetFrame
@@ -161,10 +221,7 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 			loadingSkeleton={<ChartSkeleton variant="gauge" />}
 		>
 			<svg
-				// Padded 16px either side of the 240-wide dial so a wide horizontal
-				// label at the arc's extremes ("1,000ms") isn't clipped by the
-				// viewport. CX stays the box's horizontal centre.
-				viewBox="-16 0 272 212"
+				viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`}
 				preserveAspectRatio="xMidYMid meet"
 				className="h-full w-full"
 				role="img"
@@ -235,8 +292,8 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 					)
 				})}
 
-				{/* Range + threshold labels, horizontal, centred on their tick. */}
-				{labels.map((label) => (
+				{/* Range bounds under the blade ends, threshold labels outside the rim. */}
+				{[...boundLabels, ...labels].map((label) => (
 					<text
 						key={label.value}
 						x={label.x}
@@ -244,9 +301,9 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 						textAnchor="middle"
 						dominantBaseline="central"
 						className="fill-muted-foreground"
-						style={{ fontSize: 9 }}
+						style={{ fontSize: LABEL_FONT_SIZE }}
 					>
-						{formatValueByUnit(label.value, display.unit)}
+						{label.text}
 					</text>
 				))}
 
@@ -257,7 +314,7 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 					textAnchor="middle"
 					dominantBaseline="central"
 					className="fill-foreground"
-					style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em" }}
+					style={{ fontSize: valueFontSize, fontWeight: 700, letterSpacing: "-0.02em" }}
 				>
 					{formattedValue}
 				</text>

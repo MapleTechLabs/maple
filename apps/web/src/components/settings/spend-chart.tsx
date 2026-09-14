@@ -39,7 +39,7 @@ function dayOf(datum: SpendDatum): CumulativePoint {
 }
 import { ChartEmpty, ChartLoading } from "@maple/ui/components/charts"
 
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 import {
 	buildCumulativeSeries,
 	type CumulativePoint,

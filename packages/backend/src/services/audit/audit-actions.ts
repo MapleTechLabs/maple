@@ -50,6 +50,8 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.investigation,
 		verbs: ["created", "restarted", "status_changed"],
 	},
+	/** Org-singleton credit; the amount is in `metadata`. */
+	onboarding_reward: { verbs: ["claimed"] },
 	/**
 	 * Org-singleton connections. `*_started` is the admin action Maple sees; the
 	 * OAuth round trip completes at the provider's callback.

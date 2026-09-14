@@ -6,9 +6,8 @@
  *   bun scripts/tinybird-pr-branch.ts down  <pr-number>
  *   bun scripts/tinybird-pr-branch.ts sweep
  *
- * `up` creates (or reuses) an ephemeral Tinybird branch `pr_<n>` seeded with the
- * latest production partition (`--last-partition`), deploys this PR's project
- * schema into it, then exports the branch's TINYBIRD_HOST / TINYBIRD_TOKEN to
+ * `up` creates (or reuses) an EMPTY ephemeral Tinybird branch `pr_<n>`, deploys
+ * this PR's project schema into it, then exports the branch's TINYBIRD_HOST / TINYBIRD_TOKEN to
  * $GITHUB_ENV so the subsequent `alchemy:deploy:pr` binds the whole preview stack
  * (api/web/alerting/chat-agent + Rust ingest) to the branch instead of prod.
  *
@@ -180,9 +179,15 @@ const exportToGithubEnv = (vars: Record<string, string>): void => {
 const up = (branchName: string): void => {
 	const parent = { host: requireEnv("TINYBIRD_HOST"), token: requireEnv("TINYBIRD_TOKEN") }
 
-	// 1. Create the branch with the latest production partition. Idempotent across
-	//    `synchronize` events: a pre-existing branch is fine.
-	const created = runTb(parent, ["branch", "create", branchName, "--last-partition"])
+	// 1. Create the branch EMPTY. Idempotent across `synchronize` events: a
+	//    pre-existing branch is fine.
+	//
+	//    Deliberately no `--last-partition`: that attached the latest production
+	//    partition of every datasource, which put live customer telemetry in an
+	//    environment anyone with the preview URL can read, kept only until a
+	//    best-effort teardown removed it. A preview that needs rows seeds its own
+	//    — see docs/tinybird-pr-branches.md § Getting data in.
+	const created = runTb(parent, ["branch", "create", branchName])
 	if (created.exitCode !== 0 && !isAlreadyExists(created)) {
 		fail(`Failed to create Tinybird branch ${branchName}.`)
 	}

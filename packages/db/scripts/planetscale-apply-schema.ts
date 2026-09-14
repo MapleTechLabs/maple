@@ -7,7 +7,6 @@
  *
  *   # examples
  *   bun packages/db/scripts/planetscale-apply-schema.ts main     # prd
- *   bun packages/db/scripts/planetscale-apply-schema.ts stg
  *   bun packages/db/scripts/planetscale-apply-schema.ts pr-123
  *
  * Mints an ephemeral credential for the branch (direct port 5432 — DDL must NOT

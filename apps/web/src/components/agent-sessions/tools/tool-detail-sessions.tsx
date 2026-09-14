@@ -9,7 +9,7 @@ import { ExternalLinkIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { sessionLinkWindow, sessionRowId } from "@/lib/agent-sessions/session-window"
+import { sessionLinkWindow, sessionRowId } from "@maple/agent-sessions"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`

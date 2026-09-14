@@ -3864,7 +3864,9 @@ fn any_value_string(value: &AnyValue) -> String {
             let attrs = attr_map(&value.values);
             serde_json::to_string(&attrs).unwrap_or_default()
         }
-        None => String::new(),
+        // String-table references (OTLP 1.9 experimental encoding) cannot be resolved
+        // without the sender's dictionary, which the gateway does not accept yet.
+        Some(any_value::Value::StringValueStrindex(_)) | None => String::new(),
     }
 }
 
@@ -4231,6 +4233,7 @@ mod tests {
     fn string_kv(key: &str, value: &str) -> KeyValue {
         KeyValue {
             key: key.to_owned(),
+            key_strindex: 0,
             value: Some(AnyValue {
                 value: Some(any_value::Value::StringValue(value.to_owned())),
             }),
@@ -4240,6 +4243,7 @@ mod tests {
     fn bool_kv(key: &str, value: bool) -> KeyValue {
         KeyValue {
             key: key.to_owned(),
+            key_strindex: 0,
             value: Some(AnyValue {
                 value: Some(any_value::Value::BoolValue(value)),
             }),
@@ -6994,6 +6998,7 @@ mod tests {
                     .get_or_insert_with(Resource::default);
                 resource.attributes.push(KeyValue {
                     key: "maple_org_id".to_owned(),
+                    key_strindex: 0,
                     value: Some(AnyValue {
                         value: Some(any_value::Value::StringValue("org_scraper".to_owned())),
                     }),

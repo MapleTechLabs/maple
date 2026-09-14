@@ -110,8 +110,8 @@ const parentDomain = (hostname: string): string => {
  * as the trusted `MAPLE_APP_BASE_URL`:
  *
  *   - every deployed stage puts the web app and the API on sibling hosts under
- *     one registrable domain (`app.maple.dev` / `api.maple.dev`, `staging` /
- *     `api-staging`, `app-pr-<n>` / `api-pr-<n>`), and
+ *     one registrable domain (`app.maple.dev` / `api.maple.dev`,
+ *     `app-pr-<n>` / `api-pr-<n>`), and
  *   - local dev puts them on sibling `*.localhost` hosts (portless proxy) or on
  *     loopback ports.
  *

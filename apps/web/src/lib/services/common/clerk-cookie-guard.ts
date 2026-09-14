@@ -2,10 +2,10 @@
  * Guard against cross-environment Clerk cookie collisions.
  *
  * Every deployed Maple environment lives on a subdomain of the same
- * registrable domain (`app.maple.dev`, `staging.maple.dev`,
- * `app-pr-<n>.maple.dev`, …), but they do NOT share one Clerk instance:
- * production runs the production Clerk instance (FAPI at `clerk.maple.dev`)
- * while PR previews and staging run the development instance. ClerkJS writes
+ * registrable domain (`app.maple.dev`, `app-pr-<n>.maple.dev`, …), but they do
+ * NOT share one Clerk instance: production runs the production Clerk instance
+ * (FAPI at `clerk.maple.dev`) while PR previews run the development
+ * instance. ClerkJS writes
  * its `__client_uat` cookies (both the shared legacy name and the
  * per-instance `__client_uat_<suffix>` variant) on the eTLD+1 —
  * `Domain=maple.dev` — so each instance sees, and fights over, the other
@@ -15,7 +15,7 @@
  * documents this limitation: independent environments must not share the
  * production application's domain, even on separate subdomains.
  *
- * Until preview/staging move to their own registrable domain, this guard
+ * Until previews move to their own registrable domain, this guard
  * runs before ClerkJS initializes and deletes any parent-domain
  * `__client_uat*` cookie that does not belong to the current deployment's
  * Clerk instance (plus the un-suffixed legacy cookie, which the instances

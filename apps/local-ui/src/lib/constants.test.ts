@@ -12,7 +12,7 @@ describe("local UI endpoint selection", () => {
 
 	it("uses loopback for a custom hosted UI carrying the startup marker", () => {
 		const page = location(
-			"https://local-staging.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
+			"https://local-preview.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
 		)
 		expect(localApiBaseForLocation(page)).toBe("http://127.0.0.1:4418")
 		expect(localOtlpEndpointForLocation(page)).toBe("http://127.0.0.1:4418")

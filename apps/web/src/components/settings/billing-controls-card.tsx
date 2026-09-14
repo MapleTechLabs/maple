@@ -5,7 +5,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { maximumInvoiceCents, spendLimitFor } from "@/lib/billing/controls"
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 import {
 	featureUnit,
 	FEATURE_COLORS,

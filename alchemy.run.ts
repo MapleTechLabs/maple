@@ -199,8 +199,8 @@ export default Alchemy.Stack(
 			)
 		}
 
-		// The Rust OTLP gateway on ECS Fargate (prd/stg/pr — dev stages run it
-		// through docker-compose instead). On prd/stg `domains.ingest` reaches it
+		// The Rust OTLP gateway on ECS Fargate (prd/pr — dev stages run it
+		// through docker-compose instead). On prd `domains.ingest` reaches it
 		// via a Cloudflare CNAME at the ALB, so the URL below stays a plain string
 		// and does not depend on the service resource; a PR preview gets no ingest
 		// domain, so its ALB answers plain HTTP on 80 at `ingest.serviceUrl`.
@@ -210,7 +210,7 @@ export default Alchemy.Stack(
 
 		// The application database. Each Worker binds `MAPLE_DB` from its own init
 		// (`MapleDb` in `@maple/infra/cloudflare`: the managed Hyperdrive on dev
-		// stages, a dashboard-managed config by id on stg/prd, nothing on previews).
+		// stages, a dashboard-managed config by id on prd, nothing on previews).
 		// The managed declaration is yielded here first so its `MAPLE_PG_URL` read
 		// happens outside any Worker init, where alchemy would bind it as a secret.
 		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
@@ -234,7 +234,7 @@ export default Alchemy.Stack(
 		)
 		yield* serveWorker("api", api)
 
-		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the
+		// Self-hosted ElectricSQL on ECS Fargate (prd — dev stages use the
 		// docker `electric` service, and PR previews have no database to replicate
 		// from). Deliberately NOT wired into the sync worker's env here: the worker
 		// reads `ELECTRIC_URL` from the secret store, so standing this service up

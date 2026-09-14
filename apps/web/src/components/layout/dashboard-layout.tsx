@@ -18,11 +18,13 @@ import { Kbd } from "@maple/ui/components/ui/kbd"
 import { ChatBubbleSparkleIcon, LayoutLeftIcon, LayoutRightIcon } from "@/components/icons"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
 import { ConnectButton } from "@/components/header/connect-button"
+import { OnboardingChecklistButton } from "@/components/header/onboarding-checklist-button"
 import { QuotaBanner } from "@/components/billing/quota-banner"
 import { PaymentFailedBanner } from "@/components/billing/payment-failed-banner"
 import { SubscriptionEndedBanner } from "@/components/billing/subscription-ended-banner"
 import { AppUpdateBanner } from "@/components/layout/app-update-banner"
-import { Link, defaultParseSearch } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
+import { parseSearchFromHref } from "@/lib/href"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 /* -------------------------------------------------------------------------------------------------
@@ -47,14 +49,6 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 interface BreadcrumbEntry {
 	label: string
 	href?: string
-}
-
-function parseSearchFromHref(href: string): { pathname: string; search?: Record<string, unknown> } {
-	const [pathname, queryString] = href.split("?")
-	if (!queryString) {
-		return { pathname }
-	}
-	return { pathname, search: defaultParseSearch(queryString) as Record<string, unknown> }
 }
 
 /** Sidebar + inset + skip link + `PageLayout.Root`. Everything else composes inside. */
@@ -145,6 +139,7 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 						Ask Maple AI <Kbd>C</Kbd>
 					</TooltipContent>
 				</Tooltip>
+				<OnboardingChecklistButton />
 				<ConnectButton />
 				{/* Self-gating: renders only when the sidebar has collapsed to a sheet *and* a
 				    `Filters` region is mounted to open. Both conditions live in `PageLayout`'s

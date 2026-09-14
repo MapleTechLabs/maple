@@ -120,7 +120,16 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // stacking once more. Merged measures 694.6 locally; unregistering
 // `V2GoogleAnalyticsIntegrationsApiGroup` puts it at 693.0, exactly main's
 // ceiling, so the GA contract is still the same 1.6 KB. 695 leaves ~0.4 KB.
-const maxGzipBytes = 695 * 1024
+// 695 KB from the onboarding reward checklist (#890, 2026-09-14): ~1.2 KB of
+// startup measured in CI against #878's 693.0 — the checklist group's two
+// endpoints and step/status schemas on the contract every page's client
+// carries, the pill in the persistent top bar with its live clock, and the
+// hook's query and seen-flag atoms. The popover's panel and pointer are small
+// and render only while open, so nothing there is worth a lazy chunk.
+// 697 KB on merging #890 with the GA integration (2026-09-14): both raised to
+// 695 alone. Merged measures 696.6; without `V2GoogleAnalyticsIntegrationsApiGroup`
+// it is 695.0, main's ceiling exactly, so the GA contract is 1.6 KB a fifth time.
+const maxGzipBytes = 697 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

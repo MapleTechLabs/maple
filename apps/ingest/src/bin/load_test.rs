@@ -627,6 +627,7 @@ fn build_logs_payload(batch_logs: usize) -> Vec<u8> {
 fn string_kv(key: &str, value: &str) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
             value: Some(any_value::Value::StringValue(value.to_owned())),
         }),

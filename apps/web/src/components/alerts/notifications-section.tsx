@@ -15,7 +15,7 @@ import {
 import { ProviderLogo } from "@/components/alerts/destination-provider"
 import { SectionHeader } from "@/components/layout/section-header"
 import { destinationTypeLabels, type RuleFormState } from "@/lib/alerts/form-utils"
-import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, PaperPlaneIcon } from "@/components/icons"
+import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, PaperPlaneIcon, PlusIcon } from "@/components/icons"
 
 interface NotificationsSectionProps {
 	form: RuleFormState
@@ -23,6 +23,8 @@ interface NotificationsSectionProps {
 	destinations: AlertDestinationDocument[]
 	onSendTest: () => void
 	testing: boolean
+	/** Opens the add-destination dialog in place. Absent for members, who cannot create one and are told to ask an admin. */
+	onAddDestination?: () => void
 }
 
 const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
@@ -45,6 +47,7 @@ export function NotificationsSection({
 	destinations,
 	onSendTest,
 	testing,
+	onAddDestination,
 }: NotificationsSectionProps) {
 	const hasDestinations = destinations.length > 0
 	const hasSelection = form.destinationIds.length > 0
@@ -81,17 +84,36 @@ export function NotificationsSection({
 
 			<div className="mt-3">
 				{!hasDestinations ? (
-					<p className="text-muted-foreground text-sm">
-						No destinations yet.{" "}
-						<Link
-							to="/alerts"
-							search={{ tab: "settings" }}
-							className="underline underline-offset-4 hover:text-foreground"
-						>
-							Create one in Destinations
-						</Link>{" "}
-						before saving.
-					</p>
+					// Stacked, not inline: this card sits in the narrow side column.
+					<div className="space-y-3 rounded-md border border-primary/40 bg-primary/[0.06] p-3">
+						<div className="flex items-start gap-3">
+							<span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+								<PaperPlaneIcon size={14} />
+							</span>
+							<div className="min-w-0 flex-1">
+								<p className="text-sm font-medium">Nowhere to send incidents yet</p>
+								<p className="text-xs text-muted-foreground">
+									{onAddDestination
+										? "Add a Slack, PagerDuty, email or webhook destination. The rule cannot be saved without one."
+										: "Ask an org admin to add a Slack, PagerDuty, email or webhook destination. The rule cannot be saved without one."}
+								</p>
+							</div>
+						</div>
+						{onAddDestination ? (
+							<Button size="sm" onClick={onAddDestination}>
+								<PlusIcon size={14} />
+								Add destination
+							</Button>
+						) : (
+							<Button
+								size="sm"
+								variant="outline"
+								render={<Link to="/alerts" search={{ tab: "settings" }} />}
+							>
+								View destinations
+							</Button>
+						)}
+					</div>
 				) : (
 					<AlertMultiSegmentedSelect<string>
 						options={

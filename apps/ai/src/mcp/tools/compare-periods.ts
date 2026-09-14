@@ -2,7 +2,7 @@ import { McpQueryError, optionalStringParam, optionalTimeParam, type McpToolRegi
 import { queryWarehouse } from "../lib/query-warehouse"
 import { getSpamPatternsParam } from "@maple/backend/services/errors/spam-patterns"
 import { resolveTimeRange } from "../lib/time"
-import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "../lib/format"
+import { formatDelta, formatPercent, formatDurationFromMs, formatNumber, formatTable } from "../lib/format"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { formatNextSteps } from "../lib/next-steps"
@@ -147,14 +147,6 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 
 			const curSummary = currentSummary.data[0]
 			const prevSummaryRow = previousSummary.data[0]
-
-			// Format delta
-			function formatDelta(current: number, previous: number): string {
-				if (previous === 0) return current > 0 ? "+inf" : "—"
-				const pctChange = ((current - previous) / previous) * 100
-				const sign = pctChange >= 0 ? "+" : ""
-				return `${sign}${pctChange.toFixed(1)}%`
-			}
 
 			const lines: string[] = [
 				`## Period Comparison`,

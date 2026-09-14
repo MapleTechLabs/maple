@@ -383,8 +383,22 @@
     {
       "idx": 54,
       "version": "7",
-      "when": 1788910743675,
-      "tag": "0055_google_analytics_integration",
+      "when": 1789339400947,
+      "tag": "0055_onboarding_reward_claimed",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1789390722895,
+      "tag": "0056_onboarding_reward_reserved",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789392274346,
+      "tag": "0057_google_analytics_integration",
       "breakpoints": true
     }
   ]

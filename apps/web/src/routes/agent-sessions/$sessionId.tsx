@@ -11,7 +11,6 @@ import { SquareSparkleIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { NotFoundError } from "@/components/route-error"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
 import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
@@ -20,15 +19,14 @@ import {
 	SessionViews,
 	type SessionView,
 } from "@/components/agent-sessions/session-detail/session-views"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { useSessionSpans, type SessionSpansState } from "@/hooks/use-session-spans"
 import {
 	breadcrumbSessionId,
 	buildBackToSessionsHref,
+	buildSessionSummary,
+	buildSessionTurns,
 	resolveWindow,
-} from "@/lib/agent-sessions/session-window"
-import { buildSessionSummary } from "@/lib/agent-sessions/session-summary"
-import { buildSessionTurns } from "@/lib/agent-sessions/session-turns"
+} from "@maple/agent-sessions"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -65,21 +63,7 @@ export const Route = createFileRoute("/agent-sessions/$sessionId")({
 	validateSearch: Schema.toStandardSchemaV1(agentSessionSearchSchema),
 })
 
-/**
- * Behind the `agent_tracing` org rollout flag, gated the same way the list page
- * is: in the component rather than `beforeLoad` (router context carries no
- * flags), `isLoaded` first so an entitled org gets no not-found flash, and no
- * route `loader` — a loader would fire the warehouse read for orgs that are not
- * entitled to see the page at all.
- */
 function AgentSessionDetailPage() {
-	const { flags, isLoaded } = useOrganizationFeatureFlags()
-	if (!isLoaded) return null
-	if (!flags.agentTracing) return <NotFoundError />
-	return <AgentSessionDetailContent />
-}
-
-function AgentSessionDetailContent() {
 	const { sessionId } = Route.useParams()
 	const search = Route.useSearch()
 	const queryWindow = useMemo(() => resolveWindow(search.t, search.end), [search.t, search.end])

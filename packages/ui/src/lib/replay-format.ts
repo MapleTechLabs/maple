@@ -67,26 +67,7 @@ export function sessionDurationMs(session: SessionLiveness): number | null {
 	return Math.max(0, last - start)
 }
 
-/**
- * `6h 12m` / `1m 23s` / `45s`, or `—` for missing/zero durations — a replay
- * with no measurable duration is unmeasured, not instantaneous.
- *
- * Named for the session it measures rather than `formatDuration`: this renders a
- * wall-clock span in clock units, which is a different job from the μs→h ladder
- * in `./format`. Sharing the name meant the two got imported interchangeably.
- *
- * Minutes roll over at an hour: agent sessions that wait on a human run for
- * hours, and "360m 0s" is not a duration anyone reads as six.
- */
-
-export function formatSessionDuration(ms: number | null): string {
-	if (ms == null || ms <= 0) return "—"
-	const totalSeconds = Math.round(ms / 1000)
-	const minutes = Math.floor(totalSeconds / 60)
-	if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
-	const seconds = totalSeconds % 60
-	return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
-}
+export { formatSessionDuration } from "@maple/domain/format"
 
 /** Playhead clock `m:ss`. Clamps non-finite/negative input to 0. */
 export function formatClock(ms: number): string {

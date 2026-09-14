@@ -50,6 +50,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -84,6 +85,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SharedDashboardService.layer,
 	HazelOAuthService.layer,
 	OnboardingService.layer,
+	OnboardingChecklistService.layer,
 	OrgIngestKeysService.layer,
 	OrgClickHouseSettingsService.layer,
 	TinybirdOrgTokenService.layer,

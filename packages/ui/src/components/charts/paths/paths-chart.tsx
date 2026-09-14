@@ -5,6 +5,7 @@ import { cn } from "../../../lib/utils"
 import { formatNumber } from "../../../lib/format"
 import { asFiniteNumber } from "../_shared/breakdown-rows"
 import { useContainerSize } from "../../../hooks/use-container-size"
+import { ArrowLeftIcon, UserIcon } from "../../icons"
 
 // Paths: a column-wise flow out of (or into) one anchor.
 //
@@ -40,8 +41,22 @@ interface Layout {
 	columns: number[]
 }
 
-const NODE_W = 8
-const NODE_GAP = 6
+const NODE_W = 10
+const NODE_GAP = 8
+/** A node this tall carries its count on a second line instead of after the name. */
+const TWO_LINE_H = 26
+
+/**
+ * Labels sit over the ribbons, so they wear a halo in the card colour: the text
+ * stays legible where two flows cross behind it, and a name can run further
+ * into the span than a bare label safely could.
+ */
+const HALO: React.CSSProperties = {
+	paintOrder: "stroke",
+	stroke: "var(--card)",
+	strokeWidth: 3,
+	strokeLinejoin: "round",
+}
 const HEADER_H = 18
 /** Breathing room under the lowest node, so a terminal never touches the card edge. */
 const FOOTER_H = 4
@@ -198,11 +213,13 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 	const columnSpan =
 		graph && graph.columns.length > 1 ? (width - NODE_W) / (graph.columns.length - 1) : width
 	// Two labels share every span (the left column's to the right of its node,
-	// the right column's to the left of its), so each gets half of it. When
-	// that half cannot hold a name AND a count, the count moves to the tooltip.
-	const halfChars = Math.floor((columnSpan / 2 - 24) / CHAR_W)
-	const showCounts = halfChars >= 14
-	const maxChars = Math.max(5, showCounts ? halfChars - 6 : halfChars)
+	// the right column's to the left of its). Their halos let each run a little
+	// past the midpoint, since the two rarely sit on the same row. When the room
+	// cannot hold a name AND a count, the count moves under the name on tall
+	// nodes and into the tooltip on short ones.
+	const roomChars = Math.floor((columnSpan * 0.7 - 20) / CHAR_W)
+	const showCounts = roomChars >= 14
+	const maxChars = Math.max(6, showCounts ? roomChars - 6 : roomChars)
 	const truncate = (label: string) => (label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label)
 
 	const hoveredNode = hover ? graph?.nodes.get(hover) : undefined
@@ -234,7 +251,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								x={atRightEdge ? x + NODE_W : x}
 								y={10}
 								textAnchor={atRightEdge ? "end" : "start"}
-								className="fill-muted-foreground text-[10px] uppercase tracking-wider"
+								className="fill-muted-foreground text-[10px] font-medium uppercase tracking-wider"
 							>
 								{label}
 							</text>
@@ -259,14 +276,18 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								)}
 								style={{
 									fillOpacity: dim
-										? 0.06
+										? 0.05
 										: kind === "event"
 											? lit
-												? 0.6
-												: 0.22
+												? 0.65
+												: 0.2
 											: kind === "end"
-												? 0.12
-												: 0.22,
+												? lit
+													? 0.3
+													: 0.07
+												: lit
+													? 0.4
+													: 0.12,
 									transition: "fill-opacity 140ms ease",
 								}}
 							/>
@@ -284,8 +305,10 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								(link) => isLit(link) && (link.source === node.id || link.target === node.id),
 							)
 						const showText = node.h >= 9 || node.kind !== "event"
+						const twoLine = node.h >= TWO_LINE_H
+						const countInline = showCounts && !twoLine
 						const hitLabelW = showText
-							? (truncate(labelOf(node)).length + (showCounts ? 7 : 0)) * CHAR_W + 6
+							? (truncate(labelOf(node)).length + (countInline ? 7 : 0)) * CHAR_W + 6
 							: 0
 						return (
 							<g
@@ -302,8 +325,8 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 									rx={2}
 									className={cn(
 										node.kind === "event" && "fill-[var(--chart-2)]",
-										node.kind === "end" && "fill-foreground/15",
-										node.kind === "other" && "fill-foreground/30",
+										node.kind === "end" && "fill-foreground/20",
+										node.kind === "other" && "fill-foreground/35",
 									)}
 								/>
 								{/* The hit target spans the node AND its label, so hovering the
@@ -322,17 +345,22 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 										y={node.y + Math.min(node.h, 12) / 2 + 3.5}
 										textAnchor={labelLeft ? "start" : "end"}
 										className={cn(
-											"text-[11px]",
+											"text-[11px] font-medium",
 											node.kind === "event"
-												? "fill-foreground/90"
+												? "fill-foreground"
 												: "fill-muted-foreground",
 										)}
+										style={HALO}
 									>
 										{truncate(labelOf(node))}
-										{showCounts && (
+										{(countInline || twoLine) && (
 											<>
 												{" "}
-												<tspan className="fill-muted-foreground text-[10px]">
+												<tspan
+													x={twoLine ? textX : undefined}
+													dy={twoLine ? 13 : undefined}
+													className="fill-muted-foreground text-[10px] font-normal tabular-nums"
+												>
 													{formatNumber(node.count)}
 												</tspan>
 											</>
@@ -354,9 +382,17 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 					}}
 					data-slot="paths-tooltip"
 				>
-					<div className="mb-1 truncate text-foreground/90">
-						{labelOf(hoveredNode)}
-						<span className="ml-1.5 text-muted-foreground">
+					<div className="mb-1.5 flex min-w-0 items-center gap-1.5">
+						<span
+							className={cn(
+								"size-2 shrink-0 rounded-[2px]",
+								hoveredNode.kind === "event" && "bg-[var(--chart-2)]",
+								hoveredNode.kind === "end" && "bg-foreground/20",
+								hoveredNode.kind === "other" && "bg-foreground/35",
+							)}
+						/>
+						<span className="truncate font-medium text-foreground">{labelOf(hoveredNode)}</span>
+						<span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] leading-none text-muted-foreground">
 							{hoveredNode.column === 0
 								? "anchor"
 								: reverse
@@ -364,37 +400,66 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 									: `step ${hoveredNode.column}`}
 						</span>
 					</div>
-					<div className="flex justify-between gap-3 tabular-nums">
-						<span className="text-muted-foreground">
+					<div className="mb-1.5 h-1.5 overflow-hidden rounded-sm bg-foreground/5">
+						<div
+							className="h-full rounded-sm bg-[var(--chart-2)]"
+							style={{ width: `${Math.min(100, (hoveredNode.count / anchor.count) * 100)}%` }}
+						/>
+					</div>
+					<div className="flex items-center justify-between gap-3 tabular-nums">
+						<span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground">
+							<UserIcon size={12} />
 							{hoveredNode.column === 0 ? "started here" : "reached"}
 						</span>
-						<span className="text-foreground/90">
-							{hoveredNode.count.toLocaleString("en-US")} ·{" "}
-							{((hoveredNode.count / anchor.count) * 100).toFixed(
-								hoveredNode.count / anchor.count < 0.1 ? 1 : 0,
-							)}
-							%
+						<span className="flex items-baseline gap-1.5 whitespace-nowrap">
+							<span className="font-semibold text-foreground">
+								{hoveredNode.count.toLocaleString("en-US")}
+							</span>
+							<span className="text-[10px] whitespace-nowrap text-muted-foreground">
+								{((hoveredNode.count / anchor.count) * 100).toFixed(
+									hoveredNode.count / anchor.count < 0.1 ? 1 : 0,
+								)}
+								% of anchor
+							</span>
 						</span>
 					</div>
 					{hoveredNode.column > 0 && (
-						<div className="mt-1 text-[10px] text-muted-foreground">
+						<>
+							<div className="-mx-2.5 my-1.5 h-px bg-border" />
+							<div className="mb-1 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+								Came from
+							</div>
 							{links
 								.filter((link) => link.target === hoveredNode.id)
 								.sort((a, b) => b.count - a.count)
 								.slice(0, 3)
 								.map((link) => {
 									const from = graph.nodes.get(link.source)
+									const share = hoveredNode.count > 0 ? link.count / hoveredNode.count : 0
 									return (
-										<div
-											key={link.source}
-											className="flex justify-between gap-3 tabular-nums"
-										>
-											<span className="truncate">← {from ? labelOf(from) : ""}</span>
-											<span>{link.count.toLocaleString("en-US")}</span>
+										<div key={link.source} className="my-0.5">
+											<div className="flex items-center gap-2 tabular-nums">
+												<ArrowLeftIcon
+													size={10}
+													className="shrink-0 text-muted-foreground"
+												/>
+												<span className="min-w-0 flex-1 truncate text-foreground/90">
+													{from ? labelOf(from) : ""}
+												</span>
+												<span className="text-muted-foreground">
+													{link.count.toLocaleString("en-US")}
+												</span>
+											</div>
+											<div className="relative mt-0.5 ml-4 h-1 rounded-sm bg-foreground/5">
+												<div
+													className="absolute inset-y-0 left-0 rounded-sm bg-[var(--chart-2)]/70"
+													style={{ width: `${share * 100}%` }}
+												/>
+											</div>
 										</div>
 									)
 								})}
-						</div>
+						</>
 					)}
 				</div>
 			)}

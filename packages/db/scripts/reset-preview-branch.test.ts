@@ -21,7 +21,6 @@ describe("resetGuardError", () => {
 
 	it("refuses a non-preview branch name, even in CI", () => {
 		expect(resetGuardError({ RESET_EXPECTED_BRANCH: "main" })).not.toBeNull()
-		expect(resetGuardError({ RESET_EXPECTED_BRANCH: "stg" })).not.toBeNull()
 		expect(resetGuardError({ RESET_EXPECTED_BRANCH: "pr-" })).not.toBeNull()
 		expect(resetGuardError({ RESET_EXPECTED_BRANCH: "xpr-12" })).not.toBeNull()
 	})

@@ -45,7 +45,7 @@ const main = async (): Promise<void> => {
 		process.exit(1)
 	}
 	// Tripwire (same as reset-preview-branch.ts): reassigning ownership is far
-	// less destructive than the reset, but run against prod/stg it would still
+	// less destructive than the reset, but run against prod it would still
 	// silently rewrite object ownership. Only ever meant for ephemeral
 	// PR-preview branches, driven by CI.
 	if (!process.env.CI && process.env.RESET_PREVIEW_CONFIRM !== "1") {

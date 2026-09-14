@@ -3,6 +3,8 @@ import { Schema } from "effect"
 
 import { AlertsOverviewTab } from "@/components/alerts/overview/alerts-overview-tab"
 import { AlertsSettingsTab, useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { DestinationDialog } from "@/components/alerts/destination-dialog"
+import { OpenDestinationDialogProvider } from "@/components/alerts/destination-manager-context"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PlusIcon } from "@/components/icons"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
@@ -88,23 +90,34 @@ function AlertsPage() {
 		)
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Alerts" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Alerts">{headerActions}</DashboardLayout.Header>
-						{tabBar}
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						{activeTab === "overview" ? (
-							<AlertsOverviewTab />
-						) : (
-							<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<OpenDestinationDialogProvider value={isAdmin ? () => destinationManager.openDialog() : null}>
+			<DashboardLayout.Root>
+				<DashboardLayout.Breadcrumbs items={[{ label: "Alerts" }]} />
+				<DashboardLayout.Body>
+					<DashboardLayout.Content>
+						<DashboardLayout.Sticky>
+							<DashboardLayout.Header title="Alerts">{headerActions}</DashboardLayout.Header>
+							{tabBar}
+						</DashboardLayout.Sticky>
+						<DashboardLayout.Scroll>
+							{activeTab === "overview" ? (
+								<AlertsOverviewTab />
+							) : (
+								<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
+							)}
+						</DashboardLayout.Scroll>
+					</DashboardLayout.Content>
+				</DashboardLayout.Body>
+				<DestinationDialog
+					open={destinationManager.dialogOpen}
+					onOpenChange={destinationManager.setDialogOpen}
+					form={destinationManager.form}
+					onFormChange={destinationManager.setForm}
+					isEditing={destinationManager.isEditing}
+					saving={destinationManager.saving}
+					onSave={destinationManager.save}
+				/>
+			</DashboardLayout.Root>
+		</OpenDestinationDialogProvider>
 	)
 }

@@ -24,7 +24,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { useAtomSet } from "@/lib/effect-atom"
 import { updateFeatureControls } from "@/lib/billing/controls"
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 import {
 	featureUnit,
 	formatRateLabel,

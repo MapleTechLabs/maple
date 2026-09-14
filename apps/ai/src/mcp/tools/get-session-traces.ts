@@ -11,7 +11,7 @@ import { getSessionTraces } from "@maple/query-engine/observability"
 export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_session_traces",
-		"Given a browser session id, return the session's browser metadata (browser, OS, device, country, entry URL, user, error count, duration) and the backend traces it observed — each summarized with root span name, service, duration, error status, and span count. Use after `search_sessions` to jump from a user session to the backend requests behind it; drill into any trace with `inspect_trace`.",
+		"Browser session replays (end-user web sessions), not AI agent sessions — for those use `list_agent_sessions`. Given a browser session id, return the session's browser metadata (browser, OS, device, country, entry URL, user, error count, duration) and the backend traces it observed — each summarized with root span name, service, duration, error status, and span count. Use after `search_sessions` to jump from a user session to the backend requests behind it; drill into any trace with `inspect_trace`.",
 		Schema.Struct({
 			session_id: requiredStringParam("The session id to read (from search_sessions)"),
 			limit: optionalNumberParam("Max traces to summarize (default 50, max 100)"),

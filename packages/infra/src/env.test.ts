@@ -131,7 +131,6 @@ describe("selfObservabilityEnv", () => {
 	it("derives MAPLE_ENVIRONMENT from the stage and refuses a provider override", () => {
 		const env = { ...base, MAPLE_ENVIRONMENT: "production" }
 		expect(run(selfObservabilityEnv({ kind: "pr", prNumber: 42 }), env).MAPLE_ENVIRONMENT).toBe("pr-42")
-		expect(run(selfObservabilityEnv({ kind: "stg" }), env).MAPLE_ENVIRONMENT).toBe("staging")
 		expect(run(selfObservabilityEnv({ kind: "prd" }), env).MAPLE_ENVIRONMENT).toBe("production")
 		expect(run(selfObservabilityEnv({ kind: "dev", name: "x" }), env).MAPLE_ENVIRONMENT).toBe(
 			"development",
@@ -161,7 +160,6 @@ describe("selfObservabilityEnv", () => {
 
 	it("fails when the ingest key is missing", () => {
 		expect(runExit(selfObservabilityEnv({ kind: "prd" }), {})._tag).toBe("Failure")
-		expect(runExit(selfObservabilityEnv({ kind: "stg" }), {})._tag).toBe("Failure")
 		expect(runExit(selfObservabilityEnv({ kind: "pr", prNumber: 7 }), {})._tag).toBe("Failure")
 	})
 
@@ -307,10 +305,10 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 				const old = {
 					MAPLE_INGEST_KEY: Redacted.make(oldRequireEnv(env, "MAPLE_OTEL_INGEST_KEY")),
 					...oldOptionalPlain(env, "MAPLE_ENDPOINT"),
-					MAPLE_ENVIRONMENT: "staging",
+					MAPLE_ENVIRONMENT: "production",
 					...oldOptionalPlain(env, "COMMIT_SHA", env.GITHUB_SHA?.trim()),
 				}
-				expect(unwrap(run(selfObservabilityEnv({ kind: "stg" }), env))).toEqual(unwrap(old))
+				expect(unwrap(run(selfObservabilityEnv({ kind: "prd" }), env))).toEqual(unwrap(old))
 			})
 
 			it("apnsEnv", () => {

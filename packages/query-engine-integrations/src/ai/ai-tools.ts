@@ -471,6 +471,20 @@ export interface AiToolsTotalsOutput {
 	readonly lastSeen: string
 }
 
+/** Counts are `CHNumber`: a gateway that refuses
+ *  `output_format_json_quote_64bit_integers=0` sends them quoted. */
+export const aiToolsTotalsRowSchema: CompiledQueryRowSchema<AiToolsTotalsOutput> = Schema.Struct({
+	period: Schema.String,
+	calls: CHNumber,
+	sessions: CHNumber,
+	errors: CHNumber,
+	p50: CHNumber,
+	p90: CHNumber,
+	p95: CHNumber,
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+})
+
 /**
  * Every period the tiles can ask for, which is what the overview asks for, and
  * the ORDER the union builds them in — a caller's own ordering never reaches
@@ -550,6 +564,20 @@ export interface AiToolsBreakdownsOutput {
 	 *  so the badge is a statement about this range and not about all time. */
 	readonly firstSeen: string
 }
+
+/** Same reason as the totals': the counts arrive quoted from a gateway that
+ *  refuses the unquoting setting. */
+export const aiToolsBreakdownsRowSchema: CompiledQueryRowSchema<AiToolsBreakdownsOutput> = Schema.Struct({
+	key: Schema.String,
+	calls: CHNumber,
+	sessions: CHNumber,
+	errors: CHNumber,
+	p50: CHNumber,
+	p90: CHNumber,
+	p95: CHNumber,
+	lastSeen: Schema.String,
+	firstSeen: Schema.String,
+})
 
 /**
  * The Tools table: every tool of the window, busiest first.

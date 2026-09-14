@@ -32,7 +32,7 @@
  *
  * Deletion is double-gated like the sibling sweeps: the queue/worker name must
  * match `maple-<base>-pr-<digits>` exactly, where <base> may not contain
- * `-dev-` (prd `maple-api`, stg `maple-api-stg` can never match; a dev stage
+ * `-dev-` (prd `maple-api` can never match; a dev stage
  * named "pr-3" would produce `maple-api-dev-pr-3`, hence the -dev- exclusion),
  * AND the GitHub API must affirmatively report that PR closed — unknown/open →
  * keep. Worker deletes use ?force=true because preview workers service-bind

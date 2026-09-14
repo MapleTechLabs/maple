@@ -1,6 +1,6 @@
 import type { CycleCostEstimate } from "@/lib/billing/cost-estimate"
 
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 export function CostBreakdownSkeleton() {
