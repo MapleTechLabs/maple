@@ -299,7 +299,9 @@ describe("quoteWhereValue", () => {
 		}
 	})
 
-	it("drops the double quotes of a value that carries both kinds", () => {
-		expect(quoteWhereValue(`it's "x"`)).toBe(`"it's x"`)
+	it("leaves a value carrying both quote kinds for the parser to reject, never altered", () => {
+		const result = parseWhereClause(`k = ${quoteWhereValue(`it's "x"`)}`)
+		expect(result.clauses).toEqual([])
+		expect(result.warnings).toHaveLength(1)
 	})
 })
