@@ -13,31 +13,24 @@ import {
 	StarIcon,
 	XmarkIcon,
 } from "@/components/icons"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { useOnboardingChecklist } from "@/hooks/use-onboarding-checklist"
 import { parseSearchFromHref } from "@/lib/href"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
-const HOUR_MS = 60 * 60 * 1000
-const MINUTE_MS = 60 * 1000
+const pad = (value: number) => value.toString().padStart(2, "0")
 
-/** `19h left` down to `42m left`; never negative. */
-export function formatTimeLeft(deadlineMs: number, nowMs: number): string {
-	const remaining = Math.max(0, deadlineMs - nowMs)
-	if (remaining >= HOUR_MS) return `${Math.floor(remaining / HOUR_MS)}h left`
-	return `${Math.max(1, Math.ceil(remaining / MINUTE_MS))}m left`
+/** `23:41:07` — the pill's live countdown; clamps at `00:00:00`. */
+export function formatCountdown(deadlineMs: number, nowMs: number): string {
+	const remaining = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
+	const hours = Math.floor(remaining / 3600)
+	const minutes = Math.floor((remaining % 3600) / 60)
+	const seconds = remaining % 60
+	return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
 }
 
 const formatCredits = (checklist: Pick<V2OnboardingChecklist, "reward_amount_usd">) =>
 	`$${checklist.reward_amount_usd} credits`
-
-/** The pill's label: the ask while steps remain, the payoff once they are done. */
-export function formatOnboardingPill(
-	checklist: Pick<V2OnboardingChecklist, "status" | "reward_amount_usd">,
-): string {
-	return checklist.status === "claimable"
-		? `Claim ${formatCredits(checklist)}`
-		: `Earn ${formatCredits(checklist)}`
-}
 
 /** Renders only under Clerk: self-hosted deployments have no billing to credit. */
 export function OnboardingChecklistButton() {
@@ -58,28 +51,30 @@ function OnboardingChecklistPill() {
 		claimPending,
 		claimError,
 	} = useOnboardingChecklist()
-	// `null` until the user has opened or closed it themselves; before that the popover
-	// opens on its own exactly once per org, which is the attention cue.
-	const [openOverride, setOpenOverride] = useState<boolean | null>(null)
+	const [open, setOpen] = useState(false)
 	// Keeps the popover up through the "credits added" beat: the refreshed checklist reads
 	// `claimed`, which would otherwise unmount the pill mid-sentence. Cleared on close.
 	const [justClaimed, setJustClaimed] = useState(false)
+	// The pill is a countdown, so it ticks every second while there is one to show.
+	const counting = checklist !== null && !dismissed && checklist.status === "in_progress"
+	const nowMs = useLiveClock({ intervalMs: 1000, enabled: counting })
 
 	if (checklist === null || dismissed) return null
 	const active = checklist.status === "in_progress" || checklist.status === "claimable"
 	const deadlineMs = checklist.deadline_at === null ? null : Date.parse(checklist.deadline_at)
-	// A session that crosses the deadline hides the pill on its next render, without a timer.
-	const windowOpen = deadlineMs !== null && deadlineMs >= Date.now()
+	// A session that crosses the deadline hides the pill on its next tick, without a timer of its own.
+	const windowOpen = deadlineMs !== null && deadlineMs >= nowMs
 	if (!justClaimed && !(active && windowOpen)) return null
 
-	const open = openOverride ?? !seen
 	const claimable = checklist.status === "claimable"
+	const credits = formatCredits(checklist)
 
 	const handleOpenChange = (next: boolean) => {
-		setOpenOverride(next)
-		if (next) refresh()
-		if (!next) {
+		setOpen(next)
+		if (next) {
+			refresh()
 			markSeen()
+		} else {
 			setJustClaimed(false)
 		}
 	}
@@ -90,24 +85,41 @@ function OnboardingChecklistPill() {
 
 	return (
 		<Popover open={open} onOpenChange={handleOpenChange}>
-			<PopoverTrigger
-				render={
-					<Button
-						variant="outline"
-						size="sm"
-						className={cn(
-							"relative gap-2 border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15",
-							claimable && "border-primary bg-primary/20",
-						)}
-					>
-						<StarIcon size={14} className="text-primary" />
-						<span className="hidden sm:inline">{formatOnboardingPill(checklist)}</span>
-						<span className="inline sm:hidden">{formatCredits(checklist)}</span>
-						<ProgressChip completed={checklist.completed_count} total={checklist.total_count} />
-						{!seen && <AttentionDot />}
-					</Button>
-				}
-			/>
+			<div className="relative">
+				<PopoverTrigger
+					render={
+						<Button
+							variant="outline"
+							size="sm"
+							className={cn(
+								"gap-2 border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15",
+								claimable && "border-primary bg-primary/20",
+							)}
+						>
+							<StarIcon size={14} className="text-primary" />
+							{claimable || deadlineMs === null ? (
+								<span>Claim {credits}</span>
+							) : (
+								<span className="font-mono tabular-nums">
+									{formatCountdown(deadlineMs, nowMs)}
+								</span>
+							)}
+							<ProgressChip
+								completed={checklist.completed_count}
+								total={checklist.total_count}
+							/>
+						</Button>
+					}
+				/>
+				{!seen && !open && (
+					<RewardCallout
+						credits={credits}
+						steps={checklist.total_count}
+						onOpen={() => handleOpenChange(true)}
+						onClose={markSeen}
+					/>
+				)}
+			</div>
 			<PopoverPopup align="end" className="w-[22rem] max-w-[calc(100vw-1rem)] p-0">
 				{open && (
 					<OnboardingChecklistPanel
@@ -119,9 +131,10 @@ function OnboardingChecklistPill() {
 						onClaim={handleClaim}
 						onDismiss={() => {
 							dismiss()
-							setOpenOverride(false)
+							setOpen(false)
 						}}
 						onClose={() => handleOpenChange(false)}
+						nowMs={nowMs}
 					/>
 				)}
 			</PopoverPopup>
@@ -143,13 +156,48 @@ function ProgressChip({ completed, total }: { completed: number; total: number }
 	)
 }
 
-/** A pulsing corner marker until the popover has been opened once. */
-function AttentionDot() {
+/**
+ * The one-time pointer under the pill that says what the timer is for. Goes away once the
+ * popover has been opened or the pointer closed, and never comes back for this viewer and org.
+ */
+function RewardCallout({
+	credits,
+	steps,
+	onOpen,
+	onClose,
+}: {
+	credits: string
+	steps: number
+	onOpen: () => void
+	onClose: () => void
+}) {
 	return (
-		<span className="absolute -top-1 -right-1 flex size-2.5" aria-hidden>
-			<span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-			<span className="relative inline-flex size-2.5 rounded-full bg-primary" />
-		</span>
+		<div
+			role="status"
+			className="absolute top-full right-0 z-40 mt-3 w-max max-w-[16rem] rounded-lg border border-primary/40 bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-top-1"
+		>
+			<span
+				className="absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary/40 bg-popover"
+				aria-hidden
+			/>
+			<div className="flex items-start gap-2 p-3 pr-2">
+				<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left outline-none">
+					<span className="block text-sm font-semibold">Earn {credits}</span>
+					<span className="mt-0.5 block text-xs text-muted-foreground">
+						Finish {steps} setup steps before the timer runs out.
+					</span>
+				</button>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					aria-label="Got it"
+					onClick={onClose}
+					className="-mt-1 shrink-0 text-muted-foreground"
+				>
+					<XmarkIcon size={12} />
+				</Button>
+			</div>
+		</div>
 	)
 }
 
@@ -163,7 +211,7 @@ export interface OnboardingChecklistPanelProps {
 	readonly onClaim: () => void
 	readonly onDismiss: () => void
 	readonly onClose: () => void
-	/** Injected by tests; the panel otherwise reads the clock. */
+	/** The live clock from the pill; tests inject a fixed one. */
 	readonly nowMs?: number
 }
 
@@ -180,7 +228,7 @@ export function OnboardingChecklistPanel({
 }: OnboardingChecklistPanelProps) {
 	const credits = formatCredits(checklist)
 	const deadlineMs = checklist.deadline_at === null ? null : Date.parse(checklist.deadline_at)
-	const timeLeft = deadlineMs === null ? null : formatTimeLeft(deadlineMs, nowMs ?? Date.now())
+	const timeLeft = deadlineMs === null ? null : formatCountdown(deadlineMs, nowMs ?? Date.now())
 	const progress = checklist.total_count === 0 ? 0 : checklist.completed_count / checklist.total_count
 
 	return (
@@ -267,7 +315,7 @@ export function OnboardingChecklistPanel({
 							{checklist.completed_count} of {checklist.total_count} done
 						</span>
 						{timeLeft !== null && (
-							<span className="inline-flex items-center gap-1 font-medium text-primary">
+							<span className="inline-flex items-center gap-1 font-mono font-medium tabular-nums text-primary">
 								<ClockIcon size={12} />
 								{timeLeft}
 							</span>

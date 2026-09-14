@@ -6,8 +6,7 @@ import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/do
 import { afterEach, expect, it } from "vitest"
 
 import {
-	formatOnboardingPill,
-	formatTimeLeft,
+	formatCountdown,
 	OnboardingChecklistPanel,
 	type OnboardingChecklistPanelProps,
 } from "./onboarding-checklist-button"
@@ -80,7 +79,7 @@ it("links every undone step to where it is done and leaves done steps as plain r
 	expect(mcp.getAttribute("href")).toBe("/settings?tab=mcp")
 
 	expect(screen.getByText("2 of 5 done")).toBeTruthy()
-	expect(screen.getByText("19h left")).toBeTruthy()
+	expect(screen.getByText("19:00:00")).toBeTruthy()
 })
 
 it("offers the claim to an admin once every step is done", async () => {
@@ -149,13 +148,8 @@ it("surfaces a failed claim next to the button instead of swallowing it", async 
 	expect(screen.getByText("Billing is unavailable right now.")).toBeTruthy()
 })
 
-it("labels the pill with the ask until the reward is claimable", () => {
-	expect(formatOnboardingPill({ status: "in_progress", reward_amount_usd: 30 })).toBe("Earn $30 credits")
-	expect(formatOnboardingPill({ status: "claimable", reward_amount_usd: 30 })).toBe("Claim $30 credits")
-})
-
-it("counts hours while there are any, then minutes, and never goes negative", () => {
-	expect(formatTimeLeft(NOW + 19.5 * 60 * 60 * 1000, NOW)).toBe("19h left")
-	expect(formatTimeLeft(NOW + 42 * 60 * 1000, NOW)).toBe("42m left")
-	expect(formatTimeLeft(NOW - 1, NOW)).toBe("1m left")
+it("counts down to the second and clamps at zero", () => {
+	expect(formatCountdown(NOW + 19.5 * 60 * 60 * 1000, NOW)).toBe("19:30:00")
+	expect(formatCountdown(NOW + 42 * 60 * 1000 + 7000, NOW)).toBe("00:42:07")
+	expect(formatCountdown(NOW - 1, NOW)).toBe("00:00:00")
 })
