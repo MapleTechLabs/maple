@@ -233,6 +233,14 @@ describe("AutumnClient request construction", () => {
 		assert.deepStrictEqual(anonymous.captured?.body, {})
 	})
 
+	it("redeemReward posts the promo code against the customer", async () => {
+		const { captured } = await withFetch({ body: JSON.stringify({ success: true }) }, (autumn) =>
+			autumn.redeemReward(ORG, { code: "ONBOARD30" }),
+		)
+		assert.strictEqual(captured?.url, "https://api.useautumn.com/v1/rewards.redeem")
+		assert.deepStrictEqual(captured?.body, { customer_id: ORG, code: "ONBOARD30" })
+	})
+
 	it("strips trailing slashes from the configured API url", async () => {
 		let url: string | undefined
 		const fetch = (async (input) => {

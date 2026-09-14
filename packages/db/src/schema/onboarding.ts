@@ -14,6 +14,8 @@ export const orgOnboardingState = pgTable("org_onboarding_state", {
 	connectNudgeEmailSentAt: timestamp("connect_nudge_email_sent_at", { withTimezone: true, mode: "date" }),
 	stalledEmailSentAt: timestamp("stalled_email_sent_at", { withTimezone: true, mode: "date" }),
 	activationEmailSentAt: timestamp("activation_email_sent_at", { withTimezone: true, mode: "date" }),
+	/** When the org's admin redeemed the onboarding-checklist credit. Set once; never cleared except to roll back a failed redeem. */
+	rewardClaimedAt: timestamp("reward_claimed_at", { withTimezone: true, mode: "date" }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 })

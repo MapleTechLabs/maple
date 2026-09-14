@@ -17,6 +17,9 @@ import { track, type TrackProps } from "@maple-dev/effect-sdk/client"
 
 export type ProductEvent =
 	| "onboarding_step_completed"
+	/** The org admin redeemed the onboarding-checklist credit from the top bar. */
+	| "onboarding_reward_claimed"
+	| "onboarding_reward_dismissed"
 	| "integration_connected"
 	| "alert_rule_created"
 	| "api_key_created"

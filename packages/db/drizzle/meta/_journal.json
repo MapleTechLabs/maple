@@ -379,6 +379,13 @@
       "when": 1788285534887,
       "tag": "0054_alert_incident_open_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789339400947,
+      "tag": "0055_onboarding_reward_claimed",
+      "breakpoints": true
     }
   ]
 }

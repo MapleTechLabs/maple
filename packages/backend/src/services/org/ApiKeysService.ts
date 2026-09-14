@@ -14,7 +14,7 @@ import {
 	RoleName,
 } from "@maple/domain/http"
 import { API_KEY_PREFIX, apiKeys, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
-import { and, desc, eq, getTableColumns, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, getTableColumns, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
@@ -193,6 +193,35 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.id": keyId })
 			const row = yield* requireById(orgId, keyId)
 			return rowToResponse(row)
+		})
+
+		/**
+		 * Whether the org holds a live key of `kind` that has authenticated at least
+		 * once. The onboarding checklist reads it for "connected an MCP agent": a
+		 * minted-but-unused key is intent, not a connection.
+		 */
+		const hasUsedKeyOfKind = Effect.fn("ApiKeysService.hasUsedKeyOfKind")(function* (
+			orgId: OrgId,
+			kind: ApiKeyKind,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.kind": kind })
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({ id: apiKeys.id })
+						.from(apiKeys)
+						.where(
+							and(
+								eq(apiKeys.orgId, orgId),
+								eq(apiKeys.kind, kind),
+								eq(apiKeys.revoked, false),
+								isNotNull(apiKeys.lastUsedAt),
+							),
+						)
+						.limit(1),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return rows.length > 0
 		})
 
 		/**
@@ -691,6 +720,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		return {
 			get,
 			list,
+			hasUsedKeyOfKind,
 			create,
 			roll,
 			revoke,

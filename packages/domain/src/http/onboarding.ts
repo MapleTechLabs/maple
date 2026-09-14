@@ -1,8 +1,9 @@
 import { Schema } from "effect"
 
-// Onboarding state has no HTTP surface: the v1 `/api/onboarding` group was
-// retired once the quick-start wizard moved to client-local state. These
-// schemas stay because `OnboardingService` and `SetupAuditService` use them.
+// The v1 `/api/onboarding` group was retired once the quick-start wizard moved
+// to client-local state. These schemas stay because `OnboardingService`,
+// `SetupAuditService` and `OnboardingChecklistService` use them; the checklist
+// exposes its own v2 contract (`./v2/onboarding-checklist`).
 
 export class OnboardingStateResponse extends Schema.Class<OnboardingStateResponse>("OnboardingStateResponse")(
 	{
@@ -11,6 +12,7 @@ export class OnboardingStateResponse extends Schema.Class<OnboardingStateRespons
 		onboardingCompletedAt: Schema.NullOr(Schema.Number),
 		checklistDismissedAt: Schema.NullOr(Schema.Number),
 		firstDataReceivedAt: Schema.NullOr(Schema.Number),
+		rewardClaimedAt: Schema.NullOr(Schema.Number),
 		createdAt: Schema.Number,
 		updatedAt: Schema.Number,
 	},

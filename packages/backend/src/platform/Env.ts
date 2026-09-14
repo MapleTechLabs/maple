@@ -64,6 +64,8 @@ export interface EnvConfig {
 	readonly AUTUMN_API_URL: string
 	/** Svix signing secret (`whsec_…`) for `POST /webhooks/autumn`; the route answers 503 while unset. */
 	readonly AUTUMN_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	/** Promo code of the Autumn reward the onboarding checklist redeems; claims fail closed without it. */
+	readonly AUTUMN_ONBOARDING_REWARD_CODE: Option.Option<Redacted.Redacted<string>>
 	/**
 	 * Stripe secret (or restricted, Customers read/write) key for the billing
 	 * details the Autumn API has no surface for — company name, address and tax
@@ -190,6 +192,7 @@ const envConfig = Config.all({
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
+	AUTUMN_ONBOARDING_REWARD_CODE: optionalRedacted("AUTUMN_ONBOARDING_REWARD_CODE"),
 	STRIPE_SECRET_KEY: optionalRedacted("STRIPE_SECRET_KEY"),
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
 	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),

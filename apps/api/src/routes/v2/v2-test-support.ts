@@ -22,6 +22,7 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
+import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
@@ -40,6 +41,7 @@ import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
 import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
+import { HttpV2OnboardingChecklistLive } from "./onboarding-checklist.http"
 import { HttpV2OrganizationLive } from "./organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "./recommendations.http"
 import { HttpV2AuditLogLive } from "./audit-log.http"
@@ -78,7 +80,18 @@ export const OrgMembersServiceStubLayer = Layer.succeed(OrgMembersService, {
 	resolveMembers: () => Effect.succeed([]),
 })
 
-export const AllV2GroupLayersLive = Layer.mergeAll(
+/** The checklist fans out to nine services; only its own route test builds the real one. */
+export const OnboardingChecklistServiceStubLayer = Layer.succeed(OnboardingChecklistService, {
+	read: () => Effect.die("onboarding checklist is not exercised by this harness"),
+	claim: () => Effect.die("onboarding checklist is not exercised by this harness"),
+})
+
+/**
+ * Every v2 group except the onboarding checklist, which its own route test
+ * supplies with a recording service. Everything else builds on the full
+ * bundle below.
+ */
+export const V2GroupLayersExceptOnboardingChecklist = Layer.mergeAll(
 	HttpV2ApiKeysLive,
 	HttpV2SlackIntegrationsLive,
 	HttpV2PlanetScaleIntegrationsLive,
@@ -139,6 +152,11 @@ export const AllV2GroupLayersLive = Layer.mergeAll(
 			}),
 		),
 	),
+)
+
+export const AllV2GroupLayersLive = Layer.mergeAll(
+	V2GroupLayersExceptOnboardingChecklist,
+	HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 ).pipe(
 	// Mutation handlers across the groups record audit entries; the real service
 	// needs only the Database every harness already provides.

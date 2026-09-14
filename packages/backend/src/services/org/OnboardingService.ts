@@ -3,7 +3,7 @@ import type { OrgOnboardingStateRow } from "@maple/db"
 import { OnboardingPersistenceError, OnboardingStateResponse } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/http"
 import { and, eq, isNull } from "drizzle-orm"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { dateToMs } from "@maple/backend/platform/time"
 
@@ -32,6 +32,7 @@ function rowToResponse(row: OrgOnboardingStateRow): OnboardingStateResponse {
 		onboardingCompletedAt: dateToMs(row.onboardingCompletedAt),
 		checklistDismissedAt: dateToMs(row.checklistDismissedAt),
 		firstDataReceivedAt: dateToMs(row.firstDataReceivedAt),
+		rewardClaimedAt: dateToMs(row.rewardClaimedAt),
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 	})
@@ -90,6 +91,11 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 					})
 				}
 				return row
+			})
+
+			/** The row as it is, or `None`; never creates one. */
+			const findState = Effect.fn("OnboardingService.findState")(function* (orgId: OrgId) {
+				return Option.fromNullishOr(yield* findRow(orgId))
 			})
 
 			const getState = Effect.fn("OnboardingService.getState")(function* (
@@ -168,6 +174,47 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				return result.length > 0
 			})
 
+			/**
+			 * Reserve the onboarding reward: stamps `rewardClaimedAt` only if it is
+			 * still null and reports whether this call won. The stamp goes down BEFORE
+			 * the upstream redeem so two concurrent claims cannot both reach Autumn.
+			 */
+			const markRewardClaimed = Effect.fn("OnboardingService.markRewardClaimed")(function* (
+				orgId: OrgId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const result = yield* database
+					.execute((db) =>
+						db
+							.update(orgOnboardingState)
+							.set({ rewardClaimedAt: new Date(now), updatedAt: new Date(now) })
+							.where(
+								and(
+									eq(orgOnboardingState.orgId, orgId),
+									isNull(orgOnboardingState.rewardClaimedAt),
+								),
+							)
+							.returning({ id: orgOnboardingState.orgId }),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
+				return result.length > 0
+			})
+
+			/** Roll back a reservation whose upstream redeem failed, so the org can try again. */
+			const clearRewardClaim = Effect.fn("OnboardingService.clearRewardClaim")(function* (
+				orgId: OrgId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* database
+					.execute((db) =>
+						db
+							.update(orgOnboardingState)
+							.set({ rewardClaimedAt: null, updatedAt: new Date(now) })
+							.where(eq(orgOnboardingState.orgId, orgId)),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
+			})
+
 			const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (
 				orgId: OrgId,
 				field: OnboardingEmailField,
@@ -225,10 +272,13 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 			)
 
 			return {
+				findState,
 				getState,
 				updateState,
 				ensureRow,
 				recordFirstDataReceived,
+				markRewardClaimed,
+				clearRewardClaim,
 				markEmailSent,
 				suppressOnboardingEmails,
 				listAll,

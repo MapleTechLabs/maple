@@ -70,6 +70,7 @@ type AutumnRoute =
 	| "previewAttach"
 	| "openCustomerPortal"
 	| "listPlans"
+	| "redeemReward"
 
 const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	getOrCreateCustomer: "/v1/customers.get_or_create",
@@ -78,6 +79,7 @@ const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	previewAttach: "/v1/billing.preview_attach",
 	openCustomerPortal: "/v1/billing.open_customer_portal",
 	listPlans: "/v1/plans.list",
+	redeemReward: "/v1/rewards.redeem",
 } satisfies Record<AutumnRoute, string>
 
 /**
@@ -275,6 +277,12 @@ export interface AutumnClientApi {
 	) => AutumnCall
 	readonly listPlans: (customerId: string | undefined) => AutumnCall
 	/**
+	 * Apply a dashboard-defined reward (a promo code) to a customer. The
+	 * onboarding checklist is the only caller; Autumn applies the reward's
+	 * invoice credits to the customer's next invoices.
+	 */
+	readonly redeemReward: (customerId: string, options: { readonly code: string }) => AutumnCall
+	/**
 	 * Customer billing controls live on the canonical REST surface — `autumnHandler`
 	 * never exposed an RPC route for them, so this call was always hand-rolled. Its
 	 * explicit `x-api-version` pin matches the routes above, which send the same
@@ -437,6 +445,9 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 				// still serves the public catalog.
 				listPlans: (customerId) =>
 					call("listPlans", customerId === undefined ? {} : { customer_id: customerId }),
+
+				redeemReward: (customerId, { code }) =>
+					call("redeemReward", { customer_id: customerId, code }),
 
 				updateCustomerBillingControls: (orgId, controls) =>
 					callUpdateBillingControls(httpClient, secretKey, apiUrl, orgId, controls),
