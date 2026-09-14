@@ -2,10 +2,9 @@ import { Exit, Option } from "effect"
 import { Fragment, useState, type Dispatch, type SetStateAction } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import type { AlertDestinationDocument } from "@maple/domain/http"
+import type { AlertDestinationDocument, AlertDestinationId } from "@maple/domain/http"
 
 import { DestinationCard } from "@/components/alerts/destination-card"
-import { DestinationDialog } from "@/components/alerts/destination-dialog"
 import { ProviderLogo } from "@/components/alerts/destination-provider"
 import { CircleWarningIcon, FireIcon, PlusIcon, TruckIcon } from "@/components/icons"
 import {
@@ -57,7 +56,10 @@ export interface DestinationManager {
 	remove: (destination: AlertDestinationDocument) => Promise<void>
 }
 
-export function useDestinationManager(): DestinationManager {
+export function useDestinationManager(options?: {
+	/** Called with the new destination's id after a create succeeds — a rule form uses it to select the destination it just made. */
+	readonly onCreated?: (id: AlertDestinationId) => void
+}): DestinationManager {
 	const createDestination = useAtomSet(MapleApiV2AtomClient.mutation("alertDestinations", "create"), {
 		mode: "promiseExit",
 	})
@@ -86,31 +88,40 @@ export function useDestinationManager(): DestinationManager {
 
 	async function save() {
 		setSaving(true)
-		// `as never`: the generated client collapses the discriminated-union payload
-		// to a single member in its inferred signature; the builders return the
-		// correctly-typed union, so the cast only bridges that inference gap.
-		const result: unknown = editing
-			? await updateDestination({
-					params: { id: editing.id },
-					payload: buildDestinationUpdateParamsV2(form) as never,
-					reactivityKeys: ["alertDestinations"],
-				})
-			: await createDestination({
-					payload: buildDestinationCreateParamsV2(form) as never,
-					reactivityKeys: ["alertDestinations"],
-				})
-
-		if (Exit.isExit(result) && Exit.isSuccess(result)) {
-			toastManager.add({
-				title: editing ? "Destination updated" : "Destination created",
-				type: "success",
+		if (editing) {
+			const result = await updateDestination({
+				params: { id: editing.id },
+				// `as never`: the generated client collapses the discriminated-union payload
+				// to a single member in its inferred signature; the builders return the
+				// correctly-typed union, so the cast only bridges that inference gap.
+				payload: buildDestinationUpdateParamsV2(form) as never,
+				reactivityKeys: ["alertDestinations"],
 			})
-			setDialogOpen(false)
+			if (Exit.isSuccess(result)) {
+				toastManager.add({ title: "Destination updated", type: "success" })
+				setDialogOpen(false)
+			} else {
+				toastManager.add({
+					title: getExitErrorMessage(result, "Failed to save destination"),
+					type: "error",
+				})
+			}
 		} else {
-			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to save destination"),
-				type: "error",
+			const result = await createDestination({
+				// `as never`: see above.
+				payload: buildDestinationCreateParamsV2(form) as never,
+				reactivityKeys: ["alertDestinations"],
 			})
+			if (Exit.isSuccess(result)) {
+				toastManager.add({ title: "Destination created", type: "success" })
+				setDialogOpen(false)
+				options?.onCreated?.(result.value.id)
+			} else {
+				toastManager.add({
+					title: getExitErrorMessage(result, "Failed to save destination"),
+					type: "error",
+				})
+			}
 		}
 		setSaving(false)
 	}
@@ -196,8 +207,8 @@ export function useDestinationManager(): DestinationManager {
 }
 
 /**
- * Settings tab: the destinations grid + delivery log, plus the shared
- * destination dialog. The manager is created by the route so the page header's
+ * Settings tab: the destinations grid + delivery log. The manager and the
+ * dialog live on the route (the overview's empty state opens it too) so the page header's
  * "Add destination" action drives the same dialog.
  */
 export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationManager; isAdmin: boolean }) {
@@ -427,10 +438,16 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 																render={<span />}
 																className="cursor-default text-muted-foreground tabular-nums"
 															>
-																{formatAlertTime(event.scheduledAt, effectiveTimezone)}
+																{formatAlertTime(
+																	event.scheduledAt,
+																	effectiveTimezone,
+																)}
 															</TooltipTrigger>
 															<TooltipContent>
-																{formatAlertDateTime(event.scheduledAt, effectiveTimezone)}
+																{formatAlertDateTime(
+																	event.scheduledAt,
+																	effectiveTimezone,
+																)}
 															</TooltipContent>
 														</Tooltip>
 													</TableCell>
@@ -444,16 +461,6 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 					)}
 				</section>
 			</div>
-
-			<DestinationDialog
-				open={manager.dialogOpen}
-				onOpenChange={manager.setDialogOpen}
-				form={manager.form}
-				onFormChange={manager.setForm}
-				isEditing={manager.isEditing}
-				saving={manager.saving}
-				onSave={manager.save}
-			/>
 		</>
 	)
 }
