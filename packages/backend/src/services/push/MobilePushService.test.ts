@@ -186,7 +186,9 @@ describe("renderIncidentPush", () => {
 			}),
 		)
 		expect(resolved.alert.title).toBe("Resolved · Checkout error rate")
-		expect(resolved.alert.body).toBe("Traffic dropped for 32m; no breach seen since after 6h.")
+		expect(resolved.alert.body).toBe(
+			"Traffic dropped for 32m with no breach observed; resolved after 6h.",
+		)
 		expect(resolved.interruptionLevel).toBe("passive")
 	})
 

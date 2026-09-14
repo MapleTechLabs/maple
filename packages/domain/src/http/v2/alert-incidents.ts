@@ -102,7 +102,7 @@ export const V2AlertIncident = Schema.Struct({
 	}),
 	hold_reason: Schema.NullOr(AlertIncidentHoldReason).annotate({
 		description:
-			"Set while an open incident is waiting on telemetry: the breach stopped appearing, but the service's data could not be proven to still be flowing (`volume_collapsed`, `no_data`, `sampling_changed`, `probe_failed`). The incident resolves once telemetry resumes or the hold ceiling elapses. `null` while firing or once resolved.",
+			"Set while an open incident is waiting on telemetry: the breach stopped appearing, but the service's data could not be proven to still be flowing. `volume_collapsed`, `no_data` and `sampling_changed` resolve once telemetry resumes or their hold ceiling elapses; `probe_failed` (Maple could not run the check) has no ceiling and resolves on the next successful check. `null` while firing or once resolved.",
 	}),
 	held_since: Schema.NullOr(Timestamp).annotate({
 		description: "When the current hold began, or `null` when the incident is not held.",

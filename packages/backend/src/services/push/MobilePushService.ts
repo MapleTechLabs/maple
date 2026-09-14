@@ -291,7 +291,7 @@ export const renderIncidentPush = (
 			const body =
 				held === null
 					? `${label} back to ${now}${after}.`
-					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)}; no breach seen since${after}.`
+					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)} with no breach observed; resolved${after}.`
 			return {
 				alert: {
 					title: `Resolved · ${rule}`,

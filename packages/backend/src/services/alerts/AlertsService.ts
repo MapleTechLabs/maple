@@ -2394,7 +2394,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// threshold and would resolve every incident it touches, paging
 						// out a wave of false all-clears. Believe it only once telemetry
 						// is provably still arriving.
-						let gate: LivenessGateDecision = { kind: "resolve", reason: null, heldForMs: 0 }
+						// A healthy observation with real data ends a hold too, and the
+						// resolve copy should say how long the incident waited.
+						let gate: LivenessGateDecision = {
+							kind: "resolve",
+							reason: null,
+							heldForMs:
+								openIncident.heldSince === null
+									? 0
+									: timestamp - dateToMs(openIncident.heldSince),
+						}
 						if (evaluation.derivedFromNoData) {
 							const liveness = yield* telemetryStillFlowing(
 								row.orgId,
