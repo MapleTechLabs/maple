@@ -39,10 +39,41 @@ export const warehouseFailureAttributes = (error: {
 	}
 }
 
+const INVALID_TOKEN_MARKER = "invalid token"
+
+/**
+ * `Invalid token b'…'` / `Invalid token "…"` with the quoted token redacted. A
+ * single left-to-right scan: the lazy-regex version was quadratic on a message
+ * made of repeated markers, and this is an untrusted upstream body.
+ */
+const redactInvalidTokens = (message: string): string => {
+	const lower = message.toLowerCase()
+	let out = ""
+	let cursor = 0
+	for (;;) {
+		const at = lower.indexOf(INVALID_TOKEN_MARKER, cursor)
+		if (at === -1) break
+		let i = at + INVALID_TOKEN_MARKER.length
+		while (i < message.length && /\s/.test(message.charAt(i))) i++
+		if (message[i] === "b") i++
+		const quote = message[i]
+		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
+		if (close === -1) {
+			out += message.slice(cursor, i)
+			cursor = i
+			continue
+		}
+		out += `${message.slice(cursor, i + 1)}[redacted]${quote}`
+		cursor = close + 1
+	}
+	return out + message.slice(cursor)
+}
+
 const redactWarehouseCredentials = (message: string): string =>
-	message
-		.replace(/(Invalid token\s+b?)(['"])[\s\S]*?\2/gi, "$1$2[redacted]$2")
-		.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted]")
+	redactInvalidTokens(message).replace(
+		/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+		"[redacted]",
+	)
 
 /** Strip credentials, HTML error pages and whitespace noise before exposing an upstream failure. */
 export const cleanErrorMessage = (raw: string): string => {

@@ -65,7 +65,7 @@ interface ParsedPipe {
 	readonly target: string
 }
 
-const SECTION_HEADER = /^([A-Z_][A-Z0-9_]*)\s*(>|".*"|.+)?\s*$/
+const SECTION_HEADER = /^([A-Z_][A-Z0-9_]*)([\s\S]*)$/
 
 const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	const lines = content.split("\n")
@@ -384,7 +384,7 @@ export const emitJsonPathSpec = (
 
 	const colJsonPath = new Map<string, string>()
 	for (const line of original) {
-		const m = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s+.*?`json:([^`]+)`/.exec(line)
+		const m = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s[^`]*`json:([^`]+)`/.exec(line)
 		if (m) {
 			const colName = m[1]
 			const path = m[2]

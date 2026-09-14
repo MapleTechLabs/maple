@@ -36,6 +36,14 @@ export function IncidentTimelineStrip({
 				status: incident.status,
 				start: new Date(incident.firstTriggeredAt).getTime(),
 				end: incident.resolvedAt ? new Date(incident.resolvedAt).getTime() : range.max,
+				// From here on the open incident is waiting on telemetry rather than
+				// observed breaching. Kept on the segment so a bucket is hatched only
+				// when EVERY open incident in it is held — a sibling group still
+				// firing keeps the bucket red.
+				heldSince:
+					incident.status === "open" && incident.heldSince
+						? new Date(incident.heldSince).getTime()
+						: null,
 			})),
 		[incidents, range.max],
 	)
@@ -48,7 +56,12 @@ export function IncidentTimelineStrip({
 				{Array.from({ length: buckets }, (_, i) => {
 					const bucketStart = range.min + (i / buckets) * totalRange
 					const bucketEnd = range.min + ((i + 1) / buckets) * totalRange
-					const hit = segments.find((seg) => seg.end > bucketStart && seg.start < bucketEnd)
+					const hits = segments.filter((seg) => seg.end > bucketStart && seg.start < bucketEnd)
+					const open = hits.filter((seg) => seg.status === "open")
+					const hit = open[0] ?? hits[0]
+					const held =
+						open.length > 0 &&
+						open.every((seg) => seg.heldSince !== null && seg.heldSince < bucketEnd)
 					return (
 						<div
 							// biome-ignore lint/suspicious/noArrayIndexKey: fixed-length positional strip
@@ -57,9 +70,11 @@ export function IncidentTimelineStrip({
 								"flex-1 rounded-[2px]",
 								compact ? "h-2" : "h-3",
 								hit
-									? hit.status === "open"
-										? "bg-destructive"
-										: "bg-destructive/50"
+									? held
+										? "bg-[repeating-linear-gradient(135deg,var(--destructive)_0_2px,transparent_2px_5px)] bg-warning/30"
+										: hit.status === "open"
+											? "bg-destructive"
+											: "bg-destructive/50"
 									: "bg-chart-apdex/60",
 							)}
 						/>

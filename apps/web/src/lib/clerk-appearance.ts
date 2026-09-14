@@ -28,7 +28,9 @@ export const clerkAuthCardAppearance = {
 	},
 	elements: {
 		rootBox: { width: "100%" },
-		cardBox: { width: "100%", maxWidth: "none", boxShadow: "none" },
+		// Clerk's cardBox clips its overflow and relies on the card padding to absorb the
+		// "Last used" badge, which hangs past the social button's top-right corner.
+		cardBox: { width: "100%", maxWidth: "none", boxShadow: "none", overflow: "visible" },
 		card: { width: "100%", padding: 0, background: "transparent", boxShadow: "none" },
 		footer: { background: "transparent" },
 	},

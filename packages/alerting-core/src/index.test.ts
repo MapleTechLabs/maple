@@ -164,6 +164,95 @@ describe("planAlertLifecycle", () => {
 			eventType: "resolve",
 		})
 	})
+	it("gates empty skipped windows while preserving counters and flap suppression", () => {
+		const evaluation = evaluateAlertObservation(
+			{
+				comparator: "gt",
+				threshold: 10,
+				thresholdUpper: null,
+				minimumSampleCount: 0,
+				noDataBehavior: "skip",
+			},
+			{ value: null, sampleCount: 0, hasData: false },
+			"above threshold",
+		)
+		expect(evaluation).toMatchObject({ status: "skipped", skippedForNoData: true })
+		const input = {
+			policy,
+			evaluation,
+			state: { consecutiveBreaches: 2, consecutiveHealthy: 0 },
+			openIncident: {
+				firstTriggeredAtMs: 0,
+				lastNotifiedAtMs: 0,
+				lastDeliveredEventType: "trigger" as const,
+			},
+			nowMs: 1_000,
+		}
+		expect(planAlertLifecycle(input)).toMatchObject({
+			transition: "none",
+			hold: "missing_telemetry",
+			state: input.state,
+		})
+		expect(planAlertLifecycle({ ...input, allowNoDataResolution: true })).toMatchObject({
+			transition: "resolved",
+			eventType: "resolve",
+			state: input.state,
+		})
+		expect(
+			planAlertLifecycle({
+				...input,
+				allowNoDataResolution: true,
+				openIncident: { ...input.openIncident, lastDeliveredEventType: null },
+			}),
+		).toMatchObject({
+			transition: "resolved",
+			eventType: null,
+			notificationSuppression: "flap_resolution",
+			state: input.state,
+		})
+		expect(planAlertLifecycle({ ...input, openIncident: null })).toMatchObject({
+			transition: "none",
+			hold: null,
+			state: input.state,
+		})
+	})
+
+	it("never turns insufficient samples or invalid scalars into empty-window recovery", () => {
+		for (const observation of [
+			{ value: 5, sampleCount: 1, hasData: true },
+			{ value: null, sampleCount: 3, hasData: true },
+			{ value: Number.NaN, sampleCount: 3, hasData: true },
+		]) {
+			const evaluation = evaluateAlertObservation(
+				{
+					comparator: "gt",
+					threshold: 10,
+					thresholdUpper: null,
+					minimumSampleCount: 2,
+					noDataBehavior: "skip",
+				},
+				observation,
+				"above threshold",
+			)
+			expect(evaluation.status).toBe("skipped")
+			expect(evaluation.skippedForNoData).not.toBe(true)
+			const state = { consecutiveBreaches: 2, consecutiveHealthy: 1 }
+			expect(
+				planAlertLifecycle({
+					policy,
+					evaluation,
+					state,
+					openIncident: {
+						firstTriggeredAtMs: 0,
+						lastNotifiedAtMs: 0,
+						lastDeliveredEventType: "trigger",
+					},
+					nowMs: 1_000,
+					allowNoDataResolution: true,
+				}),
+			).toMatchObject({ transition: "none", hold: null, state })
+		}
+	})
 })
 
 describe("interleaveAlertRulesByTenant", () => {

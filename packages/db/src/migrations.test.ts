@@ -71,12 +71,12 @@ describe("drizzle migrations", () => {
 		}
 	})
 
-	it("upgrades the onboarding migration head to receipts and safely re-runs", async () => {
+	it("upgrades the incident-hold migration head to receipts and safely re-runs", async () => {
 		const directory = mkdtempSync(resolve(tmpdir(), "maple-receipts-upgrade-"))
 		const pg = new PGlite()
 		try {
 			const journal = readJournal()
-			const head = journal.entries.findIndex((entry) => entry.tag === "0056_onboarding_reward_reserved")
+			const head = journal.entries.findIndex((entry) => entry.tag === "0057_alert_incident_hold")
 			expect(head).toBeGreaterThanOrEqual(0)
 			const entries = journal.entries.slice(0, head + 1)
 			mkdirSync(resolve(directory, "meta"))
@@ -112,6 +112,10 @@ describe("drizzle migrations", () => {
 				"reward_claimed_at",
 				"reward_reserved_at",
 			])
+			const holdColumns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
+			)
+			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
 		} finally {
 			await pg.close()
 			rmSync(directory, { recursive: true, force: true })

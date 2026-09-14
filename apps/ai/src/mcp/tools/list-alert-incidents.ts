@@ -85,7 +85,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 				const rows = incidents.map((i) => [
 					truncate(i.ruleName, 30),
 					i.severity,
-					i.status,
+					i.holdReason != null ? `open (waiting on data: ${i.holdReason})` : i.status,
 					i.groupKey ?? "all",
 					i.signalType,
 					`${comparatorLabel[i.comparator] ?? i.comparator} ${i.threshold}`,
@@ -120,6 +120,8 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 							signalType: i.signalType,
 							severity: i.severity,
 							status: i.status,
+							holdReason: i.holdReason,
+							heldSince: i.heldSince,
 							threshold: i.threshold,
 							comparator: i.comparator,
 							firstTriggeredAt: i.firstTriggeredAt,

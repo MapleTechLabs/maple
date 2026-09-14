@@ -30,6 +30,8 @@ export interface AlertEvaluation extends Pick<
 > {
 	/** A healthy result derived from an empty window synthesized as zero. */
 	readonly derivedFromNoData: boolean
+	/** Empty window skipped by policy; distinct from insufficient samples or an invalid scalar. */
+	readonly skippedForNoData?: boolean
 }
 
 export const compareAlertThreshold = (
@@ -84,6 +86,7 @@ export const evaluateAlertObservation = (
 			comparator: policy.comparator,
 			reason: "No data in the selected window",
 			derivedFromNoData: false,
+			skippedForNoData: true,
 		}
 	}
 
@@ -250,7 +253,7 @@ export interface AlertLifecycleInput {
 	readonly nowMs: number
 	/** Most recent notification for a resolved incident with the same rule and group. */
 	readonly previousNotificationAtMs?: number | null
-	/** Set only after the host's telemetry-query adapter proves data is still arriving. */
+	/** Set after the host's liveness gate permits recovery, including an expired hold ceiling. */
 	readonly allowNoDataResolution?: boolean
 }
 
@@ -313,6 +316,23 @@ const noTransition = (state: AlertLifecycleState, hold: AlertLifecycleHold = nul
 	advanceNotificationAnchor: false,
 })
 
+const resolutionPlan = (
+	state: AlertLifecycleState,
+	openIncident: AlertLifecycleIncident,
+): AlertLifecyclePlan => {
+	const flapResolutionSuppressed =
+		openIncident.lastDeliveredEventType == null && openIncident.lastNotifiedAtMs != null
+	return {
+		state,
+		transition: "resolved",
+		eventType: flapResolutionSuppressed ? null : "resolve",
+		notificationSuppression: flapResolutionSuppressed ? "flap_resolution" : null,
+		hold: null,
+		inheritedNotificationAtMs: null,
+		advanceNotificationAnchor: false,
+	}
+}
+
 /**
  * Decide the next alert state and lifecycle intent without performing I/O.
  *
@@ -325,7 +345,16 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		const { evaluation, policy, openIncident, nowMs } = input
 		const previous = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0 }
 
-		if (evaluation.status === "skipped") return noTransition(previous)
+		if (evaluation.status === "skipped") {
+			// Empty skipped windows use the same host liveness gate as missing
+			// groups. Other skips freeze the incident without probing or resolving.
+			if (evaluation.skippedForNoData === true && openIncident !== null) {
+				return input.allowNoDataResolution === true
+					? resolutionPlan(previous, openIncident)
+					: noTransition(previous, "missing_telemetry")
+			}
+			return noTransition(previous)
+		}
 
 		const folded = yield* foldObservation(
 			{ ...previous, incidentOpen: openIncident !== null, lastResolvedAtMs: null },
@@ -387,17 +416,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 				return noTransition(state, "missing_telemetry")
 			}
 
-			const flapResolutionSuppressed =
-				openIncident.lastDeliveredEventType == null && openIncident.lastNotifiedAtMs != null
-			return {
-				state,
-				transition: "resolved",
-				eventType: flapResolutionSuppressed ? null : "resolve",
-				notificationSuppression: flapResolutionSuppressed ? "flap_resolution" : null,
-				hold: null,
-				inheritedNotificationAtMs: null,
-				advanceNotificationAnchor: false,
-			}
+			return resolutionPlan(state, openIncident)
 		}
 
 		return noTransition(state)

@@ -1182,7 +1182,7 @@ export function undecodedColumns(
  * tiers, and its boundary is the thing `./ch/queries/rollup-splice` exists to
  * own.
  */
-const ROLLUP_TABLE_RE = /\b(\w+_(?:hourly|minutely|daily)|\w+_aggregates_\w+)\b/
+const ROLLUP_TABLE_RE = /\w_(?:hourly|minutely|daily)\b|\w_aggregates_\w/
 const RAW_TABLE_RE =
 	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans)\b/
 
@@ -1192,7 +1192,14 @@ const RAW_TABLE_RE =
  * *computed* — floor, compare to the unrounded start, advance one bucket only
  * when it is not already aligned — not that it is spelled a particular way.
  */
-const SPLICE_BOUNDARY_RE = /=\s*toStartOf\w+\([\s\S]*?\+ INTERVAL 1 (?:HOUR|MINUTE)\)/
+const SPLICE_OPEN_RE = /=\s*toStartOf\w+\(/
+const SPLICE_CLOSE_RE = /\+ INTERVAL 1 (?:HOUR|MINUTE)\)/
+
+/** A `rollup-splice` boundary: the floored start, closed by its `+ INTERVAL 1` tail. */
+const hasSpliceBoundary = (sql: string): boolean => {
+	const open = SPLICE_OPEN_RE.exec(sql)
+	return open !== null && SPLICE_CLOSE_RE.test(sql.slice(open.index + open[0].length))
+}
 
 /**
  * Two-tier queries whose window boundary does not come from `rollup-splice`.
@@ -1217,7 +1224,7 @@ export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): R
 			(entry) =>
 				ROLLUP_TABLE_RE.test(entry.sql) &&
 				RAW_TABLE_RE.test(entry.sql) &&
-				!SPLICE_BOUNDARY_RE.test(entry.sql),
+				!hasSpliceBoundary(entry.sql),
 		)
 		.map((entry) => entry.id)
 }

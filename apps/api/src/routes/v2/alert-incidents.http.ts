@@ -26,6 +26,8 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	dedupe_key: doc.dedupeKey,
 	last_delivered_event_type: doc.lastDeliveredEventType,
 	last_notified_at: doc.lastNotifiedAt,
+	hold_reason: doc.holdReason,
+	held_since: doc.heldSince,
 	error_issue_id: doc.errorIssueId,
 })
 

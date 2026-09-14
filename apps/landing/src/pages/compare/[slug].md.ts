@@ -38,7 +38,7 @@ const monthLabel = (checked: string) =>
 const dollars = (amount: number) => formatLineAmount(amount)
 
 /** Pipes inside a cell would break the row. */
-const cell = (text: string) => text.replace(/\|/g, "\\|")
+const cell = (text: string) => text.replaceAll("\\", "\\\\").replaceAll("|", "\\|")
 
 export const GET: APIRoute = ({ props, site }) => {
 	const { competitor } = props as { competitor: Competitor }

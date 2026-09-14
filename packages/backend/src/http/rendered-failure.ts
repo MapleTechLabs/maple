@@ -16,6 +16,9 @@ export interface RenderedFailure {
 	readonly cause: unknown
 }
 
+/** Enough of a message to name the failure; a ClickHouse error carries the whole query. */
+const MAX_MESSAGE_ATTRIBUTE_CHARS = 1_000
+
 /** A defect's identity: an `Error` subclass by name, anything else by its `typeof`. */
 export const failureTypeOf = (value: unknown): string => (value instanceof Error ? value.name : typeof value)
 
@@ -41,9 +44,15 @@ const recordException = (failure: RenderedFailure) =>
  */
 export const recordRenderedFailure = (failure: RenderedFailure): Effect.Effect<void> =>
 	Effect.gen(function* () {
+		// The message rides as an attribute as well as on the exception event:
+		// nothing in Maple reads span events back yet, and a 500 whose only
+		// diagnosis is an event is a 500 with none.
 		yield* Effect.annotateCurrentSpan({
 			"error.type": failure.errorType,
+			"error.message": failure.message.slice(0, MAX_MESSAGE_ATTRIBUTE_CHARS),
 			"http.response.status_code": failure.status,
+			"maple.failure.summary": failure.summary,
+			"maple.failure.operation": `${failure.group}.${failure.operation}`,
 		})
 		yield* recordException(failure)
 		yield* Effect.logError(failure.summary).pipe(

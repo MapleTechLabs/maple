@@ -22,6 +22,7 @@ import {
 	type MapleStage,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
+import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import {
 	INVESTIGATION_FANOUT_BINDING,
@@ -29,7 +30,7 @@ import {
 } from "@maple/domain/investigation-fanout"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Context, Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
@@ -137,13 +138,9 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// runs at plan time, where alchemy auto-binds every `Config` it sees read
 		// onto the Worker, and this Worker's env is declared in full by `props`.
 		// `cachedRecoverable` rather than building eagerly is what lets `/health`
-		// and preflights answer while the graph cannot build. The captured context
-		// drops the init's deferred execution context (a handler must see the
-		// event's own) and the init's memo map.
-		const isolate = Context.omit(
-			Cloudflare.WorkerExecutionContext,
-			Layer.CurrentMemoMap,
-		)(yield* Effect.context())
+		// and preflights answer while the graph cannot build. `isolateContext`
+		// says what the captured context must not carry into the graph.
+		const isolate = isolateContext(yield* Effect.context())
 		const { app, queryApp } = yield* makeAppGraphs(isolate, ports)
 		yield* registerCrons(ports)
 		yield* registerQueueConsumers(ports)

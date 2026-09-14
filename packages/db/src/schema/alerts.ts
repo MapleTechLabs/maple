@@ -181,6 +181,11 @@ export const alertIncidents = pgTable(
 		dedupeKey: text("dedupe_key").notNull(),
 		lastDeliveredEventType: text("last_delivered_event_type"),
 		lastNotifiedAt: timestamp("last_notified_at", { withTimezone: true, mode: "date" }),
+		// Set while an open incident is waiting on telemetry: the breach stopped
+		// showing up but the liveness probe could not prove the data was still
+		// flowing. Both are null once the incident is firing or resolved.
+		holdReason: text("hold_reason"),
+		heldSince: timestamp("held_since", { withTimezone: true, mode: "date" }),
 		// Issue-hub link: the error_issues row (kind="alert") this incident
 		// feeds, mirroring anomalyIncidents.errorIssueId.
 		errorIssueId: text("error_issue_id").$type<ErrorIssueId>(),

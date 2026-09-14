@@ -8,7 +8,7 @@ import {
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveTimeRange } from "../lib/time"
-import { formatNumber, formatTable, truncate } from "../lib/format"
+import { formatNumber, formatTable, tableCell, truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
@@ -83,7 +83,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 			const headers = ["Error", "Message", "Fingerprint", "Count", "Affected Services", "Last Seen"]
 			const rows = Arr.map(errors, (e) => [
 				truncate(e.label, 60),
-				truncate(e.sampleMessage.replace(/\s+/g, " ").replace(/\|/g, "\\|"), 80),
+				tableCell(e.sampleMessage, 80),
 				e.fingerprintHash,
 				formatNumber(e.count),
 				String(e.affectedServicesCount),

@@ -1031,6 +1031,6 @@ Checkpoint format v2 includes the control database. Older CLIs cannot list or re
 
 A checkpoint drains admitted operations, captures immutable SQLite bytes, and runs the synchronous chDB backup before reopening admission. The bytes are written and verified after admission resumes. chDB’s native backup blocks the JavaScript event loop, so this does not promise query availability during the native backup; it avoids holding admission closed during the subsequent asynchronous control archive write. Taking unrelated snapshots with a time gap could restore acknowledged delivery state ahead of the warehouse, so that gap is not accepted.
 
-Deploy `0057_planetscale_issue_receipts` after main's onboarding migrations and before deploying the consumer. Its receipt insert shares the issue transaction and requires the table to exist.
+Deploy `0058_planetscale_issue_receipts` after main's onboarding and incident-hold migrations and before deploying the consumer. Its receipt insert shares the issue transaction and requires the table to exist.
 
 PlanetScale issue receipts are retained for 90 days after processing and swept hourly in batches of at most 5,000. Replays after that window may apply issue mutations again. Receipts intentionally survive issue deletion within the window, so redelivery is skipped instead of recreating a deleted issue.
