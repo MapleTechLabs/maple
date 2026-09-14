@@ -78,9 +78,6 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		// the funnel should land in a different org than the API's traces.
 		optionalSecret("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
 		optionalSecret("AUTUMN_SECRET_KEY"),
-		// Promo code of the $30 onboarding-checklist reward, created by hand in the
-		// Autumn dashboard. Claims answer `billing_not_configured` until it is set.
-		optionalSecret("AUTUMN_ONBOARDING_REWARD_CODE"),
 		// Billing details (company name, address, tax IDs) are written to the Stripe
 		// customer Autumn links; Autumn itself has no API for them.
 		optionalSecret("STRIPE_SECRET_KEY"),

@@ -170,7 +170,7 @@ const stubs = (world: World) =>
 		}),
 	)
 
-const config = (extra: Record<string, string> = {}) =>
+const config = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3510",
@@ -182,12 +182,11 @@ const config = (extra: Record<string, string> = {}) =>
 			MAPLE_DEFAULT_ORG_ID: "default",
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-			...extra,
 		}),
 	)
 
-const makeLayer = (world: World, testDb: TestDb, extraConfig?: Record<string, string>) => {
-	const envLive = Env.layer.pipe(Layer.provide(config(extraConfig)))
+const makeLayer = (world: World, testDb: TestDb) => {
+	const envLive = Env.layer.pipe(Layer.provide(config()))
 	return Layer.effect(OnboardingChecklistService, OnboardingChecklistService.make).pipe(
 		// `provideMerge` so tests can reach the real key service to mint and touch a key.
 		Layer.provideMerge(
@@ -202,8 +201,6 @@ const makeLayer = (world: World, testDb: TestDb, extraConfig?: Record<string, st
 		Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)),
 	)
 }
-
-const WITH_CODE = { AUTUMN_ONBOARDING_REWARD_CODE: "ONBOARD30" }
 
 const claimedAtInDb = (testDb: TestDb) =>
 	Effect.promise(() =>
@@ -363,7 +360,7 @@ describe("OnboardingChecklistService.claim", () => {
 			assert.strictEqual(again.report.status, "claimed")
 			assert.strictEqual(again.newlyClaimed, false)
 			assert.strictEqual(world.redeems.length, 1)
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
 	it.effect("refuses while steps remain, naming the reason", () => {
@@ -377,20 +374,6 @@ describe("OnboardingChecklistService.claim", () => {
 				error._tag === "@maple/http/errors/OnboardingRewardNotClaimableError" ? error.reason : null,
 				"incomplete",
 			)
-			assert.strictEqual(world.redeems.length, 0)
-			assert.strictEqual(yield* claimedAtInDb(testDb), null)
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
-	})
-
-	it.effect("fails closed without a reward code and leaves the row untouched", () => {
-		const world = freshWorld()
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* useMcpKey
-			yield* connectGithub(testDb)
-			const service = yield* OnboardingChecklistService
-			const error = yield* Effect.flip(service.claim(tenant))
-			assert.strictEqual(error._tag, "@maple/http/errors/BillingNotConfiguredError")
 			assert.strictEqual(world.redeems.length, 0)
 			assert.strictEqual(yield* claimedAtInDb(testDb), null)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
@@ -413,7 +396,7 @@ describe("OnboardingChecklistService.claim", () => {
 			world.redeemStatus = 200
 			const result = yield* service.claim(tenant)
 			assert.strictEqual(result.report.status, "claimed")
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
 	it.effect("holds the lease, not the claim, when Autumn fails ambiguously", () => {
@@ -445,7 +428,7 @@ describe("OnboardingChecklistService.claim", () => {
 			const result = yield* service.claim(tenant)
 			assert.strictEqual(result.report.status, "claimed")
 			assert.strictEqual(yield* reservedAtInDb(testDb), null)
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
 	it.effect("gives the lease back when the customer lookup fails, since nothing was applied", () => {
@@ -465,7 +448,7 @@ describe("OnboardingChecklistService.claim", () => {
 			world.customerStatus = 200
 			const result = yield* service.claim(tenant)
 			assert.strictEqual(result.report.status, "claimed")
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
 	it.effect("lets exactly one of two concurrent claims reach Autumn; the other is told to retry", () => {
@@ -494,7 +477,7 @@ describe("OnboardingChecklistService.claim", () => {
 			)
 			assert.strictEqual(world.redeems.length, 1)
 			assert.strictEqual((yield* service.read(tenant)).status, "claimed")
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
 	it.effect("refuses once the window has closed even with every step done", () => {
@@ -512,6 +495,6 @@ describe("OnboardingChecklistService.claim", () => {
 				"expired",
 			)
 			assert.strictEqual(world.redeems.length, 0)
-		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 })

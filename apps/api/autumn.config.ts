@@ -1,4 +1,5 @@
 import { feature, plan, reward } from "atmn"
+import { ONBOARDING_REWARD_PROMO_CODE } from "@maple/domain/onboarding-checklist"
 
 // Features
 export const logs = feature({
@@ -141,7 +142,7 @@ export const bringYourOwnCloudAddOn = plan({
 })
 
 // The onboarding checklist's reward: $30 off the next invoice, once, redeemed by
-// the API with the promo code (`AUTUMN_ONBOARDING_REWARD_CODE`, see
+// the API with the promo code (`ONBOARDING_REWARD_PROMO_CODE`, see
 // `OnboardingChecklistService.claim`). A `fixed_discount` is the closest thing the
 // config builder has to an invoice credit; the API-only `invoice_credits` reward
 // type would carry an unused remainder forward, this one does not. The claim
@@ -152,5 +153,5 @@ export const onboardingChecklistReward = reward({
 	type: "fixed_discount",
 	value: 30,
 	duration: { type: "one_off" },
-	promoCodes: [{ code: "ONBOARD30" }],
+	promoCodes: [{ code: ONBOARDING_REWARD_PROMO_CODE }],
 })

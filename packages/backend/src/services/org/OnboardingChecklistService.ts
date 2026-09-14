@@ -5,14 +5,14 @@ import {
 	evaluateOnboardingChecklist,
 	type OnboardingChecklistEvaluation,
 	type OnboardingChecklistInputs,
+	ONBOARDING_REWARD_PROMO_CODE,
 	OnboardingChecklistUnavailableError,
 	onboardingRewardWindowOpen,
 	OnboardingRewardNotClaimableError,
 } from "@maple/domain/onboarding-checklist"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { Env } from "@maple/backend/platform/Env"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -73,7 +73,6 @@ export interface OnboardingChecklistServiceApi {
 }
 
 const make = Effect.gen(function* () {
-	const env = yield* Env
 	const edgeCache = yield* EdgeCacheService
 	const organizations = yield* OrganizationService
 	const onboarding = yield* OnboardingService
@@ -252,15 +251,6 @@ const make = Effect.gen(function* () {
 			})
 		}
 
-		// Checked before the reservation so a misconfigured deployment leaves the row untouched.
-		const code = yield* Option.match(env.AUTUMN_ONBOARDING_REWARD_CODE, {
-			onNone: () =>
-				Effect.fail(
-					new BillingNotConfiguredError({ message: "AUTUMN_ONBOARDING_REWARD_CODE is not set" }),
-				),
-			onSome: (value) => Effect.succeed(Redacted.value(value)),
-		})
-
 		// Take the lease first: a lost race means another admin's click is mid-redeem, and
 		// that caller gets a retryable refusal. The lease, not the claim stamp, is what is
 		// held here — `rewardClaimedAt` goes down only once Autumn has confirmed the credit,
@@ -308,7 +298,7 @@ const make = Effect.gen(function* () {
 					release.pipe(Effect.andThen(Effect.fail(error))),
 			}),
 		)
-		yield* autumn.redeemReward(orgId, { code }).pipe(
+		yield* autumn.redeemReward(orgId, { code: ONBOARDING_REWARD_PROMO_CODE }).pipe(
 			Effect.flatMap(classifyAutumn),
 			Effect.catchTags({
 				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,

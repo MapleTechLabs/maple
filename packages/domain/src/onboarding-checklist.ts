@@ -12,6 +12,8 @@ import { HttpTaggedError } from "./http/error-policy"
 /** How long after org creation the reward stays claimable. */
 export const ONBOARDING_REWARD_WINDOW_MS = 24 * 60 * 60 * 1000
 export const ONBOARDING_REWARD_AMOUNT_USD = 30
+/** Promo code of the Autumn reward the API redeems; defined in `apps/api/autumn.config.ts`. */
+export const ONBOARDING_REWARD_PROMO_CODE = "ONBOARD30"
 
 export const ONBOARDING_CHECKLIST_STEP_IDS = [
 	"send_telemetry",
