@@ -21,7 +21,7 @@ import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { getHttpInfo } from "@maple/ui/lib/http"
 
-import type { Span, SpanHierarchyResponse, SpanNode, Trace } from "@/api/warehouse/traces"
+import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
@@ -31,6 +31,7 @@ import { TraceIdBadge } from "@/components/traces/trace-id-badge"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import type { PeekTarget } from "@/lib/traces/peek"
 
 /**
  * The peek: a trace's page, in a sheet, without leaving the list.
@@ -83,8 +84,8 @@ function keepsEnter(target: EventTarget | null): boolean {
 }
 
 interface TracePeekSheetProps {
-	trace: Trace | null
-	/** Where the trace sits in the loaded list, for the footer's "3 of 50" and the arrows. */
+	target: PeekTarget | null
+	/** Where the trace sits in the loaded list, for the footer's "3 of 50" and the arrows. `null` when the row is not loaded. */
 	position: { index: number; count: number } | null
 	/** The span selected inside the peek; lives in the URL like the page's `spanId`. */
 	selectedSpanId: string | undefined
@@ -94,7 +95,7 @@ interface TracePeekSheetProps {
 }
 
 export function TracePeekSheet({
-	trace,
+	target,
 	position,
 	selectedSpanId,
 	onSelectSpan,
@@ -150,14 +151,14 @@ export function TracePeekSheet({
 		],
 		// `stopPropagation: false` so Base UI's own document-level key handling
 		// (Escape closes the sheet) is never starved.
-		{ enabled: trace !== null, ignoreInputs: true, stopPropagation: false },
+		{ enabled: target !== null, ignoreInputs: true, stopPropagation: false },
 	)
 
 	const canStepBack = position !== null && position.index > 0
 	const canStepForward = position !== null && position.index < position.count - 1
 
 	return (
-		<Sheet open={trace !== null} onOpenChange={(open) => !open && onClose()}>
+		<Sheet open={target !== null} onOpenChange={(open) => !open && onClose()}>
 			{/* Focus lands on the popup itself, not its first control: Enter and the
 			    arrows then mean the sheet's shortcuts until the user Tabs to a control. */}
 			<SheetContent
@@ -166,10 +167,10 @@ export function TracePeekSheet({
 				className="w-[min(1100px,calc(100vw-2rem))] p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]"
 				onKeyDownCapture={handleKeyDownCapture}
 			>
-				{trace ? (
+				{target ? (
 					<>
 						<TracePeekBody
-							trace={trace}
+							target={target}
 							selectedSpanId={selectedSpanId}
 							onSelectSpan={onSelectSpan}
 						/>
@@ -208,12 +209,14 @@ export function TracePeekSheet({
 									<Link
 										ref={openPageRef}
 										to="/traces/$traceId"
-										params={{ traceId: trace.traceId }}
+										params={{ traceId: target.traceId }}
 										search={(prev: Record<string, unknown>) => ({
 											...prev,
 											peek: undefined,
+											peekRow: undefined,
+											peekT: undefined,
 											peekSpan: undefined,
-											t: trace.startTime,
+											t: target.startTime,
 											spanId: selectedSpanId,
 										})}
 									/>
@@ -231,19 +234,19 @@ export function TracePeekSheet({
 }
 
 function TracePeekBody({
-	trace,
+	target,
 	selectedSpanId,
 	onSelectSpan,
 }: {
-	trace: Trace
+	target: PeekTarget
 	selectedSpanId: string | undefined
 	onSelectSpan: (spanId: string | undefined) => void
 }) {
-	// `timestamp` narrows the partition scan the way the page's `t` does; the
-	// row already knows when the trace started.
+	// `timestamp` narrows the partition scan the way the page's `t` does; a row
+	// knows when its trace started, and a bare URL carries it as `peekT`.
 	const result = useAtomValue(
 		getSpanHierarchyResultAtom({
-			data: { traceId: Schema.decodeSync(TraceId)(trace.traceId), timestamp: trace.startTime },
+			data: { traceId: Schema.decodeSync(TraceId)(target.traceId), timestamp: target.startTime },
 		}),
 	)
 
@@ -254,7 +257,7 @@ function TracePeekBody({
 					<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
 						Trace
 					</span>
-					<SheetTitle className="font-mono text-[15px]">{trace.traceId.slice(0, 8)}</SheetTitle>
+					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
 					<SheetDescription className="sr-only">Loading trace details</SheetDescription>
 				</SheetHeader>
 				<div className="flex-1 space-y-3 overflow-hidden p-4">
@@ -275,7 +278,7 @@ function TracePeekBody({
 		.onError((error) => (
 			<>
 				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{trace.traceId.slice(0, 8)}</SheetTitle>
+					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
 					<SheetDescription className="sr-only">Failed to load trace</SheetDescription>
 				</SheetHeader>
 				<div className="flex-1 overflow-auto p-4">
@@ -285,7 +288,6 @@ function TracePeekBody({
 		))
 		.onSuccess((data, r) => (
 			<TracePeekLoaded
-				trace={trace}
 				data={data}
 				waiting={r.waiting ?? false}
 				selectedSpanId={selectedSpanId}
@@ -296,20 +298,23 @@ function TracePeekBody({
 }
 
 function TracePeekLoaded({
-	trace,
 	data,
 	waiting,
 	selectedSpanId,
 	onSelectSpan,
 }: {
-	trace: Trace
 	data: SpanHierarchyResponse
-	/** A step hands back the previous trace's data flagged waiting; dim it rather than flashing a skeleton. */
+	/**
+	 * A step hands back the previous trace's data flagged waiting; dim it rather
+	 * than flashing a skeleton. Everything shown, the id included, comes from
+	 * `data` so the dimmed view stays a coherent picture of the previous trace
+	 * and never mixes the next id with the last spans.
+	 */
 	waiting: boolean
 	selectedSpanId: string | undefined
 	onSelectSpan: (spanId: string | undefined) => void
 }) {
-	const traceId = trace.traceId
+	const traceId = data.traceId
 	const rootSpan = data.rootSpans[0]
 	const traceStartTime = data.traceStartTime
 

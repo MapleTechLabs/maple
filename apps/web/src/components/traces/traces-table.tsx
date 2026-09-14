@@ -29,6 +29,7 @@ import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { TracePeekSheet } from "@/components/traces/trace-peek-sheet"
+import { peekParamsFor, resolvePeek } from "@/lib/traces/peek"
 
 type TraceSortKey = NonNullable<TracesSearchParams["sortBy"]>
 type TraceSortDir = NonNullable<TracesSearchParams["sortDir"]>
@@ -48,8 +49,8 @@ interface TracesTableViewProps {
 	 * so the row keeps being a link to the trace's page in every way that matters.
 	 */
 	onPeek?: (trace: Trace) => void
-	/** The row currently open in the peek sheet. */
-	activeTraceId?: string
+	/** The row currently open in the peek sheet, by its span id (unique in both list modes). */
+	activeRowSpanId?: string
 	onShowNoise: () => void
 	sortBy: TraceSortKey
 	sortDir: TraceSortDir
@@ -229,7 +230,7 @@ function TracesTableView({
 	waiting,
 	onTraceClick,
 	onPeek,
-	activeTraceId,
+	activeRowSpanId,
 	onShowNoise,
 	sortBy,
 	sortDir,
@@ -481,7 +482,7 @@ function TracesTableView({
 									ref={virtualizer.measureElement}
 									data-index={virtualRow.index}
 									data-focused={virtualRow.index === focusedIndex || undefined}
-									data-active={row.original.traceId === activeTraceId || undefined}
+									data-active={row.original.spanId === activeRowSpanId || undefined}
 									className="relative border-b transition-colors hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 									tabIndex={0}
 									onKeyDown={(e) => {
@@ -593,7 +594,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 	const onPeek = React.useCallback(
 		(trace: Trace) =>
 			navigateTraces({
-				search: (prev) => ({ ...prev, peek: trace.traceId, peekSpan: deepLinkSpanId(trace) }),
+				search: (prev) => ({ ...prev, ...peekParamsFor(trace), peekSpan: deepLinkSpanId(trace) }),
 			}),
 		[navigateTraces],
 	)
@@ -604,18 +605,19 @@ export function TracesTable({ filters }: TracesTableProps) {
 		[navigate, onPeek, peekEnabled],
 	)
 
-	// The peek resolves against the rows on screen. An id that no longer matches
-	// a loaded row (the filter changed under it) just means the sheet is closed.
-	const peekIndex = peekEnabled && filters?.peek ? allData.findIndex((t) => t.traceId === filters.peek) : -1
-	const peekTrace = peekIndex >= 0 ? (allData[peekIndex] ?? null) : null
+	// The peek resolves against the rows on screen. A trace that is not among
+	// them (a shared link into a later page, or the filter changed under it)
+	// still opens from the URL's id, just without a position to step from.
+	const peek = peekEnabled ? resolvePeek(allData, filters ?? {}) : null
+	const peekIndex = peek?.position?.index ?? -1
 	// Stepping and span selection replace history: walking fifty rows must not
 	// leave fifty entries behind the back button.
 	const stepPeek = React.useCallback(
 		(delta: 1 | -1) => {
-			const next = allData[peekIndex + delta]
+			const next = peekIndex >= 0 ? allData[peekIndex + delta] : undefined
 			if (next) {
 				navigateTraces({
-					search: (prev) => ({ ...prev, peek: next.traceId, peekSpan: deepLinkSpanId(next) }),
+					search: (prev) => ({ ...prev, ...peekParamsFor(next), peekSpan: deepLinkSpanId(next) }),
 					replace: true,
 				})
 			}
@@ -625,7 +627,13 @@ export function TracesTable({ filters }: TracesTableProps) {
 	const closePeek = React.useCallback(
 		() =>
 			navigateTraces({
-				search: (prev) => ({ ...prev, peek: undefined, peekSpan: undefined }),
+				search: (prev) => ({
+					...prev,
+					peek: undefined,
+					peekRow: undefined,
+					peekT: undefined,
+					peekSpan: undefined,
+				}),
 				replace: true,
 			}),
 		[navigateTraces],
@@ -663,7 +671,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 				waiting={result.waiting ?? false}
 				onTraceClick={onTraceClick}
 				onPeek={peekEnabled ? onPeek : undefined}
-				activeTraceId={peekTrace?.traceId}
+				activeRowSpanId={peek?.row?.spanId}
 				onShowNoise={onShowNoise}
 				sortBy={sortBy}
 				sortDir={sortDir}
@@ -678,8 +686,8 @@ export function TracesTable({ filters }: TracesTableProps) {
 		<>
 			{table}
 			<TracePeekSheet
-				trace={peekTrace}
-				position={peekTrace ? { index: peekIndex, count: allData.length } : null}
+				target={peek?.target ?? null}
+				position={peek?.position ?? null}
 				selectedSpanId={filters?.peekSpan}
 				onSelectSpan={selectPeekSpan}
 				onStep={stepPeek}

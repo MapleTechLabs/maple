@@ -54,8 +54,12 @@ const tracesSearchSchema = Schema.Struct({
 	whereClause: Schema.optional(Schema.String),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
-	/** The row open in the peek sheet, by trace id. In the URL so it survives a reload and a share. */
+	/** The trace open in the peek sheet. In the URL so it survives a reload and a share. */
 	peek: Schema.optional(Schema.String),
+	/** The row's own span id, only when the list is per-span and rows share a trace. */
+	peekRow: Schema.optional(Schema.String),
+	/** A timestamp inside the peeked trace, so a peek whose row is not loaded still prunes partitions. */
+	peekT: Schema.optional(Schema.String),
 	/** The span selected inside the peek — the page's `spanId`, kept apart so closing the peek clears it. */
 	peekSpan: Schema.optional(Schema.String),
 	serviceMatchMode: ContainsMatchMode,
