@@ -424,8 +424,10 @@ describe("ChatSession.subscribe", () => {
 
 		// The regression this pins: `tail` slept 40ms between SELECTs, so nothing could reach a
 		// reader faster than that no matter how fast the model produced it. A push has no floor.
-		const started = Date.now()
+		// The clock starts after the yield: on a loaded CI runner that macrotask alone can take
+		// tens of milliseconds, and it is the delivery that is being measured.
 		await new Promise((resolve) => setTimeout(resolve, 0))
+		const started = Date.now()
 		session.append({ type: "turn-start", messageId: "a1" })
 		session.append({ type: "turn-end", messageId: "a1", reason: "stop" })
 
