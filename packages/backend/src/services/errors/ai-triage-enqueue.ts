@@ -22,8 +22,8 @@ import {
 } from "@maple/backend/services/errors/investigation-quota"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
+	STALE_MS,
 	isInvestigationStale,
-	staleBudgetMs,
 	staleTimeoutMessage,
 } from "@maple/backend/services/errors/investigation-stale"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -216,7 +216,7 @@ export const maybeEnqueueTriage: (
 		const existing = existingRows[0]
 		if (existing) {
 			if (isInvestigationStale(existing, nowMs)) {
-				const budget = staleBudgetMs(existing.fanoutState)
+				const budget = STALE_MS
 				yield* database.execute((db) =>
 					db
 						.update(investigations)

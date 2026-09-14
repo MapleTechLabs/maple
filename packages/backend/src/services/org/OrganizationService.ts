@@ -142,7 +142,6 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"errorIssueVerifications",
 	"errorNotificationDeliveries",
 	"errorTickStates",
-	"investigationLensRuns",
 	"investigations",
 	"issueEscalationPolicies",
 	"issueEscalations",

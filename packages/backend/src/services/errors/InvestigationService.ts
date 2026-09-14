@@ -7,15 +7,12 @@ import {
 	InvestigationCreateRequest,
 	InvestigationDataCorruptionError,
 	InvestigationDocument,
-	InvestigationFanout,
 	InvestigationAgentUnavailableError,
-	InvestigationLensRun,
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
 	InvestigationStartFailedError,
 	InvestigationSnapshotFact,
 	InvestigationSubjectSnapshot,
-	InvestigationValidator,
 	InvestigationsListResponse,
 	type InvestigationStatus,
 	InvestigationSubject,
@@ -25,19 +22,14 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
 
-import {
-	investigationLensRuns,
-	investigations,
-	type InvestigationLensRunRow,
-	type InvestigationRow,
-} from "@maple/db"
+import { investigations, type InvestigationRow } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { applyDiagnosisWrites, subjectTypeOf } from "@maple/backend/services/errors/apply-diagnosis"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
-	STALE_BUDGETS,
+	STALE_MS,
 	isInvestigationStale,
 	staleTimeoutMessage,
 } from "@maple/backend/services/errors/investigation-stale"
@@ -49,76 +41,6 @@ const decodeIdSync = Schema.decodeUnknownSync(InvestigationId)
 const decodeIsoSync = Schema.decodeUnknownSync(InvestigationDocument.fields.createdAt)
 
 export const newInvestigationId = () => decodeIdSync(randomUUID())
-
-/**
- * Milliseconds are what the column stores — seconds are a display unit, and the
- * boards render one decimal. Rounding here rather than in five components keeps
- * two lanes of the same run from disagreeing by a tenth.
- */
-const elapsedSeconds = (ms: number | null): number | null =>
-	ms === null ? null : Math.round((ms / 1000) * 10) / 10
-
-const lensRowToDocument = (row: InvestigationLensRunRow): InvestigationLensRun =>
-	new InvestigationLensRun({
-		lensId: row.lensId,
-		status: row.status,
-		verdict: row.verdict,
-		claim: row.claim ?? null,
-		reason: row.reason ?? null,
-		progressNote: row.progressNote ?? null,
-		confidence: row.confidence ?? null,
-		toolCount: row.toolCount,
-		elapsedSeconds: elapsedSeconds(row.elapsedMs ?? null),
-		// Null on lanes written before the planner. The client falls back to the seed
-		// catalogue for those, so a null here is a real "no copy", not a gap to fill
-		// with the id.
-		name: row.lensName ?? null,
-		question: row.lensQuestion ?? null,
-		priority: row.priority ?? null,
-		deadlineHit: row.deadlineHit,
-	})
-
-/**
- * The validator lane, derived rather than stored: its status is a function of
- * how far the run got, and deriving it is what stops the rail from claiming a
- * ranking that the lens rows contradict.
- *
- * Null on the single-pass path — there were never rivals to rank.
- */
-const validatorFor = (
-	row: InvestigationRow,
-	lensRows: ReadonlyArray<InvestigationLensRunRow>,
-): InvestigationValidator | null => {
-	if (lensRows.length === 0) return null
-	const elapsed = elapsedSeconds(row.validatorElapsedMs ?? null)
-	if (row.fanoutState === "ranked" || row.fanoutState === "superseded") {
-		const promoted = lensRows.filter((lens) => lens.verdict === "promoted").length
-		const merged = lensRows.filter((lens) => lens.verdict === "merged").length
-		const ruledOut = lensRows.filter((lens) => lens.verdict === "ruled_out").length
-		return new InvestigationValidator({
-			status: "ranked",
-			note: row.validatorNote ?? `${promoted} promoted · ${merged} merged · ${ruledOut} ruled out`,
-			elapsedSeconds: elapsed,
-		})
-	}
-	if (row.fanoutState === "rejected_all") {
-		return new InvestigationValidator({
-			status: "rejected_all",
-			note:
-				row.validatorNote ??
-				"No candidate survived: each was contradicted by at least one other lens",
-			elapsedSeconds: elapsed,
-		})
-	}
-	const reported = lensRows.filter((lens) => lens.status === "reported").length
-	return new InvestigationValidator({
-		status: "blocked",
-		note:
-			row.validatorNote ??
-			`Starts once all ${lensRows.length} lenses report — then ranks the candidates and promotes one (${reported} in)`,
-		elapsedSeconds: elapsed,
-	})
-}
 
 const makePersistenceError = makePersistenceErrorMapper(
 	InvestigationPersistenceError,
@@ -288,15 +210,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					? Effect.succeed(null)
 					: decodeStoredField(row.id, "report", AiTriageResult, row.reportJson)
 
-			/**
-			 * Lens rows arrive as a parameter rather than being fetched here: this runs
-			 * once per row from `listInvestigations`, so a query inside it is an N+1 on
-			 * every page load. The callers batch by `investigationId IN (…)`.
-			 */
-			const rowToDocument = Effect.fnUntraced(function* (
-				row: InvestigationRow,
-				lensRows: ReadonlyArray<InvestigationLensRunRow> = [],
-			) {
+			const rowToDocument = Effect.fnUntraced(function* (row: InvestigationRow) {
 				const subject = yield* decodeStoredField(
 					row.id,
 					"subject",
@@ -333,9 +247,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							startedAt: row.startedAt ? iso(row.startedAt) : null,
 							diagnosedAt: row.diagnosedAt ? iso(row.diagnosedAt) : null,
 							updatedAt: iso(row.updatedAt),
-							lensRuns: lensRows.map(lensRowToDocument),
-							validator: validatorFor(row, lensRows),
-							fanout: new InvestigationFanout({ state: row.fanoutState, size: row.fanoutSize }),
 						}),
 					catch: (cause) => storedDataCorruption(row.id, "document", row.id, cause),
 				})
@@ -350,45 +261,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						.limit(1),
 				).pipe(Effect.map((rows) => rows[0]))
 
-			/**
-			 * Lens lanes for a set of investigations, in dispatch order. Ordering is a
-			 * contract — `LENS_DISPATCH_ORDER` decides which lenses a narrow run gets —
-			 * so it belongs in SQL rather than in each of the five components that
-			 * render a lane.
-			 *
-			 * Skips the query entirely when nothing in the set fanned out, which is the
-			 * common case on a list page.
-			 */
-			const loadLensRows = (orgId: OrgId, rows: ReadonlyArray<InvestigationRow>) => {
-				const fanned = rows.filter((row) => row.fanoutState !== "none")
-				if (fanned.length === 0) return Effect.succeed([] as ReadonlyArray<InvestigationLensRunRow>)
-				const ids = fanned.map((row) => row.id)
-				const attemptById = new Map(fanned.map((row) => [row.id as string, row.fanoutAttempt]))
-				return dbExecute((db) =>
-					db
-						.select()
-						.from(investigationLensRuns)
-						.where(
-							and(
-								eq(investigationLensRuns.orgId, orgId),
-								inArray(investigationLensRuns.investigationId, ids),
-							),
-						)
-						.orderBy(investigationLensRuns.investigationId, investigationLensRuns.ordinal),
-				).pipe(
-					// Only the attempt the row is on. A terminated instance can still be
-					// draining, and its lanes must not appear beside the retry's.
-					Effect.map((lanes) =>
-						lanes.filter((lane) => lane.attempt === attemptById.get(lane.investigationId)),
-					),
-				)
-			}
-
-			/** `rowToDocument` for a single row, fetching its lanes if it has any. */
-			const documentFor = Effect.fnUntraced(function* (orgId: OrgId, row: InvestigationRow) {
-				const lensRows = yield* loadLensRows(orgId, [row])
-				return yield* rowToDocument(row, lensRows)
-			})
+			const documentFor = (_orgId: OrgId, row: InvestigationRow) => rowToDocument(row)
 
 			// Look up the single incident-anchored row (the partial unique index key).
 			// Used for both the dedup fast-path and the concurrent-insert race loser.
@@ -417,30 +290,22 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				isInvestigationStale(row, nowMs)
 
 			const failStaleInvestigations = Effect.fnUntraced(function* (orgId: OrgId, nowMs: number) {
-				// Two budgets, applied as two statements: a healthy five-lens fan-out
-				// legitimately outlives the single-pass timeout, and sweeping it on the
-				// short budget would mark the row `failed` moments before the workflow
-				// wrote a diagnosis onto it — leaving `diagnosed` next to a
-				// `diagnosis_timeout` error and a failure card over a real finding.
-				for (const [budget, states] of STALE_BUDGETS) {
-					yield* dbExecute((db) =>
-						db
-							.update(investigations)
-							.set({
-								status: "failed",
-								error: staleTimeoutMessage(budget),
-								updatedAt: new Date(nowMs),
-							})
-							.where(
-								and(
-									eq(investigations.orgId, orgId),
-									eq(investigations.status, "investigating"),
-									inArray(investigations.fanoutState, states),
-									lt(investigations.startedAt, new Date(nowMs - budget)),
-								),
+				yield* dbExecute((db) =>
+					db
+						.update(investigations)
+						.set({
+							status: "failed",
+							error: staleTimeoutMessage(STALE_MS),
+							updatedAt: new Date(nowMs),
+						})
+						.where(
+							and(
+								eq(investigations.orgId, orgId),
+								eq(investigations.status, "investigating"),
+								lt(investigations.startedAt, new Date(nowMs - STALE_MS)),
 							),
-					).pipe(Effect.asVoid)
-				}
+						),
+				).pipe(Effect.asVoid)
 			})
 
 			/**
@@ -507,19 +372,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					yield* failStaleInvestigations(orgId, nowMs)
 					rows = yield* selectPage
 				}
-				// One extra query for the whole page, and none at all when nothing on it
-				// fanned out — the alternative is a query per row inside `rowToDocument`.
-				const lensRows = yield* loadLensRows(orgId, rows)
-				const byInvestigation = new Map<string, InvestigationLensRunRow[]>()
-				for (const lens of lensRows) {
-					const bucket = byInvestigation.get(lens.investigationId)
-					if (bucket) bucket.push(lens)
-					else byInvestigation.set(lens.investigationId, [lens])
-				}
 				return new InvestigationsListResponse({
-					investigations: yield* Effect.forEach(rows, (row) =>
-						rowToDocument(row, byInvestigation.get(row.id) ?? []),
-					),
+					investigations: yield* Effect.forEach(rows, (row) => rowToDocument(row)),
 				})
 			})
 
@@ -677,10 +531,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
-				const row = yield* loadRow(orgId, id)
-				// Prior lanes are NOT deleted. They are scoped by `attempt` and the reads
-				// filter to the row's current one, so a restarted run starts clean.
-				const attempt = (row?.fanoutAttempt ?? 0) + 1
 				yield* dbExecute((db) =>
 					db
 						.update(investigations)
@@ -689,11 +539,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							error: null,
 							startedAt: new Date(nowMs),
 							autonomousTurns: sql`${investigations.autonomousTurns} + 1`,
-							fanoutState: "none",
-							fanoutSize: 1,
-							fanoutAttempt: attempt,
-							validatorNote: null,
-							validatorElapsedMs: null,
 							updatedAt: new Date(nowMs),
 						})
 						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, id))),
@@ -777,9 +622,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					inputTokens: request.inputTokens ?? row.inputTokens ?? null,
 					outputTokens: request.outputTokens ?? row.outputTokens ?? null,
 					nowMs,
-					// A human follow-up that re-diagnoses a ranked fan-out orphans the lens
-					// verdicts: they explain a cause that is no longer on screen.
-					...(row.fanoutState === "ranked" ? { fanoutState: "superseded" as const } : undefined),
 				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
 
 				// Deliberately does NOT meter. `request.inputTokens`/`outputTokens` are persisted onto

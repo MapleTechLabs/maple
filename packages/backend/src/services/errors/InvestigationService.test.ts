@@ -17,13 +17,7 @@ import {
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
-import {
-	aiTriageSettings,
-	errorIssues,
-	errorIssueEvents,
-	investigationLensRuns,
-	investigations,
-} from "@maple/db"
+import { aiTriageSettings, errorIssues, errorIssueEvents, investigations } from "@maple/db"
 import type { MaplePgClient } from "@maple/db/client"
 import { createMaplePgliteClient } from "@maple/db/pglite"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
@@ -328,8 +322,6 @@ describe("InvestigationService", () => {
 			const rows = yield* database.execute((db) =>
 				db.select().from(investigations).where(eq(investigations.id, started.id)),
 			)
-			assert.strictEqual(rows[0]?.fanoutState, "none")
-			assert.strictEqual(rows[0]?.fanoutSize, 1)
 			// One agent, one pass against the daily budget.
 			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(harness.layer))
@@ -351,7 +343,6 @@ describe("InvestigationService", () => {
 			const rows = yield* database.execute((db) =>
 				db.select().from(investigations).where(eq(investigations.id, started.id)),
 			)
-			assert.strictEqual(rows[0]?.fanoutState, "none")
 			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(harness.layer))
 	})
@@ -421,49 +412,6 @@ describe("InvestigationService", () => {
 
 			const restarted = yield* service.restartInvestigation(ORG, started.id)
 			assert.strictEqual(restarted.status, "investigating")
-			assert.lengthOf(chat.beginTurns, 2)
-		}).pipe(Effect.provide(harness.layer))
-	})
-
-	it.effect("hides a previous attempt's legacy lanes on restart", () => {
-		const chat = chatSessionHarness()
-		const harness = makeHarness(chat.env)
-		return Effect.gen(function* () {
-			const database = yield* Database
-			const service = yield* InvestigationService
-			const started = yield* service.createAndStartInvestigation(
-				ORG,
-				null,
-				criticalIncidentRequest("err_restart"),
-			)
-			// A lane row from a run before the single-agent rework.
-			yield* database.execute((db) =>
-				db.insert(investigationLensRuns).values({
-					id: "lane-1",
-					orgId: ORG,
-					investigationId: started.id,
-					lensId: "deploy_correlation",
-					ordinal: 0,
-					status: "reported",
-					verdict: "promoted",
-					claim: "stale claim from the first attempt",
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				}),
-			)
-			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({ fanoutState: "ranked", fanoutSize: 3 })
-					.where(eq(investigations.id, started.id)),
-			)
-
-			yield* service.restartInvestigation(ORG, started.id)
-
-			// Reads are scoped to the row's current attempt, so the old lane no longer renders.
-			const restarted = yield* service.getInvestigation(ORG, started.id)
-			assert.lengthOf(restarted.lensRuns, 0)
-			assert.strictEqual(restarted.fanout.state, "none")
 			assert.lengthOf(chat.beginTurns, 2)
 		}).pipe(Effect.provide(harness.layer))
 	})
