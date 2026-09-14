@@ -109,6 +109,17 @@ export function splitWhereClause(expression: string): string[] {
 	return parts.map((part) => part.trim()).filter(Boolean)
 }
 
+/**
+ * A value as the quoted literal the grammar above reads back verbatim. The
+ * grammar has no escape character, so the quote is the one the value does not
+ * contain; a value carrying both kinds cannot be spelled and loses its `"`s.
+ */
+export function quoteWhereValue(value: string): string {
+	if (!value.includes('"')) return `"${value}"`
+	if (!value.includes("'")) return `'${value}'`
+	return `"${value.replaceAll('"', "")}"`
+}
+
 export interface ParseWhereClauseResult {
 	clauses: readonly ParsedClause[]
 	warnings: readonly WhereClauseParseWarning[]

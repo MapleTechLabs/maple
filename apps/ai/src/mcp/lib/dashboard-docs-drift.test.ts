@@ -88,10 +88,7 @@ describe("dashboard docs contain no retired identifiers", () => {
 	}
 
 	it("the v2→v3 translation table is the one deliberate exception", () => {
-		const hint = readFileSync(
-			resolve(import.meta.dirname, "../dashboard-mutations.ts".replace("../", "")),
-			"utf8",
-		)
+		const hint = readFileSync(resolve(import.meta.dirname, "dashboard-mutations.ts"), "utf8")
 		// Reading it at all proves the file exists at the exempt path; its job is
 		// to name the retired endpoints so the error message can translate them.
 		expect(hint).toContain("markdown_static")

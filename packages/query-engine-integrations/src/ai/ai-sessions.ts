@@ -442,7 +442,7 @@ export function idSearchPattern(search: string): string {
 	if (needle.startsWith(MAPLE_AI_TRACE_SESSION_PREFIX)) {
 		needle = needle.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)
 	}
-	needle = needle.replace(/…+$/, "")
+	while (needle.endsWith("…")) needle = needle.slice(0, -1)
 	return `${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
 }
 

@@ -4,7 +4,7 @@ import {
 	type FunnelPopulationFilters,
 	type FunnelStep,
 } from "@maple/query-model"
-import { splitWhereClause } from "@maple/domain/where-clause"
+import { quoteWhereValue, splitWhereClause } from "@maple/domain/where-clause"
 
 // The funnel panel's where-clause strings and what they compile to.
 //
@@ -63,9 +63,6 @@ function parseEqualsClauses(text: string): FunnelFilterParse<ReadonlyArray<Equal
 	return { ok: true, value: clauses }
 }
 
-/** Quote a value the way the editor prints one. */
-const quote = (value: string): string => `"${value.replace(/"/g, '\\"')}"`
-
 // Step filters → `attributeEquals`
 
 /**
@@ -92,7 +89,7 @@ export function formatFunnelStepFilter(
 ): string {
 	if (!attributeEquals) return ""
 	return Object.entries(attributeEquals)
-		.map(([key, value]) => `${key} = ${quote(value)}`)
+		.map(([key, value]) => `${key} = ${quoteWhereValue(value)}`)
 		.join(" AND ")
 }
 
@@ -229,7 +226,7 @@ export function formatProductEventsFilterClause(filters: FunnelPopulationFilters
 		const value = filters[field]
 		return value === undefined || value === ""
 			? []
-			: [`${productEventsFilterKey(field)} = ${quote(value)}`]
+			: [`${productEventsFilterKey(field)} = ${quoteWhereValue(value)}`]
 	}).join(" AND ")
 }
 

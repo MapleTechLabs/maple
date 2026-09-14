@@ -88,10 +88,14 @@ describe("clean-shutdown sentinel", () => {
 				process.execPath,
 				[
 					"-e",
-					`(async () => { const { markStoreOpenDurable } = await import(${JSON.stringify(moduleUrl)}); await markStoreOpenDurable(process.env.MAPLE_MIGRATION_TEST_DATA_DIR); process.stdout.write("ready\\n"); await new Promise(() => {}); })()`,
+					`(async () => { const { markStoreOpenDurable } = await import(process.env.MAPLE_MIGRATION_TEST_MODULE_URL); await markStoreOpenDurable(process.env.MAPLE_MIGRATION_TEST_DATA_DIR); process.stdout.write("ready\\n"); await new Promise(() => {}); })()`,
 				],
 				{
-					env: { ...process.env, MAPLE_MIGRATION_TEST_DATA_DIR: dataDir },
+					env: {
+						...process.env,
+						MAPLE_MIGRATION_TEST_DATA_DIR: dataDir,
+						MAPLE_MIGRATION_TEST_MODULE_URL: moduleUrl,
+					},
 					stdio: ["ignore", "pipe", "pipe"],
 				},
 			)
