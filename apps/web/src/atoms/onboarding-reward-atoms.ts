@@ -3,15 +3,30 @@ import { Schema } from "effect"
 import { localStorageRuntime } from "@/lib/services/common/storage-runtime"
 
 /**
- * Whether this person hid the onboarding reward pill for this org. A per-viewer preference,
- * not org state: a teammate should not lose the pill because an admin closed it, and the
- * reward window is a day, so cross-device persistence would buy nothing.
+ * This viewer's relationship to the onboarding reward pill for one org. A per-viewer
+ * preference, not org state: a teammate should not lose the pill because an admin closed
+ * it, and the reward window is a day, so cross-device persistence would buy nothing.
+ *
+ * `seen` flips the first time the popover closes; until then it opens by itself once and
+ * the pill carries an attention marker.
  */
-export const onboardingRewardDismissedAtomFamily = Atom.family((orgId: string) =>
+export interface OnboardingRewardViewState {
+	readonly dismissed: boolean
+	readonly seen: boolean
+}
+
+const OnboardingRewardViewStateSchema = Schema.Struct({
+	dismissed: Schema.Boolean,
+	seen: Schema.Boolean,
+}) as Schema.Codec<OnboardingRewardViewState>
+
+const DEFAULT: OnboardingRewardViewState = { dismissed: false, seen: false }
+
+export const onboardingRewardViewAtomFamily = Atom.family((orgId: string) =>
 	Atom.kvs({
 		runtime: localStorageRuntime,
-		key: `maple-onboarding-reward-dismissed-v1-${orgId}`,
-		schema: Schema.Boolean,
-		defaultValue: () => false,
+		key: `maple-onboarding-reward-v2-${orgId}`,
+		schema: OnboardingRewardViewStateSchema,
+		defaultValue: () => DEFAULT,
 	}),
 )

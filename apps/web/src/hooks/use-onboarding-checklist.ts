@@ -8,7 +8,7 @@ import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { trackProduct } from "@/lib/analytics"
 import { displayError } from "@/lib/error-messages"
-import { onboardingRewardDismissedAtomFamily } from "@/atoms/onboarding-reward-atoms"
+import { onboardingRewardViewAtomFamily } from "@/atoms/onboarding-reward-atoms"
 import {
 	claimOnboardingRewardMutation,
 	onboardingChecklistAtom,
@@ -20,6 +20,9 @@ export interface OnboardingChecklistState {
 	readonly isAdmin: boolean
 	readonly dismissed: boolean
 	readonly dismiss: () => void
+	/** False until the popover has been closed once; drives the one-time auto-open. */
+	readonly seen: boolean
+	readonly markSeen: () => void
 	readonly refresh: () => void
 	readonly claim: () => Promise<boolean>
 	readonly claimPending: boolean
@@ -33,7 +36,7 @@ export function useOnboardingChecklist(): OnboardingChecklistState {
 
 	const result = useAtomValue(onboardingChecklistAtom)
 	const refresh = useAtomRefresh(onboardingChecklistAtom)
-	const [dismissed, setDismissed] = useAtom(onboardingRewardDismissedAtomFamily(orgId ?? "default"))
+	const [view, setView] = useAtom(onboardingRewardViewAtomFamily(orgId ?? "default"))
 	const runClaim = useAtomSet(claimOnboardingRewardMutation, { mode: "promiseExit" })
 	const [claimPending, setClaimPending] = useState(false)
 	const [claimError, setClaimError] = useState<string | null>(null)
@@ -44,8 +47,12 @@ export function useOnboardingChecklist(): OnboardingChecklistState {
 
 	const dismiss = useCallback(() => {
 		trackProduct("onboarding_reward_dismissed")
-		setDismissed(true)
-	}, [setDismissed])
+		setView((prev) => ({ ...prev, dismissed: true, seen: true }))
+	}, [setView])
+
+	const markSeen = useCallback(() => {
+		setView((prev) => (prev.seen ? prev : { ...prev, seen: true }))
+	}, [setView])
 
 	const claim = useCallback(async () => {
 		setClaimPending(true)
@@ -64,8 +71,10 @@ export function useOnboardingChecklist(): OnboardingChecklistState {
 	return {
 		checklist: Result.isSuccess(result) ? result.value : null,
 		isAdmin,
-		dismissed,
+		dismissed: view.dismissed,
 		dismiss,
+		seen: view.seen,
+		markSeen,
 		refresh,
 		claim,
 		claimPending,
