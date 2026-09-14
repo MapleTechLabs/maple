@@ -42,12 +42,20 @@ describe("query-builder funnel: the drop-off variant", () => {
 		expect(container.querySelectorAll("[data-slot='funnel-dropoff-step']").length).toBe(3)
 		// Step 1 has nothing to lose; steps 2 and 3 carry a hatched cap.
 		expect(container.querySelectorAll("[data-slot='funnel-dropoff-lost']").length).toBe(2)
+		const pills = Array.from(
+			container.querySelectorAll("[data-slot='funnel-dropoff-pill']"),
+			(el) => el.textContent,
+		)
+		// Step-to-step conversion and the loss, at the foot of each bar past the first.
+		expect(pills).toEqual(["40%60%", "50%50%"])
 		const text = container.textContent ?? ""
-		expect(text).toContain("−60 dropped · 60%")
-		expect(text).toContain("−20 dropped · 50%")
-		// Step-to-step conversion on the connector, share of first under the bar.
+		// Share of first heads every column, its count beneath.
 		expect(text).toContain("40%")
-		expect(text).toContain("50%")
+		expect(text).toContain("20%")
+		expect(text).toContain("100")
+		// The overall rate: last step over first.
+		const summary = container.querySelector("[data-slot='funnel-dropoff-summary']")
+		expect(summary?.textContent).toBe("Conversion rate20%")
 	})
 
 	it("hides every percentage when asked to", () => {
@@ -74,7 +82,8 @@ describe("query-builder funnel: the drop-off variant", () => {
 		expect(tipText).toContain("Nothing after")
 		expect(tipText).toContain("44%")
 		expect(tipText).toContain("/docs/quickstart")
-		expect(tipText).toContain("p50 4m · p90 1h")
+		expect(tipText).toContain("p50 4m")
+		expect(tipText).toContain("p90 1h")
 	})
 
 	it("hovering step 1 opens nothing — there is no previous step to have dropped from", () => {

@@ -213,7 +213,7 @@ export function partitionInfraSubItems(
  * (see `NavRow`) — a section named "Explore" says nothing about the four
  * signals it hides.
  */
-const exploreItem = (flags?: OrganizationFeatureFlags): NavItem => ({
+const exploreItem: NavItem = {
 	title: "Explore",
 	href: "/traces",
 	icon: LayersIcon,
@@ -222,14 +222,9 @@ const exploreItem = (flags?: OrganizationFeatureFlags): NavItem => ({
 		{ title: "Logs", href: "/logs", icon: FileIcon },
 		{ title: "Metrics", href: "/metrics", icon: ChartLineIcon },
 		{ title: "Replays", href: "/replays", icon: PlayRotateClockwiseIcon },
-		// Behind the `agent_tracing` rollout flag. The parameter is optional on
-		// purpose: a caller with no organization context yet hides the row rather
-		// than flashing it (see `navGroups`).
-		...(flags?.agentTracing
-			? [{ title: "Agent Sessions", href: "/agent-sessions", icon: SquareSparkleIcon }]
-			: []),
+		{ title: "Agent Sessions", href: "/agent-sessions", icon: SquareSparkleIcon },
 	],
-})
+}
 
 /**
  * The sidebar's information architecture, and the single source the command
@@ -238,12 +233,12 @@ const exploreItem = (flags?: OrganizationFeatureFlags): NavItem => ({
  *
  * `flags` is *optional*, so a caller with no organization context yet hides a
  * flagged row rather than flashing it — a row that appears and then vanishes is
- * worse than one that arrives a beat late. Agent Sessions (`agentTracing`) and
- * Releases (`releases`) are the rows behind a staged rollout right now.
+ * worse than one that arrives a beat late. Releases (`releases`)
+ * is the row behind a staged rollout right now.
  */
 export function navGroups(flags?: OrganizationFeatureFlags): NavGroup[] {
 	const analyzeItems: NavItem[] = [
-		exploreItem(flags),
+		exploreItem,
 		{ title: "Web Analytics", href: "/analytics", icon: ChartBarHorizontalIcon },
 		{ title: "Dashboards", href: "/dashboards", icon: GridSquareCirclePlusIcon },
 	]

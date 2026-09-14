@@ -192,7 +192,9 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
   under `lib/**`, whose builder DSLs (`unitflow`) use
   `any` as a type-level placeholder in variance positions. `Record<string, unknown>` is _not_ banned —
   it forces narrowing at every read, which is the point.
-- **Effect:** source is vendored at `.context/effect/` (subtree of Effect-TS/effect-smol).
+- **Effect:** read `node_modules/effect/src/` (and `node_modules/@effect/*/src/`) — the packages
+  ship their TypeScript source and `ai-docs`, always at the installed version. The old
+  `.context/effect` subtree was 1.5 GB of the same files and drifted from `bun.lock`.
 - **Effect errors:** new expected failures always use `Schema.TaggedError`, including internal-only
   failures; `Data.TaggedError` is legacy and is not a precedent for new Maple code. Give every
   failure a namespaced tag, `message`, and useful schema-backed context (`Schema.Defect()` for an

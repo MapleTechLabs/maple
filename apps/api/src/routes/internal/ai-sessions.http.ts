@@ -20,9 +20,8 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 /**
  * Dashboard-only AI agent session reads.
  *
- * Serves the Agent Sessions page (behind the `agent_tracing` org rollout flag).
- * The flag hides the surface, not the data — scoping is `CurrentTenant`, like
- * every other warehouse read.
+ * Serves the Agent Sessions page. Scoping is `CurrentTenant`, like every other
+ * warehouse read.
  *
  * Every handler is the tenant plus one call into `ai-session-reads`, which the
  * MCP tools read through as well: the reads and their spans live there.

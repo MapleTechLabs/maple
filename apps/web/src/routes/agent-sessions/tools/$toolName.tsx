@@ -15,14 +15,12 @@ import {
 import { prepareToolErrors, type ToolErrorsWindow } from "@/components/agent-sessions/tools/tool-errors-table"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { NotFoundError } from "@/components/route-error"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Atom, Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import type { AiToolErrorSamplesInput } from "@/api/warehouse/ai-session-tools"
@@ -61,16 +59,7 @@ export const Route = createFileRoute("/agent-sessions/tools/$toolName")({
 	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
-/** Behind the `agent_tracing` org rollout flag, gated exactly as the pages
- *  around it: in the component, `isLoaded` first, and no route loader. */
 function ToolDetailPage() {
-	const { flags, isLoaded } = useOrganizationFeatureFlags()
-	if (!isLoaded) return null
-	if (!flags.agentTracing) return <NotFoundError />
-	return <ToolDetailPageContent />
-}
-
-function ToolDetailPageContent() {
 	const { toolName } = Route.useParams()
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -245,9 +234,7 @@ function ToolDetailBody({
 				<Skeleton className="h-64" />
 			</div>
 		))
-		.onError((error) => (
-			<QueryErrorState error={error} titleOverride={`Failed to load ${tool}`} />
-		))
+		.onError((error) => <QueryErrorState error={error} titleOverride={`Failed to load ${tool}`} />)
 		.onSuccess((resolved, result) => (
 			<ToolDetailView
 				tool={tool}
@@ -365,7 +352,8 @@ function ErrorModal({
 			onSelectVariant={(next) => onSearchChange({ variant: next })}
 			onStep={(offset) => {
 				const next = prepared.rows[index + offset]
-				if (next !== undefined) onSearchChange({ error: next.fingerprint, session: undefined, variant: undefined })
+				if (next !== undefined)
+					onSearchChange({ error: next.fingerprint, session: undefined, variant: undefined })
 			}}
 			onClose={() => onSearchChange({ error: undefined, session: undefined, variant: undefined })}
 		/>

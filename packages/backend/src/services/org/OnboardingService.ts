@@ -2,8 +2,8 @@ import { orgOnboardingState } from "@maple/db"
 import type { OrgOnboardingStateRow } from "@maple/db"
 import { OnboardingPersistenceError, OnboardingStateResponse } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/http"
-import { and, eq, isNull } from "drizzle-orm"
-import { Clock, Context, Effect, Layer } from "effect"
+import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { dateToMs } from "@maple/backend/platform/time"
 
@@ -32,6 +32,8 @@ function rowToResponse(row: OrgOnboardingStateRow): OnboardingStateResponse {
 		onboardingCompletedAt: dateToMs(row.onboardingCompletedAt),
 		checklistDismissedAt: dateToMs(row.checklistDismissedAt),
 		firstDataReceivedAt: dateToMs(row.firstDataReceivedAt),
+		rewardClaimedAt: dateToMs(row.rewardClaimedAt),
+		rewardReservedAt: dateToMs(row.rewardReservedAt),
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 	})
@@ -90,6 +92,11 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 					})
 				}
 				return row
+			})
+
+			/** The row as it is, or `None`; never creates one. */
+			const findState = Effect.fn("OnboardingService.findState")(function* (orgId: OrgId) {
+				return Option.fromNullishOr(yield* findRow(orgId))
 			})
 
 			const getState = Effect.fn("OnboardingService.getState")(function* (
@@ -168,6 +175,71 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				return result.length > 0
 			})
 
+			/**
+			 * Take the reward claim lease: stamps `rewardReservedAt` if the reward is not
+			 * claimed and no live reservation exists (a reservation older than `leaseMs`
+			 * is a crashed attempt and may be taken over). Reports whether this call won.
+			 */
+			const reserveRewardClaim = Effect.fn("OnboardingService.reserveRewardClaim")(function* (
+				orgId: OrgId,
+				leaseMs: number,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const result = yield* database
+					.execute((db) =>
+						db
+							.update(orgOnboardingState)
+							.set({ rewardReservedAt: new Date(now), updatedAt: new Date(now) })
+							.where(
+								and(
+									eq(orgOnboardingState.orgId, orgId),
+									isNull(orgOnboardingState.rewardClaimedAt),
+									or(
+										isNull(orgOnboardingState.rewardReservedAt),
+										lt(orgOnboardingState.rewardReservedAt, new Date(now - leaseMs)),
+									),
+								),
+							)
+							.returning({ id: orgOnboardingState.orgId }),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
+				return result.length > 0
+			})
+
+			/** Billing confirmed the credit: the claim is final and the lease is released. */
+			const finalizeRewardClaim = Effect.fn("OnboardingService.finalizeRewardClaim")(function* (
+				orgId: OrgId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* database
+					.execute((db) =>
+						db
+							.update(orgOnboardingState)
+							.set({
+								rewardClaimedAt: new Date(now),
+								rewardReservedAt: null,
+								updatedAt: new Date(now),
+							})
+							.where(eq(orgOnboardingState.orgId, orgId)),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
+			})
+
+			/** Billing refused before anything was applied: give the lease back so the org can retry now. */
+			const releaseRewardClaim = Effect.fn("OnboardingService.releaseRewardClaim")(function* (
+				orgId: OrgId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* database
+					.execute((db) =>
+						db
+							.update(orgOnboardingState)
+							.set({ rewardReservedAt: null, updatedAt: new Date(now) })
+							.where(eq(orgOnboardingState.orgId, orgId)),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
+			})
+
 			const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (
 				orgId: OrgId,
 				field: OnboardingEmailField,
@@ -225,10 +297,14 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 			)
 
 			return {
+				findState,
 				getState,
 				updateState,
 				ensureRow,
 				recordFirstDataReceived,
+				reserveRewardClaim,
+				finalizeRewardClaim,
+				releaseRewardClaim,
 				markEmailSent,
 				suppressOnboardingEmails,
 				listAll,

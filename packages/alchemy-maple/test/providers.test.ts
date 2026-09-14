@@ -2,7 +2,7 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { Effect, Layer, Redacted } from "effect"
-import type { ScopedPlanStatusSession } from "alchemy/Cli/Cli"
+import type { ScopedPlanStatusSession } from "alchemy/Report"
 import { ApiKey, ApiKeyProvider } from "../src/ApiKey"
 import { Dashboard, DashboardProvider } from "../src/Dashboard"
 import { MapleApi, type MapleApiContract } from "../src/MapleApi"

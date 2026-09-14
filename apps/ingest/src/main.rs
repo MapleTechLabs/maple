@@ -4659,6 +4659,7 @@ fn current_time_unix_nano() -> u64 {
 fn string_attribute(key: &str, value: &str) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
             value: Some(any_value::Value::StringValue(value.to_owned())),
         }),
@@ -4935,6 +4936,7 @@ fn upsert_string_attribute(attributes: &mut Vec<KeyValue>, key: &str, value: &st
 
     attributes.push(KeyValue {
         key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
             value: Some(any_value::Value::StringValue(value.to_owned())),
         }),
@@ -6568,12 +6570,14 @@ mod tests {
         let mut attributes = vec![
             KeyValue {
                 key: "org_id".to_owned(),
+                key_strindex: 0,
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("spoofed".to_owned())),
                 }),
             },
             KeyValue {
                 key: "maple_org_id".to_owned(),
+                key_strindex: 0,
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("spoofed".to_owned())),
                 }),
@@ -7247,6 +7251,7 @@ mod tests {
                 resource: Some(Resource {
                     attributes: vec![KeyValue {
                         key: "service.name".to_owned(),
+                        key_strindex: 0,
                         value: Some(AnyValue {
                             value: Some(any_value::Value::StringValue("routing-test".to_owned())),
                         }),

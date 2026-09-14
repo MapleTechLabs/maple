@@ -9,6 +9,9 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { DetailsSection } from "@/components/alerts/details-section"
 import { NotificationsSection } from "@/components/alerts/notifications-section"
+import { DestinationDialog } from "@/components/alerts/destination-dialog"
+import { useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
@@ -73,6 +76,17 @@ export function AlertCreateFormSurface({
 
 	const [ruleForm, setRuleForm] = useState<RuleFormState>(() => initialForm)
 	const [savingRule, setSavingRule] = useState(false)
+	// A destination made from this form is selected on it: the user came here to
+	// write a rule, and leaving to make the destination would have lost the draft.
+	// Creating a destination is admin-only server-side; a member gets the nudge, not the dialog.
+	const isAdmin = useIsOrgAdmin()
+	const destinationManager = useDestinationManager({
+		onCreated: (id) =>
+			setRuleForm((current) => ({
+				...current,
+				destinationIds: [...new Set([...current.destinationIds, id])],
+			})),
+	})
 	const [previewingRule, setPreviewingRule] = useState(false)
 	const [sendingTestNotification, setSendingTestNotification] = useState(false)
 	// Tagged with the rule config it was produced from. A "Would trigger" verdict
@@ -233,6 +247,9 @@ export function AlertCreateFormSurface({
 										destinations={destinations}
 										onSendTest={() => runTest(true)}
 										testing={sendingTestNotification}
+										onAddDestination={
+											isAdmin ? () => destinationManager.openDialog() : undefined
+										}
 									/>
 									<DetailsSection
 										form={ruleForm}
@@ -270,6 +287,15 @@ export function AlertCreateFormSurface({
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
+			<DestinationDialog
+				open={destinationManager.dialogOpen}
+				onOpenChange={destinationManager.setDialogOpen}
+				form={destinationManager.form}
+				onFormChange={destinationManager.setForm}
+				isEditing={destinationManager.isEditing}
+				saving={destinationManager.saving}
+				onSave={destinationManager.save}
+			/>
 		</DashboardLayout.Root>
 	)
 }

@@ -48,10 +48,6 @@ vi.mock("@/lib/agent-sessions/use-tool-analytics", () => ({
 	useAgentSessionsTabCounts: () => ({}),
 }))
 
-vi.mock("@/hooks/use-organization-feature-flags", () => ({
-	useOrganizationFeatureFlags: () => ({ flags: { agentTracing: true }, isLoaded: true }),
-}))
-
 vi.mock("@/hooks/use-infinite-ai-sessions", async () => {
 	const { Result } = await vi.importActual<typeof import("@/lib/effect-atom")>("@/lib/effect-atom")
 	return {

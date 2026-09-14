@@ -13,9 +13,11 @@ import {
 import {
 	Dialog,
 	DialogContent,
-	DialogHeader,
-	DialogTitle,
 	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogPanel,
+	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Button } from "@maple/ui/components/ui/button"
@@ -146,14 +148,14 @@ export function ClerkOrgSwitcherMenu({
 					}
 				}}
 			>
-				<DialogContent className="sm:max-w-sm">
+				<DialogContent className="sm:max-w-sm" render={<form onSubmit={handleCreateOrg} />}>
 					<DialogHeader>
 						<DialogTitle>Create Organization</DialogTitle>
 						<DialogDescription>
 							Create a new organization to collaborate with your team.
 						</DialogDescription>
 					</DialogHeader>
-					<form className="space-y-3" onSubmit={handleCreateOrg}>
+					<DialogPanel className="space-y-3">
 						<Input
 							placeholder="Organization name"
 							value={newOrgName}
@@ -163,10 +165,12 @@ export function ClerkOrgSwitcherMenu({
 							autoFocus
 						/>
 						{errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
-						<Button type="submit" className="w-full" disabled={isCreating || !newOrgName.trim()}>
+					</DialogPanel>
+					<DialogFooter>
+						<Button type="submit" disabled={isCreating || !newOrgName.trim()}>
 							{isCreating ? "Creating..." : "Create"}
 						</Button>
-					</form>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 		</>

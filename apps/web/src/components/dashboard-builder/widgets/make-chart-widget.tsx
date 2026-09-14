@@ -209,7 +209,17 @@ export function makeChartWidget(options: ChartWidgetOptions) {
 
 		const chartData =
 			dataState.status === "ready" && Array.isArray(dataState.data) ? dataState.data : undefined
-		const skeleton = <ChartSkeleton variant={entry.category} />
+		// The funnel's two views share a registry entry; the drop-off one gets
+		// its own ghost so the swap-in does not jump from rows to columns.
+		const skeleton = (
+			<ChartSkeleton
+				variant={
+					entry.category === "funnel" && display.funnel?.variant === "dropoff"
+						? "funnel-dropoff"
+						: entry.category
+				}
+			/>
+		)
 
 		return (
 			<WidgetFrame

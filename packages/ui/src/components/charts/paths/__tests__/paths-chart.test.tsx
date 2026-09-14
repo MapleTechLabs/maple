@@ -76,8 +76,9 @@ describe("paths chart", () => {
 		fireEvent.pointerEnter(target!)
 		const tip = container.querySelector("[data-slot='paths-tooltip']")
 		expect(tip?.textContent).toContain("First trace received")
-		expect(tip?.textContent).toContain("1,020 · 48%")
-		expect(tip?.textContent).toContain("← Created ingest key")
+		expect(tip?.textContent).toContain("1,020")
+		expect(tip?.textContent).toContain("48% of anchor")
+		expect(tip?.textContent).toContain("Came fromCreated ingest key")
 	})
 
 	it("is the empty state without rows", () => {
