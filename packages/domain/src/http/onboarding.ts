@@ -13,6 +13,7 @@ export class OnboardingStateResponse extends Schema.Class<OnboardingStateRespons
 		checklistDismissedAt: Schema.NullOr(Schema.Number),
 		firstDataReceivedAt: Schema.NullOr(Schema.Number),
 		rewardClaimedAt: Schema.NullOr(Schema.Number),
+		rewardReservedAt: Schema.NullOr(Schema.Number),
 		createdAt: Schema.Number,
 		updatedAt: Schema.Number,
 	},

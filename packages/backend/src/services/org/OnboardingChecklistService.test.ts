@@ -3,6 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { ONBOARDING_REWARD_WINDOW_MS } from "@maple/domain/onboarding-checklist"
+import { CLAIM_LEASE_MS } from "@maple/backend/services/org/OnboardingChecklistService"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -46,6 +47,7 @@ interface World {
 	memberCount: number
 	membersFail: boolean
 	rulesFail: boolean
+	customerStatus: number
 	redeemStatus: number
 	orgLookups: number
 	redeems: Array<{ customerId: string; code: string }>
@@ -61,6 +63,7 @@ const freshWorld = (): World => ({
 	memberCount: 2,
 	membersFail: false,
 	rulesFail: false,
+	customerStatus: 200,
 	redeemStatus: 200,
 	orgLookups: 0,
 	redeems: [],
@@ -145,7 +148,12 @@ const stubs = (world: World) =>
 			resolveMembers: die,
 		}),
 		Layer.succeed(AutumnClient, {
-			getOrCreateCustomer: () => Effect.succeed(ok({ id: ORG })),
+			getOrCreateCustomer: () =>
+				Effect.sync(() =>
+					world.customerStatus === 200
+						? ok({ id: ORG })
+						: { statusCode: world.customerStatus, response: { message: "autumn down" } },
+				),
 			aggregateEvents: die,
 			attach: die,
 			previewAttach: die,
@@ -205,6 +213,15 @@ const claimedAtInDb = (testDb: TestDb) =>
 			[ORG],
 		),
 	).pipe(Effect.map((row) => row?.reward_claimed_at ?? null))
+
+const reservedAtInDb = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ reward_reserved_at: Date | null }>(
+			testDb,
+			`SELECT reward_reserved_at FROM org_onboarding_state WHERE org_id = $1`,
+			[ORG],
+		),
+	).pipe(Effect.map((row) => row?.reward_reserved_at ?? null))
 
 /** An active GitHub installation, written the way the connect callback would. */
 const connectGithub = (testDb: TestDb, status: "active" | "suspended" = "active") =>
@@ -391,6 +408,7 @@ describe("OnboardingChecklistService.claim", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
 			assert.strictEqual(world.redeems.length, 1)
 			assert.strictEqual(yield* claimedAtInDb(testDb), null)
+			assert.strictEqual(yield* reservedAtInDb(testDb), null)
 
 			world.redeemStatus = 200
 			const result = yield* service.claim(tenant)
@@ -398,25 +416,57 @@ describe("OnboardingChecklistService.claim", () => {
 		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
 	})
 
-	it.effect(
-		"keeps the reservation when Autumn fails ambiguously, so the credit cannot double-apply",
-		() => {
-			const world = freshWorld()
-			world.redeemStatus = 500
-			const testDb = createTestDb(trackedDbs)
-			return Effect.gen(function* () {
-				yield* useMcpKey
-				yield* connectGithub(testDb)
-				const service = yield* OnboardingChecklistService
-				const error = yield* Effect.flip(service.claim(tenant))
-				assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
-				assert.strictEqual(world.redeems.length, 1)
-				// Stamped: the response was lost, not refused, so a retry must not redeem again.
-				assert.notStrictEqual(yield* claimedAtInDb(testDb), null)
-				assert.strictEqual((yield* service.read(tenant)).status, "claimed")
-			}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
-		},
-	)
+	it.effect("holds the lease, not the claim, when Autumn fails ambiguously", () => {
+		const world = freshWorld()
+		world.redeemStatus = 500
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* useMcpKey
+			yield* connectGithub(testDb)
+			const service = yield* OnboardingChecklistService
+			const error = yield* Effect.flip(service.claim(tenant))
+			assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
+			assert.strictEqual(world.redeems.length, 1)
+			// Never reported as claimed — nothing confirmed the credit — but the lease stays so an
+			// immediate retry cannot redeem a second time while the first may have applied.
+			assert.strictEqual(yield* claimedAtInDb(testDb), null)
+			assert.notStrictEqual(yield* reservedAtInDb(testDb), null)
+			assert.strictEqual((yield* service.read(tenant)).status, "claimable")
+			const retry = yield* Effect.flip(service.claim(tenant))
+			assert.strictEqual(
+				retry._tag === "@maple/http/errors/OnboardingRewardNotClaimableError" ? retry.reason : null,
+				"in_progress",
+			)
+			assert.strictEqual(world.redeems.length, 1)
+
+			// Once the lease has expired the attempt counts as dead and may be taken over.
+			yield* TestClock.adjust(`${CLAIM_LEASE_MS + 1} millis`)
+			world.redeemStatus = 200
+			const result = yield* service.claim(tenant)
+			assert.strictEqual(result.report.status, "claimed")
+			assert.strictEqual(yield* reservedAtInDb(testDb), null)
+		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+	})
+
+	it.effect("gives the lease back when the customer lookup fails, since nothing was applied", () => {
+		const world = freshWorld()
+		world.customerStatus = 503
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* useMcpKey
+			yield* connectGithub(testDb)
+			const service = yield* OnboardingChecklistService
+			const error = yield* Effect.flip(service.claim(tenant))
+			assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
+			assert.strictEqual(world.redeems.length, 0)
+			assert.strictEqual(yield* claimedAtInDb(testDb), null)
+			assert.strictEqual(yield* reservedAtInDb(testDb), null)
+
+			world.customerStatus = 200
+			const result = yield* service.claim(tenant)
+			assert.strictEqual(result.report.status, "claimed")
+		}).pipe(Effect.provide(makeLayer(world, testDb, WITH_CODE)))
+	})
 
 	it.effect("lets exactly one of two concurrent claims reach Autumn; the other is told to retry", () => {
 		const world = freshWorld()

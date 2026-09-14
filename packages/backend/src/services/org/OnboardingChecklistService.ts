@@ -26,6 +26,13 @@ import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenc
 
 export type OnboardingChecklistReport = OnboardingChecklistEvaluation
 
+/**
+ * How long a claim may sit unresolved before another attempt may take it over. Long
+ * enough for a slow Autumn round trip; short enough that a crashed attempt does not
+ * hold the reward hostage.
+ */
+export const CLAIM_LEASE_MS = 10 * 60 * 1000
+
 export interface OnboardingClaimResult {
 	readonly report: OnboardingChecklistReport
 	/** True only for the call that performed the redemption; a repeat returns the report with `false`. */
@@ -254,9 +261,15 @@ const make = Effect.gen(function* () {
 			onSome: (value) => Effect.succeed(Redacted.value(value)),
 		})
 
-		// Reserve first: a lost race means another admin's click is mid-redeem. That caller
-		// gets a retryable refusal rather than a "claimed" the winner may still roll back.
-		const reserved = yield* unavailable("markRewardClaimed", onboarding.markRewardClaimed(orgId))
+		// Take the lease first: a lost race means another admin's click is mid-redeem, and
+		// that caller gets a retryable refusal. The lease, not the claim stamp, is what is
+		// held here — `rewardClaimedAt` goes down only once Autumn has confirmed the credit,
+		// so a crash or an unanswered call never reads as "claimed". A lease older than
+		// `CLAIM_LEASE_MS` is a dead attempt and may be taken over.
+		const reserved = yield* unavailable(
+			"reserveRewardClaim",
+			onboarding.reserveRewardClaim(orgId, CLAIM_LEASE_MS),
+		)
 		if (!reserved) {
 			return yield* new OnboardingRewardNotClaimableError({
 				message: "Another admin is claiming the reward right now. Try again in a moment.",
@@ -264,39 +277,51 @@ const make = Effect.gen(function* () {
 			})
 		}
 
-		const rollback = onboarding
-			.clearRewardClaim(orgId)
+		const release = onboarding
+			.releaseRewardClaim(orgId)
 			.pipe(
 				Effect.catchCause((cause) =>
-					Effect.logError("Onboarding reward reservation could not be rolled back").pipe(
+					Effect.logError("Onboarding reward lease could not be released").pipe(
 						Effect.annotateLogs({ orgId, cause }),
 					),
 				),
 			)
-		// Only a definite refusal reopens the claim: Autumn answered 4xx, so nothing was
-		// applied. A 5xx or a lost response may have applied the credit, so the reservation
-		// stands and the failure is logged for reconciliation rather than risking a second
-		// redemption. `classifyAutumn` keeps the 4xx/5xx split that `ensureOk` collapses.
-		const redeem = Effect.gen(function* () {
-			yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(Effect.flatMap(classifyAutumn))
-			yield* autumn.redeemReward(orgId, { code }).pipe(Effect.flatMap(classifyAutumn))
-		}).pipe(
+		const releaseAndCollapse = (error: {
+			readonly message: string
+			readonly code: string
+			readonly upstreamStatus: number
+		}) => release.pipe(Effect.andThen(collapseToUpstream(error)))
+
+		// Nothing has been applied until the redeem call itself, so any failure before it
+		// gives the lease back. On the redeem, only a definite 4xx refusal does: a 5xx or a
+		// lost response may have applied the credit, so the lease stays until it expires and
+		// the failure is logged for reconciliation. `classifyAutumn` keeps the 4xx/5xx split
+		// that `ensureOk` collapses.
+		yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(
+			Effect.flatMap(classifyAutumn),
 			Effect.catchTags({
-				"@maple/http/errors/BillingPaymentRequiredError": (error) =>
-					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
-				"@maple/http/errors/BillingConflictError": (error) =>
-					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
-				"@maple/http/errors/BillingRateLimitedError": (error) =>
-					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
-				"@maple/http/errors/BillingRequestError": (error) =>
-					rollback.pipe(Effect.andThen(collapseToUpstream(error))),
+				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
+				"@maple/http/errors/BillingConflictError": releaseAndCollapse,
+				"@maple/http/errors/BillingRateLimitedError": releaseAndCollapse,
+				"@maple/http/errors/BillingRequestError": releaseAndCollapse,
+				"@maple/http/errors/BillingUpstreamError": (error) =>
+					release.pipe(Effect.andThen(Effect.fail(error))),
+			}),
+		)
+		yield* autumn.redeemReward(orgId, { code }).pipe(
+			Effect.flatMap(classifyAutumn),
+			Effect.catchTags({
+				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
+				"@maple/http/errors/BillingConflictError": releaseAndCollapse,
+				"@maple/http/errors/BillingRateLimitedError": releaseAndCollapse,
+				"@maple/http/errors/BillingRequestError": releaseAndCollapse,
 				"@maple/http/errors/BillingUpstreamError": (error) =>
 					Effect.logError(
-						"Onboarding reward redeem failed after reservation; needs reconciliation",
+						"Onboarding reward redeem unanswered after reservation; needs reconciliation",
 					).pipe(Effect.annotateLogs({ orgId, error }), Effect.andThen(Effect.fail(error))),
 			}),
 		)
-		yield* redeem
+		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId))
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 		yield* Effect.annotateCurrentSpan({ orgId, "onboarding.rewardClaimed": true })
 
