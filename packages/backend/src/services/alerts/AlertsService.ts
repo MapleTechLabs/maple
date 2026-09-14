@@ -2648,15 +2648,20 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							...incident,
 							status: "resolved" as const,
 							resolvedAt: new Date(timestamp),
+							holdReason: null,
+							heldSince: null,
 							updatedAt: new Date(timestamp),
 						}
 
+						// A hold is a sub-state of open; a config-driven resolve ends it too.
 						yield* dbExecute((db) =>
 							db
 								.update(alertIncidents)
 								.set({
 									status: "resolved",
 									resolvedAt: new Date(timestamp),
+									holdReason: null,
+									heldSince: null,
 									updatedAt: new Date(timestamp),
 								})
 								.where(eq(alertIncidents.id, incident.id)),
@@ -2731,26 +2736,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// genuinely went away, or because the service stopped reporting — and
 					// this path closes the incident AND fires a resolve notification, so
 					// getting it wrong pages an all-clear in the middle of an ingest
-					// outage. Anchor the baseline at the oldest orphan: whatever traffic
-					// existed when these incidents opened should still be there.
-					const oldestOpenedAtMs = orphaned.reduce(
-						(oldest, incident) => Math.min(oldest, incident.firstTriggeredAt.getTime()),
-						Number.POSITIVE_INFINITY,
-					)
-					// One probe per distinct service scope (a service-grouped rule probes
-					// each quiet service on its own), one decision per incident: each
-					// orphan carries its own hold clock, so two groups that went quiet an
-					// hour apart reach their ceilings an hour apart.
+					// outage.
+					//
+					// One probe per distinct (service scope, onset), one decision per
+					// incident. A service-grouped rule probes each quiet service on its
+					// own, and each incident's onset anchors its own fallback baseline: a
+					// group that opened at noon must not be compared against the traffic
+					// it had at 10:00, before it existed. Each orphan also carries its own
+					// hold clock, so two groups that went quiet an hour apart reach their
+					// ceilings an hour apart.
 					const probes = new Map<string, LivenessVerdict>()
-					const livenessFor = (services: ReadonlyArray<string>) =>
+					const livenessFor = (services: ReadonlyArray<string>, openedAtMs: number) =>
 						Effect.gen(function* () {
-							const key = services.join("\u0000")
+							const key = `${openedAtMs}\u0000${services.join("\u0000")}`
 							const cached = probes.get(key)
 							if (cached !== undefined) return cached
 							const verdict = yield* telemetryStillFlowing(
 								orgId,
 								normalized,
-								oldestOpenedAtMs,
+								openedAtMs,
 								timestamp,
 								services,
 							)
@@ -2763,6 +2767,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						return Effect.gen(function* () {
 							const liveness = yield* livenessFor(
 								livenessServicesForIncident(normalized, incident.groupKey),
+								incident.firstTriggeredAt.getTime(),
 							)
 							const gate = decideLivenessGate(
 								incident,
