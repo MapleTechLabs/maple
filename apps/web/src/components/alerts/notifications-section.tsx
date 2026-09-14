@@ -23,7 +23,7 @@ interface NotificationsSectionProps {
 	destinations: AlertDestinationDocument[]
 	onSendTest: () => void
 	testing: boolean
-	/** Opens the add-destination dialog in place; without it the section links to the Destinations tab. */
+	/** Opens the add-destination dialog in place. Absent for members, who cannot create one and are told to ask an admin. */
 	onAddDestination?: () => void
 }
 
@@ -93,8 +93,9 @@ export function NotificationsSection({
 							<div className="min-w-0 flex-1">
 								<p className="text-sm font-medium">Nowhere to send incidents yet</p>
 								<p className="text-xs text-muted-foreground">
-									Add a Slack, PagerDuty, email or webhook destination. The rule cannot be
-									saved without one.
+									{onAddDestination
+										? "Add a Slack, PagerDuty, email or webhook destination. The rule cannot be saved without one."
+										: "Ask an org admin to add a Slack, PagerDuty, email or webhook destination. The rule cannot be saved without one."}
 								</p>
 							</div>
 						</div>
@@ -104,9 +105,12 @@ export function NotificationsSection({
 								Add destination
 							</Button>
 						) : (
-							<Button size="sm" render={<Link to="/alerts" search={{ tab: "settings" }} />}>
-								<PlusIcon size={14} />
-								Add destination
+							<Button
+								size="sm"
+								variant="outline"
+								render={<Link to="/alerts" search={{ tab: "settings" }} />}
+							>
+								View destinations
 							</Button>
 						)}
 					</div>

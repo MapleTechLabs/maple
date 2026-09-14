@@ -11,6 +11,7 @@ import { DetailsSection } from "@/components/alerts/details-section"
 import { NotificationsSection } from "@/components/alerts/notifications-section"
 import { DestinationDialog } from "@/components/alerts/destination-dialog"
 import { useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
@@ -77,6 +78,8 @@ export function AlertCreateFormSurface({
 	const [savingRule, setSavingRule] = useState(false)
 	// A destination made from this form is selected on it: the user came here to
 	// write a rule, and leaving to make the destination would have lost the draft.
+	// Creating a destination is admin-only server-side; a member gets the nudge, not the dialog.
+	const isAdmin = useIsOrgAdmin()
 	const destinationManager = useDestinationManager({
 		onCreated: (id) =>
 			setRuleForm((current) => ({
@@ -244,7 +247,9 @@ export function AlertCreateFormSurface({
 										destinations={destinations}
 										onSendTest={() => runTest(true)}
 										testing={sendingTestNotification}
-										onAddDestination={() => destinationManager.openDialog()}
+										onAddDestination={
+											isAdmin ? () => destinationManager.openDialog() : undefined
+										}
 									/>
 									<DetailsSection
 										form={ruleForm}
