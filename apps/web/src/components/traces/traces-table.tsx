@@ -27,6 +27,8 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
 import { useListNavigation } from "@/hooks/use-list-navigation"
+import { useIsMobile } from "@maple/ui/hooks/use-media-query"
+import { TracePeekSheet } from "@/components/traces/trace-peek-sheet"
 
 type TraceSortKey = NonNullable<TracesSearchParams["sortBy"]>
 type TraceSortDir = NonNullable<TracesSearchParams["sortDir"]>
@@ -40,6 +42,14 @@ interface TracesTableViewProps {
 	fetchNextPage: () => void
 	waiting: boolean
 	onTraceClick: (trace: Trace) => void
+	/**
+	 * Open a row in the peek sheet instead of leaving the page. A plain click
+	 * peeks; a modified click (⌘, ctrl, shift, middle) still follows the link,
+	 * so the row keeps being a link to the trace's page in every way that matters.
+	 */
+	onPeek?: (trace: Trace) => void
+	/** The row currently open in the peek sheet. */
+	activeTraceId?: string
 	onShowNoise: () => void
 	sortBy: TraceSortKey
 	sortDir: TraceSortDir
@@ -73,6 +83,9 @@ const traceLink = (trace: Trace) =>
 function deepLinkSpanId(trace: Trace): string | undefined {
 	return trace.isRootSpan ? undefined : trace.spanId
 }
+
+const isPlainClick = (event: React.MouseEvent) =>
+	event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
 
 function truncateId(id: string, length = 8): string {
 	if (id.length <= length) return id
@@ -215,6 +228,8 @@ function TracesTableView({
 	fetchNextPage,
 	waiting,
 	onTraceClick,
+	onPeek,
+	activeTraceId,
 	onShowNoise,
 	sortBy,
 	sortDir,
@@ -253,12 +268,23 @@ function TracesTableView({
 					return (
 						<div className="flex flex-col min-w-0">
 							{/* Stretched over the <tr> so the whole row is a real anchor: modifier,
-							    middle and right click all behave like any link. */}
+							    middle and right click all behave like any link. A plain click peeks
+							    instead when the sheet is available; the underlined Trace ID stays a
+							    plain link to the page either way. */}
 							<Link
 								{...traceLink(row.original)}
 								className="after:absolute after:inset-0 after:content-['']"
 								tabIndex={-1}
 								aria-label={`Open trace ${row.original.traceId}`}
+								onClick={
+									onPeek
+										? (event) => {
+												if (!isPlainClick(event)) return
+												event.preventDefault()
+												onPeek(row.original)
+											}
+										: undefined
+								}
 							/>
 							<HttpSpanLabel
 								spanName={displayName}
@@ -339,7 +365,7 @@ function TracesTableView({
 					),
 			},
 		],
-		[effectiveTimezone, sortBy, sortDir, onSortChange],
+		[effectiveTimezone, sortBy, sortDir, onSortChange, onPeek],
 	)
 
 	const table = useTable({
@@ -455,7 +481,8 @@ function TracesTableView({
 									ref={virtualizer.measureElement}
 									data-index={virtualRow.index}
 									data-focused={virtualRow.index === focusedIndex || undefined}
-									className="relative border-b transition-colors hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+									data-active={row.original.traceId === activeTraceId || undefined}
+									className="relative border-b transition-colors hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 									tabIndex={0}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" || e.key === " ") {
@@ -559,8 +586,55 @@ export function TracesTable({ filters }: TracesTableProps) {
 		navigateTraces({ search: (prev) => ({ ...prev, hideNoise: false }) })
 	}, [navigateTraces])
 
+	// A phone has no room for a sheet beside the list: plain click takes the page there.
+	const isMobile = useIsMobile()
+	const peekEnabled = !isMobile
+
+	const onPeek = React.useCallback(
+		(trace: Trace) =>
+			navigateTraces({
+				search: (prev) => ({ ...prev, peek: trace.traceId, peekSpan: deepLinkSpanId(trace) }),
+			}),
+		[navigateTraces],
+	)
+
 	// Mouse clicks go through the row's real link; this is the keyboard path.
-	const onTraceClick = React.useCallback((trace: Trace) => navigate(traceLink(trace)), [navigate])
+	const onTraceClick = React.useCallback(
+		(trace: Trace) => (peekEnabled ? onPeek(trace) : navigate(traceLink(trace))),
+		[navigate, onPeek, peekEnabled],
+	)
+
+	// The peek resolves against the rows on screen. An id that no longer matches
+	// a loaded row (the filter changed under it) just means the sheet is closed.
+	const peekIndex = peekEnabled && filters?.peek ? allData.findIndex((t) => t.traceId === filters.peek) : -1
+	const peekTrace = peekIndex >= 0 ? (allData[peekIndex] ?? null) : null
+	// Stepping and span selection replace history: walking fifty rows must not
+	// leave fifty entries behind the back button.
+	const stepPeek = React.useCallback(
+		(delta: 1 | -1) => {
+			const next = allData[peekIndex + delta]
+			if (next) {
+				navigateTraces({
+					search: (prev) => ({ ...prev, peek: next.traceId, peekSpan: deepLinkSpanId(next) }),
+					replace: true,
+				})
+			}
+		},
+		[allData, peekIndex, navigateTraces],
+	)
+	const closePeek = React.useCallback(
+		() =>
+			navigateTraces({
+				search: (prev) => ({ ...prev, peek: undefined, peekSpan: undefined }),
+				replace: true,
+			}),
+		[navigateTraces],
+	)
+	const selectPeekSpan = React.useCallback(
+		(spanId: string | undefined) =>
+			navigateTraces({ search: (prev) => ({ ...prev, peekSpan: spanId }), replace: true }),
+		[navigateTraces],
+	)
 
 	const sortBy = filters?.sortBy ?? "timestamp"
 	const sortDir = filters?.sortDir ?? "desc"
@@ -575,7 +649,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 		[navigateTraces, sortBy, sortDir],
 	)
 
-	return Result.builder(firstPageResult)
+	const table = Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
 		.onError((error) => <QueryErrorState error={error} />)
 		.onSuccess((_response, result) => (
@@ -588,6 +662,8 @@ export function TracesTable({ filters }: TracesTableProps) {
 				fetchNextPage={fetchNextPage}
 				waiting={result.waiting ?? false}
 				onTraceClick={onTraceClick}
+				onPeek={peekEnabled ? onPeek : undefined}
+				activeTraceId={peekTrace?.traceId}
 				onShowNoise={onShowNoise}
 				sortBy={sortBy}
 				sortDir={sortDir}
@@ -597,4 +673,18 @@ export function TracesTable({ filters }: TracesTableProps) {
 			/>
 		))
 		.render()
+
+	return (
+		<>
+			{table}
+			<TracePeekSheet
+				trace={peekTrace}
+				position={peekTrace ? { index: peekIndex, count: allData.length } : null}
+				selectedSpanId={filters?.peekSpan}
+				onSelectSpan={selectPeekSpan}
+				onStep={stepPeek}
+				onClose={closePeek}
+			/>
+		</>
+	)
 }

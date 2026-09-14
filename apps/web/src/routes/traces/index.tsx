@@ -54,6 +54,10 @@ const tracesSearchSchema = Schema.Struct({
 	whereClause: Schema.optional(Schema.String),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
+	/** The row open in the peek sheet, by trace id. In the URL so it survives a reload and a share. */
+	peek: Schema.optional(Schema.String),
+	/** The span selected inside the peek — the page's `spanId`, kept apart so closing the peek clears it. */
+	peekSpan: Schema.optional(Schema.String),
 	serviceMatchMode: ContainsMatchMode,
 	spanNameMatchMode: ContainsMatchMode,
 	deploymentEnvMatchMode: ContainsMatchMode,
