@@ -29,7 +29,7 @@ export function formatCountdown(deadlineMs: number, nowMs: number): string {
 }
 
 const formatCredits = (checklist: Pick<V2OnboardingChecklist, "reward_amount_usd">) =>
-	`$${checklist.reward_amount_usd} credits`
+	`$${checklist.reward_amount_usd}`
 
 /** Renders only under Clerk: self-hosted deployments have no billing to credit. */
 export function OnboardingChecklistButton() {
@@ -87,7 +87,7 @@ function OnboardingChecklistPill() {
 						>
 							<StarIcon size={14} className="text-primary" />
 							{claimable || deadlineMs === null ? (
-								<span>Claim {credits}</span>
+								<span>Claim {credits} credits</span>
 							) : (
 								<span className="font-mono tabular-nums">
 									{formatCountdown(deadlineMs, nowMs)}
@@ -103,7 +103,6 @@ function OnboardingChecklistPill() {
 				{!seen && !open && (
 					<RewardCallout
 						credits={credits}
-						steps={checklist.total_count}
 						onOpen={() => handleOpenChange(true)}
 						onClose={markSeen}
 					/>
@@ -147,12 +146,10 @@ function ProgressChip({ completed, total }: { completed: number; total: number }
  */
 function RewardCallout({
 	credits,
-	steps,
 	onOpen,
 	onClose,
 }: {
 	credits: string
-	steps: number
 	onOpen: () => void
 	onClose: () => void
 }) {
@@ -167,9 +164,9 @@ function RewardCallout({
 			/>
 			<div className="flex items-start gap-2 p-3 pr-2">
 				<button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left outline-none">
-					<span className="block text-sm font-semibold">Earn {credits}</span>
+					<span className="block text-sm font-semibold">Finish the onboarding list</span>
 					<span className="mt-0.5 block text-xs text-muted-foreground">
-						Finish {steps} setup steps before the timer runs out.
+						and get {credits} in credits.
 					</span>
 				</button>
 				<Button
@@ -225,11 +222,11 @@ export function OnboardingChecklistPanel({
 						{/* Plain elements rather than Popover.Title/Description: the panel is also rendered
 						    and tested on its own, outside a Popover root. */}
 						<h3 className="text-base font-semibold leading-tight">
-							{claimed ? `${credits} added` : `Get ${credits}`}
+							{claimed ? `${credits} in credits added` : `Get ${credits} in credits`}
 						</h3>
 						<p className="text-xs leading-relaxed text-muted-foreground">
 							{claimed
-								? `${credits} were added to your balance. They apply to your next invoices.`
+								? `${credits} was added to your balance. It applies to your next invoices.`
 								: `Finish these steps within 24 hours of creating your org and we'll credit your balance.`}
 						</p>
 					</div>
@@ -268,7 +265,7 @@ export function OnboardingChecklistPanel({
 								{claimError ?? "Every step is done."}
 							</span>
 							<Button size="sm" onClick={onClaim} disabled={claimPending}>
-								{claimPending ? "Claiming…" : `Claim ${credits}`}
+								{claimPending ? "Claiming…" : `Claim ${credits} credits`}
 							</Button>
 						</>
 					) : (

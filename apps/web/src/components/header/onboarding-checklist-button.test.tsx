@@ -133,7 +133,7 @@ it("confirms the credit once claimed and lets the user close the panel", async (
 		},
 	})
 
-	expect(screen.getByText("$30 credits added")).toBeTruthy()
+	expect(screen.getByText("$30 in credits added")).toBeTruthy()
 	fireEvent.click(screen.getByRole("button", { name: "Done" }))
 	expect(closed).toBe(1)
 })
