@@ -108,14 +108,16 @@ There are exactly **three** places, and they do different jobs:
 ### 1. Auto-investigation on a new incident
 
 Off by default; an admin opts in per org (`ai_triage_settings`). When an incident opens — first-seen
-or regression — `maybeEnqueueTriage` starts an investigation, subject to a daily budget counted in
-_model passes_, not runs (`maxPassesPerDay`, default 90; one fanned-out incident is about six
-passes).
+or regression — `maybeEnqueueTriage` starts an investigation, subject to a daily budget in runs and
+in model passes (`maxRunsPerDay`, `maxPassesPerDay`; one investigation is one pass).
 
-The run either takes the single-pass path or fans out: a **planner** writes hypotheses for this
-specific incident, each is dispatched to its own **lens** agent, and a **validator** ranks them and
-promotes one cause. Everything it decided — including the hypotheses it chose _not_ to test — is
-persisted on the investigation, which is what makes a conclusion readable a week later.
+The run is one turn of the investigate agent on the investigation's `ChatSession` Durable Object:
+it gathers the evidence, tests the rival explanations itself, and closes on `submit_diagnosis`. A
+pass that stops in prose or dies on a model error gets one close-out turn over its own tool
+transcript; a pass that still files nothing is marked `failed` with `no_diagnosis`. The report's
+`ruledOut` is what records the explanations it tested and dropped, which is what makes a conclusion
+readable a week later. (Until 2026-09 this was a planner → hypothesis lanes → validator workflow;
+the handoffs lost the evidence and most passes never reached a verdict.)
 
 The result lands back on the issue as an `ai_triage` timeline event plus an applied severity.
 Severity is what escalates, so an AI-set severity can page people (`issue_escalations`), gated on
@@ -184,7 +186,7 @@ loop in verification without a human ever seeing it.
 | Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`   |
 | The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`      |
 | Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`           |
-| Planner / lenses / validator            | `apps/api/src/workflows/`                                             |
+| The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`      |
 | Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`             |
 | PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts` |
 | The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`  |

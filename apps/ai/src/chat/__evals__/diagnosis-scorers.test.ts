@@ -8,17 +8,11 @@
  */
 import { describe, expect, it } from "vitest"
 import { DIAGNOSIS_FIXTURES } from "./diagnosis-fixtures"
-import {
-	scoreCauseMatch,
-	scoreEvidenceGrounding,
-	scorePlanRelevance,
-	scoreUnknownDiscipline,
-} from "./diagnosis-scorers"
+import { scoreCauseMatch, scoreEvidenceGrounding, scoreUnknownDiscipline } from "./diagnosis-scorers"
 
 const fixture = (id: string) => DIAGNOSIS_FIXTURES.find((f) => f.id === id)!
 
 const POOL = fixture("pool_exhaustion")
-const DEPLOY = fixture("bad_deploy")
 const UNKNOWABLE = fixture("unknowable")
 
 describe("scoreEvidenceGrounding", () => {
@@ -182,71 +176,5 @@ describe("scoreCauseMatch", () => {
 		const result = scoreCauseMatch({ suspectedCause: ["unknown"] }, UNKNOWABLE)
 		expect(result.score).toBe(0)
 		expect(result.rationale).toContain("malformed")
-	})
-})
-
-describe("scorePlanRelevance", () => {
-	/**
-	 * The dead-lens regression. The fixed catalogue dispatched a saturation lane at
-	 * an org exporting no resource metrics on every single run.
-	 */
-	it("fails a plan proposing saturation where no resource metrics exist", () => {
-		const result = scorePlanRelevance(
-			{
-				hypotheses: [
-					{ name: "Resource saturation", claimToTest: "A pool hit its ceiling." },
-					{ name: "The 14:02 rollout", claimToTest: "Commit c7d3e02 introduced it." },
-				],
-			},
-			DEPLOY,
-		)
-		expect(result.score).toBe(0)
-		expect(result.rationale).toContain("no evidence source")
-	})
-
-	it("passes a plan that covers the planted cause and nothing unanswerable", () => {
-		const result = scorePlanRelevance(
-			{
-				hypotheses: [
-					{ name: "The 14:02 rollout", claimToTest: "Commit c7d3e02 introduced the null deref." },
-					{ name: "Traffic shape", claimToTest: "Volume moved against the baseline." },
-				],
-			},
-			DEPLOY,
-		)
-		expect(result.score).toBe(1)
-	})
-
-	it("half-credits a plan that avoided the unanswerable but missed the cause", () => {
-		const result = scorePlanRelevance(
-			{ hypotheses: [{ name: "Traffic shape", claimToTest: "Volume moved." }] },
-			DEPLOY,
-		)
-		expect(result.score).toBe(0.5)
-	})
-
-	it("fails an empty plan", () => {
-		expect(scorePlanRelevance({ hypotheses: [] }, DEPLOY).score).toBe(0)
-	})
-
-	it("fails a plan whose hypotheses are not objects", () => {
-		const result = scorePlanRelevance({ hypotheses: ["The 14:02 rollout"] }, DEPLOY)
-		expect(result.score).toBe(0)
-		expect(result.rationale).toContain("malformed")
-	})
-
-	it("passes a plan on the unknowable fixture that proposed nothing unanswerable", () => {
-		const result = scorePlanRelevance(
-			{
-				hypotheses: [
-					{
-						name: "Status-message-only errors",
-						claimToTest: "The failing spans share one operation, visible in the span names.",
-					},
-				],
-			},
-			UNKNOWABLE,
-		)
-		expect(result.score).toBe(1)
 	})
 })

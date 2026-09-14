@@ -229,7 +229,7 @@ describe("the model-call span", () => {
 		Effect.gen(function* () {
 			const recorder = recordingTracer()
 			const model = resolveTriageModel(ENV, {
-				surface: "investigation-lens",
+				surface: "chat",
 				orgId: "org_1",
 				sessionId: "org_1:inv-1",
 				turnId: "inv_1_h1",

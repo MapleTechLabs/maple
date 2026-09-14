@@ -15,14 +15,7 @@ import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import {
-	layerLlm,
-	resolveLensModel,
-	resolveTriageModel,
-	type LlmCallTags,
-	type LlmEnv,
-	type ResolvedModel,
-} from "./Llm"
+import { layerLlm, resolveTriageModel, type LlmCallTags, type LlmEnv, type ResolvedModel } from "./Llm"
 
 interface CapturedRequest {
 	readonly url: string
@@ -107,9 +100,9 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 
 	it.live("omits session_id when the caller has no session to group by", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureRequest(openRouterEnv, { surface: "ai-triage", orgId: "org_123" })
+			const captured = yield* captureRequest(openRouterEnv, { surface: "chat", orgId: "org_123" })
 
-			expect(captured.body).toMatchObject({ user: "org_123", trace: { trace_name: "ai-triage" } })
+			expect(captured.body).toMatchObject({ user: "org_123", trace: { trace_name: "chat" } })
 			expect(captured.body).not.toHaveProperty("session_id")
 		}),
 	)
@@ -178,58 +171,11 @@ describe("reasoning effort", () => {
 		}),
 	)
 
-	it.live("defaults a lens pass to low, because a fan-out of five multiplies whatever it spends", () =>
-		Effect.gen(function* () {
-			const captured = yield* captureRequest(openRouterEnv, tags, resolveLensModel)
-
-			expect(captured.body).toMatchObject({ reasoning: { effort: "low" } })
-		}),
-	)
-
-	it.live("lets a lens be raised past the default", () =>
-		Effect.gen(function* () {
-			const captured = yield* captureRequest(
-				{ ...openRouterEnv, MAPLE_LENS_REASONING_EFFORT: "medium" },
-				tags,
-				resolveLensModel,
-			)
-
-			expect(captured.body).toMatchObject({ reasoning: { effort: "medium" } })
-		}),
-	)
-
-	it.live("omits the field entirely on `off`, rather than sending a zero budget", () =>
-		Effect.gen(function* () {
-			// The escape hatch: a model that does not support reasoning must see no `reasoning` key.
-			const captured = yield* captureRequest(
-				{ ...openRouterEnv, MAPLE_LENS_REASONING_EFFORT: "off" },
-				tags,
-				resolveLensModel,
-			)
-
-			expect(captured.body).not.toHaveProperty("reasoning")
-		}),
-	)
-
-	it.live("falls back to the default on an unrecognized value rather than failing the call", () =>
-		Effect.gen(function* () {
-			// Read on a request path in a Worker: a typo'd env var must not take the agent down.
-			const captured = yield* captureRequest(
-				{ ...openRouterEnv, MAPLE_LENS_REASONING_EFFORT: "maximum" },
-				tags,
-				resolveLensModel,
-			)
-
-			expect(captured.body).toMatchObject({ reasoning: { effort: "low" } })
-		}),
-	)
-
 	it.live("keeps reasoning off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(
 				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: "test-key" },
 				tags,
-				resolveLensModel,
 			)
 
 			// `reasoning` is OpenRouter's field, namespaced under its own provider options.
@@ -601,4 +547,3 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		}),
 	)
 })
-

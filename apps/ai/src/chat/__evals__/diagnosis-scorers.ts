@@ -38,10 +38,6 @@ export interface ScoredReport {
 	readonly ruledOut?: unknown
 }
 
-export interface ScoredPlan {
-	readonly hypotheses?: unknown
-}
-
 export interface RuleScore {
 	readonly score: number
 	readonly rationale: string
@@ -178,47 +174,4 @@ export const scoreCauseMatch = (report: ScoredReport, fixture: DiagnosisFixture)
 				`named none of the expected cause terms ${JSON.stringify(fixture.expectedCauseTerms)}; said "${text(report.suspectedCause)}"`,
 			)
 		: pass(`named the planted cause family via "${hit}"`)
-}
-
-/**
- * Did the plan avoid hypotheses this world cannot answer?
- *
- * The direct regression test for the dead-lens problem. The fixed catalogue
- * dispatched a saturation lane at an org that exports no resource metrics and a
- * deploy lane at one that emits no version attribute, every single time — and
- * then had to rank whatever those lanes came back with.
- */
-export const scorePlanRelevance = (plan: ScoredPlan, fixture: DiagnosisFixture): RuleScore => {
-	const breach = notList("hypotheses", plan.hypotheses)
-	if (breach) return fail(breach)
-
-	const hypotheses = items(plan.hypotheses)
-	if (hypotheses.length === 0) return fail("the plan contained no hypotheses")
-
-	const broken = hypotheses.filter(
-		(h) =>
-			!isRecord(h) ||
-			notString("name", h.name) !== undefined ||
-			notString("claimToTest", h.claimToTest) !== undefined,
-	)
-	if (broken.length > 0) {
-		return fail(`hypotheses are malformed: ${JSON.stringify(broken)}`)
-	}
-
-	const said = hypotheses.map((h) => (isRecord(h) ? `${lower(h.name)} ${lower(h.claimToTest)}` : ""))
-	const unanswerable = fixture.forbiddenHypothesisTerms.filter((term) =>
-		said.some((entry) => entry.includes(term)),
-	)
-	if (unanswerable.length > 0) {
-		return fail(`proposed hypotheses with no evidence source: ${JSON.stringify(unanswerable)}`)
-	}
-	if (fixture.expectedCauseTerms.length === 0) {
-		// Nothing is checkable here, so any plan that avoided the forbidden framings
-		// is doing as well as a plan can.
-		return pass("avoided every unanswerable framing on an unknowable incident")
-	}
-	const covered = fixture.expectedCauseTerms.some((term) => said.some((entry) => entry.includes(term)))
-	return covered
-		? pass("the plan includes the planted cause family and nothing unanswerable")
-		: { score: 0.5, rationale: "avoided the unanswerable framings but missed the planted cause" }
 }
