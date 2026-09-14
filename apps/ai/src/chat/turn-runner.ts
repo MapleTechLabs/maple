@@ -291,7 +291,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// in prose or died on a model error gets one close-out turn first, so its terminal is held
 		// back until the outcome is known.
 		let held: Extract<ChatTurnEvent, { readonly type: "turn-end" }> | undefined
-		const run = (turn: { readonly text: string; readonly history: ReadonlyArray<ChatMessage> }) =>
+		const run = (turn: {
+			readonly text: string
+			readonly history: ReadonlyArray<ChatMessage>
+			readonly closeOut?: boolean
+		}) =>
 			runChatTurn({
 				sessionId: input.sessionId,
 				messageId: input.messageId,
@@ -299,6 +303,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				toolExecutor,
 				model,
 				submitDiagnosis: investigations.submitDiagnosis,
+				...(turn.closeOut === true ? { closeOut: true } : undefined),
 				text: turn.text,
 				history: turn.history,
 				...(compaction === undefined ? undefined : { compaction }),
@@ -349,7 +354,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		if (!submitted && holdsTurn()) {
 			held = undefined
 			const closeOut = yield* recoverAutonomousFailure(
-				run({ text: CLOSE_OUT_PROMPT, history: withToolTranscript(input.session.history()) }),
+				run({
+					text: CLOSE_OUT_PROMPT,
+					history: withToolTranscript(input.session.history()),
+					closeOut: true,
+				}),
 			)
 			submitted = closeOut.submittedDiagnosis
 			yield* Effect.annotateCurrentSpan("maple.investigation.closed_out", submitted)
