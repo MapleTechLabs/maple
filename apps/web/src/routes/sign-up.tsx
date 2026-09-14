@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { AuthLayout } from "@/components/layout/auth-layout"
-import { clerkAppearance } from "@/lib/clerk-appearance"
+import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 
 const SignUpSearch = Schema.Struct({
 	redirect_url: Schema.optional(Schema.String),
@@ -27,7 +27,7 @@ function SignUpPage() {
 
 	return (
 		<AuthLayout>
-			<SignUp appearance={clerkAppearance} forceRedirectUrl={target ?? "/quick-start"} />
+			<SignUp appearance={clerkAuthCardAppearance} forceRedirectUrl={target ?? "/quick-start"} />
 		</AuthLayout>
 	)
 }
