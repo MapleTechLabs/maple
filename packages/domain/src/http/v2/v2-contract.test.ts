@@ -462,6 +462,8 @@ describe("V2 alerts wire format", () => {
 			dedupe_key: "rule:__total__",
 			last_delivered_event_type: "trigger",
 			last_notified_at: null,
+			hold_reason: null,
+			held_since: null,
 			error_issue_id: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
