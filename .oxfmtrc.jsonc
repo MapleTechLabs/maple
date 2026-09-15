@@ -30,6 +30,7 @@
 		"deploy",
 		"skills",
 		"packages/db/drizzle",
+		"packages/eventing-core/schemas",
 		"lib/thinking-orbs",
 		"packages/email/emails",
 		"packages/email/components",

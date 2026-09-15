@@ -1,5 +1,16 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { readdirSync, readFileSync } from "node:fs"
+import {
+	readdirSync,
+	readFileSync,
+	mkdtempSync,
+	mkdirSync,
+	writeFileSync,
+	copyFileSync,
+	rmSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { PGlite } from "@electric-sql/pglite"
@@ -33,8 +44,11 @@ describe("drizzle migrations", () => {
 		const { entries } = readJournal()
 
 		for (let i = 0; i < entries.length; i++) {
-			expect(entries[i]!.idx).toBe(i)
+			expect(Number.isSafeInteger(entries[i]!.idx)).toBe(true)
+			expect(entries[i]!.idx).toBeGreaterThanOrEqual(0)
 			if (i === 0) continue
+			// Gaps preserve published migration filenames when branches converge.
+			expect(entries[i]!.idx).toBeGreaterThan(entries[i - 1]!.idx)
 
 			// Drizzle only compares each journal timestamp against the highest
 			// created_at already recorded in the DB. A lower timestamp after a
@@ -45,6 +59,68 @@ describe("drizzle migrations", () => {
 			).toBeGreaterThan(entries[i - 1]!.when)
 		}
 	})
+
+	it("keeps the next generated index beyond every existing migration and snapshot prefix", () => {
+		const { entries } = readJournal()
+		const nextIndex = entries.at(-1)!.idx + 1
+		for (const directory of [migrationsDir(), resolve(migrationsDir(), "meta")]) {
+			for (const file of readdirSync(directory)) {
+				const prefix = /^(\d+)_/.exec(file)?.[1]
+				if (prefix !== undefined) expect(nextIndex, file).toBeGreaterThan(Number(prefix))
+			}
+		}
+	})
+
+	it("upgrades the incident-hold migration head to receipts and safely re-runs", async () => {
+		const directory = mkdtempSync(resolve(tmpdir(), "maple-receipts-upgrade-"))
+		const pg = new PGlite()
+		try {
+			const journal = readJournal()
+			const head = journal.entries.findIndex((entry) => entry.tag === "0057_alert_incident_hold")
+			expect(head).toBeGreaterThanOrEqual(0)
+			const entries = journal.entries.slice(0, head + 1)
+			mkdirSync(resolve(directory, "meta"))
+			writeFileSync(resolve(directory, "meta/_journal.json"), JSON.stringify({ ...journal, entries }))
+			for (const entry of entries)
+				copyFileSync(
+					resolve(migrationsDir(), `${entry.tag}.sql`),
+					resolve(directory, `${entry.tag}.sql`),
+				)
+			const db = drizzle(pg)
+			await migrate(db, { migrationsFolder: directory })
+			const before = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
+			)
+			expect(before.rows[0]?.count).toBe(entries.length)
+			await migrate(db, { migrationsFolder: migrationsDir() })
+			await pg.exec(
+				"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org-upgrade', 'event-upgrade', now())",
+			)
+			await migrate(db, { migrationsFolder: migrationsDir() })
+			const receipts = await pg.query<{ event_id: string }>(
+				"SELECT event_id FROM planetscale_issue_receipts",
+			)
+			expect(receipts.rows).toEqual([{ event_id: "event-upgrade" }])
+			const after = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
+			)
+			expect(after.rows[0]?.count).toBe(journal.entries.length)
+			const columns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_name = 'org_onboarding_state' AND column_name IN ('reward_claimed_at', 'reward_reserved_at') ORDER BY column_name",
+			)
+			expect(columns.rows.map((row) => row.column_name)).toEqual([
+				"reward_claimed_at",
+				"reward_reserved_at",
+			])
+			const holdColumns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
+			)
+			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
+		} finally {
+			await pg.close()
+			rmSync(directory, { recursive: true, force: true })
+		}
+	}, 30_000)
 
 	/**
 	 * A migration is only recorded in `drizzle.__drizzle_migrations` after the
