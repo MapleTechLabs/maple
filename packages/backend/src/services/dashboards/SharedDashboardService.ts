@@ -487,13 +487,24 @@ export class SharedDashboardService extends Context.Service<
 			// per dashboard — is satisfied when the insert lands.
 			const inserted = yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						await tx
-							.update(dashboardShares)
-							.set({ revokedAt: msToDate(now), updatedAt: msToDate(now), updatedBy: userId })
-							.where(and(eq(dashboardShares.orgId, orgId), eq(dashboardShares.id, existing.id)))
-						return tx.insert(dashboardShares).values(values).returning(shareColumns)
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx
+								.update(dashboardShares)
+								.set({
+									revokedAt: msToDate(now),
+									updatedAt: msToDate(now),
+									updatedBy: userId,
+								})
+								.where(
+									and(
+										eq(dashboardShares.orgId, orgId),
+										eq(dashboardShares.id, existing.id),
+									),
+								)
+							return yield* tx.insert(dashboardShares).values(values).returning(shareColumns)
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 

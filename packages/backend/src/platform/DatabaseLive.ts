@@ -1,50 +1,62 @@
-import type { MaplePgClient } from "@maple/db/client"
+import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollector } from "@maple/db/client"
 import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Clock, Context, Effect, Schema } from "effect"
-import { isPostgresConnectionError, postgresErrorType, postgresSqlState } from "./postgres-errors"
+import { SqlError } from "effect/unstable/sql/SqlError"
+import {
+	driverRootError,
+	isPostgresConnectionError,
+	postgresErrorType,
+	postgresSqlState,
+} from "./postgres-errors"
 import { updateCurrentSpanName } from "./span-name"
 
-export type DatabaseClient = MaplePgClient
+export type DatabaseClient = MapleDb
 
 /**
  * `cause` is the driver's own error, kept for `postgres-errors.ts` to read the
- * `code`/SQLSTATE off. It is `Schema.Defect()` rather than `Schema.Unknown` for
- * the reason the convention gives: `Unknown` has no encoded form, so anything
- * that serialized a `DatabaseError` serialized the raw postgres.js object —
- * host, port, driver options and all. `Defect()` encodes an `Error` to its
- * `name` and `message`, and `excludeCause: true` stops at the driver error
- * instead of walking into the socket error underneath it. `toDatabaseError`
- * already lifts the root cause's message into `message`, so the diagnostic half
- * survives the narrowing.
+ * classification and SQLSTATE off. It is `Schema.Defect()` rather than
+ * `Schema.Unknown` for the reason the convention gives: `Unknown` has no
+ * encoded form, so anything that serialized a `DatabaseError` serialized the
+ * raw driver object — host, port, driver options and all. `Defect()` encodes an
+ * `Error` to its `name` and `message`, and `excludeCause: true` stops at the
+ * driver error instead of walking into the socket error underneath it.
+ * `toDatabaseError` already lifts the root cause's message into `message`, so
+ * the diagnostic half survives the narrowing.
  */
 export class DatabaseError extends Schema.TaggedError<DatabaseError>()("@maple/api/lib/DatabaseError", {
 	message: Schema.String,
 	cause: Schema.Defect({ excludeCause: true }),
 }) {}
 
+/**
+ * What a `Database.execute` call fails with: the driver's own failures are
+ * absorbed into `DatabaseError` at this boundary, everything the callback
+ * failed with on its own passes through untouched. Spelled through `Extract`
+ * because that is exactly what the `catchIf` refinement in `executeWithSpan`
+ * produces; for a concrete `E` it reads as `DatabaseError | <the rest>`.
+ */
+export type ExecuteError<E> = DatabaseError | Exclude<E, Extract<E, MapleDbError>>
+
 export interface DatabaseApi {
-	readonly execute: <T>(fn: (db: DatabaseClient) => Promise<T>) => Effect.Effect<T, DatabaseError>
+	readonly execute: <A, E, R>(
+		fn: (db: MapleDb) => Effect.Effect<A, E, R>,
+	) => Effect.Effect<A, ExecuteError<E>, R>
 }
 
 /**
- * Callbacks handed to an `executeWithSpan` body so it can report what only it
- * knows: which statements ran, and any transport-level attributes discovered
- * along the way.
+ * Callback handed to an `executeWithSpan` body so it can report what only it
+ * knows: transport-level attributes discovered along the way. Statements are
+ * collected without its help, through `MapleStatementCollector`.
  */
 export interface ExecuteHooks {
-	/**
-	 * Wire to the client's `onQuery` — every parameterized statement lands in
-	 * `db.query.text`.
-	 */
-	readonly collect: (query: string) => void
 	/** Merge extra attributes into the span at annotate time. */
 	readonly record: (attributes: Record<string, unknown>) => void
 }
 
 /**
- * Drizzle's own message is `Failed query: <sql>\nparams: <params>` — with the
- * params inlined, a batched upsert of error rows runs to tens of KB. Span status
- * and log lines truncate, so whatever comes first is what survives.
+ * A batched upsert of error rows runs to tens of KB of SQL. Span status and log
+ * lines truncate, so whatever comes first is what survives.
  */
 const MAX_QUERY_MESSAGE_CHARS = 600
 
@@ -61,6 +73,14 @@ const capQueryMessage = (message: string): string =>
  * on the span as `db.query.text`.
  */
 export const toDatabaseError = (cause: unknown): DatabaseError => {
+	if (cause instanceof EffectDrizzleQueryError) {
+		const statement = capQueryMessage(cause.query)
+		const root = driverRootError(cause)?.message
+		return new DatabaseError({ message: root ? `${root} [while: ${statement}]` : statement, cause })
+	}
+	if (cause instanceof SqlError) {
+		return new DatabaseError({ message: driverRootError(cause)?.message ?? cause.message, cause })
+	}
 	const message = cause instanceof Error ? cause.message : "Database operation failed"
 	const rootCause = cause instanceof Error && cause.cause instanceof Error ? cause.cause.message : undefined
 	return new DatabaseError({
@@ -68,6 +88,17 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 		cause,
 	})
 }
+
+/** Absorb the driver's failures into `DatabaseError`; whatever else the callback failed with passes through. */
+const absorbDriverErrors = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, ExecuteError<E>, R> =>
+	self.pipe(
+		// Type arguments pinned: left to inference, TypeScript picks an `orElse`
+		// success type that leaks `E` into the success channel.
+		Effect.catchIf<E, Extract<E, MapleDbError>, never, DatabaseError, never>(
+			(error): error is Extract<E, MapleDbError> => isMapleDbError(error),
+			(error) => Effect.fail(toDatabaseError(error)),
+		),
+	)
 
 /** Shared by both entry points below so the two can never describe different origins. */
 const DB_SPAN_OPTIONS = {
@@ -81,11 +112,11 @@ const DB_SPAN_OPTIONS = {
 /**
  * A `Database.execute` span for a call refused before any statement could run.
  *
- * The refusal is decided in Effect, so it fails in Effect — there is no promise
- * to throw out of. It still gets a span: a call that reached `Database.execute`
- * and was turned away is exactly the thing an operator needs to see, and a
- * silent `Effect.fail` would leave the trace looking as though it never
- * happened. `db.query.*` is absent on purpose — there is no statement.
+ * The refusal is decided in Effect, so it fails in Effect. It still gets a
+ * span: a call that reached `Database.execute` and was turned away is exactly
+ * the thing an operator needs to see, and a silent `Effect.fail` would leave
+ * the trace looking as though it never happened. `db.query.*` is absent on
+ * purpose — there is no statement.
  */
 export const failExecuteWithSpan = Effect.fn(
 	"Database.execute",
@@ -100,11 +131,12 @@ export const failExecuteWithSpan = Effect.fn(
 /**
  * Wraps one Database.execute call in a Client-kind span per Maple's telemetry
  * conventions (db.system.name + peer.service power the service-map DB edge;
- * db.query.text feeds the query-shapes panel). `run` receives a per-call
- * statement collector — wire it to the db client's `onQuery` so every
- * parameterized statement (including inside transactions) lands in
- * `db.query.text`. The identity attributes live on the span declaration, not
- * the success path, so failed calls still produce map edges.
+ * db.query.text feeds the query-shapes panel). A fresh statement collector is
+ * provided around `run`, so every parameterized statement the call issues
+ * (including inside transactions) lands in `db.query.text`, and concurrent
+ * calls over the same database never cross-attribute. The identity attributes
+ * live on the span declaration, not the success path, so failed calls still
+ * produce map edges.
  *
  * `"Database.execute"` is only the *placeholder* name: OTel wants a DB client
  * span named after its query, so once the SQL is known the span is renamed to
@@ -115,17 +147,23 @@ export const failExecuteWithSpan = Effect.fn(
  * for the same origin database, so the two paths don't produce divergent
  * service-map targets (MAP-01 in the maple-audit skill).
  *
- * There is no connect/query split. postgres.js connects on the first statement,
- * so there is no separate connect phase to time — the split previously came from
- * a `select 1` probe that cost a round trip on every request purely to produce
- * it. What that split was used to infer, `error.type` now states outright: a
- * `CONNECT_TIMEOUT` and a constraint violation are different classes, not
- * different durations.
+ * `@effect/sql` opens a span of its own per statement. Those are suppressed
+ * here: this span already carries the statement text, and the API traces
+ * itself, so a second span per statement would double the volume of the
+ * busiest edge in the internal org for nothing new.
+ *
+ * There is no connect/query split. The pool dials on the first statement, so
+ * there is no separate connect phase to time. What that split was used to
+ * infer, `error.type` states outright: a stalled dial and a constraint
+ * violation are different classes, not different durations.
  */
 export const executeWithSpan = Effect.fn(
 	"Database.execute",
 	DB_SPAN_OPTIONS,
-)(function* <T>(run: (hooks: ExecuteHooks) => Promise<T>, extraAttributes?: Record<string, unknown>) {
+)(function* <A, E, R>(
+	run: (hooks: ExecuteHooks) => Effect.Effect<A, E, R>,
+	extraAttributes?: Record<string, unknown>,
+) {
 	if (extraAttributes) {
 		yield* Effect.annotateCurrentSpan(extraAttributes)
 	}
@@ -162,8 +200,8 @@ export const executeWithSpan = Effect.fn(
 	})
 	// `error.type` is what separates a stalled dial from a constraint violation
 	// once the span lands — the message alone cannot, since `toDatabaseError`
-	// flattens the driver's code into prose. `db.response.status_code` carries
-	// SQLSTATE where there is one, per OTel's database conventions.
+	// flattens the driver's classification into prose. `db.response.status_code`
+	// carries SQLSTATE where there is one, per OTel's database conventions.
 	const annotateFailure = (error: DatabaseError) =>
 		Effect.gen(function* () {
 			const errorType = postgresErrorType(error)
@@ -177,14 +215,16 @@ export const executeWithSpan = Effect.fn(
 			yield* Effect.annotateCurrentSpan("db.connect.failed", isPostgresConnectionError(error))
 			yield* annotate
 		})
-	const result = yield* Effect.tryPromise({
-		try: () =>
-			run({
-				collect: (query) => statements.push(query),
-				record: (attributes) => Object.assign(recorded, attributes),
-			}),
-		catch: toDatabaseError,
-	}).pipe(Effect.tapError(annotateFailure))
+	const result = yield* run({
+		record: (attributes) => Object.assign(recorded, attributes),
+	}).pipe(
+		Effect.provideService(MapleStatementCollector, (query) => {
+			statements.push(query)
+		}),
+		Effect.withTracerEnabled(false),
+		absorbDriverErrors,
+		Effect.tapError((error) => (error instanceof DatabaseError ? annotateFailure(error) : annotate)),
+	)
 	yield* annotate
 	if (Array.isArray(result)) {
 		// `db.response.returned_rows` is what the span-detail database panel reads

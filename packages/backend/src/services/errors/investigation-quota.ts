@@ -24,9 +24,11 @@
  */
 
 import { investigations } from "@maple/db"
+import type { MapleDbLike } from "@maple/db/client"
 import { and, eq, gte, sql } from "drizzle-orm"
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import { Effect } from "effect"
 import type { IssueSeverity, OrgId } from "@maple/domain/http"
-import type { DatabaseClient } from "@maple/backend/platform/DatabaseLive"
 
 /** Runs per UTC day when the org has no row in `ai_triage_settings`. */
 export const DEFAULT_MAX_RUNS_PER_DAY = 250
@@ -82,26 +84,27 @@ export interface InvestigationUsage {
  * `maybeEnqueueTriage` has `database.execute`, and neither should have to adopt
  * the other's.
  */
-export const selectInvestigationUsage = async (
-	db: DatabaseClient,
+export const selectInvestigationUsage = (
+	db: MapleDbLike,
 	orgId: OrgId,
 	nowMs: number,
-): Promise<InvestigationUsage> => {
-	const rows = await db
-		.select({
-			runs: sql<number>`count(*)::int`,
-			// What one start cost: N hypotheses plus the validator, or 1 for a single pass.
-			passes: sql<number>`coalesce(sum(case when ${investigations.fanoutSize} > 1 then ${investigations.fanoutSize} + 1 else 1 end), 0)::int`,
-		})
-		.from(investigations)
-		.where(
-			and(
-				eq(investigations.orgId, orgId),
-				gte(investigations.startedAt, new Date(startOfUtcDay(nowMs))),
+): Effect.Effect<InvestigationUsage, EffectDrizzleQueryError> =>
+	Effect.map(
+		db
+			.select({
+				runs: sql<number>`count(*)::int`,
+				// What one start cost: N hypotheses plus the validator, or 1 for a single pass.
+				passes: sql<number>`coalesce(sum(case when ${investigations.fanoutSize} > 1 then ${investigations.fanoutSize} + 1 else 1 end), 0)::int`,
+			})
+			.from(investigations)
+			.where(
+				and(
+					eq(investigations.orgId, orgId),
+					gte(investigations.startedAt, new Date(startOfUtcDay(nowMs))),
+				),
 			),
-		)
-	return { runs: rows[0]?.runs ?? 0, passes: rows[0]?.passes ?? 0 }
-}
+		(rows) => ({ runs: rows[0]?.runs ?? 0, passes: rows[0]?.passes ?? 0 }),
+	)
 
 export interface InvestigationQuotaLimits {
 	readonly maxRunsPerDay?: number | null

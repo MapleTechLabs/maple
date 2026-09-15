@@ -943,53 +943,55 @@ const make: Effect.Effect<
 		orgId: OrgId,
 		nowMs: number,
 	) {
-		return yield* dbExecute(async (db) => {
-			const actorRows = await db
-				.select()
-				.from(actors)
-				.where(
-					and(
-						eq(actors.orgId, orgId),
-						eq(actors.type, "agent"),
-						eq(actors.agentName, SYSTEM_AGENT_NAME),
-					),
-				)
-				.limit(1)
-			const policyRows = await db
-				.select()
-				.from(errorNotificationPolicies)
-				.where(eq(errorNotificationPolicies.orgId, orgId))
-				.limit(1)
-			const expiredLeases = await db
-				.select()
-				.from(errorIssues)
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						isNotNull(errorIssues.leaseExpiresAt),
-						lt(errorIssues.leaseExpiresAt, new Date(nowMs)),
-					),
-				)
-			// Wake up wontfix issues whose snooze has elapsed, so that new events
-			// observed in this tick are treated as regressions rather than skipped.
-			const wakeCandidates = await db
-				.select()
-				.from(errorIssues)
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						eq(errorIssues.workflowState, "wontfix"),
-						isNotNull(errorIssues.snoozeUntil),
-						lt(errorIssues.snoozeUntil, new Date(nowMs)),
-					),
-				)
-			return {
-				actorRow: actorRows[0] ?? null,
-				policyRow: policyRows[0] ?? null,
-				expiredLeases,
-				wakeCandidates,
-			}
-		})
+		return yield* dbExecute((db) =>
+			Effect.gen(function* () {
+				const actorRows = yield* db
+					.select()
+					.from(actors)
+					.where(
+						and(
+							eq(actors.orgId, orgId),
+							eq(actors.type, "agent"),
+							eq(actors.agentName, SYSTEM_AGENT_NAME),
+						),
+					)
+					.limit(1)
+				const policyRows = yield* db
+					.select()
+					.from(errorNotificationPolicies)
+					.where(eq(errorNotificationPolicies.orgId, orgId))
+					.limit(1)
+				const expiredLeases = yield* db
+					.select()
+					.from(errorIssues)
+					.where(
+						and(
+							eq(errorIssues.orgId, orgId),
+							isNotNull(errorIssues.leaseExpiresAt),
+							lt(errorIssues.leaseExpiresAt, new Date(nowMs)),
+						),
+					)
+				// Wake up wontfix issues whose snooze has elapsed, so that new events
+				// observed in this tick are treated as regressions rather than skipped.
+				const wakeCandidates = yield* db
+					.select()
+					.from(errorIssues)
+					.where(
+						and(
+							eq(errorIssues.orgId, orgId),
+							eq(errorIssues.workflowState, "wontfix"),
+							isNotNull(errorIssues.snoozeUntil),
+							lt(errorIssues.snoozeUntil, new Date(nowMs)),
+						),
+					)
+				return {
+					actorRow: actorRows[0] ?? null,
+					policyRow: policyRows[0] ?? null,
+					expiredLeases,
+					wakeCandidates,
+				}
+			}),
+		)
 	})
 
 	const expireLeasesForOrg = Effect.fn("ErrorsService.expireLeases")(function* (
@@ -1037,54 +1039,56 @@ const make: Effect.Effect<
 	) {
 		const claimToken = randomUUID()
 		const initialProcessedThrough = new Date(cutoffMs - TICK_BOOTSTRAP_WINDOW_MS)
-		const claim = yield* dbExecute(async (db) => {
-			await db
-				.insert(errorTickStates)
-				.values({
-					orgId,
-					processedThrough: initialProcessedThrough,
-					bootstrapCompleted: false,
-					claimToken: null,
-					claimExpiresAt: null,
-					updatedAt: new Date(nowMs),
-				})
-				.onConflictDoNothing({ target: errorTickStates.orgId })
+		const claim = yield* dbExecute((db) =>
+			Effect.gen(function* () {
+				yield* db
+					.insert(errorTickStates)
+					.values({
+						orgId,
+						processedThrough: initialProcessedThrough,
+						bootstrapCompleted: false,
+						claimToken: null,
+						claimExpiresAt: null,
+						updatedAt: new Date(nowMs),
+					})
+					.onConflictDoNothing({ target: errorTickStates.orgId })
 
-			// `for update skip locked` is what makes the TTL a crash-recovery
-			// mechanism rather than a deadline. `persistErrorTickWindow` holds this
-			// row locked for the life of its transaction, so a legitimately slow
-			// apply is skipped here instead of being stolen and rolled back at its
-			// checkpoint — the retry-forever loop that stalls an org permanently.
-			// Only a dead worker leaves the row unlocked with a lapsed lease.
-			const claimable = db
-				.select({ orgId: errorTickStates.orgId })
-				.from(errorTickStates)
-				.where(
-					and(
-						eq(errorTickStates.orgId, orgId),
-						lt(errorTickStates.processedThrough, new Date(cutoffMs)),
-						or(
-							isNull(errorTickStates.claimExpiresAt),
-							lte(errorTickStates.claimExpiresAt, new Date(nowMs)),
+				// `for update skip locked` is what makes the TTL a crash-recovery
+				// mechanism rather than a deadline. `persistErrorTickWindow` holds this
+				// row locked for the life of its transaction, so a legitimately slow
+				// apply is skipped here instead of being stolen and rolled back at its
+				// checkpoint — the retry-forever loop that stalls an org permanently.
+				// Only a dead worker leaves the row unlocked with a lapsed lease.
+				const claimable = db
+					.select({ orgId: errorTickStates.orgId })
+					.from(errorTickStates)
+					.where(
+						and(
+							eq(errorTickStates.orgId, orgId),
+							lt(errorTickStates.processedThrough, new Date(cutoffMs)),
+							or(
+								isNull(errorTickStates.claimExpiresAt),
+								lte(errorTickStates.claimExpiresAt, new Date(nowMs)),
+							),
 						),
-					),
-				)
-				.for("update", { skipLocked: true })
+					)
+					.for("update", { skipLocked: true })
 
-			const claimed = await db
-				.update(errorTickStates)
-				.set({
-					claimToken,
-					claimExpiresAt: new Date(nowMs + TICK_CLAIM_TTL_MS),
-					updatedAt: new Date(nowMs),
-				})
-				.where(inArray(errorTickStates.orgId, claimable))
-				.returning({
-					processedThrough: errorTickStates.processedThrough,
-					bootstrapCompleted: errorTickStates.bootstrapCompleted,
-				})
-			return claimed
-		})
+				const claimed = yield* db
+					.update(errorTickStates)
+					.set({
+						claimToken,
+						claimExpiresAt: new Date(nowMs + TICK_CLAIM_TTL_MS),
+						updatedAt: new Date(nowMs),
+					})
+					.where(inArray(errorTickStates.orgId, claimable))
+					.returning({
+						processedThrough: errorTickStates.processedThrough,
+						bootstrapCompleted: errorTickStates.bootstrapCompleted,
+					})
+				return claimed
+			}),
+		)
 		const row = claim[0]
 		if (!row) return null
 		const windowStartMs = row.processedThrough.getTime()
@@ -1274,6 +1278,14 @@ const make: Effect.Effect<
 					: Effect.void,
 			),
 			Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
+			// The window's own failures reach here as themselves; the tick's contract
+			// is the persistence error, which is what they rolled the window back as before.
+			Effect.catchTags({
+				"@maple/api/services/ErrorTickClaimLostError": (error) =>
+					Effect.fail(makePersistenceError(error)),
+				"@maple/api/services/ErrorTickUpsertMissingRowError": (error) =>
+					Effect.fail(makePersistenceError(error)),
+			}),
 		)
 
 		// Post-merge refutation. An issue sitting in `verifying` has a merged fix and

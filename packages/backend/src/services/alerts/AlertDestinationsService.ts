@@ -856,28 +856,33 @@ export class AlertDestinationsService extends Context.Service<
 			// per-org advisory lock, so re-checking references inside it closes the
 			// race where a rule commits a reference between our scan and the delete.
 			const deleteResult = yield* dbExecute((db) =>
-				db.transaction(async (tx) => {
-					await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
-					const stillReferenced = await tx
-						.select({ id: alertRules.id, name: alertRules.name })
-						.from(alertRules)
-						.where(
-							and(
-								eq(alertRules.orgId, orgId),
-								sql`${alertRules.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
-							),
-						)
-					if (stillReferenced.length > 0) {
-						return { referencedBy: stillReferenced, deleted: [] }
-					}
-					const deleted = await tx
-						.delete(alertDestinations)
-						.where(
-							and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)),
-						)
-						.returning(txidColumn)
-					return { referencedBy: [], deleted }
-				}),
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						yield* tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+						const stillReferenced = yield* tx
+							.select({ id: alertRules.id, name: alertRules.name })
+							.from(alertRules)
+							.where(
+								and(
+									eq(alertRules.orgId, orgId),
+									sql`${alertRules.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
+								),
+							)
+						if (stillReferenced.length > 0) {
+							return { referencedBy: stillReferenced, deleted: [] }
+						}
+						const deleted = yield* tx
+							.delete(alertDestinations)
+							.where(
+								and(
+									eq(alertDestinations.orgId, orgId),
+									eq(alertDestinations.id, destinationId),
+								),
+							)
+							.returning(txidColumn)
+						return { referencedBy: [], deleted }
+					}),
+				),
 			)
 			if (deleteResult.referencedBy.length > 0) {
 				return yield* Effect.fail(
