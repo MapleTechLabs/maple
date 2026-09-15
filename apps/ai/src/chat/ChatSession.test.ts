@@ -373,6 +373,47 @@ describe("ChatSession turn mutex", () => {
 	})
 })
 
+describe("ChatSession turn heartbeat", () => {
+	/**
+	 * An outbound fetch never keeps a Durable Object alive, so an autonomous turn nobody was watching
+	 * was evicted about two minutes in. The alarm is the incoming event that prevents it.
+	 */
+	it("arms the alarm when a turn starts, and re-arms it while that turn runs", () => {
+		const { session, state } = makeSession()
+		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		assert.lengthOf(state.alarms, 1)
+
+		session.alarm()
+		assert.lengthOf(state.alarms, 2)
+		assert.isTrue(session.running())
+	})
+
+	it("stops re-arming once no turn holds the slot", () => {
+		const { session, state, turnId } = makeSession()
+		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		session.endTurn(turnId()!)
+
+		session.alarm()
+		assert.lengthOf(state.alarms, 1)
+	})
+
+	/** A fresh activation holds the claim but not the fiber: the object was evicted mid-turn. */
+	it("releases a slot whose turn did not survive an eviction", () => {
+		const { session, state, turnId } = makeSession()
+		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		const orphaned = turnId()!
+
+		const revived = new ChatSession(state, {})
+		revived.alarm()
+
+		assert.isFalse(revived.running())
+		const last = revived.since(0).at(-1)
+		assert.strictEqual(last?.type, "turn-end")
+		assert.strictEqual(last?.type === "turn-end" ? last.messageId : undefined, orphaned)
+		assert.strictEqual(last?.type === "turn-end" ? last.reason : undefined, "error")
+	})
+})
+
 describe("ChatSession.subscribe", () => {
 	/** Read the whole subscription, which ends at `turn-end`. */
 	const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
