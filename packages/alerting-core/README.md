@@ -29,11 +29,11 @@ The boundary is:
 - delivery adapters share idempotency-key and bounded retry policy helpers;
 - host clock supplies `nowMs`; the core never reads global time.
 
-Empty windows skipped by policy and healthy values synthesized from zero request
-`missing_telemetry` before resolving an open incident. The host applies its liveness
-gate, including durable hold reasons, clocks, and reason-specific ceilings, then
-sets `allowNoDataResolution` when recovery is allowed. Other skipped evaluations
-freeze counters and incidents. A permitted empty-window recovery also preserves
+Empty windows skipped by policy and healthy evaluations derived from a synthetic
+zero both request a `missing_telemetry` hold before resolving an open incident.
+The host applies its liveness gate, including durable hold reasons, clocks, and
+reason-specific ceilings, then sets `allowNoDataResolution` when recovery is
+allowed. Other skipped evaluations freeze counters and incidents. A permitted empty-window recovery also preserves
 the counters and the usual suppression of resolve notifications for silent flaps.
 
 Rule CRUD, storage schemas, scheduler claims, destination configuration, and
