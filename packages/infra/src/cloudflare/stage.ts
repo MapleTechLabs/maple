@@ -1,4 +1,15 @@
+import { DEFAULT_MAPLE_REGION, isMapleRegion, type MapleRegion, regionSuffix } from "../region.ts"
+
 export type MapleStage = { kind: "prd" } | { kind: "pr"; prNumber: number } | { kind: "dev"; name: string }
+
+/** What one `alchemy deploy` is: a stage of one geographic instance. */
+export interface MapleDeployment {
+	readonly stage: MapleStage
+	readonly region: MapleRegion
+}
+
+/** The alchemy stage suffix that selects the EU instance; absent means `us`. */
+const REGION_STAGE_SUFFIX_RE = /-(eu)$/
 
 const PR_STAGE_RE = /^pr-(\d+)$/
 /** Names of the removed staging stage, in the spellings someone would actually type. */
@@ -23,7 +34,49 @@ export interface MapleDomains {
 	local?: string
 }
 
-export const CLOUDFLARE_WORKER_PLACEMENT = { region: "aws:us-east-1" } as const
+/**
+ * Where a Worker's requests are steered to run. A placement hint is best
+ * effort — Cloudflare may run the script elsewhere when the pinned location is
+ * unhealthy — so it is not, on its own, a residency guarantee; the storage
+ * behind an instance (Tinybird, Postgres, R2 and the Durable Objects, see
+ * {@link resolveStorageJurisdiction}) is what is hard-pinned. The contractual
+ * execution guarantee, Regional Services, is an Enterprise add-on the account
+ * does not carry. `us` pins to us-east-1 so the Workers sit beside the
+ * production database and the Tinybird workspace; `eu` to eu-central-1 for the
+ * same reason on the EU instance.
+ */
+export function resolveWorkerPlacement(region: MapleRegion = DEFAULT_MAPLE_REGION): {
+	readonly region: "aws:us-east-1" | "aws:eu-central-1"
+} {
+	switch (region) {
+		case "us":
+			return { region: "aws:us-east-1" }
+		case "eu":
+			return { region: "aws:eu-central-1" }
+	}
+}
+
+/**
+ * The R2 / Durable Object jurisdiction for an instance's storage, or
+ * `undefined` for the non-jurisdictional default. Unlike placement this IS a
+ * hard guarantee on every Cloudflare plan: a jurisdictional bucket or object
+ * is stored and served only from data centres in that jurisdiction.
+ * Jurisdiction is fixed at creation — an existing bucket cannot move — which is
+ * why the EU instance gets new resources rather than relocated ones.
+ */
+export function resolveStorageJurisdiction(region: MapleRegion): "eu" | undefined {
+	return region === "eu" ? "eu" : undefined
+}
+
+/**
+ * Whether an instance hosts the apps that are shared across regions and hold
+ * no customer data: the marketing site and the local-mode dashboard SPA. One
+ * `maple.dev` exists, so only the `us` instance deploys them; the EU instance
+ * deploys the product Workers alone.
+ */
+export function regionHostsSharedApps(region: MapleRegion): boolean {
+	return region === DEFAULT_MAPLE_REGION
+}
 
 const PRD_DOMAINS: MapleDomains = {
 	web: "app.maple.dev",
@@ -33,6 +86,20 @@ const PRD_DOMAINS: MapleDomains = {
 	electric: "electric.maple.dev",
 	landing: "maple.dev",
 	local: "local.maple.dev",
+}
+
+/**
+ * The EU instance's production hostnames, all under `eu.maple.dev` so the
+ * region is the hostname: no application code routes on it, and a request to
+ * an EU hostname cannot reach a US resource because the EU Workers are bound
+ * to none. No landing or local-ui — see {@link regionHostsSharedApps}.
+ */
+const PRD_DOMAINS_EU: MapleDomains = {
+	web: "app.eu.maple.dev",
+	api: "api.eu.maple.dev",
+	ingest: "ingest.eu.maple.dev",
+	sync: "sync.eu.maple.dev",
+	electric: "electric.eu.maple.dev",
 }
 
 export function parseMapleStage(stage: string): MapleStage {
@@ -74,6 +141,37 @@ export function parseMapleStage(stage: string): MapleStage {
 	)
 }
 
+/**
+ * The alchemy stage string names both the stage and the instance: `prd`,
+ * `prd-eu`, `pr-12`, `dev_makisuo`, `dev_makisuo-eu`. The region rides on the
+ * stage rather than on an env var because alchemy keys its state store by
+ * stage — `prd` and `prd-eu` are therefore two independent stacks that can
+ * never plan against each other's resources, and nothing has to remember to
+ * set a second variable in lockstep. A `-eu` suffix always means the region:
+ * a dev stage cannot be named `*-eu` and mean the US.
+ *
+ * PR previews are US-only (`pr-12-eu` is rejected): a preview has no database
+ * and reviews code, not residency, and a second preview fleet per PR is real
+ * money for nothing.
+ */
+export function parseMapleDeployment(raw: string): MapleDeployment {
+	const normalized = raw.trim().toLowerCase()
+	const match = normalized.match(REGION_STAGE_SUFFIX_RE)
+	const suffix = match?.[1]
+	const region: MapleRegion = suffix !== undefined && isMapleRegion(suffix) ? suffix : DEFAULT_MAPLE_REGION
+	const stage = parseMapleStage(match ? normalized.slice(0, -match[0].length) : normalized)
+	if (stage.kind === "pr" && region !== DEFAULT_MAPLE_REGION) {
+		throw new Error(
+			`PR previews deploy to the ${DEFAULT_MAPLE_REGION} instance only; "${raw}" asks for "${region}".`,
+		)
+	}
+	return { stage, region }
+}
+
+export function formatMapleDeployment({ stage, region }: MapleDeployment): string {
+	return `${formatMapleStage(stage)}${regionSuffix(region)}`
+}
+
 export function formatMapleStage(stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
@@ -96,11 +194,17 @@ export function resolveDeploymentEnvironment(stage: MapleStage): string {
 	}
 }
 
-export function resolveMapleDomains(stage: MapleStage): MapleDomains {
+export function resolveMapleDomains(
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): MapleDomains {
 	switch (stage.kind) {
 		case "prd":
-			return PRD_DOMAINS
+			return region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS
 		case "pr":
+			if (region !== DEFAULT_MAPLE_REGION) {
+				throw new Error(`PR previews have no ${region} hostnames; see parseMapleDeployment.`)
+			}
 			// Give PR previews stable, secret-free URLs. The default workers.dev URL
 			// embeds the Cloudflare account subdomain, which Infisical masks as a
 			// secret — GitHub then refuses to set the environment URL. Custom domains
@@ -174,9 +278,23 @@ export type MapleDbConsumer = "api" | "ai" | "alerting"
  * Hyperdrive from MAPLE_PG_URL or no database — `resolveDatabaseMode` decides.
  * Config IDs are not secrets.
  */
-export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsumer): string | undefined {
+export function resolveHyperdriveRefId(
+	stage: MapleStage,
+	consumer: MapleDbConsumer,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): string | undefined {
 	switch (stage.kind) {
 		case "prd":
+			if (region === "eu") {
+				// Deliberately a defect and not `undefined`: undefined means "no
+				// database" (a PR preview), and an EU instance that silently deployed
+				// with no `MAPLE_DB` would 500 every DB-backed route in production.
+				// Create the configs against the EU PlanetScale database (one per
+				// consumer, like prd's) and put their ids here.
+				throw new Error(
+					`No Hyperdrive config for the EU instance yet (consumer "${consumer}"). Create maple-prd-eu / maple-alerting-prd-eu in the dashboard and add the ids to resolveHyperdriveRefId.`,
+				)
+			}
 			// Both target the PlanetScale `main` branch; their `origin_connection_limit`s
 			// SUM against its `max_connections`.
 			// TODO(ai-worker): `ai` shares `maple-prd` until a dedicated
@@ -193,13 +311,24 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 	}
 }
 
-export function resolveWorkerName(base: string, stage: MapleStage): string {
+/**
+ * Physical Worker (and bucket, and Hyperdrive) name. The region suffix sits
+ * right after the base, mirroring `resolveAwsResourceName`, so `maple-api`,
+ * `maple-api-eu`, `maple-api-eu-dev-makisuo` read the same in both consoles.
+ * `us` carries no suffix — see `MapleRegion`.
+ */
+export function resolveWorkerName(
+	base: string,
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): string {
+	const suffix = regionSuffix(region)
 	switch (stage.kind) {
 		case "prd":
-			return `maple-${base}`
+			return `maple-${base}${suffix}`
 		case "pr":
-			return `maple-${base}-pr-${stage.prNumber}`
+			return `maple-${base}${suffix}-pr-${stage.prNumber}`
 		case "dev":
-			return `maple-${base}-dev-${stage.name}`
+			return `maple-${base}${suffix}-dev-${stage.name}`
 	}
 }

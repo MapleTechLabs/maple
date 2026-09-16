@@ -11,10 +11,11 @@
  */
 import {
 	cachedRecoverable,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
+	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { authEnv, merge, optionalPlain, optionalSecret, selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -22,7 +23,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/unstable/http"
 
-const configuredEnv = (stage: MapleStage) =>
+const configuredEnv = (stage: MapleStage, region: MapleRegion) =>
 	merge(
 		// Auth (same AuthEnv subset the api worker sets; no DB).
 		authEnv,
@@ -43,7 +44,7 @@ const configuredEnv = (stage: MapleStage) =>
 					optionalSecret("ELECTRIC_SECRET"),
 				]),
 		// Self-observability (OTLP export through the ingest gateway).
-		selfObservabilityEnv(stage),
+		selfObservabilityEnv(stage, region),
 	)
 
 /**
@@ -54,12 +55,12 @@ const configuredEnv = (stage: MapleStage) =>
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains, workerDev } = yield* MapleStack
+	const { stage, region, domains, workerDev } = yield* MapleStack
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("electric-sync", stage),
+		name: resolveWorkerName("electric-sync", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("electric-sync"),
 		workersDev: true,
@@ -67,7 +68,7 @@ const props = Effect.gen(function* () {
 		// pr-stage hostnames would be authoritative NXDOMAIN. Custom domains
 		// provision DNS + edge certs automatically.
 		domain: domains.sync,
-		env: yield* configuredEnv(stage),
+		env: yield* configuredEnv(stage, region),
 	}
 })
 

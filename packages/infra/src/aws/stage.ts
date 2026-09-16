@@ -1,19 +1,10 @@
 import type { RegionName } from "@distilled.cloud/aws/Region"
 import type { MapleStage } from "../cloudflare/stage.ts"
+import { DEFAULT_MAPLE_REGION, type MapleRegion, regionSuffix } from "../region.ts"
 
-/**
- * Geographic instance a deployment belongs to.
- *
- * Orthogonal to `MapleStage`: stage is prd/pr/dev, region is which
- * geographic instance. A full EU instance is `region: "eu"` at every stage,
- * with its OWN Tinybird workspace, application database, and ingest fleet —
- * telemetry that lands in `eu` must never transit `us`, which is the whole
- * point of having one.
- *
- * `us` is deliberately the unsuffixed default so adding `eu` later renames
- * nothing (a rename destroys and recreates every resource).
- */
-export type MapleRegion = "us" | "eu"
+// The region itself lives in `../region.ts`, shared with the Cloudflare half;
+// re-exported here so existing `@maple/infra/aws` imports keep resolving.
+export * from "../region.ts"
 
 /**
  * The AWS regions Maple deploys into, as the literal union the AWS client
@@ -21,19 +12,6 @@ export type MapleRegion = "us" | "eu"
  * into an AWS `Region` override without a cast at the call site.
  */
 export type AwsRegionName = Extract<RegionName, "us-east-1" | "eu-central-1">
-
-export const DEFAULT_MAPLE_REGION: MapleRegion = "us"
-
-export function parseMapleRegion(value: string | undefined): MapleRegion {
-	const normalized = value?.trim().toLowerCase()
-	if (!normalized) {
-		return DEFAULT_MAPLE_REGION
-	}
-	if (normalized === "us" || normalized === "eu") {
-		return normalized
-	}
-	throw new Error(`Unsupported Maple region "${value}". Expected "us" or "eu".`)
-}
 
 /**
  * AWS region backing each Maple region.
@@ -83,7 +61,7 @@ export function resolveAwsResourceName(
 	stage: MapleStage,
 	region: MapleRegion = DEFAULT_MAPLE_REGION,
 ): string {
-	const suffix = region === DEFAULT_MAPLE_REGION ? "" : `-${region}`
+	const suffix = regionSuffix(region)
 	switch (stage.kind) {
 		case "prd":
 			return `maple-${base}${suffix}`

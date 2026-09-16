@@ -30,7 +30,7 @@
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
 		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
-		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
+		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy": "alchemy destroy --yes",
 		"alchemy:destroy:pr": "alchemy destroy --yes --stage pr-${PR_NUMBER}",

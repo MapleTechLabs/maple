@@ -8,9 +8,9 @@
  */
 import {
 	assetWorkerObservability,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
 import { plainWithDefault } from "@maple/infra/env"
@@ -29,7 +29,7 @@ import { type AssetsBinding, handleRequest } from "./handler"
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains, urls } = yield* MapleStack
+	const { stage, region, domains, urls } = yield* MapleStack
 	const destinations = yield* WorkersObservabilityDestinations
 	// Astro static build (memoized on the app's source files, skipped on destroy).
 	const build = yield* Command.Build("landing-build", {
@@ -48,7 +48,7 @@ const props = Effect.gen(function* () {
 	})
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("landing", stage),
+		name: resolveWorkerName("landing", stage, region),
 		// The `assets` prop auto-adds the ASSETS binding the handler reads.
 		assets: {
 			directory: build.outdir,
@@ -63,7 +63,7 @@ const props = Effect.gen(function* () {
 			runWorkerFirst: ["/*", "!/_astro/*", "!/*.*"],
 		},
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		observability: assetWorkerObservability(destinations),
 		workersDev: true,
 		domain: domains.landing,

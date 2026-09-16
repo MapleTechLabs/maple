@@ -6,7 +6,7 @@
  * SPA shell fallback — which stays a plain function so its tests need no
  * Worker runtime.
  */
-import { ApiWorker, CLOUDFLARE_WORKER_PLACEMENT, MapleStack, resolveWorkerName } from "@maple/infra/cloudflare"
+import { ApiWorker, MapleStack, resolveWorkerName, resolveWorkerPlacement } from "@maple/infra/cloudflare"
 import { plainFrom } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
@@ -23,7 +23,7 @@ import { handleRequest } from "./handler"
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains, urls } = yield* MapleStack
+	const { stage, region, domains, urls } = yield* MapleStack
 	const api = yield* ApiWorker
 	// The build runs through `Command.Build` so the VITE_* env is part of the
 	// memo hash: a stage's URLs (or the commit) changing re-runs it with no
@@ -36,16 +36,25 @@ const props = Effect.gen(function* () {
 			VITE_API_BASE_URL: urls.api,
 			VITE_INGEST_URL: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
-			VITE_MAPLE_AUTH_MODE: yield* plainFrom(["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"], "self_hosted"),
-			VITE_CLERK_PUBLISHABLE_KEY: yield* plainFrom(["VITE_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY"], ""),
-			VITE_MAPLE_INGEST_KEY: yield* plainFrom(["VITE_MAPLE_INGEST_KEY", "MAPLE_OTEL_PUBLIC_INGEST_KEY"], ""),
+			VITE_MAPLE_AUTH_MODE: yield* plainFrom(
+				["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"],
+				"self_hosted",
+			),
+			VITE_CLERK_PUBLISHABLE_KEY: yield* plainFrom(
+				["VITE_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY"],
+				"",
+			),
+			VITE_MAPLE_INGEST_KEY: yield* plainFrom(
+				["VITE_MAPLE_INGEST_KEY", "MAPLE_OTEL_PUBLIC_INGEST_KEY"],
+				"",
+			),
 			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
 			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
 		},
 	})
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("web", stage),
+		name: resolveWorkerName("web", stage, region),
 		assets: {
 			directory: build.outdir,
 			hash: Output.map(build.hash, (h) => h.output ?? ""),
@@ -54,7 +63,7 @@ const props = Effect.gen(function* () {
 			// trailing-slash normalization 307s that to "/" on every hard reload.
 			notFoundHandling: "single-page-application" as const,
 		},
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		workersDev: true,
 		domain: domains.web,
 		// The share-preview lookups ride the service binding; the URL is still

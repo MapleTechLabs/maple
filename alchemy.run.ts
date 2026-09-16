@@ -16,22 +16,18 @@ import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import {
-	parseMapleRegion,
-	resolveAwsRegion,
-	stageDeploysElectric,
-	stageDeploysIngest,
-} from "@maple/infra/aws"
+import { resolveAwsRegion, stageDeploysElectric, stageDeploysIngest } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
 	stageDeploysSandbox,
-	formatMapleStage,
+	formatMapleDeployment,
 	ManagedMapleDb,
 	MapleStack,
 	type MapleStackContext,
-	parseMapleStage,
+	parseMapleDeployment,
+	regionHostsSharedApps,
 	resolveDatabaseMode,
 	resolveMapleDomains,
 } from "@maple/infra/cloudflare"
@@ -105,10 +101,13 @@ const devEnv = devApps
 const MapleStackLive = Layer.effect(
 	MapleStack,
 	Effect.gen(function* () {
-		const stage = parseMapleStage(yield* Alchemy.Stage)
-		const domains = resolveMapleDomains(stage)
+		// `prd` or `prd-eu`: the stage string names the instance too, and alchemy's
+		// state is keyed by it, so the two instances never share a plan.
+		const { stage, region } = parseMapleDeployment(yield* Alchemy.Stage)
+		const domains = resolveMapleDomains(stage, region)
 		const context: MapleStackContext = {
 			stage,
+			region,
 			domains,
 			urls: {
 				api: devEnv?.MAPLE_API_BASE_URL ?? (yield* resolveUrl(domains.api, "MAPLE_API_BASE_URL")),
@@ -180,22 +179,20 @@ export default Alchemy.Stack(
 		state: process.env.ALCHEMY_LOCAL_STATE ? Alchemy.localState() : Cloudflare.state(),
 	},
 	Effect.gen(function* () {
-		const { stage, domains, urls } = yield* MapleStack
+		const { stage, region, domains, urls } = yield* MapleStack
 
-		// Geographic instance this deploy belongs to. `us` today; an EU instance is
-		// the same stack deployed with MAPLE_REGION=eu against that instance's own
-		// Tinybird workspace and application database. Guarded here because a
-		// mismatch between MAPLE_REGION and AWS_REGION would put the ACM
-		// certificate in a different region from the ALB that must use it — and
-		// worse, would export telemetry across the residency boundary the EU
-		// instance exists to enforce.
-		const { MAPLE_REGION } = yield* optionalPlain("MAPLE_REGION")
+		// Geographic instance this deploy belongs to, from the stage string
+		// (`prd-eu`): the EU instance is this same stack against its own Tinybird
+		// workspace, application database and secrets (Infisical `prod-eu`, same
+		// variable names). Guarded here because an AWS_REGION that disagrees would
+		// put the ACM certificate in a different region from the ALB that must use
+		// it — and worse, would export telemetry across the residency boundary the
+		// EU instance exists to enforce.
 		const { AWS_REGION } = yield* optionalPlain("AWS_REGION")
-		const region = parseMapleRegion(MAPLE_REGION)
 		const expectedAwsRegion = resolveAwsRegion(region)
 		if (AWS_REGION && AWS_REGION !== expectedAwsRegion) {
 			throw new Error(
-				`AWS_REGION="${AWS_REGION}" does not match MAPLE_REGION="${region}" (expects "${expectedAwsRegion}").`,
+				`AWS_REGION="${AWS_REGION}" does not match the "${region}" instance (expects "${expectedAwsRegion}").`,
 			)
 		}
 
@@ -262,9 +259,12 @@ export default Alchemy.Stack(
 		// Worker (its `API` service binding), handed over as `ApiWorker`.
 		const web = isDevServer ? undefined : yield* Effect.provideService(Web, ApiWorker, api)
 
-		const landing = isDevServer ? undefined : yield* Landing
+		// The marketing site and the local-mode SPA are shared across instances
+		// and hold no customer data: one `maple.dev`, deployed by `us` alone.
+		const sharedApps = !isDevServer && regionHostsSharedApps(region)
+		const landing = sharedApps ? yield* Landing : undefined
 
-		const localUi = isDevServer ? undefined : yield* LocalUi
+		const localUi = sharedApps ? yield* LocalUi : undefined
 
 		const alerting = yield* Alerting
 		yield* serveWorker("alerting", alerting)
@@ -279,7 +279,8 @@ export default Alchemy.Stack(
 		}
 
 		const summary = {
-			stage: formatMapleStage(stage),
+			stage: formatMapleDeployment({ stage, region }),
+			region,
 			apiUrl: urls.api,
 			ingestUrl: urls.ingest,
 			electricSyncUrl: urls.electricSync,

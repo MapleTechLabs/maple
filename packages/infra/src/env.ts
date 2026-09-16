@@ -3,8 +3,9 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { optionalString } from "./config-helpers.ts"
-import type { MapleStage } from "./cloudflare/stage.ts"
+import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
 import { resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
+import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
 
 /**
  * Deploy-time environment for the Cloudflare workers.
@@ -173,12 +174,17 @@ export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
 	requireSecretEntry("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 )
 
-/** Public URLs the workers build links with (emails, share links, quick-start snippets). */
-export const appUrlsEnv: Config.Config<WorkerEnv> = merge(
-	plainWithDefault("MAPLE_INGEST_PUBLIC_URL", "https://ingest.maple.dev"),
-	plainWithDefault("MAPLE_APP_BASE_URL", "https://app.maple.dev"),
-	plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
-)
+/**
+ * Public URLs the workers build links with (emails, share links, quick-start
+ * snippets). Defaults follow the deploy's own hostnames, so the EU instance
+ * links to itself; a dev stage has none and falls back to production's.
+ */
+export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv> =>
+	merge(
+		plainWithDefault("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest ?? "ingest.maple.dev"}`),
+		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+		plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
+	)
 
 /**
  * The worker's own OTLP export, through the ingest gateway.
@@ -190,7 +196,10 @@ export const appUrlsEnv: Config.Config<WorkerEnv> = merge(
  * missing binding quietly restores the behaviour where any occurrence reopens a
  * fixed issue.
  */
-export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv> =>
+export const selfObservabilityEnv = (
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): Config.Config<WorkerEnv> =>
 	merge(
 		// Bound under a different name than it is read from. Optional on dev stages
 		// only: no developer has a real ingest key, and absent means self-observability off.
@@ -207,6 +216,10 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
 				),
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
+		// The instance a Worker runs in. Read where a Durable Object stub is
+		// addressed (`chatSessionStub`), which is the one place the runtime has to
+		// know: the EU instance keeps its objects in the `eu` jurisdiction.
+		derived("MAPLE_REGION", region),
 		// GITHUB_SHA is read as its own key and re-labelled, rather than passed to
 		// `optionalPlain`'s `fallback` — a `process.env.GITHUB_SHA` read there would
 		// bypass the ConfigProvider and so miss `.env` / `--env-file`.

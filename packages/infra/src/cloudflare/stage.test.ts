@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest"
-import { parseMapleStage, resolveDatabaseMode, resolveHyperdriveRefId, stageDeploysSandbox } from "./stage.ts"
+import {
+	formatMapleDeployment,
+	parseMapleDeployment,
+	parseMapleStage,
+	regionHostsSharedApps,
+	resolveDatabaseMode,
+	resolveHyperdriveRefId,
+	resolveMapleDomains,
+	resolveStorageJurisdiction,
+	resolveWorkerName,
+	resolveWorkerPlacement,
+	stageDeploysSandbox,
+} from "./stage.ts"
 
 const stage = (name: string) => parseMapleStage(name)
 
@@ -21,6 +33,85 @@ describe("parseMapleStage", () => {
 		expect(stage("prd")).toEqual({ kind: "prd" })
 		expect(stage("pr-123")).toEqual({ kind: "pr", prNumber: 123 })
 		expect(stage("dev_makisuo")).toEqual({ kind: "dev", name: "dev-makisuo" })
+	})
+})
+
+describe("parseMapleDeployment", () => {
+	it("reads the region off the stage string, defaulting to us", () => {
+		expect(parseMapleDeployment("prd")).toEqual({ stage: { kind: "prd" }, region: "us" })
+		expect(parseMapleDeployment("prd-eu")).toEqual({ stage: { kind: "prd" }, region: "eu" })
+		expect(parseMapleDeployment(" PRD-EU ")).toEqual({ stage: { kind: "prd" }, region: "eu" })
+		expect(parseMapleDeployment("dev_makisuo-eu")).toEqual({
+			stage: { kind: "dev", name: "dev-makisuo" },
+			region: "eu",
+		})
+	})
+
+	it("keeps PR previews on the us instance", () => {
+		expect(parseMapleDeployment("pr-12")).toEqual({ stage: { kind: "pr", prNumber: 12 }, region: "us" })
+		expect(() => parseMapleDeployment("pr-12-eu")).toThrow(/PR previews deploy to the us instance/)
+	})
+
+	it("round-trips through formatMapleDeployment, which is what the deploy summary prints", () => {
+		for (const raw of ["prd", "prd-eu", "pr-12", "dev-makisuo", "dev-makisuo-eu"]) {
+			expect(formatMapleDeployment(parseMapleDeployment(raw))).toBe(raw)
+		}
+	})
+
+	it("still rejects the removed stg stage under either region", () => {
+		expect(() => parseMapleDeployment("stg-eu")).toThrow(/"stg" stage was removed/)
+	})
+})
+
+describe("resolveWorkerName", () => {
+	it("leaves us unsuffixed so the existing prd Workers keep their names", () => {
+		expect(resolveWorkerName("api", stage("prd"))).toBe("maple-api")
+		expect(resolveWorkerName("api", stage("prd"), "us")).toBe("maple-api")
+		expect(resolveWorkerName("api", stage("pr-12"), "us")).toBe("maple-api-pr-12")
+	})
+
+	it("suffixes eu right after the base, mirroring the AWS names", () => {
+		expect(resolveWorkerName("api", stage("prd"), "eu")).toBe("maple-api-eu")
+		expect(resolveWorkerName("db", stage("dev_makisuo"), "eu")).toBe("maple-db-eu-dev-dev-makisuo")
+	})
+})
+
+describe("resolveMapleDomains", () => {
+	it("gives the EU instance its own hostnames under eu.maple.dev, and no shared apps", () => {
+		const eu = resolveMapleDomains(stage("prd"), "eu")
+		expect(eu).toEqual({
+			web: "app.eu.maple.dev",
+			api: "api.eu.maple.dev",
+			ingest: "ingest.eu.maple.dev",
+			sync: "sync.eu.maple.dev",
+			electric: "electric.eu.maple.dev",
+		})
+		expect(eu.landing).toBeUndefined()
+		expect(eu.local).toBeUndefined()
+		expect(regionHostsSharedApps("eu")).toBe(false)
+		expect(regionHostsSharedApps("us")).toBe(true)
+	})
+
+	it("keeps the us production hostnames exactly as they were", () => {
+		expect(resolveMapleDomains(stage("prd"))).toEqual(resolveMapleDomains(stage("prd"), "us"))
+		expect(resolveMapleDomains(stage("prd")).web).toBe("app.maple.dev")
+	})
+
+	it("has no eu hostnames for a PR preview", () => {
+		expect(() => resolveMapleDomains(stage("pr-12"), "eu")).toThrow(/PR previews have no eu hostnames/)
+	})
+})
+
+describe("region-bound Cloudflare settings", () => {
+	it("steers each instance's Workers beside its own database and warehouse", () => {
+		expect(resolveWorkerPlacement("us")).toEqual({ region: "aws:us-east-1" })
+		expect(resolveWorkerPlacement("eu")).toEqual({ region: "aws:eu-central-1" })
+		expect(resolveWorkerPlacement()).toEqual({ region: "aws:us-east-1" })
+	})
+
+	it("pins EU storage to the eu jurisdiction and leaves us non-jurisdictional", () => {
+		expect(resolveStorageJurisdiction("eu")).toBe("eu")
+		expect(resolveStorageJurisdiction("us")).toBeUndefined()
 	})
 })
 
@@ -50,5 +141,14 @@ describe("resolveHyperdriveRefId", () => {
 		expect(resolveHyperdriveRefId({ kind: "prd" }, "alerting")).toBe("f473167201af4d2cae494f9989f1d742")
 		expect(resolveHyperdriveRefId(stage("pr-123"), "api")).toBeUndefined()
 		expect(resolveHyperdriveRefId(stage("dev_makisuo"), "api")).toBeUndefined()
+	})
+
+	it("refuses to deploy the EU instance without its own configs, rather than binding nothing", () => {
+		// `undefined` means "no database" and is what a PR preview gets; an EU prd
+		// that silently took that path would 500 every DB-backed route.
+		expect(() => resolveHyperdriveRefId({ kind: "prd" }, "api", "eu")).toThrow(
+			/No Hyperdrive config for the EU instance/,
+		)
+		expect(resolveHyperdriveRefId(stage("dev_makisuo"), "api", "eu")).toBeUndefined()
 	})
 })

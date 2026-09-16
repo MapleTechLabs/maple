@@ -29,10 +29,12 @@
  */
 import {
 	cachedRecoverable,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
+	type MapleDomains,
+	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import {
 	appUrlsEnv,
@@ -87,14 +89,14 @@ export type AiWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWork
  * their own tenants, so this is largely the api's set; the LLM provider keys
  * arrive with `platform/Llm.ts`.
  */
-const configuredEnv = (stage: MapleStage) =>
+const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		// The tools query the warehouse as the calling org, and resolve their own
 		// tenants, so this is largely the api's set.
 		tinybirdEnv,
 		authEnv,
-		appUrlsEnv,
-		selfObservabilityEnv(stage),
+		appUrlsEnv(domains),
+		selfObservabilityEnv(stage, region),
 		ingestKeyCryptoEnv,
 		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
 		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
@@ -117,13 +119,13 @@ const configuredEnv = (stage: MapleStage) =>
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, workerDev, devEnv } = yield* MapleStack
-	const env = yield* configuredEnv(stage)
+	const { stage, region, domains, workerDev, devEnv } = yield* MapleStack
+	const env = yield* configuredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("ai", stage),
+		name: resolveWorkerName("ai", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("ai"),
 		// No public hostname. Reached only over the api's service binding, which is

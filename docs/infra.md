@@ -57,8 +57,11 @@ Two things a future change here needs to know:
   `apps/api/src/resources/replay-blobs.ts`.
 - `packages/infra` — stage/region/domain/naming logic, the shared deploy-time env groups,
   and the few resources several Worker modules bind.
-    - `cloudflare/stage.ts` — `MapleStage`, domains, worker names, Hyperdrive resolution.
-      Pure functions, unit-tested, no cloud calls.
+    - `region.ts` — `MapleRegion` (`us` | `eu`), the one axis both clouds key on; see
+      "Regions" below.
+    - `cloudflare/stage.ts` — `MapleStage`, `parseMapleDeployment` (stage + region off the
+      alchemy stage string), domains, worker names, placement, storage jurisdiction,
+      Hyperdrive resolution. Pure functions, unit-tested, no cloud calls.
     - `cloudflare/stack.ts` — `MapleStack`, what the root stack tells the Worker classes.
     - `cloudflare/observability.ts` — the Workers Observability destinations, declared once
       and yielded from every module that binds them (alchemy registers a resource by id; a
@@ -84,6 +87,41 @@ half does not. `Config` also reports every missing key in one pass instead of th
 the first, and keeps the failure in the typed error channel. `packages/alchemy-maple`'s
 `MapleEnvironment` is the same pattern inside a provider; the runtime worker env schemas
 use `@maple/infra/config-helpers`, which `env.ts` builds on.
+
+## Regions: one stack, one instance per deploy
+
+A geographic instance is the whole stack — every Worker, the ingest fleet, Electric, the
+replay bucket, the chat Durable Object — deployed against that instance's own Tinybird
+workspace, application database and secrets. There is no per-org routing anywhere: an org's
+region is the instance it was created on, and an EU hostname cannot reach a US resource
+because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-plan.md`.
+
+- **The alchemy stage string carries the region**: `prd` is the US instance, `prd-eu` the EU
+  one (`dev_makisuo-eu` a dev stage of it; PR previews are US-only). Alchemy keys its state
+  by stage, so the two instances never plan against each other's resources, and nothing has
+  to set a second variable in lockstep. `parseMapleDeployment` is the one parser;
+  `MapleStack` carries `region` to every Worker module.
+- **`us` is unsuffixed** everywhere — Worker names, AWS names, hostnames — so adding `eu`
+  renamed nothing: `maple-api` / `maple-api-eu`, `app.maple.dev` / `app.eu.maple.dev`,
+  `maple-ingest` / `maple-ingest-eu`. `regionSuffix` in `region.ts` is the single rule.
+- **Placement is a hint, jurisdiction is a pin.** `resolveWorkerPlacement` steers each
+  instance's Workers beside its own database (us-east-1 / eu-central-1), best effort.
+  `resolveStorageJurisdiction` puts the EU instance's R2 bucket and its Durable Objects in
+  Cloudflare's `eu` jurisdiction, which is a hard storage guarantee on every plan. The DO
+  jurisdiction is a property of the object id, so it is applied where ids are minted
+  (`chatSessionStub`, reading the stack-derived `MAPLE_REGION`), not on the binding.
+  Regional Services, the contractual execution guarantee, is an Enterprise add-on the
+  account does not carry; the residency claim says so.
+- **Shared apps stay on `us`**: the marketing site and the local-mode SPA hold no customer
+  data and there is one `maple.dev`, so `regionHostsSharedApps` keeps them off the EU
+  deploy.
+- **Secrets** come from a per-instance Infisical environment (`prod`, `prod-eu`) holding the
+  same variable names with that instance's values; `deploy-prd-instance.yml` picks the
+  environment, the stage and the AWS region from one `region` input, and the stack refuses
+  an `AWS_REGION` that disagrees with the stage. The EU deploy is opt-in through the
+  `MAPLE_DEPLOY_EU` repository variable until its Hyperdrive configs exist —
+  `resolveHyperdriveRefId` throws for `eu` rather than binding nothing.
+- **AI features are off on the EU instance**: the model providers have no EU pin.
 
 ## Local dev: one `alchemy dev` stack
 
