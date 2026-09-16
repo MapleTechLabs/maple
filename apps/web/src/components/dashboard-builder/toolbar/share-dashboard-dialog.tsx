@@ -15,6 +15,7 @@ import { useMemo, useRef, useState, type ReactNode } from "react"
 import { Exit } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import {
+	ArrowRotateClockwiseIcon,
 	CheckIcon,
 	CircleWarningIcon,
 	CopyIcon,
@@ -97,7 +98,7 @@ export function ShareDashboardDialog({
 	/*
 	 * Nothing in the dialog uses `disabled` to keep mutations from stacking —
 	 * disabling a control mid-flight dims it for the length of the round-trip, and
-	 * every pick or regenerate flashed. The guard lives here instead, so the
+	 * every pick or replace flashed. The guard lives here instead, so the
 	 * protection is centralised and no control has to change how it looks to get it.
 	 */
 	const run = async <A,>(action: () => Promise<Exit.Exit<A, unknown>>) => {
@@ -196,8 +197,8 @@ export function ShareDashboardDialog({
 					{boardShare ? (
 						<ShareLinkRow
 							url={shareUrl(boardShare.token)}
-							onRegenerate={() => void regenerate()}
-							regenerateWarning="Anyone using the current link loses access to this dashboard. Chart embeds keep working."
+							onReplace={() => void regenerate()}
+							replaceWarning="Anyone using the current link loses access to this dashboard. Chart embeds keep working."
 						/>
 					) : null}
 
@@ -273,21 +274,21 @@ function NoticeRow({ tone = "muted", children }: { tone?: "muted" | "error"; chi
 }
 
 /**
- * Regenerating kills the current link for good — every copy of it already handed
+ * Replacing kills the current link for good — every copy of it already handed
  * out, every embed on someone else's page. So it asks first, inline: a second
  * modal over the dialog would be heavier than the question.
  */
 export function ShareLinkRow({
 	url,
-	onRegenerate,
-	regenerateWarning,
+	onReplace,
+	replaceWarning,
 }: {
 	url: string
-	onRegenerate: () => void
+	onReplace: () => void
 	/** What stops working when the link is replaced, shown before confirming. */
-	regenerateWarning: string
+	replaceWarning: string
 }) {
-	const [confirmingRegenerate, setConfirmingRegenerate] = useState(false)
+	const [confirmingReplace, setConfirmingReplace] = useState(false)
 	const [copied, setCopied] = useState(false)
 	const [copyBlocked, setCopyBlocked] = useState(false)
 	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -332,41 +333,39 @@ export function ShareLinkRow({
 					{copied ? <CheckIcon /> : <CopyIcon />}
 					{copied ? "Copied" : "Copy"}
 				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => setConfirmingReplace((open) => !open)}
+					aria-expanded={confirmingReplace}
+				>
+					<ArrowRotateClockwiseIcon />
+					Replace
+				</Button>
 			</div>
-			{confirmingRegenerate ? (
+			{confirmingReplace ? (
 				<div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
 					<p className="text-xs leading-relaxed">
 						<span className="font-medium">Replace this link?</span>{" "}
-						<span className="text-muted-foreground">
-							{regenerateWarning} This can't be undone.
-						</span>
+						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>
 					</p>
 					<div className="flex justify-end gap-2">
-						<Button variant="ghost" size="xs" onClick={() => setConfirmingRegenerate(false)}>
+						<Button variant="ghost" size="xs" onClick={() => setConfirmingReplace(false)}>
 							Cancel
 						</Button>
 						<Button
 							variant="destructive"
 							size="xs"
 							onClick={() => {
-								setConfirmingRegenerate(false)
-								onRegenerate()
+								setConfirmingReplace(false)
+								onReplace()
 							}}
 						>
-							Regenerate link
+							Replace link
 						</Button>
 					</div>
 				</div>
-			) : (
-				<Button
-					variant="ghost"
-					size="xs"
-					className="-ml-2 text-muted-foreground"
-					onClick={() => setConfirmingRegenerate(true)}
-				>
-					Regenerate link
-				</Button>
-			)}
+			) : null}
 			{copyBlocked ? (
 				<p className="text-muted-foreground text-xs leading-relaxed">
 					Your browser blocked the clipboard. The link is selected — copy it with ⌘C.
