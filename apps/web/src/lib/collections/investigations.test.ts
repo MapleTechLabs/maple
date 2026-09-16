@@ -38,11 +38,6 @@ const row = (overrides: Partial<InvestigationRow> = {}): InvestigationRow => ({
 	input_tokens: 12000,
 	output_tokens: 800,
 	error: null,
-	fanout_state: "ranked",
-	fanout_size: 2,
-	fanout_attempt: 1,
-	validator_note: null,
-	validator_elapsed_ms: 8200,
 	created_by: null,
 	created_at: "2026-08-01T14:02:00.000Z",
 	started_at: "2026-08-01T14:02:00.000Z",
@@ -60,10 +55,7 @@ describe("rowsToInvestigation", () => {
 			status: "diagnosed",
 			subject: { type: "incident", incident_kind: "error" },
 			report: { suspectedCause: "Pool exhaustion in checkout-api" },
-			fanout: { state: "ranked", size: 2 },
 		})
-		// ms → seconds at one decimal, exactly as InvestigationService does it.
-		expect(investigation?.lens_runs[0]).toMatchObject({ elapsedSeconds: 9.4, verdict: "promoted" })
 	})
 
 	/**
@@ -81,8 +73,6 @@ describe("rowsToInvestigation", () => {
 				severity: null,
 				confidence: "low",
 				error: null,
-				fanout_state: "rejected_all",
-				validator_note: "no candidate survived",
 				report_json: {
 					summary: "Nothing held up.",
 					suspectedCause: "Possibly the payments-api pool, unconfirmed",

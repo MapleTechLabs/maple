@@ -55,11 +55,10 @@ const seedSettings = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 	})
 
 /**
- * Usage is counted from started rows as `fanoutSize + 1` for legacy fan-out rows
- * and 1 for a single-agent run. Seeding rows rather than driving the enqueue path
- * keeps the arithmetic under the test's control.
+ * Usage is one pass per started row. Seeding rows rather than driving the
+ * enqueue path keeps the arithmetic under the test's control.
  */
-const seedStartedRuns = (count: number, fanoutSize: number, idOffset = 0) =>
+const seedStartedRuns = (count: number, idOffset = 0) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = new Date()
@@ -73,7 +72,6 @@ const seedStartedRuns = (count: number, fanoutSize: number, idOffset = 0) =>
 					status: "investigating",
 					seededBy: "system",
 					subjectJson: { type: "question", question: "seed" },
-					fanoutSize,
 					startedAt: now,
 					createdAt: now,
 					updatedAt: now,
@@ -100,8 +98,7 @@ describe("AiTriageService.getSettings pause state", () => {
 			// Ordinary slice of a 100-pass ceiling is 70. Land usage exactly on it:
 			// 70 + 1 > 70 refuses an ordinary start while 70 + 1 <= 100 lets a critical through.
 			yield* seedSettings(500, 100)
-			yield* seedStartedRuns(17, 3) // 17 x 4 = 68, legacy fan-out rows
-			yield* seedStartedRuns(2, 1, 100) // a single-agent run is worth 1
+			yield* seedStartedRuns(70)
 			const doc = yield* (yield* AiTriageService).getSettings(ORG)
 			assert.strictEqual(doc.usage.passes, 70)
 			assert.isTrue(doc.ordinaryPaused)
@@ -115,7 +112,7 @@ describe("AiTriageService.getSettings pause state", () => {
 	it.effect("pauses priority triage too once the full ceiling is spent", () =>
 		Effect.gen(function* () {
 			yield* seedSettings(500, 100)
-			yield* seedStartedRuns(25, 3) // 100 passes; 100 + 1 > 100
+			yield* seedStartedRuns(100) // 100 + 1 > 100
 			const doc = yield* (yield* AiTriageService).getSettings(ORG)
 			assert.isTrue(doc.ordinaryPaused)
 			assert.isTrue(doc.priorityPaused)
@@ -131,7 +128,7 @@ describe("AiTriageService.getSettings pause state", () => {
 	it.effect("names the runs ceiling and pauses every severity with it", () =>
 		Effect.gen(function* () {
 			yield* seedSettings(3, 10_000)
-			yield* seedStartedRuns(3, 3)
+			yield* seedStartedRuns(3)
 			const doc = yield* (yield* AiTriageService).getSettings(ORG)
 			assert.strictEqual(doc.pausedDimension, "runs")
 			assert.isTrue(doc.ordinaryPaused)
