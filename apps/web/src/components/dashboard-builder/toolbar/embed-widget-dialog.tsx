@@ -8,7 +8,7 @@
  * share list is the same atom the board dialog reads, so either side's changes
  * show up in the other.
  */
-import { useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import { useMountEffect } from "@maple/ui/hooks/use-mount-effect"
 import { Exit } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -28,8 +28,6 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	ArrowRotateClockwiseIcon,
 	BracketsCurlyIcon,
-	CheckIcon,
-	CopyIcon,
 	ClockIcon,
 	GlobeIcon,
 	SunIcon,
@@ -47,6 +45,7 @@ import {
 	type ShareRecord,
 } from "./dashboard-shares"
 import { ShareLinkRow } from "./share-dashboard-dialog"
+import { CodeBlock } from "@/components/quick-start/code-block"
 
 /** `YYYY-MM-DD HH:MM:SS` in UTC — the only shape the share API accepts. */
 const warehouseDateTime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
@@ -164,29 +163,20 @@ export function EmbedWidgetDialog({
 
 /** A ready-to-paste `<iframe>` for the embed link. The chart fills whatever height the frame gets. */
 function IframeSnippet({ url }: { url: string }) {
-	const snippet = `<iframe src="${url}" width="100%" height="400" style="border: 0" loading="lazy"></iframe>`
-	const [copied, setCopied] = useState(false)
-	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-	const copy = () =>
-		void navigator.clipboard.writeText(snippet).then(() => {
-			setCopied(true)
-			clearTimeout(resetCopied.current)
-			resetCopied.current = setTimeout(() => setCopied(false), 2000)
-		})
+	const snippet = [
+		"<iframe",
+		`  src="${url}"`,
+		'  width="100%"',
+		'  height="400"',
+		'  style="border: 0"',
+		'  loading="lazy"',
+		"></iframe>",
+	].join("\n")
 
 	return (
 		<div className="space-y-2">
-			<div className="flex items-center justify-between">
-				<div className="font-medium text-xs">Embed in a page</div>
-				<Button size="xs" variant="ghost" onClick={copy} className="text-muted-foreground">
-					{copied ? <CheckIcon /> : <CopyIcon />}
-					{copied ? "Copied" : "Copy"}
-				</Button>
-			</div>
-			<pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border bg-muted/40 px-3 py-2 font-mono text-[11px] text-muted-foreground leading-relaxed">
-				{snippet}
-			</pre>
+			<div className="font-medium text-xs">Embed in a page</div>
+			<CodeBlock code={snippet} language="html" />
 		</div>
 	)
 }
