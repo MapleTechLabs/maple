@@ -13,7 +13,12 @@ import { DatabaseSync } from "node:sqlite"
 
 /** Everything the DO under test reads off its state, and nothing more. */
 export interface FakeDurableObjectState {
-	readonly storage: { readonly sql: SqlStorage }
+	readonly storage: {
+		readonly sql: SqlStorage
+		readonly setAlarm: (scheduledTime: number) => Promise<void>
+	}
+	/** Every alarm time the object asked for, in order. */
+	readonly alarms: Array<number>
 	/** Collected rather than awaited, so a test can drive the turn itself. */
 	readonly waitUntil: (promise: Promise<unknown>) => void
 	readonly pending: Array<Promise<unknown>>
@@ -22,6 +27,7 @@ export interface FakeDurableObjectState {
 export const makeFakeDurableObjectState = (): FakeDurableObjectState => {
 	const db = new DatabaseSync(":memory:")
 	const pending: Array<Promise<unknown>> = []
+	const alarms: Array<number> = []
 
 	const sql = {
 		exec: (statement: string, ...bindings: ReadonlyArray<unknown>) => {
@@ -43,7 +49,13 @@ export const makeFakeDurableObjectState = (): FakeDurableObjectState => {
 	}
 
 	return {
-		storage: { sql: sql as SqlStorage },
+		storage: {
+			sql: sql as SqlStorage,
+			setAlarm: async (scheduledTime) => {
+				alarms.push(scheduledTime)
+			},
+		},
+		alarms,
 		waitUntil: (promise) => {
 			// Swallow rejections here the way the runtime does; a test that cares awaits `pending`.
 			pending.push(promise.catch(() => undefined))
