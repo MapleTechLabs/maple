@@ -32,7 +32,7 @@ The data behind the example is synthetic: about 4,200 visitors to `fieldnote.app
   <figcaption>The dashboard in Maple. Of 4.1K visitors to the pricing page, 282 started a paid plan within the 14-day funnel window.</figcaption>
 </figure>
 
-Nothing on this page depends on funnels. Query builder charts, raw SQL charts and the other kinds listed in [Which charts can be embedded](#which-charts-can-be-embedded) embed the same way.
+Other chart types embed the same way. See [Which charts can be embedded](#which-charts-can-be-embedded).
 
 ## Embed a chart in three steps
 
