@@ -48,24 +48,49 @@ for (const local of locals) {
 	byHash.set(local.hash, local)
 }
 
-/** Every migration SQL blob this checkout's git history has ever held, keyed by its hash. */
-const historicalNames = (): Map<string, { readonly name: string; readonly oid: string }> => {
-	const names = new Map<string, { readonly name: string; readonly oid: string }>()
+/** The migration name a historical path carried: `0003_premium_korg.sql` or `<stamp>_premium_korg/migration.sql`. */
+const nameFromPath = (path: string): string | undefined => {
+	const folder = /\/(\d{14})_([^/]+)\/migration\.sql$/.exec(path)
+	if (folder) return folder[2]
+	const flat = /\/\d{4}_([^/]+)\.sql$/.exec(path)
+	return flat ? flat[1] : undefined
+}
+
+interface HistoricalBlob {
+	readonly oid: string
+	/** Every migration name this exact SQL has been filed under. More than one is ambiguous. */
+	readonly names: ReadonlySet<string>
+}
+
+/**
+ * Every migration SQL blob this checkout's git history has ever held, keyed by
+ * its sha256. `rev-list --objects` reports a blob once per path it was reached
+ * through, so a renumbered file shows up under each of its names; all of them
+ * are kept, and a digest that maps to more than one name is left to a human.
+ */
+const historicalBlobs = (): Map<string, HistoricalBlob> => {
+	const blobs = new Map<string, { oid: string; names: Set<string> }>()
 	const listing = spawnSync("git", ["rev-list", "--all", "--objects", "--", "drizzle"], {
 		encoding: "utf8",
 	})
-	if (listing.status !== 0) return names
+	if (listing.status !== 0) return blobs
+	const digests = new Map<string, string>()
 	for (const line of listing.stdout.split("\n")) {
 		const [oid, path] = line.split(" ", 2)
 		if (!oid || !path?.endsWith(".sql")) continue
-		const blob = spawnSync("git", ["cat-file", "blob", oid])
-		if (blob.status !== 0) continue
-		names.set(createHash("sha256").update(blob.stdout).digest("hex"), {
-			name: path.replace(/^.*\//, ""),
-			oid,
-		})
+		let digest = digests.get(oid)
+		if (digest === undefined) {
+			const blob = spawnSync("git", ["cat-file", "blob", oid])
+			if (blob.status !== 0) continue
+			digest = createHash("sha256").update(blob.stdout).digest("hex")
+			digests.set(oid, digest)
+		}
+		const entry = blobs.get(digest) ?? { oid, names: new Set<string>() }
+		const name = nameFromPath(path)
+		if (name !== undefined) entry.names.add(name)
+		blobs.set(digest, entry)
 	}
-	return names
+	return blobs
 }
 
 const sql = postgres(url, { max: 1, fetch_types: false })
@@ -104,23 +129,33 @@ try {
 	)
 	if (orphans.length === 0) process.exit(0)
 
-	const history = historicalNames()
+	const history = historicalBlobs()
 	const recorded = new Set(rows.map((r) => Math.floor(Number(r.created_at) / 1000) * 1000))
 	for (const orphan of orphans) {
-		const historical = history.get(orphan.hash)
-		const suffix = historical?.name.replace(/^\d+_/, "").replace(/\.sql$/, "")
-		const current = suffix ? locals.find((l) => l.suffix === suffix) : undefined
 		console.log(
 			`\nrow ${orphan.id}: created_at ${new Date(orphan.createdAt).toISOString()} hash ${orphan.hash.slice(0, 12)}…`,
 		)
+		const historical = history.get(orphan.hash)
 		if (!historical) {
 			console.log("  not in this checkout's history: applied from another branch, decide by hand")
 			continue
 		}
-		console.log(`  is the historical ${historical.name}`)
-		if (current === undefined) {
-			console.log("  no current migration with that name: decide by hand")
-		} else if (recorded.has(current.millis)) {
+		const names = [...historical.names]
+		if (names.length !== 1) {
+			console.log(
+				`  this SQL was filed under ${names.length} names (${names.join(", ") || "none recognisable"}): decide by hand`,
+			)
+			continue
+		}
+		const name = names[0]!
+		const currents = locals.filter((l) => l.suffix === name)
+		console.log(`  is the historical ${name}`)
+		if (currents.length !== 1) {
+			console.log(`  ${currents.length} current migrations carry that name: decide by hand`)
+			continue
+		}
+		const current = currents[0]!
+		if (recorded.has(current.millis)) {
 			console.log(
 				`  superseded: the current ${current.name} is recorded on its own row, so this one is a leftover`,
 			)
