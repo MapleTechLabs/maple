@@ -435,16 +435,8 @@ export function SpanDetailPanel({
 											})}
 										</CopyableValue>
 									</PlatformRow>
-									<PlatformRow label="Duration">
-										<CopyableValue value={formatDuration(span.durationMs)}>
-											{formatDuration(span.durationMs)}
-										</CopyableValue>
-									</PlatformRow>
 									<PlatformRow label="Span ID">
 										<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
-									</PlatformRow>
-									<PlatformRow label="Trace ID">
-										<CopyableValue value={span.traceId}>{span.traceId}</CopyableValue>
 									</PlatformRow>
 									{span.parentSpanId && (
 										<PlatformRow label="Parent Span ID">
@@ -477,6 +469,10 @@ export function SpanDetailPanel({
 									))
 									.onError(() => (
 										<>
+											<p className="rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+												Couldn't load all attributes. Showing the ones loaded with the
+												trace.
+											</p>
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={span.spanAttributes ?? {}}
