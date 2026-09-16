@@ -10,7 +10,6 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { INVESTIGATION_FANOUT_BINDING } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verification-enqueue"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
@@ -131,11 +130,7 @@ const make: Effect.Effect<
 
 	// Present only inside a Worker isolate; absent in tests and local runs, where
 	// the enqueue records `no_binding` rather than silently degrading.
-	const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-	const fanoutBinding = Option.match(workerEnv, {
-		onNone: () => undefined,
-		onSome: (env) => env[INVESTIGATION_FANOUT_BINDING],
-	})
+	const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -327,7 +322,7 @@ const make: Effect.Effect<
 				pullRequestUrl: subject.url,
 				postMergeOccurrences: split.value.postMerge,
 				staleClientOccurrences: split.value.staleClients,
-				fanoutBinding,
+				workerEnv,
 			}).pipe(
 				Effect.provideService(Database, database),
 				// An interrupt here must never become `{ enqueued: false }`: the fallback

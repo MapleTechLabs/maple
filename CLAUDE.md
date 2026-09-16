@@ -52,10 +52,15 @@ upgrading a runtime (keep `bun` in sync with `packageManager`).
 
 ## The AI Worker (`apps/ai`)
 
-Every agent surface runs in its own Worker: the public MCP server and its ~47 tools, the chat agent
-and its `ChatSession` Durable Object, and the autonomous investigation fan-out. They moved together
-because all three reach the same tool registry in-process — extracting any one alone leaves the
-registry behind, which is why the first attempt was worth 1%.
+Every agent surface runs in its own Worker: the public MCP server and its ~47 tools, and the chat
+agent and its `ChatSession` Durable Object, which also runs every investigation's autonomous pass.
+They moved together because both reach the same tool registry in-process — extracting either alone
+leaves the registry behind, which is why the first attempt was worth 1%.
+
+An investigation is **one agent turn**: the investigate agent gathers the evidence, tests the rival
+explanations itself and closes on `submit_diagnosis`. Do not reintroduce sub-agents, planners or
+validators; the 2026-09 fan-out lost the evidence at every handoff and most passes never reached a
+verdict.
 
 `api.maple.dev/mcp` is still the public address. `apps/api` forwards `/mcp`, `/api/chat/*` and
 `/internal/chat/*` over a service binding, ahead of building its route graph, which keeps the OAuth
@@ -151,10 +156,15 @@ Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/
 `packages/db/src/schema/`, on the PlanetScale `main` branch (prd — the only stage with a
 database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
+- Drizzle is Effect-native (`drizzle-orm/effect-postgres` over `@effect/sql-pg`, node-postgres
+  underneath): `Database.execute` takes an Effect callback, queries are `yield*`ed, and
+  `db.transaction` takes an Effect callback. Driver failures become `DatabaseError` at that
+  boundary; a `Schema.TaggedError` failed inside a transaction rolls it back and reaches the caller
+  as itself. Raw `db.execute(sql…)` returns the driver's result object — wrap it in `rawRows`.
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
   `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare `new Date(ms)` /
-  `.getTime()`, including inside Promise-land helpers. Never read driver write-result shapes
-  — use `.returning()` + length. `count(*)` needs `::int` (bigint → string).
+  `.getTime()`. Never read driver write-result shapes — use `.returning()` + length. `count(*)`
+  needs `::int` (bigint → string).
 - Layers: `DatabasePgLive` (Workers) and `DatabasePgliteLive` (tests/local; `createTestDb()` in
   `packages/backend/src/platform/test-pglite.ts`).
 - One Postgres connection per invocation — request, cron tick, or Workflow run — created lazily and
@@ -163,7 +173,8 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
   installs it for HTTP, `withPgConnectionScope` for cron. Sockets are request-bound on Workers, so a
   connection may be reused freely WITHIN an invocation but must never outlive it. `max` is 5
   (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost 3–6x on p50) and the
-  dial is bounded so a stall lands as `error.type = CONNECT_TIMEOUT` instead of hanging.
+  dial is bounded so a stall lands as `error.type = ConnectionError` instead of hanging (a refused
+  dial carries the socket code, `ECONNREFUSED`).
 - Migrations: `bun run --cwd packages/db db:generate`; CI applies them against the branch's DIRECT
   port 5432 (never a pooler) before `alchemy deploy`. PGlite applies them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a

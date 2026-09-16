@@ -11,12 +11,11 @@ import { aiTriageSettings, errorIssues, investigations, type ErrorIssueVerificat
 import { and, eq } from "drizzle-orm"
 import { Clock, Effect, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { startInvestigationFanout } from "@maple/backend/services/errors/investigation-fanout-start"
+import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
 	evaluateInvestigationQuota,
 	selectInvestigationUsage,
 } from "@maple/backend/services/errors/investigation-quota"
-import { FIX_VERIFICATION_MAX_WIDTH } from "@maple/backend/services/errors/investigation-route"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -28,7 +27,8 @@ export interface EnqueueFixVerificationInput {
 	readonly postMergeOccurrences: number
 	/** Occurrences since the merge from builds that were already running. */
 	readonly staleClientOccurrences: number
-	readonly fanoutBinding?: unknown
+	/** The Worker env, for the `ChatSession` binding. Absent outside a Worker isolate. */
+	readonly workerEnv?: Record<string, unknown>
 }
 
 export type EnqueueFixVerificationResult =
@@ -45,8 +45,8 @@ export type EnqueueFixVerificationResult =
  * Deliberately NOT routed through `maybeEnqueueTriage`: that path dedupes on
  * `(incidentKind, incidentId)` and builds an incident snapshot, and a
  * verification has neither. What it does share — and what is reused here — is
- * the org's daily investigation quota and the Cloudflare Workflow start, so a
- * burst of merges cannot outspend a burst of incidents.
+ * the org's daily investigation quota and the agent start, so a burst of merges
+ * cannot outspend a burst of incidents.
  *
  * The snapshot carries the deterministic evidence as facts. That is the point of
  * the whole design: the agent is asked to interpret a occurrence split that has
@@ -68,13 +68,12 @@ export const enqueueFixVerification: (
 	const settings = settingsRows[0]
 
 	const usage = yield* database.execute((db) => selectInvestigationUsage(db, orgId, nowMs))
-	const reservedPasses = FIX_VERIFICATION_MAX_WIDTH + 2
 	const quota = evaluateInvestigationQuota({
 		usage,
 		limits: settings
 			? { maxRunsPerDay: settings.maxRunsPerDay, maxPassesPerDay: settings.maxPassesPerDay }
 			: undefined,
-		passCount: reservedPasses,
+		passCount: 1,
 		nowMs,
 	})
 	if (quota.kind === "exceeded") {
@@ -174,9 +173,7 @@ export const enqueueFixVerification: (
 				issueId: verification.issueId,
 				severity: issue.severity ?? null,
 				startedAt: new Date(nowMs),
-				fanoutState: "queued",
-				fanoutSize: FIX_VERIFICATION_MAX_WIDTH,
-				autonomousTurns: reservedPasses,
+				autonomousTurns: 1,
 				createdAt: new Date(nowMs),
 				updatedAt: new Date(nowMs),
 			})
@@ -191,13 +188,13 @@ export const enqueueFixVerification: (
 		return { enqueued: false, reason: "error" as const }
 	}
 
-	const started = yield* startInvestigationFanout({
+	const started = yield* startInvestigationTurn({
 		orgId,
 		investigationId,
-		maxWidth: FIX_VERIFICATION_MAX_WIDTH,
-		reservedPasses,
+		subject,
+		snapshot,
+		workerEnv: input.workerEnv,
 		nowMs,
-		fanoutBinding: input.fanoutBinding,
 		// The tick reads this outcome back and can answer `no_binding` with a
 		// terminal `verified` verdict that auto-closes the issue. Without the id,
 		// the trace of that close says nothing about which verification it closed,
@@ -205,7 +202,11 @@ export const enqueueFixVerification: (
 		annotations: { "maple.verification.id": verification.id },
 	})
 	if (!started.started) {
-		return { enqueued: false, investigationId, reason: started.reason }
+		return {
+			enqueued: false,
+			investigationId,
+			reason: started.reason === "no_binding" ? ("no_binding" as const) : ("error" as const),
+		}
 	}
 	return { enqueued: true, investigationId }
 })

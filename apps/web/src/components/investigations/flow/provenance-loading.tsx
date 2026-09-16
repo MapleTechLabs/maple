@@ -2,9 +2,9 @@
  * The provenance canvas before it has anything to draw.
  *
  * Rather than a grey block standing in for the page's lead widget, this previews
- * the destination: the same left-to-right chain — spine, lens fan, verdict,
- * proposed actions — as ghost cards that assemble on the same column grid the
- * real graph uses, wired by the same square-cornered strands.
+ * the destination: the same left-to-right chain — spine, verdict, proposed
+ * actions — as ghost cards that assemble on the same column grid the real graph
+ * uses, wired by the same square-cornered strands.
  *
  * Inline SVG on the real graph's 1270-wide frame, for the reason
  * `service-map-loading.tsx` is: it scales to any pane with no measurement pass,
@@ -17,7 +17,7 @@
  */
 import type { CSSProperties } from "react"
 
-import { ACTION_WIDTH, LENS_WIDTH, SPINE_WIDTH } from "./provenance-graph"
+import { ACTION_WIDTH, SPINE_WIDTH } from "./provenance-graph"
 
 /* The real graph's geometry. The widths are imported; the rest is the private
    arithmetic of `provenance-graph.ts`, mirrored rather than exported — the ghost
@@ -25,22 +25,19 @@ import { ACTION_WIDTH, LENS_WIDTH, SPINE_WIDTH } from "./provenance-graph"
 const GUTTER = 52
 const SPINE_H = 128
 const SPINE_H_LIVE = 148
-const LENS_H = 64
-const LENS_GAP = 8
 const ACTION_H = 76
 const ACTION_GAP = 8
 /** Column headings ride 20px above their column's top edge. */
 const HEADING_OFFSET = 20
 
 /**
- * Six columns on 198px origins — issue, incident, investigation, the lens fan,
- * the verdict, the proposed actions — which is the widest chain the real builder
- * emits and lands on its 1270 frame.
+ * Five columns on 198px origins — issue, incident, investigation, the verdict,
+ * the proposed actions — which is the widest chain the real builder emits.
  */
-const COLUMN_X = [0, 1, 2, 3, 4, 5].map((i) => i * (SPINE_WIDTH + GUTTER))
-const GRAPH_W = COLUMN_X[5] + ACTION_WIDTH
+const COLUMN_X = [0, 1, 2, 3, 4].map((i) => i * (SPINE_WIDTH + GUTTER))
+const GRAPH_W = COLUMN_X[4] + ACTION_WIDTH
 /** The tallest column sets the frame; every other column centres against it. */
-const GRAPH_H = LENS_H * 3 + LENS_GAP * 2
+const GRAPH_H = Math.max(SPINE_H_LIVE, ACTION_H * 2 + ACTION_GAP)
 
 const top = (height: number) => (GRAPH_H - height) / 2
 
@@ -56,16 +53,9 @@ const spineCard = (column: number, h: number): Card => ({
 
 /** The three causal steps: what happened, where, and the run itself. */
 const SPINE: Array<Card> = [spineCard(0, SPINE_H), spineCard(1, SPINE_H), spineCard(2, SPINE_H_LIVE)]
-const LENSES: Array<Card> = [0, 1, 2].map((i) => ({
-	x: COLUMN_X[3],
-	y: i * (LENS_H + LENS_GAP),
-	w: LENS_WIDTH,
-	h: LENS_H,
-	r: 6,
-}))
-const VERDICT: Card = spineCard(4, SPINE_H)
+const VERDICT: Card = spineCard(3, SPINE_H)
 const ACTIONS: Array<Card> = [0, 1].map((i) => ({
-	x: COLUMN_X[5],
+	x: COLUMN_X[4],
 	y: top(ACTION_H * 2 + ACTION_GAP) + i * (ACTION_H + ACTION_GAP),
 	w: ACTION_WIDTH,
 	h: ACTION_H,
@@ -98,9 +88,8 @@ function stepPath(a: { x: number; y: number }, b: { x: number; y: number }) {
 const STRANDS: Array<{ d: string; dash: string }> = [
 	{ d: stepPath(right(SPINE[0]), left(SPINE[1])), dash: "3 3" },
 	{ d: stepPath(right(SPINE[1]), left(SPINE[2])), dash: "3 3" },
-	// Fan out into the lanes, merge back into the verdict, then the roadmap hop.
-	...LENSES.map((lens) => ({ d: stepPath(right(SPINE[2]), left(lens)), dash: "3 3" })),
-	...LENSES.map((lens) => ({ d: stepPath(right(lens), left(VERDICT)), dash: "3 3" })),
+	// Into the verdict, then the roadmap hop.
+	{ d: stepPath(right(SPINE[2]), left(VERDICT)), dash: "3 3" },
 	...ACTIONS.map((action) => ({ d: stepPath(right(VERDICT), left(action)), dash: "4 4" })),
 ]
 
@@ -111,7 +100,6 @@ const PORTS = [
 	right(SPINE[1]),
 	left(SPINE[2]),
 	right(SPINE[2]),
-	...LENSES.flatMap((c) => [left(c), right(c)]),
 	left(VERDICT),
 	right(VERDICT),
 	...ACTIONS.map((c) => left(c)),
@@ -176,29 +164,6 @@ function SpineGhost({ card, delay }: { card: Card; delay: number }) {
 	)
 }
 
-/** A lens lane: title, then the state row — glyph, word, elapsed. */
-function LensGhost({ card, delay }: { card: Card; delay: number }) {
-	const { x, y, w, h } = card
-	return (
-		<g className="provenance-load-node" style={{ animationDelay: `${delay}s` } as CSSProperties}>
-			<rect
-				x={x}
-				y={y}
-				width={w}
-				height={h}
-				rx={card.r}
-				fill="var(--background)"
-				stroke="var(--border)"
-				strokeWidth={1}
-			/>
-			<Bar x={x + 10} y={y + 14} w={w - 40} h={5.5} breathe delay={delay} />
-			<circle cx={x + 15.5} cy={y + 39} r={5.5} fill={BAR} opacity={0.22} />
-			<Bar x={x + 26} y={y + 36.5} w={36} opacity={0.22} />
-			<Bar x={x + w - 32} y={y + 36.5} w={22} opacity={0.14} />
-		</g>
-	)
-}
-
 /** A proposed action: the fixed ordinal/glyph gutter, two text rows, a chip. */
 function ActionGhost({ card, delay }: { card: Card; delay: number }) {
 	const { x, y, w, h } = card
@@ -233,9 +198,8 @@ function ActionGhost({ card, delay }: { card: Card; delay: number }) {
 export function ProvenanceCanvasLoading() {
 	const cards = [
 		...SPINE.map((card, i) => ({ kind: "spine" as const, card, delay: i * 0.08 })),
-		...LENSES.map((card, i) => ({ kind: "lens" as const, card, delay: 0.26 + i * 0.07 })),
-		{ kind: "spine" as const, card: VERDICT, delay: 0.5 },
-		...ACTIONS.map((card, i) => ({ kind: "action" as const, card, delay: 0.58 + i * 0.07 })),
+		{ kind: "spine" as const, card: VERDICT, delay: 0.3 },
+		...ACTIONS.map((card, i) => ({ kind: "action" as const, card, delay: 0.4 + i * 0.07 })),
 	]
 
 	return (
@@ -267,9 +231,8 @@ export function ProvenanceCanvasLoading() {
 				aria-label="Loading the provenance graph"
 				fill="none"
 			>
-				{/* Column headings — the fan and the actions column each carry one. */}
-				<Bar x={COLUMN_X[3]} y={-HEADING_OFFSET - 5} w={96} opacity={0.16} />
-				<Bar x={COLUMN_X[5]} y={-HEADING_OFFSET - 5} w={128} opacity={0.16} />
+				{/* Column heading — the actions column carries one. */}
+				<Bar x={COLUMN_X[4]} y={-HEADING_OFFSET - 5} w={128} opacity={0.16} />
 
 				{STRANDS.map((strand, i) => (
 					<path
@@ -299,8 +262,6 @@ export function ProvenanceCanvasLoading() {
 				{cards.map(({ kind, card, delay }, i) =>
 					kind === "spine" ? (
 						<SpineGhost key={`card-${i}`} card={card} delay={delay} />
-					) : kind === "lens" ? (
-						<LensGhost key={`card-${i}`} card={card} delay={delay} />
 					) : (
 						<ActionGhost key={`card-${i}`} card={card} delay={delay} />
 					),

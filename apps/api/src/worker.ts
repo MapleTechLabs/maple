@@ -8,8 +8,8 @@
  * `maple-api`, background work under its own service names (`eventTelemetry`).
  *
  * The bundle entry is the one alchemy generates around this module: the
- * default export is the Worker, and the chat Durable Object and the two
- * Workflows are alchemy classes the init yields — their bindings, the
+ * default export is the Worker, and the chat Durable Object and the
+ * Workflow are alchemy classes the init yields — their bindings, the
  * namespace, the physical workflows and the entry's class exports all derive
  * from those yields.
  */
@@ -24,10 +24,6 @@ import {
 } from "@maple/infra/cloudflare"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import {
-	INVESTIGATION_FANOUT_BINDING,
-	type InvestigationFanoutWorkflowPayload,
-} from "@maple/domain/investigation-fanout"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
@@ -52,22 +48,15 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// so declaring it under `alchemy dev` diffs it against Cloudflare and demands
 	// an `alchemy login`; without the binding the Llm shim is a no-op.
 	...emailBinding(stage),
-	// The two classes maple-ai now hosts, bound cross-script under their CLASS
-	// names — which is what `chatSessionStub` and `INVESTIGATION_FANOUT_BINDING`
-	// read off `env`. `resolveWorkerName` rather than the yielded Worker's output
-	// on purpose: consuming the output would make api's deploy wait on ai's, and
-	// these are reference-only bindings that need no such ordering.
+	// The chat Durable Object maple-ai hosts, bound cross-script under its CLASS
+	// name — which is what `chatSessionStub` reads off `env`. `resolveWorkerName`
+	// rather than the yielded Worker's output on purpose: consuming the output
+	// would make api's deploy wait on ai's, and this is a reference-only binding
+	// that needs no such ordering.
 	ChatSession: Cloudflare.DurableObject("ChatSession", {
 		className: "ChatSession",
 		scriptName: resolveWorkerName("ai", stage),
 	}),
-	[INVESTIGATION_FANOUT_BINDING]: Cloudflare.Workflow<InvestigationFanoutWorkflowPayload>(
-		INVESTIGATION_FANOUT_BINDING,
-		{
-			className: INVESTIGATION_FANOUT_BINDING,
-			scriptName: resolveWorkerName("ai", stage),
-		},
-	),
 })
 
 /**

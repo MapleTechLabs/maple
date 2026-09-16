@@ -2,8 +2,8 @@
  * Every state the provenance canvas can draw, on one canvas.
  *
  * The page only ever shows the handful of states a real investigation happens to
- * be in, so most of this surface — eight lens states, ten action glyphs, three
- * edge kinds doubled by `live` — has never been seen side by side. That is the
+ * be in, so most of this surface — ten action glyphs, two edge kinds doubled by
+ * `live` — has never been seen side by side. That is the
  * one view in which "does this read as one system?" is answerable at all, and
  * this builder is it.
  *
@@ -17,16 +17,12 @@
  * is: coverage over the state space is a fact about this array, and it should be
  * assertable without mounting a canvas.
  */
-import { lensChecks, lensNodeState, type LensRun } from "@/components/investigations/lens-derive"
-import { lensCopy } from "@/components/investigations/lens-catalogue"
 import { ACTION_GLYPH } from "@/components/investigations/flow/flow-nodes"
 import type { ActionKind, ActionTarget } from "@/components/investigations/flow/action-target"
 import {
 	ACTION_HEIGHT,
 	ACTION_WIDTH,
 	HEADING_HEIGHT,
-	LENS_HEIGHT,
-	LENS_WIDTH,
 	SPINE_HEIGHT,
 	SPINE_HEIGHT_CURRENT,
 	SPINE_HEIGHT_LIVE,
@@ -152,46 +148,6 @@ const spineCell = (g: Grid, caption: string, data: SpineNodeData) => {
 	g.nodes.push({ id: g.nextId("spine"), type: "spine", position, width: SPINE_WIDTH, height, data })
 }
 
-/**
- * A lens cell, built from a real `LensRun` rather than a hand-written
- * `LensNodeState`.
- *
- * This is the whole reason the studio is trustworthy: the badge, tone, glyph,
- * strike and dash all come out of `lensNodeState`, and the result line out of
- * `lensChecks`, so a change to that state machine shows up here rather than
- * quietly diverging from a frozen copy of its output.
- */
-const lensCell = (g: Grid, caption: string, run: LensRun) => {
-	const position = g.reserve(caption, LENS_WIDTH, LENS_HEIGHT)
-	g.nodes.push({
-		id: g.nextId("lens"),
-		type: "lens",
-		position,
-		width: LENS_WIDTH,
-		height: LENS_HEIGHT,
-		data: {
-			title: lensCopy(run).name,
-			question: run.question ?? "",
-			result: lensChecks([run])[0]?.result ?? "",
-			state: lensNodeState(run),
-			elapsed: run.elapsedSeconds == null ? null : `${run.elapsedSeconds.toFixed(1)}s`,
-			progressNote: run.progressNote,
-		},
-	})
-}
-
-const overflowCell = (g: Grid, caption: string, hidden: number) => {
-	const position = g.reserve(caption, LENS_WIDTH, LENS_HEIGHT)
-	g.nodes.push({
-		id: g.nextId("overflow"),
-		type: "lensOverflow",
-		position,
-		width: LENS_WIDTH,
-		height: LENS_HEIGHT,
-		data: { hidden },
-	})
-}
-
 const pendingVerdictCell = (g: Grid, caption: string, word: string, note: string | null) => {
 	const position = g.reserve(caption, SPINE_WIDTH, SPINE_HEIGHT_TALL)
 	g.nodes.push({
@@ -288,24 +244,6 @@ const edgeCell = (
  * Fixtures
  * -----------------------------------------------------------------------------------------------*/
 
-const run = (overrides: Partial<LensRun>): LensRun =>
-	({
-		lensId: "deploy_correlation",
-		status: "reported",
-		verdict: "ruled_out",
-		claim: "a deploy landed 40s before the onset",
-		reason: null,
-		progressNote: null,
-		confidence: "medium",
-		toolCount: 3,
-		elapsedSeconds: 9.4,
-		name: null,
-		question: null,
-		priority: null,
-		deadlineHit: false,
-		...overrides,
-	}) as LensRun
-
 const TONES: ReadonlyArray<FlowTone> = ["muted", "primary", "success", "info", "warning", "destructive"]
 const GLYPHS: ReadonlyArray<FlowGlyph> = ["issue", "check", "incident", "investigation", "verdict"]
 
@@ -343,7 +281,7 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		glyph: "investigation",
 		eyebrow: "INVESTIGATION",
 		title: "Checkout timeouts",
-		note: "38s · 4 lenses",
+		note: "manual · 38s",
 		current: true,
 		at: AT,
 	})
@@ -430,65 +368,11 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		})
 	}
 
-	/* --- lens ----------------------------------------------------------------- */
-
-	g.section("LENS · STATE")
-	lensCell(g, "PENDING", run({ status: "queued", verdict: "pending", elapsedSeconds: null }))
-	lensCell(
-		g,
-		"PENDING · NO ELAPSED",
-		run({ status: "queued", verdict: "pending", elapsedSeconds: null, name: "Traffic shape" }),
-	)
-	lensCell(
-		g,
-		"RUNNING · WITH NOTE",
-		run({
-			status: "checking",
-			verdict: "pending",
-			progressNote: "reading 4 traces",
-			elapsedSeconds: 3.2,
-		}),
-	)
-	lensCell(g, "RUNNING · NO NOTE", run({ status: "checking", verdict: "pending", elapsedSeconds: 1.1 }))
-	lensCell(g, "DEADLINE HIT", run({ status: "reported", verdict: "pending", deadlineHit: true }))
-	lensCell(
-		g,
-		"NO FINDING",
-		run({ status: "no_finding", verdict: "pending", reason: "no deploy in the window" }),
-	)
-	lensCell(g, "REPORTED", run({ status: "reported", verdict: "pending" }))
-	lensCell(g, "CONFIRMED", run({ status: "reported", verdict: "promoted", confidence: "high" }))
-	lensCell(g, "MERGED", run({ status: "reported", verdict: "merged" }))
-	lensCell(g, "RULED OUT", run({ status: "reported", verdict: "ruled_out" }))
-	lensCell(g, "REJECTED", run({ status: "reported", verdict: "rejected" }))
-	lensCell(
-		g,
-		"UNKNOWN LENS ID",
-		run({ lensId: "pool_exhaustion_payments_api", status: "reported", verdict: "promoted" }),
-	)
-	lensCell(
-		g,
-		"OVERFLOW",
-		run({
-			status: "checking",
-			verdict: "pending",
-			name: "A planner-written lane name long enough to truncate",
-			progressNote: "a progress note long enough to truncate on a 146px node",
-			elapsedSeconds: 128.75,
-		}),
-	)
-
-	g.section("LENS · OVERFLOW NODE")
-	overflowCell(g, "ONE HIDDEN", 1)
-	overflowCell(g, "TWO HIDDEN", 2)
-	overflowCell(g, "TWELVE HIDDEN", 12)
-
 	/* --- pending verdict ------------------------------------------------------ */
 
 	g.section("PENDING VERDICT")
-	pendingVerdictCell(g, "WITH NOTE", "AWAITING VERDICT", "4 candidates, ranking")
+	pendingVerdictCell(g, "WITH NOTE", "AWAITING VERDICT", "closing out")
 	pendingVerdictCell(g, "NO NOTE", "AWAITING VERDICT", null)
-	pendingVerdictCell(g, "VALIDATING", "VALIDATING", "checking the top candidate")
 
 	/* --- actions -------------------------------------------------------------- */
 
@@ -533,8 +417,6 @@ export function buildNodeCatalogue(): NodeCatalogue {
 	edgeCell(g, "CAUSAL · BARE", { kind: "causal" })
 	edgeCell(g, "CAUSAL · LABELLED", { kind: "causal", label: "SEEDED" })
 	edgeCell(g, "CAUSAL · LIVE", { kind: "causal", label: "RUNNING", live: true })
-	edgeCell(g, "FAN", { kind: "fan" })
-	edgeCell(g, "FAN · LIVE", { kind: "fan", live: true })
 	edgeCell(g, "ROADMAP", { kind: "roadmap", label: "AUTOFIX" })
 	edgeCell(g, "ROADMAP · LIVE", { kind: "roadmap", label: "AUTOFIX", live: true })
 

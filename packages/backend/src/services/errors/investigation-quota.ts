@@ -1,18 +1,11 @@
 /**
  * The daily investigation budget, counted in two units.
  *
- * There are two ceilings because there are two costs. A *run* is an
+ * There are two ceilings because there were two costs. A *run* is an
  * investigation — the unit an operator thinks in and configures. A *pass* is one
- * model call — the unit that costs money, and a planned investigation spends
- * several of them (the planner, N hypotheses, the validator). Counting one
- * against the other's limit is the bug this module exists to prevent:
- * `maybeEnqueueTriage` summed `autonomous_turns`, which is incremented by the
- * *pass* count, and compared it to `max_runs_per_day`. A configured 20 runs
- * therefore became 20 passes — about three planned incidents a day — and the
- * automatic path went quiet without anything logging that a limit was wrong.
- *
- * Both producers now read the same query and the same verdict, so a change to
- * either ceiling lands in both places or in neither.
+ * agent turn; an investigation spends exactly one now, so the two ceilings count
+ * the same thing, but both stay configurable and both producers read the same
+ * query and the same verdict.
  *
  * The second failure this module has to prevent is subtler than a wrong unit: a
  * budget spent is not the same as a budget spent *well*. A single UTC-day bucket
@@ -34,18 +27,8 @@ import type { IssueSeverity, OrgId } from "@maple/domain/http"
 export const DEFAULT_MAX_RUNS_PER_DAY = 250
 
 /**
- * Model passes per day when unconfigured.
- *
- * Sized against what a fan-out actually costs, which is `fanoutSize + 1`: a
- * `low` incident settles at width 3 and spends 4, a `critical` at width 5 spends
- * 7. 1000 is therefore roughly 150–250 investigations a day depending on the mix.
- *
- * The previous 90 was sized for "planner + 4 hypotheses + validator ≈ 6 passes,
- * so about 15 incidents" — which held right up until the fan-out shipped and the
- * real settled width turned out to be 3, giving exactly 22 starts a day. Every
- * one of them was spent before 03:00 UTC, and every incident for the remaining
- * 21 hours was refused. A ceiling low enough to be hit overnight is
- * indistinguishable, from the operator's side, from the feature being off.
+ * Model passes per day when unconfigured. One investigation is one pass, so this
+ * is the ceiling the reserve below is carved out of.
  */
 export const DEFAULT_MAX_PASSES_PER_DAY = 1000
 
@@ -93,8 +76,8 @@ export const selectInvestigationUsage = (
 		db
 			.select({
 				runs: sql<number>`count(*)::int`,
-				// What one start cost: N hypotheses plus the validator, or 1 for a single pass.
-				passes: sql<number>`coalesce(sum(case when ${investigations.fanoutSize} > 1 then ${investigations.fanoutSize} + 1 else 1 end), 0)::int`,
+				// One agent turn per start.
+				passes: sql<number>`count(*)::int`,
 			})
 			.from(investigations)
 			.where(

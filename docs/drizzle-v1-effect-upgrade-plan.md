@@ -289,7 +289,8 @@ What B1 settled that the plan above left open:
 
 ## Open questions for the owner
 
-- Is pinning `1.0.0-rc.4` in prod acceptable, or does Phase A wait for a GA tag? The rc line
-  has been silent since June; the effect driver only exists on it.
+- The pin is the commit-suffixed snapshot `1.0.0-rc.5-5935859`, chosen because the tagged rc.4
+  cannot be imported on current effect. Move to the tagged rc.5 (or GA) when drizzle cuts it; the
+  kit reads the converted folder unchanged, so that is a manifest bump.
 - Does the extra Workers bundle (`pg` + `pg-types` + `pg-cursor`) fit the api cold-start budget?
-  The spike answers this with a number.
+  Not measured before merge; no non-prod stage has a database, so the first deploy is the number.

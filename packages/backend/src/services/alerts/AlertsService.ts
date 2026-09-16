@@ -78,7 +78,6 @@ import {
 	Context,
 } from "effect"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
-import { INVESTIGATION_FANOUT_BINDING } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
 import {
 	holdCeilingMs,
@@ -478,11 +477,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			} = destinationDelivery
 			// Optional: present only inside a Worker isolate. Used to kick off the
 			// AI triage Workflow for issues created from freshly opened incidents.
-			const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-			const investigationFanoutBinding = Option.match(workerEnv, {
-				onNone: () => undefined,
-				onSome: (e) => e[INVESTIGATION_FANOUT_BINDING],
-			})
+			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
 			const now = runtime.now
 			const makeUuid = () => runtime.makeUuid()
 			const workerId = makeUuid()
@@ -2493,7 +2488,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									? groupKey
 									: (normalized.serviceNames[0] ?? ""),
 							timestamp,
-							fanoutBinding: investigationFanoutBinding,
+							workerEnv,
 						}).pipe(Effect.provideService(Database, database))
 					} else {
 						yield* Effect.logWarning(

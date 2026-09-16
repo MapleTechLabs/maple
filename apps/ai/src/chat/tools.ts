@@ -88,6 +88,22 @@ export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	failure: MapleToolFailure,
 })
 
+/** The investigation a session belongs to, or `undefined` for an ordinary conversation. */
+export const investigationForSession = (sessionId: string): InvestigationId | undefined => {
+	const rawId = investigationIdFromChatSessionId(sessionId)
+	if (!rawId) return undefined
+	// An unparseable id simply means this conversation is not an investigation.
+	return Option.getOrUndefined(decodeInvestigationIdOption(rawId))
+}
+
+/**
+ * Whether this turn is an investigation's own autonomous pass — claimed under the internal actor —
+ * rather than a person asking a follow-up in the same session. The pass must end on
+ * `submit_diagnosis`; the follow-up may answer in prose.
+ */
+export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantContext): boolean =>
+	investigationForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
+
 /**
  * The `submit_diagnosis` tool for an investigate-mode session (`"<orgId>:inv-<id>"`).
  *
@@ -98,6 +114,11 @@ export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
  * `submitDiagnosis` arrives as a callback rather than being resolved from `InvestigationService`
  * here: that service is itself what starts an investigation's autonomous run, so resolving it
  * through the requirements channel would make it require itself.
+ *
+ * `submitted` reports whether the tool landed a report during the run. The engine is never told
+ * the tool is *required*: a required completion becomes `tool_choice: required` on every model
+ * call, which the providers Maple runs on do not reliably honour, and the engine fails the whole
+ * run when they do not. The turn runner checks `submitted` instead and closes the pass itself.
  */
 export const buildDiagnosisCompletion = (
 	sessionId: string,
@@ -106,13 +127,10 @@ export const buildDiagnosisCompletion = (
 	usage: RunUsage,
 	modelName: string,
 ) => {
-	const rawId = investigationIdFromChatSessionId(sessionId)
-	if (!rawId) return undefined
-	// An unparseable id simply means this conversation is not an investigation, so it gets no tool.
-	const decoded = decodeInvestigationIdOption(rawId)
-	if (Option.isNone(decoded)) return undefined
-	const investigationId = decoded.value
+	const investigationId = investigationForSession(sessionId)
+	if (investigationId === undefined) return undefined
 	const toolkit = Toolkit.make(diagnosisTool)
+	let submitted = false
 	return {
 		toolkit,
 		layer: toolkit.toLayer({
@@ -127,6 +145,7 @@ export const buildDiagnosisCompletion = (
 						outputTokens: usage.output,
 					}),
 				).pipe(
+					Effect.tap(() => Effect.sync(() => (submitted = true))),
 					Effect.as("Diagnosis recorded."),
 					// Named failures only. A rendered Effect cause carries stack frames and, inside a
 					// DatabaseError, connection details.
@@ -139,16 +158,8 @@ export const buildDiagnosisCompletion = (
 					),
 				),
 		}),
-		/**
-		 * The autonomous pass answers *through* this tool, so the run has to close on it: it is the
-		 * only thing that writes `investigations.diagnosis`, and a pass that spends its turns
-		 * gathering evidence and then answers in prose files nothing at all.
-		 *
-		 * A human follow-up in the same session gets the same tool and no completion declaration. It
-		 * *may* file a superseding diagnosis, but "what did you mean by the pool?" must be answerable
-		 * in prose — requiring the close there would rewrite the report every time someone asked.
-		 */
-		required: tenant.userId === INTERNAL_SERVICE_USER_ID,
+		autonomous: isAutonomousInvestigationTurn(sessionId, tenant),
+		submitted: () => submitted,
 	}
 }
 

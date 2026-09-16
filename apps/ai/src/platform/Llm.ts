@@ -44,7 +44,7 @@ const OPENROUTER_APP_TITLE = "Maple"
  * be filed under different sessions.
  */
 export interface LlmCallTags {
-	readonly surface: "chat" | "ai-triage" | "investigation-lens" | "investigation-validator"
+	readonly surface: "chat"
 	readonly orgId: string
 	/** Groups one conversation or investigation. OpenRouter caps this at 256 characters. */
 	readonly sessionId?: string
@@ -97,12 +97,8 @@ export interface LlmEnv extends Record<string, unknown> {
 	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string
 	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	readonly MAPLE_TRIAGE_MODEL_OUTPUT?: string
-	/** Cheaper model for the fan-out lens passes; falls back to the triage model. */
-	readonly MAPLE_LENS_MODEL_OPENROUTER?: string
-	readonly MAPLE_LENS_MODEL_WORKERS_AI?: string
 	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
 	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string
-	readonly MAPLE_LENS_REASONING_EFFORT?: string
 	readonly OPENROUTER_API_KEY?: string
 }
 
@@ -335,42 +331,6 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 				// No default. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
 				undefined,
-				tags,
-			)
-
-/**
- * The model a fan-out *lens* runs on.
- *
- * Lenses gather evidence through one narrow framing; the validator does the reasoning about which
- * candidate explains the incident. So the spend belongs on the validator, and a fan-out of five
- * otherwise multiplies the expensive model by five for work a cheaper one does adequately.
- *
- * The reasoning budget is that argument in its other form, and it is the part that is **not**
- * opt-in: `low` by default, because a narrow framing does not need a long think and the fan-out
- * multiplies whatever it does need by five.
- *
- * Note the coupling this keeps: `MAPLE_TRIAGE_MODEL_CONTEXT`/`_OUTPUT` are read by `limitsFor`, so
- * a lens on a *different* model inherits the triage overrides. Deliberate — an override is set to
- * describe a deployment, not a single model — and now less consequential than it was, because the
- * limit feeds `contextTokenLimit`, which compacts rather than failing the request. Still the thing
- * to fix first if the two stages ever diverge that far.
- */
-export const resolveLensModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
-	resolveLlmProvider(env) === "workers-ai"
-		? workersAiModel(
-				env,
-				readString(env, "MAPLE_LENS_MODEL_WORKERS_AI") ??
-					readString(env, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ??
-					DEFAULT_WORKERS_AI_MODEL,
-				tags,
-			)
-		: openRouterModel(
-				env,
-				readString(env, "MAPLE_LENS_MODEL_OPENROUTER") ??
-					readString(env, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
-					DEFAULT_OPENROUTER_MODEL,
-				"MAPLE_LENS_REASONING_EFFORT",
-				"low",
 				tags,
 			)
 

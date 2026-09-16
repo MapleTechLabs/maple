@@ -54,8 +54,8 @@ export interface UpsertAlertIssueInput {
 	readonly incidentId: AlertIncidentId
 	readonly serviceName: string
 	readonly timestamp: number
-	/** `InvestigationFanoutWorkflow`, for incidents whose severity earns a fan-out. */
-	readonly fanoutBinding?: unknown
+	/** The Worker env, for the `ChatSession` binding the investigation agent runs on. */
+	readonly workerEnv?: Record<string, unknown>
 }
 
 export interface UpsertAlertIssueResult {
@@ -354,7 +354,7 @@ export const upsertAlertIssue: (
 				lastTriggeredAt: new Date(input.timestamp).toISOString(),
 				issueId,
 			},
-			fanoutBinding: input.fanoutBinding,
+			workerEnv: input.workerEnv,
 		})
 
 		return { issueId, action }

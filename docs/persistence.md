@@ -30,16 +30,22 @@ of it: `pgConnectionMiddleware` installs a scope for HTTP, `withPgConnectionScop
 Workers tie TCP sockets to the invocation that opened them, so a connection may be reused freely
 within one but must never outlive it. Two settings carry hard-won history:
 
-- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: postgres.js
+The driver is node-postgres through `@effect/sql-pg`: one `pg.Pool` per invocation, built lazily
+by `createMaplePgPool` (`packages/db/src/client.ts`) and handed to `PgClient.fromPool` rather than
+`PgClient.make`, because `make` probes with `SELECT 1` at acquire. Two settings carry hard-won
+history:
+
+- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: the pool
   opens a second socket only when a second statement is genuinely in flight. It was 1 for one day
   on the theory that Postgres should hold at most one of the Worker's six outbound slots, which
   serialized every statement in a cron tick behind one connection (`SELECT actors` p50 928ms →
   5687ms at flat volume).
-- **A bounded `connect_timeout`** — postgres.js only raises `CONNECT_TIMEOUT` from
-  `connectTimedOut()`, and its `timer()` is a no-op when the option is unset, so an unbounded dial
-  hangs for the whole invocation and lands with no `error.type` to classify. The bound is generous
-  and single: a 2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder
-  that followed existed only to compensate for it.
+- **A bounded `connectionTimeoutMillis`** (10s) — unset, a stalled dial hangs for the whole
+  invocation and lands with no `error.type` to classify. A dial that hits the bound carries no
+  driver code and lands as `error.type = ConnectionError` (`@effect/sql`'s classification); a
+  refused one carries the socket's own code (`ECONNREFUSED`). The bound is generous and single: a
+  2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder that followed
+  existed only to compensate for it.
 
 ## Local development
 

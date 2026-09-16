@@ -49,32 +49,16 @@ const enableSettings = Effect.gen(function* () {
 	)
 })
 
-/**
- * Every incident is planned now, so a start needs the workflow binding as well as
- * the chat one. A caller that supplies only the chat binding is exercising the
- * missing-binding path — which is what several of these tests were doing by
- * accident once the routing default flipped.
- */
-/**
- * Every start needs the workflow binding, because every incident is planned.
- * Omitting it is not "the cheap path" — it is the missing-binding failure, which
- * is deliberate: a run that was planned and quietly executed as one shallow pass
- * would be a lie in the boards.
- */
-const baseInput = (incidentId: string, fanoutBinding?: unknown) => ({
+/** Every start needs the `ChatSession` binding; omitting it is the missing-binding failure. */
+const baseInput = (incidentId: string, workerEnv?: Record<string, unknown>) => ({
 	orgId: ORG,
 	incidentKind: "error" as const,
 	incidentId,
 	context: { kind: "error" },
-	fanoutBinding,
+	workerEnv,
 })
 
-/**
- * Automation on, everything else default — which now means planned. There is no
- * fan-out flag to set: the one this replaced defaulted false and had no write
- * path, so every test that "enabled" it was exercising a state production could
- * never reach.
- */
+/** Automation on, everything else default. */
 const enableAutomation = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
@@ -108,73 +92,54 @@ const enableWithLimits = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 		)
 	})
 
-const fakeFanoutWorkflow = () => {
-	const created: Array<{ id: string; params: Record<string, unknown> }> = []
-	return {
-		created,
-		binding: {
-			create: async (input: { id: string; params: Record<string, unknown> }) => {
-				created.push(input)
-				return { id: input.id }
+/**
+ * Stub `ChatSession` namespace: the observable contract of a start is one
+ * `beginTurn` call on the investigation's session.
+ */
+const fakeChatSession = (options?: { readonly busy?: boolean }) => {
+	const turns: Array<{ sessionId: string; text: string }> = []
+	const namespace = {
+		idFromName: (name: string) => name,
+		get: () => ({
+			beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
+				turns.push({ sessionId: input.sessionId, text: input.text })
+				return options?.busy === true ? undefined : { cursor: 0, messageId: input.messageId }
 			},
-		},
+		}),
 	}
+	return { turns, env: { ChatSession: namespace } }
 }
 
-/** A critical incident. Severity now sizes the plan; it no longer gates it. */
-/** A critical incident. Severity now sizes the plan; it no longer gates it. */
-const criticalInput = (fanoutBinding: unknown, incidentId: string) => ({
+/** A critical incident. Severity decides which slice of the pass budget it may spend. */
+const criticalInput = (workerEnv: Record<string, unknown> | undefined, incidentId: string) => ({
 	orgId: ORG,
 	incidentKind: "error" as const,
 	incidentId,
 	context: { kind: "error", severity: "critical", serviceName: "checkout-api" },
-	fanoutBinding,
+	workerEnv,
 })
 
 describe("maybeEnqueueTriage", () => {
-	it.effect("dispatches a critical automatic incident to the planned workflow", () =>
+	it.effect("starts a critical automatic incident as one agent turn", () =>
 		Effect.gen(function* () {
 			yield* enableAutomation
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
 
-			const result = yield* maybeEnqueueTriage(criticalInput(workflow.binding, "incident-critical"))
+			const result = yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-critical"))
 			assert.isTrue(result.enqueued)
-			assert.lengthOf(workflow.created, 1)
-			assert.strictEqual(workflow.created[0]!.params.maxWidth, 5)
+			assert.lengthOf(chat.turns, 1)
+			assert.strictEqual(chat.turns[0]!.sessionId, `${ORG}:inv-${result.investigationId}`)
+			assert.include(chat.turns[0]!.text, "checkout-api")
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
 				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
 			)
-			assert.strictEqual(rows[0]?.fanoutState, "queued")
-			assert.strictEqual(rows[0]?.fanoutSize, 5)
-			// Reserved high — planner + width + validator — and reconciled downward by
-			// the workflow once the planner has produced a real width.
-			assert.strictEqual(rows[0]?.autonomousTurns, 7)
+			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	/**
-	 * The regression that started the rework. Severity used to *gate* the
-	 * multi-hypothesis path, so anything below critical — and every error incident,
-	 * which carries no severity at all — silently got one shallow pass.
-	 */
-	it.effect("plans a low-severity incident too, just more narrowly", () =>
-		Effect.gen(function* () {
-			yield* enableAutomation
-			const workflow = fakeFanoutWorkflow()
-
-			const result = yield* maybeEnqueueTriage({
-				...criticalInput(workflow.binding, "incident-low"),
-				context: { kind: "error", severity: "low" },
-			})
-			assert.isTrue(result.enqueued)
-			assert.lengthOf(workflow.created, 1)
-			assert.strictEqual(workflow.created[0]!.params.maxWidth, 3)
-		}).pipe(Effect.provide(makeLayer())),
-	)
-
-	it.effect("records agent_unavailable when the workflow binding is missing", () =>
+	it.effect("records agent_unavailable when the chat binding is missing", () =>
 		Effect.gen(function* () {
 			yield* enableAutomation
 
@@ -193,39 +158,48 @@ describe("maybeEnqueueTriage", () => {
 
 	it.effect("does nothing when the org has not opted in", () =>
 		Effect.gen(function* () {
-			const workflow = fakeFanoutWorkflow()
-			const result = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			const chat = fakeChatSession()
+			const result = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.deepStrictEqual(result, { enqueued: false, reason: "disabled" })
-			assert.lengthOf(workflow.created, 0)
+			assert.lengthOf(chat.turns, 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
 	it.effect("enqueues once and dedups subsequent calls for the same incident", () =>
 		Effect.gen(function* () {
 			yield* enableSettings
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
 
-			const first = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.isTrue(first.enqueued)
-			assert.lengthOf(workflow.created, 1)
-			assert.strictEqual(workflow.created[0]?.id, first.investigationId)
+			assert.lengthOf(chat.turns, 1)
 
-			const second = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.isFalse(second.enqueued)
 			assert.strictEqual(second.reason, "duplicate")
 			assert.strictEqual(second.investigationId, first.investigationId)
-			assert.lengthOf(workflow.created, 1)
+			assert.lengthOf(chat.turns, 1)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("reports an error, and leaves the row failed, when the session is busy", () =>
+		Effect.gen(function* () {
+			yield* enableSettings
+			const chat = fakeChatSession({ busy: true })
+
+			const result = yield* maybeEnqueueTriage(baseInput("incident-busy", chat.env))
+			assert.isFalse(result.enqueued)
+			assert.strictEqual(result.reason, "error")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
 	it.effect("stops at the daily cap", () =>
 		Effect.gen(function* () {
 			yield* enableSettings
-			const workflow = fakeFanoutWorkflow()
-			const start = (id: string) => maybeEnqueueTriage(baseInput(id, workflow.binding))
+			const chat = fakeChatSession()
+			const start = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
 
-			// `maxRunsPerDay` is 2 here, and a planned run reserves 6 passes against a
-			// 1000-pass default — so the runs ceiling is what bites first.
+			// `maxRunsPerDay` is 2 here, so the runs ceiling is what bites.
 			assert.isTrue((yield* start("incident-1")).enqueued)
 			assert.isTrue((yield* start("incident-2")).enqueued)
 			assert.deepStrictEqual(yield* start("incident-3"), {
@@ -235,12 +209,7 @@ describe("maybeEnqueueTriage", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	/**
-	 * No fallback, on purpose. A run planned as several hypotheses that quietly
-	 * executed as one shallow pass would be indistinguishable on the boards from a
-	 * real investigation.
-	 */
-	it.effect("marks the run failed when no workflow binding is available", () =>
+	it.effect("marks the run failed when no chat binding is available", () =>
 		Effect.gen(function* () {
 			yield* enableSettings
 			const database = yield* Database
@@ -263,26 +232,24 @@ describe("maybeEnqueueTriage", () => {
 			yield* enableSettings
 			const database = yield* Database
 			const nowMs = yield* Clock.currentTimeMillis
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
 
 			// First start claims the slot, then we simulate a run that stopped making
-			// progress past its budget. A planned run gets the 25-minute fan-out
-			// budget, not the single pass's 15 — it has a planner, N lanes and a
-			// validator to get through.
-			const first = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			// progress past the single pass's 15-minute budget.
+			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
 				db
 					.update(investigations)
 					.set({
 						status: "investigating",
-						startedAt: new Date(nowMs - 26 * 60 * 1000),
-						updatedAt: new Date(nowMs - 26 * 60 * 1000),
+						startedAt: new Date(nowMs - 16 * 60 * 1000),
+						updatedAt: new Date(nowMs - 16 * 60 * 1000),
 					})
 					.where(eq(investigations.orgId, ORG)),
 			)
 
-			const second = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.isFalse(second.enqueued)
 			assert.strictEqual(second.reason, "duplicate")
 
@@ -300,9 +267,9 @@ describe("maybeEnqueueTriage", () => {
 		Effect.gen(function* () {
 			yield* enableSettings
 			const database = yield* Database
-			const workflow = fakeFanoutWorkflow()
+			const chat = fakeChatSession()
 
-			const first = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
 				db
@@ -311,25 +278,24 @@ describe("maybeEnqueueTriage", () => {
 					.where(eq(investigations.orgId, ORG)),
 			)
 
-			const second = yield* maybeEnqueueTriage(baseInput("incident-1", workflow.binding))
+			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
 			assert.isFalse(second.enqueued)
 			assert.strictEqual(second.reason, "duplicate")
-			assert.lengthOf(workflow.created, 1)
+			assert.lengthOf(chat.turns, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
 	it.effect("force bypasses the enabled flag but still requires a binding", () =>
 		Effect.gen(function* () {
-			const workflow = fakeFanoutWorkflow()
-			// No settings row at all. There is nothing to configure: an org that has
-			// never touched these settings still gets the full investigation, because
-			// how one runs is not a setting.
+			const chat = fakeChatSession()
+			// No settings row at all: an org that has never touched these settings
+			// still gets the full investigation, because how one runs is not a setting.
 			const result = yield* maybeEnqueueTriage({
-				...baseInput("incident-1", workflow.binding),
+				...baseInput("incident-1", chat.env),
 				force: true,
 			})
 			assert.isTrue(result.enqueued)
-			assert.lengthOf(workflow.created, 1)
+			assert.lengthOf(chat.turns, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -339,37 +305,34 @@ describe("maybeEnqueueTriage", () => {
 	 * so every incident during working hours was refused — including the ones
 	 * worth investigating. Arrival order must not outrank severity.
 	 *
-	 * A start contributes `fanoutSize + 1` to usage and reserves `width + 2`. At
-	 * width 4 (unclassified) that is 5 spent per start and 6 reserved; a critical
-	 * is width 5, so 7 reserved. With a 20-pass ceiling the ordinary slice is 14.
+	 * A start spends one pass. With a 4-pass ceiling the ordinary slice is 2.
 	 */
 	it.effect("keeps the reserve for high and critical once ordinary starts fill the slice", () =>
 		Effect.gen(function* () {
-			yield* enableWithLimits(50, 20)
-			const workflow = fakeFanoutWorkflow()
-			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, workflow.binding))
+			yield* enableWithLimits(50, 4)
+			const chat = fakeChatSession()
+			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
 
-			assert.isTrue((yield* ordinary("incident-1")).enqueued) // 0 + 6 <= 14
-			assert.isTrue((yield* ordinary("incident-2")).enqueued) // 5 + 6 <= 14
+			assert.isTrue((yield* ordinary("incident-1")).enqueued) // 0 + 1 <= 2
+			assert.isTrue((yield* ordinary("incident-2")).enqueued) // 1 + 1 <= 2
 			assert.deepStrictEqual(yield* ordinary("incident-3"), {
 				enqueued: false,
 				reason: "daily_cap",
-			}) // 10 + 6 > 14
+			}) // 2 + 1 > 2
 
 			// Same instant, same usage, higher severity: the reserved slice is still there.
-			const critical = yield* maybeEnqueueTriage(criticalInput(workflow.binding, "incident-4"))
-			assert.isTrue(critical.enqueued) // 10 + 7 <= 20
-			assert.lengthOf(workflow.created, 3)
+			const critical = yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-4"))
+			assert.isTrue(critical.enqueued) // 2 + 1 <= 4
+			assert.lengthOf(chat.turns, 3)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
 	it.effect("refuses a critical start too once the full ceiling is spent", () =>
 		Effect.gen(function* () {
-			yield* enableWithLimits(50, 8)
-			const workflow = fakeFanoutWorkflow()
-			// One critical spends 6 of 8; a second needs 6 + 7 and cannot have it.
-			assert.isTrue((yield* maybeEnqueueTriage(criticalInput(workflow.binding, "incident-1"))).enqueued)
-			assert.deepStrictEqual(yield* maybeEnqueueTriage(criticalInput(workflow.binding, "incident-2")), {
+			yield* enableWithLimits(50, 1)
+			const chat = fakeChatSession()
+			assert.isTrue((yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-1"))).enqueued)
+			assert.deepStrictEqual(yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-2")), {
 				enqueued: false,
 				reason: "daily_cap",
 			})
