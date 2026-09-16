@@ -9,6 +9,7 @@ import {
 	getErrorsByTypeResultAtom,
 	getErrorsSparkResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
+import type { HubSort, HubView, SeverityFilter } from "@/lib/errors/hub-params"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import {
@@ -21,9 +22,6 @@ import {
 	ACTIONABLE_VIEWS,
 	ErrorsHubView,
 	type HubPaging,
-	type HubSort,
-	type HubView,
-	type SeverityFilter,
 	viewCovers,
 } from "./errors-hub-view"
 import { ErrorsStatStrip } from "./errors-stat-strip"
@@ -48,14 +46,6 @@ import { ErrorsStatStrip } from "./errors-stat-strip"
  * `/lab/errors` renders over fixtures.
  */
 
-/**
- * How far back the trend, count and totals look. A day, because a sparkline of
- * the last twelve hours reads as silence for anything that errors nightly, and
- * a week flattens a burst into a tick. Not a URL param: the list does not
- * change with it, and a picker on a list that ignores it is what this replaced.
- */
-export const ERRORS_WINDOW = "24h"
-
 /** How many buckets the row sparkline gets. Enough to show a shape, few enough
  *  that a page of them stays cheap to render. */
 const SPARK_BUCKETS = 32
@@ -69,15 +59,6 @@ const INVESTIGATIONS_LIMIT = 100
 
 const NO_CURSORS: ReadonlyArray<string> = []
 const NO_HASHES: Array<string> = []
-
-export {
-	HUB_SORTS,
-	HUB_VIEWS,
-	SEVERITY_FILTERS,
-	type HubSort,
-	type HubView,
-	type SeverityFilter,
-} from "./errors-hub-view"
 
 export interface ErrorsHubProps {
 	view: HubView
