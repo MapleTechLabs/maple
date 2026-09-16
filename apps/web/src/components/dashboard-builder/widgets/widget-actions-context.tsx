@@ -226,10 +226,8 @@ export function WidgetActionsProvider({
 /**
  * "Copy embed link" for one widget.
  *
- * Offered only on a public board. A widget share is independent of the board's
- * own link server-side, so this is a product rule rather than an access check:
- * embedding a chart publishes its data, and the board's mode is where the org
- * has already said whether that is acceptable.
+ * Offered only on a public board, mirroring the server: a chart link resolves
+ * only while its board is shared, capped at the board's mode.
  */
 function useWidgetEmbed(dashboardId: string, widget: DashboardWidget): WidgetActions["embed"] {
 	const sharesAtom = useMemo(() => dashboardSharesAtom(dashboardId), [dashboardId])

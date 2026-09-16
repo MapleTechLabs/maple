@@ -666,6 +666,10 @@ describe("v2 dashboard shares", () => {
 		expect(shared.status).toBe(200)
 		expect(shared.body.widget_id).toBe("w-1")
 		expect(typeof shared.body.token).toBe("string")
+
+		// Minted, but dormant until the board itself is shared.
+		expect(await resolve(harness, shared.body.token)).toBe("__not_found__")
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode: "public" })
 		expect(await resolve(harness, shared.body.token)).toBe(id)
 
 		await harness.dispose()
@@ -689,7 +693,7 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
-	it("keeps a widget share independent of the dashboard's own", async () => {
+	it("gates a widget share on the dashboard's own", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
 		const id = await createDashboard(harness, key.secret)
@@ -709,16 +713,24 @@ describe("v2 dashboard shares", () => {
 		const listed = await harness.request("GET", `/v2/dashboards/${id}/shares`, key.secret)
 		expect(listed.body).toHaveLength(2)
 
-		// This is the property an embed depends on: unsharing the board must not
-		// break a chart already embedded in someone else's page.
+		// Unsharing the board takes its chart links down with it...
 		await harness.request("DELETE", `/v2/dashboards/${id}/share`, key.secret)
 		expect(await resolve(harness, boardToken)).toBe("__not_found__")
-		expect(await resolve(harness, widgetToken)).toBe(id)
+		expect(await resolve(harness, widgetToken)).toBe("__not_found__")
 
-		// And the reverse: rotating the widget link leaves the board's alone.
+		// ...and sharing it again brings the same chart link back.
 		const reshared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
 			mode: "public",
 		})
+		expect(await resolve(harness, widgetToken)).toBe(id)
+
+		// An org-only board caps a public chart link at org: no anonymous embed.
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode: "org" })
+		const capped = await harness.runtime.runPromise(SharedDashboardService.resolveByToken(widgetToken))
+		expect(capped.share.mode).toBe("org")
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode: "public" })
+
+		// Rotating the widget link leaves the board's alone.
 		const rotated = await harness.request(
 			"POST",
 			`/v2/dashboards/${id}/widgets/w-1/share/rotate`,

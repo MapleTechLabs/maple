@@ -551,6 +551,26 @@ export class SharedDashboardService extends Context.Service<
 			})
 		})
 
+		/**
+		 * The mode a widget link actually grants: its own, capped by the board's.
+		 *
+		 * A chart link lives inside its board's sharing. Unsharing the board kills
+		 * every chart link on it, and sharing the board again brings them back with
+		 * the same tokens — the widget rows are never revoked, only out-ranked.
+		 * An `org` board caps a `public` chart link at `org`.
+		 */
+		const cappedByBoard = Effect.fnUntraced(function* (row: {
+			readonly orgId: OrgId
+			readonly dashboardId: DashboardId
+			readonly mode: DashboardShareMode
+		}) {
+			const [board] = yield* loadLive(row.orgId, { dashboardId: row.dashboardId, widgetId: null })
+			if (board === undefined) {
+				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+			}
+			return board.mode === "org" ? "org" : row.mode
+		})
+
 		const resolveByToken = Effect.fn("SharedDashboardService.resolveByToken")(function* (token: string) {
 			const hmacKey = yield* requireHmacKey
 			const tokenHash = hashShareToken(token, hmacKey)
@@ -580,7 +600,8 @@ export class SharedDashboardService extends Context.Service<
 			// `token` is the one the caller presented — it hashed to this row, so it
 			// is by definition the stored one, and decrypting to prove that again
 			// would only add a cipher round to the viewer hot path.
-			return { share: toDashboardShare(row, token), orgId: row.orgId }
+			const mode = row.widgetId === null ? row.mode : yield* cappedByBoard(row)
+			return { share: toDashboardShare({ ...row, mode }, token), orgId: row.orgId }
 		})
 
 		const resolvePublicById = Effect.fn("SharedDashboardService.resolvePublicById")(function* (
@@ -616,6 +637,10 @@ export class SharedDashboardService extends Context.Service<
 
 			const row = rows[0]
 			if (row === undefined) {
+				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+			}
+
+			if (row.widgetId !== null && (yield* cappedByBoard({ ...row, mode: "public" })) !== "public") {
 				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
 			}
 
