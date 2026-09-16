@@ -604,6 +604,63 @@ describe("v2 telemetry reads over HTTP", () => {
 		await harness.dispose()
 	})
 
+	// Regression: timeseries and breakdowns read the hourly rollups whenever the
+	// filters allow, and those floor their bounds through `toDateTime` or compare
+	// them against plain `DateTime` columns. Millisecond bounds made every
+	// unfiltered `POST /v2/logs/breakdown` fail with `Cannot parse string '…576'
+	// as DateTime`. The query engine is stubbed here, so check what reaches it.
+	it("sends second-precision window bounds to the timeseries and breakdown queries", async () => {
+		const observedWindows: Array<{ path: string; startTime: string; endTime: string }> = []
+		let currentPath = ""
+		const queryEngine: QueryEngineServiceApi = {
+			...queryEngineStub,
+			execute: (tenant, request) => {
+				observedWindows.push({
+					path: currentPath,
+					startTime: request.startTime,
+					endTime: request.endTime,
+				})
+				return queryEngineStub.execute(tenant, request)
+			},
+		}
+		const harness = makeHarness(warehouseStub, queryEngine)
+		const key = await harness.bootstrapKey()
+		const bounds = { start_time: "2026-07-15T08:30:00.576Z", end_time: "2026-07-15T12:15:00.100Z" }
+		const metricFilters = { metric_name: "http.server.duration", metric_type: "histogram" }
+
+		for (const [path, body] of [
+			["/v2/traces/timeseries", { ...bounds, aggregation: "count" }],
+			["/v2/traces/breakdown", { ...bounds, aggregation: "count", group_by: "service" }],
+			["/v2/logs/timeseries", { ...bounds, aggregation: "count" }],
+			["/v2/logs/breakdown", { ...bounds, aggregation: "count", group_by: "service" }],
+			["/v2/metrics/timeseries", { ...bounds, aggregation: "avg", filters: metricFilters }],
+			[
+				"/v2/metrics/breakdown",
+				{ ...bounds, aggregation: "avg", group_by: "service", filters: metricFilters },
+			],
+		] as const) {
+			currentPath = path
+			const response = await harness.request("POST", path, key.secret, body)
+			expect(response.status, path).toBe(200)
+		}
+
+		expect(observedWindows.map((window) => window.path)).toEqual([
+			"/v2/traces/timeseries",
+			"/v2/traces/breakdown",
+			"/v2/logs/timeseries",
+			"/v2/logs/breakdown",
+			"/v2/metrics/timeseries",
+			"/v2/metrics/breakdown",
+		])
+		for (const window of observedWindows) {
+			expect(window, window.path).toMatchObject({
+				startTime: "2026-07-15 08:30:00",
+				endTime: "2026-07-15 12:15:00",
+			})
+		}
+		await harness.dispose()
+	})
+
 	it("enforces signal query windows, bucket budgets, and breakdown narrowing", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["traces:read"])

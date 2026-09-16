@@ -83,6 +83,10 @@ const MAX_SUMMARY_RANGE_SECONDS = 60 * 60 * 24 * 365
  * `Cannot parse string '…000' as DateTime`. Whole seconds cost nothing on a
  * window measured in hours.
  *
+ * Timeseries and breakdowns count as rollup reads: the query engine reads the
+ * hourly tiers whenever the filters allow, so they use `"second"` even though
+ * their edges come from the raw tables.
+ *
  * Required, deliberately: this used to default to `"millisecond"`, so a handler
  * reading a rollup only had to omit it to 500 on every call — which is how
  * `v2ListMetrics` shipped broken against `metric_catalog`. Stating the table's
@@ -516,7 +520,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_QUERY_RANGE_SECONDS,
 						rangeLabel: "Trace timeseries",
-						precision: "millisecond",
+						precision: "second",
 					})
 					const bucketSeconds = yield* validateTimeseriesBucket(
 						payload.start_time,
@@ -566,7 +570,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 						rangeLabel: "Trace breakdown",
-						precision: "millisecond",
+						precision: "second",
 					})
 					yield* validateBreakdownRange(window.rangeSeconds, payload.filters)
 					const request = yield* decodeQueryEngineRequest(
@@ -718,7 +722,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_QUERY_RANGE_SECONDS,
 						rangeLabel: "Log timeseries",
-						precision: "millisecond",
+						precision: "second",
 					})
 					const bucketSeconds = yield* validateTimeseriesBucket(
 						payload.start_time,
@@ -764,7 +768,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 						rangeLabel: "Log breakdown",
-						precision: "millisecond",
+						precision: "second",
 					})
 					yield* validateBreakdownRange(window.rangeSeconds, payload.filters)
 					const request = yield* decodeQueryEngineRequest(
@@ -885,7 +889,7 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_QUERY_RANGE_SECONDS,
 						rangeLabel: "Metric timeseries",
-						precision: "millisecond",
+						precision: "second",
 					})
 					const bucketSeconds = yield* validateTimeseriesBucket(
 						payload.start_time,
@@ -935,7 +939,7 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 						rangeLabel: "Metric breakdown",
-						precision: "millisecond",
+						precision: "second",
 					})
 					yield* validateBreakdownRange(window.rangeSeconds, payload.filters)
 					const request = yield* decodeQueryEngineRequest(

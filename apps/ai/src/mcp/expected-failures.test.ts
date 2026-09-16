@@ -27,7 +27,7 @@ describe("MCP expected failures", () => {
 	// A runtime that builds MCP services but configures its tracer WITHOUT these
 	// identifiers reports anticipated 4xx tool failures as Error spans carrying an
 	// exception event, so they land in error tracking as unexpected errors. That is
-	// exactly what `InvestigationFanoutWorkflow.run.ts` did: the auto-investigation
+	// exactly what the old fan-out workflow did: the auto-investigation
 	// agent's decode failures were the top `investigation.hypothesis` error in
 	// production, and none of them were bugs. The two facts live in different files,
 	// so nothing but this test ties them together.

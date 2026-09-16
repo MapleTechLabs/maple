@@ -4,14 +4,14 @@
  * (`main: import.meta.url`).
  *
  * Everything Maple's agents do runs here rather than in `apps/api`: the public
- * MCP server and its tools, the chat agent and its Durable Object, and the
- * autonomous investigation fan-out. They moved together because they are one
- * thing wearing three hats — all three reach the same tool registry in-process,
- * so splitting any one of them out alone leaves the registry behind, which is
- * exactly what made the first attempt at this worth 1%.
+ * MCP server and its tools, and the chat agent and its Durable Object, which
+ * also runs every investigation's autonomous pass. They moved together because
+ * they are one thing wearing two hats — both reach the same tool registry
+ * in-process, so splitting either out alone leaves the registry behind, which
+ * is exactly what made the first attempt at this worth 1%.
  *
  * Measured on the api's module graph before the move (rolldown, unminified):
- * dropping the MCP registry, the chat routes and the two hosted classes takes it
+ * dropping the MCP registry, the chat routes and the hosted classes takes it
  * from 11.74 MB over 85 chunks to 9.34 MB over 50, and module evaluation from
  * ~336 ms to ~278 ms. The other half is per-request: a `/mcp` call no longer
  * builds `AllRoutes` and `ApiAuthLive`, and a `/v2` call no longer builds 47
@@ -51,7 +51,6 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
 import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
-import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
 import { aiPorts, AiBindingLayers, bindAiClients } from "./worker/bindings"
 import { buildApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
@@ -62,7 +61,7 @@ import { AiObservabilityLive } from "./worker/observability"
  *
  * Empty until the surfaces land: the MCP tool rate limiter arrives with the
  * transport, the AI gateway and the sandbox binding with the tools that use
- * them, and the two hosted classes are yielded in the init rather than declared
+ * them, and the hosted class is yielded in the init rather than declared
  * here.
  */
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
@@ -149,7 +148,6 @@ export default MapleAi.make(
 		// registers them at plan time and exports them from the generated entry —
 		// never a ref-form binding plus a hand-written class.
 		yield* ChatSessionObject
-		yield* InvestigationFanoutWorkflow
 		const clients = yield* bindAiClients
 		const env = yield* Cloudflare.WorkerEnvironment
 		const ports = aiPorts(clients, env)
@@ -177,9 +175,8 @@ export default MapleAi.make(
 					// export; the MCP identifiers are what keep an expected 400/401 —
 					// a tool call that does not decode, a missing credential — exporting
 					// with an `Ok` status and no exception event, per CLAUDE.md's rule
-					// that only 5xx is an `Error` span. `chat/turn-runner.ts` and the
-					// fan-out Workflow pass the same set to their own tracers; this is
-					// the public `/mcp` transport's.
+					// that only 5xx is an `Error` span. `chat/turn-runner.ts` passes the
+					// same set to its own tracer; this is the public `/mcp` transport's.
 					dropSpanNames: ["McpServer/Notifications."],
 					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
 				}),

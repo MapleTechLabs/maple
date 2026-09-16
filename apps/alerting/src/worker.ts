@@ -36,10 +36,6 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import {
-	INVESTIGATION_FANOUT_BINDING,
-	type InvestigationFanoutWorkflowPayload,
-} from "@maple/domain/investigation-fanout"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -49,20 +45,13 @@ import { HttpServerResponse } from "effect/unstable/http"
  * so `InferEnv` can derive `AlertingWorkerEnv` below.
  */
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
-	// Cross-script binding to the investigation fan-out Workflow the AI Worker
-	// hosts as an alchemy class. Alert, error, and anomaly ticks start
-	// investigations when incidents open. Bound under the CLASS name because the
-	// api services shared with these ticks read it there
-	// (`INVESTIGATION_FANOUT_BINDING`, one constant for both). The
-	// physical workflow name derives from `scriptName` + `className` on both
-	// sides; `scriptName` makes this a reference-only binding.
-	[INVESTIGATION_FANOUT_BINDING]: Cloudflare.Workflow<InvestigationFanoutWorkflowPayload>(
-		INVESTIGATION_FANOUT_BINDING,
-		{
-			className: INVESTIGATION_FANOUT_BINDING,
-			scriptName: resolveWorkerName("ai", stage),
-		},
-	),
+	// Cross-script reference to the chat Durable Object the AI Worker hosts.
+	// Alert, error, and anomaly ticks start an investigation's agent turn on it
+	// when incidents open; `chatSessionStub` reads it off `env` under the class name.
+	ChatSession: Cloudflare.DurableObject("ChatSession", {
+		className: "ChatSession",
+		scriptName: resolveWorkerName("ai", stage),
+	}),
 	...emailBinding(stage),
 })
 

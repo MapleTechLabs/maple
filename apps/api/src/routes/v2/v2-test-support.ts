@@ -196,6 +196,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		restartInvestigation: die,
 		updateStatus: die,
 		submitDiagnosis: die,
+		failInvestigation: die,
 	}),
 	Layer.succeed(AnomalyDetectionService, {
 		runTick: die,

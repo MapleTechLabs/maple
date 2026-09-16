@@ -68,9 +68,6 @@ const investigation = {
 	started_at: "2026-08-01T14:02:00.000Z",
 	diagnosed_at: "2026-08-01T14:02:38.000Z",
 	updated_at: "2026-08-01T14:02:38.000Z",
-	lens_runs: [],
-	validator: null,
-	fanout: { state: "none", size: 0 },
 } as never as V2Investigation
 
 beforeAll(() => {
@@ -94,31 +91,13 @@ const renderCanvas = (onOpenAction = vi.fn(), subject: V2Investigation = investi
 	return onOpenAction
 }
 
-/** Mid-run: a fan in flight, no report, so both ghost columns are up. */
+/** Mid-run: no report yet, so both ghost columns are up. */
 // SAFETY: This fixture starts from a decoded investigation and overrides fields with valid variants.
 const running = {
 	...investigation,
 	status: "investigating",
 	report: null,
 	diagnosed_at: null,
-	lens_runs: [
-		{
-			lensId: "deploy_correlation",
-			status: "checking",
-			verdict: "pending",
-			claim: null,
-			reason: null,
-			progressNote: null,
-			confidence: null,
-			toolCount: 1,
-			elapsedSeconds: 2.1,
-			name: null,
-			question: null,
-			priority: null,
-			deadlineHit: false,
-		},
-	],
-	fanout: { state: "running", size: 1 },
 } as never as V2Investigation
 
 describe("ProvenanceCanvas", () => {

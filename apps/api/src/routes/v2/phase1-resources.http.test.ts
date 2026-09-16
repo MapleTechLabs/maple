@@ -25,7 +25,6 @@ import {
 	ErrorIssuesListResponse,
 	ErrorIssueTimeseriesPoint,
 	InvestigationDocument,
-	InvestigationFanout,
 	InvestigationIncidentSubject,
 	InvestigationNotFoundError,
 	InvestigationSnapshotFact,
@@ -165,10 +164,6 @@ const investigationFixture = new InvestigationDocument({
 	startedAt: decodeIso("2026-07-15T09:12:05.000Z"),
 	diagnosedAt: decodeIso("2026-07-15T09:12:42.000Z"),
 	updatedAt: decodeIso("2026-07-15T09:12:42.000Z"),
-	// Single-pass fixture: no lenses were dispatched, so nothing ranked them.
-	lensRuns: [],
-	validator: null,
-	fanout: new InvestigationFanout({ state: "none", size: 1 }),
 })
 
 const corruptInvestigationFixture = new InvestigationDocument({

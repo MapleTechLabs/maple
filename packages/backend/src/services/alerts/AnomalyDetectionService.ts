@@ -55,10 +55,7 @@ import {
 	Schema,
 } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import {
-	INVESTIGATION_FANOUT_BINDING,
-	maybeEnqueueTriage,
-} from "@maple/backend/services/errors/ai-triage-enqueue"
+import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -252,13 +249,9 @@ const make: Effect.Effect<
 	const warehouse = yield* WarehouseQueryService
 	const edgeCache = yield* EdgeCacheService
 	const env = yield* Env
-	// Optional: present only inside a Worker isolate. Used to kick off the
-	// AI triage Workflow when an incident opens (org opt-in).
-	const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-	const investigationFanoutBinding = Option.match(workerEnv, {
-		onNone: () => undefined,
-		onSome: (e) => e[INVESTIGATION_FANOUT_BINDING],
-	})
+	// Optional: present only inside a Worker isolate. Used to start the
+	// investigation agent when an incident opens (org opt-in).
+	const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
@@ -1711,7 +1704,7 @@ const make: Effect.Effect<
 								sampleCount: evaluation.sampleCount,
 								detectedAt: new Date(nowMs).toISOString(),
 							},
-							fanoutBinding: investigationFanoutBinding,
+							workerEnv,
 						}).pipe(Effect.provideService(Database, database))
 						if (triage.enqueued) {
 							yield* dbExecute((db) =>

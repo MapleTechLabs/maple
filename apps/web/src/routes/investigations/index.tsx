@@ -407,10 +407,6 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 			(entry) => entry.status === "resolved" && toEpochMs(entry.updated_at) >= cutoff,
 		)
 
-		// Dispatched lenses, not the computed size: a single-pass run persists a
-		// size of 1 with zero lenses, so summing size reports lenses in flight for
-		// runs that never dispatched one.
-		const lensesInFlight = running.reduce((total, entry) => total + entry.lens_runs.length, 0)
 		const critical = review.filter(
 			(entry) => (entry.severity ?? entry.snapshot.severity) === "critical",
 		).length
@@ -422,12 +418,8 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 			.filter((ms): ms is number => ms !== null && Number.isFinite(ms) && ms >= 0)
 			.sort((a, b) => a - b)
 		const median = durations.length > 0 ? durations[Math.floor(durations.length / 2)]! : null
-		const avgLenses =
-			resolved.length > 0
-				? resolved.reduce((total, entry) => total + entry.lens_runs.length, 0) / resolved.length
-				: null
 
-		return { running, review, resolved, lensesInFlight, critical, median, avgLenses }
+		return { running, review, resolved, critical, median }
 	}, [investigations])
 
 	return (
@@ -443,7 +435,7 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 				detail={
 					stats.running.length === 0
 						? "nothing in flight"
-						: `${stats.lensesInFlight} ${stats.lensesInFlight === 1 ? "lens" : "lenses"} in flight`
+						: `${stats.running.length === 1 ? "an agent is" : "agents are"} gathering evidence`
 				}
 			/>
 			<TriageStat
@@ -466,11 +458,7 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 				valueTone="text-muted-foreground"
 				value={stats.resolved.length}
 				detail={
-					stats.median === null
-						? "none in the last day"
-						: `median ${formatDuration(stats.median)}${
-								stats.avgLenses === null ? "" : ` · ${stats.avgLenses.toFixed(1)} lenses`
-							}`
+					stats.median === null ? "none in the last day" : `median ${formatDuration(stats.median)}`
 				}
 			/>
 		</div>
@@ -537,9 +525,9 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 				Ask, and Maple goes and finds out.
 			</h1>
 			<p className="max-w-xl text-sm leading-6 text-muted-foreground">
-				It dispatches up to five agents, each attacking the problem from a different angle — deploys,
-				dependencies, saturation, traffic — then a validator ranks what they found and promotes one
-				answer.
+				One agent reads the traces, logs and metrics around it, tests the likely explanations —
+				deploys, dependencies, saturation, traffic — and comes back with a cause, the evidence for it,
+				and what it ruled out.
 			</p>
 			<InvestigateBar
 				onSubmit={onSubmit}

@@ -13,7 +13,6 @@ import { aiTriageSettings, type AiTriageSettingsRow } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { widthFor } from "@maple/domain/investigation-fanout"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import {
 	DEFAULT_MAX_PASSES_PER_DAY,
@@ -58,16 +57,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 				return yield* dbExecute((db) => selectInvestigationUsage(db, orgId, nowMs))
 			})
 
-			/**
-			 * What a start of this severity would actually reserve.
-			 *
-			 * Derived from `widthFor` rather than pinned to a constant, because the
-			 * enqueue path judges a start against its *reservation* (`width + 2`), not
-			 * against what the run eventually settles at. Probing with the settled
-			 * cost reported triage as healthy across the last two passes of the
-			 * budget — exactly the window in which starts were already being refused.
-			 */
-			const probeCost = (severity: IssueSeverity) => widthFor(severity, "error") + 2
+			/** What a start spends: one agent, one pass. */
+			const probeCost = (_severity: IssueSeverity) => 1
 
 			/**
 			 * Pause state is asked of the same verdict the enqueue path uses, twice:

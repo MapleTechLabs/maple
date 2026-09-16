@@ -404,8 +404,15 @@
     {
       "idx": 57,
       "version": "7",
-      "when": 1789415848092,
-      "tag": "0058_google_analytics_integration",
+      "when": 1789425475824,
+      "tag": "0058_drop_investigation_lanes",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789595037711,
+      "tag": "0059_google_analytics_integration",
       "breakpoints": true
     }
   ]
