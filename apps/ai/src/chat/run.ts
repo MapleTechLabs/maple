@@ -17,7 +17,6 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { agentForSession, chatAgent } from "./agents"
-import { buildDelegation } from "./delegation"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
@@ -92,8 +91,6 @@ export interface ChatRunInput {
 	readonly tenant: TenantContext
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
-	/** The model sub-agents run on. Defaults to the conversation's own. */
-	readonly subagentModel?: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
@@ -132,27 +129,8 @@ export const runChatTurn = (input: ChatRunInput) => {
 		input.model.name,
 	)
 
-	// The sub-agents this agent may spawn, as delegation tools. `undefined` for an agent that
-	// spawns none, which is most of them — the capability is opt-in per agent rather than a tool
-	// every turn carries and refuses.
-	const delegation = buildDelegation(
-		definition,
-		input.toolExecutor,
-		input.tenant,
-		input.model,
-		input.subagentModel ?? input.model,
-	)
-
-	const toolkit = Toolkit.merge(
-		maple.toolkit,
-		...(completion === undefined ? [] : [completion.toolkit]),
-		...(delegation === undefined ? [] : [delegation.toolkit]),
-	)
-	const handlers = Layer.mergeAll(
-		maple.layer,
-		...(completion === undefined ? [] : [completion.layer]),
-		...(delegation === undefined ? [] : [delegation.layer]),
-	)
+	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))
+	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const agent = chatAgent(definition, toolkit, input.model, {

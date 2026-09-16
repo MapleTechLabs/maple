@@ -2,10 +2,9 @@
  * Four incidents with planted ground truth.
  *
  * Each one is a *world*, not a prompt: what the telemetry says, and — just as
- * importantly — what it does not say. That second half is what the fixed lens
- * catalogue could never model. A world with no `service.version` attribute is a
- * world where a deploy hypothesis is unanswerable, and the whole point of the
- * planner's sweep is to notice that before spending a pass on it.
+ * importantly — what it does not say. A world with no `service.version`
+ * attribute is a world where a deploy hypothesis is unanswerable, and the
+ * investigator has to notice that rather than guess.
  *
  * The fourth fixture is the most valuable and the least obvious: a real symptom
  * with nothing behind it. The correct answer there is "unknown", with a list of
@@ -17,15 +16,13 @@ export interface DiagnosisFixture {
 	readonly id: string
 	/** What the investigation is handed — the shape `buildIncidentContextMessage` renders. */
 	readonly context: string
-	/** What the planner's sweep would establish about this org's telemetry. */
+	/** What the investigator's first calls would establish about this org's telemetry. */
 	readonly scopeSummary: string
 	/**
 	 * The family of cause a correct diagnosis must name, as lowercase substrings —
 	 * any one of them counts. Empty means the correct answer is that there is none.
 	 */
 	readonly expectedCauseTerms: ReadonlyArray<string>
-	/** Hypothesis families the planner must NOT propose: nothing can answer them here. */
-	readonly forbiddenHypothesisTerms: ReadonlyArray<string>
 	/** Identifiers that exist in this world. Anything else in a report is invented. */
 	readonly knownIdentifiers: ReadonlyArray<string>
 	/** True when the honest answer is "unknown". */
@@ -67,7 +64,6 @@ const POOL_EXHAUSTION: DiagnosisFixture = {
 	expectedCauseTerms: ["pool", "saturat", "exhaust", "connection"],
 	// The version is emitted and flat: a deploy hypothesis is answerable but wrong,
 	// so it is not forbidden — only the ones with no instrument are.
-	forbiddenHypothesisTerms: [],
 	knownIdentifiers: [
 		"payments-api",
 		"ledger-api",
@@ -113,7 +109,6 @@ const BAD_DEPLOY: DiagnosisFixture = {
 		"checkout-api emits vcs.ref.head.revision, which flipped at 14:02. No resource metrics are exported by this org. pricing-api stayed flat.",
 	expectedCauseTerms: ["deploy", "release", "rollout", "c7d3e02", "commit"],
 	// No pool/queue/memory metrics exist, so a saturation hypothesis cannot be tested.
-	forbiddenHypothesisTerms: ["saturat", "pool", "queue", "memory"],
 	knownIdentifiers: [
 		"checkout-api",
 		"pricing-api",
@@ -160,7 +155,6 @@ const DOWNSTREAM_DEGRADATION: DiagnosisFixture = {
 	scopeSummary:
 		"checkout-api calls inventory-api, whose p99 moved first. Versions are emitted and unchanged. No resource metrics are exported by this org.",
 	expectedCauseTerms: ["inventory-api", "downstream", "callee", "dependenc"],
-	forbiddenHypothesisTerms: ["saturat", "pool", "queue", "memory"],
 	knownIdentifiers: ["checkout-api", "inventory-api", "7c8f2e1a9b3d4c5e6f7a8b9c0d1e2f3a"],
 	unknowable: false,
 }
@@ -207,7 +201,6 @@ const UNKNOWABLE: DiagnosisFixture = {
 	scopeSummary:
 		"notifications-worker emits no version attribute, no resource metrics, no exception events and no error logs, and has no callees. Almost nothing about this incident is checkable.",
 	expectedCauseTerms: [],
-	forbiddenHypothesisTerms: ["saturat", "pool", "queue", "memory", "deploy", "release", "downstream"],
 	knownIdentifiers: ["notifications-worker", "1122334455667788990011223344556677", "ff00ee11dd22cc33"],
 	unknowable: true,
 }

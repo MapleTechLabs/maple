@@ -15,7 +15,7 @@ References verified on August 4, 2026:
 
 | Path                                  | Client                                     | Surfaces                                                         |
 | ------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| `apps/api/src/platform/Llm.ts`        | `@opencode-ai/ai` (`OpenRouter.configure`) | chat turns and investigation planner/hypothesis/validator agents |
+| `apps/ai/src/platform/Llm.ts`         | Effect AI (`@effect/ai-openrouter`)        | chat turns and autonomous investigation passes                   |
 | `apps/slack-agent/agent/agent.ts`     | `@openrouter/ai-sdk-provider`              | the Slack agent                                                  |
 | `apps/api/src/mcp/__evals__/model.ts` | `@ai-sdk/openai-compatible`                | MCP evals in CI — **not** attributed or tagged                   |
 
@@ -48,7 +48,7 @@ through.
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `user`             | Maple org id                                                                                                                                                                | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream.        |
 | `session_id`       | the chat session id — `<orgId>:inv-<investigationId>` for an investigation's passes — truncated to OpenRouter's 256-character limit; the Slack agent sends eve's session id | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to a single provider so prompt caches actually hit |
-| `trace.trace_name` | `chat`, `ai-triage`, `investigation-lens`, `investigation-validator`, or `slack`                                                                                            | forwarded to configured Broadcast destinations only — it does **not** appear in the OpenRouter dashboard                                                  |
+| `trace.trace_name` | `chat` or `slack`                                                                                                                                                          | forwarded to configured Broadcast destinations only — it does **not** appear in the OpenRouter dashboard                                                  |
 
 The same session id goes onto Maple's own model-call spans as `maple_ai.session.id`, so a call and
 its Broadcast mirror land in one agent session.
