@@ -46,6 +46,7 @@ import {
 } from "./dashboard-shares"
 import { ShareLinkRow } from "./share-dashboard-dialog"
 import { CodeBlock } from "@/components/quick-start/code-block"
+import { highlightCode } from "@/lib/sugar-high"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 /** `YYYY-MM-DD HH:MM:SS` in UTC — the only shape the share API accepts. */
@@ -171,6 +172,23 @@ export function EmbedWidgetDialog({
  * and HTML has no self-closing `<iframe />` — the parser ignores the slash and
  * swallows whatever markup follows.
  */
+/**
+ * Sugar High tokenizes a JSX attribute expression flatly: `400` and the `border`
+ * key both come out as identifiers, the same colour as the braces around them,
+ * so `{{ border: 0 }}` reads as one grey run. Recolour just those two cases, for
+ * this snippet only — every other code block keeps the highlighter's output.
+ */
+const refineJsxTokens = (html: string) =>
+	html
+		.replace(
+			/<span class="sh__token--identifier" style="color:var\(--sh-identifier\)">(\d+)<\/span>/g,
+			'<span class="sh__token--keyword" style="color:var(--sh-keyword)">$1</span>',
+		)
+		.replace(
+			/<span class="sh__token--identifier" style="color:var\(--sh-identifier\)">(\w+)<\/span>(?=<span class="sh__token--sign" style="color:var\(--sh-sign\)">:<\/span>)/g,
+			'<span class="sh__token--property" style="color:var(--sh-property)">$1</span>',
+		)
+
 function IframeSnippet({ url }: { url: string }) {
 	const html = [
 		"<iframe",
@@ -204,7 +222,7 @@ function IframeSnippet({ url }: { url: string }) {
 				<CodeBlock code={html} language="html" />
 			</TabsContent>
 			<TabsContent value="react">
-				<CodeBlock code={jsx} language="jsx" />
+				<CodeBlock code={jsx} language="jsx" highlighted={refineJsxTokens(highlightCode(jsx))} />
 			</TabsContent>
 		</Tabs>
 	)
