@@ -21,7 +21,10 @@ import {
 	DialogPanel,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
-import { ALL_VALUE } from "@maple/query-engine"
+import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
+import { cn } from "@maple/ui/lib/utils"
+import { ArrowRotateClockwiseIcon, BracketsCurlyIcon, ClockIcon, SunIcon } from "@/components/icons"
+import type { DashboardVariable } from "@/components/dashboard-builder/types"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { REFRESH_INTERVAL_OPTIONS } from "@/lib/dashboard-controls/search-params"
@@ -114,52 +117,120 @@ export function EmbedWidgetDialog({
 	)
 }
 
-/** The query parameters a share URL understands, with examples appended to the link. */
+interface UrlOption {
+	readonly key: string
+	readonly icon: typeof ClockIcon
+	readonly param: string
+	readonly description: string
+	readonly example: string
+	/** Shown for reference, but this dashboard cannot use it. */
+	readonly unavailable?: boolean
+}
+
+/** An example for a variable: its current value, else its first option, else its default. */
+const exampleVariableValue = (
+	variable: DashboardVariable,
+	resolved: ResolvedVariable | undefined,
+	options: ReadonlyArray<string> | undefined,
+) => {
+	// `||`, not `??`: an empty textbox resolves to "", which makes a useless example.
+	if (resolved !== undefined && !resolved.isAll && resolved.value !== "") return resolved.value
+	return options?.[0] || variable.defaultValue || (variable.type === "textbox" ? "value" : ALL_VALUE)
+}
+
+/** The query parameters a share URL understands, each with an example to append to the link. */
 function EmbedUrlOptions() {
 	const variables = useDashboardVariablesOptional()
+	const definitions = variables?.variables ?? []
 	const now = Date.now()
 
-	const rows: ReadonlyArray<{ param: string; description: string; example: string }> = [
-		{ param: "theme", description: "light or dark", example: "&theme=light" },
+	const options: ReadonlyArray<UrlOption> = [
 		{
-			param: "from, to",
-			description: "UTC, both required. Default: the dashboard's range",
+			key: "theme",
+			icon: SunIcon,
+			param: "theme",
+			description: "light or dark",
+			example: "&theme=light",
+		},
+		{
+			key: "range",
+			icon: ClockIcon,
+			param: "from · to",
+			description: "UTC, both required. Defaults to the dashboard's own range",
 			example: `&from=${warehouseDateTime(now - 12 * 3600_000)}&to=${warehouseDateTime(now)}`,
 		},
 		{
+			key: "refresh",
+			icon: ArrowRotateClockwiseIcon,
 			param: "refresh",
-			description: `Seconds: ${REFRESH_INTERVAL_OPTIONS.join(", ")} (0 = off)`,
+			description: `Seconds: ${REFRESH_INTERVAL_OPTIONS.filter((value) => value > 0).join(", ")}, or 0 for off`,
 			example: "&refresh=60",
 		},
-		...(variables?.variables ?? []).map((variable) => {
-			const resolved = variables?.values[variable.name]
-			const value = resolved?.isAll ? ALL_VALUE : (resolved?.value ?? variable.defaultValue ?? "value")
-			return {
-				param: `var-${variable.name}`,
-				description: variable.label ?? "Dashboard variable",
-				example: `&var-${variable.name}=${value}`,
-			}
-		}),
+		...(definitions.length === 0
+			? [
+					{
+						key: "var",
+						icon: BracketsCurlyIcon,
+						param: "var-<name>",
+						description: "Not available: this dashboard has no variables",
+						example: "&var-service=checkout",
+						unavailable: true,
+					},
+				]
+			: definitions.map((variable) => ({
+					key: `var-${variable.name}`,
+					icon: BracketsCurlyIcon,
+					param: `var-${variable.name}`,
+					description: variable.label ?? "Dashboard variable",
+					example: `&var-${variable.name}=${exampleVariableValue(
+						variable,
+						variables?.values[variable.name],
+						variables?.optionsByName[variable.name]?.options,
+					)}`,
+				}))),
 	]
 
 	return (
 		<div className="space-y-2">
-			<div className="font-medium text-xs">URL options</div>
-			<div className="divide-y divide-border overflow-hidden rounded-lg border">
-				{rows.map((row) => (
-					<div key={row.param} className="space-y-0.5 px-3 py-2 text-xs">
-						<div className="flex items-baseline justify-between gap-3">
-							<code className="shrink-0 font-mono">{row.param}</code>
-							<span className="min-w-0 truncate text-right text-muted-foreground">
-								{row.description}
-							</span>
-						</div>
-						<code className="block truncate font-mono text-[11px] text-muted-foreground/80">
-							{row.example}
-						</code>
-					</div>
-				))}
+			<div>
+				<div className="font-medium text-xs">URL options</div>
+				<p className="text-muted-foreground text-xs">Append any of these to the link above.</p>
 			</div>
+			<ul className="divide-y divide-border overflow-hidden rounded-lg border">
+				{options.map(({ key, icon: Icon, param, description, example, unavailable }) => (
+					<li key={key} className="flex items-start gap-3 px-3 py-2.5">
+						<span
+							className={cn(
+								"flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
+								unavailable && "opacity-50",
+							)}
+						>
+							<Icon size={14} />
+						</span>
+						<div className="min-w-0 flex-1 space-y-1">
+							<div className="flex min-w-0 items-baseline gap-2 text-xs">
+								<code
+									className={cn(
+										"shrink-0 font-medium font-mono",
+										unavailable && "text-muted-foreground",
+									)}
+								>
+									{param}
+								</code>
+								<span className="min-w-0 text-muted-foreground">{description}</span>
+							</div>
+							<code
+								className={cn(
+									"block w-fit max-w-full truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground",
+									unavailable && "opacity-60",
+								)}
+							>
+								{example}
+							</code>
+						</div>
+					</li>
+				))}
+			</ul>
 		</div>
 	)
 }

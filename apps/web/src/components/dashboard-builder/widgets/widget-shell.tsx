@@ -95,7 +95,9 @@ export function WidgetShell({
 	// last 30 minutes.
 	const timeRangeOverride = useWidgetTimeRangeOverride()
 	const { effectiveTimezone } = useTimezonePreference()
-	const timeRangeLabel = timeRangeOverride ? widgetTimeRangeLabel(timeRangeOverride, effectiveTimezone) : null
+	const timeRangeLabel = timeRangeOverride
+		? widgetTimeRangeLabel(timeRangeOverride, effectiveTimezone)
+		: null
 
 	return (
 		// `@container/widget` is the size anchor for every widget body. Tiles are
@@ -280,7 +282,9 @@ export function WidgetShell({
 													Embed chart
 												</DropdownMenuItem>
 											</TooltipTrigger>
-											<TooltipContent side="left">{embed.disabledReason}</TooltipContent>
+											<TooltipContent side="left">
+												{embed.disabledReason}
+											</TooltipContent>
 										</Tooltip>
 									) : (
 										<DropdownMenuItem onClick={embed.open}>

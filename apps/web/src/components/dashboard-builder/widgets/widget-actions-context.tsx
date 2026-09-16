@@ -11,7 +11,10 @@ import {
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { dashboardSharesAtom, type ShareRecord } from "@/components/dashboard-builder/toolbar/dashboard-shares"
+import {
+	dashboardSharesAtom,
+	type ShareRecord,
+} from "@/components/dashboard-builder/toolbar/dashboard-shares"
 import { EmbedWidgetDialog } from "@/components/dashboard-builder/toolbar/embed-widget-dialog"
 import { unsupportedShareWidgets } from "@/components/dashboard-builder/toolbar/share-support"
 
