@@ -12,8 +12,7 @@
  * would hang forever.
  */
 import { useMemo, useRef, useState, type ReactNode } from "react"
-import { Exit, Schema } from "effect"
-import { DashboardId } from "@maple/domain/http"
+import { Exit } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import {
 	CheckIcon,
@@ -37,25 +36,18 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 import { cn } from "@maple/ui/lib/utils"
-import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "./share-support"
+import {
+	asDashboardId,
+	dashboardSharesAtom,
+	dashboardSharesReactivityKey,
+	shareUrl,
+	type ShareMode,
+	type ShareRecord,
+} from "./dashboard-shares"
 import type { Dashboard } from "@/components/dashboard-builder/types"
-
-type ShareMode = "public" | "org"
-
-/**
- * The v2 atom client hands back the *decoded* record, so these are the camelCase
- * domain names — not the snake_case the wire carries.
- */
-interface ShareRecord {
-	readonly id: string
-	readonly widgetId?: string
-	readonly mode: ShareMode
-	readonly token: string
-}
-
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 
 export function ShareDashboardDialog({
 	dashboard,
@@ -66,14 +58,7 @@ export function ShareDashboardDialog({
 	open: boolean
 	onOpenChange: (open: boolean) => void
 }) {
-	const listAtom = useMemo(
-		() =>
-			retainedQueryV2("dashboards", "listShares", {
-				params: { id: asDashboardId(dashboard.id) },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
-			}),
-		[dashboard.id],
-	)
+	const listAtom = useMemo(() => dashboardSharesAtom(dashboard.id), [dashboard.id])
 	const listResult = useAtomValue(listAtom)
 	const refreshList = useAtomRefresh(listAtom)
 
@@ -143,7 +128,7 @@ export function ShareDashboardDialog({
 			upsert({
 				params: { id: asDashboardId(dashboard.id) },
 				payload: { mode },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
+				reactivityKeys: [dashboardSharesReactivityKey(dashboard.id)],
 			}),
 		)
 
@@ -151,7 +136,7 @@ export function ShareDashboardDialog({
 		run(() =>
 			rotate({
 				params: { id: asDashboardId(dashboard.id) },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
+				reactivityKeys: [dashboardSharesReactivityKey(dashboard.id)],
 			}),
 		)
 
@@ -159,7 +144,7 @@ export function ShareDashboardDialog({
 		run(() =>
 			revoke({
 				params: { id: asDashboardId(dashboard.id) },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
+				reactivityKeys: [dashboardSharesReactivityKey(dashboard.id)],
 			}),
 		)
 
@@ -288,7 +273,7 @@ function ShareLinkRow({ token, onRegenerate }: { token: string; onRegenerate: ()
 	const [copyBlocked, setCopyBlocked] = useState(false)
 	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
 	const field = useRef<HTMLInputElement>(null)
-	const url = `${window.location.origin}/share/${token}`
+	const url = shareUrl(token)
 
 	// Browsers deny `writeText` outside a secure context or when the clipboard
 	// permission is refused, and the promise rejects. Without this the button just

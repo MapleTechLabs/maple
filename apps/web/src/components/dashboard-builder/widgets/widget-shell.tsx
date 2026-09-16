@@ -12,6 +12,7 @@ import {
 	ClockIcon,
 	CircleInfoIcon,
 	ExternalLinkIcon,
+	CodeIcon,
 } from "@/components/icons"
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
@@ -70,10 +71,11 @@ export function WidgetShell({
 	const createAlert = ctx?.createAlert
 	const moveToSection = ctx?.moveToSection
 	const moveTargets = ctx?.moveTargets
+	const embed = ctx?.embed
 	const isEditable = mode === "edit"
-	// The menu is also shown in view mode when "Create alert" is available, so
-	// alerts can be spun off a chart without entering dashboard edit mode.
-	const showMenu = isEditable || createAlert != null
+	// The menu is also shown in view mode when "Create alert" or "Copy embed
+	// link" is available, so neither needs dashboard edit mode.
+	const showMenu = isEditable || createAlert != null || embed != null
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [legendItems, setLegendItems] = useState<readonly PlotLegendItem[]>([])
 	// One piece of state, two providers. The Recharts `ChartContainer` and the
@@ -267,6 +269,25 @@ export function WidgetShell({
 										Create alert
 									</DropdownMenuItem>
 								)}
+								{embed &&
+									(embed.disabledReason ? (
+										// A disabled item swallows pointer events, so the tooltip
+										// hangs off a wrapper that still receives the hover.
+										<Tooltip>
+											<TooltipTrigger render={<div />}>
+												<DropdownMenuItem disabled>
+													<CodeIcon size={14} />
+													Copy embed link
+												</DropdownMenuItem>
+											</TooltipTrigger>
+											<TooltipContent side="left">{embed.disabledReason}</TooltipContent>
+										</Tooltip>
+									) : (
+										<DropdownMenuItem onClick={embed.copy}>
+											<CodeIcon size={14} />
+											Copy embed link
+										</DropdownMenuItem>
+									))}
 								{isEditable && remove && (
 									<>
 										<DropdownMenuSeparator />
