@@ -23,11 +23,13 @@ const SUPPORTED_ROUTE_ENDPOINTS = new Set([
 	"service_overview",
 	"service_usage",
 	"list_logs",
+	"product_events_funnel",
+	"product_events_paths",
 ])
 
 /** Prose for the dialog, so the copy and the list cannot disagree. */
 export const SHAREABLE_WIDGET_KINDS =
-	"query-builder charts, raw SQL, markdown, and errors, service and logs tiles"
+	"query-builder charts, raw SQL, markdown, funnels, paths, and errors, service and logs tiles"
 
 interface WidgetLike {
 	readonly id: string
