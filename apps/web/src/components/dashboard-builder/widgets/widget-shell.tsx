@@ -102,7 +102,7 @@ export function WidgetShell({
 		// sized by the grid, not the viewport — the nav sidebar collapse swings the
 		// canvas ~208px and the grid drops to 6 or 1 columns on narrow screens — so
 		// internals gate on the card's own width, never on `md:`/`lg:`.
-		<Card className="@container/widget h-full flex flex-col">
+		<Card className="group/card @container/widget h-full flex flex-col">
 			<CardHeader className="py-2.5">
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
@@ -243,7 +243,7 @@ export function WidgetShell({
 									</Button>
 								}
 							/>
-							<DropdownMenuContent align="end">
+							<DropdownMenuContent align="end" className="w-max">
 								{isEditable && configure && (
 									<DropdownMenuItem onClick={configure}>
 										<PencilIcon size={14} />
