@@ -94,8 +94,10 @@ The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__d
 in place (adds `name` and `applied_at`), matching every existing row to a local folder by
 `created_at` truncated to the second, then by hash, and **refusing the whole run if any row matches
 nothing**. A row like that is a migration that was applied and later renumbered or re-timestamped,
-or one applied from a branch that never merged. Check before migrating, and fix rows with the
-UPDATE or DELETE the report prints:
+or one applied from a branch that never merged. Check before migrating. The report prints a
+DELETE for a superseded row and an UPDATE for a renumbered row whose SQL is byte-identical; a row
+whose SQL changed after it ran gets a `git diff` instead, because relabelling it would record
+statements this database never saw as applied:
 
 ```bash
 bun run --cwd packages/db db:migrate:preflight              # DATABASE_URL, defaults to the docker Postgres

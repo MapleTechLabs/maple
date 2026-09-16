@@ -287,7 +287,8 @@ What B1 settled that the plan above left open:
   `premium_korg` through `slippery_winter_soldier` (superseded, their current versions have their
   own rows) and one migration from an unmerged branch. Production likely holds the first four.
   `bun run --cwd packages/db ps:migrations-preflight main` (read-only) names each row and prints
-  the UPDATE or DELETE; run it before `bun run migrate:prod`.
+  the DELETE (superseded) or UPDATE (renumbered, identical SQL); a row whose SQL changed after it
+  ran gets a `git diff` to apply by hand first. Run it before `bun run migrate:prod`.
 
 ## What to carry over from the previous assessment
 

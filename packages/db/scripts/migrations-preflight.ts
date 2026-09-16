@@ -49,8 +49,8 @@ for (const local of locals) {
 }
 
 /** Every migration SQL blob this checkout's git history has ever held, keyed by its hash. */
-const historicalNames = (): Map<string, string> => {
-	const names = new Map<string, string>()
+const historicalNames = (): Map<string, { readonly name: string; readonly oid: string }> => {
+	const names = new Map<string, { readonly name: string; readonly oid: string }>()
 	const listing = spawnSync("git", ["rev-list", "--all", "--objects", "--", "drizzle"], {
 		encoding: "utf8",
 	})
@@ -60,7 +60,10 @@ const historicalNames = (): Map<string, string> => {
 		if (!oid || !path?.endsWith(".sql")) continue
 		const blob = spawnSync("git", ["cat-file", "blob", oid])
 		if (blob.status !== 0) continue
-		names.set(createHash("sha256").update(blob.stdout).digest("hex"), path.replace(/^.*\//, ""))
+		names.set(createHash("sha256").update(blob.stdout).digest("hex"), {
+			name: path.replace(/^.*\//, ""),
+			oid,
+		})
 	}
 	return names
 }
@@ -105,7 +108,7 @@ try {
 	const recorded = new Set(rows.map((r) => Math.floor(Number(r.created_at) / 1000) * 1000))
 	for (const orphan of orphans) {
 		const historical = history.get(orphan.hash)
-		const suffix = historical?.replace(/^\d+_/, "").replace(/\.sql$/, "")
+		const suffix = historical?.name.replace(/^\d+_/, "").replace(/\.sql$/, "")
 		const current = suffix ? locals.find((l) => l.suffix === suffix) : undefined
 		console.log(
 			`\nrow ${orphan.id}: created_at ${new Date(orphan.createdAt).toISOString()} hash ${orphan.hash.slice(0, 12)}…`,
@@ -114,7 +117,7 @@ try {
 			console.log("  not in this checkout's history: applied from another branch, decide by hand")
 			continue
 		}
-		console.log(`  is the historical ${historical}`)
+		console.log(`  is the historical ${historical.name}`)
 		if (current === undefined) {
 			console.log("  no current migration with that name: decide by hand")
 		} else if (recorded.has(current.millis)) {
@@ -122,8 +125,21 @@ try {
 				`  superseded: the current ${current.name} is recorded on its own row, so this one is a leftover`,
 			)
 			console.log(`  DELETE FROM drizzle.__drizzle_migrations WHERE id = ${orphan.id};`)
+		} else if (current.hash === orphan.hash) {
+			// Same SQL under a new timestamp: the row only needs to point at the folder.
+			console.log(`  renumbered as ${current.name} with identical SQL; point the row at it`)
+			console.log(
+				`  UPDATE drizzle.__drizzle_migrations SET created_at = ${current.millis} WHERE id = ${orphan.id};`,
+			)
 		} else {
-			console.log(`  renumbered as ${current.name}; point the row at it`)
+			// The SQL changed after this version ran, so the current migration has
+			// statements this database never saw. No generated UPDATE: relabelling
+			// the row would record them as applied.
+			console.log(
+				`  renumbered as ${current.name} but the SQL differs; this database ran the OLD version`,
+			)
+			console.log(`  git diff ${historical.oid} HEAD:packages/db/drizzle/${current.name}/migration.sql`)
+			console.log("  apply whatever the current version adds by hand, then")
 			console.log(
 				`  UPDATE drizzle.__drizzle_migrations SET created_at = ${current.millis}, hash = '${current.hash}' WHERE id = ${orphan.id};`,
 			)
