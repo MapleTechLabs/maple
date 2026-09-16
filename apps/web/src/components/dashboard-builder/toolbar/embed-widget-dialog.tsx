@@ -188,7 +188,7 @@ function NotPublicNotice({
 				<li>Reopen Embed chart from this chart's menu</li>
 			</ol>
 			<div className="ml-7">
-				<Button size="sm" variant="outline" onClick={onMakePublic} disabled={busy}>
+				<Button size="sm" variant="destructive" onClick={onMakePublic} disabled={busy}>
 					<GlobeIcon />
 					Make dashboard public
 				</Button>
