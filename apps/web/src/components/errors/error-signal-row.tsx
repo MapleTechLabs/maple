@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueId } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -113,6 +114,9 @@ function SignalActivity({
  * does not.
  */
 const LANE = {
+	/** The checkbox. Hidden on an untouched row, shown on hover and for as long
+	 *  as anything is selected, so a triage sweep sees its column. */
+	select: "w-4 shrink-0",
 	severity: "w-6 shrink-0",
 	/** The lane that grows, and the last one to give ground. Every other lane
 	 *  now switches on at the width where the identity can still afford it —
@@ -147,8 +151,18 @@ const ROW_SHELL = "flex items-center gap-3 px-3"
  *
  * Severity and assignee stay unlabelled: a chip reading "Critical" and a face
  * do not need telling.
+ *
+ * The select lane carries the page-wide checkbox: every visible row, or none
+ * once they all are, with the half state in between. A header over rows that
+ * have not arrived yet has nothing to select and leaves the lane blank.
  */
-export function ErrorSignalHeader() {
+export type HeaderSelection = "none" | "some" | "all"
+
+export function ErrorSignalHeader({
+	select,
+}: {
+	select?: { readonly selection: HeaderSelection; readonly onToggleAll: () => void }
+}) {
 	return (
 		<div
 			className={cn(
@@ -156,6 +170,16 @@ export function ErrorSignalHeader() {
 				"h-7 border-b border-border/60 bg-muted/30 text-[10px] font-medium tracking-wide text-muted-foreground uppercase",
 			)}
 		>
+			<span className={cn(LANE.select, "flex items-center justify-center")}>
+				{select !== undefined ? (
+					<Checkbox
+						checked={select.selection === "all"}
+						indeterminate={select.selection === "some"}
+						onCheckedChange={select.onToggleAll}
+						aria-label={select.selection === "all" ? "Deselect all errors" : "Select all errors"}
+					/>
+				) : null}
+			</span>
 			<span className={LANE.severity} />
 			<span className={LANE.identity}>Error</span>
 			<span className={LANE.volume}>
@@ -185,6 +209,7 @@ export function ErrorSignalRowSkeleton({ index }: { index: number }) {
 
 	return (
 		<div className={cn(ROW_SHELL, "h-11")} aria-hidden="true">
+			<span className={LANE.select} />
 			<span className={cn(LANE.severity, "flex items-center justify-center")}>
 				<Skeleton className="size-3.5 rounded-sm" />
 			</span>
@@ -223,6 +248,10 @@ export interface ErrorSignalRowProps {
 	sparkWindow: { readonly startMs: number; readonly endMs: number; readonly bucketMs: number }
 	mutations: IssueMutations
 	selected: boolean
+	/** Whether any row on the page is selected: the checkbox column stays
+	 *  visible for the whole sweep rather than surfacing row by row. */
+	selecting: boolean
+	onToggleSelect: (id: ErrorIssueId, mods: { shiftKey: boolean }) => void
 	focused: boolean
 	onFocus: (id: ErrorIssueId) => void
 	/** Which picker is open on this row, if any. Owned by the list so a hotkey
@@ -248,6 +277,8 @@ export function ErrorSignalRow({
 	sparkWindow,
 	mutations,
 	selected,
+	selecting,
+	onToggleSelect,
 	focused,
 	onFocus,
 	picker,
@@ -284,6 +315,40 @@ export function ErrorSignalRow({
 					"transition-colors",
 				)}
 			>
+				{/* Inside the row's link, so a click here must select and not navigate.
+				    Base UI prevents the button's default and re-dispatches the click on
+				    its hidden input; both pass through this span, which cancels the
+				    anchor and keeps the click from the row. */}
+				<span
+					role="presentation"
+					className={cn(LANE.select, "flex items-center justify-center")}
+					onClick={(event) => {
+						event.preventDefault()
+						event.stopPropagation()
+					}}
+					onMouseDown={(event) => {
+						// A shift-click extends the selection; it should not also
+						// highlight every row's text between here and the anchor.
+						if (event.shiftKey) event.preventDefault()
+					}}
+				>
+					<Checkbox
+						checked={selected}
+						onCheckedChange={(_, details) =>
+							onToggleSelect(signal.id, {
+								shiftKey: details.event instanceof MouseEvent && details.event.shiftKey,
+							})
+						}
+						aria-label={selected ? "Deselect this error" : "Select this error"}
+						className={cn(
+							"transition-opacity",
+							selecting || selected
+								? "opacity-100"
+								: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100",
+						)}
+					/>
+				</span>
+
 				<span className={cn(LANE.severity, "flex items-center justify-center")}>
 					<SeverityPicker
 						value={signal.severity}
