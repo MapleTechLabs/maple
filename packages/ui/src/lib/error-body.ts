@@ -42,7 +42,8 @@ export function parseErrorBody(message: string): ErrorBody {
 		}
 	}
 
-	return { format: "text", full: message }
+	// Trailing newlines would paint as blank lines under the message.
+	return { format: "text", full: message.replace(/^\n+/, "").trimEnd() }
 }
 
 export type JsonTokenType = "key" | "string" | "number" | "keyword" | "punctuation" | "plain"
