@@ -19,6 +19,11 @@ describe("parseErrorBody", () => {
 		expect(body.format).toBe("text")
 		expect(body.full).toBe("Timed out\n  at fetch()")
 	})
+
+	it("drops leading and trailing blank lines, LF or CRLF", () => {
+		expect(parseErrorBody("\r\n\nPlain text\r\n").full).toBe("Plain text")
+		expect(parseErrorBody("\n  indented\n\n").full).toBe("  indented")
+	})
 })
 
 describe("tokenizeJson", () => {
