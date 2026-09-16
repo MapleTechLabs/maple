@@ -46,6 +46,7 @@ import {
 } from "./dashboard-shares"
 import { ShareLinkRow } from "./share-dashboard-dialog"
 import { CodeBlock } from "@/components/quick-start/code-block"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 /** `YYYY-MM-DD HH:MM:SS` in UTC — the only shape the share API accepts. */
 const warehouseDateTime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
@@ -161,9 +162,16 @@ export function EmbedWidgetDialog({
 	)
 }
 
-/** A ready-to-paste `<iframe>` for the embed link. The chart fills whatever height the frame gets. */
+/**
+ * A ready-to-paste `<iframe>` for the embed link, as HTML and as JSX. The chart
+ * fills whatever height the frame gets.
+ *
+ * Two tabs because one snippet cannot serve both: JSX rejects a string `style`,
+ * and HTML has no self-closing `<iframe />` — the parser ignores the slash and
+ * swallows whatever markup follows.
+ */
 function IframeSnippet({ url }: { url: string }) {
-	const snippet = [
+	const html = [
 		"<iframe",
 		`  src="${url}"`,
 		'  width="100%"',
@@ -172,12 +180,32 @@ function IframeSnippet({ url }: { url: string }) {
 		'  loading="lazy"',
 		"></iframe>",
 	].join("\n")
+	const jsx = [
+		"<iframe",
+		`  src="${url}"`,
+		'  width="100%"',
+		"  height={400}",
+		"  style={{ border: 0 }}",
+		'  loading="lazy"',
+		"/>",
+	].join("\n")
 
 	return (
-		<div className="space-y-2">
-			<div className="font-medium text-xs">Embed in a page</div>
-			<CodeBlock code={snippet} language="html" />
-		</div>
+		<Tabs defaultValue="html" className="gap-2">
+			<div className="flex items-center justify-between gap-3">
+				<div className="font-medium text-xs">Embed in a page</div>
+				<TabsList variant="underline">
+					<TabsTrigger value="html">HTML</TabsTrigger>
+					<TabsTrigger value="react">React</TabsTrigger>
+				</TabsList>
+			</div>
+			<TabsContent value="html">
+				<CodeBlock code={html} language="html" />
+			</TabsContent>
+			<TabsContent value="react">
+				<CodeBlock code={jsx} language="jsx" />
+			</TabsContent>
+		</Tabs>
 	)
 }
 
