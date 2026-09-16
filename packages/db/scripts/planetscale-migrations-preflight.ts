@@ -12,7 +12,7 @@ const branch = process.argv[2]?.trim()
 if (!branch) fail("Usage: bun packages/db/scripts/planetscale-migrations-preflight.ts <branch>")
 
 await withBranchConnection(branch as string, async (connectionUrl) => {
-	const proc = spawnSync("bun", ["scripts/migrations-preflight.ts"], {
+	const proc = spawnSync("bun", ["run", "db:migrate:preflight"], {
 		cwd: resolve(import.meta.dir, ".."),
 		env: { ...process.env, DATABASE_URL: connectionUrl },
 		stdio: "inherit",
