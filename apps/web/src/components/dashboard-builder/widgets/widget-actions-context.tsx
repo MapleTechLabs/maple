@@ -1,7 +1,5 @@
-import { createContext, use, useMemo, type ReactNode } from "react"
+import { createContext, use, useCallback, useMemo, useState, type ReactNode } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import type { SectionTarget } from "@maple/domain/http"
 import { useDashboardActions } from "@/components/dashboard-builder/dashboard-actions-context"
@@ -12,16 +10,9 @@ import {
 } from "@/components/chat/widget-fix-context"
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
-import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { displayError } from "@/lib/error-messages"
-import {
-	asDashboardId,
-	dashboardSharesAtom,
-	dashboardSharesReactivityKey,
-	embedUrl,
-	type ShareRecord,
-} from "@/components/dashboard-builder/toolbar/dashboard-shares"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { dashboardSharesAtom, type ShareRecord } from "@/components/dashboard-builder/toolbar/dashboard-shares"
+import { EmbedWidgetDialog } from "@/components/dashboard-builder/toolbar/embed-widget-dialog"
 import { unsupportedShareWidgets } from "@/components/dashboard-builder/toolbar/share-support"
 
 export interface WidgetActions {
@@ -31,11 +22,11 @@ export interface WidgetActions {
 	createAlert?: () => void
 	fix?: () => void
 	/**
-	 * Copies an iframe-able link to just this widget. `disabledReason` is set when
+	 * Opens the embed dialog for just this widget. `disabledReason` is set when
 	 * the item is shown but cannot be used — the board is not public, or the
 	 * widget is a kind a share cannot render.
 	 */
-	embed?: { copy: () => void; disabledReason?: string }
+	embed?: { open: () => void; disabledReason?: string }
 	/**
 	 * Pulls just this tile back to the widest window its query kind supports.
 	 * Present only while the tile is blocked on a `range` error; local to the
@@ -107,7 +98,9 @@ export function WidgetActionsProvider({
 		moveWidgetToSection,
 	} = useDashboardActions()
 	const navigate = useNavigate()
-	const embed = useWidgetEmbed(dashboardId, widget)
+	const [embedOpen, setEmbedOpen] = useState(false)
+	const openEmbed = useCallback(() => setEmbedOpen(true), [])
+	const embed = useWidgetEmbed(dashboardId, widget, openEmbed)
 
 	const errorTitle = dataState.status === "error" ? (dataState.title ?? null) : null
 	const errorMessage = dataState.status === "error" ? (dataState.message ?? null) : null
@@ -220,73 +213,48 @@ export function WidgetActionsProvider({
 		narrowRangeLabel,
 	])
 
-	return <WidgetActionsContext value={actions}>{children}</WidgetActionsContext>
+	return (
+		<WidgetActionsContext value={actions}>
+			{children}
+			{embedOpen ? (
+				<EmbedWidgetDialog
+					dashboardId={dashboardId}
+					widgetId={widget.id}
+					open={embedOpen}
+					onOpenChange={setEmbedOpen}
+				/>
+			) : null}
+		</WidgetActionsContext>
+	)
 }
 
 /**
- * "Copy embed link" for one widget.
+ * "Embed chart" for one widget.
  *
  * Offered only on a public board, mirroring the server: a chart link resolves
  * only while its board is shared, capped at the board's mode.
  */
-function useWidgetEmbed(dashboardId: string, widget: DashboardWidget): WidgetActions["embed"] {
+function useWidgetEmbed(
+	dashboardId: string,
+	widget: DashboardWidget,
+	open: () => void,
+): WidgetActions["embed"] {
 	const sharesAtom = useMemo(() => dashboardSharesAtom(dashboardId), [dashboardId])
 	const sharesResult = useAtomValue(sharesAtom)
-	const upsert = useAtomSet(MapleApiV2AtomClient.mutation("dashboards", "upsertWidgetShare"), {
-		mode: "promiseExit",
-	})
 
-	const shares: ReadonlyArray<ShareRecord> = Result.isSuccess(sharesResult)
-		? (sharesResult.value as ReadonlyArray<ShareRecord>)
-		: []
-	const boardPublic = shares.some((share) => share.widgetId === undefined && share.mode === "public")
-	const existing = shares.find((share) => share.widgetId === widget.id && share.mode === "public")
+	const boardPublic =
+		Result.isSuccess(sharesResult) &&
+		(sharesResult.value as ReadonlyArray<ShareRecord>).some(
+			(share) => share.widgetId === undefined && share.mode === "public",
+		)
 	const supported = unsupportedShareWidgets([widget]).length === 0
 
 	return useMemo(() => {
-		const resolveUrl = async (): Promise<string> => {
-			if (existing) return embedUrl(existing.token)
-			const result = await upsert({
-				params: { id: asDashboardId(dashboardId), widget_id: widget.id },
-				payload: { mode: "public" },
-				reactivityKeys: [dashboardSharesReactivityKey(dashboardId)],
-			})
-			if (Exit.isFailure(result)) throw new Error(displayError(result).message)
-			return embedUrl(result.value.token)
-		}
-
-		// The clipboard write starts synchronously inside the click, with the URL
-		// as a pending blob: Safari refuses `writeText` once an await has passed,
-		// and minting the share is a round-trip.
-		const copy = () => {
-			const url = resolveUrl()
-			const blob = url.then((value) => new Blob([value], { type: "text/plain" }))
-			navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]).then(
-				() => toastManager.add({ type: "success", title: "Embed link copied" }),
-				() =>
-					url.then(
-						() =>
-							toastManager.add({
-								type: "error",
-								title: "Couldn't copy embed link",
-								description: "Your browser blocked the clipboard.",
-							}),
-						(error: Error) =>
-							toastManager.add({
-								type: "error",
-								title: "Couldn't create embed link",
-								description: error.message,
-							}),
-					),
-			)
-		}
-
 		const disabledReason = !boardPublic
 			? "Make this dashboard public to embed its charts"
 			: !supported
 				? "This widget can't be shown in shared views"
 				: undefined
-
-		return { copy, disabledReason }
-	}, [dashboardId, widget.id, existing, boardPublic, supported, upsert])
+		return { open, disabledReason }
+	}, [open, boardPublic, supported])
 }

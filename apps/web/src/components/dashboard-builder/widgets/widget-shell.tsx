@@ -277,15 +277,15 @@ export function WidgetShell({
 											<TooltipTrigger render={<div />}>
 												<DropdownMenuItem disabled>
 													<CodeIcon size={14} />
-													Copy embed link
+													Embed chart
 												</DropdownMenuItem>
 											</TooltipTrigger>
 											<TooltipContent side="left">{embed.disabledReason}</TooltipContent>
 										</Tooltip>
 									) : (
-										<DropdownMenuItem onClick={embed.copy}>
+										<DropdownMenuItem onClick={embed.open}>
 											<CodeIcon size={14} />
-											Copy embed link
+											Embed chart
 										</DropdownMenuItem>
 									))}
 								{isEditable && remove && (

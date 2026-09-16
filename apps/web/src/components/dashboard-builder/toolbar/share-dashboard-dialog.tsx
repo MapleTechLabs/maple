@@ -194,7 +194,7 @@ export function ShareDashboardDialog({
 					</RadioGroup>
 
 					{boardShare ? (
-						<ShareLinkRow token={boardShare.token} onRegenerate={() => void regenerate()} />
+						<ShareLinkRow url={shareUrl(boardShare.token)} onRegenerate={() => void regenerate()} />
 					) : null}
 
 					{unsupported.length > 0 && boardShare ? (
@@ -268,12 +268,11 @@ function NoticeRow({ tone = "muted", children }: { tone?: "muted" | "error"; chi
 	)
 }
 
-function ShareLinkRow({ token, onRegenerate }: { token: string; onRegenerate: () => void }) {
+export function ShareLinkRow({ url, onRegenerate }: { url: string; onRegenerate: () => void }) {
 	const [copied, setCopied] = useState(false)
 	const [copyBlocked, setCopyBlocked] = useState(false)
 	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
 	const field = useRef<HTMLInputElement>(null)
-	const url = shareUrl(token)
 
 	// Browsers deny `writeText` outside a secure context or when the clipboard
 	// permission is refused, and the promise rejects. Without this the button just

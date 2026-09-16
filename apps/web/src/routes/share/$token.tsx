@@ -19,7 +19,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useAuth } from "@clerk/clerk-react"
 import { Schema } from "effect"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useLayoutEffect, useMemo, useState } from "react"
+import { setTheme } from "@maple/ui/hooks/use-theme"
 import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
 import { ResolvedDashboardVariablesProvider } from "@/components/dashboard-builder/dashboard-variables-context"
 import { ReadOnlyDashboardView } from "@/components/dashboard-builder/read-only-dashboard-view"
@@ -61,6 +62,11 @@ const ShareSearch = Schema.StructWithRest(
 		 * values, so `?embed=1` arrives as the number 1 and fails a string schema.
 		 */
 		embed: Schema.optional(Schema.Boolean),
+		/**
+		 * `light` or `dark`, applied without persisting. Loose on purpose: a bad
+		 * value falls back to the viewer's theme rather than failing the page.
+		 */
+		theme: Schema.optional(Schema.String),
 		from: Schema.optional(Schema.String),
 		to: Schema.optional(Schema.String),
 		/**
@@ -129,6 +135,28 @@ const resolveShareWindow = (
  * splits this way.
  */
 function SharePage() {
+	const { theme, embed } = Route.useSearch()
+	useLayoutEffect(() => {
+		if (theme === "light" || theme === "dark") setTheme(theme, { persist: false })
+		if (embed !== true) return
+
+		// An embed has no backdrop of its own: the host page shows around the card.
+		// `body` carries `bg-background` from the base layer, so it is cleared. And
+		// `color-scheme` goes back to `normal` — a frame whose scheme differs from
+		// its host's is painted on an opaque canvas, so a dark chart on a light
+		// page would otherwise keep a dark rectangle behind it. Nothing a tile
+		// renders reads `light-dark()`, so the theme class still does the styling.
+		// After `setTheme`, which writes `color-scheme` itself.
+		const root = document.documentElement
+		const previous = { background: document.body.style.background, colorScheme: root.style.colorScheme }
+		document.body.style.background = "transparent"
+		root.style.colorScheme = "normal"
+		return () => {
+			document.body.style.background = previous.background
+			root.style.colorScheme = previous.colorScheme
+		}
+	}, [theme, embed])
+
 	return isClerkAuthEnabled ? <SharePageWithClerk /> : <SharePageContent isSignedIn={false} />
 }
 
@@ -249,7 +277,7 @@ function ShareShell({
 		// scroll to them. `min-h-screen` still gives the canvas a definite width
 		// to measure, which is all `useContainerSize` needs.
 		const height = scope === "dashboard" ? "min-h-screen" : "h-screen"
-		return <div className={`${height} w-full bg-background p-2`}>{children}</div>
+		return <div className={`${height} w-full p-2`}>{children}</div>
 	}
 
 	return (

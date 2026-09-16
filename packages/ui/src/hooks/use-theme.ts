@@ -73,10 +73,14 @@ function getServerSnapshot(): Theme {
 	return DEFAULT_THEME
 }
 
-/** Set the active theme, persist it, and apply the `light`/`dark` class to <html>. */
-export function setTheme(theme: Theme): void {
+/**
+ * Set the active theme, persist it, and apply the `light`/`dark` class to <html>.
+ * `persist: false` is for a page that dictates its theme (a share's `?theme=`)
+ * and must not overwrite the viewer's own choice.
+ */
+export function setTheme(theme: Theme, { persist = true }: { persist?: boolean } = {}): void {
 	current = theme
-	writeLocalStorage(STORAGE_KEY, theme)
+	if (persist) writeLocalStorage(STORAGE_KEY, theme)
 	applyTheme(theme)
 	notify()
 }
