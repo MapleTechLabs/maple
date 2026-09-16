@@ -1,10 +1,12 @@
 /**
  * Embed one chart: its public link, plus the URL options an embed can carry.
  *
- * Mounted only while open, and mounting is what mints the chart's public share,
- * so the link is ready by the time anyone reads it. The menu item that opens it
- * requires a public board, which means the share list has already loaded. The share list is the same atom the board
- * dialog reads, so a link minted here shows up there and vice versa.
+ * Mounted only while open, and only once the share list has loaded. On a public
+ * board, mounting mints the chart's public share so the link is ready by the time
+ * anyone reads it. On any other board a chart link would not resolve, so the
+ * dialog says how to make the board public instead — and offers to do it. The
+ * share list is the same atom the board dialog reads, so either side's changes
+ * show up in the other.
  */
 import { useMemo, useState } from "react"
 import { useMountEffect } from "@maple/ui/hooks/use-mount-effect"
@@ -23,7 +25,13 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
-import { ArrowRotateClockwiseIcon, BracketsCurlyIcon, ClockIcon, SunIcon } from "@/components/icons"
+import {
+	ArrowRotateClockwiseIcon,
+	BracketsCurlyIcon,
+	ClockIcon,
+	GlobeIcon,
+	SunIcon,
+} from "@/components/icons"
 import type { DashboardVariable } from "@/components/dashboard-builder/types"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
@@ -58,32 +66,58 @@ export function EmbedWidgetDialog({
 	const upsert = useAtomSet(MapleApiV2AtomClient.mutation("dashboards", "upsertWidgetShare"), {
 		mode: "promiseExit",
 	})
+	const upsertBoard = useAtomSet(MapleApiV2AtomClient.mutation("dashboards", "upsertShare"), {
+		mode: "promiseExit",
+	})
 	const rotate = useAtomSet(MapleApiV2AtomClient.mutation("dashboards", "rotateWidgetShare"), {
 		mode: "promiseExit",
 	})
 	const [error, setError] = useState<string | null>(null)
+	const [busy, setBusy] = useState(false)
 
-	const share = Result.isSuccess(sharesResult)
-		? (sharesResult.value as ReadonlyArray<ShareRecord>).find(
-				(candidate) => candidate.widgetId === widgetId && candidate.mode === "public",
-			)
-		: undefined
+	const shares = Result.isSuccess(sharesResult) ? (sharesResult.value as ReadonlyArray<ShareRecord>) : []
+	const boardMode = shares.find((candidate) => candidate.widgetId === undefined)?.mode
+	const share = shares.find((candidate) => candidate.widgetId === widgetId && candidate.mode === "public")
 
 	const request = {
 		params: { id: asDashboardId(dashboardId), widget_id: widgetId },
 		reactivityKeys: [dashboardSharesReactivityKey(dashboardId)],
 	}
 
-	const run = async (action: () => Promise<Exit.Exit<unknown, unknown>>) => {
+	/** Runs the steps in order, stopping at the first failure. */
+	const run = async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
 		setError(null)
-		const result = await action()
-		if (Exit.isFailure(result)) setError(displayError(result).message)
-		else refreshShares()
+		setBusy(true)
+		try {
+			for (const step of steps) {
+				const result = await step()
+				if (Exit.isFailure(result)) {
+					setError(displayError(result).message)
+					return
+				}
+			}
+			refreshShares()
+		} finally {
+			setBusy(false)
+		}
 	}
 
+	const mintChartLink = () => upsert({ ...request, payload: { mode: "public" } })
+
 	useMountEffect(() => {
-		if (share === undefined) void run(() => upsert({ ...request, payload: { mode: "public" } }))
+		if (boardMode === "public" && share === undefined) void run(mintChartLink)
 	})
+
+	const makeBoardPublic = () =>
+		void run(
+			() =>
+				upsertBoard({
+					params: request.params,
+					payload: { mode: "public" },
+					reactivityKeys: request.reactivityKeys,
+				}),
+			...(share === undefined ? [mintChartLink] : []),
+		)
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -97,7 +131,13 @@ export function EmbedWidgetDialog({
 				</DialogHeader>
 
 				<DialogPanel className="space-y-4">
-					{share ? (
+					{boardMode !== "public" ? (
+						<NotPublicNotice
+							orgOnly={boardMode === "org"}
+							busy={busy}
+							onMakePublic={makeBoardPublic}
+						/>
+					) : share ? (
 						<ShareLinkRow
 							url={embedUrl(share.token)}
 							onRegenerate={() => void run(() => rotate(request))}
@@ -114,6 +154,46 @@ export function EmbedWidgetDialog({
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>
+	)
+}
+
+function NotPublicNotice({
+	orgOnly,
+	busy,
+	onMakePublic,
+}: {
+	orgOnly: boolean
+	busy: boolean
+	onMakePublic: () => void
+}) {
+	return (
+		<div className="space-y-3 rounded-lg border bg-muted/30 px-3.5 py-3">
+			<div className="flex items-start gap-3">
+				<GlobeIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+				<div className="space-y-1">
+					<div className="font-medium text-sm">
+						{orgOnly
+							? "This dashboard is shared with your organization only"
+							: "This dashboard isn't shared"}
+					</div>
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						Embeds only work on public dashboards. Making it public lets anyone with the
+						dashboard's link view all of it, not just this chart.
+					</p>
+				</div>
+			</div>
+			<ol className="ml-7 list-decimal space-y-0.5 pl-4 text-muted-foreground text-xs leading-relaxed">
+				<li>Open the ⋮ menu in the dashboard header and choose Share…</li>
+				<li>Select "Anyone with the link"</li>
+				<li>Reopen Embed chart from this chart's menu</li>
+			</ol>
+			<div className="ml-7">
+				<Button size="sm" variant="outline" onClick={onMakePublic} disabled={busy}>
+					<GlobeIcon />
+					Make dashboard public
+				</Button>
+			</div>
+		</div>
 	)
 }
 
@@ -194,7 +274,7 @@ function EmbedUrlOptions() {
 		<div className="space-y-2">
 			<div>
 				<div className="font-medium text-xs">URL options</div>
-				<p className="text-muted-foreground text-xs">Append any of these to the link above.</p>
+				<p className="text-muted-foreground text-xs">Append any of these to the embed link.</p>
 			</div>
 			{/* Three fixed columns on every row — icon, parameter, details — so names,
 			    descriptions and examples line up down the list whatever their length. */}

@@ -11,10 +11,7 @@ import {
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import {
-	dashboardSharesAtom,
-	type ShareRecord,
-} from "@/components/dashboard-builder/toolbar/dashboard-shares"
+import { dashboardSharesAtom } from "@/components/dashboard-builder/toolbar/dashboard-shares"
 import { EmbedWidgetDialog } from "@/components/dashboard-builder/toolbar/embed-widget-dialog"
 import { unsupportedShareWidgets } from "@/components/dashboard-builder/toolbar/share-support"
 
@@ -234,8 +231,10 @@ export function WidgetActionsProvider({
 /**
  * "Embed chart" for one widget.
  *
- * Offered only on a public board, mirroring the server: a chart link resolves
- * only while its board is shared, capped at the board's mode.
+ * Absent until the share list has loaded, so the dialog always opens knowing
+ * whether the board is public. A non-public board still opens it: the dialog
+ * explains how to make it public. Only a widget a share cannot render is
+ * disabled outright.
  */
 function useWidgetEmbed(
 	dashboardId: string,
@@ -243,21 +242,17 @@ function useWidgetEmbed(
 	open: () => void,
 ): WidgetActions["embed"] {
 	const sharesAtom = useMemo(() => dashboardSharesAtom(dashboardId), [dashboardId])
-	const sharesResult = useAtomValue(sharesAtom)
-
-	const boardPublic =
-		Result.isSuccess(sharesResult) &&
-		(sharesResult.value as ReadonlyArray<ShareRecord>).some(
-			(share) => share.widgetId === undefined && share.mode === "public",
-		)
+	const loaded = Result.isSuccess(useAtomValue(sharesAtom))
 	const supported = unsupportedShareWidgets([widget]).length === 0
 
-	return useMemo(() => {
-		const disabledReason = !boardPublic
-			? "Make this dashboard public to embed its charts"
-			: !supported
-				? "This widget can't be shown in shared views"
-				: undefined
-		return { open, disabledReason }
-	}, [open, boardPublic, supported])
+	return useMemo(
+		() =>
+			loaded
+				? {
+						open,
+						disabledReason: supported ? undefined : "This widget can't be shown in shared views",
+					}
+				: undefined,
+		[open, loaded, supported],
+	)
 }
