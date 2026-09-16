@@ -194,7 +194,11 @@ export function ShareDashboardDialog({
 					</RadioGroup>
 
 					{boardShare ? (
-						<ShareLinkRow url={shareUrl(boardShare.token)} onRegenerate={() => void regenerate()} />
+						<ShareLinkRow
+							url={shareUrl(boardShare.token)}
+							onRegenerate={() => void regenerate()}
+							regenerateWarning="Anyone using the current link loses access to this dashboard. Chart embeds keep working."
+						/>
 					) : null}
 
 					{unsupported.length > 0 && boardShare ? (
@@ -268,7 +272,22 @@ function NoticeRow({ tone = "muted", children }: { tone?: "muted" | "error"; chi
 	)
 }
 
-export function ShareLinkRow({ url, onRegenerate }: { url: string; onRegenerate: () => void }) {
+/**
+ * Regenerating kills the current link for good — every copy of it already handed
+ * out, every embed on someone else's page. So it asks first, inline: a second
+ * modal over the dialog would be heavier than the question.
+ */
+export function ShareLinkRow({
+	url,
+	onRegenerate,
+	regenerateWarning,
+}: {
+	url: string
+	onRegenerate: () => void
+	/** What stops working when the link is replaced, shown before confirming. */
+	regenerateWarning: string
+}) {
+	const [confirmingRegenerate, setConfirmingRegenerate] = useState(false)
 	const [copied, setCopied] = useState(false)
 	const [copyBlocked, setCopyBlocked] = useState(false)
 	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -314,9 +333,40 @@ export function ShareLinkRow({ url, onRegenerate }: { url: string; onRegenerate:
 					{copied ? "Copied" : "Copy"}
 				</Button>
 			</div>
-			<Button variant="ghost" size="xs" className="-ml-2 text-muted-foreground" onClick={onRegenerate}>
-				Regenerate link
-			</Button>
+			{confirmingRegenerate ? (
+				<div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+					<p className="text-xs leading-relaxed">
+						<span className="font-medium">Replace this link?</span>{" "}
+						<span className="text-muted-foreground">
+							{regenerateWarning} This can't be undone.
+						</span>
+					</p>
+					<div className="flex justify-end gap-2">
+						<Button variant="ghost" size="xs" onClick={() => setConfirmingRegenerate(false)}>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							size="xs"
+							onClick={() => {
+								setConfirmingRegenerate(false)
+								onRegenerate()
+							}}
+						>
+							Regenerate link
+						</Button>
+					</div>
+				</div>
+			) : (
+				<Button
+					variant="ghost"
+					size="xs"
+					className="-ml-2 text-muted-foreground"
+					onClick={() => setConfirmingRegenerate(true)}
+				>
+					Regenerate link
+				</Button>
+			)}
 			{copyBlocked ? (
 				<p className="text-muted-foreground text-xs leading-relaxed">
 					Your browser blocked the clipboard. The link is selected — copy it with ⌘C.

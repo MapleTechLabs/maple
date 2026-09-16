@@ -740,6 +740,13 @@ describe("v2 dashboard shares", () => {
 		expect(await resolve(harness, rotated.body.token)).toBe(id)
 		expect(await resolve(harness, reshared.body.token)).toBe(id)
 
+		// And rotating the board's link keeps its chart links alive: the board is
+		// still shared, just under a new token.
+		const boardRotated = await harness.request("POST", `/v2/dashboards/${id}/share/rotate`, key.secret)
+		expect(await resolve(harness, reshared.body.token)).toBe("__not_found__")
+		expect(await resolve(harness, boardRotated.body.token)).toBe(id)
+		expect(await resolve(harness, rotated.body.token)).toBe(id)
+
 		await harness.dispose()
 	})
 

@@ -144,6 +144,7 @@ export function EmbedWidgetDialog({
 							<ShareLinkRow
 								url={embedUrl(share.token)}
 								onRegenerate={() => void run(() => rotate(request))}
+								regenerateWarning="Every existing embed of this chart stops working until it is updated with the new link."
 							/>
 							<IframeSnippet url={embedUrl(share.token)} />
 							<EmbedUrlOptions />
