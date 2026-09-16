@@ -106,6 +106,13 @@ export interface ChatRunInput {
 	readonly append: (event: ChatTurnEvent) => void
 }
 
+export interface ChatRunOutcome {
+	/** This run was an investigation's own autonomous pass. */
+	readonly autonomous: boolean
+	/** `submit_diagnosis` landed a report during this run. */
+	readonly submittedDiagnosis: boolean
+}
+
 /**
  * Build and drain one run.
  *
@@ -147,10 +154,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 		...(delegation === undefined ? [] : [delegation.layer]),
 	)
 
+	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const agent = chatAgent(definition, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
-			: { completion: { tool: SUBMIT_DIAGNOSIS, required: completion.required } }),
+			: { completion: { tool: SUBMIT_DIAGNOSIS, required: false } }),
 	})
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
@@ -173,6 +181,12 @@ export const runChatTurn = (input: ChatRunInput) => {
 				for (const chat of toChatEvents(event, { messageId: input.messageId, isProposed })) {
 					input.append(chat)
 				}
+			}),
+		),
+		Effect.map(
+			(): ChatRunOutcome => ({
+				autonomous: completion?.autonomous ?? false,
+				submittedDiagnosis: completion?.submitted() ?? false,
 			}),
 		),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
