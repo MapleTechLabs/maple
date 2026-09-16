@@ -277,6 +277,17 @@ What B1 settled that the plan above left open:
   code and lands as `error.type = ConnectionError`; dashboards keyed on `CONNECT_TIMEOUT` need
   both.
 - `rawRows` (`packages/backend/src/platform/raw-rows.ts`) normalises raw `db.execute` results.
+- Verified against a real Postgres (docker) on the new driver: `apps/api`'s
+  `pg-connection-scope.integration.test.ts` passes 6/6 (one backend per scope in
+  `pg_stat_activity`, transactions, refused dial classified). Not yet verified: the Workers
+  bundle with `pg`.
+- **The v1 migrator refuses orphan rows.** Its one-time upgrade of `drizzle.__drizzle_migrations`
+  matches each row to a local folder by second-truncated `created_at`, then by hash, and aborts if
+  any row matches nothing. The docker dev database has five: the pre-renumbering versions of
+  `premium_korg` through `slippery_winter_soldier` (superseded, their current versions have their
+  own rows) and one migration from an unmerged branch. Production likely holds the first four.
+  `bun run --cwd packages/db ps:migrations-preflight main` (read-only) names each row and prints
+  the UPDATE or DELETE; run it before `bun run migrate:prod`.
 
 ## What to carry over from the previous assessment
 

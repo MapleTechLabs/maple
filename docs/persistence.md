@@ -90,6 +90,18 @@ CI runs `drizzle-kit migrate` against the stage's PlanetScale **direct** port 54
 Alchemy deployment. Never run migrations through a pooler or Hyperdrive. The deployed Worker
 does not migrate on boot.
 
+The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__drizzle_migrations`
+in place (adds `name` and `applied_at`), matching every existing row to a local folder by
+`created_at` truncated to the second, then by hash, and **refusing the whole run if any row matches
+nothing**. A row like that is a migration that was applied and later renumbered or re-timestamped,
+or one applied from a branch that never merged. Check before migrating, and fix rows with the
+UPDATE or DELETE the report prints:
+
+```bash
+bun run --cwd packages/db db:migrate:preflight              # DATABASE_URL, defaults to the docker Postgres
+bun run --cwd packages/db ps:migrations-preflight main      # a PlanetScale branch, read-only
+```
+
 PGlite applies the same bundled migrations while its layer is built. The test harness caches a
 fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the
 PostgreSQL schema without a shared server.
