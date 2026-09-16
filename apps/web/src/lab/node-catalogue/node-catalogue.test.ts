@@ -12,21 +12,18 @@ const catalogue = buildNodeCatalogue()
  * narrowing these assertions exist to have.
  */
 const spines = catalogue.nodes.flatMap((node) => (node.type === "spine" ? [node.data] : []))
-const lenses = catalogue.nodes.flatMap((node) => (node.type === "lens" ? [node.data] : []))
 const actions = catalogue.nodes.flatMap((node) => (node.type === "action" ? [node.data] : []))
 
 /**
  * The studio is only worth having if it is exhaustive, and "exhaustive" is not a
  * property anyone re-checks by eye after adding a state. These assertions are the
- * thing that fails when a new glyph, lens state or action kind lands without a
+ * thing that fails when a new glyph or action kind lands without a
  * cell — the gallery cannot silently stop covering the surface it documents.
  */
 describe("node catalogue", () => {
 	it("covers every node type the canvas registers", () => {
 		const types = new Set(catalogue.nodes.map((node) => node.type))
-		expect(types).toEqual(
-			new Set(["spine", "lens", "lensOverflow", "pendingVerdict", "action", "actionGhost", "heading"]),
-		)
+		expect(types).toEqual(new Set(["spine", "pendingVerdict", "action", "actionGhost", "heading"]))
 	})
 
 	it("covers every spine glyph", () => {
@@ -38,31 +35,6 @@ describe("node catalogue", () => {
 		expect(spines.some((data) => data.current === true)).toBe(true)
 		expect(spines.some((data) => data.lifted === true)).toBe(true)
 		expect(spines.some((data) => data.live === true && data.phase)).toBe(true)
-	})
-
-	it("covers every lens icon and every lens badge word", () => {
-		const states = lenses.map((data) => data.state)
-		expect(new Set(states.map((state) => state.icon))).toEqual(
-			new Set(["queued", "running", "reported", "confirmed", "ruledOut", "deadline", "failed"]),
-		)
-		expect(new Set(states.map((state) => state.word))).toEqual(
-			new Set([
-				"PENDING",
-				"RUNNING",
-				"DEADLINE HIT",
-				"NO FINDING",
-				"REPORTED",
-				"CONFIRMED",
-				"MERGED",
-				"RULED OUT",
-			]),
-		)
-	})
-
-	it("shows a running lens both with and without a progress note", () => {
-		const running = lenses.filter((data) => data.state.icon === "running")
-		expect(running.some((data) => data.progressNote !== null)).toBe(true)
-		expect(running.some((data) => data.progressNote === null)).toBe(true)
 	})
 
 	it("covers every action kind", () => {
@@ -79,9 +51,7 @@ describe("node catalogue", () => {
 	})
 
 	it("covers every edge kind, live and settled", () => {
-		expect(new Set(catalogue.edges.map((edge) => edge.kind))).toEqual(
-			new Set(["causal", "fan", "roadmap"]),
-		)
+		expect(new Set(catalogue.edges.map((edge) => edge.kind))).toEqual(new Set(["causal", "roadmap"]))
 		expect(catalogue.edges.some((edge) => edge.live === true)).toBe(true)
 		expect(catalogue.edges.some((edge) => edge.live === undefined)).toBe(true)
 		expect(catalogue.edges.some((edge) => edge.label)).toBe(true)
