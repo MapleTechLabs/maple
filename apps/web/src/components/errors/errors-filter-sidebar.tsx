@@ -14,7 +14,7 @@ import {
 } from "@/components/filters/filter-sidebar"
 import { getErrorsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { ERRORS_WINDOW } from "@/components/errors/errors-hub"
+import { ERRORS_WINDOW } from "@/lib/errors/hub-params"
 import { CLEARED_ERROR_FILTERS, KIND_LABEL, hasErrorFilters } from "@/lib/errors/error-filter-chips"
 import { SOURCES, SOURCE_COLOR, SOURCE_DESCRIPTION, SourceLegend } from "./issue-source"
 

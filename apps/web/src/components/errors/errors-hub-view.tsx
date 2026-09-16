@@ -12,6 +12,14 @@ import { ErrorState } from "@/components/common/error-state"
 import { ListToolbar } from "@/components/common/list-toolbar"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { useListNavigation } from "@/hooks/use-list-navigation"
+import {
+	HUB_SORTS,
+	HUB_VIEWS,
+	SEVERITY_FILTERS,
+	type HubSort,
+	type HubView,
+	type SeverityFilter,
+} from "@/lib/errors/hub-params"
 import type { ErrorSignal } from "@/lib/models/error-signal"
 import {
 	allToggledSelection,
@@ -46,9 +54,6 @@ import { useIssueMutations } from "./use-issue-mutations"
 
 /** Enough to fill the fold without pretending to know the page size. */
 const SKELETON_ROWS = 8
-
-export const HUB_VIEWS = ["open", "triage", "active", "resolved", "all"] as const
-export type HubView = (typeof HUB_VIEWS)[number]
 
 const VIEW_LABEL: Record<HubView, string> = {
 	open: "Open",
@@ -91,12 +96,6 @@ export function viewCovers(view: HubView, state: WorkflowState): boolean {
 	return states === "all" || states.includes(state)
 }
 
-/** `last_seen` leads because it is the default: newest activity first, paged
- *  back through older issues. `volume` is the one sort only the warehouse can
- *  answer, so it is the one scoped to the time range. */
-export const HUB_SORTS = ["last_seen", "volume", "severity"] as const
-export type HubSort = (typeof HUB_SORTS)[number]
-
 const SORT_LABEL: Record<HubSort, string> = {
 	last_seen: "Most recent",
 	volume: "Most errors",
@@ -116,9 +115,6 @@ export interface HubPaging {
 /** Placeholder rows under the list while the next page loads. Fewer than the
  *  first paint's, because the reader already has rows to look at. */
 const LOAD_MORE_SKELETON_ROWS = 3
-
-export const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
-export type SeverityFilter = (typeof SEVERITY_FILTERS)[number]
 
 const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
 	all: "All severities",

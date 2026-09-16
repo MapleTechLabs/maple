@@ -4,13 +4,8 @@ import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import {
-	ErrorsHubView,
-	type HubSort,
-	type HubView,
-	type SeverityFilter,
-	viewCovers,
-} from "@/components/errors/errors-hub-view"
+import { ErrorsHubView, viewCovers } from "@/components/errors/errors-hub-view"
+import type { HubSort, HubView, SeverityFilter } from "@/lib/errors/hub-params"
 import { buildErrorsLabFixture } from "@/lab/errors-fixture"
 
 /**
