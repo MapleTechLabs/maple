@@ -242,6 +242,11 @@ export class SubmitDiagnosisRequest extends Schema.Class<SubmitDiagnosisRequest>
 	model: Schema.optionalKey(Schema.String),
 	inputTokens: Schema.optionalKey(Schema.Number),
 	outputTokens: Schema.optionalKey(Schema.Number),
+	/**
+	 * The report is a partial: filed by the close-out turn after the pass itself ended
+	 * without one. It lands as `inconclusive`, never as a diagnosis.
+	 */
+	partial: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 // Errors

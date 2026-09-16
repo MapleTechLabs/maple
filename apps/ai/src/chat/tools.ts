@@ -126,6 +126,8 @@ export const buildDiagnosisCompletion = (
 	submitDiagnosis: SubmitDiagnosis,
 	usage: RunUsage,
 	modelName: string,
+	/** This run is the close-out: whatever it files is a partial, and lands as `inconclusive`. */
+	partial = false,
 ) => {
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
@@ -143,6 +145,7 @@ export const buildDiagnosisCompletion = (
 						model: modelName,
 						inputTokens: usage.input,
 						outputTokens: usage.output,
+						...(partial ? { partial: true } : undefined),
 					}),
 				).pipe(
 					Effect.tap(() => Effect.sync(() => (submitted = true))),

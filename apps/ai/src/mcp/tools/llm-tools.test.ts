@@ -40,6 +40,38 @@ const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 }
 
 describe("buildMapleToolkit", () => {
+	/**
+	 * A tool error is the call's answer, not the run's end. The engine ends a run on a declared
+	 * failure — right for a proposal, wrong for a rejected query the model can rewrite.
+	 */
+	it("answers a failed tool with its message instead of failing the run", async () => {
+		const executor: McpToolExecutorApi = {
+			execute: () =>
+				Effect.succeed({
+					isError: true,
+					content: [
+						{ type: "text" as const, text: "Tool failed: SQL rejected (MissingOrgFilter)" },
+					],
+				}),
+		}
+		const result = await Effect.runPromise(
+			Effect.result(handlerFor(executor, "run_sql")({ sql: "select 1" }, {} as never)),
+		)
+		assert.isTrue(Result.isSuccess(result))
+		assert.include(Result.isSuccess(result) ? result.success : "", "MissingOrgFilter")
+	})
+
+	it("answers a tool that died with a summary instead of failing the run", async () => {
+		const executor: McpToolExecutorApi = {
+			execute: () => Effect.die(new Error("connection reset")),
+		}
+		const result = await Effect.runPromise(
+			Effect.result(handlerFor(executor, "list_services")({ limit: 10 }, {} as never)),
+		)
+		assert.isTrue(Result.isSuccess(result))
+		assert.include(Result.isSuccess(result) ? result.success : "", "Tool failed")
+	})
+
 	it("records a gated tool's description on its span as the model saw it", async () => {
 		const { executor } = countingExecutor()
 		const handler = buildMapleToolkit(executor, TENANT, { gate: () => true }).handlers.list_services
@@ -66,7 +98,11 @@ describe("buildMapleToolkit", () => {
 			assert.isTrue(Result.isSuccess(result), `attempt ${attempt + 1} should have run`)
 		}
 
-		assert.isTrue(Result.isFailure(await call()))
+		// Answered, not failed: a declared failure would end the run, and a model repeating itself
+		// needs to be told, not stopped.
+		const fourth = await call()
+		assert.isTrue(Result.isSuccess(fourth))
+		assert.include(Result.isSuccess(fourth) ? fourth.success : "", "already been called")
 		assert.equal(dispatched(), 3, "the fourth call must not reach the executor")
 	})
 

@@ -92,6 +92,8 @@ export interface ChatRunInput {
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
+	/** This run is an autonomous pass's close-out: a report it files is a partial. */
+	readonly closeOut?: boolean
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -127,6 +129,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		input.submitDiagnosis,
 		input.usage,
 		input.model.name,
+		input.closeOut === true,
 	)
 
 	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))
