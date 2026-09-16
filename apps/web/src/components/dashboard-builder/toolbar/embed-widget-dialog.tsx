@@ -87,7 +87,7 @@ export function EmbedWidgetDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
+			<DialogContent className="sm:max-w-xl">
 				<DialogHeader>
 					<DialogTitle>Embed chart</DialogTitle>
 					<DialogDescription>
@@ -155,15 +155,15 @@ function EmbedUrlOptions() {
 		{
 			key: "range",
 			icon: ClockIcon,
-			param: "from · to",
-			description: "UTC, both required. Defaults to the dashboard's own range",
+			param: "from, to",
+			description: "UTC, set both. Defaults to the dashboard's range",
 			example: `&from=${warehouseDateTime(now - 12 * 3600_000)}&to=${warehouseDateTime(now)}`,
 		},
 		{
 			key: "refresh",
 			icon: ArrowRotateClockwiseIcon,
 			param: "refresh",
-			description: `Seconds: ${REFRESH_INTERVAL_OPTIONS.filter((value) => value > 0).join(", ")}, or 0 for off`,
+			description: `Seconds: ${REFRESH_INTERVAL_OPTIONS.filter((value) => value > 0).join(", ")}. 0 turns it off`,
 			example: "&refresh=60",
 		},
 		...(definitions.length === 0
@@ -172,7 +172,7 @@ function EmbedUrlOptions() {
 						key: "var",
 						icon: BracketsCurlyIcon,
 						param: "var-<name>",
-						description: "Not available: this dashboard has no variables",
+						description: "Not available, this dashboard has no variables",
 						example: "&var-service=checkout",
 						unavailable: true,
 					},
@@ -196,38 +196,27 @@ function EmbedUrlOptions() {
 				<div className="font-medium text-xs">URL options</div>
 				<p className="text-muted-foreground text-xs">Append any of these to the link above.</p>
 			</div>
+			{/* Three fixed columns on every row — icon, parameter, details — so names,
+			    descriptions and examples line up down the list whatever their length. */}
 			<ul className="divide-y divide-border overflow-hidden rounded-lg border">
 				{options.map(({ key, icon: Icon, param, description, example, unavailable }) => (
-					<li key={key} className="flex items-start gap-3 px-3 py-2.5">
-						<span
-							className={cn(
-								"flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
-								unavailable && "opacity-50",
-							)}
-						>
+					<li
+						key={key}
+						className={cn(
+							"grid grid-cols-[1rem_6.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 px-3 py-2.5 text-xs leading-5",
+							unavailable && "opacity-60",
+						)}
+					>
+						<span className="flex h-5 items-center text-muted-foreground">
 							<Icon size={14} />
 						</span>
-						<div className="min-w-0 flex-1 space-y-1">
-							<div className="flex min-w-0 items-baseline gap-2 text-xs">
-								<code
-									className={cn(
-										"shrink-0 font-medium font-mono",
-										unavailable && "text-muted-foreground",
-									)}
-								>
-									{param}
-								</code>
-								<span className="min-w-0 text-muted-foreground">{description}</span>
-							</div>
-							<code
-								className={cn(
-									"block w-fit max-w-full truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground",
-									unavailable && "opacity-60",
-								)}
-							>
-								{example}
-							</code>
-						</div>
+						<code className="truncate font-medium font-mono" title={param}>
+							{param}
+						</code>
+						<span className="text-muted-foreground">{description}</span>
+						<code className="col-start-3 w-fit max-w-full truncate rounded bg-muted px-1.5 font-mono text-[11px] text-muted-foreground">
+							{example}
+						</code>
 					</li>
 				))}
 			</ul>
