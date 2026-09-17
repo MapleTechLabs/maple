@@ -385,9 +385,11 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 				turnText: turnListText([index], turns, false),
 				terminal: false,
 				detail:
-					run.length >= 2
-						? `called ${calls.length}× within one turn, ${run.length} in a row with identical arguments`
-						: `called ${calls.length}× within one turn`,
+					run.length >= 2 && spanFailed(run[0])
+						? `retried ${run.length - 1}× unchanged after it failed`
+						: run.length >= 2
+							? `called ${calls.length}× within one turn, ${run.length} in a row with identical arguments`
+							: `called ${calls.length}× within one turn`,
 				spanId: first.spanId,
 				atMs: spanStartMs(first),
 			})

@@ -62,7 +62,7 @@ describe("buildSessionChecks", () => {
 		expect(report.counts.failed).toBe(0)
 		expect(report.counts.warning).toBe(0)
 		expect(report.headline).toBe(`Completed cleanly — ${report.counts.passed} checks passed`)
-		expect(byId(report, "completed").headline).toBe("All 2 turns closed cleanly")
+		expect(report.checks.find((check) => check.id === "completion")).toBeUndefined()
 		expect(byId(report, "context-window").headline).toBe("The prompt peaked at 1.0K tokens")
 		expect(byId(report, "tool-timeouts").headline).toBe(
 			"No tool call timed out; the slowest was `read_file` at 2s",
@@ -74,7 +74,7 @@ describe("buildSessionChecks", () => {
 		expect(report.checks.every((check) => check.status !== "passed" || check.fixArea === undefined)).toBe(true)
 	})
 
-	it("fails the outcome on the cause of death, and the cause's own check carries the action", () => {
+	it("names the cause of death in the headline, and the cause's own check carries the action", () => {
 		const report = checks([
 			...firstTurn(),
 			agentSpan({
@@ -104,9 +104,8 @@ describe("buildSessionChecks", () => {
 
 		expect(report.verdict.status).toBe("failed")
 		expect(report.headline).toBe("The final turn died on the context window")
-		// The outcome leads the list and owns no evidence of its own.
-		expect(report.checks[0].id).toBe("completed")
-		expect(report.checks[0].findings).toEqual([])
+		// The cause leads the list; the outcome is the headline, not a row.
+		expect(report.checks[0].id).toBe("context-window")
 
 		const context = byId(report, "context-window")
 		expect(context.status).toBe("failed")
@@ -116,7 +115,7 @@ describe("buildSessionChecks", () => {
 		expect(context.action).toMatch(/^Compact or summarise/)
 		expect(context.fixArea).toBe("prompt")
 		expect(context.findings.map((finding) => finding.spanId)).toEqual(["l2"])
-		expect(report.counts.failed).toBe(2)
+		expect(report.counts.failed).toBe(1)
 	})
 
 	it("warns on a failure the session carried past, and says so", () => {
@@ -174,7 +173,7 @@ describe("buildSessionChecks", () => {
 		const availability = byId(report, "tool-availability")
 		expect(availability.status).toBe("failed")
 		expect(availability.headline).toBe(
-			"`sandbox_grep` could not run on turn 2: GitHub App not configured for this organisation",
+			"`sandbox_grep` could not run on turn 2: GitHub App not configured for this organisation; the session carried on",
 		)
 		expect(availability.fixArea).toBe("integration")
 	})

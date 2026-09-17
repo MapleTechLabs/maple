@@ -21,7 +21,7 @@ import {
 	type SessionVerdict,
 } from "./session-findings"
 import { spanTokenBuckets, type SessionSummary, type SessionTokenReporting } from "./session-summary"
-import { classifyAiSpan, isLlmCall, type SessionTurn, type TurnAnchorKind } from "./session-turns"
+import { classifyAiSpan, isLlmCall, spanStartMs, type SessionTurn, type TurnAnchorKind } from "./session-turns"
 
 /** Below this share of the prompt served from cache, across the calls after
  *  the first, the prefix is not being reused. */
@@ -71,7 +71,9 @@ export interface SessionCoverage {
 export interface SessionChecksReport {
 	readonly verdict: SessionVerdict
 	/** The one line that answers "did it work": `The final turn died on the
-	 *  context window`, `Completed with 2 warnings`. */
+	 *  context window`, `Completed with 2 warnings`. The outcome is not a
+	 *  check of its own — the check for whatever killed the session carries
+	 *  the evidence and the action, and this line names it. */
 	readonly headline: string
 	readonly counts: Readonly<Record<SessionCheckStatus, number>>
 	/** Failed first, then warnings, passed, skipped; stable within a status. */
@@ -100,7 +102,7 @@ export function buildSessionChecks(
 	const errors = of("error")
 
 	const checks = [
-		outcomeCheck(report, turns, of("incomplete")),
+		...completionCheck(of("incomplete")),
 		contextWindowCheck(of("contextExceeded"), llmCalls, coverage),
 		rateLimitCheck(of("rateLimited")),
 		providerCheck(of("providerError"), of("providerRetry"), llmCalls.length),
@@ -125,21 +127,25 @@ export function buildSessionChecks(
 
 	return {
 		verdict: report.verdict,
-		headline: reportHeadline(report.verdict, checks[0], counts),
+		headline: reportHeadline(report, turns, counts),
 		counts,
 		checks,
 		coverage,
 	}
 }
 
-/** The failed outcome leads the list, so its headline is the report's; a
- *  session that completed is summarised by what the other checks found. */
+/** A failed session is named by what killed it; one that completed is
+ *  summarised by what the checks found. */
 function reportHeadline(
-	verdict: SessionVerdict,
-	first: SessionCheck,
+	report: SessionFindingsReport,
+	turns: readonly SessionTurn[],
 	counts: Readonly<Record<SessionCheckStatus, number>>,
 ): string {
-	if (verdict.status === "failed") return first.headline
+	if (report.verdict.status === "failed") {
+		const word = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
+		const cause = report.findings.find((finding) => finding.terminal)
+		return `The final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`
+	}
 	if (counts.failed > 0) return `Completed, but ${plural(counts.failed, "check")} failed`
 	if (counts.warning > 0) return `Completed with ${plural(counts.warning, "warning")}`
 	return `Completed cleanly — ${plural(counts.passed, "check")} passed`
@@ -196,41 +202,21 @@ const check = (
 const foundStatus = (findings: readonly SessionFinding[]): SessionCheckStatus =>
 	findings.some((finding) => finding.terminal) ? "failed" : "warning"
 
-/**
- * The verdict as a check: it carries no evidence of its own, because the
- * check for whatever killed the session already does, and the page's verdict
- * has its own link to the failing span.
- */
-function outcomeCheck(
-	report: SessionFindingsReport,
-	turns: readonly SessionTurn[],
-	incomplete: readonly SessionFinding[],
-): SessionCheck {
-	const identity: CheckIdentity = { id: "completed", group: "outcome", name: "Completed", fixArea: undefined }
-	const word = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
-	if (report.verdict.status === "failed") {
-		const cause = report.findings.find((finding) => finding.terminal)
-		return check(
-			identity,
-			"failed",
-			`The final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`,
-		)
-	}
+/** A run that ended without the completion its agent demanded: present only
+ *  when it happened, since most agents demand no such thing. */
+function completionCheck(incomplete: readonly SessionFinding[]): SessionCheck[] {
 	const unfinished = incomplete[0]
-	if (unfinished !== undefined) {
-		return check(
+	if (unfinished === undefined) return []
+	const identity: CheckIdentity = { id: "completion", group: "outcome", name: "Completion", fixArea: "prompt" }
+	return [
+		check(
 			identity,
 			"failed",
-			`A run ${unfinished.detail ?? "ended without calling its completion tool"} on ${where(unfinished)}`,
+			`A run ${unfinished.detail ?? "ended without calling its completion tool"} on ${where(unfinished)}${carriedOn(incomplete)}`,
 			"Give the agent a stop condition, or a larger turn budget; it ended without its completion tool.",
 			incomplete,
-		)
-	}
-	return check(
-		identity,
-		"passed",
-		turns.length === 1 ? `The one ${word} closed cleanly` : `All ${turns.length} ${word}s closed cleanly`,
-	)
+		),
+	]
 }
 
 /** `died on the context window`, `ended without calling \`submit_plan\``. */
@@ -268,19 +254,23 @@ function contextWindowCheck(
 	coverage: SessionCoverage,
 ): SessionCheck {
 	const identity: CheckIdentity = { id: "context-window", group: "model", name: "Context window", fixArea: "prompt" }
-	const sizes = promptSizes(llmCalls)
+	const found = findings[0]
+	// The growth that matters is the one that ended in the overflow, not what
+	// the session did after it recovered.
+	const sizes = promptSizes(
+		found === undefined ? llmCalls : llmCalls.filter((span) => spanStartMs(span) <= found.atMs),
+	)
 	const first = sizes[0]
 	const last = sizes[sizes.length - 1]
 	const growth =
 		first !== undefined && last !== undefined && sizes.length > 1 && last > first
 			? `; the prompt grew ${formatNumber(first)} → ${formatNumber(last)} tokens over the session`
 			: ""
-	const found = findings[0]
 	if (found !== undefined) {
 		return check(
 			identity,
 			"failed",
-			`The prompt outgrew the model's context window on ${where(found)}${growth}`,
+			`The prompt outgrew the model's context window on ${where(found)}${growth}${carriedOn(findings)}`,
 			"Compact or summarise the history before it nears the limit, or split the task across sessions.",
 			findings,
 		)
@@ -309,7 +299,7 @@ function rateLimitCheck(findings: readonly SessionFinding[]): SessionCheck {
 	return check(
 		identity,
 		status,
-		`${plural(total(findings), "model call")} ${total(findings) === 1 ? "was" : "were"} rate-limited on ${where(found)}${carriedOn(status)}`,
+		`${plural(total(findings), "model call")} ${total(findings) === 1 ? "was" : "were"} rate-limited on ${where(found)}${carriedOn(findings)}`,
 		"Add jittered backoff, or spread the load across API keys.",
 		findings,
 	)
@@ -333,7 +323,7 @@ function providerCheck(
 	const parts = [
 		...(failures.length > 0
 			? [
-					`${plural(total(failures), "model call")} failed at the provider on ${where(failures[0])}${carriedOn(status)}`,
+					`${plural(total(failures), "model call")} failed at the provider on ${where(failures[0])}${carriedOn(failures)}`,
 				]
 			: []),
 		...retries.map((retry) => `retried at the gateway: ${retry.detail ?? `${retry.count} attempts`}`),
@@ -356,7 +346,7 @@ function refusalCheck(findings: readonly SessionFinding[]): SessionCheck {
 	return check(
 		identity,
 		status,
-		`${plural(n, "reply", "replies")} ${n === 1 ? "was" : "were"} refused or filtered on ${where(found)}${carriedOn(status)}`,
+		`${plural(n, "reply", "replies")} ${n === 1 ? "was" : "were"} refused or filtered on ${where(found)}${carriedOn(findings)}`,
 		"Review what the model declined; adjust the prompt, or handle refusals in the agent.",
 		findings,
 	)
@@ -392,7 +382,7 @@ function structuredOutputCheck(findings: readonly SessionFinding[]): SessionChec
 	return check(
 		identity,
 		"failed",
-		`${plural(n, "reply", "replies")} did not match the schema the agent demanded on ${where(found)}${detailText(found)}`,
+		`${plural(n, "reply", "replies")} did not match the schema the agent demanded on ${where(found)}${detailText(found)}${carriedOn(findings)}`,
 		"Add an example of the field to the prompt, or relax the schema.",
 		findings,
 	)
@@ -415,7 +405,8 @@ function toolAvailabilityCheck(findings: readonly SessionFinding[], summary: Ses
 	return check(
 		identity,
 		"failed",
-		findings.map((finding) => `${toolName(finding)} could not run on ${where(finding)}${detailText(finding)}`).join("; "),
+		findings.map((finding) => `${toolName(finding)} could not run on ${where(finding)}${detailText(finding)}`).join("; ") +
+			carriedOn(findings),
 		"Connect the integration or grant the permission the tool needs, then re-run.",
 		findings,
 	)
@@ -439,7 +430,7 @@ function toolTimeoutCheck(findings: readonly SessionFinding[], summary: SessionS
 		status,
 		findings
 			.map((finding) => `${toolName(finding)} timed out ${times(finding.count)} on ${where(finding)}`)
-			.join("; ") + carriedOn(status),
+			.join("; ") + carriedOn(findings),
 		"Raise the tool's timeout, or make the tool faster.",
 		findings,
 	)
@@ -485,7 +476,7 @@ function toolErrorCheck(findings: readonly SessionFinding[], summary: SessionSum
 	const single = findings.length === 1 ? findings[0] : undefined
 	const headline =
 		single !== undefined
-			? `${toolName(single)} failed ${times(single.count)} on ${where(single)}${detailText(single)}${carriedOn(status)}`
+			? `${toolName(single)} failed ${times(single.count)} on ${where(single)}${detailText(single)}${carriedOn(findings)}`
 			: `${plural(n, "tool call")} failed${status === "warning" ? " and the agent carried on" : ""}: ${findings
 					.map((finding) => `${toolName(finding)} (${finding.detail ?? finding.label}, ${where(finding)})`)
 					.join(", ")}`
@@ -510,7 +501,7 @@ function otherErrorsCheck(findings: readonly SessionFinding[]): SessionCheck[] {
 			status,
 			findings
 				.map((finding) => `\`${finding.label}\` ${times(finding.count)} on ${where(finding)}${detailText(finding)}`)
-				.join("; ") + carriedOn(status),
+				.join("; ") + carriedOn(findings),
 			"Open the span for the framework's own message.",
 			findings,
 		),
@@ -618,6 +609,8 @@ function detailText(finding: SessionFinding): string {
 	return finding.detail === undefined ? "" : `: ${finding.detail}`
 }
 
-function carriedOn(status: SessionCheckStatus): string {
-	return status === "warning" ? "; the session carried on" : ""
+/** A failure the session survived says so: it is what separates a warning
+ *  worth a look from the thing that ended the run. */
+function carriedOn(findings: readonly SessionFinding[]): string {
+	return findings.some((finding) => finding.terminal) ? "" : "; the session carried on"
 }

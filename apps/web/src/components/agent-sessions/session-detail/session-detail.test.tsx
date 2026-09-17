@@ -437,15 +437,20 @@ describe("SessionOverview", () => {
 	})
 
 	// A mid-session failure the session recovered from is not a failed session —
-	// but it is exactly what the findings list exists to surface. There is no
-	// verdict line above it: the findings ARE the verdict, and a headline
-	// counting them said it twice.
-	it("leads with the findings when something failed mid-session, and opens one", () => {
+	// but it is exactly what the checklist exists to surface: the session
+	// completed, the tool check says what failed and what to do, and its
+	// evidence row opens the span.
+	it("leads with the checks that need attention when something failed mid-session, and opens one", () => {
 		const onSelectSpan = vi.fn()
 		render(<Overview onSelectSpan={onSelectSpan} />)
 
-		expect(screen.queryByText(/^Completed/)).toBeNull()
-		expect(screen.getByText("Findings")).toBeTruthy()
+		expect(screen.getByText("Completed")).toBeTruthy()
+		expect(screen.getByText("Needs attention")).toBeTruthy()
+		const errors = within(screen.getByTestId("check-tool-errors"))
+		expect(errors.getByText("Tool errors")).toBeTruthy()
+		// The tool name is set as code, so the sentence's own text starts after it.
+		expect(errors.getByText(/failed once on turn 1: exit 1; the session carried on$/)).toBeTruthy()
+		expect(errors.getByText(/^Fix the tool/)).toBeTruthy()
 		fireEvent.click(screen.getByText("error · run_tests"))
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
@@ -488,12 +493,16 @@ describe("SessionOverview", () => {
 		expect(onSelectSpan).toHaveBeenCalledWith(undefined)
 	})
 
-	it("says a clean session completed cleanly, and what that claim covers", () => {
+	// A clean session is not an empty page: the passed list opens on its own,
+	// and every row says what it measured.
+	it("says a clean session completed cleanly, and opens the passed checks with their facts", () => {
 		render(<Overview turns={quietTurns} summary={quiet} />)
 
-		expect(screen.getByText("Completed cleanly")).toBeTruthy()
-		expect(screen.getByText(/No errors, refusals, truncated replies/)).toBeTruthy()
-		expect(screen.getByText("No findings.")).toBeTruthy()
+		expect(screen.getByText("Completed")).toBeTruthy()
+		expect(screen.getByText(/^cleanly — \d+ checks passed$/)).toBeTruthy()
+		expect(screen.getByText(/^Nothing to fix/)).toBeTruthy()
+		expect(screen.getByRole("button", { name: /^Passed/ }).getAttribute("aria-expanded")).toBe("true")
+		expect(screen.getByText("No model call was rate-limited")).toBeTruthy()
 	})
 
 	// The ledger's row is a summary; the calls behind it are the point. A mark is
