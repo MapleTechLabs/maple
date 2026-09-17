@@ -897,6 +897,59 @@ describe("buildSessionSummary — work and failures", () => {
 		expect(summary.failures.errors).toBe(0)
 	})
 
+	// A gateway's failed provider attempts and the app's spans around a failed
+	// tool call are not failures of the agent: the counts read the generation
+	// and the tool span, once each.
+	it("counts neither a gateway's provider attempts nor the app's spans under a failed tool", () => {
+		const summary = summarize([
+			agentSpan({ spanId: "agent", startMs: 0, durationMs: 20 * SECOND }),
+			llmSpan({
+				spanId: "gen",
+				parentSpanId: "agent",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: SECOND,
+				durationMs: 2 * SECOND,
+			}),
+			llmSpan({
+				spanId: "attempt",
+				parentSpanId: "gen",
+				vendorId: "openrouter",
+				spanName: "provider attempt 1: Crusoe",
+				startMs: SECOND,
+				durationMs: 200,
+				statusCode: "Error",
+				genAi: { attemptIndex: 0, attemptStatusCode: 429, attemptProvider: "Crusoe" },
+			}),
+			toolSpan({
+				spanId: "tool",
+				parentSpanId: "agent",
+				startMs: 4 * SECOND,
+				durationMs: SECOND,
+				toolName: "sandbox_grep",
+				statusCode: "Error",
+				statusMessage: "Tool execution reached a failed terminal state",
+				genAi: { toolCallResult: { result: "Tool failed: GitHub App is not configured" } },
+			}),
+			makeSpan({
+				spanId: "app",
+				parentSpanId: "tool",
+				spanName: "GithubAppClient.getCommit",
+				startMs: 4 * SECOND,
+				durationMs: 500,
+				isAiSpan: false,
+				statusCode: "Error",
+				statusMessage: "GitHub App is not configured",
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 1, rateLimited: 0, contextExceeded: 0, refusals: 0 })
+		expect(summary.failureGroups).toEqual([
+			{ kind: "toolUnavailable", label: "tool_unavailable · sandbox_grep", count: 1 },
+		])
+		expect(summary.tools[0]?.events[0]?.errorDetail).toBe("GitHub App is not configured")
+	})
+
 	it("does not read a max_tokens finish as a failure", () => {
 		const summary = summarize([
 			llmSpan({

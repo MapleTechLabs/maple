@@ -308,6 +308,14 @@ export const AI_GENAI_FIELDS = {
 	// workflow
 	workflowName: { key: "gen_ai.workflow.name", type: "string" },
 
+	// gateway routing — a gateway that tries several upstream providers for one
+	// generation (OpenRouter Broadcast) emits one child span per attempt, with the
+	// provider it went to and the HTTP status that sent it to the next one. A
+	// failed attempt whose generation succeeded is a retry, not a failure.
+	attemptIndex: { key: "span.metadata.attempt_index", type: "number" },
+	attemptStatusCode: { key: "span.metadata.status_code", type: "number" },
+	attemptProvider: { key: "trace.metadata.openrouter.provider_name", type: "string" },
+
 	// core semconv attributes AI spans carry — see `AI_CORE_FIELDS`
 	errorType: { key: "error.type", type: "string" },
 	serverAddress: { key: "server.address", type: "string" },

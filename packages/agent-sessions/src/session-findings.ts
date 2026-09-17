@@ -9,17 +9,24 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
+import { clipDetail, failureDetailText } from "./failure-text"
 import {
-	clipDetail,
 	failureEvents,
 	findIdleGaps,
-	firstProse,
+	isProviderAttempt,
 	shadowedAncestorIds,
 	spanTokenBuckets,
 	type SessionFailureKind,
 	type SessionSummary,
 } from "./session-summary"
-import { classifyAiSpan, isLlmCall, spanEndMs, spanStartMs, type SessionTurn } from "./session-turns"
+import {
+	classifyAiSpan,
+	isLlmCall,
+	spanEndMs,
+	spanFailed,
+	spanStartMs,
+	type SessionTurn,
+} from "./session-turns"
 
 /** Same tool this often within one turn reads as the agent going in circles. */
 const REPEATED_TOOL_MIN_CALLS = 8
@@ -33,6 +40,14 @@ const MID_TURN_STALL_MIN_MS = 30_000
 
 /** Finish reasons that mean the reply was cut off at the output token limit. */
 const TRUNCATION_FINISH_REASONS = new Set(["length", "max_tokens", "max_output_tokens"])
+
+/**
+ * Failure kinds that read as warnings unless the session died on one: the
+ * recovered-shaped signals the rail's amber dots have always drawn, plus a
+ * tool refusing the model's arguments — the tool ran, the model called it
+ * wrong, and the run usually goes on.
+ */
+const ANOMALY_KINDS: ReadonlySet<SessionFailureKind> = new Set(["rateLimited", "refusal", "toolArguments"])
 
 /** Red or amber: whether the thing found affected the outcome, or merely looks
  *  wrong. The mapping for failures matches the rail's old dot colors — errors
@@ -99,6 +114,7 @@ export function buildSessionFindings(
 
 	const findings = [
 		...failureFindings(events, turns, turnIndexBySpan, cause?.span.spanId, spans),
+		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
 		...repetitionFindings(turns),
 		...stallFindings(turns),
@@ -156,12 +172,8 @@ function failureFindings(
 		const linked = cause ?? group.members[0]
 		return {
 			id: `failure:${label}`,
-			// Rate limits and refusals are warnings unless the session died on one:
-			// the same split the failure dots have always drawn.
 			severity:
-				terminal || group.kind === "error" || group.kind === "contextExceeded"
-					? ("failure" as const)
-					: ("anomaly" as const),
+				terminal || !ANOMALY_KINDS.has(group.kind) ? ("failure" as const) : ("anomaly" as const),
 			label,
 			count: group.members.length,
 			turnText: turnListText(turnIndices, turns, terminal),
@@ -178,27 +190,78 @@ function failureFindings(
 }
 
 /**
- * The group's evidence line: the first status message a member carries, and
- * where every member is silent, the failed tool call's own recorded result.
- *
- * The fallback exists because frameworks record a failed tool call as a value
- * on an `Ok` span — Maple's own agent stamps `error.type: tool_error` and puts
- * the error message in `gen_ai.tool.call.result`, with no status message at
- * all. For those spans the result payload IS the error.
+ * The group's evidence line: the first member that says anything, read the
+ * way `failure-text.ts` reads every failed span — the status message unless
+ * it is the framework's generic one, else the tool call's recorded result,
+ * with the framework's prefixes stripped and a schema path made readable.
  */
 function failureDetail(spans: readonly AiSessionSpan[], label: string): string | undefined {
 	for (const span of spans) {
-		const message = span.statusMessage.trim()
-		if (message === "" || message === label) continue
-		return clipDetail(message)
-	}
-	for (const span of spans) {
-		const result = span.genAi.toolCallResult ?? undefined
-		if (result === undefined) continue
-		const prose = firstProse(result)
-		if (prose !== undefined) return clipDetail(prose)
+		const detail = failureDetailText(span)
+		if (detail !== undefined && detail !== label) return detail
 	}
 	return undefined
+}
+
+/**
+ * A gateway's failed provider attempts, rolled up into one row: how many, on
+ * which statuses, at which providers, and whether the generations above them
+ * recovered. Attempts are never failure events ({@link isProviderAttempt}); a
+ * generation that ran out of providers is its own `provider_error` finding.
+ */
+function retryFindings(
+	spans: readonly AiSessionSpan[],
+	turns: readonly SessionTurn[],
+	turnIndexBySpan: ReadonlyMap<string, number>,
+): SessionFinding[] {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const attempts = spans.filter((span) => isProviderAttempt(span) && spanFailed(span))
+	const first = attempts[0]
+	if (first === undefined) return []
+
+	const byStatus = new Map<string, number>()
+	const providers = new Set<string>()
+	const generations = new Set<string>()
+	const failedGenerations = new Set<string>()
+	for (const attempt of attempts) {
+		const status = attempt.genAi.attemptStatusCode
+		const key = status === undefined ? "error" : String(status)
+		byStatus.set(key, (byStatus.get(key) ?? 0) + 1)
+		if (attempt.genAi.attemptProvider !== undefined) providers.add(attempt.genAi.attemptProvider)
+		const parent = byId.get(attempt.parentSpanId)
+		if (parent === undefined) continue
+		generations.add(parent.spanId)
+		if (spanFailed(parent)) failedGenerations.add(parent.spanId)
+	}
+
+	const statuses = [...byStatus]
+		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.map(([status, count]) => `${status} ×${count}`)
+		.join(" · ")
+	const where = providers.size === 0 ? "" : ` — ${[...providers].sort().join(", ")}`
+	const outcome =
+		generations.size === 0
+			? ""
+			: failedGenerations.size === 0
+				? " · all recovered"
+				: ` · ${failedGenerations.size} of ${generations.size} calls did not recover`
+
+	return [
+		{
+			id: "provider-retry",
+			severity: "anomaly",
+			label: "provider_retry",
+			count: attempts.length,
+			turnText: turnListText(
+				distinctSorted(attempts.map((span) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				turns,
+				false,
+			),
+			detail: clipDetail(`${statuses}${where}${outcome}`),
+			spanId: first.spanId,
+			atMs: spanStartMs(first),
+		},
+	]
 }
 
 /**
