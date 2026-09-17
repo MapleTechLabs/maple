@@ -236,9 +236,7 @@ describe("buildSessionChecks", () => {
 
 		const errors = byId(report, "tool-errors")
 		expect(errors.status).toBe("warning")
-		expect(errors.headline).toBe(
-			"2 tool calls failed; the session carried on",
-		)
+		expect(errors.headline).toBe("2 tool calls failed; the session carried on")
 		expect(errors.findings).toHaveLength(2)
 	})
 
@@ -507,9 +505,7 @@ describe("buildSessionChecks", () => {
 			}),
 		])
 
-		expect(byId(report, "tool-errors").headline).toBe(
-			"5 tool calls failed; the session carried on",
-		)
+		expect(byId(report, "tool-errors").headline).toBe("5 tool calls failed; the session carried on")
 		expect(byId(report, "tool-errors").findings).toHaveLength(5)
 	})
 
@@ -593,12 +589,29 @@ describe("buildSessionChecks", () => {
 		])
 
 		expect(report.coverage).toEqual({
-			messages: false,
-			toolPayloads: false,
+			messages: "missing",
+			toolPayloads: "missing",
 			usage: "per-call",
-			cost: false,
+			cost: "missing",
 			// One conversation id alone is no turn key; the agent root opens the turn.
 			turns: "agent-root",
 		})
+	})
+
+	// A session that called no tool has no tool payloads to capture: that is
+	// not a gap in the instrumentation, and the row must not say it is.
+	it("marks a signal absent, not missing, when there was nothing to capture", () => {
+		const report = checks([
+			agentSpan({ spanId: "a1", startMs: 0, durationMs: 4 * SECOND, genAi: { conversationId: "t1" } }),
+			llmSpan({
+				spanId: "l1",
+				parentSpanId: "a1",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { conversationId: "t1" },
+			}),
+		])
+		expect(report.coverage.toolPayloads).toBe("absent")
+		expect(report.coverage.messages).toBe("missing")
 	})
 })

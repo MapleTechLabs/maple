@@ -5,6 +5,7 @@ import type {
 	SessionCheckStatus,
 	SessionChecksReport,
 	SessionCoverage,
+	SessionCoverageSignal,
 	SessionFinding,
 } from "@maple/agent-sessions"
 
@@ -271,7 +272,10 @@ function StatusDot({ status }: { status: SessionCheckStatus }) {
 	return (
 		<span
 			aria-hidden
-			className={cn("size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full", STATUS_DOT[status])}
+			className={cn(
+				"size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full",
+				STATUS_DOT[status],
+			)}
 		/>
 	)
 }
@@ -317,7 +321,12 @@ function Disclosure({
 				)}
 			/>
 			<span className="flex items-baseline gap-2">
-				<span className={cn("font-semibold text-[13px]", disclosable ? STATUS_TEXT[status] : "text-muted-foreground")}>
+				<span
+					className={cn(
+						"font-semibold text-[13px]",
+						disclosable ? STATUS_TEXT[status] : "text-muted-foreground",
+					)}
+				>
 					{title}
 				</span>
 				<span className="font-mono text-muted-foreground text-xs tabular-nums">{checks.length}</span>
@@ -371,53 +380,75 @@ function CheckFact({ check }: { check: SessionCheck }) {
 /* Coverage                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** One captured signal: what it is, and what the checks do with it — or
- *  what is missing without it. */
+/** One signal on the Captured row: what it is, and one line on what the
+ *  checks do with it — or what is missing without it. */
 interface Signal {
 	readonly label: string
-	readonly on: boolean
+	readonly state: SessionCoverageSignal
 	readonly title: string
 	readonly explains: string
 }
 
+const SIGNAL_MARK = {
+	captured: { glyph: "✓", tone: "text-severity-info", says: "captured:" },
+	missing: { glyph: "✕", tone: "text-destructive", says: "not captured:" },
+	absent: { glyph: "–", tone: "text-muted-foreground/60", says: "nothing to capture:" },
+} satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
+
+const NO_MODEL_CALL = "No model call in this session."
+
 function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 	const usage = coverage.usage
 	const turns = coverage.turns
+	const usageState: SessionCoverageSignal =
+		usage === "absent" ? "absent" : usage === "none" ? "missing" : "captured"
 	return [
 		{
 			label: "messages",
-			on: coverage.messages,
+			state: coverage.messages,
 			title: "Messages",
-			explains: coverage.messages
-				? "The prompts and replies of each model call, as the instrumentation recorded them. The Transcript shows them, and Refusals and Reply length read the actual text."
-				: "No model call recorded its prompts or replies. Message capture is opt-in in most SDKs; without it the Transcript is structure only, and Refusals and Reply length go by status codes alone.",
+			explains: {
+				captured:
+					"Each model call's prompts and replies were recorded. Refusals and Reply length read them.",
+				missing:
+					"No model call recorded its prompts or replies. Refusals and Reply length go by status codes only.",
+				absent: NO_MODEL_CALL,
+			}[coverage.messages],
 		},
 		{
 			label: "tool args & results",
-			on: coverage.toolPayloads,
+			state: coverage.toolPayloads,
 			title: "Tool arguments and results",
-			explains: coverage.toolPayloads
-				? "What each tool was called with and what it returned. The tool ledger shows them, and Tool errors and Tool arguments read the error text."
-				: "No tool call recorded its arguments or result. Without them a failed call has only its status, and Repeated calls cannot tell identical calls apart.",
+			explains: {
+				captured:
+					"Each tool call's arguments and result were recorded. Tool errors and Repeated calls read them.",
+				missing:
+					"No tool call recorded its arguments or result. A failed call has only its status, and identical retries cannot be told apart.",
+				absent: "No tool was called in this session.",
+			}[coverage.toolPayloads],
 		},
 		{
-			label: usage === "none" ? "token usage" : `token usage ${usage}`,
-			on: usage !== "none",
+			label: usage === "absent" || usage === "none" ? "token usage" : `token usage ${usage}`,
+			state: usageState,
 			title: "Token usage",
 			explains:
 				usage === "per-call" || usage === "roll-up"
-					? "Input, output and cache tokens reported on every model call. Context window and Prompt cache read them call by call."
+					? "Every model call reported its tokens. Context window and Prompt cache read them."
 					: usage === "session-level"
-						? "Token counts were reported once for the whole session rather than per call, so Context window and Prompt cache cannot follow the prompt from call to call."
-						: "No span reported token usage. Context window and Prompt cache have nothing to read.",
+						? "Tokens were reported once for the whole session, not per call. Context window and Prompt cache cannot follow them."
+						: usage === "none"
+							? "No span reported token usage."
+							: NO_MODEL_CALL,
 		},
 		{
 			label: "cost",
-			on: coverage.cost,
+			state: coverage.cost,
 			title: "Cost",
-			explains: coverage.cost
-				? "The price the instrumentation stamped on each call. Maple prices nothing itself — this is what the emitter reported, not a bill."
-				: "No span carried a cost. Maple prices nothing itself, so the session has no cost figure.",
+			explains: {
+				captured: "Each call carries the cost its instrumentation reported. Not a bill.",
+				missing: "No span reported a cost. Maple prices nothing itself.",
+				absent: NO_MODEL_CALL,
+			}[coverage.cost],
 		},
 		{
 			label:
@@ -428,14 +459,14 @@ function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 						: "turns by trace",
 			// One turn per trace is the floor, not a turn key; the other two rules
 			// found real turn boundaries.
-			on: turns === "conversation" || turns === "agent-root",
+			state: turns === "conversation" || turns === "agent-root" ? "captured" : "missing",
 			title: "Turns",
 			explains:
 				turns === "conversation"
-					? "Turns are cut at the conversation id the instrumentation stamped on its spans — the real boundaries between one exchange and the next."
+					? "Turns follow the conversation id on the spans."
 					: turns === "agent-root"
-						? "Turns are cut at each agent's root span, the closest thing to an exchange the spans carry. Stalls and Repeated calls look within a turn."
-						: "The spans carried no conversation id and no agent root, so each trace counts as one turn. Stalls and Repeated calls, which look within a turn, are reading a guess.",
+						? "Turns follow each agent's root span."
+						: "No conversation id or agent root on the spans, so each trace is one turn. Stalls and Repeated calls read a guess.",
 		},
 	]
 }
@@ -449,29 +480,35 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 			<span />
 			<span className="text-muted-foreground">Captured</span>
 			<span className="flex flex-wrap gap-x-4 gap-y-1">
-				{coverageSignals(coverage).map((signal) => (
-					<Tooltip key={signal.label}>
-						<TooltipTrigger
-							render={<span />}
-							className={cn(
-								"flex cursor-help items-baseline gap-1.5 underline decoration-dotted decoration-muted-foreground/40 underline-offset-[3px]",
-								signal.on ? "text-muted-foreground" : "text-muted-foreground/60 line-through",
-							)}
-						>
-							<span aria-hidden className={signal.on ? "text-severity-info" : "text-destructive"}>
-								{signal.on ? "✓" : "✕"}
-							</span>
-							<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
-							{signal.label}
-						</TooltipTrigger>
-						<TooltipContent className="max-w-72">
-							<span className="flex flex-col gap-1 py-1 text-left leading-relaxed">
-								<span className="font-semibold">{signal.title}</span>
-								<span className="text-muted-foreground">{signal.explains}</span>
-							</span>
-						</TooltipContent>
-					</Tooltip>
-				))}
+				{coverageSignals(coverage).map((signal) => {
+					const mark = SIGNAL_MARK[signal.state]
+					return (
+						<Tooltip key={signal.label}>
+							<TooltipTrigger
+								render={<span />}
+								className={cn(
+									"flex cursor-help items-baseline gap-1.5 underline decoration-dotted decoration-muted-foreground/40 underline-offset-[3px]",
+									signal.state === "captured"
+										? "text-muted-foreground"
+										: "text-muted-foreground/60",
+									signal.state === "missing" && "line-through",
+								)}
+							>
+								<span aria-hidden className={mark.tone}>
+									{mark.glyph}
+								</span>
+								<span className="sr-only">{mark.says}</span>
+								{signal.label}
+							</TooltipTrigger>
+							<TooltipContent className="max-w-72">
+								<span className="flex flex-col gap-1 py-1 text-left leading-relaxed">
+									<span className="font-semibold">{signal.title}</span>
+									<span className="text-muted-foreground">{signal.explains}</span>
+								</span>
+							</TooltipContent>
+						</Tooltip>
+					)
+				})}
 			</span>
 		</p>
 	)
