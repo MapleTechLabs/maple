@@ -1103,6 +1103,44 @@ describe("buildSessionSummary — work and failures", () => {
 		expect(summary.failures).toEqual({ errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 1 })
 	})
 
+	it("counts a refusal seen by the app and by a gateway mirror once", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "app",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { responseId: "gen-1", responseFinishReasons: ["content_filter"] },
+			}),
+			llmSpan({
+				spanId: "mirror",
+				traceId: "mirror",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { responseId: "gen-1", responseFinishReasons: ["content_filter"] },
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 1 })
+	})
+
+	it("reads a rejected parameter named timeout as the model's arguments", () => {
+		const summary = summarize([
+			toolSpan({
+				spanId: "t",
+				startMs: 0,
+				durationMs: SECOND,
+				toolName: "sandbox_exec",
+				statusCode: "Error",
+				statusMessage:
+					'Tool failed: Invalid parameters: SchemaError(Expected a number\n  at ["timeout"])',
+			}),
+		])
+
+		expect(summary.failureGroups.map((group) => group.label)).toEqual(["tool_arguments · sandbox_exec"])
+	})
+
 	it("does not read a max_tokens finish as a failure", () => {
 		const summary = summarize([
 			llmSpan({

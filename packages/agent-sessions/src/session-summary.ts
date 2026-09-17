@@ -1011,20 +1011,24 @@ function agentSignal(
  * (OpenRouter Broadcast) land in one session as separate traces with the same
  * `gen_ai.response.id`. The observation that named the cause keeps the event:
  * a specific kind over the catch-alls, then the longer text. Refusals are a
- * finish reason, not a failure, so a refused call that also failed keeps both.
+ * finish reason, not a failure, so a refused call that also failed keeps both,
+ * while its refusal seen twice is one.
  */
 function dedupeByResponseId(events: readonly SessionFailureEvent[]): readonly SessionFailureEvent[] {
 	const slots = new Map<string, { index: number; event: SessionFailureEvent }>()
 	const kept: SessionFailureEvent[] = []
 	for (const event of events) {
 		const id = event.span.genAi.responseId
-		if (event.kind === "refusal" || id === undefined || id === "") {
+		if (id === undefined || id === "") {
 			kept.push(event)
 			continue
 		}
-		const slot = slots.get(id)
+		// A refusal and a failure of one call are two events; two observers of
+		// its refusal are one.
+		const key = `${event.kind === "refusal" ? "refusal" : "failure"}:${id}`
+		const slot = slots.get(key)
 		if (slot === undefined) {
-			slots.set(id, { index: kept.length, event })
+			slots.set(key, { index: kept.length, event })
 			kept.push(event)
 			continue
 		}
@@ -1085,9 +1089,11 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		// prefixes stripping removes, so it is read off the raw text.
 		const named = toolNamedBySchemaError(raw) ?? tool
 		const words = `${span.genAi.errorType ?? ""} ${text}`
-		if (TOOL_TIMEOUT_PATTERN.test(words)) return { kind: "toolTimeout", label: `tool_timeout · ${named}` }
+		// The schema cue first: a rejected parameter named `timeout` is still
+		// the model's arguments.
 		if (TOOL_SCHEMA_PATTERN.test(raw))
 			return { kind: "toolArguments", label: `tool_arguments · ${named}` }
+		if (TOOL_TIMEOUT_PATTERN.test(words)) return { kind: "toolTimeout", label: `tool_timeout · ${named}` }
 		if (TOOL_UNAVAILABLE_PATTERN.test(words)) {
 			return { kind: "toolUnavailable", label: `tool_unavailable · ${named}` }
 		}
