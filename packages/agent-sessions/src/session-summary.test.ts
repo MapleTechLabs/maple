@@ -950,6 +950,120 @@ describe("buildSessionSummary — work and failures", () => {
 		expect(summary.tools[0]?.events[0]?.errorDetail).toBe("GitHub App is not configured")
 	})
 
+	// A refused call that also failed is two events: the refusal is a finish
+	// reason, the failure a status. Sharing a response id must not fold them.
+	it("keeps a refusal and a failure on one span as two events", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "llm",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				statusMessage: "content filtered",
+				genAi: { responseId: "gen-1", responseFinishReasons: ["content_filter"] },
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 1, rateLimited: 0, contextExceeded: 0, refusals: 1 })
+	})
+
+	it("keeps the observation that named the cause, whichever observer came first", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "mirror",
+				traceId: "mirror",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				statusMessage: "Provider returned error after retries were exhausted",
+				genAi: { responseId: "gen-1" },
+			}),
+			llmSpan({
+				spanId: "app",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				statusMessage: "429 Too Many Requests",
+				genAi: { responseId: "gen-1", errorType: "rate_limit" },
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 0, rateLimited: 1, contextExceeded: 0, refusals: 0 })
+	})
+
+	it("reads a failed tool's cause off `error.type` when the framework recorded no words", () => {
+		const summary = summarize([
+			toolSpan({
+				spanId: "t",
+				startMs: 0,
+				durationMs: SECOND,
+				toolName: "run_tests",
+				genAi: { errorType: "timeout" },
+			}),
+		])
+
+		expect(summary.failureGroups).toEqual([
+			{ kind: "toolTimeout", label: "tool_timeout · run_tests", count: 1 },
+		])
+	})
+
+	// The error-tag chain is not the message: an integrations error tag on an
+	// upstream 500 is the tool failing, not an integration that is missing.
+	it("classifies a tool failure on its words, not on its error tags", () => {
+		const summary = summarize([
+			toolSpan({
+				spanId: "t-500",
+				startMs: 0,
+				durationMs: SECOND,
+				toolName: "sandbox_grep",
+				statusCode: "Error",
+				statusMessage:
+					"Tool failed: @maple/http/errors/IntegrationsUpstreamError: GitHub returned 500 Internal Server Error",
+			}),
+			toolSpan({
+				spanId: "t-required",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+				toolName: "read_source_file",
+				statusCode: "Error",
+				statusMessage: "Tool failed: The GitHub integration is required for this tool",
+			}),
+			toolSpan({
+				spanId: "t-schema",
+				startMs: 4 * SECOND,
+				durationMs: SECOND,
+				toolName: "query_data",
+				statusCode: "Error",
+				statusMessage:
+					'Tool failed: Invalid parameters: SchemaError(Missing key\n  at ["integration"])',
+			}),
+		])
+
+		expect(summary.failureGroups.map((group) => group.label).sort()).toEqual([
+			"error · sandbox_grep",
+			"tool_arguments · query_data",
+			"tool_unavailable · read_source_file",
+		])
+	})
+
+	it("keeps a gateway span's own error type over the provider_error default", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "gen",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				genAi: { errorType: "content_filter" },
+			}),
+		])
+
+		expect(summary.failureGroups.map((group) => group.label)).toEqual(["content_filter"])
+	})
+
 	it("does not read a max_tokens finish as a failure", () => {
 		const summary = summarize([
 			llmSpan({

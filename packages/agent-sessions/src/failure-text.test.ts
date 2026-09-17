@@ -28,6 +28,22 @@ describe("stripFailurePrefixes", () => {
 	it("leaves a message with no prefix alone", () => {
 		expect(stripFailurePrefixes("exit 1")).toBe("exit 1")
 	})
+
+	it("strips a tag chain of any length", () => {
+		const chain = Array.from({ length: 12 }, (_, index) => `@maple/errors/E${index}: `).join("")
+		expect(stripFailurePrefixes(`${chain}real text`)).toBe("real text")
+	})
+
+	it("closes the schema wrapper it opened, hint and all", () => {
+		expect(
+			stripFailurePrefixes(
+				'Tool failed: Invalid parameters: SchemaError(boom happened). Check the "sandbox_grep" tool schema for valid parameter names.',
+			),
+		).toBe("boom happened")
+		expect(stripFailurePrefixes("SchemaError(Expected a number (not a string))")).toBe(
+			"Expected a number (not a string)",
+		)
+	})
 })
 
 describe("describeSchemaFailure", () => {
@@ -102,6 +118,19 @@ describe("rawFailureText / failureDetailText", () => {
 
 	it("says nothing for a span that recorded nothing", () => {
 		const span = llmSpan({ spanId: "l", startMs: 0, durationMs: 1, statusCode: "Error" })
+		expect(failureDetailText(span)).toBeUndefined()
+	})
+
+	it("says nothing when the status message only repeats the error type", () => {
+		const span = toolSpan({
+			spanId: "t",
+			startMs: 0,
+			durationMs: 1,
+			statusCode: "Error",
+			statusMessage: "tool_error",
+			genAi: { errorType: "tool_error" },
+		})
+		expect(rawFailureText(span)).toBeUndefined()
 		expect(failureDetailText(span)).toBeUndefined()
 	})
 

@@ -21,6 +21,7 @@ interface SpanInput {
 	readonly startMs: number
 	readonly durationMs: number
 	readonly spanName?: string
+	readonly spanKind?: string
 	readonly serviceName?: string
 	readonly statusCode?: string
 	readonly statusMessage?: string
@@ -36,7 +37,7 @@ export function makeSpan(input: SpanInput): AiSessionSpan {
 		spanId: input.spanId,
 		parentSpanId: input.parentSpanId ?? "",
 		spanName: input.spanName ?? "gen_ai.chat",
-		spanKind: "Internal",
+		spanKind: input.spanKind ?? "Internal",
 		serviceName: input.serviceName ?? "agent-runner",
 		timestamp: at(input.startMs),
 		durationMs: input.durationMs,

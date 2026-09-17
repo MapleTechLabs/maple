@@ -9,6 +9,8 @@
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
+import { classifyAiSpan } from "./session-turns"
+
 /** Status messages a framework stamps on every failed tool call regardless of
  *  cause. They name nothing, so the recorded result is read instead. */
 const GENERIC_TOOL_MESSAGE = /reached a failed terminal state|^tool (execution |call )?failed\.?$/i
@@ -21,7 +23,6 @@ const LEADING_PREFIXES = [
 	/^[a-z0-9_]+(?:\.[a-z0-9_]+)*\.streamtext:\s*/i,
 	/^invalid output:\s*/i,
 	/^invalid parameters:\s*/i,
-	/^schemaerror\(/i,
 ]
 const ERROR_TAG = /^@[\w-]+\/[\w./-]+:\s*/
 const ERROR_ENVELOPE = /^\[error\]\s*/i
@@ -64,39 +65,23 @@ const PROSE_KEYS = [
 ]
 
 /**
- * The first human-readable line inside a captured payload. Maple's own tool
- * errors are plain strings; other vendors wrap the message in an object or an
+ * The human-readable text inside a captured payload. Maple's own tool errors
+ * are plain strings; other vendors wrap the message in an object or an
  * MCP-style content array, so this walks tolerantly and gives up rather than
- * serialising structure into the row.
+ * serialising structure into the row. The whole text, not its first line: a
+ * schema failure puts the path on the line after the words
+ * (`Missing key\n  at ["pattern"]`), and the first line alone would lose the
+ * field it names.
  */
-export function firstProse(value: unknown, depth = 0): string | undefined {
-	return proseIn(value, depth, false)
-}
-
-/**
- * The whole text, not its first line: a schema failure puts the path on the
- * line after the words (`Missing key\n  at ["pattern"]`), and reading the
- * first line alone would lose the field it names.
- */
-function wholeProse(value: unknown): string | undefined {
-	return proseIn(value, 0, true)
-}
-
-function proseIn(value: unknown, depth: number, whole: boolean): string | undefined {
+function wholeProse(value: unknown, depth = 0): string | undefined {
 	if (depth > 4) return undefined
 	if (typeof value === "string") {
-		if (whole) {
-			const text = value.trim()
-			return text === "" ? undefined : text
-		}
-		return value
-			.split("\n")
-			.map((raw) => raw.trim())
-			.find((raw) => raw.length > 0)
+		const text = value.trim()
+		return text === "" ? undefined : text
 	}
 	if (Array.isArray(value)) {
 		for (const entry of value) {
-			const prose = proseIn(entry, depth + 1, whole)
+			const prose = wholeProse(entry, depth + 1)
 			if (prose !== undefined) return prose
 		}
 		return undefined
@@ -105,12 +90,12 @@ function proseIn(value: unknown, depth: number, whole: boolean): string | undefi
 	const record = value as Record<string, unknown>
 	for (const key of PROSE_KEYS) {
 		if (key in record) {
-			const prose = proseIn(record[key], depth + 1, whole)
+			const prose = wholeProse(record[key], depth + 1)
 			if (prose !== undefined) return prose
 		}
 	}
 	// `content` last and on its own: MCP results nest their text parts there.
-	return "content" in record ? proseIn(record.content, depth + 1, whole) : undefined
+	return "content" in record ? wholeProse(record.content, depth + 1) : undefined
 }
 
 /**
@@ -129,16 +114,27 @@ export function rawFailureText(span: AiSessionSpan): string | undefined {
 	return message === "" || message === errorType ? undefined : message
 }
 
-/** The text with its framework prefixes and error-tag chain stripped. */
+/** `SchemaError(` wraps its message in parentheses; the closing one, and the
+ *  hint the framework appends after it, go with the opening one. */
+const SCHEMA_ERROR_OPEN = /^schemaerror\(/i
+const SCHEMA_ERROR_CLOSE = /\)(?:\.\s*Check the "[^"]+" tool schema[^\n]*)?$/i
+
+/** The text with its framework prefixes and error-tag chain stripped. Every
+ *  pass removes something or ends the loop, so it is bounded by the text. */
 export function stripFailurePrefixes(text: string): string {
 	let out = text.trim()
-	for (let guard = 0; guard < 8; guard++) {
+	let wrapped = false
+	for (;;) {
 		const before = out
 		for (const prefix of LEADING_PREFIXES) out = out.replace(prefix, "")
+		if (SCHEMA_ERROR_OPEN.test(out)) {
+			out = out.replace(SCHEMA_ERROR_OPEN, "")
+			wrapped = true
+		}
 		out = out.replace(ERROR_TAG, "").replace(ERROR_ENVELOPE, "")
 		if (out === before) break
 	}
-	return out
+	return wrapped ? out.replace(SCHEMA_ERROR_CLOSE, "").trim() : out
 }
 
 /**
@@ -201,7 +197,8 @@ export function failureDetailText(span: AiSessionSpan): string | undefined {
 	if (schema !== undefined) {
 		// On a tool span the schema is the tool's parameters and the model sent
 		// them; anywhere else it is the output the agent demanded of the model.
-		const subject = span.genAi.toolName !== undefined ? "invalid arguments" : "output rejected by schema"
+		const isTool = span.genAi.toolName !== undefined || classifyAiSpan(span) === "tool"
+		const subject = isTool ? "invalid arguments" : "output rejected by schema"
 		return clipDetail(`${subject}: ${schema}`)
 	}
 	const incomplete = incompleteRunTool(raw)

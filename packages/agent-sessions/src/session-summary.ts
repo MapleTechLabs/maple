@@ -20,6 +20,7 @@ import {
 	failureDetailText,
 	incompleteRunTool,
 	rawFailureText,
+	stripFailurePrefixes,
 	toolNamedBySchemaError,
 } from "./failure-text"
 import {
@@ -265,6 +266,8 @@ export function buildSessionSummary({
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
+	// The counts and the breakdown are two readings of this one list.
+	const events = failureEvents(ordered)
 
 	return {
 		startMs,
@@ -288,8 +291,8 @@ export function buildSessionSummary({
 			llmCalls: calls.length,
 			toolCalls: ordered.filter((span) => classifyAiSpan(span) === "tool").length,
 		},
-		failures: countFailures(ordered),
-		failureGroups: groupFailures(failureEvents(ordered)),
+		failures: countFailures(events),
+		failureGroups: groupFailures(events),
 		tools: toolUsage(ordered, turns),
 		spanCount: ordered.length,
 		traceCount: new Set(ordered.map((span) => span.traceId)).size,
@@ -828,9 +831,6 @@ function toolUsage(
 	)
 }
 
-// The findings and the MCP read the same lines; they live in `failure-text.ts`.
-export { clipDetail, firstProse } from "./failure-text"
-
 /* -------------------------------------------------------------------------- */
 /* Work and failures                                                          */
 /* -------------------------------------------------------------------------- */
@@ -902,8 +902,14 @@ export function isProviderAttempt(span: AiSessionSpan): boolean {
 }
 
 /** Span kinds that are the app talking to something else: a client call's
- *  4xx or a server span's 5xx is the app's business, never the agent's. */
-const RPC_SPAN_KINDS = new Set(["Client", "Server", "Producer", "Consumer"])
+ *  4xx or a server span's 5xx is the app's business, never the agent's. The
+ *  warehouse spells the kind two ways (`SPAN_KIND_CLIENT` on the managed
+ *  schema, `Client` on BYO ClickHouse), so it is compared normalised. */
+const RPC_SPAN_KINDS = new Set(["CLIENT", "SERVER", "PRODUCER", "CONSUMER"])
+
+function isRpcSpan(span: AiSessionSpan): boolean {
+	return RPC_SPAN_KINDS.has(span.spanKind.replace(/^SPAN_KIND_/i, "").toUpperCase())
+}
 
 /**
  * The app's own failed spans that restate an agent failure: the service and
@@ -984,7 +990,7 @@ export function failureEvents(spans: readonly AiSessionSpan[]): readonly Session
 		}
 		if (!spanFailed(span) || shadowedFailures.has(span.spanId)) continue
 		if (isProviderAttempt(span)) continue
-		if (!span.isAiSpan && (RPC_SPAN_KINDS.has(span.spanKind) || shadowedApp.has(span.spanId))) continue
+		if (!span.isAiSpan && (isRpcSpan(span) || shadowedApp.has(span.spanId))) continue
 		events.push({ ...classifyFailure(span), span })
 	}
 
@@ -994,37 +1000,56 @@ export function failureEvents(spans: readonly AiSessionSpan[]): readonly Session
 /**
  * One model call, two observers: the app's own span and a gateway mirror of it
  * (OpenRouter Broadcast) land in one session as separate traces with the same
- * `gen_ai.response.id`. The one that says more about why keeps the event.
+ * `gen_ai.response.id`. The observation that named the cause keeps the event:
+ * a specific kind over the catch-alls, then the longer text. Refusals are a
+ * finish reason, not a failure, so a refused call that also failed keeps both.
  */
 function dedupeByResponseId(events: readonly SessionFailureEvent[]): readonly SessionFailureEvent[] {
-	const byResponse = new Map<string, SessionFailureEvent>()
+	const slots = new Map<string, { index: number; event: SessionFailureEvent }>()
 	const kept: SessionFailureEvent[] = []
 	for (const event of events) {
 		const id = event.span.genAi.responseId
-		if (id === undefined || id === "") {
+		if (event.kind === "refusal" || id === undefined || id === "") {
 			kept.push(event)
 			continue
 		}
-		const existing = byResponse.get(id)
-		if (existing === undefined) {
-			byResponse.set(id, event)
+		const slot = slots.get(id)
+		if (slot === undefined) {
+			slots.set(id, { index: kept.length, event })
 			kept.push(event)
 			continue
 		}
-		const better =
-			(rawFailureText(event.span) ?? "").length > (rawFailureText(existing.span) ?? "").length
-		if (better) kept[kept.indexOf(existing)] = event
-		if (better) byResponse.set(id, event)
+		const specific = failureSpecificity(event) - failureSpecificity(slot.event)
+		const longer =
+			(rawFailureText(event.span) ?? "").length - (rawFailureText(slot.event.span) ?? "").length
+		if (specific > 0 || (specific === 0 && longer > 0)) {
+			kept[slot.index] = event
+			slot.event = event
+		}
 	}
 	return kept
+}
+
+/** Whether the event's kind says what happened, or is one of the catch-alls. */
+function failureSpecificity(event: SessionFailureEvent): number {
+	return event.kind === "error" || event.kind === "providerError" ? 0 : 1
 }
 
 // The words a failed tool's message uses for each cause. Written for what
 // frameworks and Maple's own tools actually say, so a reader gets "the model
 // called it wrong" against "it could not run" instead of one `error` bucket.
+// Matched against the message with its framework prefixes stripped — the
+// `@maple/http/errors/IntegrationsUpstreamError` tag on a GitHub 500 would
+// otherwise read as an integration that is not connected — and bounded, so a
+// megabyte tool result cannot stall the read.
+const CLASSIFIED_TEXT_CHARS = 1000
 const TOOL_TIMEOUT_PATTERN = /timeout|timed out|deadline exceeded/i
+/** A schema or parameter rejection: unambiguous, so it is read before the
+ *  availability words — a missing key named `integration` is still the model's
+ *  arguments. Read off the raw text, whose framework wrapper is the cue. */
+const TOOL_SCHEMA_PATTERN = /invalid (parameters?|arguments?|params?|input)|schemaerror|missing key/i
 const TOOL_ARGUMENTS_PATTERN =
-	/invalid (parameters?|arguments?|params?|input|group_by|metric|filter|time range|value)|schemaerror|missing key|is required|requires `|must reference|must be|not a valid|unknown (function|column|table|field)|no table named|not found\b[\s\S]*available tables|resource '[^']*' not found|illegal types|too large|out of range|unsupported/i
+	/invalid (group_by|metric|filter|time range|value)|is required|requires `|must reference|must be|not a valid|unknown (function|column|table|field)|no table named|not found\b[\s\S]{0,400}available tables|resource '[^']*' not found|illegal types|too large|out of range|unsupported/i
 const TOOL_UNAVAILABLE_PATTERN =
 	/not configured|not connected|not available|unavailable|not enabled|not installed|unauthori[sz]ed|forbidden|permission denied|access denied|no sandbox|integration/i
 
@@ -1035,7 +1060,8 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		return { kind: "contextExceeded", label: "context_length_exceeded" }
 	}
 
-	const text = rawFailureText(span) ?? ""
+	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
+	const text = stripFailurePrefixes(raw)
 	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
 
 	// `error.type` is the instrumentation's own word for it; the tool name is
@@ -1044,13 +1070,20 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 	const tool = span.genAi.toolName ?? (classifyAiSpan(span) === "tool" ? span.spanName : undefined)
 	if (tool !== undefined) {
 		// A parameter error names the tool whose schema was violated; a batch
-		// of calls can stamp a sibling's name on the span.
-		const named = toolNamedBySchemaError(text) ?? tool
-		if (TOOL_TIMEOUT_PATTERN.test(text)) return { kind: "toolTimeout", label: `tool_timeout · ${named}` }
-		if (TOOL_ARGUMENTS_PATTERN.test(text))
+		// of calls can stamp a sibling's name on the span. `error.type` joins
+		// the words: a framework that stamps `timeout` and records no message
+		// has still said what happened. The schema wrapper is one of the
+		// prefixes stripping removes, so it is read off the raw text.
+		const named = toolNamedBySchemaError(raw) ?? tool
+		const words = `${span.genAi.errorType ?? ""} ${text}`
+		if (TOOL_TIMEOUT_PATTERN.test(words)) return { kind: "toolTimeout", label: `tool_timeout · ${named}` }
+		if (TOOL_SCHEMA_PATTERN.test(raw))
 			return { kind: "toolArguments", label: `tool_arguments · ${named}` }
-		if (TOOL_UNAVAILABLE_PATTERN.test(text)) {
+		if (TOOL_UNAVAILABLE_PATTERN.test(words)) {
 			return { kind: "toolUnavailable", label: `tool_unavailable · ${named}` }
+		}
+		if (TOOL_ARGUMENTS_PATTERN.test(words)) {
+			return { kind: "toolArguments", label: `tool_arguments · ${named}` }
 		}
 		return { kind: "error", label: `${name} · ${named}` }
 	}
@@ -1060,16 +1093,19 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 	}
 	// A model call that failed at the provider: Maple's own agents stamp
 	// `provider_error`; a gateway mirror's generation span stamps nothing and is
-	// known by where it came from.
-	if (span.genAi.errorType === "provider_error" || (span.vendorId === "openrouter" && isLlmCall(span))) {
+	// known by where it came from. A more specific `error.type` keeps its name.
+	if (
+		span.genAi.errorType === "provider_error" ||
+		(span.genAi.errorType === undefined && span.vendorId === "openrouter" && isLlmCall(span))
+	) {
 		return { kind: "providerError", label: "provider_error" }
 	}
 	return { kind: "error", label: name }
 }
 
-function countFailures(spans: readonly AiSessionSpan[]): SessionFailureCounts {
+function countFailures(events: readonly SessionFailureEvent[]): SessionFailureCounts {
 	const counts = { errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 0 }
-	for (const event of failureEvents(spans)) {
+	for (const event of events) {
 		if (event.kind === "rateLimited") counts.rateLimited++
 		else if (event.kind === "contextExceeded") counts.contextExceeded++
 		else if (event.kind === "refusal") counts.refusals++

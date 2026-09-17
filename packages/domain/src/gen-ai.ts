@@ -325,11 +325,20 @@ export const AI_GENAI_FIELDS = {
 export type AiGenAiField = keyof typeof AI_GENAI_FIELDS
 
 /**
- * Plain core-semconv attributes that AI spans happen to carry, not AI signal.
- * Every ordinary HTTP client span in the trace has them too, which is why the
- * mapper refuses to treat one as evidence that a span is an AI span.
+ * Attributes AI spans happen to carry that are not AI signal: the plain
+ * core-semconv keys every ordinary HTTP client span in the trace has too, and
+ * a gateway's un-namespaced routing metadata, whose generic `span.metadata.*`
+ * keys any instrumentation might stamp. The mapper refuses to treat one as
+ * evidence that a span is an AI span.
  */
-export const AI_CORE_FIELDS: ReadonlySet<AiGenAiField> = new Set(["errorType", "serverAddress", "serverPort"])
+export const AI_CORE_FIELDS: ReadonlySet<AiGenAiField> = new Set([
+	"errorType",
+	"serverAddress",
+	"serverPort",
+	"attemptIndex",
+	"attemptStatusCode",
+	"attemptProvider",
+])
 
 /**
  * `gen_ai.prompt.variable.<name>` is a TEMPLATED attribute: the key carries the

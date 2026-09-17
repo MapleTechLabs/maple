@@ -560,18 +560,19 @@ describe("buildSessionFindings", () => {
 					durationMs: 10 * SECOND,
 					genAi: { conversationId: "t2" },
 				}),
-				...[0, 1, 2].map((index) => ({
-					...makeSpan({
+				// Both spellings the warehouse uses for the kind.
+				...[0, 1, 2].map((index) =>
+					makeSpan({
 						spanId: `probe-${index}`,
 						parentSpanId: "a2",
 						spanName: "GET",
+						spanKind: index === 0 ? "SPAN_KIND_CLIENT" : "Client",
 						startMs: 5 * MINUTE + index * SECOND,
 						durationMs: 100,
 						isAiSpan: false,
 						statusCode: "Error",
 					}),
-					spanKind: "Client",
-				})),
+				),
 			]),
 		)
 
@@ -589,9 +590,9 @@ describe("buildSessionFindings", () => {
 					genAi: { conversationId: "t2" },
 				}),
 				makeSpan({
-					spanId: "db",
+					spanId: "store",
 					parentSpanId: "a2",
-					spanName: "SELECT sessions",
+					spanName: "SessionStore.load",
 					startMs: 5 * MINUTE + SECOND,
 					durationMs: 100,
 					isAiSpan: false,
