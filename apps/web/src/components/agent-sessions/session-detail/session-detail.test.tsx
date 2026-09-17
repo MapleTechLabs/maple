@@ -46,7 +46,6 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", async (importOriginal) => 
 })
 
 import type { AiSessionSpan, GetAiSessionSummaryResponse } from "@maple/domain/http"
-import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import {
 	buildSessionSummary,
@@ -1429,13 +1428,14 @@ describe("SessionViews", () => {
 })
 
 describe("SessionHeader", () => {
-	it("names the session after its agent, with the framework as a fact beside it", () => {
+	it("names the session after its agent, and leaves the framework to its mark", () => {
 		const { summary: vendorSummary } = sessionOf([
 			agentSpan({ spanId: "v-agent", startMs: 0, durationMs: SECOND, vendorId: "langchain" }),
 		])
 		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} />)
 		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("billing-agent")
-		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
+		expect(screen.queryByText("Framework")).toBeNull()
+		expect(screen.queryByText("LangChain")).toBeNull()
 	})
 
 	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
@@ -1443,18 +1443,28 @@ describe("SessionHeader", () => {
 		expect(screen.queryByText(/webhook/)).toBeNull()
 	})
 
-	it("shows the full session id as a copyable fact, never as the heading", () => {
+	it("shows the session id as a copyable fact, never as the heading", () => {
 		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} />)
 		const copy = screen.getByRole("button", { name: "Copy Session ID" })
 		expect(copy.textContent).toContain("0f3c9a1e-long-session-id")
 		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("0f3c9a1e")
 	})
 
-	it("shows the duration, and neither the model nor a turn count", () => {
+	// An id is emitter input of any length: the fact shows a prefix, the
+	// clipboard and the tooltip carry the whole.
+	it("shortens a long session id to its first 32 characters, keeping the whole to copy", () => {
+		const long = "a".repeat(32) + "b".repeat(20)
+		render(<SessionHeader sessionId={long} summary={summary} />)
+		const copy = screen.getByRole("button", { name: "Copy Session ID" })
+		expect(copy.textContent).toContain(`${"a".repeat(32)}…`)
+		expect(copy.textContent).not.toContain("b")
+		expect(screen.getByTitle(long)).toBeTruthy()
+	})
+
+	it("states neither the duration, the framework, the model nor a turn count", () => {
 		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.getByText("Duration").nextElementSibling?.textContent).toBe(
-			formatSessionDuration(summary.wallClockMs),
-		)
+		expect(screen.queryByText("Duration")).toBeNull()
+		expect(screen.queryByText("Framework")).toBeNull()
 		expect(screen.queryByText("Turns")).toBeNull()
 		expect(screen.queryByText("Model")).toBeNull()
 	})
@@ -1467,22 +1477,14 @@ describe("SessionHeader", () => {
 	})
 
 	it("falls back to the framework, then to a generic name, when no agent is named", () => {
-		expect(sessionIdentity({ agentNames: [], vendorIds: ["claude_agent_sdk"] })).toEqual({
-			heading: "Claude Agent SDK session",
-			framework: undefined,
-		})
-		expect(sessionIdentity({ agentNames: [], vendorIds: ["unknown:foo"] })).toEqual({
-			heading: "Agent session",
-			framework: undefined,
-		})
-		expect(sessionIdentity({ agentNames: ["planner"], vendorIds: [] })).toEqual({
-			heading: "planner",
-			framework: undefined,
-		})
+		expect(sessionIdentity({ agentNames: [], vendorIds: ["claude_agent_sdk"] })).toBe(
+			"Claude Agent SDK session",
+		)
+		expect(sessionIdentity({ agentNames: [], vendorIds: ["unknown:foo"] })).toBe("Agent session")
+		expect(sessionIdentity({ agentNames: ["planner"], vendorIds: [] })).toBe("planner")
 		// `default` is the SDK's placeholder, not a name.
-		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toEqual({
-			heading: "Claude Agent SDK session",
-			framework: undefined,
-		})
+		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toBe(
+			"Claude Agent SDK session",
+		)
 	})
 })
