@@ -285,6 +285,27 @@ export function buildCaptureOffFixture(): readonly AiSessionSpan[] {
 	}))
 }
 
+/**
+ * The same session with nothing going wrong: every error status cleared, the
+ * gateway's rate-limited retries dropped, the failed tool results replaced by
+ * ordinary ones. It is what a clean Overview looks like — the passed list
+ * open, every row carrying a fact — which no fixture with a failure can show.
+ */
+export function buildCleanFixture(): readonly AiSessionSpan[] {
+	return buildAgentSessionFixture()
+		.filter((span) => span.genAi.errorType !== "rate_limit")
+		.map((span) => {
+			const { errorType: _errorType, ...genAi } = span.genAi
+			const failedTool = span.genAi.errorType === "tool_error"
+			return {
+				...span,
+				statusCode: "Unset",
+				statusMessage: "",
+				genAi: failedTool ? { ...genAi, toolCallResult: toolResult(span.genAi.toolName ?? "") } : genAi,
+			}
+		})
+}
+
 const CAPTURED_CONTENT_KEYS = new Set([
 	"systemInstructions",
 	"inputMessages",
