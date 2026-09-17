@@ -5,25 +5,14 @@ import type {
 	SessionCheckStatus,
 	SessionChecksReport,
 	SessionCoverage,
+	SessionCoverageSignal,
 	SessionFinding,
-	SessionFixArea,
 } from "@maple/agent-sessions"
 
 import { ArrowRightIcon, CheckIcon, ChevronRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
-
-import { Pill } from "./pill"
-
-/** The tag on a check that found something: what a fix would touch. */
-const FIX_AREA_LABEL = {
-	prompt: "Prompt",
-	tool: "Tool",
-	integration: "Integration",
-	model: "Model settings",
-	provider: "Provider",
-	instrumentation: "Instrumentation",
-} satisfies Record<SessionFixArea, string>
 
 /** One tone per status, for the dot beside a name and the text of a label. */
 const STATUS_DOT = {
@@ -61,7 +50,16 @@ type OpenSpan = (spanId: string) => void
  * one row away, expanded for a clean session so it still reads as inspected;
  * a check the instrumentation could not support says what to capture.
  */
-export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSpan: OpenSpan }) {
+export function SessionChecks({
+	report,
+	onOpenSpan,
+	onOpenTools,
+}: {
+	report: SessionChecksReport
+	onOpenSpan: OpenSpan
+	/** Bring the Overview's tool ledger into view: the tool-errors check's next step. */
+	onOpenTools: () => void
+}) {
 	const attention = report.checks.filter((check) => check.status === "failed" || check.status === "warning")
 	const passed = report.checks.filter((check) => check.status === "passed")
 	const skipped = report.checks.filter((check) => check.status === "skipped")
@@ -85,7 +83,12 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 				) : (
 					<div className="flex flex-col divide-y divide-border border-border border-y">
 						{attention.map((check) => (
-							<CheckBlock key={check.id} check={check} onOpenSpan={onOpenSpan} />
+							<CheckBlock
+								key={check.id}
+								check={check}
+								onOpenSpan={onOpenSpan}
+								onOpenTools={onOpenTools}
+							/>
 						))}
 					</div>
 				)}
@@ -169,25 +172,50 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 /* A check that found something                                               */
 /* -------------------------------------------------------------------------- */
 
-function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: OpenSpan }) {
+/** The page has a section the MCP does not: the tool ledger at the bottom,
+ *  with every call's arguments and result. For tool failures that is the
+ *  next step, so the page's action points there instead of the engine's. */
+function CheckBlock({
+	check,
+	onOpenSpan,
+	onOpenTools,
+}: {
+	check: SessionCheck
+	onOpenSpan: OpenSpan
+	onOpenTools: () => void
+}) {
+	// The page has a section the MCP does not — the tool ledger at the bottom,
+	// with every call's arguments and result — so for tool failures the page's
+	// next step is a jump there rather than the engine's line.
+	const toolsAction = check.id === "tool-errors"
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
 			<StatusDot status={check.status} />
-			<span className="flex min-w-0 flex-col gap-1">
-				<span className="truncate font-semibold text-[13px]">{check.name}</span>
-				{check.fixArea !== undefined && (
-					<span>
-						<Pill tone="outline">{FIX_AREA_LABEL[check.fixArea]}</Pill>
-					</span>
-				)}
-			</span>
+			<span className="truncate font-semibold text-[13px]">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
-				{check.action !== undefined && (
+				{toolsAction ? (
 					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
 						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
-						<span>{withCode(check.action)}</span>
+						<span>
+							Check the{" "}
+							<button
+								type="button"
+								onClick={onOpenTools}
+								className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground"
+							>
+								Tools section
+							</button>{" "}
+							at the bottom of this page for details.
+						</span>
 					</p>
+				) : (
+					check.action !== undefined && (
+						<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
+							<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
+							<span>{withCode(check.action)}</span>
+						</p>
+					)
 				)}
 				{check.findings.length > 0 && (
 					<div className="-ml-1.5 mt-0.5 flex flex-col">
@@ -244,7 +272,10 @@ function StatusDot({ status }: { status: SessionCheckStatus }) {
 	return (
 		<span
 			aria-hidden
-			className={cn("size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full", STATUS_DOT[status])}
+			className={cn(
+				"size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full",
+				STATUS_DOT[status],
+			)}
 		/>
 	)
 }
@@ -290,7 +321,12 @@ function Disclosure({
 				)}
 			/>
 			<span className="flex items-baseline gap-2">
-				<span className={cn("font-semibold text-[13px]", disclosable ? STATUS_TEXT[status] : "text-muted-foreground")}>
+				<span
+					className={cn(
+						"font-semibold text-[13px]",
+						disclosable ? STATUS_TEXT[status] : "text-muted-foreground",
+					)}
+				>
 					{title}
 				</span>
 				<span className="font-mono text-muted-foreground text-xs tabular-nums">{checks.length}</span>
@@ -344,49 +380,135 @@ function CheckFact({ check }: { check: SessionCheck }) {
 /* Coverage                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** What the instrumentation gave the checks: the line that explains a
- *  skipped row, and says what capturing more would unlock. */
-function Coverage({ coverage }: { coverage: SessionCoverage }) {
-	const signals = [
-		{ label: "messages", on: coverage.messages },
-		{ label: "tool args & results", on: coverage.toolPayloads },
+/** One signal on the Captured row: what it is, and one line on what the
+ *  checks do with it — or what is missing without it. */
+interface Signal {
+	readonly label: string
+	readonly state: SessionCoverageSignal
+	readonly title: string
+	readonly explains: string
+}
+
+const SIGNAL_MARK = {
+	captured: { glyph: "✓", tone: "text-severity-info", says: "captured:" },
+	missing: { glyph: "✕", tone: "text-destructive", says: "not captured:" },
+	absent: { glyph: "–", tone: "text-muted-foreground/60", says: "nothing to capture:" },
+} satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
+
+const NO_MODEL_CALL = "No model call in this session."
+
+function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
+	const usage = coverage.usage
+	const turns = coverage.turns
+	const usageState: SessionCoverageSignal =
+		usage === "absent" ? "absent" : usage === "none" ? "missing" : "captured"
+	return [
 		{
-			label: coverage.usage === "none" ? "token usage" : `token usage ${coverage.usage}`,
-			on: coverage.usage !== "none",
+			label: "messages",
+			state: coverage.messages,
+			title: "Messages",
+			explains: {
+				captured:
+					"Each model call's prompts and replies were recorded. Refusals and Reply length read them.",
+				missing:
+					"No model call recorded its prompts or replies. Refusals and Reply length go by status codes only.",
+				absent: NO_MODEL_CALL,
+			}[coverage.messages],
 		},
-		{ label: "cost", on: coverage.cost },
+		{
+			label: "tool args & results",
+			state: coverage.toolPayloads,
+			title: "Tool arguments and results",
+			explains: {
+				captured:
+					"Each tool call's arguments and result were recorded. Tool errors and Repeated calls read them.",
+				missing:
+					"No tool call recorded its arguments or result. A failed call has only its status, and identical retries cannot be told apart.",
+				absent: "No tool was called in this session.",
+			}[coverage.toolPayloads],
+		},
+		{
+			label: usage === "absent" || usage === "none" ? "token usage" : `token usage ${usage}`,
+			state: usageState,
+			title: "Token usage",
+			explains:
+				usage === "per-call" || usage === "roll-up"
+					? "Every model call reported its tokens. Context window and Prompt cache read them."
+					: usage === "session-level"
+						? "Tokens were reported once for the whole session, not per call. Context window and Prompt cache cannot follow them."
+						: usage === "none"
+							? "No span reported token usage."
+							: NO_MODEL_CALL,
+		},
+		{
+			label: "cost",
+			state: coverage.cost,
+			title: "Cost",
+			explains: {
+				captured: "Each call carries the cost its instrumentation reported. Not a bill.",
+				missing: "No span reported a cost. Maple prices nothing itself.",
+				absent: NO_MODEL_CALL,
+			}[coverage.cost],
+		},
 		{
 			label:
-				coverage.turns === "conversation"
+				turns === "conversation"
 					? "turns by conversation id"
-					: coverage.turns === "agent-root"
+					: turns === "agent-root"
 						? "turns by agent root"
 						: "turns by trace",
 			// One turn per trace is the floor, not a turn key; the other two rules
 			// found real turn boundaries.
-			on: coverage.turns === "conversation" || coverage.turns === "agent-root",
+			state: turns === "conversation" || turns === "agent-root" ? "captured" : "missing",
+			title: "Turns",
+			explains:
+				turns === "conversation"
+					? "Turns follow the conversation id on the spans."
+					: turns === "agent-root"
+						? "Turns follow each agent's root span."
+						: "No conversation id or agent root on the spans, so each trace is one turn. Stalls and Repeated calls read a guess.",
 		},
 	]
+}
+
+/** What the instrumentation gave the checks: the line that explains a
+ *  skipped row, and says what capturing more would unlock. Each signal
+ *  carries its own explanation in a tooltip. */
+function Coverage({ coverage }: { coverage: SessionCoverage }) {
 	return (
 		<p className={cn(ROW_GRID, "text-xs")}>
 			<span />
 			<span className="text-muted-foreground">Captured</span>
 			<span className="flex flex-wrap gap-x-4 gap-y-1">
-				{signals.map((signal) => (
-					<span
-						key={signal.label}
-						className={cn(
-							"flex items-baseline gap-1.5",
-							signal.on ? "text-muted-foreground" : "text-muted-foreground/60 line-through",
-						)}
-					>
-						<span aria-hidden className={signal.on ? "text-severity-info" : "text-destructive"}>
-							{signal.on ? "✓" : "✕"}
-						</span>
-						<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
-						{signal.label}
-					</span>
-				))}
+				{coverageSignals(coverage).map((signal) => {
+					const mark = SIGNAL_MARK[signal.state]
+					return (
+						<Tooltip key={signal.label}>
+							<TooltipTrigger
+								render={<span />}
+								className={cn(
+									"flex cursor-help items-baseline gap-1.5 underline decoration-dotted decoration-muted-foreground/40 underline-offset-[3px]",
+									signal.state === "captured"
+										? "text-muted-foreground"
+										: "text-muted-foreground/60",
+									signal.state === "missing" && "line-through",
+								)}
+							>
+								<span aria-hidden className={mark.tone}>
+									{mark.glyph}
+								</span>
+								<span className="sr-only">{mark.says}</span>
+								{signal.label}
+							</TooltipTrigger>
+							<TooltipContent className="max-w-72">
+								<span className="flex flex-col gap-1 py-1 text-left leading-relaxed">
+									<span className="font-semibold">{signal.title}</span>
+									<span className="text-muted-foreground">{signal.explains}</span>
+								</span>
+							</TooltipContent>
+						</Tooltip>
+					)
+				})}
 			</span>
 		</p>
 	)

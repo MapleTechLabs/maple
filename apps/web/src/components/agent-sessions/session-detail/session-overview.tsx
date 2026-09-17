@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
@@ -89,6 +89,8 @@ export function SessionOverview({
 	)
 
 	const openSpan = (spanId: string) => onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
+	const toolsRef = useRef<HTMLElement>(null)
+	const openTools = () => toolsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
 
 	if (progress !== undefined && !progress.agentSpansComplete) {
 		return (
@@ -114,11 +116,11 @@ export function SessionOverview({
 				    question, so every boundary is the same hairline with the same
 				    air either side of it. */}
 				<div className="flex min-w-0 grow flex-col gap-6">
-					<SessionChecks report={checks} onOpenSpan={openSpan} />
+					<SessionChecks report={checks} onOpenSpan={openSpan} onOpenTools={openTools} />
 					<Separator />
 					<TimeComposition summary={summary} />
 					<Separator />
-					<ToolUsage summary={summary} onOpenSpan={openSpan} />
+					<ToolUsage ref={toolsRef} summary={summary} onOpenSpan={openSpan} />
 				</div>
 				<Rail summary={summary} />
 			</div>
@@ -384,7 +386,16 @@ function Rail({ summary }: { summary: SessionSummary }) {
  * them puts every call on the session's own clock, so a row also says *when*. A
  * mark is a call: clicking it opens that span.
  */
-function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpan: OpenSpan }) {
+function ToolUsage({
+	ref,
+	summary,
+	onOpenSpan,
+}: {
+	/** The scroll target of the checklist's "see the Tools section". */
+	ref: Ref<HTMLElement>
+	summary: SessionSummary
+	onOpenSpan: OpenSpan
+}) {
 	const [expanded, setExpanded] = useState<string | undefined>(undefined)
 	const axis = useMemo(
 		() => buildSessionAxis({ startMs: summary.startMs, endMs: summary.endMs, collapsedGaps: [] }),
@@ -394,7 +405,9 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 	const toggle = (key: string) => setExpanded((current) => (current === key ? undefined : key))
 
 	return (
-		<section className="flex flex-col gap-3">
+		// `scroll-mt`: the views' sticky control bar, which a plain scroll-to
+		// would otherwise park the header under.
+		<section ref={ref} className="flex scroll-mt-14 flex-col gap-3">
 			<ToolLedgerHeader summary={summary} />
 
 			{summary.tools.length === 0 ? (
