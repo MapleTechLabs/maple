@@ -31,14 +31,11 @@ const CACHE_MIN_CALLS = 3
 
 export type SessionCheckStatus = "failed" | "warning" | "passed" | "skipped"
 
-export type SessionCheckGroup = "outcome" | "model" | "tools" | "flow" | "efficiency"
-
 /** What a fix would touch — the tag a reader filters on for what they own. */
 export type SessionFixArea = "prompt" | "tool" | "integration" | "model" | "provider" | "instrumentation"
 
 export interface SessionCheck {
 	readonly id: string
-	readonly group: SessionCheckGroup
 	/** Plain English: `Context window`, `Tool arguments`. */
 	readonly name: string
 	/**
@@ -76,7 +73,9 @@ export interface SessionChecksReport {
 	 *  the evidence and the action, and this line names it. */
 	readonly headline: string
 	readonly counts: Readonly<Record<SessionCheckStatus, number>>
-	/** Failed first, then warnings, passed, skipped; stable within a status. */
+	/** Failed first, then warnings, passed, skipped; within a status, in the
+	 *  order the checks are defined — outcome, model, tools, control flow,
+	 *  efficiency — so related rows sit together. */
 	readonly checks: readonly SessionCheck[]
 	readonly coverage: SessionCoverage
 }
@@ -177,7 +176,6 @@ function readCoverage(
 
 interface CheckIdentity {
 	readonly id: string
-	readonly group: SessionCheckGroup
 	readonly name: string
 	readonly fixArea: SessionFixArea | undefined
 }
@@ -207,7 +205,7 @@ const foundStatus = (findings: readonly SessionFinding[]): SessionCheckStatus =>
 function completionCheck(incomplete: readonly SessionFinding[]): SessionCheck[] {
 	const unfinished = incomplete[0]
 	if (unfinished === undefined) return []
-	const identity: CheckIdentity = { id: "completion", group: "outcome", name: "Completion", fixArea: "prompt" }
+	const identity: CheckIdentity = { id: "completion", name: "Completion", fixArea: "prompt" }
 	return [
 		check(
 			identity,
@@ -253,7 +251,7 @@ function contextWindowCheck(
 	llmCalls: readonly AiSessionSpan[],
 	coverage: SessionCoverage,
 ): SessionCheck {
-	const identity: CheckIdentity = { id: "context-window", group: "model", name: "Context window", fixArea: "prompt" }
+	const identity: CheckIdentity = { id: "context-window", name: "Context window", fixArea: "prompt" }
 	const found = findings[0]
 	// The growth that matters is the one that ended in the overflow, not what
 	// the session did after it recovered.
@@ -292,7 +290,7 @@ function promptSizes(llmCalls: readonly AiSessionSpan[]): readonly number[] {
 }
 
 function rateLimitCheck(findings: readonly SessionFinding[]): SessionCheck {
-	const identity: CheckIdentity = { id: "rate-limits", group: "model", name: "Rate limits", fixArea: "provider" }
+	const identity: CheckIdentity = { id: "rate-limits", name: "Rate limits", fixArea: "provider" }
 	const found = findings[0]
 	if (found === undefined) return check(identity, "passed", "No model call was rate-limited")
 	const status = foundStatus(findings)
@@ -310,7 +308,7 @@ function providerCheck(
 	retries: readonly SessionFinding[],
 	llmCalls: number,
 ): SessionCheck {
-	const identity: CheckIdentity = { id: "provider", group: "model", name: "Provider errors", fixArea: "provider" }
+	const identity: CheckIdentity = { id: "provider", name: "Provider errors", fixArea: "provider" }
 	const findings = [...failures, ...retries]
 	if (findings.length === 0) {
 		return check(
@@ -338,7 +336,7 @@ function providerCheck(
 }
 
 function refusalCheck(findings: readonly SessionFinding[]): SessionCheck {
-	const identity: CheckIdentity = { id: "refusals", group: "model", name: "Refusals", fixArea: "prompt" }
+	const identity: CheckIdentity = { id: "refusals", name: "Refusals", fixArea: "prompt" }
 	const found = findings[0]
 	if (found === undefined) return check(identity, "passed", "No reply was refused or filtered")
 	const status = foundStatus(findings)
@@ -353,7 +351,7 @@ function refusalCheck(findings: readonly SessionFinding[]): SessionCheck {
 }
 
 function replyLengthCheck(findings: readonly SessionFinding[], llmCalls: readonly AiSessionSpan[]): SessionCheck {
-	const identity: CheckIdentity = { id: "reply-length", group: "model", name: "Reply length", fixArea: "model" }
+	const identity: CheckIdentity = { id: "reply-length", name: "Reply length", fixArea: "model" }
 	const found = findings[0]
 	if (found !== undefined) {
 		const n = total(findings)
@@ -375,7 +373,7 @@ function replyLengthCheck(findings: readonly SessionFinding[], llmCalls: readonl
 }
 
 function structuredOutputCheck(findings: readonly SessionFinding[]): SessionCheck {
-	const identity: CheckIdentity = { id: "structured-output", group: "model", name: "Structured output", fixArea: "prompt" }
+	const identity: CheckIdentity = { id: "structured-output", name: "Structured output", fixArea: "prompt" }
 	const found = findings[0]
 	if (found === undefined) return check(identity, "passed", "No reply was rejected by a schema")
 	const n = total(findings)
@@ -391,7 +389,6 @@ function structuredOutputCheck(findings: readonly SessionFinding[]): SessionChec
 function toolAvailabilityCheck(findings: readonly SessionFinding[], summary: SessionSummary): SessionCheck {
 	const identity: CheckIdentity = {
 		id: "tool-availability",
-		group: "tools",
 		name: "Tool availability",
 		fixArea: "integration",
 	}
@@ -413,7 +410,7 @@ function toolAvailabilityCheck(findings: readonly SessionFinding[], summary: Ses
 }
 
 function toolTimeoutCheck(findings: readonly SessionFinding[], summary: SessionSummary): SessionCheck {
-	const identity: CheckIdentity = { id: "tool-timeouts", group: "tools", name: "Tool timeouts", fixArea: "tool" }
+	const identity: CheckIdentity = { id: "tool-timeouts", name: "Tool timeouts", fixArea: "tool" }
 	if (findings.length === 0) {
 		const slowest = [...summary.tools].sort((a, b) => b.slowestMs - a.slowestMs)[0]
 		return check(
@@ -437,7 +434,7 @@ function toolTimeoutCheck(findings: readonly SessionFinding[], summary: SessionS
 }
 
 function toolArgumentsCheck(findings: readonly SessionFinding[], summary: SessionSummary): SessionCheck {
-	const identity: CheckIdentity = { id: "tool-arguments", group: "tools", name: "Tool arguments", fixArea: "tool" }
+	const identity: CheckIdentity = { id: "tool-arguments", name: "Tool arguments", fixArea: "tool" }
 	if (findings.length === 0) {
 		return check(
 			identity,
@@ -462,7 +459,7 @@ function toolArgumentsCheck(findings: readonly SessionFinding[], summary: Sessio
 }
 
 function toolErrorCheck(findings: readonly SessionFinding[], summary: SessionSummary): SessionCheck {
-	const identity: CheckIdentity = { id: "tool-errors", group: "tools", name: "Tool errors", fixArea: "tool" }
+	const identity: CheckIdentity = { id: "tool-errors", name: "Tool errors", fixArea: "tool" }
 	if (findings.length === 0) {
 		const calls = summary.tools.reduce((sum, tool) => sum + tool.calls, 0)
 		return check(
@@ -493,7 +490,7 @@ function toolErrorCheck(findings: readonly SessionFinding[], summary: SessionSum
  *  present only when there is something in it. */
 function otherErrorsCheck(findings: readonly SessionFinding[]): SessionCheck[] {
 	if (findings.length === 0) return []
-	const identity: CheckIdentity = { id: "other-errors", group: "outcome", name: "Other errors", fixArea: undefined }
+	const identity: CheckIdentity = { id: "other-errors", name: "Other errors", fixArea: undefined }
 	const status = foundStatus(findings)
 	return [
 		check(
@@ -509,7 +506,7 @@ function otherErrorsCheck(findings: readonly SessionFinding[]): SessionCheck[] {
 }
 
 function repetitionCheck(findings: readonly SessionFinding[], summary: SessionSummary): SessionCheck {
-	const identity: CheckIdentity = { id: "repetition", group: "flow", name: "Repeated calls", fixArea: "prompt" }
+	const identity: CheckIdentity = { id: "repetition", name: "Repeated calls", fixArea: "prompt" }
 	if (findings.length === 0) {
 		return check(
 			identity,
@@ -529,7 +526,7 @@ function repetitionCheck(findings: readonly SessionFinding[], summary: SessionSu
 }
 
 function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
-	const identity: CheckIdentity = { id: "stalls", group: "flow", name: "Stalls", fixArea: "instrumentation" }
+	const identity: CheckIdentity = { id: "stalls", name: "Stalls", fixArea: "instrumentation" }
 	if (findings.length === 0) return check(identity, "passed", "No gap over 30s inside a turn")
 	return check(
 		identity,
@@ -543,7 +540,7 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 }
 
 function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
-	const identity: CheckIdentity = { id: "prompt-cache", group: "efficiency", name: "Prompt cache", fixArea: "prompt" }
+	const identity: CheckIdentity = { id: "prompt-cache", name: "Prompt cache", fixArea: "prompt" }
 	const reporting = llmCalls.filter(
 		(span) =>
 			span.genAi.usageCacheReadInputTokens !== undefined ||
