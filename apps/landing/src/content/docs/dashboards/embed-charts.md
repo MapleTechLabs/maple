@@ -122,7 +122,7 @@ For example, a light chart over the first two weeks of September that reloads ev
 ></iframe>
 ```
 
-A relative time range such as the dashboard's "Last 30 days" is worked out again every time the chart loads or refreshes, so the embed moves forward with the clock. `from` and `to` pin a fixed window.
+Without `from` and `to`, the embed uses the dashboard's own time range. When that is a relative range such as "Last 30 days", it is recalculated on every load and refresh. The URL can only set a fixed window; to embed a different relative range, change the dashboard's time range.
 
 ## What a viewer of the embed can see
 
