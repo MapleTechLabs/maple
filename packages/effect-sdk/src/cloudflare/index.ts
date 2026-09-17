@@ -149,7 +149,16 @@ export interface Telemetry {
 	 * - Errors are caught and logged to `console.error`; cooldown of 60s
 	 *   per signal before next attempt after a failure.
 	 */
-	flush(env: Record<string, unknown>): Promise<void>
+	flush(env: Record<string, unknown>, options?: FlushOptions): Promise<void>
+}
+
+export interface FlushOptions {
+	/**
+	 * POST even while a signal is in its 60 s cooldown after a failed flush. For the last flush
+	 * a piece of background work will make: nothing drains these buffers after it, so a skipped
+	 * flush there is a lost one, not a deferred one.
+	 */
+	readonly force?: boolean | undefined
 }
 
 const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => {
@@ -192,35 +201,39 @@ export const make = (config: Config = {}): Telemetry => {
 	// Never rejects: this runs inside `ctx.waitUntil`, where a rejection would
 	// surface as an unhandled Worker error caused purely by telemetry.
 	const flush = makeSerializedFlush(
-		guardFlush("[MapleCloudflareSDK]", async (env: Record<string, unknown>): Promise<void> => {
-			// Effect defers work onto the scheduler's next macrotask
-			// (`scheduleTask(task, 0)`) — including `HttpMiddleware.tracer`'s
-			// `span.end` and `withSpan` finalizers — while the drain below is
-			// synchronous. Flushing in the same task therefore misses exactly the
-			// spans the request just produced, and an isolated request (e.g. a lone
-			// webhook) can freeze the isolate before a later flush rescues them.
-			// Yield one macrotask so those tasks run first. This sits INSIDE the
-			// serialized body, so overlapping flushes still queue rather than
-			// interleave.
-			await new Promise<void>((resolve) => setTimeout(resolve, 0))
+		guardFlush(
+			"[MapleCloudflareSDK]",
+			async (env: Record<string, unknown>, options?: FlushOptions): Promise<void> => {
+				// Effect defers work onto the scheduler's next macrotask
+				// (`scheduleTask(task, 0)`) — including `HttpMiddleware.tracer`'s
+				// `span.end` and `withSpan` finalizers — while the drain below is
+				// synchronous. Flushing in the same task therefore misses exactly the
+				// spans the request just produced, and an isolated request (e.g. a lone
+				// webhook) can freeze the isolate before a later flush rescues them.
+				// Yield one macrotask so those tasks run first. This sits INSIDE the
+				// serialized body, so overlapping flushes still queue rather than
+				// interleave.
+				await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-			if (resolved === undefined) {
-				resolved = resolveOnce(env, config)
-			}
+				if (resolved === undefined) {
+					resolved = resolveOnce(env, config)
+				}
 
-			await runFlush({
-				resolved,
-				spans,
-				logs,
-				metrics,
-				tracesState,
-				logsState,
-				metricsState,
-				transport: fetchTransport,
-				logPrefix: "[MapleCloudflareSDK]",
-				onNoOp: noOpNotice,
-			})
-		}),
+				await runFlush({
+					resolved,
+					spans,
+					logs,
+					metrics,
+					tracesState,
+					logsState,
+					metricsState,
+					transport: fetchTransport,
+					logPrefix: "[MapleCloudflareSDK]",
+					onNoOp: noOpNotice,
+					force: options?.force,
+				})
+			},
+		),
 		{ coalesceSameArguments: true },
 	)
 

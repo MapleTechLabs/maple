@@ -292,15 +292,31 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 })
 
 describe("makeSpanBuffer restore", () => {
-	it.effect("puts failed telemetry back ahead of what arrived since, and trims the oldest", () =>
+	const record = (buffer: ReturnType<typeof makeSpanBuffer>, name: string) =>
+		Effect.void.pipe(Effect.withSpan(name), Effect.provide(buffer.tracerLayer))
+
+	it.effect("puts failed telemetry back ahead of what arrived since", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer()
-			yield* runSpan(buffer, Effect.succeed("old"))
-			const [oldest] = buffer.drain()
-			yield* Effect.succeed(undefined).pipe(
-				Effect.withSpan("newest"),
-				Effect.provide(buffer.tracerLayer),
+			yield* record(buffer, "failed")
+			const failed = buffer.drain()
+			yield* record(buffer, "since 1")
+			yield* record(buffer, "since 2")
+
+			buffer.restore(failed)
+			assert.deepStrictEqual(
+				buffer.drain().map((span) => span.name),
+				["failed", "since 1", "since 2"],
 			)
+		}),
+	)
+
+	it.effect("trims the oldest when the restored batch overflows the cap", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* record(buffer, "oldest")
+			const [oldest] = buffer.drain()
+			yield* record(buffer, "newest")
 			const [newest] = buffer.drain()
 			assert.isDefined(oldest)
 			assert.isDefined(newest)
@@ -308,8 +324,7 @@ describe("makeSpanBuffer restore", () => {
 			buffer.restore([oldest!, ...Array.from({ length: 10_000 }, () => newest!)])
 			const restored = buffer.drain()
 			assert.strictEqual(restored.length, 10_000)
-			assert.strictEqual(restored[0]?.name, "newest")
-			assert.strictEqual(restored.at(-1)?.name, "newest")
+			assert.isUndefined(restored.find((span) => span.name === "oldest"))
 		}),
 	)
 })
