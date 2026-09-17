@@ -33,13 +33,13 @@ const orgArgs = (): string[] => {
 
 export const resolveDatabase = (): string => process.env.PLANETSCALE_DATABASE?.trim() || "maple"
 
-interface CliResult {
+export interface CliResult {
 	readonly exitCode: number
 	readonly stdout: string
 	readonly stderr: string
 }
 
-const runPscale = (args: string[], opts?: { secret?: boolean }): CliResult => {
+export const runPscale = (args: string[], opts?: { secret?: boolean }): CliResult => {
 	const proc = spawnSync("pscale", [...args, ...orgArgs()], { encoding: "utf8" })
 	if (proc.error) {
 		fail(`Failed to invoke \`pscale\` — is the PlanetScale CLI installed? (${proc.error.message})`)

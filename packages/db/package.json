@@ -24,6 +24,7 @@
 		"db:normalize-preview": "bun scripts/normalize-preview-ownership.ts",
 		"ps:apply-schema": "bun scripts/planetscale-apply-schema.ts",
 		"ps:migrations-preflight": "bun scripts/planetscale-migrations-preflight.ts",
+		"db:restore-test": "bun scripts/restore-test.ts",
 		"db:backfill:dashboards-v3": "bun scripts/backfill-dashboard-datasource-v3.ts"
 	},
 	"dependencies": {

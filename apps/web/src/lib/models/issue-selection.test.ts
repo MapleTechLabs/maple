@@ -1,6 +1,7 @@
 import { Story } from "@maple/unitflow/reducer"
 import { describe, expect, it } from "vitest"
 import {
+	allToggledSelection,
 	clearedSelection,
 	initialIssueSelection,
 	toggledSelection,
@@ -46,6 +47,35 @@ describe("updateIssueSelection (Story)", () => {
 		story.dispatch(toggledSelection("c", true, ordered))
 		expect(selected(story.state)).toEqual(["c"])
 		expect(story.state.anchor).toBe("c")
+	})
+
+	it("AllToggled selects every visible row and drops the anchor", () => {
+		const story = Story.make(updateIssueSelection, initialIssueSelection)
+		story.dispatch(toggledSelection("b", false, ordered))
+		story.dispatch(allToggledSelection(ordered))
+		expect(selected(story.state)).toEqual(["a", "b", "c", "d"])
+		expect(story.state.anchor).toBeNull()
+	})
+
+	it("AllToggled with every visible row already selected clears the selection", () => {
+		const story = Story.make(updateIssueSelection, initialIssueSelection)
+		story.dispatch(allToggledSelection(ordered))
+		story.dispatch(allToggledSelection(ordered))
+		expect(selected(story.state)).toEqual([])
+	})
+
+	it("AllToggled over a partial selection completes it rather than clearing", () => {
+		const story = Story.make(updateIssueSelection, initialIssueSelection)
+		story.dispatch(toggledSelection("a", false, ordered))
+		story.dispatch(toggledSelection("c", false, ordered))
+		story.dispatch(allToggledSelection(ordered))
+		expect(selected(story.state)).toEqual(["a", "b", "c", "d"])
+	})
+
+	it("AllToggled over no rows is a no-op", () => {
+		const story = Story.make(updateIssueSelection, initialIssueSelection)
+		story.dispatch(allToggledSelection([]))
+		expect(selected(story.state)).toEqual([])
 	})
 
 	it("Cleared resets selection and anchor", () => {

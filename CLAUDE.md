@@ -315,6 +315,7 @@ there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER
 gets diagnosed, fixed and verified — read before touching `packages/backend/src/services/errors/`) ·
 `sampling-throughput.md` · `persistence.md` ·
 `ingest-wal-durability.md` (WAL segments, the S3 tier, and what survives a task dying) ·
+`backup-and-recovery.md` (system inventory, the PlanetScale restore drill, and the compliance evidence it feeds) ·
 `docker-container-monitoring.md` (Docker agent → `/infra/containers` lifecycle + its invariants) ·
 `service-map-architecture.md` (the map's tiers, its splice invariant, and what a new overlay costs) ·
 `warehouse-rollups.md` (MV/rollup tiering contract — read before adding a materialized view) ·
