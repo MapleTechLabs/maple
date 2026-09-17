@@ -73,8 +73,8 @@ export function WidgetShell({
 	const moveTargets = ctx?.moveTargets
 	const embed = ctx?.embed
 	const isEditable = mode === "edit"
-	// The menu is also shown in view mode when "Create alert" or "Copy embed
-	// link" is available, so neither needs dashboard edit mode.
+	// The menu is also shown in view mode when "Create alert" or "Embed chart"
+	// is available, so neither needs dashboard edit mode.
 	const showMenu = isEditable || createAlert != null || embed != null
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [legendItems, setLegendItems] = useState<readonly PlotLegendItem[]>([])

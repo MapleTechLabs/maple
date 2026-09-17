@@ -22,6 +22,8 @@ describe("unsupportedShareWidgets", () => {
 		const widgets = [
 			widget("w1", { kind: "route", endpoint: "errors_summary" }),
 			widget("w2", { kind: "route", endpoint: "list_logs" }),
+			widget("w3", { kind: "route", endpoint: "product_events_funnel" }),
+			widget("w4", { kind: "route", endpoint: "product_events_paths" }),
 		]
 		expect(unsupportedShareWidgets(widgets)).toEqual([])
 	})

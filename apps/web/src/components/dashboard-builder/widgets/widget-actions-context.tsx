@@ -23,8 +23,8 @@ export interface WidgetActions {
 	fix?: () => void
 	/**
 	 * Opens the embed dialog for just this widget. `disabledReason` is set when
-	 * the item is shown but cannot be used — the board is not public, or the
-	 * widget is a kind a share cannot render.
+	 * the item is shown but cannot be used: the widget is a kind a share cannot
+	 * render. A non-public board still opens the dialog, which explains itself.
 	 */
 	embed?: { open: () => void; disabledReason?: string }
 	/**

@@ -74,7 +74,7 @@ export function ShareDashboardDialog({
 	})
 
 	const shares = useMemo<ReadonlyArray<ShareRecord>>(
-		() => (Result.isSuccess(listResult) ? (listResult.value as ReadonlyArray<ShareRecord>) : []),
+		() => (Result.isSuccess(listResult) ? listResult.value : []),
 		[listResult],
 	)
 	const boardShare = useMemo(() => shares.find((share) => share.widgetId === undefined), [shares])

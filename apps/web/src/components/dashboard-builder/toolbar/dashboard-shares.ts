@@ -7,21 +7,17 @@
  * side knowing about the other.
  */
 import { Schema } from "effect"
-import { DashboardId } from "@maple/domain/http"
+import { DashboardId, type DashboardShareMode } from "@maple/domain/http"
+import type { V2DashboardShare } from "@maple/domain/http/v2"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 
-export type ShareMode = "public" | "org"
+export type ShareMode = DashboardShareMode
 
 /**
- * The v2 atom client hands back the *decoded* record, so these are the camelCase
- * domain names — not the snake_case the wire carries.
+ * The v2 atom client hands back the *decoded* record — camelCase domain names,
+ * not the snake_case the wire carries — so the list is already this type.
  */
-export interface ShareRecord {
-	readonly id: string
-	readonly widgetId?: string
-	readonly mode: ShareMode
-	readonly token: string
-}
+export type ShareRecord = V2DashboardShare
 
 export const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 

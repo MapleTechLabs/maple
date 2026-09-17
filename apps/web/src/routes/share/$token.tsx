@@ -20,8 +20,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useAuth } from "@clerk/clerk-react"
 import { Schema } from "effect"
 import { useCallback, useLayoutEffect, useMemo, useState } from "react"
-import { setTheme } from "@maple/ui/hooks/use-theme"
-import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
+import { getTheme, setTheme } from "@maple/ui/hooks/use-theme"
 import { ResolvedDashboardVariablesProvider } from "@/components/dashboard-builder/dashboard-variables-context"
 import { ReadOnlyDashboardView } from "@/components/dashboard-builder/read-only-dashboard-view"
 import {
@@ -40,10 +39,8 @@ import {
 import { RefreshControls } from "@/components/time-range-picker/refresh-controls"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import type { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
-import { formatTimeRangeDisplay, presetLabel } from "@/lib/time-utils"
-import { resolveTimeRangeWindow } from "@maple/query-engine"
+import { resolveShareWindow } from "@/lib/share-window"
 import {
-	shareTimeRange,
 	useShareWidgetData,
 	useSharedDashboard,
 	type ShareResolveError,
@@ -94,56 +91,6 @@ export const Route = createFileRoute("/share/$token")({
 })
 
 /**
- * The window a share is viewed over, and how to describe it.
- *
- * `?from`/`?to` pin an absolute window; otherwise it is the board's own stored
- * `timeRange`, resolved through the same `resolveTimeRange` the signed-in
- * dashboard seeds its picker from — same relative grammar, same cache-grid
- * snapping, same `"1h"` fallback for a stored preset this build cannot read.
- * The share page used to hardcode "last 12 hours" here, which is how a board on
- * "Last 1 hour" shared as a board on twelve.
- */
-interface ShareWindow {
-	readonly timeRange: ShareTimeRange
-	readonly label: string
-}
-
-const DEFAULT_SHARE_TIME_RANGE = { type: "relative", value: "1h" } as const
-
-const resolveShareWindow = (
-	search: { readonly from?: string; readonly to?: string; readonly range?: string },
-	stored: unknown,
-	{ snap }: { snap: boolean } = { snap: true },
-): ShareWindow | null => {
-	if (search.from !== undefined && search.to !== undefined) {
-		return {
-			timeRange: { startTime: search.from, endTime: search.to },
-			label: formatTimeRangeDisplay(search.from, search.to),
-		}
-	}
-	// `resolveTimeRangeWindow`, not `resolveTimeRange`: the latter quietly
-	// substitutes "1h" for a shorthand it cannot read, and a typo in the URL
-	// should cost the override, not silently show a different window.
-	const range =
-		search.range === undefined
-			? null
-			: resolveTimeRangeWindow({ type: "relative", value: search.range }, { snap })
-	if (search.range !== undefined && range !== null) {
-		return { timeRange: range, label: presetLabel(search.range) }
-	}
-	const timeRange = shareTimeRange(stored) ?? DEFAULT_SHARE_TIME_RANGE
-	const resolved = resolveTimeRange(timeRange, { snap })
-	if (resolved === null) return null
-	return {
-		timeRange: resolved,
-		label:
-			timeRange.type === "relative"
-				? presetLabel(timeRange.value)
-				: formatTimeRangeDisplay(resolved.startTime, resolved.endTime),
-	}
-}
-
-/**
  * Split in two so `useAuth` is never called conditionally.
  *
  * A share page must render for a signed-out viewer, and in self-hosted mode
@@ -153,8 +100,15 @@ const resolveShareWindow = (
 function SharePage() {
 	const { theme, embed } = Route.useSearch()
 	useLayoutEffect(() => {
-		if (theme === "light" || theme === "dark") setTheme(theme, { persist: false })
-		if (embed !== true) return
+		// Applied without persisting, and put back on the way out so a viewer who
+		// carries on into the app keeps their own theme.
+		const viewerTheme = getTheme()
+		const overridesTheme = theme === "light" || theme === "dark"
+		if (overridesTheme) setTheme(theme, { persist: false })
+		const restoreTheme = () => {
+			if (overridesTheme) setTheme(viewerTheme, { persist: false })
+		}
+		if (embed !== true) return restoreTheme
 
 		// An embed has no backdrop of its own: the host page shows around the card.
 		// `body` carries `bg-background` from the base layer, so it is cleared. And
@@ -170,6 +124,7 @@ function SharePage() {
 		return () => {
 			document.body.style.background = previous.background
 			root.style.colorScheme = previous.colorScheme
+			restoreTheme()
 		}
 	}, [theme, embed])
 

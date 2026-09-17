@@ -8,13 +8,14 @@
  * judgement made ahead of time, so the dialog can say so before you share.
  *
  * Mirrors `ROUTE_ENDPOINT_PLANS` in
- * `apps/api/src/services/dashboards/route-endpoint-plans.ts`. Kept as a plain
- * list rather than imported, because that module pulls in the query registry
- * and the warehouse services — none of which belong in the browser bundle. A
- * drift here is cosmetic in one direction (a warning for a widget that would
- * have worked) and a missing warning in the other; the server remains the
+ * `packages/backend/src/services/dashboards/route-endpoint-plans.ts`. Kept as a
+ * plain list rather than imported, because that module pulls in the query
+ * registry and the warehouse services — none of which belong in the browser
+ * bundle. A drift here is cosmetic in one direction (a warning for a widget that
+ * would have worked) and a missing warning in the other; the server remains the
  * authority either way.
  */
+import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
 
 /** Route endpoints the share resolver can serve. */
 const SUPPORTED_ROUTE_ENDPOINTS = new Set([
@@ -23,13 +24,13 @@ const SUPPORTED_ROUTE_ENDPOINTS = new Set([
 	"service_overview",
 	"service_usage",
 	"list_logs",
-	"product_events_funnel",
-	"product_events_paths",
+	PRODUCT_EVENTS_FUNNEL_ENDPOINT,
+	PRODUCT_EVENTS_PATHS_ENDPOINT,
 ])
 
 /** Prose for the dialog, so the copy and the list cannot disagree. */
 export const SHAREABLE_WIDGET_KINDS =
-	"query-builder charts, raw SQL, markdown, funnels, paths, and errors, service and logs tiles"
+	"query-builder charts, raw SQL, markdown, funnels, paths, and the errors, service and logs tiles"
 
 interface WidgetLike {
 	readonly id: string

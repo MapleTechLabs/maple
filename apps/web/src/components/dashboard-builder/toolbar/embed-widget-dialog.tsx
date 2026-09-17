@@ -78,13 +78,17 @@ export function EmbedWidgetDialog({
 	const [error, setError] = useState<string | null>(null)
 	const [busy, setBusy] = useState(false)
 
-	const shares = Result.isSuccess(sharesResult) ? (sharesResult.value as ReadonlyArray<ShareRecord>) : []
+	const shares: ReadonlyArray<ShareRecord> = Result.isSuccess(sharesResult) ? sharesResult.value : []
+	// A list that failed to load must not read as "this board isn't shared":
+	// that branch offers to make the board public.
+	const listError = Result.isFailure(sharesResult) ? displayError(sharesResult).message : null
 	const boardMode = shares.find((candidate) => candidate.widgetId === undefined)?.mode
 	const share = shares.find((candidate) => candidate.widgetId === widgetId && candidate.mode === "public")
 
+	const reactivityKeys = [dashboardSharesReactivityKey(dashboardId)]
 	const request = {
 		params: { id: asDashboardId(dashboardId), widget_id: widgetId },
-		reactivityKeys: [dashboardSharesReactivityKey(dashboardId)],
+		reactivityKeys,
 	}
 
 	/** Runs the steps in order, stopping at the first failure. */
@@ -107,6 +111,9 @@ export function EmbedWidgetDialog({
 
 	const mintChartLink = () => upsert({ ...request, payload: { mode: "public" } })
 
+	// Reads the list as of mount. That may be a retained copy still refreshing,
+	// which is fine: the upsert is idempotent, so minting against a stale list
+	// at worst re-asserts a link that already exists.
 	useMountEffect(() => {
 		if (boardMode === "public" && share === undefined) void run(mintChartLink)
 	})
@@ -115,9 +122,9 @@ export function EmbedWidgetDialog({
 		void run(
 			() =>
 				upsertBoard({
-					params: request.params,
+					params: { id: request.params.id },
 					payload: { mode: "public" },
-					reactivityKeys: request.reactivityKeys,
+					reactivityKeys,
 				}),
 			...(share === undefined ? [mintChartLink] : []),
 		)
@@ -134,7 +141,7 @@ export function EmbedWidgetDialog({
 				</DialogHeader>
 
 				<DialogPanel className="space-y-4">
-					{boardMode !== "public" ? (
+					{listError ? null : boardMode !== "public" ? (
 						<NotPublicNotice
 							orgOnly={boardMode === "org"}
 							busy={busy}
@@ -153,7 +160,9 @@ export function EmbedWidgetDialog({
 					) : error ? null : (
 						<div className="h-8 animate-pulse rounded-lg bg-muted/60 sm:h-7" />
 					)}
-					{error ? <p className="text-destructive-foreground text-xs">{error}</p> : null}
+					{(listError ?? error) ? (
+						<p className="text-destructive-foreground text-xs">{listError ?? error}</p>
+					) : null}
 				</DialogPanel>
 
 				<DialogFooter>
@@ -164,14 +173,6 @@ export function EmbedWidgetDialog({
 	)
 }
 
-/**
- * A ready-to-paste `<iframe>` for the embed link, as HTML and as JSX. The chart
- * fills whatever height the frame gets.
- *
- * Two tabs because one snippet cannot serve both: JSX rejects a string `style`,
- * and HTML has no self-closing `<iframe />` — the parser ignores the slash and
- * swallows whatever markup follows.
- */
 /**
  * Sugar High tokenizes a JSX attribute expression flatly: `400` and the `border`
  * key both come out as identifiers, the same colour as the braces around them,
@@ -189,6 +190,14 @@ const refineJsxTokens = (html: string) =>
 			'<span class="sh__token--property" style="color:var(--sh-property)">$1</span>',
 		)
 
+/**
+ * A ready-to-paste `<iframe>` for the embed link, as HTML and as JSX. The chart
+ * fills whatever height the frame gets.
+ *
+ * Two tabs because one snippet cannot serve both: JSX rejects a string `style`,
+ * and HTML has no self-closing `<iframe />` — the parser ignores the slash and
+ * swallows whatever markup follows.
+ */
 function IframeSnippet({ url }: { url: string }) {
 	const html = [
 		"<iframe",
@@ -293,7 +302,8 @@ const exampleVariableValue = (
 function EmbedUrlOptions() {
 	const variables = useDashboardVariablesOptional()
 	const definitions = variables?.variables ?? []
-	const now = Date.now()
+	// Fixed at first render, so the from/to example doesn't drift as the list re-renders.
+	const [now] = useState(() => Date.now())
 
 	const options: ReadonlyArray<UrlOption> = [
 		{

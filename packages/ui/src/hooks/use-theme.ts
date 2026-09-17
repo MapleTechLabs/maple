@@ -69,6 +69,11 @@ function getSnapshot(): Theme {
 	return current
 }
 
+/** The active theme, outside React — for a page that overrides it and must restore it. */
+export function getTheme(): Theme {
+	return current
+}
+
 function getServerSnapshot(): Theme {
 	return DEFAULT_THEME
 }
