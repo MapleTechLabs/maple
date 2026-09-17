@@ -151,7 +151,7 @@ export const toChatEvents = (
 		// Observable in traces, with no word on the wire.
 		case "SubagentStarted":
 			return childEvent(event, context, { type: "turn-start" })
-		// Nothing emits this at `@effect-agent` 0.1.0-beta.74 — a delegation reports its lifecycle and
+		// Nothing emits this at `@effect-agent` 0.1.0-beta.85 — a delegation reports its lifecycle and
 		// its result, not its progress. Mapped anyway so the day one arrives it lands on the card
 		// instead of being silently dropped by a filtered switch.
 		case "SubagentProgress":
@@ -169,6 +169,8 @@ export const toChatEvents = (
 			})
 		case "SubagentInterrupted":
 			return childEvent(event, context, { type: "turn-end", reason: "aborted" })
+		// Maple's agents declare no typed updates.
+		case "AgentUpdateEmitted":
 		case "ApprovalRequested":
 		case "TurnStarted":
 		case "ModelStarted":
