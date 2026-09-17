@@ -8,28 +8,17 @@ navLabel: "Embed charts"
 
 Any chart on a public Maple dashboard can go into another page as a plain `<iframe>`. The chart queries Maple every time it loads, so the page shows the same numbers as the dashboard, with no export job and no second copy of the data.
 
-The example on this page is Fieldnote, a made-up B2B app. Its admin panel has a Growth page, and the three funnels on it come straight from a Maple dashboard.
+The example on this page is Fieldnote, a made-up B2B app. Its admin panel has a Growth page, and its three funnel charts are embedded from Maple.
 
 <figure class="shot">
   <img src="/screenshots/docs/embed-charts-06-customer-product.webp" alt="A light-themed admin panel for an app called Fieldnote. Its Growth page shows three KPI cards and, below them, three funnel charts embedded from Maple: pricing page to paid plan, signup to activation, and invite to paid." loading="lazy" />
   <figcaption>Fieldnote's admin panel. The KPI cards are Fieldnote's own markup; the three funnels are Maple charts in iframes, using <code>theme=light</code>.</figcaption>
 </figure>
 
-## The example dashboard: a trial-to-paid funnel
-
-The data behind the example is synthetic: about 4,200 visitors to `fieldnote.app/pricing` over 30 days, with [product events](/docs/product-events/overview) for each step they took after that. The dashboard, **Customer funnel**, has three funnel charts built on those events:
-
-| Chart                    | Steps                                                                                                |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Pricing page → paid plan | page view of `/pricing`, `signup_completed`, `workspace_created`, `teammate_invited`, `plan_started` |
-| Signup → activation      | `signup_completed`, `workspace_created`, `teammate_invited`                                          |
-| Invite → paid            | `teammate_invited`, `plan_started`                                                                   |
-
-`plan_started` is sent from Fieldnote's billing service with `POST /v1/events`. The other events come from the browser.
+The charts come from a Maple dashboard called **Customer funnel**:
 
 <figure class="shot">
-  <img src="/screenshots/docs/embed-charts-01-dashboard.webp" alt="The Customer funnel dashboard in Maple: a wide funnel from the pricing page to a paid plan, with 4.1K visitors narrowing to 282 paid, and two smaller funnels below it for signup to activation and invite to paid." loading="lazy" />
-  <figcaption>The dashboard in Maple. Of 4.1K visitors to the pricing page, 282 started a paid plan within the 14-day funnel window.</figcaption>
+  <img src="/screenshots/docs/embed-charts-01-dashboard.webp" alt="The Customer funnel dashboard in Maple with three funnel charts: pricing page to paid plan, signup to activation, and invite to paid." loading="lazy" />
 </figure>
 
 Other chart types embed the same way. See [Which charts can be embedded](#which-charts-can-be-embedded).
@@ -101,20 +90,21 @@ The chart fills the frame, so `height` sets the chart's height. `?embed=true` re
 
 Append any of these to the link in `src`:
 
-| Parameter    | Values                                                                                                                     |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `theme`      | `light` or `dark`. Defaults to dark.                                                                                       |
-| `from`, `to` | UTC, `YYYY-MM-DD HH:MM:SS`. Set both. Defaults to the dashboard's own time range.                                          |
-| `refresh`    | Seconds between reloads: `5`, `10`, `30`, `60`, `300` or `900`. `0` turns it off. Defaults to the dashboard's own setting. |
-| `var-<name>` | A value for one of the dashboard's variables, such as `var-service=checkout`.                                              |
+| Parameter    | Values                                                                                                                                                                      |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `theme`      | `light` or `dark`. Defaults to dark.                                                                                                                                        |
+| `range`      | A relative window: minutes, hours, days, weeks or months, such as `30m`, `24h`, `7d`, `2w` or `1mo`, or `today`. Up to 31 days. Defaults to the dashboard's own time range. |
+| `from`, `to` | A fixed window in UTC, `YYYY-MM-DD HH:MM:SS`. Set both. Takes precedence over `range`.                                                                                      |
+| `refresh`    | Seconds between reloads: `5`, `10`, `30`, `60`, `300` or `900`. `0` turns it off. Defaults to the dashboard's own setting.                                                  |
+| `var-<name>` | A value for one of the dashboard's variables, such as `var-service=checkout`.                                                                                               |
 
 The dialog lists the dashboard's own variables with an example value for each. A space in `from` and `to` works as typed inside an HTML attribute.
 
-For example, a light chart over the first two weeks of September that reloads every five minutes:
+For example, a light chart over the last 7 days that reloads every five minutes:
 
 ```html
 <iframe
-	src="https://app.maple.dev/share/<token>?embed=true&theme=light&from=2026-09-01 00:00:00&to=2026-09-15 00:00:00&refresh=300"
+	src="https://app.maple.dev/share/<token>?embed=true&theme=light&range=7d&refresh=300"
 	width="100%"
 	height="330"
 	style="border: 0"
@@ -122,7 +112,7 @@ For example, a light chart over the first two weeks of September that reloads ev
 ></iframe>
 ```
 
-Without `from` and `to`, the embed uses the dashboard's own time range. When that is a relative range such as "Last 30 days", it is recalculated on every load and refresh. The URL can only set a fixed window; to embed a different relative range, change the dashboard's time range.
+A relative window, from `range` or from the dashboard, is recalculated on every load and refresh, so the chart always ends at the current time. A `range` the chart can't read is ignored and the dashboard's range is used instead.
 
 ## What a viewer of the embed can see
 

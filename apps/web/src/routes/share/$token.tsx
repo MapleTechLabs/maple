@@ -41,6 +41,7 @@ import { RefreshControls } from "@/components/time-range-picker/refresh-controls
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import type { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { formatTimeRangeDisplay, presetLabel } from "@/lib/time-utils"
+import { resolveTimeRangeWindow } from "@maple/query-engine"
 import {
 	shareTimeRange,
 	useShareWidgetData,
@@ -69,6 +70,11 @@ const ShareSearch = Schema.StructWithRest(
 		theme: Schema.optional(Schema.String),
 		from: Schema.optional(Schema.String),
 		to: Schema.optional(Schema.String),
+		/**
+		 * A relative window (`24h`, `7d`, `today`) overriding the board's own. Loose
+		 * like `theme`: an unreadable value falls back to the board's range.
+		 */
+		range: Schema.optional(Schema.String),
 		/**
 		 * Auto-refresh cadence in seconds for this URL, overriding the board's
 		 * stored default. A share has nowhere to persist a viewer's choice, so
@@ -105,7 +111,7 @@ interface ShareWindow {
 const DEFAULT_SHARE_TIME_RANGE = { type: "relative", value: "1h" } as const
 
 const resolveShareWindow = (
-	search: { readonly from?: string; readonly to?: string },
+	search: { readonly from?: string; readonly to?: string; readonly range?: string },
 	stored: unknown,
 	{ snap }: { snap: boolean } = { snap: true },
 ): ShareWindow | null => {
@@ -114,6 +120,16 @@ const resolveShareWindow = (
 			timeRange: { startTime: search.from, endTime: search.to },
 			label: formatTimeRangeDisplay(search.from, search.to),
 		}
+	}
+	// `resolveTimeRangeWindow`, not `resolveTimeRange`: the latter quietly
+	// substitutes "1h" for a shorthand it cannot read, and a typo in the URL
+	// should cost the override, not silently show a different window.
+	const range =
+		search.range === undefined
+			? null
+			: resolveTimeRangeWindow({ type: "relative", value: search.range }, { snap })
+	if (search.range !== undefined && range !== null) {
+		return { timeRange: range, label: presetLabel(search.range) }
 	}
 	const timeRange = shareTimeRange(stored) ?? DEFAULT_SHARE_TIME_RANGE
 	const resolved = resolveTimeRange(timeRange, { snap })
@@ -207,6 +223,7 @@ function SharePageContent({ isSignedIn }: { isSignedIn: boolean }) {
 				token={token}
 				from={search.from}
 				to={search.to}
+				range={search.range}
 				search={search}
 				refreshParam={search.refresh}
 				signedIn={isSignedIn}
@@ -398,6 +415,7 @@ function ShareBody({
 	token,
 	from,
 	to,
+	range,
 	search,
 	refreshParam,
 	signedIn,
@@ -407,6 +425,7 @@ function ShareBody({
 	token: string
 	from: string | undefined
 	to: string | undefined
+	range: string | undefined
 	search: Record<string, unknown>
 	refreshParam: number | string | undefined
 	signedIn: boolean
@@ -423,8 +442,8 @@ function ShareBody({
 	// re-resolving a relative preset on every render would re-key the fetch
 	// effect forever.
 	const window = useMemo(
-		() => resolveShareWindow({ from, to }, share.dashboard.timeRange, { snap: refreshTick === 0 }),
-		[from, to, share.dashboard.timeRange, refreshTick],
+		() => resolveShareWindow({ from, to, range }, share.dashboard.timeRange, { snap: refreshTick === 0 }),
+		[from, to, range, share.dashboard.timeRange, refreshTick],
 	)
 	// Only what the URL selects; the server runs the board's own ladder
 	// (default → All → first option) for everything else, so an unset variable

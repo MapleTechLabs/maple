@@ -306,8 +306,15 @@ function EmbedUrlOptions() {
 		{
 			key: "range",
 			icon: ClockIcon,
+			param: "range",
+			description: "Relative window: 30m, 24h, 7d, 2w or today. Defaults to the dashboard's range",
+			example: "&range=7d",
+		},
+		{
+			key: "from-to",
+			icon: ClockIcon,
 			param: "from, to",
-			description: "UTC, set both. Defaults to the dashboard's range",
+			description: "Fixed window in UTC, set both. Overrides range",
 			example: `&from=${warehouseDateTime(now - 12 * 3600_000)}&to=${warehouseDateTime(now)}`,
 		},
 		{
