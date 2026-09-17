@@ -504,7 +504,8 @@ describe("SessionOverview", () => {
 		render(<Overview turns={quietTurns} summary={quiet} />)
 
 		expect(screen.getByText("Completed")).toBeTruthy()
-		expect(screen.getByText(/^cleanly — \d+ checks passed across \d+ (turn|segment)s?$/)).toBeTruthy()
+		// The headline is the count strip's job here; only a failed session names a cause.
+		expect(screen.queryByText(/^cleanly —/)).toBeNull()
 		expect(screen.getByText(/^Nothing to fix/)).toBeTruthy()
 		expect(screen.getByRole("button", { name: /^Passed/ }).getAttribute("aria-expanded")).toBe("true")
 		expect(screen.getByText("No model call was rate-limited")).toBeTruthy()

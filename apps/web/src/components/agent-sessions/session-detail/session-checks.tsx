@@ -131,9 +131,8 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 	const { counts } = report
 	// Only a failed verdict carries the span it failed on.
 	const failingSpanId = report.verdict.spanId
-	// The colour says what the count strip says: red for anything that ended
-	// the run or needs a fix, amber for something worth a look, green only
-	// when nothing was found.
+	// Red for anything that ended the run or needs a fix, amber for something
+	// worth a look, green only when nothing was found.
 	const tone: SessionCheckStatus =
 		failed || counts.failed > 0 ? "failed" : counts.warning > 0 ? "warning" : "passed"
 
@@ -145,26 +144,10 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 						aria-hidden
 						className={cn("size-2 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
 					/>
+					{/* The word alone: the report's headline and its counts restate
+					    the list right under it — the checks that need attention, and
+					    how many passed. They are the MCP's line. */}
 					<span className={STATUS_TEXT[tone]}>{failed ? "Failed" : "Completed"}</span>
-					{failed && (
-						<span aria-hidden className="text-muted-foreground">
-							—
-						</span>
-					)}
-					<span className="min-w-0 font-normal text-muted-foreground">{report.headline}</span>
-				</p>
-				<p className="flex flex-wrap gap-x-2 pl-4 font-mono text-xs tabular-nums">
-					<Count n={counts.failed} word="failed" status="failed" />
-					<Dot />
-					<Count
-						n={counts.warning}
-						word={counts.warning === 1 ? "warning" : "warnings"}
-						status="warning"
-					/>
-					<Dot />
-					<Count n={counts.passed} word="passed" status="passed" />
-					<Dot />
-					<Count n={counts.skipped} word="not checked" status="skipped" />
 				</p>
 			</div>
 			{failingSpanId !== undefined && (
@@ -179,27 +162,6 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 				</Button>
 			)}
 		</section>
-	)
-}
-
-/** One figure of the count strip: the number carries its tone only when it is
- *  not zero, so a clean strip reads as grey. */
-function Count({ n, word, status }: { n: number; word: string; status: SessionCheckStatus }) {
-	return (
-		<span className="text-muted-foreground">
-			<span className={cn("font-semibold", n > 0 ? STATUS_TEXT[status] : "text-muted-foreground")}>
-				{n}
-			</span>{" "}
-			{word}
-		</span>
-	)
-}
-
-function Dot() {
-	return (
-		<span aria-hidden className="text-muted-foreground/60">
-			·
-		</span>
 	)
 }
 
