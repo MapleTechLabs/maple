@@ -299,6 +299,14 @@ describe("MapleCloudflareSDK.make", () => {
 		await telemetry.flush(env) // second flush — within cooldown, should be a no-op
 		expect(calls.length).toBe(failedCount)
 		expect(consoleErrorSpy).toHaveBeenCalled()
+
+		// A forced flush is the last one a piece of background work makes: it posts through the
+		// cooldown (and, failing again here, re-arms it).
+		await telemetry.flush(env, { force: true })
+		expect(calls.length).toBe(failedCount + 1)
+		expect(calls.at(-1)?.url).toMatch(/\/v1\/traces$/)
+		await telemetry.flush(env)
+		expect(calls.length).toBe(failedCount + 1)
 	})
 
 	// Effect defers `span.end` and `withSpan` finalizers onto the scheduler's

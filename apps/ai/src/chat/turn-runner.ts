@@ -73,6 +73,12 @@ const telemetry = MapleCloudflareSDK.make(
  * a span can now land twice. Session usage nets by response id; raw span counts do not.
  */
 const FLUSH_INTERVAL_MS = 10_000
+/**
+ * How long the turn waits for `runtime.dispose()`. Its finalizers — the Postgres connection, the
+ * model client — are the one part of the turn that can hang, and past this the second flush and
+ * the session's `endTurn` matter more than a clean close.
+ */
+const DISPOSE_TIMEOUT = "5 seconds"
 let liveTurns = 0
 let flushTimer: ReturnType<typeof setInterval> | undefined
 
@@ -483,7 +489,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// leave them skipped inside the cooldown. `flush` never rejects and serializes overlapping
 		// calls — a tick in flight finishes (or times out) first, then this one drains.
 		await telemetry.flush(input.env, { force: true })
-		await runtime.dispose().catch(() => undefined)
+		await Effect.runPromise(
+			Effect.promise(() => runtime.dispose()).pipe(Effect.timeout(DISPOSE_TIMEOUT), Effect.ignoreCause),
+		)
 		await telemetry.flush(input.env, { force: true })
 	}
 }

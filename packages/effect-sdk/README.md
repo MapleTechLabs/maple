@@ -73,7 +73,7 @@ export default {
 
 `telemetry.layer` MUST live in the same runtime as your routes — provide it to the layer composition you hand to `HttpRouter.toWebHandler`, not a separate per-request runtime, or your spans won't pick up the Tracer reference.
 
-When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. After a flush failure, the failed batch is put back ahead of newer telemetry and that signal sleeps 60s before retrying; buffers hold 10k items per signal and evict the oldest past that, so a long outage loses the earliest telemetry first. Trace and log cooldowns are independent. `flush(env, { force: true })` posts through a cooldown — for the last flush a piece of background work will make.
+When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. After a flush failure, the failed batch is put back ahead of newer telemetry and that signal sleeps 60s before retrying; buffers hold 10k items per signal and evict the oldest past that, so a long outage loses the earliest telemetry first. Trace and log cooldowns are independent. `flush(env, { force: true })` posts even inside that cooldown: use it for the last flush of a unit of work that nothing will flush after (a Durable Object's background turn, say), and run it under `ctx.waitUntil()` like any other flush so the isolate stays up until it completes.
 
 ### Cloudflare-specific options
 
