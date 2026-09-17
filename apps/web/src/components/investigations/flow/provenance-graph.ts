@@ -15,7 +15,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-import { splitDuration } from "../investigation-display"
+import { reportHeadline, splitDuration } from "../investigation-display"
 import {
 	classifyAction,
 	routingContextFromInvestigation,
@@ -398,6 +398,10 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 		)
 		liveIds.add("pending-verdict")
 	} else if (!running && report) {
+		// The node is one line wide, so it takes the one field written to be a line.
+		// `suspectedCause` is prompted for a mechanism as well as a cause and arrives
+		// as a paragraph, which this node clamps to three lines of it.
+		const verdictTitle = reportHeadline(report) ?? report.suspectedCause
 		pushColumn(
 			[
 				{
@@ -416,7 +420,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 							? {
 									glyph: "verdict",
 									eyebrow: "PARTIAL RESULT",
-									title: report.suspectedCause,
+									title: verdictTitle,
 									note: `${report.ruledOut?.length ?? 0} ruled out · ${report.unchecked?.length ?? 0} unchecked`,
 									...(investigation.updated_at
 										? { at: investigation.updated_at }
@@ -426,7 +430,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 							: {
 									glyph: "verdict",
 									eyebrow: "VERDICT",
-									title: report.suspectedCause,
+									title: verdictTitle,
 									note: `${report.confidence} confidence`,
 									...(investigation.diagnosed_at
 										? { at: investigation.diagnosed_at }

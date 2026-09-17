@@ -60,22 +60,42 @@ export type InvestigationFinding =
 	| { readonly kind: "none" }
 
 /**
+ * The report's one-line finding, for every place a report is shown rather than
+ * read: the hub row, the verdict heading, the graph's verdict node.
+ *
+ * Three fields deep because only the first is written to be a line. `headline`
+ * is prompted at "one line, under 90 characters"; `summary` is prompted at
+ * "2-4 sentences"; `suspectedCause` is prompted for a mechanism as well as a
+ * cause, which models answer with a paragraph. Reports predating `headline`
+ * have to render somewhere, and the second-shortest field is the least bad
+ * place. Nothing here truncates: callers clamp in CSS, where the full text is
+ * still selectable and still in the DOM.
+ */
+export function reportHeadline(report: V2Investigation["report"]): string | null {
+	if (!report) return null
+	return trimmed(report.headline) ?? trimmed(report.summary) ?? trimmed(report.suspectedCause)
+}
+
+/**
  * What Maple concluded — the column the list was missing. Every state has
  * something to say: a running pass says it is running, and a failed pass says
  * why, which was on the wire and rendered nowhere.
  */
 export function investigationFinding(investigation: V2Investigation): InvestigationFinding {
 	if (investigation.status === "investigating") {
-		return { kind: "pending", text: "Gathering evidence…" }
+		// The last step, when there is one. Every running row saying the same three
+		// words is a row that reports liveness and nothing else, and the hub is
+		// where several passes are watched at once.
+		const step = investigation.progress?.steps.at(-1)?.label
+		return { kind: "pending", text: trimmed(step) ?? "Gathering evidence…" }
 	}
 	// Before `failed`, and a distinct kind rather than a `cause` with a caveat.
 	// The hub is scanned, not read: a partial that renders identically to a
 	// confirmed cause is worse than one that renders as a failure, because it
 	// makes an unconfirmed lead look like an answer.
 	if (investigation.status === "inconclusive") {
-		const report = investigation.report
-		const text = trimmed(report?.suspectedCause) ?? trimmed(report?.summary)
-		return { kind: "partial", text: text ?? "No cause established — see what was ruled out." }
+		const text = reportHeadline(investigation.report)
+		return { kind: "partial", text: text ?? "No cause established. See what was ruled out." }
 	}
 	if (investigation.status === "failed") {
 		return {
@@ -83,15 +103,20 @@ export function investigationFinding(investigation: V2Investigation): Investigat
 			text: trimmed(investigation.error) ?? "The pass failed without recording a reason.",
 		}
 	}
-	const report = investigation.report
-	if (report) {
-		const text = trimmed(report.suspectedCause) ?? trimmed(report.summary)
-		if (text !== null) return { kind: "cause", text }
-	}
+	const text = reportHeadline(investigation.report)
+	if (text !== null) return { kind: "cause", text }
 	return { kind: "none" }
 }
 
-/** Case-insensitive match across everything the row actually renders. */
+/**
+ * Case-insensitive match across what the row renders, plus the suspected cause.
+ *
+ * The cause is searched although the row no longer prints it. A person filtering
+ * this hub is looking for a finding they half-remember, and that memory is far
+ * more often the named cause than the summary that frames it. Dropping it from
+ * the haystack when the row's text changed would have made the search worse to
+ * fix the rendering.
+ */
 export function matchesQuery(investigation: V2Investigation, query: string): boolean {
 	const needle = query.trim().toLowerCase()
 	if (!needle) return true
@@ -100,6 +125,7 @@ export function matchesQuery(investigation: V2Investigation, query: string): boo
 		investigationHeadline(investigation),
 		investigation.snapshot.scope,
 		finding.kind === "none" ? null : finding.text,
+		investigation.report?.suspectedCause,
 	]
 	return haystack.some((value) => value?.toLowerCase().includes(needle))
 }

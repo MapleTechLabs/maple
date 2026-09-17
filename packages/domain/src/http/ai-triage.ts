@@ -22,6 +22,24 @@ export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEv
 }) {}
 
 export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult")({
+	/**
+	 * One line naming the cause, for the places a report is shown rather than
+	 * read: the hub row, the verdict heading, the graph's verdict node.
+	 *
+	 * It exists because neither field below is a headline and one of them kept
+	 * being used as one. `summary` is prompted at "2-4 sentences", and
+	 * `suspectedCause` is prompted for a mechanism as well as a cause, which
+	 * models answer with a paragraph. Rendering either as a heading produced a
+	 * heading of arbitrary length, and truncating one to a line cuts it mid-clause
+	 * at the setup rather than the finding.
+	 *
+	 * `optionalKey` because every report stored before this field existed still
+	 * has to decode, and deliberately unenforced at the tool boundary for the
+	 * reason spelled out on `ruledOut` below: a submission rejected at the end of
+	 * a spent budget loses the whole investigation. Readers fall back to
+	 * `summary`.
+	 */
+	headline: Schema.optionalKey(Schema.String),
 	summary: Schema.String,
 	suspectedCause: Schema.String,
 	/**

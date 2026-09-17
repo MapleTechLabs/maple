@@ -155,6 +155,7 @@ const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(fu
 		subject: yield* toWireSubject(doc.id, doc.subject),
 		snapshot: doc.snapshot,
 		report,
+		progress: doc.progress,
 		model: doc.model,
 		severity: doc.severity,
 		confidence: doc.confidence,

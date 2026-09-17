@@ -21,12 +21,14 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, decodeChatTurnTenant, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
+import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { CLOSE_OUT_PROMPT } from "./prompts"
+import { makeProgressRecorder, parseToolInput } from "./progress"
 import { investigationForSession, isAutonomousInvestigationTurn, makeRunUsage } from "./tools"
 
 /**
@@ -286,6 +288,55 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
 		const autonomous = isAutonomousInvestigationTurn(input.sessionId, tenant)
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
+		const investigationId = investigationForSession(input.sessionId)
+
+		/**
+		 * Mirror the run's tool calls onto the investigation row.
+		 *
+		 * Autonomous passes only. A follow-up question shares the session but is a
+		 * conversation, and its tool calls are not the investigation making progress.
+		 *
+		 * Writes are chained rather than fired in parallel, for two reasons: two
+		 * progress updates in flight at once can land out of order and leave the row
+		 * showing the older tail, and the chain is what `drainProgress` below can
+		 * await, so the runtime is never disposed with a write still going.
+		 *
+		 * A write that fails is logged and dropped. This is a progress feed; losing
+		 * a run because its feed could not be written is the worse trade by far.
+		 */
+		const progress = makeProgressRecorder()
+		let progressWrites: Promise<void> = Promise.resolve()
+		const writeProgress = (record: InvestigationProgress | undefined) => {
+			if (record === undefined || investigationId === undefined) return
+			progressWrites = progressWrites.then(
+				(): Promise<void> =>
+					runtime
+						.runPromise(
+							investigations
+								.recordProgress(tenant.orgId, investigationId, record)
+								.pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("Could not record investigation progress").pipe(
+											Effect.annotateLogs({ investigationId, error: error.message }),
+										),
+									),
+								),
+						)
+						.catch(() => undefined),
+			)
+		}
+
+		/**
+		 * The steps the heartbeat swallowed, plus whatever is still in flight.
+		 *
+		 * Without it a run that took four quick steps and then stopped reports the
+		 * first one forever, which is the shape of a stalled pass rather than a
+		 * finished one.
+		 */
+		const drainProgress = Effect.suspend(() => {
+			writeProgress(progress.pending())
+			return Effect.promise(() => progressWrites)
+		})
 
 		// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
 		// in prose or died on a model error gets one close-out turn first, so its terminal is held
@@ -312,6 +363,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				// a conversation that has moved on.
 				holdsTurn,
 				append: (event) => {
+					if (autonomous && event.type === "tool-call" && event.proposed !== true) {
+						writeProgress(progress.step(event.name, parseToolInput(event.input), Date.now()))
+					}
 					if (event.type === "turn-end" && event.task === undefined) {
 						observability.outcome = event.reason
 						if (autonomous && event.reason !== "aborted") {
@@ -364,8 +418,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			yield* Effect.annotateCurrentSpan("maple.investigation.closed_out", submitted)
 		}
 
+		yield* drainProgress
+
 		if (holdsTurn()) {
-			const investigationId = investigationForSession(input.sessionId)
 			if (!submitted && investigationId !== undefined) {
 				observability.failureReason = "NoDiagnosis"
 				yield* investigations

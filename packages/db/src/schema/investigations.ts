@@ -5,6 +5,7 @@ import type {
 	AiTriageIncidentKind,
 	AiTriageResult,
 	InvestigationConfidence,
+	InvestigationProgress,
 	InvestigationSeededBy,
 	InvestigationStatus,
 	InvestigationSubject,
@@ -40,6 +41,17 @@ export const investigations = pgTable(
 		issueId: text("issue_id").$type<ErrorIssueId>(),
 		/** Structured diagnosis; null until the first `submit_diagnosis` lands. */
 		reportJson: jsonb("report_json").$type<AiTriageResult>(),
+		/**
+		 * What the running pass is doing, so the row says something between being
+		 * opened and a report landing. Null until the first step; kept afterwards,
+		 * because on a pass that failed it is the only record of how far it got that
+		 * outlives the agent's event stream.
+		 *
+		 * Written on a heartbeat rather than per step. This table is replicated with
+		 * REPLICA IDENTITY FULL, so every update ships the whole row including the
+		 * three jsonb blobs above, and a run is allowed 100 tool calls.
+		 */
+		progressJson: jsonb("progress_json").$type<InvestigationProgress>(),
 		/** Denormalized from the report for cheap war-room list rendering. */
 		severity: text("severity").$type<IssueSeverity>(),
 		confidence: text("confidence").$type<InvestigationConfidence>(),

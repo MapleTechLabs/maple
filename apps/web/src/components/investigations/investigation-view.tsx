@@ -267,18 +267,21 @@ export function InvestigationView({
 									) : (
 										<>
 											{/*
-											 * The canvas leads. It carries what the rail's run
-											 * spine, its checks panel and the Next-actions ledger
-											 * used to say separately — one causal read instead of
-											 * three partial ones — so the verdict below it
-											 * qualifies a chain the reader has already seen.
+											 * The verdict leads. The canvas led for a while, on the
+											 * reasoning that a verdict qualifies a chain better
+											 * once the reader has seen the chain. In practice a
+											 * reader arrives with one question, and answering it
+											 * below a 330px graph meant scrolling past the
+											 * provenance of an answer they had not read yet. The
+											 * graph is how the run got there, which is the second
+											 * question, so it sits where the second question does.
 											 */}
+											<VerdictCard investigation={investigation} />
 											<ProvenanceCanvas
 												investigation={investigation}
 												openActionIndex={openActionIndex}
 												onOpenAction={handleOpenAction}
 											/>
-											<VerdictCard investigation={investigation} />
 											<ImpactStrip investigation={investigation} />
 											<SignalsCard investigation={investigation} />
 										</>
