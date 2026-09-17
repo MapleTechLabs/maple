@@ -109,6 +109,13 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				// counts stay even when nothing needs attention — that is the
 				// answer, not an empty section.
 				const { counts } = checks
+				// The verdict and the counts are what a read of a session answers;
+				// on the span they say how often a read lands on a failing session.
+				yield* Effect.annotateCurrentSpan({
+					"maple.ai.session.verdict": report.verdict.status,
+					"checks.failed": counts.failed,
+					"checks.warning": counts.warning,
+				})
 				const attention = checks.checks.filter(
 					(check) => check.status === "failed" || check.status === "warning",
 				)

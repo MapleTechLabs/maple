@@ -91,13 +91,16 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 				    content, and a closed row would leave it looking empty. */}
 				<Disclosure
 					title="Passed"
+					status="passed"
 					checks={passed}
 					open={clean}
 					summary="Each one carries the fact it measured"
+					emptySummary="Nothing passed"
 					className="grid grid-cols-1 gap-x-8 gap-y-1.5 @2xl:grid-cols-2"
 				/>
 				<Disclosure
 					title="Not checked"
+					status="skipped"
 					checks={skipped}
 					open={clean && skipped.length > 0}
 					summary="The instrumentation did not carry the signal"
@@ -118,6 +121,8 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSpan: OpenSpan }) {
 	const failed = report.verdict.status === "failed"
 	const { counts } = report
+	// Only a failed verdict carries the span it failed on.
+	const failingSpanId = report.verdict.spanId
 	// The colour says what the count strip says: red for anything that ended
 	// the run or needs a fix, amber for something worth a look, green only
 	// when nothing was found.
@@ -154,12 +159,12 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 					<Count n={counts.skipped} word="not checked" status="skipped" />
 				</p>
 			</div>
-			{report.verdict.spanId !== undefined && (
+			{failingSpanId !== undefined && (
 				<Button
 					variant="outline"
 					size="sm"
 					aria-haspopup="dialog"
-					onClick={() => onOpenSpan(report.verdict.spanId!)}
+					onClick={() => onOpenSpan(failingSpanId)}
 				>
 					Open failing span
 					<ArrowRightIcon size={14} />
@@ -275,11 +280,12 @@ function EvidenceRow({
 /**
  * A collapsed row of checks with the same status. `open` is the page's
  * default for the session in front of it — it follows the report as spans
- * arrive or the reader moves to another session — until the reader toggles
- * the row, after which their choice stands.
+ * arrive — until the reader toggles the row, after which their choice stands
+ * for as long as the Overview is mounted.
  */
 function Disclosure({
 	title,
+	status,
 	checks,
 	open,
 	summary,
@@ -287,50 +293,53 @@ function Disclosure({
 	className,
 }: {
 	title: string
+	status: SessionCheckStatus
 	checks: readonly SessionCheck[]
 	open: boolean
 	/** What the row says while open. */
 	summary: string
 	/** What the row says when it has nothing in it. */
-	emptySummary?: string
+	emptySummary: string
 	className: string
 }) {
 	const [choice, setChoice] = useState<boolean | undefined>(undefined)
 	const disclosable = checks.length > 0
 	const expanded = disclosable && (choice ?? open)
-	const status = checks[0]?.status ?? "skipped"
+	const head = (
+		<>
+			<ChevronRightIcon
+				size={12}
+				aria-hidden
+				className={cn(
+					"shrink-0 text-muted-foreground transition-transform",
+					expanded && "rotate-90",
+					!disclosable && "invisible",
+				)}
+			/>
+			<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />
+			<span className="font-medium text-sm">{title}</span>
+			<span className="font-mono text-muted-foreground text-xs tabular-nums">({checks.length})</span>
+			<span className="ml-auto min-w-0 truncate pl-4 text-muted-foreground text-xs">
+				{!disclosable
+					? emptySummary
+					: expanded
+						? summary
+						: checks.map((check) => check.name).join(" · ")}
+			</span>
+		</>
+	)
+	// An empty row has nothing to disclose, so it is a line of text rather
+	// than a control a screen reader would announce as unavailable.
+	if (!disclosable) return <div className="flex w-full items-center gap-2 py-2.5">{head}</div>
 	return (
 		<div className="flex flex-col">
 			<button
 				type="button"
-				disabled={!disclosable}
-				aria-expanded={disclosable ? expanded : undefined}
+				aria-expanded={expanded}
 				onClick={() => setChoice(!expanded)}
-				className={cn(
-					"flex w-full items-center gap-2 py-2.5 text-left",
-					disclosable ? "hover:bg-accent/40" : "cursor-default",
-				)}
+				className="flex w-full items-center gap-2 py-2.5 text-left hover:bg-accent/40"
 			>
-				<ChevronRightIcon
-					size={12}
-					aria-hidden
-					className={cn(
-						"shrink-0 text-muted-foreground transition-transform",
-						expanded && "rotate-90",
-					)}
-				/>
-				<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />
-				<span className="font-medium text-sm">{title}</span>
-				<span className="font-mono text-muted-foreground text-xs tabular-nums">
-					({checks.length})
-				</span>
-				<span className="ml-auto min-w-0 truncate pl-4 text-muted-foreground text-xs">
-					{!disclosable
-						? emptySummary
-						: expanded
-							? summary
-							: checks.map((check) => check.name).join(" · ")}
-				</span>
+				{head}
 			</button>
 			{expanded && (
 				<div className={cn("pb-3 pl-6", className)}>
