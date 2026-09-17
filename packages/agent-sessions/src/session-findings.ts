@@ -418,7 +418,8 @@ function longestIdenticalRuns(
 	let run: AiSessionSpan[] = []
 	let key: string | undefined
 	for (const span of calls) {
-		const args = span.genAi.toolCallArguments
+		// `?? undefined`: a JSON `null` is a call that recorded nothing.
+		const args = span.genAi.toolCallArguments ?? undefined
 		const name = toolNameOf(span)
 		const next = args === undefined ? undefined : `${name}\u0000${canonicalJSON(args)}`
 		if (next !== undefined && next === key) {
@@ -432,9 +433,10 @@ function longestIdenticalRuns(
 		if (
 			best === undefined ||
 			run.length > best.length ||
-			(run.length === best.length && run !== best && spanFailed(run[0]))
+			(run.length === best.length && spanFailed(run[0]) && !spanFailed(best[0]))
 		) {
-			longest.set(name, run)
+			// A copy: the run keeps growing after it is recorded.
+			longest.set(name, [...run])
 		}
 	}
 	return longest

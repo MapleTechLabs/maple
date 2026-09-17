@@ -20,7 +20,12 @@ import {
 	type SessionFindingsReport,
 	type SessionVerdict,
 } from "./session-findings"
-import { spanTokenBuckets, type SessionSummary, type SessionTokenReporting } from "./session-summary"
+import {
+	spanTokenBuckets,
+	type SessionFailureKind,
+	type SessionSummary,
+	type SessionTokenReporting,
+} from "./session-summary"
 import {
 	classifyAiSpan,
 	isLlmCall,
@@ -179,12 +184,17 @@ function readCoverage(
 	turns: readonly SessionTurn[],
 ): SessionCoverage {
 	return {
+		// JSON-decoded payloads: an emitter that wrote `null` lands as `null`,
+		// not as a missing key, and recorded nothing.
 		messages: spans.some(
-			(span) => span.genAi.inputMessages !== undefined || span.genAi.outputMessages !== undefined,
+			(span) =>
+				(span.genAi.inputMessages ?? undefined) !== undefined ||
+				(span.genAi.outputMessages ?? undefined) !== undefined,
 		),
 		toolPayloads: spans.some(
 			(span) =>
-				(span.genAi.toolCallArguments !== undefined || span.genAi.toolCallResult !== undefined) &&
+				((span.genAi.toolCallArguments ?? undefined) !== undefined ||
+					(span.genAi.toolCallResult ?? undefined) !== undefined) &&
 				classifyAiSpan(span) === "tool",
 		),
 		usage: summary.tokenReporting,
@@ -220,7 +230,7 @@ const check = (
 
 /** The findings' own severity decides: a red row ended the run or names a
  *  class that needs a fix regardless; an amber one was survived. */
-const foundStatus = (findings: readonly SessionFinding[]): SessionCheckStatus =>
+const foundStatus = (findings: readonly SessionFinding[]): "failed" | "warning" =>
 	findings.some((finding) => finding.severity === "failure") ? "failed" : "warning"
 
 const endedTheRun = (findings: readonly SessionFinding[]): boolean =>
@@ -243,33 +253,27 @@ function completionCheck(incomplete: readonly SessionFinding[]): SessionCheck[] 
 	]
 }
 
-/** `died on the context window`, `ended without calling \`submit_plan\``. */
+/** How the final turn ended, per failure kind: `died on the context window`,
+ *  `ended without calling \`submit_plan\``. Only a failure event can be the
+ *  terminal finding, so the table covers exactly the failure kinds. */
+const CAUSE_TEXT = {
+	contextExceeded: () => "died on the context window",
+	rateLimited: () => "died on a rate limit",
+	providerError: () => "died on a provider error",
+	refusal: () => "ended on a refusal",
+	invalidOutput: () => "died on a reply that did not match its schema",
+	incomplete: (finding) => finding.detail ?? "ended without calling its completion tool",
+	toolUnavailable: (finding) => `died with ${toolName(finding)} unable to run`,
+	toolTimeout: (finding) => `died on ${toolName(finding)} timing out`,
+	toolArguments: (finding) => `died on ${toolName(finding)} rejecting its arguments`,
+	error: (finding) =>
+		finding.tool === undefined ? `died on \`${finding.label}\`` : `died on ${toolName(finding)} failing`,
+} satisfies Record<SessionFailureKind, (finding: SessionFinding) => string>
+
+const isFailureKind = (kind: SessionFindingKind): kind is SessionFailureKind => kind in CAUSE_TEXT
+
 function causeText(finding: SessionFinding): string {
-	const tool = finding.tool === undefined ? undefined : `\`${finding.tool}\``
-	switch (finding.kind) {
-		case "contextExceeded":
-			return "died on the context window"
-		case "rateLimited":
-			return "died on a rate limit"
-		case "providerError":
-			return "died on a provider error"
-		case "refusal":
-			return "ended on a refusal"
-		case "invalidOutput":
-			return "died on a reply that did not match its schema"
-		case "incomplete":
-			return finding.detail ?? "ended without calling its completion tool"
-		case "toolUnavailable":
-			return `died with ${tool} unable to run`
-		case "toolTimeout":
-			return `died on ${tool} timing out`
-		case "toolArguments":
-			return `died on ${tool} rejecting its arguments`
-		case "error":
-			return tool === undefined ? `died on \`${finding.label}\`` : `died on ${tool} failing`
-		default:
-			return "did not close cleanly"
-	}
+	return isFailureKind(finding.kind) ? CAUSE_TEXT[finding.kind](finding) : "did not close cleanly"
 }
 
 function contextWindowCheck(
@@ -395,7 +399,7 @@ function replyLengthCheck(
 		const limit = llmCalls.find((span) => span.spanId === found.spanId)?.genAi.requestMaxTokens
 		return check(
 			identity,
-			"warning",
+			foundStatus(findings),
 			`${plural(n, "reply", "replies")} hit the output token limit${
 				limit === undefined ? "" : ` (max_tokens ${formatNumber(limit)})`
 			} on ${where(found)}`,
@@ -574,7 +578,7 @@ function repetitionCheck(
 	}
 	return check(
 		identity,
-		"warning",
+		foundStatus(findings),
 		clauses(
 			findings,
 			(finding) =>
@@ -590,7 +594,7 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	if (findings.length === 0) return check(identity, "passed", "No gap over 30s inside a turn")
 	return check(
 		identity,
-		"warning",
+		foundStatus(findings),
 		clauses(
 			findings,
 			(finding) => `Nothing ran for ${finding.label.replace(/^idle /, "")} inside ${where(finding)}`,

@@ -11,7 +11,7 @@ import {
 	sessionWindowParams,
 	truncationNote,
 } from "../lib/agent-sessions"
-import { Effect, Schema } from "effect"
+import { Effect, Match, Schema } from "effect"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	buildSessionChecks,
@@ -97,11 +97,11 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						: []),
 					...truncationNote(loaded),
 					``,
-					`### Verdict: ${
-						report.verdict.status === "failed"
-							? `Failed — ${checks.headline}`
-							: `Completed ${checks.headline}`
-					}${report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""}`,
+					`### Verdict: ${Match.value(report.verdict.status).pipe(
+						Match.when("failed", () => `Failed — ${checks.headline}`),
+						Match.whenOr("attention", "clean", () => `Completed ${checks.headline}`),
+						Match.exhaustive,
+					)}${report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""}`,
 				]
 
 				// The checks are the reading a caller can act on; the findings below
