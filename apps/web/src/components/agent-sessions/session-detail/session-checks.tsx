@@ -102,14 +102,19 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 					emptySummary="Nothing passed"
 					className="flex flex-col gap-1.5"
 				/>
-				<Disclosure
-					title="Not checked"
-					status="skipped"
-					checks={skipped}
-					open={clean && skipped.length > 0}
-					emptySummary="Every check had the signal it needed"
-					className="flex flex-col gap-1.5"
-				/>
+				{/* A session every check could read has no row here: the count
+				    strip already says "0 not checked", and a row announcing that
+				    nothing is missing is one more line to read past. */}
+				{skipped.length > 0 && (
+					<Disclosure
+						title="Not checked"
+						status="skipped"
+						checks={skipped}
+						open={clean}
+						emptySummary="Every check had the signal it needed"
+						className="flex flex-col gap-1.5"
+					/>
+				)}
 			</div>
 
 			<Coverage coverage={report.coverage} />
