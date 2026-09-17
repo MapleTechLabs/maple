@@ -1097,10 +1097,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const recordChecks = options?.recordChecks !== false
 
-				// One `execute` — one Postgres connection — for the whole report. A
-				// transaction is deliberately not used: these are independent per-target
-				// writes that were never atomic before (they ran on separate
-				// connections), and wrapping them would add lock scope for no benefit.
+				// One `execute` — one span — for the whole report. Outside a transaction
+				// each statement checks out its own pooled client, and a transaction is
+				// deliberately not used: these are independent per-target writes that
+				// were never atomic, and wrapping them would add lock scope for no benefit.
 				yield* database
 					.execute((db) =>
 						Effect.gen(function* () {
@@ -1131,8 +1131,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							if (!recordChecks) return
 
 							// Durable check history: one row per scheduled scrape attempt.
-							// Resolve orgIds on the same connection; results for deleted
-							// targets are skipped (the FK would reject them anyway).
+							// Results for deleted targets are skipped (the FK would reject
+							// them anyway).
 							const targetRows = yield* db
 								.select({ id: scrapeTargets.id, orgId: scrapeTargets.orgId })
 								.from(scrapeTargets)

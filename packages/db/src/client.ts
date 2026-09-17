@@ -6,7 +6,7 @@ import type { EffectPgQueryEffectHKT, EffectPgQueryResultHKT } from "drizzle-orm
 import type { PgEffectDatabase } from "drizzle-orm/pg-core/effect"
 import { Context, Effect, Layer, type Scope } from "effect"
 import { SqlError } from "effect/unstable/sql/SqlError"
-import { Pool } from "pg"
+import { Client, type ClientConfig, Pool } from "pg"
 
 /**
  * The drizzle database every Maple service codes against: Effect-native, over
@@ -14,16 +14,21 @@ import { Pool } from "pg"
  * Effects (`yield* db.select()…`), transactions take an Effect callback, and
  * every failure lands in the typed channel as a `MapleDbError`.
  *
+ * The driver-neutral base class rather than `effect-postgres`'s
+ * `EffectPgDatabase`: the two drivers' classes differ only in `$client`, which
+ * nothing above the platform layer reads, so both are one type without a cast.
+ * It is also what a `tx` is, so helpers take it inside or outside a transaction.
+ *
  * No `relations` are registered: Maple uses the SQL-like query builder only,
  * never `db.query.*`.
  */
-export type MapleDb = PgDrizzle.EffectPgDatabase
+export type MapleDb = PgEffectDatabase<EffectPgQueryEffectHKT, EffectPgQueryResultHKT>
 
 /** The `tx` handed to a `db.transaction` callback. */
 export type MapleTx = Parameters<Parameters<MapleDb["transaction"]>[0]>[0]
 
 /** Either a database or a transaction — for helpers that run inside or outside one. */
-export type MapleDbLike = PgEffectDatabase<EffectPgQueryEffectHKT, EffectPgQueryResultHKT>
+export type MapleDbLike = MapleDb
 
 /**
  * What a query or transaction fails with below the `Database` service.
@@ -70,9 +75,14 @@ export type MaplePgPool = Pool
 export interface MaplePgPoolOptions {
 	readonly maxConnections?: number
 	/**
-	 * node-postgres `connectionTimeoutMillis`, in SECONDS. Unset, a stalled dial
-	 * has no bound at all. Always pass this; see `CONNECT_TIMEOUT_SECONDS` in
+	 * Bound on one socket dial, in SECONDS. Unset, a stalled dial has no bound at
+	 * all. Always pass this; see `CONNECT_TIMEOUT_SECONDS` in
 	 * packages/backend/src/platform/pg-connection-scope.ts.
+	 *
+	 * Set on each `Client`, never on the `Pool`: pg-pool applies a pool-level
+	 * `connectionTimeoutMillis` to waiting for a free client as well, so a
+	 * fan-out wider than the pool would fail as a connection error after that
+	 * long although the server is healthy. postgres.js bounded only the dial.
 	 *
 	 * The driver option rather than an `Effect.timeout` on purpose: interrupting
 	 * the fiber does not cancel the socket, so only the driver's own timer frees
@@ -105,7 +115,7 @@ export const createMaplePgPool = (connectionString: string, options?: MaplePgPoo
 		connectionString,
 		max: options?.maxConnections ?? 5,
 		...(!(connectTimeoutSeconds === undefined)
-			? { connectionTimeoutMillis: connectTimeoutSeconds * 1000 }
+			? { Client: dialBoundedClient(connectTimeoutSeconds * 1000) }
 			: undefined),
 	})
 	// An idle client's socket error is emitted on the pool; unhandled, it is an
@@ -113,6 +123,18 @@ export const createMaplePgPool = (connectionString: string, options?: MaplePgPoo
 	pool.on("error", () => undefined)
 	return pool
 }
+
+/** A `Client` whose own dial timer is the bound; the pool it is handed to sets none. */
+const dialBoundedClient = (connectionTimeoutMillis: number): typeof Client =>
+	class DialBoundedClient extends Client {
+		constructor(config?: string | ClientConfig) {
+			super(
+				typeof config === "string"
+					? { connectionString: config, connectionTimeoutMillis }
+					: { ...config, connectionTimeoutMillis },
+			)
+		}
+	}
 
 /**
  * Build the drizzle database over a pool the caller acquires.
@@ -132,7 +154,7 @@ export const makeMapleEffectDb = (
 		const services = yield* Layer.build(
 			Layer.merge(
 				mapleDrizzleServices,
-				PgClient.layerFrom(PgClient.fromPool({ acquire, applicationName: "maple" })),
+				PgClient.layerFrom(PgClient.fromPool({ acquire })),
 			),
 		)
 		return yield* PgDrizzle.make().pipe(Effect.provideContext(services))

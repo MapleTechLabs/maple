@@ -23,9 +23,11 @@ const CONTENTION_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("50 millis"
 type PersistenceErrorConstructor<E> = new (fields: { readonly message: string; readonly cause?: string }) => E
 
 /**
- * Build the `unknown -> E` mapper each service used to hand-roll: the thrown
+ * Build the `unknown -> E` mapper each service used to hand-roll: the error's
  * message when there is one, the flattened nested cause when there is one, and
- * `fallbackMessage` for a non-`Error` rejection that carries neither.
+ * `fallbackMessage` for a non-`Error` value that carries neither. `unknown`
+ * because callers also fold their own typed failures (a lost claim, a missing
+ * row) into the same persistence error, not only `DatabaseError`.
  */
 export const makePersistenceErrorMapper =
 	<E>(Ctor: PersistenceErrorConstructor<E>, fallbackMessage: string) =>

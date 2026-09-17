@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { PGlite, type Transaction } from "@electric-sql/pglite"
+import { PGlite } from "@electric-sql/pglite"
 import { Effect, Layer } from "effect"
 import { snapshotPath } from "../../test/pglite-snapshot"
 import { Database } from "./DatabaseLive"
@@ -42,16 +42,15 @@ const assertNoDateParams = (sql: string, params: unknown[] | undefined): void =>
 	const index = params?.findIndex((param) => param instanceof Date) ?? -1
 	if (index === -1) return
 	throw new Error(
-		`Bound a Date as param $${index + 1}, which the deployed postgres.js driver rejects. ` +
+		`Bound a Date as param $${index + 1}: raw \`sql\` fragments have no column type to serialize it. ` +
 			`Interpolate an ISO string (msToSqlTimestamp) into raw \`sql\` templates instead.\n${sql}`,
 	)
 }
 
 /**
- * PGlite with the guard applied to `query` and, crucially, to the client
- * drizzle hands to a `transaction` callback — that is a different object, and
- * without re-wrapping it the guard would miss every statement inside a
- * transaction, which is exactly where the raw templates live.
+ * PGlite with the guard applied to `query`. `@effect/sql-pglite` sends every
+ * statement through it, BEGIN and COMMIT included, so transactions are covered
+ * without wrapping `pglite.transaction`, which it never calls.
  */
 const withDateParamGuard = <T extends object>(client: T): T =>
 	new Proxy(client, {
@@ -65,10 +64,6 @@ const withDateParamGuard = <T extends object>(client: T): T =>
 					assertNoDateParams(sql, params)
 					return value.call(target, sql, params, ...rest)
 				}
-			}
-			if (property === "transaction") {
-				return <Result>(callback: (tx: Transaction) => Promise<Result>) =>
-					value.call(target, (tx: Transaction) => callback(withDateParamGuard(tx)))
 			}
 			return value.bind(target)
 		},

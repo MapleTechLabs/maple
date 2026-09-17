@@ -21,23 +21,26 @@ const causeMessage = (cause: unknown): string | undefined => {
 }
 
 /**
- * `@effect/sql`'s classification of a driver failure, when the error carries
- * one. A statement failure arrives as `EffectDrizzleQueryError` whose `cause`
- * is a `Cause<SqlError>`; transaction control fails with a bare `SqlError`.
- * Anything else — a scope refusal, a test double — has no reason.
+ * The `SqlError` behind a driver failure, when there is one. A statement
+ * failure arrives as `EffectDrizzleQueryError` whose `cause` is a
+ * `Cause<SqlError>`; transaction control fails with a bare `SqlError`.
+ * Anything else — a scope refusal, a test double — has none.
  */
-export const driverReason = (cause: unknown): SqlError["reason"] | undefined => {
-	if (cause instanceof SqlError) return cause.reason
+export const driverSqlError = (cause: unknown): SqlError | undefined => {
+	if (cause instanceof SqlError) return cause
 	if (cause instanceof EffectDrizzleQueryError) {
 		const inner: unknown = cause.cause
 		if (Cause.isCause(inner)) {
 			const failure = Cause.findErrorOption(inner)
-			return Option.isSome(failure) ? driverReason(failure.value) : undefined
+			return Option.isSome(failure) ? driverSqlError(failure.value) : undefined
 		}
-		return driverReason(inner)
+		return driverSqlError(inner)
 	}
 	return undefined
 }
+
+/** `@effect/sql`'s classification of a driver failure, when the error carries one. */
+export const driverReason = (cause: unknown): SqlError["reason"] | undefined => driverSqlError(cause)?.reason
 
 /**
  * The pg error underneath the classification — the half an operator needs
@@ -65,9 +68,9 @@ export const isRetryablePostgresContention = (error: DatabaseError): boolean => 
 /**
  * Socket-level codes for failures to establish or keep a connection, as
  * opposed to failures of a statement. node-postgres surfaces the socket's own
- * code; a dial that hit `connectionTimeoutMillis` or a dropped socket carries
- * none, and `@effect/sql-pg` only tags SQLSTATE `08*` as `ConnectionError`, so
- * those are recognised by node-postgres's own message instead.
+ * code. A dial timeout (`timeout expired`) or a dropped socket carries none,
+ * and `@effect/sql-pg` only tags SQLSTATE `08*` as `ConnectionError`, so those
+ * are recognised by the operation that failed or by node-postgres's message.
  */
 const CONNECTION_ERROR_CODES: ReadonlySet<string> = new Set([
 	"CONNECT_TIMEOUT",
@@ -86,20 +89,23 @@ const CONNECTION_ERROR_CODES: ReadonlySet<string> = new Set([
 /** SQLSTATE: five alphanumerics, e.g. `23505`, `40001`, `57014`. */
 const SQLSTATE = /^[0-9A-Z]{5}$/
 
-/** node-postgres / pg-pool messages for code-less connection failures. */
-const CODELESS_CONNECTION_MESSAGE = /Connection terminated|timeout exceeded when trying to connect/
+/** node-postgres's message for a socket that closed under a statement. */
+const DROPPED_CONNECTION_MESSAGE = /^Connection terminated/
 
-/** A connection-class driver failure: tagged `ConnectionError`, or code-less with a connection message. */
+/**
+ * A connection-class driver failure: tagged `ConnectionError`, or code-less and
+ * either raised while acquiring a connection or a socket dropped mid-statement.
+ * An acquire failure WITH a code is left to the code (`28P01` is auth, not a
+ * dead connection).
+ */
 const isConnectionReason = (cause: unknown): boolean => {
 	const reason = driverReason(cause)
 	if (reason === undefined) return false
 	if (reason._tag === "ConnectionError") return true
 	const root = driverRootError(cause)
-	return (
-		root?.code === undefined &&
-		root?.message !== undefined &&
-		CODELESS_CONNECTION_MESSAGE.test(root.message)
-	)
+	if (root === undefined || root.code !== undefined) return false
+	if (reason.operation === "acquireConnection") return true
+	return root.message !== undefined && DROPPED_CONNECTION_MESSAGE.test(root.message)
 }
 
 const nestedCause = (cause: unknown): unknown =>

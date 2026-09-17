@@ -167,14 +167,16 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
   needs `::int` (bigint → string).
 - Layers: `DatabasePgLive` (Workers) and `DatabasePgliteLive` (tests/local; `createTestDb()` in
   `packages/backend/src/platform/test-pglite.ts`).
-- One Postgres connection per invocation — request, cron tick, or Workflow run — created lazily and
+- One Postgres pool per invocation — request, cron tick, or Workflow run — created lazily and
   closed at the boundary, which is Cloudflare's documented Hyperdrive shape. The single primitive is
-  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
-  installs it for HTTP, `withPgConnectionScope` for cron. Sockets are request-bound on Workers, so a
-  connection may be reused freely WITHIN an invocation but must never outlive it. `max` is 5
-  (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost 3–6x on p50) and the
-  dial is bounded so a stall lands as `error.type = ConnectionError` instead of hanging (a refused
-  dial carries the socket code, `ECONNREFUSED`).
+  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`;
+  `withPgConnectionScope` installs it around each worker's request handler and cron tick. Sockets are
+  request-bound on Workers, so a connection may be reused freely WITHIN an invocation but must never
+  outlive it. `max` is 5 (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost
+  3–6x on p50). The 10s bound is on each client's DIAL, never the pool: pg-pool applies a pool-level
+  `connectionTimeoutMillis` to queue waits too. A stalled dial lands as `error.type = ConnectionError`
+  (a refused one carries the socket code, `ECONNREFUSED`). Fork DB work off a request only with
+  `forkRequestScoped`, which interrupts it at the response but lets a DB call already under way finish.
 - Migrations: `bun run --cwd packages/db db:generate`; CI applies them against the branch's DIRECT
   port 5432 (never a pooler) before `alchemy deploy`. PGlite applies them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a

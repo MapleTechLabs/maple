@@ -46,24 +46,39 @@ describe("postgresErrorType", () => {
 	it("classifies node-postgres's code-less connection failures as connection errors", () => {
 		// `@effect/sql-pg` only tags SQLSTATE 08* as `ConnectionError`; these carry
 		// no code at all, so they arrive as `UnknownError`.
-		for (const message of [
-			"Connection terminated due to connection timeout",
-			"timeout exceeded when trying to connect",
-			"Connection terminated unexpectedly",
-		]) {
+		for (const [message, operation] of [
+			["timeout expired", "acquireConnection"],
+			["Connection terminated due to connection timeout", "acquireConnection"],
+			["Connection terminated unexpectedly", "acquireConnection"],
+			["Connection terminated unexpectedly", "execute"],
+		] as const) {
 			const error = toDatabaseError(
 				new SqlError({
 					reason: new UnknownError({
 						cause: new Error(message),
-						message: "Failed to acquire connection",
-						operation: "acquireConnection",
+						message: "Driver failure",
+						operation,
 					}),
 				}),
 			)
-			assert.strictEqual(postgresErrorType(error), "ConnectionError", message)
-			assert.isTrue(isPostgresConnectionError(error), message)
-			assert.isUndefined(postgresSqlState(error), message)
+			assert.strictEqual(postgresErrorType(error), "ConnectionError", `${operation}: ${message}`)
+			assert.isTrue(isPostgresConnectionError(error), `${operation}: ${message}`)
+			assert.isUndefined(postgresSqlState(error), `${operation}: ${message}`)
 		}
+	})
+
+	it("leaves an acquire failure that carries a SQLSTATE to its code", () => {
+		const error = toDatabaseError(
+			new SqlError({
+				reason: new UnknownError({
+					cause: pgError("53300", "sorry, too many clients already"),
+					message: "Failed to acquire connection",
+					operation: "acquireConnection",
+				}),
+			}),
+		)
+		assert.strictEqual(postgresErrorType(error), "53300")
+		assert.isFalse(isPostgresConnectionError(error))
 	})
 
 	it("classifies a statement cut off by a dropped connection as a connection error", () => {
@@ -127,7 +142,8 @@ describe("postgresErrorType", () => {
 			error.message,
 			'duplicate key value violates unique constraint "api_keys_pkey" [while: insert into "api_keys" ("id") values ($1)]',
 		)
-		assert.instanceOf(error.cause, EffectDrizzleQueryError)
+		// The SqlError, not the drizzle error: that one's message carries the params.
+		assert.instanceOf(error.cause, SqlError)
 	})
 
 	it("caps the statement in the message and keeps it out of the diagnostic", () => {

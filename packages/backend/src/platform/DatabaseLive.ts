@@ -1,10 +1,11 @@
 import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollector } from "@maple/db/client"
 import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
-import { Clock, Context, Effect, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Result, Schema } from "effect"
 import { SqlError } from "effect/unstable/sql/SqlError"
 import {
 	driverRootError,
+	driverSqlError,
 	isPostgresConnectionError,
 	postgresErrorType,
 	postgresSqlState,
@@ -76,7 +77,12 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 	if (cause instanceof EffectDrizzleQueryError) {
 		const statement = capQueryMessage(cause.query)
 		const root = driverRootError(cause)?.message
-		return new DatabaseError({ message: root ? `${root} [while: ${statement}]` : statement, cause })
+		return new DatabaseError({
+			message: root ? `${root} [while: ${statement}]` : statement,
+			// Never the drizzle error itself: its `message` getter interpolates the
+			// bound params, and `Schema.Defect` encodes `message`.
+			cause: driverSqlError(cause) ?? new Error(`Failed query: ${statement}`),
+		})
 	}
 	if (cause instanceof SqlError) {
 		return new DatabaseError({ message: driverRootError(cause)?.message ?? cause.message, cause })
@@ -89,7 +95,21 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 	})
 }
 
-/** Absorb the driver's failures into `DatabaseError`; whatever else the callback failed with passes through. */
+/** The driver failure a Cause carries as a defect, if it is one. */
+const driverDefect = <E>(cause: Cause.Cause<E>): MapleDbError | undefined => {
+	const defect = Cause.findDefect(cause)
+	return Result.isSuccess(defect) && isMapleDbError(defect.success) ? defect.success : undefined
+}
+
+/**
+ * Absorb the driver's failures into `DatabaseError`; whatever else the callback
+ * failed with passes through.
+ *
+ * Defects too: `@effect/sql`'s transaction wrapper `orDie`s a failed COMMIT or
+ * ROLLBACK (a deferred constraint at commit, a connection that dropped before
+ * the rollback), so without this the failure would skip contention retry, the
+ * service's error mapping and the span's `error.type`.
+ */
 const absorbDriverErrors = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, ExecuteError<E>, R> =>
 	self.pipe(
 		// Type arguments pinned: left to inference, TypeScript picks an `orElse`
@@ -97,6 +117,11 @@ const absorbDriverErrors = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effec
 		Effect.catchIf<E, Extract<E, MapleDbError>, never, DatabaseError, never>(
 			(error): error is Extract<E, MapleDbError> => isMapleDbError(error),
 			(error) => Effect.fail(toDatabaseError(error)),
+		),
+		// Only a driver defect is caught; any other defect keeps its original Cause.
+		Effect.catchCauseIf(
+			(cause) => driverDefect(cause) !== undefined,
+			(cause) => Effect.fail(toDatabaseError(driverDefect(cause))),
 		),
 	)
 

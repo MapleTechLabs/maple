@@ -4,7 +4,7 @@ import { eq, sql } from "drizzle-orm"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Cause, Effect, Exit, Schema, Tracer } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError"
-import { Database, executeWithSpan } from "./DatabaseLive"
+import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
 import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
 
@@ -128,7 +128,75 @@ describe("Database execute span instrumentation", () => {
 				error.message,
 				/^relation "nowhere" does not exist \[while: select broken from nowhere\]/,
 			)
-			assert.instanceOf(error.cause, EffectDrizzleQueryError)
+			assert.instanceOf(error.cause, SqlError)
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("never serializes the bound params of a failed statement", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+
+			const error = yield* database
+				.execute((db) => db.execute(sql`insert into nowhere values (${"sk_live_SECRET_HASH"})`))
+				.pipe(Effect.flip)
+
+			// drizzle's own error interpolates params into `message`, and
+			// `Schema.Defect` encodes `message` — so it must not be the stored cause.
+			const encoded = JSON.stringify(Schema.encodeSync(DatabaseError)(error))
+			assert.notInclude(encoded, "sk_live_SECRET_HASH")
+			assert.notInclude(error.message, "sk_live_SECRET_HASH")
+			assert.include(encoded, 'relation \\"nowhere\\" does not exist')
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("rejects a bound Date inside a transaction in the test harness", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+
+			const error = yield* database
+				.execute((db) =>
+					db.transaction((tx) => tx.execute(sql`select ${new Date(0)}::timestamptz as at`)),
+				)
+				.pipe(Effect.flip)
+
+			// `@effect/sql-pglite` routes BEGIN, the statement and ROLLBACK through
+			// `pglite.query`, so the guard sees transactions without a second hook.
+			assert.include(error.message, "Bound a Date as param $1")
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("absorbs a failed COMMIT into DatabaseError instead of dying", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.execute(sql`create table deferred_parent (id int primary key)`),
+			)
+			yield* database.execute((db) =>
+				db.execute(
+					sql`create table deferred_child (parent_id int references deferred_parent (id) deferrable initially deferred)`,
+				),
+			)
+
+			// Every statement succeeds; the foreign key is only checked at COMMIT,
+			// which `@effect/sql`'s transaction wrapper runs under `orDie`.
+			const exit = yield* database
+				.execute((db) =>
+					db.transaction((tx) =>
+						tx.execute(sql`insert into deferred_child (parent_id) values (1)`),
+					),
+				)
+				.pipe(Effect.withTracer(tracer), Effect.exit)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined
+			assert.isTrue(failure !== undefined && failure._tag === "Some")
+			const error = failure?._tag === "Some" ? failure.value : undefined
+			assert.instanceOf(error, DatabaseError)
+			assert.include(error?.message, "foreign key")
+			const span = dbSpans(spans).at(-1)
+			assert.strictEqual(span?.attributes.get("error.type"), "23503")
+			assert.strictEqual(span?.attributes.get("db.connect.failed"), false)
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
 	)
 

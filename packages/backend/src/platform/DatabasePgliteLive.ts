@@ -1,25 +1,12 @@
 import type { PGliteInterface } from "@electric-sql/pglite"
 import type { MapleDb } from "@maple/db/client"
-import { type MaplePgliteDb, makeMaplePgliteDb } from "@maple/db/pglite"
+import { makeMaplePgliteDb } from "@maple/db/pglite"
 import { Effect, type Scope } from "effect"
 import type { SqlError } from "effect/unstable/sql/SqlError"
 import { Database, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
 
 /** `db.namespace` for the embedded Postgres used by vitest / local entrypoints. */
 export const PGLITE_DB_NAMESPACE = "pglite"
-
-/**
- * The PGlite-backed database as the type the app codes against.
- *
- * drizzle declares one `EffectPgDatabase` class per driver module. The two are
- * the same class body over the same query and result HKTs — only the `$client`
- * differs, and nothing above this layer reaches for it — so the vitest/local
- * database is presented as the Workers one here, in one place. Exported for
- * the Workflow test seams that hand a PGlite database to `pgConnectionScopeFrom`.
- */
-export const pgliteAsMapleDb = (db: MaplePgliteDb): MapleDb =>
-	// SAFETY: same PgEffectDatabase shape over identical HKTs; see the doc comment.
-	db as unknown as MapleDb
 
 /**
  * Wrap an already-migrated PGlite instance as the Database service (no
@@ -34,7 +21,7 @@ export const makeDatabaseFromInstance = (
 	pglite: PGliteInterface,
 ): Effect.Effect<DatabaseApi, SqlError, Scope.Scope> =>
 	Effect.map(makeMaplePgliteDb(pglite), (pgliteDb) => {
-		const db = pgliteAsMapleDb(pgliteDb)
+		const db: MapleDb = pgliteDb
 		return Database.of({
 			execute: (fn) =>
 				executeWithSpan(

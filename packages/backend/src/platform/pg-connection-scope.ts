@@ -91,6 +91,22 @@ export class PgConnectionScopeClosedError extends Schema.TaggedError<PgConnectio
 	{ message: Schema.String },
 ) {}
 
+/**
+ * Set by `forkRequestScoped`: a DB call that has started runs to completion
+ * even when the request interrupts its fiber.
+ *
+ * node-postgres checks a client out on a later tick, so a statement forked
+ * just before the response is still a pending waiter when the request Scope
+ * interrupts the child, and it never runs. postgres.js sent it synchronously and
+ * `sql.end()` drained it. Uninterruptible over the call alone restores that:
+ * the request waits for a statement already on its way, not for the rest of
+ * the forked work.
+ */
+export class DrainRunOnInterrupt extends Context.Reference<boolean>(
+	"@maple/api/platform/DrainRunOnInterrupt",
+	{ defaultValue: () => false },
+) {}
+
 const CLOSED_MESSAGE =
 	"Postgres connection scope is already closed — this call outlived the request, cron tick or Workflow run that owned the connection"
 
@@ -189,7 +205,7 @@ export const makePgConnectionScope = (
 				// `trackOutboundSlot` scopes to the statement, not the socket: an idle
 				// kept-open connection doesn't starve `cache.match()`, an in-flight
 				// statement does.
-				return trackOutboundSlot(
+				const call = trackOutboundSlot(
 					executeWithSpan((hooks) => {
 						hooks.record({ "db.connect.reused": reused })
 						// A close can land while this call waits for a slot or the gate;
@@ -208,6 +224,9 @@ export const makePgConnectionScope = (
 						)
 						return Effect.flatMap(opened, fn)
 					}, extraAttributes),
+				)
+				return Effect.flatMap(DrainRunOnInterrupt, (drain) =>
+					drain ? Effect.uninterruptible(call) : call,
 				)
 			}),
 

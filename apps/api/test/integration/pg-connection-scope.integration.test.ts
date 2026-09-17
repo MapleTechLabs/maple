@@ -2,7 +2,13 @@ import { afterAll, assert, describe, it } from "@effect/vitest"
 import { createMaplePgPool } from "@maple/db/client"
 import { sql } from "drizzle-orm"
 import { Effect, Tracer } from "effect"
-import { makePgConnectionScope, MAX_CONNECTIONS } from "@maple/backend/platform/pg-connection-scope"
+import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
+import {
+	makePgConnectionScope,
+	MAX_CONNECTIONS,
+	PgConnectionScope,
+	withPgConnectionScopeOf,
+} from "@maple/backend/platform/pg-connection-scope"
 import { isPostgresConnectionError, postgresErrorType } from "@maple/backend/platform/postgres-errors"
 import { rawRows } from "@maple/backend/platform/raw-rows"
 
@@ -233,6 +239,130 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		await Effect.runPromise(scope.run((db) => db.execute(sql.raw(`drop table ${table}`))))
 		await Effect.runPromise(scope.close)
 		assert.strictEqual(await waitForDelta(baseline, 0), 0)
+	})
+
+	it("lets a statement wait for a busy pool longer than the dial bound", async () => {
+		// pg-pool applies a POOL-level `connectionTimeoutMillis` to waiting for a free
+		// client too, so with the bound there a fan-out wider than the pool failed as
+		// "timeout exceeded when trying to connect" against a healthy server. The
+		// bound lives on each client's dial instead; the queue waits.
+		const dialBoundSeconds = 0.3
+		const scope = makePgConnectionScope(url, undefined, {
+			openPool: (options) =>
+				createMaplePgPool(url, {
+					...options,
+					maxConnections: 1,
+					connectTimeoutSeconds: dialBoundSeconds,
+				}),
+		})
+
+		const results = await Effect.runPromise(
+			Effect.all(
+				[
+					scope.run((db) => db.execute(sql`select pg_sleep(0.8)`)),
+					scope.run((db) => db.execute(sql`select 'waited' as tag`)),
+				],
+				{ concurrency: 2 },
+			).pipe(Effect.exit),
+		)
+
+		await Effect.runPromise(scope.close)
+		assert.isTrue(results._tag === "Success", "the queued statement timed out waiting for the pool")
+	})
+
+	it("reports a COMMIT the server rejects as a DatabaseError, not a defect", async () => {
+		// `@effect/sql` runs COMMIT under `orDie`. A deferred foreign key is checked
+		// only there, so every statement succeeds and the commit fails.
+		const scope = makePgConnectionScope(url)
+		const parent = `scope_commit_parent_${Date.now()}`
+		const child = `scope_commit_child_${Date.now()}`
+		const { spans, tracer } = makeRecordingTracer()
+		try {
+			await Effect.runPromise(
+				scope.run((db) => db.execute(sql.raw(`create table ${parent} (id int primary key)`))),
+			)
+			await Effect.runPromise(
+				scope.run((db) =>
+					db.execute(
+						sql.raw(
+							`create table ${child} (parent_id int references ${parent} (id) deferrable initially deferred)`,
+						),
+					),
+				),
+			)
+
+			const error = await Effect.runPromise(
+				scope
+					.run((db) =>
+						db.transaction((tx) =>
+							tx.execute(sql.raw(`insert into ${child} (parent_id) values (1)`)),
+						),
+					)
+					.pipe(Effect.flip, Effect.withTracer(tracer)),
+			)
+
+			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(postgresErrorType(error), "23503")
+			assert.isFalse(isPostgresConnectionError(error))
+			assert.strictEqual(dbSpans(spans).at(-1)?.attributes.get("error.type"), "23503")
+		} finally {
+			await Effect.runPromise(
+				scope.run((db) => db.execute(sql.raw(`drop table if exists ${child}; `))).pipe(Effect.ignore),
+			)
+			await Effect.runPromise(
+				scope.run((db) => db.execute(sql.raw(`drop table if exists ${parent}`))).pipe(Effect.ignore),
+			)
+			await Effect.runPromise(scope.close)
+		}
+	})
+
+	it("lands a DB write forked just before the response", async () => {
+		// The API worker's nesting: the request Scope closes inside the connection
+		// scope. node-postgres checks a client out on a later tick, so without
+		// draining, the forked statement was still queued when the request Scope
+		// interrupted it and never ran — with or without a warm connection.
+		const setup = makePgConnectionScope(url)
+		const table = `scope_fork_${Date.now()}`
+		await Effect.runPromise(setup.run((db) => db.execute(sql.raw(`create table ${table} (tag text)`))))
+		try {
+			for (const warm of [false, true]) {
+				const tag = warm ? "warm" : "cold"
+				const scope = makePgConnectionScope(url)
+				const write = Effect.gen(function* () {
+					const current = yield* PgConnectionScope
+					yield* current!.run((db) => db.execute(sql.raw(`insert into ${table} values ('${tag}')`)))
+				})
+				await Effect.runPromise(
+					withPgConnectionScopeOf(
+						scope,
+						Effect.scoped(
+							Effect.gen(function* () {
+								if (warm) {
+									const current = yield* PgConnectionScope
+									yield* current!.run((db) => db.execute(sql`select 1`))
+								}
+								yield* forkRequestScoped(write)
+								return "response"
+							}),
+						),
+					),
+				)
+				const rows = rawRows(
+					await Effect.runPromise(
+						setup.run((db) =>
+							db.execute<{ n: number }>(
+								sql.raw(`select count(*)::int as n from ${table} where tag = '${tag}'`),
+								"objects",
+							),
+						),
+					),
+				)
+				assert.strictEqual(rows[0]?.n, 1, `${tag} fork did not land`)
+			}
+		} finally {
+			await Effect.runPromise(setup.run((db) => db.execute(sql.raw(`drop table ${table}`))))
+			await Effect.runPromise(setup.close)
+		}
 	})
 
 	it("classifies a refused connection as a connection error on a real socket", async () => {

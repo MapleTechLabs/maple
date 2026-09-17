@@ -24,7 +24,7 @@ boundary — use `msToDate` / `dateToMs` from `packages/backend/src/platform/tim
 One connection per invocation — request, cron tick, or Workflow run — created lazily on the first
 query and closed at the boundary. This is Cloudflare's documented Hyperdrive shape, and
 `makePgConnectionScope` (`packages/backend/src/platform/pg-connection-scope.ts`) is the only implementation
-of it: `pgConnectionMiddleware` installs a scope for HTTP, `withPgConnectionScope` for cron, and
+of it: `withPgConnectionScope` installs a scope around each worker's request handler and cron tick, and
 `executeOnFreshPgClient` is the same scope one call long for entry points that have none.
 
 Workers tie TCP sockets to the invocation that opened them, so a connection may be reused freely
@@ -40,10 +40,12 @@ history:
   on the theory that Postgres should hold at most one of the Worker's six outbound slots, which
   serialized every statement in a cron tick behind one connection (`SELECT actors` p50 928ms →
   5687ms at flat volume).
-- **A bounded `connectionTimeoutMillis`** (10s) — unset, a stalled dial hangs for the whole
-  invocation and lands with no `error.type` to classify. A dial that hits the bound carries no
-  driver code and lands as `error.type = ConnectionError` (`@effect/sql`'s classification); a
-  refused one carries the socket's own code (`ECONNREFUSED`). The bound is generous and single: a
+- **A bounded dial** (10s, `connectionTimeoutMillis` on each `Client`, never on the `Pool`) —
+  unset, a stalled dial hangs for the whole invocation and lands with no `error.type` to classify.
+  On the pool the same option also times out waiting for a free client, so a fan-out wider than
+  `max` would fail against a healthy server. A dial that hits the bound carries no driver code and
+  lands as `error.type = ConnectionError` (`postgres-errors.ts` classifies code-less acquire
+  failures); a refused one carries the socket's own code (`ECONNREFUSED`). The bound is generous and single: a
   2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder that followed
   existed only to compensate for it.
 
