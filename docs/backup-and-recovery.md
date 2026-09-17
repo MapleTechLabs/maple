@@ -69,10 +69,20 @@ login` session. Takes 10–20 minutes, most of it PlanetScale provisioning the r
 - **Failure path without a restore:** `RESTORE_TEST_SOURCE_BRANCH=does-not-exist` fails at
   `branch show`, before anything is created.
 - **In CI:** the workflow only runs on its schedule or `gh workflow run backup-restore-test.yml`
-  (after merge — a PR's CI does not run it). The first dispatch validates the service token: it
-  needs `read_backups`, `restore_production_branch_backups` and branch create/delete on the
-  database; a token missing the restore permission fails at `branch create` with nothing to
-  clean up.
+  (after merge — a PR's CI does not run it). The first dispatch validates the service token. On
+  the database it needs `read_branch`, `create_branch`, `connect_branch`, `read_backups`,
+  `restore_production_branch_backup`, and — because a branch restored from a production backup
+  is itself flagged `production: true`, and PlanetScale cannot demote a Postgres restore branch
+  — `delete_production_branch` and `delete_production_branch_password` rather than the
+  development-branch variants. A token missing `read_backups` fails at `backup list`, one
+  missing the restore access fails at `branch create`, both before anything is created; one
+  missing the production-delete accesses restores fine and then leaves the branch behind, which
+  the drill reports as a failed check. Only the token's creator or an organization
+  administrator can change its accesses.
+- **Guardrail for those delete accesses:** enable deletion protection on the `main` branch (its
+  branch details page in the PlanetScale dashboard). The drill's own gate refuses any name that
+  is not `restore-test-*`; deletion protection makes `main` undeletable by that token even if
+  the gate did not exist, and PlanetScale also refuses to delete a database's default branch.
 
 ### Schedule
 
