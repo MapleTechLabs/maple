@@ -409,7 +409,7 @@
       "breakpoints": true
     },
     {
-      "idx": 58,
+      "idx": 59,
       "version": "7",
       "when": 1789684460658,
       "tag": "0059_planetscale_issue_receipts",
