@@ -1,0 +1,79 @@
+name: Backup Restore Test
+
+# Restore drill for the PlanetScale application database — the recurring
+# evidence behind the "backups + tested restoration" control. It restores the
+# newest successful backup of `main` into a throwaway branch, verifies the data
+# is readable and consistent, writes a report, and deletes the branch. See
+# docs/backup-and-recovery.md and packages/db/scripts/restore-test.ts.
+#
+# Quarterly, which comfortably beats the annual minimum, and on demand. A red
+# run means recovery could NOT be proven — treat it as an incident, not noise.
+
+on:
+    schedule:
+        # 06:23 UTC on the first day of January, April, July and October.
+        - cron: "23 6 1 1,4,7,10 *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    id-token: write # Infisical OIDC machine-identity auth
+
+concurrency:
+    group: backup-restore-test
+    cancel-in-progress: false
+
+jobs:
+    restore:
+        runs-on: ubuntu-latest
+        # Restoring a backup provisions a fresh cluster (~10 min) before the
+        # checks run, and the branch delete is awaited at the end.
+        timeout-minutes: 45
+        # Same STOPGAP as cleanup-preview-orphans.yml: the job borrows
+        # `pr-preview` only to shape the Infisical OIDC subject
+        # (repo:<org>/<repo>:environment:<name> is the allowlisted form). It
+        # deploys nothing. Remove once the `ref:refs/heads/main` subject is
+        # allowlisted on the machine identity.
+        environment: pr-preview
+        env:
+            INFISICAL_ENV_SLUG: dev
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - name: Setup mise (toolchain)
+              uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+            - name: Load secrets from Infisical
+              uses: Infisical/secrets-action@6cd3f7c0e4cc0d2395ee4ef414eb6eeb5d3e73db # v1.0.17
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: ${{ env.INFISICAL_ENV_SLUG }}
+                  export-type: "env"
+                  secret-path: "/"
+
+            - name: Install dependencies
+              uses: ./.github/actions/bun-install
+              with:
+                  filters: "@maple/db"
+
+            - name: Install PlanetScale CLI
+              uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1
+
+            - name: Restore the newest backup and verify it
+              run: bun run --cwd packages/db db:restore-test
+
+            # Uploaded even when the drill fails: a failed report is the evidence
+            # of what was checked. GitHub caps retention at 90 days on public
+            # repositories; the compliance platform's automation copies each run
+            # into its own evidence store.
+            - name: Upload restore report
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: backup-restore-test-report
+                  path: packages/db/.restore-test/
+                  if-no-files-found: warn
+                  retention-days: 90
