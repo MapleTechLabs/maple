@@ -62,7 +62,12 @@ jobs:
             - name: Install PlanetScale CLI
               uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1
 
+            # The report goes to a non-hidden directory: upload-artifact skips
+            # dot-directories by default, which silently dropped the first run's
+            # report from `packages/db/.restore-test/`.
             - name: Restore the newest backup and verify it
+              env:
+                  RESTORE_TEST_REPORT_DIR: ${{ runner.temp }}/backup-restore-test
               run: bun run --cwd packages/db db:restore-test
 
             # Uploaded even when the drill fails: a failed report is the evidence
@@ -74,6 +79,6 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: backup-restore-test-report
-                  path: packages/db/.restore-test/
+                  path: ${{ runner.temp }}/backup-restore-test/
                   if-no-files-found: warn
                   retention-days: 90
