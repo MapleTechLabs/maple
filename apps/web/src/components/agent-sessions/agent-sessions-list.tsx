@@ -8,7 +8,7 @@ import {
 	useTable,
 } from "@tanstack/react-table"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
+import type { AiSessionFailureSummary, AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
@@ -53,6 +53,8 @@ export interface AgentSessionRow {
 	readonly toolErrorCount: number
 	/** Failed model calls and turn spans that failed on their own. */
 	readonly turnErrorCount: number
+	/** The failures by label, red first — the Errors cell's chips and hover. */
+	readonly failures: ReadonlyArray<AiSessionFailureSummary>
 	readonly serviceNames: ReadonlyArray<string>
 	readonly models: ReadonlyArray<string>
 	readonly agentNames: ReadonlyArray<string>
@@ -104,7 +106,8 @@ const ROW_HEIGHT = 53
 
 // No wrap: a two-word label ("LLM calls") breaking onto a second line would
 // make the whole header row taller.
-const HEADER_CELL_CLASS = "h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-muted-foreground"
+const HEADER_CELL_CLASS =
+	"h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-muted-foreground"
 
 /**
  * Column layout, shared by the real table and the loading skeleton so the two can't drift apart.
@@ -114,11 +117,12 @@ const HEADER_CELL_CLASS = "h-10 whitespace-nowrap px-2 text-left align-middle fo
  * queries against `@container/page` (declared by PageLayout.Content), as on the traces table: the
  * app sidebar and the filter rail take width the viewport knows nothing about.
  *
- * Budget: Errors (100) is always on — the triage signal, as Status is for traces. Every other column
- * joins where Session keeps ≥200px beside it, the sortable measures first, so a width that shows a
- * measure can also sort by it: Started (96) at 400, Duration (100) at 500, Cost (80) at 580, LLM
- * calls (110) at 690, Tool calls (116) at 810 and Tokens (130) at 940. Services (170) at 1110 and
- * Model (160) at 1270 come last — the filter rail answers both for the whole list. A sortable
+ * Budget: Errors (140, room for a "12 warnings" chip on one line) is always on — the triage signal,
+ * as Status is for traces. Every other column joins where Session keeps ≥200px beside it, the
+ * sortable measures first, so a width that shows a measure can also sort by it: Started (96) at
+ * 440, Duration (100) at 540, Cost (80) at 620, LLM calls (110) at 730, Tool calls (116) at 850 and
+ * Tokens (130) at 980. Services (170) at 1150 and Model (160) at 1310 come last — the filter rail
+ * answers both for the whole list. A sortable
  * column is at least as wide as its label and arrow at text-sm plus the cell's padding.
  */
 interface SessionColumnLayout {
@@ -138,57 +142,57 @@ const SESSION_COLUMNS: readonly SessionColumnLayout[] = [
 		header: "Services",
 		width: 170,
 		skeleton: "w-24",
-		responsive: "hidden @min-[1110px]/page:table-cell",
+		responsive: "hidden @min-[1150px]/page:table-cell",
 	},
 	{
 		id: "model",
 		header: "Model",
 		width: 160,
 		skeleton: "w-24",
-		responsive: "hidden @min-[1270px]/page:table-cell",
+		responsive: "hidden @min-[1310px]/page:table-cell",
 	},
 	{
 		id: "durationMs",
 		header: "Duration",
 		width: 100,
 		skeleton: "w-12",
-		responsive: "hidden @min-[500px]/page:table-cell",
+		responsive: "hidden @min-[540px]/page:table-cell",
 	},
 	{
 		id: "llmCalls",
 		header: "LLM calls",
 		width: 110,
 		skeleton: "w-8",
-		responsive: "hidden @min-[690px]/page:table-cell",
+		responsive: "hidden @min-[730px]/page:table-cell",
 	},
 	{
 		id: "toolCalls",
 		header: "Tool calls",
 		width: 116,
 		skeleton: "w-8",
-		responsive: "hidden @min-[810px]/page:table-cell",
+		responsive: "hidden @min-[850px]/page:table-cell",
 	},
 	{
 		id: "totalTokens",
 		header: "Tokens",
 		width: 130,
 		skeleton: "w-20",
-		responsive: "hidden @min-[940px]/page:table-cell",
+		responsive: "hidden @min-[980px]/page:table-cell",
 	},
 	{
 		id: "cost",
 		header: "Cost",
 		width: 80,
 		skeleton: "w-10",
-		responsive: "hidden @min-[580px]/page:table-cell",
+		responsive: "hidden @min-[620px]/page:table-cell",
 	},
-	{ id: "errorSpanCount", header: "Errors", width: 100, skeleton: "w-12" },
+	{ id: "errorSpanCount", header: "Errors", width: 140, skeleton: "w-12" },
 	{
 		id: "startTime",
 		header: "Started",
 		width: 96,
 		skeleton: "w-14",
-		responsive: "hidden @min-[400px]/page:table-cell",
+		responsive: "hidden @min-[440px]/page:table-cell",
 	},
 ]
 
@@ -316,7 +320,11 @@ export function AgentSessionsList({
 								</div>
 							}
 						>
-							<ModelLabel detected={detect(firstModel)} moreCount={models.length - 1} title={null} />
+							<ModelLabel
+								detected={detect(firstModel)}
+								moreCount={models.length - 1}
+								title={null}
+							/>
 						</Hint>
 					)
 				},
@@ -370,20 +378,31 @@ export function AgentSessionsList({
 			},
 			{
 				id: "cost",
-				header: sortHeader("Cost", "cost", "As priced by the instrumentation; blank where it reported none"),
+				header: sortHeader(
+					"Cost",
+					"cost",
+					"As priced by the instrumentation; blank where it reported none",
+				),
 				size: 80,
 				// Blank where nothing was reported — a "$0.00" would read as "measured,
 				// and it was free".
 				cell: ({ row }) =>
 					row.original.cost > 0 ? (
-						<Hint className="font-mono text-xs tabular-nums" content="As priced by the instrumentation">
+						<Hint
+							className="font-mono text-xs tabular-nums"
+							content="As priced by the instrumentation"
+						>
 							{formatCost(row.original.cost)}
 						</Hint>
 					) : null,
 			},
 			{
 				id: "errorSpanCount",
-				header: sortHeader("Errors", "errorSpanCount", "Failed turns and tool calls"),
+				header: sortHeader(
+					"Errors",
+					"errorSpanCount",
+					"Failures the run needs fixed, and warnings it survived",
+				),
 				size: 100,
 				cell: ({ row }) => <ErrorChips session={row.original} />,
 			},
@@ -466,7 +485,10 @@ export function AgentSessionsList({
 													: "descending"
 												: undefined
 										}
-										className={cn(HEADER_CELL_CLASS, COLUMN_LAYOUT.get(header.id)?.responsive)}
+										className={cn(
+											HEADER_CELL_CLASS,
+											COLUMN_LAYOUT.get(header.id)?.responsive,
+										)}
 										style={{
 											width: header.getSize() !== 150 ? header.getSize() : undefined,
 										}}
@@ -481,7 +503,10 @@ export function AgentSessionsList({
 					</thead>
 					<tbody ref={listRef}>
 						{firstItem && (
-							<tr aria-hidden style={{ height: firstItem.start - virtualizer.options.scrollMargin }}>
+							<tr
+								aria-hidden
+								style={{ height: firstItem.start - virtualizer.options.scrollMargin }}
+							>
 								<td />
 							</tr>
 						)}
@@ -505,7 +530,10 @@ export function AgentSessionsList({
 									{row.getAllCells().map((cell) => (
 										<td
 											key={cell.id}
-											className={cn("p-2 align-middle", COLUMN_LAYOUT.get(cell.column.id)?.responsive)}
+											className={cn(
+												"p-2 align-middle",
+												COLUMN_LAYOUT.get(cell.column.id)?.responsive,
+											)}
 										>
 											{flexRender(cell.column.columnDef.cell, cell.getContext())}
 										</td>
@@ -643,11 +671,14 @@ function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone
 				<StartedAt
 					startTime={session.startTime}
 					timeZone={timeZone}
-					className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden"
+					className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[440px]/page:hidden"
 				/>
 			</div>
 			<Tooltip>
-				<TooltipTrigger render={<div />} className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs">
+				<TooltipTrigger
+					render={<div />}
+					className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"
+				>
 					<span className="shrink-0 text-muted-foreground/70">
 						{id.kind === "trace" ? "Trace" : "Session"}
 					</span>
@@ -743,7 +774,10 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 				{/* A session that reported only a total draws no bar — an empty track
 				    would read as "measured, and it was nothing". */}
 				{bucketTotal > 0 && (
-					<span aria-hidden className="flex h-1.5 w-full gap-px overflow-hidden rounded-xs bg-muted">
+					<span
+						aria-hidden
+						className="flex h-1.5 w-full gap-px overflow-hidden rounded-xs bg-muted"
+					>
 						{drawn.map((bucket) => (
 							<span
 								key={bucket.key}
@@ -760,11 +794,13 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 }
 
 /**
- * Tool failures apart from turn failures: a tool that errored is something the
- * agent may have recovered from, a turn that failed is the session not
- * answering — so they are two chips in two tones rather than one count. A
- * failure the index cannot classify (an errored span outside the agent's own)
- * shows only when it is all there is.
+ * Failures apart from warnings, graded as the detail page's Overview grades
+ * them: red is what the run died on or what always needs a fix (the prompt
+ * outgrew the window, the tool is not connected), amber is what it survived
+ * (a rate limit retried, a tool error recovered from). Each chip's hover is
+ * the breakdown by label, so a reader triages without opening the session.
+ * A failure the index cannot classify (an errored span outside the agent's
+ * own) shows only when it is all there is.
  */
 function ErrorChips({ session }: { session: AgentSessionRow }) {
 	// Unlike cost, none is a measurement here — the index counts every errored
@@ -772,25 +808,32 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 	if (session.errorSpanCount === 0) {
 		return <span className="text-xs text-muted-foreground/50">—</span>
 	}
+	const failures = session.failures.filter((failure) => failure.severity === "failure")
+	const warnings = session.failures.filter((failure) => failure.severity === "anomaly")
 	const classified = session.toolErrorCount + session.turnErrorCount
 	const other = session.errorSpanCount - classified
 	return (
 		<div className="flex flex-col items-start gap-1">
-			{session.turnErrorCount > 0 && (
+			{failures.length > 0 && (
 				<ErrorChip
 					icon={FaceRobotIcon}
-					count={session.turnErrorCount}
-					noun="turn"
-					hint={`${plural(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
+					count={sumCounts(failures)}
+					noun="failure"
+					hint={
+						<FailureBreakdown
+							rows={failures}
+							lede="Needs a fix — the run died on it, or it will recur"
+						/>
+					}
 					className="border-destructive/30 bg-destructive/10 text-destructive"
 				/>
 			)}
-			{session.toolErrorCount > 0 && (
+			{warnings.length > 0 && (
 				<ErrorChip
 					icon={GearIcon}
-					count={session.toolErrorCount}
-					noun="tool"
-					hint={`${plural(session.toolErrorCount, "failed tool call")} — the agent may have recovered`}
+					count={sumCounts(warnings)}
+					noun="warning"
+					hint={<FailureBreakdown rows={warnings} lede="Survived — retried or recovered from" />}
 					className="border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
 				/>
 			)}
@@ -806,6 +849,29 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 	)
 }
 
+const sumCounts = (rows: ReadonlyArray<AiSessionFailureSummary>) =>
+	rows.reduce((total, row) => total + row.count, 0)
+
+/** The hover: one line per label, in the Overview's own words and order. */
+function FailureBreakdown({ rows, lede }: { rows: ReadonlyArray<AiSessionFailureSummary>; lede: string }) {
+	return (
+		<div className="flex flex-col gap-1">
+			<span className="text-muted-foreground">{lede}</span>
+			<ul className="flex flex-col gap-0.5">
+				{rows.map((row) => (
+					<li key={row.label} className="flex items-baseline gap-2 font-mono text-[11px]">
+						<span className="truncate">{row.label}</span>
+						{row.count > 1 && (
+							<span className="tabular-nums text-muted-foreground">×{row.count}</span>
+						)}
+						{row.terminal && <span className="text-muted-foreground">ended the run</span>}
+					</li>
+				))}
+			</ul>
+		</div>
+	)
+}
+
 function ErrorChip({
 	icon: Icon,
 	count,
@@ -816,13 +882,13 @@ function ErrorChip({
 	icon?: IconComponent
 	count: number
 	noun: string
-	hint: string
+	hint: ReactNode
 	className: string
 }) {
 	return (
 		<Hint
 			className={cn(
-				"inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums",
+				"inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums",
 				className,
 			)}
 			content={hint}

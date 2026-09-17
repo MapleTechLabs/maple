@@ -134,6 +134,40 @@ export const AiSessionDetailsItem = Schema.Struct({
 })
 export type AiSessionDetailsItem = Schema.Schema.Type<typeof AiSessionDetailsItem>
 
+/** What a failed span was classified as — `classifyFailureSignal` in
+ *  `@maple/agent-sessions`, whose `SessionFailureKind` is this type. */
+export const AiSessionFailureKind = Schema.Literals([
+	"error",
+	"rateLimited",
+	"contextExceeded",
+	"refusal",
+	"providerError",
+	"invalidOutput",
+	"toolArguments",
+	"toolUnavailable",
+	"toolTimeout",
+	"incomplete",
+])
+export type AiSessionFailureKind = Schema.Schema.Type<typeof AiSessionFailureKind>
+
+/**
+ * One line of a list row's failure breakdown: the failures sharing a label,
+ * classified off the index the way the detail page classifies them off the
+ * spans, and graded by the same rule — `failure` needs a fix (the run died
+ * on it, or its kind always does), `anomaly` was survived.
+ */
+export const AiSessionFailureSummary = Schema.Struct({
+	kind: AiSessionFailureKind,
+	/** `context_length_exceeded`, `tool_error · run_tests` — the finding's label. */
+	label: Schema.String,
+	tool: Schema.optionalKey(Schema.String),
+	count: Schema.Number,
+	severity: Schema.Literals(["failure", "anomaly"]),
+	/** The session's last turn died on it. */
+	terminal: Schema.Boolean,
+})
+export type AiSessionFailureSummary = Schema.Schema.Type<typeof AiSessionFailureSummary>
+
 export const AiSessionListItem = Schema.Struct({
 	/** The vendor's own session id, or `trace:<TraceId>` for an agent trace whose
 	 *  vendor exposes no session key — see `MAPLE_AI_TRACE_SESSION_PREFIX`. */
@@ -153,6 +187,9 @@ export const AiSessionListItem = Schema.Struct({
 	toolErrorCount: Schema.Number,
 	/** Failed model calls and turn spans that failed on their own. */
 	turnErrorCount: Schema.Number,
+	/** The failures by label, red first — what the Errors cell's chips count
+	 *  and its hover lists. Empty when nothing failed. */
+	failures: Schema.Array(AiSessionFailureSummary),
 	/** Services the agent spans came from until the details land, then every service touched. */
 	serviceNames: Schema.Array(Schema.String),
 	/** Every model any agent span of the session ran on, dialects coalesced. */

@@ -241,13 +241,19 @@ export const sessionKey = (rawSessionId: CH.Expr<string>, traceId: CH.Expr<strin
 	CH.if_(rawSessionId.eq(""), CH.concat(MAPLE_AI_TRACE_SESSION_PREFIX, traceId), rawSessionId)
 
 /**
- * One trace's failed agent spans — `(SpanId, ParentSpanId, IsToolCall)` per
- * failed index row — for the tool/turn split one level up, which needs the
- * whole trace's failures in hand at once. Same shape and cap as
- * `usageReportersExpr`, for the same reason: a framework that fails the turn
- * span because the call beneath it failed reports one failure as two, and
- * only the deepest span carrying the failure counts — `failureEvents` in
- * `@maple/agent-sessions`' `session-summary.ts`, one level deep.
+ * One trace's failed agent spans, one tuple per failed index row, for the
+ * tool/turn split one level up, which needs the whole trace's failures in
+ * hand at once. Same tuple array and cap as `usageReportersExpr`, for the same
+ * reason: a framework that fails the turn span because the call beneath it
+ * failed reports one failure as two, and only the deepest span carrying the
+ * failure counts — `failureEvents` in `@maple/agent-sessions`'
+ * `session-summary.ts`, one level deep.
+ *
+ * The first three elements are the split's; the rest are what the list's
+ * breakdown classifies a failure on (`summarizeIndexFailures`): the columns
+ * migration 0032 added, which are what the detail page's classifier reads
+ * off a span, plus the trace and the instant for the verdict. `''`/0 on rows
+ * that predate 0032, which classify as a plain `error`.
  */
 const failedSpansExpr = ($: {
 	readonly SpanId: CH.Expr<string>
@@ -256,8 +262,61 @@ const failedSpansExpr = ($: {
 	readonly IsError: CH.Expr<number>
 }): CH.Expr<unknown> =>
 	CH.untypedExpr(
-		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1)`,
+		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, StatusMessage, FailedToolCallResult, ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1)`,
 	)
+
+/** The most failures a page row ships for its breakdown — the deepest failed
+ *  spans of the session, in no order. A session past it is triaged on its
+ *  first hundred, which is what a chip and a hover can say anyway. */
+const MAX_FAILURES_PER_SESSION = 100
+
+/**
+ * The session's deepest failed spans (`deepestFailureCount`'s filter, kept
+ * rather than counted), flattened across its traces and cut at
+ * `MAX_FAILURES_PER_SESSION`. Decoded as the tuple's positions.
+ */
+const sessionFailuresExpr = (failedSpans: string): CH.Expr<readonly IndexFailedSpanTuple[]> =>
+	CH.rawExpr(
+		`arraySlice(groupArrayArray(arrayFilter(f -> NOT has(tupleElement(${failedSpans}, 2), f.1), ${failedSpans})), 1, ${MAX_FAILURES_PER_SESSION})`,
+		FAILED_SPAN_TUPLES,
+	)
+
+/** `(spanId, parentSpanId, isToolCall, isLlmCall, errorType, toolName,
+ *  vendorId, statusMessage, failedToolCallResult, responseId, traceId, atMs)`
+ *  — an element of `failedSpansExpr`, as the JSON wire renders a tuple. */
+export type IndexFailedSpanTuple = readonly [
+	string,
+	string,
+	number,
+	number,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	number,
+]
+const FAILED_SPAN_TUPLES = T.array(
+	T.custom(
+		"Tuple(String, String, UInt8, UInt8, LowCardinality(String), LowCardinality(String), LowCardinality(String), String, String, String, String, Int64)",
+		Schema.Tuple([
+			Schema.String,
+			Schema.String,
+			CHNumber,
+			CHNumber,
+			Schema.String,
+			Schema.String,
+			Schema.String,
+			Schema.String,
+			Schema.String,
+			Schema.String,
+			Schema.String,
+			CHNumber,
+		]),
+	),
+)
 
 /**
  * Failed spans of one kind, summed over the traces' `failedSpans`, with a
@@ -383,6 +442,13 @@ export interface AiSessionPageOutput {
 	readonly toolErrors: number
 	/** Failed model calls and turn spans that failed on their own — the rest. */
 	readonly turnErrors: number
+	/** The deepest failed spans, for the row's breakdown — see `sessionFailuresExpr`. */
+	readonly failures: readonly IndexFailedSpanTuple[]
+	/** The trace whose agent spans end last — where the session's final turn is. */
+	readonly lastTraceId: string
+	/** That trace had a failed span that was not a tool call — the session's
+	 *  last turn did not close cleanly, one trace deep. 0/1. */
+	readonly lastTraceTurnFailed: number
 	/** Tokens across every bucket, deepest reporter counted, one claim per response id — see `sessionUsageSum`. */
 	readonly totalTokens: number
 	// The five disjoint buckets `totalTokens` is the sum of, counted the same
@@ -596,6 +662,9 @@ const SESSION_COLUMNS = [
 	"errorAgentSpans",
 	"toolErrors",
 	"turnErrors",
+	"failures",
+	"lastTraceId",
+	"lastTraceTurnFailed",
 	"agentDurationMs",
 ] as const
 type SessionColumn = (typeof SESSION_COLUMNS)[number]
@@ -640,6 +709,12 @@ const indexSessions = (opts: AiSessionFilterOpts) =>
 			errorAgentSpans: CH.sum($.errorAgentSpans),
 			toolErrors: deepestFailureCount("failedSpans", "tool"),
 			turnErrors: deepestFailureCount("failedSpans", "turn"),
+			failures: sessionFailuresExpr("failedSpans"),
+			lastTraceId: CH.argMax($.traceId, $.traceAgentEndNanos),
+			lastTraceTurnFailed: CH.rawExpr(
+				`argMax(arrayExists(f -> f.3 != 1, failedSpans), traceAgentEndNanos)`,
+				T.uint8,
+			),
 			// Nanoseconds first, wrapped in `intDiv` — see `durationMs` in
 			// `aiSessionDetailsQuery` for both.
 			agentDurationMs: CH.intDiv(
@@ -769,8 +844,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 	])
 	// A String order, and a correct one: the literal is fixed-width
 	// `YYYY-MM-DD hh:mm:ss.nnnnnnnnn`, so it sorts as the instant does.
-	const ranked =
-		sortsOnSession(order) && !filtersOnUsage ? paged(sessions.orderBy(...order)) : sessions
+	const ranked = sortsOnSession(order) && !filtersOnUsage ? paged(sessions.orderBy(...order)) : sessions
 
 	const netted = fromQuery(ranked, "ranked_sessions").select(($) => ({
 		...carry($),
@@ -840,7 +914,8 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 	// its page is empty — see `AiSessionDetailsOpts`.
 	if (opts.sessionIds.length === 0) {
 		throw new QueryBuilderDefect({
-			message: "aiSessionDetailsQuery needs the page's session ids; an empty page has nothing to detail",
+			message:
+				"aiSessionDetailsQuery needs the page's session ids; an empty page has nothing to detail",
 		})
 	}
 	// The page's traces, keyed as the page keyed them — read twice below, once
@@ -944,8 +1019,7 @@ const NANOS_PER_MS = 1_000_000n
 const warehouseNanos = (literal: string): bigint => {
 	const [datetime = "", fraction = ""] = literal.split(".")
 	return (
-		BigInt(Date.parse(`${datetime.replace(" ", "T")}Z`)) * NANOS_PER_MS +
-		BigInt(fraction.padEnd(9, "0"))
+		BigInt(Date.parse(`${datetime.replace(" ", "T")}Z`)) * NANOS_PER_MS + BigInt(fraction.padEnd(9, "0"))
 	)
 }
 
@@ -1615,15 +1689,15 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	const model = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
 	const toolName = field("toolName")
 	const agentName = field("agentName")
-	const isLlmCall = operation
-		.in_(...AI_INFERENCE_OPERATIONS)
-		.or(
-			operation
-				.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
-				.and(model.neq(""))
-				.and(toolName.eq("")),
-		)
-	const isToolCall = operation.in_(...AI_TOOL_OPERATIONS).or(operation.eq("").and(isAi).and(toolName.neq("")))
+	const isLlmCall = operation.in_(...AI_INFERENCE_OPERATIONS).or(
+		operation
+			.notIn(...AI_RETRIEVAL_OPERATIONS, ...AI_TOOL_OPERATIONS, ...AI_AGENT_OPERATIONS)
+			.and(model.neq(""))
+			.and(toolName.eq("")),
+	)
+	const isToolCall = operation
+		.in_(...AI_TOOL_OPERATIONS)
+		.or(operation.eq("").and(isAi).and(toolName.neq("")))
 	// The list query's error rule, so the summary and the list badge agree.
 	const failed = $.StatusCode.eq("Error").or(
 		isAi.and(

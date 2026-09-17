@@ -104,11 +104,27 @@ function wholeProse(value: unknown, depth = 0): string | undefined {
  * call's recorded result. `undefined` when the span said nothing at all.
  */
 export function rawFailureText(span: AiSessionSpan): string | undefined {
-	const message = span.statusMessage.trim()
-	const errorType = span.genAi.errorType
+	return rawFailureTextOf({
+		statusMessage: span.statusMessage,
+		errorType: span.genAi.errorType,
+		toolCallResult: span.genAi.toolCallResult,
+	})
+}
+
+/** The three fields {@link rawFailureText} reads, as a span or an
+ *  `ai_trace_index` row supplies them — the list classifies off the index. */
+export interface FailureText {
+	readonly statusMessage: string
+	readonly errorType: string | undefined
+	readonly toolCallResult: unknown
+}
+
+export function rawFailureTextOf(signal: FailureText): string | undefined {
+	const message = signal.statusMessage.trim()
+	const errorType = signal.errorType
 	const informative = message !== "" && message !== errorType && !GENERIC_TOOL_MESSAGE.test(message)
 	if (informative) return message
-	const result = span.genAi.toolCallResult
+	const result = signal.toolCallResult
 	const prose = result === undefined ? undefined : wholeProse(result)
 	if (prose !== undefined) return prose
 	return message === "" || message === errorType ? undefined : message

@@ -35,6 +35,7 @@ import {
 	type ListAiSessionsRequest,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
+import { summarizeIndexFailures, type IndexFailedSpan } from "@maple/agent-sessions"
 import { Array as Arr, Effect } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -222,6 +223,10 @@ export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 			errorSpanCount: row.errorAgentSpans,
 			toolErrorCount: row.toolErrors,
 			turnErrorCount: row.turnErrors,
+			failures: summarizeIndexFailures(row.failures.map(indexFailedSpan), {
+				traceId: row.lastTraceId,
+				turnFailed: row.lastTraceTurnFailed === 1,
+			}),
 			serviceNames: row.serviceNames,
 			models: row.models,
 			agentNames: row.agentNames,
@@ -601,6 +606,21 @@ export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(fun
 		{ context: "aiToolsBreakdowns" },
 	)
 	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
+})
+
+/** A `failedSpansExpr` tuple as the page query ships it, by position. */
+export const indexFailedSpan = (tuple: Integrations.IndexFailedSpanTuple): IndexFailedSpan => ({
+	spanId: tuple[0],
+	traceId: tuple[10],
+	isToolCall: tuple[2] === 1,
+	isLlmCall: tuple[3] === 1,
+	errorType: tuple[4],
+	toolName: tuple[5],
+	vendorId: tuple[6],
+	statusMessage: tuple[7],
+	failedToolCallResult: tuple[8],
+	responseId: tuple[9],
+	atMs: tuple[11],
 })
 
 export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
