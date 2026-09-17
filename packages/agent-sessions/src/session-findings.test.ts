@@ -84,7 +84,6 @@ describe("buildSessionFindings", () => {
 
 		expect(failed.verdict).toEqual({
 			status: "failed",
-			label: "context_length_exceeded",
 			spanId: "l-ctx",
 		})
 		// The terminal failure leads the list; the rate limit is its own finding.
@@ -148,10 +147,11 @@ describe("buildSessionFindings", () => {
 		)
 
 		// The last turn's root closed cleanly, so the session completed — with the
-		// failures on record.
+		// failures on record as something worth a look, not a fix: the agent
+		// carried on past them.
 		expect(result.verdict.status).toBe("attention")
 		const finding = result.findings.find((entry) => entry.label === "error · run_tests")!
-		expect(finding.severity).toBe("failure")
+		expect(finding.severity).toBe("anomaly")
 		expect(finding.count).toBe(2)
 		expect(finding.detail).toBe("exit 1")
 		expect(finding.spanId).toBe("t-1")

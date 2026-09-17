@@ -11,9 +11,10 @@ import {
 	sessionWindowParams,
 	truncationNote,
 } from "../lib/agent-sessions"
-import { Effect, Schema } from "effect"
+import { Effect, Match, Schema } from "effect"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import {
+	buildSessionChecks,
 	buildSessionFindings,
 	buildSessionSummary,
 	buildSessionTurns,
@@ -39,7 +40,7 @@ const WHOLE_SESSION_TOO_LARGE =
 export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 	server.tool(
 		"get_agent_session",
-		"Read one AI agent session (an LLM agent trace, not a browser session replay): its verdict and findings, wall/active/idle time, agent time by kind, turn and call counts, token buckets, reported cost, the models and tools it used, its failure groups and its turns. Derived from the session's own spans, exactly as the Agent Sessions page derives them — up to 10000 of them, past which it says so and every figure covers the spans it loaded. Pass start_time/end_time exactly as the `get_agent_session` line under a `list_agent_sessions` row prints them — that makes the read a seek. Follow up with `inspect_span` for what one span actually said.",
+		"Read one AI agent session (an LLM agent trace, not a browser session replay): its verdict, the checks it failed or passed with what to do about each, its findings, wall/active/idle time, agent time by kind, turn and call counts, token buckets, reported cost, the models and tools it used, its failure groups and its turns. Derived from the session's own spans, exactly as the Agent Sessions page derives them — up to 10000 of them, past which it says so and every figure covers the spans it loaded. Pass start_time/end_time exactly as the `get_agent_session` line under a `list_agent_sessions` row prints them — that makes the read a seek. Follow up with `inspect_span` for what one span actually said.",
 		Schema.Struct({
 			session_id: requiredStringParam(
 				"The agent session id, as `list_agent_sessions` reports it (a vendor id, or `trace:<traceId>`)",
@@ -74,6 +75,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				const turns = buildSessionTurns(loaded.spans)
 				const summary = buildSessionSummary({ spans: loaded.spans, turns })
 				const report = buildSessionFindings(turns, summary)
+				const checks = buildSessionChecks(turns, summary, report)
 
 				const tokens = summary.tokens
 				const findings = report.findings.slice(0, MAX_FINDINGS)
@@ -95,10 +97,57 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						: []),
 					...truncationNote(loaded),
 					``,
-					`### Verdict: ${report.verdict.status}${
-						report.verdict.label !== undefined ? ` — ${report.verdict.label}` : ""
-					}${report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""}`,
+					// Headlines carry span-derived text (tool names, error types), so they
+					// go through `tableCell` like every other cell: one line, no forged
+					// heading from a newline in an attribute.
+					`### Verdict: ${Match.value(report.verdict.status).pipe(
+						Match.when("failed", () => `Failed — ${tableCell(checks.headline, 200)}`),
+						Match.whenOr(
+							"attention",
+							"clean",
+							() => `Completed ${tableCell(checks.headline, 200)}`,
+						),
+						Match.exhaustive,
+					)}${report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""}`,
 				]
+
+				// The checks are the reading a caller can act on; the findings below
+				// them are the evidence rows, span by span. The heading and its
+				// counts stay even when nothing needs attention — that is the
+				// answer, not an empty section.
+				const { counts } = checks
+				// The verdict and the counts are what a read of a session answers;
+				// on the span they say how often a read lands on a failing session.
+				yield* Effect.annotateCurrentSpan({
+					"maple.ai.session.verdict": report.verdict.status,
+					"maple.ai.checks.failed": counts.failed,
+					"maple.ai.checks.warning": counts.warning,
+				})
+				const attention = checks.checks.filter(
+					(check) => check.status === "failed" || check.status === "warning",
+				)
+				lines.push(
+					``,
+					`### Checks (${counts.failed} failed · ${counts.warning} ${counts.warning === 1 ? "warning" : "warnings"} · ${counts.passed} passed · ${counts.skipped} not checked)`,
+					...(attention.length === 0
+						? ["Nothing needs attention."]
+						: [
+								formatTable(
+									["Status", "Check", "What happened", "Do"],
+									attention.map((check) => [
+										check.status,
+										check.name,
+										tableCell(check.headline, 160),
+										check.action === undefined ? "—" : tableCell(check.action, 120),
+									]),
+								),
+							]),
+					...checks.checks
+						.filter((check) => check.status === "passed" || check.status === "skipped")
+						.map(
+							(check) => `- ${check.name} (${check.status}): ${tableCell(check.headline, 200)}`,
+						),
+				)
 
 				lines.push(
 					...tableSection(
