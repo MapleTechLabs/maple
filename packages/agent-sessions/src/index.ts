@@ -6,6 +6,7 @@
 export * from "./session-turns"
 export * from "./session-summary"
 export * from "./session-findings"
+export * from "./session-checks"
 export * from "./session-transcript"
 export * from "./span-detail"
 export * from "./session-window"

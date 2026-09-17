@@ -171,6 +171,8 @@ export interface SessionFailureEvent {
 	readonly kind: SessionFailureKind
 	/** What went wrong, in the instrumentation's own vocabulary. */
 	readonly label: string
+	/** The tool the failure is about, for the kinds that name one. */
+	readonly tool?: string
 	readonly span: AiSessionSpan
 }
 
@@ -1092,15 +1094,17 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		// The schema cue first: a rejected parameter named `timeout` is still
 		// the model's arguments.
 		if (TOOL_SCHEMA_PATTERN.test(raw))
-			return { kind: "toolArguments", label: `tool_arguments · ${named}` }
-		if (TOOL_TIMEOUT_PATTERN.test(words)) return { kind: "toolTimeout", label: `tool_timeout · ${named}` }
+			return { kind: "toolArguments", label: `tool_arguments · ${named}`, tool: named }
+		if (TOOL_TIMEOUT_PATTERN.test(words)) {
+			return { kind: "toolTimeout", label: `tool_timeout · ${named}`, tool: named }
+		}
 		if (TOOL_UNAVAILABLE_PATTERN.test(words)) {
-			return { kind: "toolUnavailable", label: `tool_unavailable · ${named}` }
+			return { kind: "toolUnavailable", label: `tool_unavailable · ${named}`, tool: named }
 		}
 		if (TOOL_ARGUMENTS_PATTERN.test(words)) {
-			return { kind: "toolArguments", label: `tool_arguments · ${named}` }
+			return { kind: "toolArguments", label: `tool_arguments · ${named}`, tool: named }
 		}
-		return { kind: "error", label: `${name} · ${named}` }
+		return { kind: "error", label: `${name} · ${named}`, tool: named }
 	}
 
 	if (span.genAi.errorType === "invalid_output" || describeSchemaFailure(text) !== undefined) {
