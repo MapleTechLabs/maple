@@ -504,7 +504,7 @@ describe("SessionOverview", () => {
 		render(<Overview turns={quietTurns} summary={quiet} />)
 
 		expect(screen.getByText("Completed")).toBeTruthy()
-		expect(screen.getByText(/^cleanly — \d+ checks passed across \d+ (turns|segments)$/)).toBeTruthy()
+		expect(screen.getByText(/^cleanly — \d+ checks passed across \d+ (turn|segment)s?$/)).toBeTruthy()
 		expect(screen.getByText(/^Nothing to fix/)).toBeTruthy()
 		expect(screen.getByRole("button", { name: /^Passed/ }).getAttribute("aria-expanded")).toBe("true")
 		expect(screen.getByText("No model call was rate-limited")).toBeTruthy()

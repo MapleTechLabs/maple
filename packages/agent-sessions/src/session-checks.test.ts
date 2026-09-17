@@ -286,6 +286,29 @@ describe("buildSessionChecks", () => {
 			read("r3", 5 * MINUTE + 5 * SECOND, "src/retry.ts"),
 		])
 		expect(byId(rerun, "repetition").status).toBe("passed")
+
+		// Another tool between two identical reads is work between them too.
+		const interleaved = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 20 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			read("r1", 5 * MINUTE + SECOND, "src/retry.ts"),
+			toolSpan({
+				spanId: "w1",
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + 2 * SECOND,
+				durationMs: SECOND,
+				toolName: "write_file",
+				genAi: { conversationId: "t2", toolCallArguments: { path: "src/retry.ts" } },
+			}),
+			read("r2", 5 * MINUTE + 4 * SECOND, "src/retry.ts"),
+			read("r3", 5 * MINUTE + 6 * SECOND, "src/retry.ts"),
+		])
+		expect(byId(interleaved, "repetition").status).toBe("passed")
 	})
 
 	// One unchanged retry after a failure is how a transient error is handled;

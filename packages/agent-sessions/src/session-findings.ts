@@ -360,20 +360,21 @@ function truncationSignal(span: AiSessionSpan): string | undefined {
 function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	const findings: SessionFinding[] = []
 	turns.forEach((turn, index) => {
+		const calls = turn.spans.filter((span) => classifyAiSpan(span) === "tool")
 		const byTool = new Map<string, AiSessionSpan[]>()
-		for (const span of turn.spans) {
-			if (classifyAiSpan(span) !== "tool") continue
-			const name = span.genAi.toolName ?? span.spanName
+		for (const span of calls) {
+			const name = toolNameOf(span)
 			const list = byTool.get(name) ?? []
 			list.push(span)
 			byTool.set(name, list)
 		}
-		for (const [name, calls] of byTool) {
-			const run = calls.length < IDENTICAL_RUN_MIN_CALLS ? [] : longestIdenticalRun(calls)
+		const runs = longestIdenticalRuns(calls)
+		for (const [name, toolCalls] of byTool) {
+			const run = runs.get(name) ?? []
 			const looped = run.length >= IDENTICAL_RUN_MIN_CALLS
-			if (calls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
+			if (toolCalls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
 			// The row links where the loop began, else the tool's first call.
-			const first = looped ? run[0] : calls[0]
+			const first = looped ? run[0] : toolCalls[0]
 			findings.push({
 				id: `repetition:${turn.id}:${name}`,
 				kind: "repetition",
@@ -386,8 +387,8 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 				detail: looped
 					? spanFailed(run[0])
 						? `retried ${run.length - 1}× unchanged after it failed`
-						: `called ${calls.length}× within one turn, ${run.length} in a row with identical arguments`
-					: `called ${calls.length}× within one turn`,
+						: `called ${toolCalls.length}× within one turn, ${run.length} in a row with identical arguments`
+					: `called ${toolCalls.length}× within one turn`,
 				spanId: first.spanId,
 				atMs: spanStartMs(first),
 			})
@@ -396,33 +397,44 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	return findings
 }
 
+function toolNameOf(span: AiSessionSpan): string {
+	return span.genAi.toolName ?? span.spanName
+}
+
 /**
- * The longest run of back-to-back calls that sent the same arguments, in start
- * order — empty when no call recorded its arguments. Only consecutive calls
- * count: a test suite re-run after a fix sends the same arguments over new
- * code, which is progress, while the same call three times with nothing
- * between is not. Among runs of equal length the one that opened with a
+ * Per tool, the longest run of back-to-back calls that sent the same
+ * arguments — back-to-back across every tool call of the turn, in start
+ * order, with nothing at all between. A test suite re-run after a write sends
+ * the same arguments over new code, which is progress; the same call three
+ * times with nothing between is not. A tool whose calls never recorded
+ * arguments has no run. Among runs of equal length the one that opened with a
  * failure wins, since that is the one the row should say retried. Arguments
  * compare as canonical JSON so key order cannot split a run.
  */
-function longestIdenticalRun(calls: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
-	let longest: AiSessionSpan[] = []
+function longestIdenticalRuns(
+	calls: readonly AiSessionSpan[],
+): ReadonlyMap<string, readonly AiSessionSpan[]> {
+	const longest = new Map<string, readonly AiSessionSpan[]>()
 	let run: AiSessionSpan[] = []
 	let key: string | undefined
 	for (const span of calls) {
 		const args = span.genAi.toolCallArguments
-		const next = args === undefined ? undefined : canonicalJSON(args)
+		const name = toolNameOf(span)
+		const next = args === undefined ? undefined : `${name}\u0000${canonicalJSON(args)}`
 		if (next !== undefined && next === key) {
 			run.push(span)
 		} else {
 			run = next === undefined ? [] : [span]
 			key = next
 		}
+		if (run.length === 0) continue
+		const best = longest.get(name)
 		if (
-			run.length > longest.length ||
-			(run.length > 0 && run.length === longest.length && run !== longest && spanFailed(run[0]))
+			best === undefined ||
+			run.length > best.length ||
+			(run.length === best.length && run !== best && spanFailed(run[0]))
 		) {
-			longest = run
+			longest.set(name, run)
 		}
 	}
 	return longest
