@@ -1064,6 +1064,45 @@ describe("buildSessionSummary — work and failures", () => {
 		expect(summary.failureGroups.map((group) => group.label)).toEqual(["content_filter"])
 	})
 
+	// A gateway attempt that a provider refused, then another provider served:
+	// the retry is not the agent being refused, and it must not hide the
+	// generation's own verdict either.
+	it("reads neither a refusal nor a failure off a provider attempt, nor lets one shadow its generation", () => {
+		const generation = (id: string, startMs: number, genAi: Parameters<typeof llmSpan>[0]["genAi"]) =>
+			llmSpan({
+				spanId: id,
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs,
+				durationMs: SECOND,
+				genAi,
+			})
+		const attempt = (
+			id: string,
+			parent: string,
+			startMs: number,
+			genAi: Parameters<typeof llmSpan>[0]["genAi"],
+		) =>
+			llmSpan({
+				spanId: id,
+				parentSpanId: parent,
+				vendorId: "openrouter",
+				spanName: "provider attempt 1: BaseTen",
+				startMs,
+				durationMs: 200,
+				statusCode: "Error",
+				genAi: { attemptIndex: 0, attemptStatusCode: 400, attemptProvider: "BaseTen", ...genAi },
+			})
+		const summary = summarize([
+			generation("gen-served", 0, {}),
+			attempt("att-refused", "gen-served", 0, { responseFinishReasons: ["content_filter"] }),
+			generation("gen-refused", 2 * SECOND, { responseFinishReasons: ["content_filter"] }),
+			attempt("att-copied", "gen-refused", 2 * SECOND, { responseFinishReasons: ["content_filter"] }),
+		])
+
+		expect(summary.failures).toEqual({ errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 1 })
+	})
+
 	it("does not read a max_tokens finish as a failure", () => {
 		const summary = summarize([
 			llmSpan({

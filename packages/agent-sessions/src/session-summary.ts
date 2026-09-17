@@ -979,22 +979,31 @@ function appSpanShadowedIds(spans: readonly AiSessionSpan[]): ReadonlySet<string
  * three readings of this one list, and they must not disagree.
  */
 export function failureEvents(spans: readonly AiSessionSpan[]): readonly SessionFailureEvent[] {
-	const shadowedFailures = shadowedAncestorIds(spans, failureSignal)
-	const shadowedRefusals = shadowedAncestorIds(spans, refusalSignal)
+	// An attempt neither reports nor shadows: the generation above it is the
+	// one call, and its own refusal or failure is the gateway's retry.
+	const shadowedFailures = shadowedAncestorIds(spans, agentSignal(failureSignal))
+	const shadowedRefusals = shadowedAncestorIds(spans, agentSignal(refusalSignal))
 	const shadowedApp = appSpanShadowedIds(spans)
 	const events: SessionFailureEvent[] = []
 
 	for (const span of spans) {
+		if (isProviderAttempt(span)) continue
 		if (refusalSignal(span) !== undefined && !shadowedRefusals.has(span.spanId)) {
 			events.push({ kind: "refusal", label: "refusal", span })
 		}
 		if (!spanFailed(span) || shadowedFailures.has(span.spanId)) continue
-		if (isProviderAttempt(span)) continue
 		if (!span.isAiSpan && (isRpcSpan(span) || shadowedApp.has(span.spanId))) continue
 		events.push({ ...classifyFailure(span), span })
 	}
 
 	return dedupeByResponseId(events)
+}
+
+/** The signal as the agent's spans carry it: a provider attempt's is not read. */
+function agentSignal(
+	signalOf: (span: AiSessionSpan) => string | undefined,
+): (span: AiSessionSpan) => string | undefined {
+	return (span) => (isProviderAttempt(span) ? undefined : signalOf(span))
 }
 
 /**
