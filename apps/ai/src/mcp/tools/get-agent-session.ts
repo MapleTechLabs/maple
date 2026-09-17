@@ -97,28 +97,37 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						: []),
 					...truncationNote(loaded),
 					``,
-					`### Verdict: ${report.verdict.status} — ${checks.headline}${
-						report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""
-					}`,
+					`### Verdict: ${
+						report.verdict.status === "failed"
+							? `Failed — ${checks.headline}`
+							: `Completed ${checks.headline}`
+					}${report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""}`,
 				]
 
 				// The checks are the reading a caller can act on; the findings below
-				// them are the evidence rows, span by span.
+				// them are the evidence rows, span by span. The heading and its
+				// counts stay even when nothing needs attention — that is the
+				// answer, not an empty section.
 				const { counts } = checks
+				const attention = checks.checks.filter(
+					(check) => check.status === "failed" || check.status === "warning",
+				)
 				lines.push(
-					...tableSection(
-						`Checks (${counts.failed} failed · ${counts.warning} warnings · ${counts.passed} passed · ${counts.skipped} not checked)`,
-						["Status", "Check", "What happened", "Do"],
-						checks.checks
-							.filter((check) => check.status === "failed" || check.status === "warning")
-							.map((check) => [
-								check.status,
-								check.name,
-								tableCell(check.headline, 160),
-								check.action === undefined ? "—" : tableCell(check.action, 120),
-							]),
-					),
 					``,
+					`### Checks (${counts.failed} failed · ${counts.warning} ${counts.warning === 1 ? "warning" : "warnings"} · ${counts.passed} passed · ${counts.skipped} not checked)`,
+					...(attention.length === 0
+						? ["Nothing needs attention."]
+						: [
+								formatTable(
+									["Status", "Check", "What happened", "Do"],
+									attention.map((check) => [
+										check.status,
+										check.name,
+										tableCell(check.headline, 160),
+										check.action === undefined ? "—" : tableCell(check.action, 120),
+									]),
+								),
+							]),
 					...checks.checks
 						.filter((check) => check.status === "passed" || check.status === "skipped")
 						.map((check) => `- ${check.name} (${check.status}): ${check.headline}`),

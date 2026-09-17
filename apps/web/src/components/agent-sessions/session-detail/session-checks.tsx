@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react"
 
 import type {
 	SessionCheck,
+	SessionCheckStatus,
 	SessionChecksReport,
 	SessionCoverage,
 	SessionFinding,
@@ -24,6 +25,21 @@ const FIX_AREA_LABEL = {
 	instrumentation: "Instrumentation",
 } satisfies Record<SessionFixArea, string>
 
+/** One tone per status, for the dot beside a name and the text of a label. */
+const STATUS_DOT = {
+	failed: "bg-destructive",
+	warning: "bg-severity-warn",
+	passed: "bg-severity-info",
+	skipped: "border border-muted-foreground",
+} satisfies Record<SessionCheckStatus, string>
+
+const STATUS_TEXT = {
+	failed: "text-destructive",
+	warning: "text-severity-warn",
+	passed: "text-severity-info",
+	skipped: "text-muted-foreground",
+} satisfies Record<SessionCheckStatus, string>
+
 /** Open a span's payload in the inspection overlay. */
 type OpenSpan = (spanId: string) => void
 
@@ -41,9 +57,12 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 	const attention = report.checks.filter((check) => check.status === "failed" || check.status === "warning")
 	const passed = report.checks.filter((check) => check.status === "passed")
 	const skipped = report.checks.filter((check) => check.status === "skipped")
+	const clean = attention.length === 0
 
 	return (
-		<div className="flex flex-col gap-6">
+		// Its own container: the two-column passed list sizes against this
+		// column, not the Overview with its rail.
+		<div className="@container flex flex-col gap-6">
 			<Verdict report={report} onOpenSpan={onOpenSpan} />
 
 			<section className="flex flex-col gap-3">
@@ -51,7 +70,7 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 					title="Needs attention"
 					aside={`${attention.length} of ${report.checks.length} checks`}
 				/>
-				{attention.length === 0 ? (
+				{clean ? (
 					<p className="flex items-center gap-2 text-sm">
 						<CheckIcon size={14} aria-hidden className="shrink-0 text-severity-info" />
 						{skipped.length === 0
@@ -68,44 +87,23 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 			</section>
 
 			<div className="flex flex-col divide-y divide-border border-border border-y">
+				{/* A clean session opens its passed list: the facts are the page's
+				    content, and a closed row would leave it looking empty. */}
 				<Disclosure
 					title="Passed"
-					count={passed.length}
-					dotClassName="bg-severity-info"
-					// A clean session opens its passed list: the facts are the page's
-					// content, and a closed row would leave it looking empty.
-					defaultOpen={attention.length === 0}
-					summary={
-						passed.length === 0
-							? "Nothing passed"
-							: passed.map((check) => check.name).join(" · ")
-					}
-					openSummary="Each one carries the fact it measured"
-				>
-					<div className="grid grid-cols-1 gap-x-8 gap-y-1.5 @2xl:grid-cols-2">
-						{passed.map((check) => (
-							<CheckFact key={check.id} check={check} dotClassName="bg-severity-info" />
-						))}
-					</div>
-				</Disclosure>
+					checks={passed}
+					open={clean}
+					summary="Each one carries the fact it measured"
+					className="grid grid-cols-1 gap-x-8 gap-y-1.5 @2xl:grid-cols-2"
+				/>
 				<Disclosure
 					title="Not checked"
-					count={skipped.length}
-					dotClassName="border border-muted-foreground"
-					defaultOpen={skipped.length > 0 && attention.length === 0}
-					summary={
-						skipped.length === 0
-							? "Every check had the signal it needed"
-							: skipped.map((check) => check.name).join(" · ")
-					}
-					openSummary="The instrumentation did not carry the signal"
-				>
-					<div className="flex flex-col gap-1.5">
-						{skipped.map((check) => (
-							<CheckFact key={check.id} check={check} dotClassName="border border-muted-foreground" />
-						))}
-					</div>
-				</Disclosure>
+					checks={skipped}
+					open={clean && skipped.length > 0}
+					summary="The instrumentation did not carry the signal"
+					emptySummary="Every check had the signal it needed"
+					className="flex flex-col gap-1.5"
+				/>
 			</div>
 
 			<Coverage coverage={report.coverage} />
@@ -119,12 +117,12 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 
 function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSpan: OpenSpan }) {
 	const failed = report.verdict.status === "failed"
-	// The engine's headline is a sentence; the page splits its first word off as
-	// the verdict and lets the rest read on in a quieter weight.
-	const rest = failed
-		? report.headline.charAt(0).toLowerCase() + report.headline.slice(1)
-		: report.headline.replace(/^Completed/, "").replace(/^,?\s*/, "")
 	const { counts } = report
+	// The colour says what the count strip says: red for anything that ended
+	// the run or needs a fix, amber for something worth a look, green only
+	// when nothing was found.
+	const tone: SessionCheckStatus =
+		failed || counts.failed > 0 ? "failed" : counts.warning > 0 ? "warning" : "passed"
 
 	return (
 		<section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -132,27 +130,28 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 				<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-lg">
 					<span
 						aria-hidden
-						className={cn(
-							"size-2.5 shrink-0 self-center rounded-full",
-							failed ? "bg-destructive" : "bg-severity-info",
-						)}
+						className={cn("size-2.5 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
 					/>
-					<span className={failed ? "text-destructive" : "text-severity-info"}>
-						{failed ? "Failed" : "Completed"}
-					</span>
-					<span aria-hidden className="text-muted-foreground">
-						—
-					</span>
-					<span className="min-w-0 font-normal text-muted-foreground">{rest}</span>
+					<span className={STATUS_TEXT[tone]}>{failed ? "Failed" : "Completed"}</span>
+					{failed && (
+						<span aria-hidden className="text-muted-foreground">
+							—
+						</span>
+					)}
+					<span className="min-w-0 font-normal text-muted-foreground">{report.headline}</span>
 				</p>
 				<p className="flex flex-wrap gap-x-2 pl-[1.375rem] font-mono text-xs tabular-nums">
-					<Count n={counts.failed} word="failed" tone="text-destructive" />
+					<Count n={counts.failed} word="failed" status="failed" />
 					<Dot />
-					<Count n={counts.warning} word={counts.warning === 1 ? "warning" : "warnings"} tone="text-severity-warn" />
+					<Count
+						n={counts.warning}
+						word={counts.warning === 1 ? "warning" : "warnings"}
+						status="warning"
+					/>
 					<Dot />
-					<Count n={counts.passed} word="passed" tone="text-severity-info" />
+					<Count n={counts.passed} word="passed" status="passed" />
 					<Dot />
-					<Count n={counts.skipped} word="not checked" tone="text-foreground" />
+					<Count n={counts.skipped} word="not checked" status="skipped" />
 				</p>
 			</div>
 			{report.verdict.spanId !== undefined && (
@@ -172,10 +171,13 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 
 /** One figure of the count strip: the number carries its tone only when it is
  *  not zero, so a clean strip reads as grey. */
-function Count({ n, word, tone }: { n: number; word: string; tone: string }) {
+function Count({ n, word, status }: { n: number; word: string; status: SessionCheckStatus }) {
 	return (
 		<span className="text-muted-foreground">
-			<span className={cn("font-semibold", n > 0 ? tone : "text-muted-foreground")}>{n}</span> {word}
+			<span className={cn("font-semibold", n > 0 ? STATUS_TEXT[status] : "text-muted-foreground")}>
+				{n}
+			</span>{" "}
+			{word}
 		</span>
 	)
 }
@@ -193,19 +195,18 @@ function Dot() {
 /* -------------------------------------------------------------------------- */
 
 function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: OpenSpan }) {
-	const failed = check.status === "failed"
 	return (
 		<div
 			data-testid={`check-${check.id}`}
 			className={cn(
 				"flex flex-col gap-1.5 border-l-2 py-3 pl-3",
-				failed ? "border-l-destructive" : "border-l-severity-warn",
+				check.status === "failed" ? "border-l-destructive" : "border-l-severity-warn",
 			)}
 		>
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 				<span
 					aria-hidden
-					className={cn("size-1.5 shrink-0 rounded-full", failed ? "bg-destructive" : "bg-severity-warn")}
+					className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[check.status])}
 				/>
 				<span className="font-semibold text-[15px]">{check.name}</span>
 				{check.fixArea !== undefined && <Pill tone="outline">{FIX_AREA_LABEL[check.fixArea]}</Pill>}
@@ -220,7 +221,12 @@ function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: Op
 			{check.findings.length > 0 && (
 				<div className="flex flex-col pl-2">
 					{check.findings.map((finding) => (
-						<EvidenceRow key={finding.id} finding={finding} failed={failed} onOpenSpan={onOpenSpan} />
+						<EvidenceRow
+							key={finding.id}
+							finding={finding}
+							status={check.status}
+							onOpenSpan={onOpenSpan}
+						/>
 					))}
 				</div>
 			)}
@@ -232,11 +238,11 @@ function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: Op
  *  line it said — opening the span that is its proof. */
 function EvidenceRow({
 	finding,
-	failed,
+	status,
 	onOpenSpan,
 }: {
 	finding: SessionFinding
-	failed: boolean
+	status: SessionCheckStatus
 	onOpenSpan: OpenSpan
 }) {
 	return (
@@ -246,7 +252,7 @@ function EvidenceRow({
 			onClick={() => onOpenSpan(finding.spanId)}
 			className="group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-1 text-left font-mono text-xs hover:bg-accent/40"
 		>
-			<span className={cn("shrink-0 font-medium", failed ? "text-destructive" : "text-severity-warn")}>
+			<span className={cn("shrink-0 font-medium", STATUS_TEXT[status])}>
 				{finding.label}
 				{finding.count > 1 && ` ×${finding.count}`}
 			</span>
@@ -266,32 +272,40 @@ function EvidenceRow({
 /* Passed and not checked                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A collapsed row of checks with the same status. `open` is the page's
+ * default for the session in front of it — it follows the report as spans
+ * arrive or the reader moves to another session — until the reader toggles
+ * the row, after which their choice stands.
+ */
 function Disclosure({
 	title,
-	count,
-	dotClassName,
-	defaultOpen,
+	checks,
+	open,
 	summary,
-	openSummary,
-	children,
+	emptySummary,
+	className,
 }: {
 	title: string
-	count: number
-	dotClassName: string
-	defaultOpen: boolean
+	checks: readonly SessionCheck[]
+	open: boolean
+	/** What the row says while open. */
 	summary: string
-	openSummary: string
-	children: ReactNode
+	/** What the row says when it has nothing in it. */
+	emptySummary?: string
+	className: string
 }) {
-	const [open, setOpen] = useState(defaultOpen)
-	const disclosable = count > 0
+	const [choice, setChoice] = useState<boolean | undefined>(undefined)
+	const disclosable = checks.length > 0
+	const expanded = disclosable && (choice ?? open)
+	const status = checks[0]?.status ?? "skipped"
 	return (
 		<div className="flex flex-col">
 			<button
 				type="button"
 				disabled={!disclosable}
-				aria-expanded={disclosable ? open : undefined}
-				onClick={() => setOpen((current) => !current)}
+				aria-expanded={disclosable ? expanded : undefined}
+				onClick={() => setChoice(!expanded)}
 				className={cn(
 					"flex w-full items-center gap-2 py-2.5 text-left",
 					disclosable ? "hover:bg-accent/40" : "cursor-default",
@@ -300,28 +314,48 @@ function Disclosure({
 				<ChevronRightIcon
 					size={12}
 					aria-hidden
-					className={cn("shrink-0 text-muted-foreground transition-transform", open && disclosable && "rotate-90")}
+					className={cn(
+						"shrink-0 text-muted-foreground transition-transform",
+						expanded && "rotate-90",
+					)}
 				/>
-				<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClassName)} />
+				<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />
 				<span className="font-medium text-sm">{title}</span>
-				<span className="font-mono text-muted-foreground text-xs tabular-nums">({count})</span>
+				<span className="font-mono text-muted-foreground text-xs tabular-nums">
+					({checks.length})
+				</span>
 				<span className="ml-auto min-w-0 truncate pl-4 text-muted-foreground text-xs">
-					{open && disclosable ? openSummary : summary}
+					{!disclosable
+						? emptySummary
+						: expanded
+							? summary
+							: checks.map((check) => check.name).join(" · ")}
 				</span>
 			</button>
-			{open && disclosable && <div className="pb-3 pl-6">{children}</div>}
+			{expanded && (
+				<div className={cn("pb-3 pl-6", className)}>
+					{checks.map((check) => (
+						<CheckFact key={check.id} check={check} />
+					))}
+				</div>
+			)}
 		</div>
 	)
 }
 
 /** A passed or skipped check as one line: its name, and the fact it measured
  *  or the signal it lacked. */
-function CheckFact({ check, dotClassName }: { check: SessionCheck; dotClassName: string }) {
+function CheckFact({ check }: { check: SessionCheck }) {
 	return (
 		<div className="flex items-baseline gap-2 text-sm">
-			<span aria-hidden className={cn("size-1.5 shrink-0 translate-y-[-1px] rounded-full", dotClassName)} />
+			<span
+				aria-hidden
+				className={cn("size-1.5 shrink-0 translate-y-[-1px] rounded-full", STATUS_DOT[check.status])}
+			/>
 			<span className="shrink-0 font-medium">{check.name}</span>
-			<span className="min-w-0 text-muted-foreground text-xs leading-relaxed">{withCode(check.headline)}</span>
+			<span className="min-w-0 text-muted-foreground text-xs leading-relaxed">
+				{withCode(check.headline)}
+			</span>
 		</div>
 	)
 }
@@ -350,7 +384,7 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 						: "turns by trace",
 			// One turn per trace is the floor, not a turn key; the other two rules
 			// found real turn boundaries.
-			on: coverage.turns !== "trace",
+			on: coverage.turns === "conversation" || coverage.turns === "agent-root",
 		},
 	]
 	return (
@@ -361,7 +395,10 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 			{signals.map((signal) => (
 				<span
 					key={signal.label}
-					className={cn("flex items-baseline gap-1.5", signal.on ? "text-foreground" : "text-muted-foreground")}
+					className={cn(
+						"flex items-baseline gap-1.5",
+						signal.on ? "text-foreground" : "text-muted-foreground",
+					)}
 				>
 					<span aria-hidden className={signal.on ? "text-severity-info" : ""}>
 						{signal.on ? "✓" : "✕"}
@@ -373,14 +410,18 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 	)
 }
 
-/** The engine spells identifiers in backticks — tool names, fields — so the
- *  MCP reads them as code; the page sets them in mono the same way. */
+/**
+ * The engine spells identifiers in backticks — tool names, fields — so the
+ * MCP reads them as code; the page sets them in mono the same way. A line
+ * with an odd number of backticks carries one from a raw error message, and
+ * is left alone rather than flipping every segment after it.
+ */
 function withCode(text: string): ReactNode {
 	const parts = text.split(/`([^`]+)`/)
+	if (parts.length === 1 || (text.match(/`/g)?.length ?? 0) % 2 === 1) return text
 	return parts.map((part, index) =>
 		index % 2 === 1 ? (
-			// The index is the segment's position in a fixed string.
-			// eslint-disable-next-line react/no-array-index-key
+			// The index is the segment's position in one fixed string.
 			<code key={index} className="font-mono text-[0.92em]">
 				{part}
 			</code>
@@ -393,7 +434,9 @@ function withCode(text: string): ReactNode {
 function SectionHeader({ title, aside }: { title: string; aside?: string }) {
 	return (
 		<div className="flex items-baseline justify-between gap-2">
-			<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">{title}</h3>
+			<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+				{title}
+			</h3>
 			{aside !== undefined && (
 				<span className="font-mono text-muted-foreground text-xs tabular-nums">{aside}</span>
 			)}

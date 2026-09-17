@@ -47,7 +47,12 @@ describe("buildSessionChecks", () => {
 	it("passes a clean session with the facts each check measured", () => {
 		const report = checks([
 			...firstTurn(),
-			agentSpan({ spanId: "a2", startMs: 5 * MINUTE, durationMs: 10 * SECOND, genAi: { conversationId: "t2" } }),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 10 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
 			toolSpan({
 				spanId: "t2-read",
 				parentSpanId: "a2",
@@ -61,7 +66,7 @@ describe("buildSessionChecks", () => {
 		expect(report.verdict.status).toBe("clean")
 		expect(report.counts.failed).toBe(0)
 		expect(report.counts.warning).toBe(0)
-		expect(report.headline).toBe(`Completed cleanly — ${report.counts.passed} checks passed`)
+		expect(report.headline).toBe(`cleanly — ${report.counts.passed} checks passed across 2 turns`)
 		expect(report.checks.find((check) => check.id === "completion")).toBeUndefined()
 		expect(byId(report, "context-window").headline).toBe("The prompt peaked at 1.0K tokens")
 		expect(byId(report, "tool-timeouts").headline).toBe(
@@ -71,7 +76,9 @@ describe("buildSessionChecks", () => {
 		// Nothing reported cache usage, so the cache check says so rather than passing.
 		expect(byId(report, "prompt-cache").status).toBe("skipped")
 		// Passed and skipped rows carry no fix tag: there is nothing to fix.
-		expect(report.checks.every((check) => check.status !== "passed" || check.fixArea === undefined)).toBe(true)
+		expect(report.checks.every((check) => check.status !== "passed" || check.fixArea === undefined)).toBe(
+			true,
+		)
 	})
 
 	it("names the cause of death in the headline, and the cause's own check carries the action", () => {
@@ -103,7 +110,7 @@ describe("buildSessionChecks", () => {
 		])
 
 		expect(report.verdict.status).toBe("failed")
-		expect(report.headline).toBe("The final turn died on the context window")
+		expect(report.headline).toBe("the final turn died on the context window")
 		// The cause leads the list; the outcome is the headline, not a row.
 		expect(report.checks[0].id).toBe("context-window")
 
@@ -121,7 +128,12 @@ describe("buildSessionChecks", () => {
 	it("warns on a failure the session carried past, and says so", () => {
 		const report = checks([
 			...firstTurn(),
-			agentSpan({ spanId: "a2", startMs: 5 * MINUTE, durationMs: 10 * SECOND, genAi: { conversationId: "t2" } }),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 10 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
 			llmSpan({
 				spanId: "l2",
 				parentSpanId: "a2",
@@ -143,7 +155,7 @@ describe("buildSessionChecks", () => {
 		])
 
 		expect(report.verdict.status).toBe("attention")
-		expect(report.headline).toBe("Completed with 1 warning")
+		expect(report.headline).toBe("with 1 warning")
 		const limits = byId(report, "rate-limits")
 		expect(limits.status).toBe("warning")
 		expect(limits.headline).toBe("1 model call was rate-limited on turn 2; the session carried on")
@@ -156,7 +168,12 @@ describe("buildSessionChecks", () => {
 	it("fails tool availability outright and names the integration as the fix", () => {
 		const report = checks([
 			...firstTurn(),
-			agentSpan({ spanId: "a2", startMs: 5 * MINUTE, durationMs: 10 * SECOND, genAi: { conversationId: "t2" } }),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 10 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
 			toolSpan({
 				spanId: "t2-grep",
 				parentSpanId: "a2",
@@ -169,7 +186,7 @@ describe("buildSessionChecks", () => {
 			}),
 		])
 
-		expect(report.headline).toBe("Completed, but 1 check failed")
+		expect(report.headline).toBe("but 1 check failed")
 		const availability = byId(report, "tool-availability")
 		expect(availability.status).toBe("failed")
 		expect(availability.headline).toBe(
@@ -181,7 +198,12 @@ describe("buildSessionChecks", () => {
 	it("lists several failed tools in one headline, in the order they failed", () => {
 		const report = checks([
 			...firstTurn(),
-			agentSpan({ spanId: "a2", startMs: 5 * MINUTE, durationMs: 20 * SECOND, genAi: { conversationId: "t2" } }),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 20 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
 			toolSpan({
 				spanId: "t2-tests",
 				parentSpanId: "a2",
@@ -215,7 +237,7 @@ describe("buildSessionChecks", () => {
 		const errors = byId(report, "tool-errors")
 		expect(errors.status).toBe("warning")
 		expect(errors.headline).toBe(
-			"2 tool calls failed and the agent carried on: `run_tests` (exit 1, turn 2), `reindex_shard` (shard 3 is locked by a running merge, turn 2)",
+			"2 tool calls failed: `run_tests` (exit 1, turn 2), `reindex_shard` (shard 3 is locked by a running merge, turn 2); the session carried on",
 		)
 		expect(errors.findings).toHaveLength(2)
 	})
@@ -234,7 +256,12 @@ describe("buildSessionChecks", () => {
 			})
 		const looped = checks([
 			...firstTurn(),
-			agentSpan({ spanId: "a2", startMs: 5 * MINUTE, durationMs: 20 * SECOND, genAi: { conversationId: "t2" } }),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 20 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
 			read("r1", 5 * MINUTE + SECOND, "src/retry.ts"),
 			read("r2", 5 * MINUTE + 3 * SECOND, "src/retry.ts"),
 			read("r3", 5 * MINUTE + 5 * SECOND, "src/retry.ts"),
@@ -248,12 +275,65 @@ describe("buildSessionChecks", () => {
 
 		const rerun = checks([
 			...firstTurn(),
-			agentSpan({ spanId: "a2", startMs: 5 * MINUTE, durationMs: 20 * SECOND, genAi: { conversationId: "t2" } }),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 20 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
 			read("r1", 5 * MINUTE + SECOND, "src/retry.ts"),
 			read("r2", 5 * MINUTE + 3 * SECOND, "src/other.ts"),
 			read("r3", 5 * MINUTE + 5 * SECOND, "src/retry.ts"),
 		])
 		expect(byId(rerun, "repetition").status).toBe("passed")
+	})
+
+	// One unchanged retry after a failure is how a transient error is handled;
+	// two is the retry that learned nothing — and it is the failing run the row
+	// names, not an earlier run of the same length that succeeded.
+	it("names the run that kept retrying after a failure, not the equal run that worked", () => {
+		const run = (spanId: string, startMs: number, suite: string, failed = false) =>
+			toolSpan({
+				spanId,
+				parentSpanId: "a2",
+				startMs,
+				durationMs: SECOND,
+				toolName: "run_tests",
+				statusCode: failed ? "Error" : "Unset",
+				statusMessage: failed ? "exit 1" : "",
+				genAi: { conversationId: "t2", toolCallArguments: { suite } },
+			})
+		const once = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 30 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			run("t1", 5 * MINUTE + SECOND, "webhooks", true),
+			run("t2", 5 * MINUTE + 3 * SECOND, "webhooks"),
+		])
+		expect(byId(once, "repetition").status).toBe("passed")
+
+		const looped = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 30 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			run("ok1", 5 * MINUTE + SECOND, "billing"),
+			run("ok2", 5 * MINUTE + 2 * SECOND, "billing"),
+			run("ok3", 5 * MINUTE + 3 * SECOND, "billing"),
+			run("f1", 5 * MINUTE + 5 * SECOND, "webhooks", true),
+			run("f2", 5 * MINUTE + 7 * SECOND, "webhooks", true),
+			run("f3", 5 * MINUTE + 9 * SECOND, "webhooks", true),
+		])
+		const repetition = byId(looped, "repetition")
+		expect(repetition.headline).toBe("`run_tests` was retried 2× unchanged after it failed on turn 2")
+		expect(repetition.findings[0].spanId).toBe("f1")
 	})
 
 	it("reads the prompt cache off the calls after the first, and skips when nothing reported one", () => {

@@ -9,6 +9,7 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
+import { canonicalJSON } from "@maple/query-engine"
 import { clipDetail, failureDetailText } from "./failure-text"
 import {
 	failureEvents,
@@ -33,8 +34,8 @@ const REPEATED_TOOL_MIN_CALLS = 8
 
 /**
  * The same call — tool and arguments — this many times in a row, with nothing
- * between, is a loop whatever the tool's total. After a failure, once more
- * unchanged is already one: the retry that learned nothing.
+ * between, is a loop whatever the tool's total. One unchanged retry after a
+ * failure is not: a transient 429 or timeout is retried exactly that way.
  */
 const IDENTICAL_RUN_MIN_CALLS = 3
 
@@ -49,26 +50,28 @@ const MID_TURN_STALL_MIN_MS = 30_000
 const TRUNCATION_FINISH_REASONS = new Set(["length", "max_tokens", "max_output_tokens"])
 
 /**
- * Failure kinds that read as warnings unless the session died on one: the
- * recovered-shaped signals the rail's amber dots have always drawn, plus a
- * tool refusing the model's arguments — the tool ran, the model called it
- * wrong, and the run usually goes on.
+ * Failure kinds that need a fix whether or not the run survived them: the
+ * prompt will outgrow the window again, the schema will reject the next reply,
+ * the tool will still not be connected, the run will end without its
+ * completion tool again. Every other kind is red only when the final turn
+ * died on it — a rate limit, a refusal, a tool error the agent recovered from
+ * is worth a look, not a fix.
  */
-const ANOMALY_KINDS: ReadonlySet<SessionFailureKind> = new Set(["rateLimited", "refusal", "toolArguments"])
+const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
+	"contextExceeded",
+	"invalidOutput",
+	"toolUnavailable",
+	"incomplete",
+])
 
-/** Red or amber: whether the thing found affected the outcome, or merely looks
- *  wrong. The mapping for failures matches the rail's old dot colors — errors
- *  and context blowups red, recovered-shaped rate limits and refusals amber. */
+/** Red or amber: whether the thing found ended the run or names a class that
+ *  needs a fix regardless, or was survived. The checklist's failed/warning
+ *  split reads the same field, so the two never disagree. */
 export type FindingSeverity = "failure" | "anomaly"
 
 /** Which detector produced the row: a failure kind, or one of the four
  *  session-shape detectors below. What the checklist groups rows on. */
-export type SessionFindingKind =
-	| SessionFailureKind
-	| "providerRetry"
-	| "truncation"
-	| "repetition"
-	| "stall"
+export type SessionFindingKind = SessionFailureKind | "providerRetry" | "truncation" | "repetition" | "stall"
 
 export interface SessionFinding {
 	readonly id: string
@@ -97,8 +100,6 @@ export type SessionVerdictStatus = "failed" | "attention" | "clean"
 
 export interface SessionVerdict {
 	readonly status: SessionVerdictStatus
-	/** What killed the final turn, when the session failed and a span said. */
-	readonly label: string | undefined
 	/** The failing span, for the verdict's own link. */
 	readonly spanId: string | undefined
 }
@@ -148,8 +149,8 @@ export function buildSessionFindings(
 	)
 
 	const verdict: SessionVerdict = summary.failed
-		? { status: "failed", label: cause?.label, spanId: cause?.span.spanId }
-		: { status: findings.length > 0 ? "attention" : "clean", label: undefined, spanId: undefined }
+		? { status: "failed", spanId: cause?.span.spanId }
+		: { status: findings.length > 0 ? "attention" : "clean", spanId: undefined }
 
 	return { verdict, findings }
 }
@@ -198,8 +199,7 @@ function failureFindings(
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
-			severity:
-				terminal || !ANOMALY_KINDS.has(group.kind) ? ("failure" as const) : ("anomaly" as const),
+			severity: terminal || FAILURE_KINDS.has(group.kind) ? ("failure" as const) : ("anomaly" as const),
 			label,
 			tool: group.tool,
 			count: group.members.length,
@@ -369,9 +369,8 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 			byTool.set(name, list)
 		}
 		for (const [name, calls] of byTool) {
-			const run = longestIdenticalRun(calls)
-			const looped =
-				run.length >= IDENTICAL_RUN_MIN_CALLS || (run.length >= 2 && spanFailed(run[0]))
+			const run = calls.length < IDENTICAL_RUN_MIN_CALLS ? [] : longestIdenticalRun(calls)
+			const looped = run.length >= IDENTICAL_RUN_MIN_CALLS
 			if (calls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
 			// The row links where the loop began, else the tool's first call.
 			const first = looped ? run[0] : calls[0]
@@ -384,12 +383,11 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 				count: 1,
 				turnText: turnListText([index], turns, false),
 				terminal: false,
-				detail:
-					run.length >= 2 && spanFailed(run[0])
+				detail: looped
+					? spanFailed(run[0])
 						? `retried ${run.length - 1}× unchanged after it failed`
-						: run.length >= 2
-							? `called ${calls.length}× within one turn, ${run.length} in a row with identical arguments`
-							: `called ${calls.length}× within one turn`,
+						: `called ${calls.length}× within one turn, ${run.length} in a row with identical arguments`
+					: `called ${calls.length}× within one turn`,
 				spanId: first.spanId,
 				atMs: spanStartMs(first),
 			})
@@ -402,8 +400,10 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
  * The longest run of back-to-back calls that sent the same arguments, in start
  * order — empty when no call recorded its arguments. Only consecutive calls
  * count: a test suite re-run after a fix sends the same arguments over new
- * code, which is progress, while the same call twice with nothing between is
- * not. Arguments compare as canonical JSON so key order cannot split a run.
+ * code, which is progress, while the same call three times with nothing
+ * between is not. Among runs of equal length the one that opened with a
+ * failure wins, since that is the one the row should say retried. Arguments
+ * compare as canonical JSON so key order cannot split a run.
  */
 function longestIdenticalRun(calls: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
 	let longest: AiSessionSpan[] = []
@@ -411,30 +411,21 @@ function longestIdenticalRun(calls: readonly AiSessionSpan[]): readonly AiSessio
 	let key: string | undefined
 	for (const span of calls) {
 		const args = span.genAi.toolCallArguments
-		const next = args === undefined ? undefined : canonicalJson(args)
+		const next = args === undefined ? undefined : canonicalJSON(args)
 		if (next !== undefined && next === key) {
 			run.push(span)
 		} else {
 			run = next === undefined ? [] : [span]
 			key = next
 		}
-		if (run.length > longest.length) longest = run
+		if (
+			run.length > longest.length ||
+			(run.length > 0 && run.length === longest.length && run !== longest && spanFailed(run[0]))
+		) {
+			longest = run
+		}
 	}
 	return longest
-}
-
-/** JSON with object keys sorted at every level, so two calls that sent the
- *  same arguments in a different order still read as the same call. */
-export function canonicalJson(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
-	if (typeof value === "object" && value !== null) {
-		const record = value as Record<string, unknown>
-		const entries = Object.keys(record)
-			.sort()
-			.map((entry) => `${JSON.stringify(entry)}:${canonicalJson(record[entry])}`)
-		return `{${entries.join(",")}}`
-	}
-	return JSON.stringify(value) ?? "null"
 }
 
 function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {

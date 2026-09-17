@@ -48,7 +48,12 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", async (importOriginal) => 
 import type { AiSessionSpan, GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
-import { buildSessionSummary, buildSessionTurns, type SessionSummary, type SessionTurn } from "@maple/agent-sessions"
+import {
+	buildSessionSummary,
+	buildSessionTurns,
+	type SessionSummary,
+	type SessionTurn,
+} from "@maple/agent-sessions"
 import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "@maple/agent-sessions/testing"
 import { SessionFlow } from "./session-flow"
 import { SessionHeader, sessionIdentity } from "./session-header"
@@ -499,7 +504,7 @@ describe("SessionOverview", () => {
 		render(<Overview turns={quietTurns} summary={quiet} />)
 
 		expect(screen.getByText("Completed")).toBeTruthy()
-		expect(screen.getByText(/^cleanly — \d+ checks passed$/)).toBeTruthy()
+		expect(screen.getByText(/^cleanly — \d+ checks passed across \d+ (turns|segments)$/)).toBeTruthy()
 		expect(screen.getByText(/^Nothing to fix/)).toBeTruthy()
 		expect(screen.getByRole("button", { name: /^Passed/ }).getAttribute("aria-expanded")).toBe("true")
 		expect(screen.getByText("No model call was rate-limited")).toBeTruthy()
@@ -1198,7 +1203,13 @@ describe("SessionViews", () => {
 	// in hand and marks that its end is not here yet. Nothing asks the reader
 	// to load anything.
 	it("waits for the agent's spans in the Overview and marks the transcript's open end while loading", () => {
-		const progress: SessionLoadProgress = { phase: "agent", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = {
+			phase: "agent",
+			agentSpansComplete: false,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry: noop,
+		}
 		render(<Views view="overview" progress={progress} totals={totals} />)
 
 		const waiting = screen.getByTestId("overview-waiting")
@@ -1214,7 +1225,13 @@ describe("SessionViews", () => {
 	// while the app's spans are still filling in behind it, and the transcript
 	// has its end.
 	it("renders the Overview and a closed transcript once the agent's spans are all in", () => {
-		const progress: SessionLoadProgress = { phase: "app", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = {
+			phase: "app",
+			agentSpansComplete: true,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry: noop,
+		}
 		render(<Views view="overview" progress={progress} totals={totals} />)
 		expect(screen.queryByTestId("overview-waiting")).toBeNull()
 		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
@@ -1224,7 +1241,13 @@ describe("SessionViews", () => {
 	// A page that did not come back is the one case with something to press.
 	it("offers a retry where an agent page failed", () => {
 		const retry = vi.fn()
-		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry }
+		const progress: SessionLoadProgress = {
+			phase: "failed",
+			agentSpansComplete: false,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry,
+		}
 		render(<Views view="transcript" progress={progress} totals={totals} />)
 		expect(screen.getByText("The rest of this session didn't load")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }))
@@ -1235,7 +1258,13 @@ describe("SessionViews", () => {
 	// alone: the Overview stands and the transcript has its end. The header
 	// indicator is where that failure is reported.
 	it("keeps the Overview and a closed transcript when only an app page failed", () => {
-		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = {
+			phase: "failed",
+			agentSpansComplete: true,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry: noop,
+		}
 		render(<Views view="overview" progress={progress} totals={totals} />)
 		expect(screen.queryByTestId("overview-waiting")).toBeNull()
 		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
