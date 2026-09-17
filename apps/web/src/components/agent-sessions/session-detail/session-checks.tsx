@@ -10,6 +10,7 @@ import type {
 
 import { ArrowRightIcon, CheckIcon, ChevronRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
 /** One tone per status, for the dot beside a name and the text of a label. */
@@ -186,31 +187,35 @@ function CheckBlock({
 	// with every call's arguments and result — so for tool failures the page's
 	// next step is a jump there rather than the engine's line.
 	const toolsAction = check.id === "tool-errors"
-	const action = toolsAction ? "Check the Tools section at the bottom of this page for details." : check.action
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
 			<StatusDot status={check.status} />
 			<span className="truncate font-semibold text-[13px]">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
-				{action !== undefined &&
-					(toolsAction ? (
-						<button
-							type="button"
-							onClick={onOpenTools}
-							className="flex items-start gap-1.5 self-start text-left text-muted-foreground text-xs leading-relaxed hover:text-foreground"
-						>
-							<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
-							<span className="underline decoration-muted-foreground/40 underline-offset-2">
-								{action}
-							</span>
-						</button>
-					) : (
+				{toolsAction ? (
+					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
+						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
+						<span>
+							Check the{" "}
+							<button
+								type="button"
+								onClick={onOpenTools}
+								className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground"
+							>
+								Tools section
+							</button>{" "}
+							at the bottom of this page for details.
+						</span>
+					</p>
+				) : (
+					check.action !== undefined && (
 						<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
 							<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
-							<span>{withCode(action)}</span>
+							<span>{withCode(check.action)}</span>
 						</p>
-					))}
+					)
+				)}
 				{check.findings.length > 0 && (
 					<div className="-ml-1.5 mt-0.5 flex flex-col">
 						{check.findings.map((finding) => (
@@ -366,48 +371,106 @@ function CheckFact({ check }: { check: SessionCheck }) {
 /* Coverage                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** What the instrumentation gave the checks: the line that explains a
- *  skipped row, and says what capturing more would unlock. */
-function Coverage({ coverage }: { coverage: SessionCoverage }) {
-	const signals = [
-		{ label: "messages", on: coverage.messages },
-		{ label: "tool args & results", on: coverage.toolPayloads },
+/** One captured signal: what it is, and what the checks do with it — or
+ *  what is missing without it. */
+interface Signal {
+	readonly label: string
+	readonly on: boolean
+	readonly title: string
+	readonly explains: string
+}
+
+function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
+	const usage = coverage.usage
+	const turns = coverage.turns
+	return [
 		{
-			label: coverage.usage === "none" ? "token usage" : `token usage ${coverage.usage}`,
-			on: coverage.usage !== "none",
+			label: "messages",
+			on: coverage.messages,
+			title: "Messages",
+			explains: coverage.messages
+				? "The prompts and replies of each model call, as the instrumentation recorded them. The Transcript shows them, and Refusals and Reply length read the actual text."
+				: "No model call recorded its prompts or replies. Message capture is opt-in in most SDKs; without it the Transcript is structure only, and Refusals and Reply length go by status codes alone.",
 		},
-		{ label: "cost", on: coverage.cost },
+		{
+			label: "tool args & results",
+			on: coverage.toolPayloads,
+			title: "Tool arguments and results",
+			explains: coverage.toolPayloads
+				? "What each tool was called with and what it returned. The tool ledger shows them, and Tool errors and Tool arguments read the error text."
+				: "No tool call recorded its arguments or result. Without them a failed call has only its status, and Repeated calls cannot tell identical calls apart.",
+		},
+		{
+			label: usage === "none" ? "token usage" : `token usage ${usage}`,
+			on: usage !== "none",
+			title: "Token usage",
+			explains:
+				usage === "per-call" || usage === "roll-up"
+					? "Input, output and cache tokens reported on every model call. Context window and Prompt cache read them call by call."
+					: usage === "session-level"
+						? "Token counts were reported once for the whole session rather than per call, so Context window and Prompt cache cannot follow the prompt from call to call."
+						: "No span reported token usage. Context window and Prompt cache have nothing to read.",
+		},
+		{
+			label: "cost",
+			on: coverage.cost,
+			title: "Cost",
+			explains: coverage.cost
+				? "The price the instrumentation stamped on each call. Maple prices nothing itself — this is what the emitter reported, not a bill."
+				: "No span carried a cost. Maple prices nothing itself, so the session has no cost figure.",
+		},
 		{
 			label:
-				coverage.turns === "conversation"
+				turns === "conversation"
 					? "turns by conversation id"
-					: coverage.turns === "agent-root"
+					: turns === "agent-root"
 						? "turns by agent root"
 						: "turns by trace",
 			// One turn per trace is the floor, not a turn key; the other two rules
 			// found real turn boundaries.
-			on: coverage.turns === "conversation" || coverage.turns === "agent-root",
+			on: turns === "conversation" || turns === "agent-root",
+			title: "Turns",
+			explains:
+				turns === "conversation"
+					? "Turns are cut at the conversation id the instrumentation stamped on its spans — the real boundaries between one exchange and the next."
+					: turns === "agent-root"
+						? "Turns are cut at each agent's root span, the closest thing to an exchange the spans carry. Stalls and Repeated calls look within a turn."
+						: "The spans carried no conversation id and no agent root, so each trace counts as one turn. Stalls and Repeated calls, which look within a turn, are reading a guess.",
 		},
 	]
+}
+
+/** What the instrumentation gave the checks: the line that explains a
+ *  skipped row, and says what capturing more would unlock. Each signal
+ *  carries its own explanation in a tooltip. */
+function Coverage({ coverage }: { coverage: SessionCoverage }) {
 	return (
 		<p className={cn(ROW_GRID, "text-xs")}>
 			<span />
 			<span className="text-muted-foreground">Captured</span>
 			<span className="flex flex-wrap gap-x-4 gap-y-1">
-				{signals.map((signal) => (
-					<span
-						key={signal.label}
-						className={cn(
-							"flex items-baseline gap-1.5",
-							signal.on ? "text-muted-foreground" : "text-muted-foreground/60 line-through",
-						)}
-					>
-						<span aria-hidden className={signal.on ? "text-severity-info" : "text-destructive"}>
-							{signal.on ? "✓" : "✕"}
-						</span>
-						<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
-						{signal.label}
-					</span>
+				{coverageSignals(coverage).map((signal) => (
+					<Tooltip key={signal.label}>
+						<TooltipTrigger
+							render={<span />}
+							className={cn(
+								"flex cursor-help items-baseline gap-1.5 underline decoration-dotted decoration-muted-foreground/40 underline-offset-[3px]",
+								signal.on ? "text-muted-foreground" : "text-muted-foreground/60 line-through",
+							)}
+						>
+							<span aria-hidden className={signal.on ? "text-severity-info" : "text-destructive"}>
+								{signal.on ? "✓" : "✕"}
+							</span>
+							<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
+							{signal.label}
+						</TooltipTrigger>
+						<TooltipContent className="max-w-72">
+							<span className="flex flex-col gap-1 py-1 text-left leading-relaxed">
+								<span className="font-semibold">{signal.title}</span>
+								<span className="text-muted-foreground">{signal.explains}</span>
+							</span>
+						</TooltipContent>
+					</Tooltip>
 				))}
 			</span>
 		</p>

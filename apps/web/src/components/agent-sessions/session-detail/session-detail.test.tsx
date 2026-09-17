@@ -459,7 +459,7 @@ describe("SessionOverview", () => {
 		const original = Element.prototype.scrollIntoView
 		Element.prototype.scrollIntoView = scrollIntoView
 		try {
-			fireEvent.click(errors.getByRole("button", { name: /^Check the Tools section/ }))
+			fireEvent.click(errors.getByRole("button", { name: "Tools section" }))
 			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" })
 		} finally {
 			Element.prototype.scrollIntoView = original
