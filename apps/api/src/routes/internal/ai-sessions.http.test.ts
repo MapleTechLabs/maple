@@ -454,6 +454,26 @@ describe("POST /internal/ai-sessions/list", () => {
 		errorAgentSpans: "1",
 		toolErrors: 1,
 		turnErrors: 0,
+		// The one failed span, as the wire renders the tuple: a tool that timed
+		// out, in a trace that is not the session's last, so a warning.
+		failures: [
+			[
+				"span-tool-1",
+				"span-agent-1",
+				1,
+				0,
+				"TimeoutError",
+				"search_traces",
+				"eve",
+				"search timed out",
+				"",
+				"",
+				"trace-1",
+				"1755599605825",
+			],
+		],
+		lastTraceId: "trace-2",
+		lastTraceTurnFailed: 0,
 		totalTokens: 18_400,
 		inputTokens: 12_000,
 		cacheReadTokens: 4_000,
@@ -523,6 +543,17 @@ describe("POST /internal/ai-sessions/list", () => {
 				errorSpanCount: 1,
 				toolErrorCount: 1,
 				turnErrorCount: 0,
+				// Classified off the shipped tuple by the detail page's own rule.
+				failures: [
+					{
+						kind: "toolTimeout",
+						label: "tool_timeout · search_traces",
+						tool: "search_traces",
+						count: 1,
+						severity: "anomaly",
+						terminal: false,
+					},
+				],
 				models: ["claude-sonnet-5"],
 				agentNames: ["web-fetcher", "slack-agent"],
 				firstAgentName: "slack-agent",
