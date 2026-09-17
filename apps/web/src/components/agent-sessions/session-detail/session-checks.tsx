@@ -40,6 +40,14 @@ const STATUS_TEXT = {
 	skipped: "text-muted-foreground",
 } satisfies Record<SessionCheckStatus, string>
 
+/**
+ * Every row of the list — a check that found something, a passed fact, a
+ * disclosure head — sits on the same three columns: the status mark, the
+ * check's name, and what it has to say. One grid is what keeps thirteen
+ * rows of very different length reading as one list.
+ */
+const ROW_GRID = "grid grid-cols-[0.75rem_9.5rem_minmax(0,1fr)] items-baseline gap-x-3"
+
 /** Open a span's payload in the inspection overlay. */
 type OpenSpan = (spanId: string) => void
 
@@ -60,25 +68,22 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 	const clean = attention.length === 0
 
 	return (
-		// Its own container: the two-column passed list sizes against this
-		// column, not the Overview with its rail.
-		<div className="@container flex flex-col gap-6">
+		<div className="flex flex-col gap-5">
 			<Verdict report={report} onOpenSpan={onOpenSpan} />
 
-			<section className="flex flex-col gap-3">
-				<SectionHeader
-					title="Needs attention"
-					aside={`${attention.length} of ${report.checks.length} checks`}
-				/>
+			<section className="flex flex-col gap-2">
+				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+					Needs attention
+				</h3>
 				{clean ? (
-					<p className="flex items-center gap-2 text-sm">
+					<p className="flex items-center gap-2 py-2 text-[13px]">
 						<CheckIcon size={14} aria-hidden className="shrink-0 text-severity-info" />
 						{skipped.length === 0
 							? "Nothing to fix. Every check below carries what it measured."
 							: `Nothing to fix in what could be checked; ${skipped.length === 1 ? "one check" : `${skipped.length} checks`} had no signal to read.`}
 					</p>
 				) : (
-					<div className="flex flex-col divide-y divide-border">
+					<div className="flex flex-col divide-y divide-border border-border border-y">
 						{attention.map((check) => (
 							<CheckBlock key={check.id} check={check} onOpenSpan={onOpenSpan} />
 						))}
@@ -94,16 +99,14 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 					status="passed"
 					checks={passed}
 					open={clean}
-					summary="Each one carries the fact it measured"
 					emptySummary="Nothing passed"
-					className="grid grid-cols-1 gap-x-8 gap-y-1.5 @2xl:grid-cols-2"
+					className="flex flex-col gap-1.5"
 				/>
 				<Disclosure
 					title="Not checked"
 					status="skipped"
 					checks={skipped}
 					open={clean && skipped.length > 0}
-					summary="The instrumentation did not carry the signal"
 					emptySummary="Every check had the signal it needed"
 					className="flex flex-col gap-1.5"
 				/>
@@ -131,11 +134,11 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 
 	return (
 		<section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-			<div className="flex min-w-0 flex-col gap-1.5">
-				<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-lg">
+			<div className="flex min-w-0 flex-col gap-1">
+				<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base">
 					<span
 						aria-hidden
-						className={cn("size-2.5 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
+						className={cn("size-2 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
 					/>
 					<span className={STATUS_TEXT[tone]}>{failed ? "Failed" : "Completed"}</span>
 					{failed && (
@@ -145,7 +148,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 					)}
 					<span className="min-w-0 font-normal text-muted-foreground">{report.headline}</span>
 				</p>
-				<p className="flex flex-wrap gap-x-2 pl-[1.375rem] font-mono text-xs tabular-nums">
+				<p className="flex flex-wrap gap-x-2 pl-4 font-mono text-xs tabular-nums">
 					<Count n={counts.failed} word="failed" status="failed" />
 					<Dot />
 					<Count
@@ -201,40 +204,37 @@ function Dot() {
 
 function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: OpenSpan }) {
 	return (
-		<div
-			data-testid={`check-${check.id}`}
-			className={cn(
-				"flex flex-col gap-1.5 border-l-2 py-3 pl-3",
-				check.status === "failed" ? "border-l-destructive" : "border-l-severity-warn",
-			)}
-		>
-			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-				<span
-					aria-hidden
-					className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[check.status])}
-				/>
-				<span className="font-semibold text-[15px]">{check.name}</span>
-				{check.fixArea !== undefined && <Pill tone="outline">{FIX_AREA_LABEL[check.fixArea]}</Pill>}
+		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
+			<StatusDot status={check.status} />
+			<span className="flex min-w-0 flex-col gap-1">
+				<span className="truncate font-semibold text-[13px]">{check.name}</span>
+				{check.fixArea !== undefined && (
+					<span>
+						<Pill tone="outline">{FIX_AREA_LABEL[check.fixArea]}</Pill>
+					</span>
+				)}
+			</span>
+			<div className="flex min-w-0 flex-col gap-1">
+				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
+				{check.action !== undefined && (
+					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
+						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
+						<span>{withCode(check.action)}</span>
+					</p>
+				)}
+				{check.findings.length > 0 && (
+					<div className="-ml-1.5 mt-0.5 flex flex-col">
+						{check.findings.map((finding) => (
+							<EvidenceRow
+								key={finding.id}
+								finding={finding}
+								status={check.status}
+								onOpenSpan={onOpenSpan}
+							/>
+						))}
+					</div>
+				)}
 			</div>
-			<p className="pl-3.5 text-sm leading-relaxed">{withCode(check.headline)}</p>
-			{check.action !== undefined && (
-				<p className="flex items-start gap-1.5 pl-3.5 font-medium text-[13px] leading-relaxed">
-					<ArrowRightIcon size={13} aria-hidden className="mt-1 shrink-0 text-severity-warn" />
-					<span>{withCode(check.action)}</span>
-				</p>
-			)}
-			{check.findings.length > 0 && (
-				<div className="flex flex-col pl-2">
-					{check.findings.map((finding) => (
-						<EvidenceRow
-							key={finding.id}
-							finding={finding}
-							status={check.status}
-							onOpenSpan={onOpenSpan}
-						/>
-					))}
-				</div>
-			)}
 		</div>
 	)
 }
@@ -255,13 +255,13 @@ function EvidenceRow({
 			type="button"
 			aria-haspopup="dialog"
 			onClick={() => onOpenSpan(finding.spanId)}
-			className="group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-1 text-left font-mono text-xs hover:bg-accent/40"
+			className="group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-accent/40"
 		>
-			<span className={cn("shrink-0 font-medium", STATUS_TEXT[status])}>
+			<span className={cn("shrink-0", STATUS_TEXT[status])}>
 				{finding.label}
 				{finding.count > 1 && ` ×${finding.count}`}
 			</span>
-			<span className="shrink-0 text-muted-foreground">{finding.turnText}</span>
+			<span className="shrink-0 text-muted-foreground/70">{finding.turnText}</span>
 			{finding.detail !== undefined && (
 				<span className="min-w-0 truncate text-muted-foreground">{finding.detail}</span>
 			)}
@@ -270,6 +270,15 @@ function EvidenceRow({
 				<ArrowRightIcon size={12} />
 			</span>
 		</button>
+	)
+}
+
+function StatusDot({ status }: { status: SessionCheckStatus }) {
+	return (
+		<span
+			aria-hidden
+			className={cn("size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full", STATUS_DOT[status])}
+		/>
 	)
 }
 
@@ -288,7 +297,6 @@ function Disclosure({
 	status,
 	checks,
 	open,
-	summary,
 	emptySummary,
 	className,
 }: {
@@ -296,8 +304,6 @@ function Disclosure({
 	status: SessionCheckStatus
 	checks: readonly SessionCheck[]
 	open: boolean
-	/** What the row says while open. */
-	summary: string
 	/** What the row says when it has nothing in it. */
 	emptySummary: string
 	className: string
@@ -311,38 +317,39 @@ function Disclosure({
 				size={12}
 				aria-hidden
 				className={cn(
-					"shrink-0 text-muted-foreground transition-transform",
+					"shrink-0 translate-y-px justify-self-center text-muted-foreground transition-transform",
 					expanded && "rotate-90",
 					!disclosable && "invisible",
 				)}
 			/>
-			<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />
-			<span className="font-medium text-sm">{title}</span>
-			<span className="font-mono text-muted-foreground text-xs tabular-nums">({checks.length})</span>
-			<span className="ml-auto min-w-0 truncate pl-4 text-muted-foreground text-xs">
-				{!disclosable
-					? emptySummary
-					: expanded
-						? summary
-						: checks.map((check) => check.name).join(" · ")}
+			<span className="flex items-baseline gap-2">
+				<span className={cn("font-semibold text-[13px]", disclosable ? STATUS_TEXT[status] : "text-muted-foreground")}>
+					{title}
+				</span>
+				<span className="font-mono text-muted-foreground text-xs tabular-nums">{checks.length}</span>
+			</span>
+			{/* Collapsed, the row lists what is inside it; open, the list is
+			    right below and the head says nothing twice. */}
+			<span className="min-w-0 truncate text-muted-foreground text-xs">
+				{!disclosable ? emptySummary : expanded ? "" : checks.map((check) => check.name).join(" · ")}
 			</span>
 		</>
 	)
 	// An empty row has nothing to disclose, so it is a line of text rather
 	// than a control a screen reader would announce as unavailable.
-	if (!disclosable) return <div className="flex w-full items-center gap-2 py-2.5">{head}</div>
+	if (!disclosable) return <div className={cn(ROW_GRID, "py-2.5")}>{head}</div>
 	return (
 		<div className="flex flex-col">
 			<button
 				type="button"
 				aria-expanded={expanded}
 				onClick={() => setChoice(!expanded)}
-				className="flex w-full items-center gap-2 py-2.5 text-left hover:bg-accent/40"
+				className={cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-accent/40")}
 			>
 				{head}
 			</button>
 			{expanded && (
-				<div className={cn("pb-3 pl-6", className)}>
+				<div className={cn("pt-0.5 pb-3", className)}>
 					{checks.map((check) => (
 						<CheckFact key={check.id} check={check} />
 					))}
@@ -356,12 +363,9 @@ function Disclosure({
  *  or the signal it lacked. */
 function CheckFact({ check }: { check: SessionCheck }) {
 	return (
-		<div className="flex items-baseline gap-2 text-sm">
-			<span
-				aria-hidden
-				className={cn("size-1.5 shrink-0 translate-y-[-1px] rounded-full", STATUS_DOT[check.status])}
-			/>
-			<span className="shrink-0 font-medium">{check.name}</span>
+		<div className={ROW_GRID}>
+			<StatusDot status={check.status} />
+			<span className="truncate text-[13px]">{check.name}</span>
 			<span className="min-w-0 text-muted-foreground text-xs leading-relaxed">
 				{withCode(check.headline)}
 			</span>
@@ -373,7 +377,7 @@ function CheckFact({ check }: { check: SessionCheck }) {
 /* Coverage                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** What the instrumentation gave the checks: the strip that explains a
+/** What the instrumentation gave the checks: the line that explains a
  *  skipped row, and says what capturing more would unlock. */
 function Coverage({ coverage }: { coverage: SessionCoverage }) {
 	const signals = [
@@ -397,25 +401,26 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 		},
 	]
 	return (
-		<p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 font-mono text-xs">
-			<span className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-				Coverage
-			</span>
-			{signals.map((signal) => (
-				<span
-					key={signal.label}
-					className={cn(
-						"flex items-baseline gap-1.5",
-						signal.on ? "text-foreground" : "text-muted-foreground",
-					)}
-				>
-					<span aria-hidden className={signal.on ? "text-severity-info" : ""}>
-						{signal.on ? "✓" : "✕"}
+		<p className={cn(ROW_GRID, "text-xs")}>
+			<span />
+			<span className="text-muted-foreground">Captured</span>
+			<span className="flex flex-wrap gap-x-4 gap-y-1">
+				{signals.map((signal) => (
+					<span
+						key={signal.label}
+						className={cn(
+							"flex items-baseline gap-1.5",
+							signal.on ? "text-muted-foreground" : "text-muted-foreground/60 line-through",
+						)}
+					>
+						<span aria-hidden className={signal.on ? "text-severity-info" : "text-destructive"}>
+							{signal.on ? "✓" : "✕"}
+						</span>
+						<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
+						{signal.label}
 					</span>
-					<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
-					{signal.label}
-				</span>
-			))}
+				))}
+			</span>
 		</p>
 	)
 }
@@ -438,18 +443,5 @@ function withCode(text: string): ReactNode {
 		) : (
 			part
 		),
-	)
-}
-
-function SectionHeader({ title, aside }: { title: string; aside?: string }) {
-	return (
-		<div className="flex items-baseline justify-between gap-2">
-			<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-				{title}
-			</h3>
-			{aside !== undefined && (
-				<span className="font-mono text-muted-foreground text-xs tabular-nums">{aside}</span>
-			)}
-		</div>
 	)
 }
