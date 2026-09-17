@@ -33,24 +33,46 @@ It records, in order:
    and the recent backups with state, size, completion and expiry, from which the actual cadence
    and retention are derived. This is the "backup settings" half of the evidence.
 2. **The restore** — `pscale branch create <db> restore-test-<stamp> --restore <backup-id>`, then
-   waits for the branch to be ready. The branch name never matches `pr-<n>`, so the preview-orphan
-   sweep leaves it alone, and nothing in the script can address `main`.
+   waits for the branch to be ready. The source branch is only ever read (`branch show`,
+   `backup list`); the restore lands in a new branch on its own cluster.
 3. **Verification** on the restored branch, each a pass/fail row in the report:
-   - the Drizzle migrations journal is present;
-   - every critical table exists (`org_ingest_keys`, `api_keys`, dashboards and their versions,
-     alert rules/destinations/incidents, error issues and events, integrations), and the ones that
-     are never empty in production hold rows;
-   - the newest record falls inside the backup's own window — no later than the backup completed,
-     no older than a day before it started — which is what distinguishes "the backup's snapshot"
-     from "some data";
-   - a parent/child join (`dashboard_versions → dashboards`) has no orphans;
-   - one record reads back with its full history.
-4. **Cleanup** — the branch is deleted in a `finally`, so a failed check still tears it down.
-   `RESTORE_TEST_KEEP_BRANCH=1` keeps it for inspection; it bills until deleted.
+    - the Drizzle migrations journal is present;
+    - every critical table exists (`org_ingest_keys`, `api_keys`, dashboards and their versions,
+      alert rules/destinations/incidents, error issues and events, integrations), and the ones that
+      are never empty in production hold rows;
+    - the newest record falls inside the backup's own window — no later than the backup completed,
+      no older than a day before it started — which is what distinguishes "the backup's snapshot"
+      from "some data";
+    - a parent/child join (`dashboard_versions → dashboards`) has no orphans;
+    - one record reads back with its full history.
+      A query that errors is a failed row, not a crash: the report is always written.
+4. **Cleanup** — the only destructive call is `branch delete`, and it passes through a gate that
+   refuses any name not starting with `restore-test-` or equal to the source branch. The report
+   is written before the delete is requested, and a process `exit` hook re-requests the delete
+   if anything exits early, because a leaked restore branch bills until someone notices.
+   `RESTORE_TEST_KEEP_BRANCH=1` keeps it for inspection.
 
 The report lands in `packages/db/.restore-test/restore-test-report.{json,md}` (gitignored) and, in
-CI, in the job summary and the `backup-restore-test-report` artifact. A non-zero exit means a check
+CI, in the job summary and the `backup-restore-test-report` artifact. The repository is public and
+so are its run logs and artifacts, so the report carries no org slug, row counts as orders of
+magnitude rather than exact figures, and no record identifiers. A non-zero exit means a check
 failed: a scheduled red run is a recovery incident, not noise.
+
+### Testing the drill
+
+- **Locally, for real:** `PLANETSCALE_ORG=<org> bun run backup:restore-test` with a `pscale auth
+login` session. Takes 10–20 minutes, most of it PlanetScale provisioning the restored cluster;
+  the branch is billed for that window (restores default to the PS-10 size). Inspect
+  `packages/db/.restore-test/`. This is the run that produces the first restore evidence.
+- **Keep the branch:** add `RESTORE_TEST_KEEP_BRANCH=1` to poke at the restored data by hand, then
+  `pscale branch delete <db> restore-test-<stamp> --force`.
+- **Failure path without a restore:** `RESTORE_TEST_SOURCE_BRANCH=does-not-exist` fails at
+  `branch show`, before anything is created.
+- **In CI:** the workflow only runs on its schedule or `gh workflow run backup-restore-test.yml`
+  (after merge — a PR's CI does not run it). The first dispatch validates the service token: it
+  needs `read_backups`, `restore_production_branch_backups` and branch create/delete on the
+  database; a token missing the restore permission fails at `branch create` with nothing to
+  clean up.
 
 ### Schedule
 
