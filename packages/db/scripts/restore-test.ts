@@ -565,14 +565,32 @@ const main = async (): Promise<void> => {
 		deleted = requestDelete(database, branch, sourceBranch) && (await waitUntilGone(database, branch))
 		cleanupOwed = false
 	}
-	const finalReport: Report = { ...report, restore: { ...report.restore, deleted } }
+	// A restore branch that outlives the drill bills until someone notices, so
+	// a failed delete is a failed run even when every data check passed.
+	const cleanup: ReadonlyArray<Check> = keepBranch
+		? []
+		: [
+				{
+					name: "restore branch deleted",
+					pass: deleted === true,
+					detail: deleted ? branch : `${branch} still exists — delete it by hand`,
+				},
+			]
+	const finalChecks = [...verification.checks, ...cleanup]
+	const finalStatus: Report["status"] = finalChecks.every((c) => c.pass) ? "pass" : "fail"
+	const finalReport: Report = {
+		...report,
+		status: finalStatus,
+		restore: { ...report.restore, deleted },
+		verification: { ...verification, checks: finalChecks },
+	}
 	const json = writeReport(reportDir, finalReport)
 	const markdown = renderMarkdown(finalReport)
 	if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`)
 
 	console.log(`\n${markdown}`)
 	console.log(`Report: ${json}`)
-	if (status !== "pass") fail("Restore drill FAILED — see the verification table above")
+	if (finalStatus !== "pass") fail("Restore drill FAILED — see the verification table above")
 	console.log("✓ Restore drill passed")
 }
 
