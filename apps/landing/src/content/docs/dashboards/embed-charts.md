@@ -95,28 +95,26 @@ Use the **React** tab in JSX. React only accepts `style` as an object, so the HT
 />
 ```
 
-Keep the closing `</iframe>` in HTML. A self-closing `<iframe />` only works in JSX; an HTML parser ignores the slash and treats everything after it as the frame's content.
-
 The chart fills the frame, so `height` sets the chart's height. `?embed=true` removes Maple's page header, and the embed has no background of its own: the chart's card sits directly on your page, as in the Fieldnote screenshot. The card has 8px of space around it inside the frame, so pull the iframe out by 8px if its edges need to line up with your own cards.
 
 ## Set theme, time range, refresh and variables in the URL
 
 Append any of these to the link in `src`:
 
-| Parameter    | Values                                                                                                                     | Example                                            |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `theme`      | `light` or `dark`. Defaults to dark.                                                                                       | `&theme=light`                                     |
-| `from`, `to` | UTC, `YYYY-MM-DD HH:MM:SS`. Set both. Defaults to the dashboard's own time range.                                          | `&from=2026-09-01 00:00:00&to=2026-09-15 00:00:00` |
-| `refresh`    | Seconds between reloads: `5`, `10`, `30`, `60`, `300` or `900`. `0` turns it off. Defaults to the dashboard's own setting. | `&refresh=300`                                     |
-| `var-<name>` | A value for one of the dashboard's variables                                                                               | `&var-service=checkout`                            |
+| Parameter    | Values                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `theme`      | `light` or `dark`. Defaults to dark.                                                                                       |
+| `from`, `to` | UTC, `YYYY-MM-DD HH:MM:SS`. Set both. Defaults to the dashboard's own time range.                                          |
+| `refresh`    | Seconds between reloads: `5`, `10`, `30`, `60`, `300` or `900`. `0` turns it off. Defaults to the dashboard's own setting. |
+| `var-<name>` | A value for one of the dashboard's variables, such as `var-service=checkout`.                                              |
 
-The dialog lists the dashboard's own variables with an example value for each. A space in `from` and `to` works as typed inside an HTML attribute; encode it as `%20` if you build the URL in code.
+The dialog lists the dashboard's own variables with an example value for each. A space in `from` and `to` works as typed inside an HTML attribute.
 
-For example, a light chart that reloads every five minutes:
+For example, a light chart over the first two weeks of September that reloads every five minutes:
 
 ```html
 <iframe
-	src="https://app.maple.dev/share/<token>?embed=true&theme=light&refresh=300"
+	src="https://app.maple.dev/share/<token>?embed=true&theme=light&from=2026-09-01 00:00:00&to=2026-09-15 00:00:00&refresh=300"
 	width="100%"
 	height="330"
 	style="border: 0"
@@ -135,14 +133,11 @@ A relative time range such as the dashboard's "Last 30 days" is worked out again
 
 ## Which charts can be embedded
 
-| Embeddable                                                     | Not embeddable (the menu item is greyed out)                                         |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Query builder charts, raw SQL charts, markdown, funnels, paths | Trace lists, trace facets and trace duration stats                                   |
-| Errors summary and errors by type                              | Error facets, error rate by service, error detail traces                             |
-| Service overview and service usage                             | Service time series, Apdex time series, service facets                               |
-| Log lists                                                      | Log counts and log facets, metric lists and metric summaries, older v2 custom charts |
+Only charts on a dashboard. Pages such as Traces, Logs, Errors or the Service Map can't be embedded; put the chart you need on a dashboard first.
 
-Hover a greyed-out **Embed chart** item to see why that chart can't be embedded.
+On a dashboard, every chart you can add today can be embedded except **Recent Traces**. That covers query builder charts, raw SQL charts, markdown, funnels, paths and the service, error and log presets.
+
+Older dashboards can hold charts built on data sources Maple no longer offers, such as trace facets or metric summaries. Those can't be embedded either. For any chart that can't be embedded, **Embed chart** is greyed out, and hovering it says why.
 
 ## FAQ
 
@@ -152,7 +147,7 @@ Pick the option that matches how permanent you want it to be:
 
 - **Turn off every embed on the dashboard, reversibly.** Set the dashboard back to **Not shared** in its Share dialog. Every chart link on it stops working. Set it to **Anyone with the link** again and the same links, and the embeds using them, work again.
 - **Kill one chart's link for good.** Open **Embed chart** on that chart and click **Replace**. The old link never works again, and the dialog shows a new one. Anyone still embedding the chart needs the new link.
-- **Remove one chart's link without replacing it.** There's no button for this yet. Call the API with a key that has `dashboards:write`:
+- **Remove one chart's link without replacing it via the API.** Use a key that has `dashboards:write`:
 
 ```bash
 curl -X DELETE \
