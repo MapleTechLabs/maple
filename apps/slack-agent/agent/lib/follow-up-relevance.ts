@@ -1,5 +1,6 @@
 import { generateText } from "ai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
+import { openRouterFetch } from "./openrouter-trace.js"
 import type { SlackThreadMessage } from "eve/channels/slack"
 import {
 	formatContextBlock,
@@ -104,6 +105,7 @@ function buildDefaultDeps(): FollowUpRelevanceDeps {
 		apiKey: process.env.OPENROUTER_API_KEY ?? "",
 		appUrl: "https://maple.dev",
 		appName: "Maple",
+		fetch: openRouterFetch,
 		extraBody: { trace: { trace_name: "slack" } },
 	})
 	const model = openrouter(gateModelId())

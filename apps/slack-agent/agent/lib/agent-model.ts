@@ -1,5 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { defineDynamic } from "eve"
+import { openRouterFetch } from "./openrouter-trace.js"
 
 /**
  * OpenRouter over its REST API.
@@ -8,12 +9,14 @@ import { defineDynamic } from "eve"
  * traffic to Maple's app page on openrouter.ai. Same URL and title as `apps/api` on purpose: the
  * referer is the app's identity, so a different one here would mint a second app entry and split
  * the rankings. Surfaces are told apart by `trace.trace_name` instead — static, because this
- * process only ever is the Slack agent.
+ * process only ever is the Slack agent. `fetch` adds the calling span's ids per request, which is
+ * what nests OpenRouter's Broadcast mirror of the call under this agent's own trace.
  */
 const openrouter = createOpenRouter({
 	apiKey: process.env.OPENROUTER_API_KEY ?? "",
 	appUrl: "https://maple.dev",
 	appName: "Maple",
+	fetch: openRouterFetch,
 	extraBody: { trace: { trace_name: "slack" } },
 })
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { generateText, type LanguageModel } from "ai"
 import { agentModel } from "./agent-model.js"
 import { installFetchStub, type FetchStub } from "./fetch-stub.js"
+import { withActiveSpan } from "./openrouter-trace.test.js"
 
 type StepStarted = NonNullable<(typeof agentModel.events)["step.started"]>
 
@@ -46,6 +47,18 @@ describe("agentModel", () => {
 		expect(body.session_id).toBe("wrun_01TEST")
 		expect(body.trace).toEqual({ trace_name: "slack" })
 		expect(body.usage).toEqual({ include: true })
+	})
+
+	test("a call made under a span nests OpenRouter's mirror under it", async () => {
+		const ids = await withActiveSpan("ai.streamText.doStream", async (ids) => {
+			await capturedBody(agentModel.fallback)
+			return ids
+		})
+		const raw = stub?.calls[0]?.body
+		if (typeof raw !== "string") throw new Error("no request reached the transport")
+		// SAFETY: the stub captured the JSON object the provider serialised; `trace` is read as one key.
+		const body = JSON.parse(raw) as Record<string, unknown>
+		expect(body.trace).toEqual({ trace_name: "slack", trace_id: ids.traceId, parent_span_id: ids.spanId })
 	})
 
 	test("the fallback, used before any session exists, carries none", async () => {

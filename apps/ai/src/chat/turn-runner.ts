@@ -54,6 +54,18 @@ const telemetry = MapleCloudflareSDK.make(
 	}),
 )
 
+/**
+ * How often a running turn ships the spans it has finished so far.
+ *
+ * The turn is background work on the Durable Object: no request holds the isolate open for it, and
+ * an investigation has no subscriber at all. A single flush at the end of the turn was therefore
+ * one fetch that had to survive the object's whole remaining life — and on 2026-09-17 it did not
+ * for 22 of 101 investigation passes: OpenRouter's Broadcast mirror arrived nested under span ids
+ * the warehouse never saw, and the Agent Sessions list showed the pass as an OpenRouter-only
+ * session with no agent. Flushing on an interval bounds a lost flush to the tail of the turn.
+ */
+const FLUSH_INTERVAL_MS = 10_000
+
 export interface RunChatSessionTurnInput {
 	/** The Durable Object itself. Appends are direct calls, not stub RPC. */
 	readonly session: ChatSession
@@ -423,6 +435,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		}),
 	)
 
+	// `flush` never rejects and serializes overlapping calls, so a tick landing on the final flush
+	// queues behind it rather than racing it.
+	const flushTimer = setInterval(() => void telemetry.flush(input.env), FLUSH_INTERVAL_MS)
 	try {
 		await runtime.runPromise(program)
 	} catch {
@@ -437,6 +452,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			})
 		}
 	} finally {
+		clearInterval(flushTimer)
+		// The turn's own spans have ended by now; ship them before `dispose`, whose finalizers (the
+		// Postgres connection, the model client) are the one part of the turn that can still hang.
+		await telemetry.flush(input.env).catch(() => undefined)
 		await runtime.dispose().catch(() => undefined)
 		await telemetry.flush(input.env).catch(() => undefined)
 	}
