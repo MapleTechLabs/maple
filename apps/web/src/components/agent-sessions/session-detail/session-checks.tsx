@@ -156,17 +156,24 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 /* A check that found something                                               */
 /* -------------------------------------------------------------------------- */
 
+/** The page has a section the MCP does not: the tool ledger at the bottom,
+ *  with every call's arguments and result. For tool failures that is the
+ *  next step, so the page's action points there instead of the engine's. */
 function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: OpenSpan }) {
+	const action =
+		check.id === "tool-errors"
+			? "Check the Tools section at the bottom of this page for details."
+			: check.action
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
 			<StatusDot status={check.status} />
 			<span className="truncate font-semibold text-[13px]">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
-				{check.action !== undefined && (
+				{action !== undefined && (
 					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
 						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
-						<span>{withCode(check.action)}</span>
+						<span>{withCode(action)}</span>
 					</p>
 				)}
 				{check.findings.length > 0 && (

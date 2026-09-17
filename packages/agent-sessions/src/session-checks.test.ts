@@ -237,7 +237,7 @@ describe("buildSessionChecks", () => {
 		const errors = byId(report, "tool-errors")
 		expect(errors.status).toBe("warning")
 		expect(errors.headline).toBe(
-			"2 tool calls failed on turn 2: `run_tests`, `reindex_shard`; the session carried on",
+			"2 tool calls failed; the session carried on",
 		)
 		expect(errors.findings).toHaveLength(2)
 	})
@@ -508,7 +508,7 @@ describe("buildSessionChecks", () => {
 		])
 
 		expect(byId(report, "tool-errors").headline).toBe(
-			"5 tool calls failed on turn 2: `t_one`, `t_two`, `t_three`, and 2 more; the session carried on",
+			"5 tool calls failed; the session carried on",
 		)
 		expect(byId(report, "tool-errors").findings).toHaveLength(5)
 	})
