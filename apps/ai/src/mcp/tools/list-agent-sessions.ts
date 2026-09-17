@@ -22,6 +22,7 @@ import {
 	RangeBound,
 } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
+import type { AiSessionFailureSummary } from "@maple/domain/http"
 import { splitCsv } from "@maple/domain/where-clause"
 import { listAiSessions } from "@maple/backend/services/ai-sessions/ai-session-reads"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
@@ -150,7 +151,8 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				formatDurationFromMs(session.durationMs),
 				formatNumber(session.llmCalls),
 				formatNumber(session.toolCalls),
-				`${session.errorSpanCount}/${session.toolErrorCount}/${session.turnErrorCount}`,
+				failuresCell(session.failures) ??
+					`${session.errorSpanCount}/${session.toolErrorCount}/${session.turnErrorCount}`,
 				formatNumber(session.totalTokens),
 				session.cost > 0 ? formatCost(session.cost) : "—",
 				truncate(session.models.join(", "), 40),
@@ -160,7 +162,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			const lines: string[] = [
 				`## AI agent sessions (showing ${offset + 1}–${offset + sessions.length})`,
 				`Time range: ${st} — ${et}`,
-				`Every figure is over the session's AGENT spans; the app's own spans in the same traces are not counted. Errors are agent/tool/turn.`,
+				`Every figure is over the session's AGENT spans; the app's own spans in the same traces are not counted. Failures are by label, ×count; "!" marks one that needs a fix (the run died on it, or its kind always does), the rest were survived. A bare a/b/c is errored agent/tool/turn spans the index could not classify.`,
 				``,
 				formatTable(
 					[
@@ -171,7 +173,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 						"Duration",
 						"LLM calls",
 						"Tool calls",
-						"Errors",
+						"Failures",
 						"Tokens",
 						"Cost",
 						"Models",
@@ -180,7 +182,10 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					rows,
 				),
 				...(sessions.length === limit
-					? [``, `The page is full; more sessions may match — call again with offset=${offset + sessions.length}.`]
+					? [
+							``,
+							`The page is full; more sessions may match — call again with offset=${offset + sessions.length}.`,
+						]
 					: []),
 				formatNextSteps(
 					sessions.slice(0, 3).map(
@@ -195,5 +200,21 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+	)
+}
+
+/** `!context_length_exceeded, tool_error · run_tests ×2` — the row's failures
+ *  by label, a `!` on each one that needs a fix. `undefined` when the index
+ *  classified none, and the raw counts say what it saw. */
+function failuresCell(failures: ReadonlyArray<AiSessionFailureSummary>): string | undefined {
+	if (failures.length === 0) return undefined
+	return truncate(
+		failures
+			.map(
+				(failure) =>
+					`${failure.severity === "failure" ? "!" : ""}${failure.label}${failure.count > 1 ? ` ×${failure.count}` : ""}`,
+			)
+			.join(", "),
+		80,
 	)
 }

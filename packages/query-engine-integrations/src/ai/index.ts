@@ -41,6 +41,7 @@ export {
 	type AiSessionSummaryOutput,
 	type AiSessionTotalsOutput,
 	type AiSessionWindowOutput,
+	type IndexFailedSpanTuple,
 } from "./ai-sessions"
 
 export {

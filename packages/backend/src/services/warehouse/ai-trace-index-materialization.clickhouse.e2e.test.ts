@@ -26,6 +26,8 @@ import {
 } from "@maple/domain/gen-ai"
 import { genAiErrorFingerprintText } from "@maple/domain/tinybird/gen-ai-columns"
 import * as Integrations from "@maple/query-engine-integrations"
+import { summarizeIndexFailures } from "@maple/agent-sessions"
+import { indexFailedSpan } from "@maple/backend/services/ai-sessions/ai-session-reads"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -806,6 +808,44 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		assert.strictEqual(sessionless!.errorAgentSpans, 1)
 		// The one failed span is a model call: a turn failure, not a tool's.
 		assert.deepStrictEqual([sessionless!.toolErrors, sessionless!.turnErrors], [0, 1])
+		// The failed span, shipped for the breakdown as the tuple's positions —
+		// its trace is the session's only one, so its turn failure is terminal.
+		assert.deepStrictEqual(sessionless!.failures, [
+			[
+				"span-agent-2",
+				"",
+				0,
+				1,
+				"",
+				"",
+				"vercel_ai_sdk",
+				"",
+				"",
+				"",
+				SESSIONLESS_TRACE,
+				BASE_MS + 60_123,
+			],
+		])
+		assert.deepStrictEqual(
+			[sessionless!.lastTraceId, sessionless!.lastTraceTurnFailed],
+			[SESSIONLESS_TRACE, 1],
+		)
+		assert.deepStrictEqual(
+			summarizeIndexFailures(sessionless!.failures.map(indexFailedSpan), {
+				traceId: sessionless!.lastTraceId,
+				turnFailed: sessionless!.lastTraceTurnFailed === 1,
+			}),
+			[
+				{
+					kind: "error",
+					label: "error",
+					tool: undefined,
+					count: 1,
+					severity: "failure",
+					terminal: true,
+				},
+			],
+		)
 		// One span of 1ms: the extent is its own duration.
 		assert.strictEqual(sessionless!.agentDurationMs, 1)
 
@@ -834,6 +874,41 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// The failed tool span under an `Ok` turn: one tool error, and no turn
 		// error echoed off it. The failure lambda is raw SQL too.
 		assert.deepStrictEqual([session!.toolErrors, session!.turnErrors], [1, 0])
+		// The 0032 columns ride along, and the session's last trace — the second
+		// one, 30s on — closed cleanly, so the timeout is a warning, not red.
+		assert.deepStrictEqual(session!.failures, [
+			[
+				"span-tool-1",
+				"span-agent-1",
+				1,
+				0,
+				"TimeoutError",
+				"search_traces",
+				"eve",
+				"search timed out",
+				"",
+				"",
+				AGENT_TRACE,
+				BASE_MS + 2_000,
+			],
+		])
+		assert.deepStrictEqual([session!.lastTraceId, session!.lastTraceTurnFailed], [AGENT_TRACE_2, 0])
+		assert.deepStrictEqual(
+			summarizeIndexFailures(session!.failures.map(indexFailedSpan), {
+				traceId: session!.lastTraceId,
+				turnFailed: session!.lastTraceTurnFailed === 1,
+			}),
+			[
+				{
+					kind: "toolTimeout",
+					label: "tool_timeout · search_traces",
+					tool: "search_traces",
+					count: 1,
+					severity: "anomaly",
+					terminal: false,
+				},
+			],
+		)
 		// From the first turn span to the end of the second trace's turn span.
 		assert.strictEqual(session!.agentDurationMs, 30_001)
 	})

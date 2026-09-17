@@ -277,6 +277,26 @@ describe("aiSessionPageQuery", () => {
 					errorAgentSpans: "1",
 					toolErrors: 1,
 					turnErrors: 0,
+					// A tuple on the JSON wire is an array; the 64-bit instant is quoted
+					// where the setting is refused, like every other UInt64/Int64.
+					failures: [
+						[
+							"span-tool-1",
+							"span-agent-1",
+							1,
+							0,
+							"TimeoutError",
+							"search_traces",
+							"eve",
+							"search timed out",
+							"",
+							"",
+							"trace-1",
+							"1755599605825",
+						],
+					],
+					lastTraceId: "trace-3",
+					lastTraceTurnFailed: 0,
 					totalTokens: 184_320,
 					inputTokens: 120_000,
 					cacheReadTokens: 60_000,
@@ -305,6 +325,24 @@ describe("aiSessionPageQuery", () => {
 				errorAgentSpans: 1,
 				toolErrors: 1,
 				turnErrors: 0,
+				failures: [
+					[
+						"span-tool-1",
+						"span-agent-1",
+						1,
+						0,
+						"TimeoutError",
+						"search_traces",
+						"eve",
+						"search timed out",
+						"",
+						"",
+						"trace-1",
+						1_755_599_605_825,
+					],
+				],
+				lastTraceId: "trace-3",
+				lastTraceTurnFailed: 0,
 				totalTokens: 184_320,
 				inputTokens: 120_000,
 				cacheReadTokens: 60_000,
@@ -368,10 +406,14 @@ describe("aiSessionPageQuery", () => {
 		// The session's reporters, every trace's flattened, so a gateway's mirror
 		// trace of a call is in hand next to the app's own span of it — and the
 		// two lookups the netting makes, taken off them once per session.
-		expect(sessions).toContain("arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters")
+		expect(sessions).toContain(
+			"arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters",
+		)
 		expect(sessions).toContain("arrayReduce('sumMap', arrayMap(c -> [c.2], reporters)")
 		expect(sessions).toContain(") AS childClaims")
-		expect(sessions).toContain("tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds")
+		expect(sessions).toContain(
+			"tupleElement(arrayFilter(p -> p.3 > 0 OR p.4 > 0, reporters), 1) AS reportingIds",
+		)
 		expect(sessions).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
@@ -425,7 +467,7 @@ describe("aiSessionPageQuery", () => {
 		const { sessions: outer, traces: inner } = levels(sql)
 
 		expect(inner).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, StatusMessage, FailedToolCallResult, ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans",
 		)
 		// A failed span whose own child also failed is the child's echo, not a
 		// second failure — the turn span a framework fails alongside its call.
@@ -434,6 +476,15 @@ describe("aiSessionPageQuery", () => {
 		)
 		expect(outer).toContain(
 			"sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors",
+		)
+		// The same deepest spans, kept for the row's breakdown and capped; and
+		// whether the last trace's turn failed, off every failed span of it.
+		expect(outer).toContain(
+			"arraySlice(groupArrayArray(arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)), 1, 100) AS failures",
+		)
+		expect(outer).toContain("argMax(traceId, traceAgentEndNanos) AS lastTraceId")
+		expect(outer).toContain(
+			"argMax(arrayExists(f -> f.3 != 1, failedSpans), traceAgentEndNanos) AS lastTraceTurnFailed",
 		)
 	})
 
@@ -497,7 +548,9 @@ describe("aiSessionPageQuery", () => {
 		expect(byCost.split("ORDER BY").length - 1).toBe(1)
 		// A session-level sort ranks and cuts the page before the netting.
 		const byDuration = compileUnsafe(aiSessionPageQuery({ sortBy: "durationMs" }), params).sql
-		expect(byDuration.split("ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC").length - 1).toBe(2)
+		expect(
+			byDuration.split("ORDER BY agentDurationMs DESC, agentStart DESC, sessionId ASC").length - 1,
+		).toBe(2)
 		expect(byDuration.indexOf("LIMIT 50")).toBeLessThan(byDuration.indexOf(") AS ranked_sessions"))
 		expect(compileUnsafe(aiSessionPageQuery({ sortBy: "errorSpanCount" }), params).sql).toContain(
 			"ORDER BY errorAgentSpans DESC, agentStart DESC, sessionId ASC",
@@ -1379,7 +1432,12 @@ describe("aiSessionSummaryQuery", () => {
 	it("reads usage across every vendor spelling, per call and in total", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 
-		for (const key of ["gen_ai.usage.input_tokens", "gen_ai.usage.prompt_tokens", "ai.usage.inputTokens", "llm.token_count.prompt"]) {
+		for (const key of [
+			"gen_ai.usage.input_tokens",
+			"gen_ai.usage.prompt_tokens",
+			"ai.usage.inputTokens",
+			"llm.token_count.prompt",
+		]) {
 			expect(sql, key).toContain(`SpanAttributes['${key}']`)
 		}
 		expect(sql).toContain("AS inputTokens")
@@ -1406,7 +1464,9 @@ describe("aiSessionSummaryQuery", () => {
 	it("guards every usage sum against a non-finite attribute", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 		for (const alias of ["inputTokens", "llmInputTokens", "cost", "llmCost"]) {
-			expect(sql, alias).toMatch(new RegExp(`ifNotFinite\\(sum(If)?\\(toFloat64OrZero\\([^\\n]*, 0\\) AS ${alias},`))
+			expect(sql, alias).toMatch(
+				new RegExp(`ifNotFinite\\(sum(If)?\\(toFloat64OrZero\\([^\\n]*, 0\\) AS ${alias},`),
+			)
 		}
 	})
 
@@ -1455,6 +1515,12 @@ describe("aiSessionSummaryQuery", () => {
 			},
 		])
 
-		expect(row).toMatchObject({ spanCount: 12, durationMs: 1000, inputTokens: 300, cost: 0.0123, models: ["gpt-5"] })
+		expect(row).toMatchObject({
+			spanCount: 12,
+			durationMs: 1000,
+			inputTokens: 300,
+			cost: 0.0123,
+			models: ["gpt-5"],
+		})
 	})
 })

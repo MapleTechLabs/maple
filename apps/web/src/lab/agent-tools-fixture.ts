@@ -194,9 +194,7 @@ export function buildToolCells(nowMs: number): ReadonlyArray<ToolFixtureCell> {
 			// `run_tests` regresses through the back half of the window. It is the
 			// one thing this page exists to make visible, so the fixture has one.
 			const regression =
-				profile.name === "run_tests" && index > BUCKETS * 0.6
-					? 1 + (index - BUCKETS * 0.6) / 14
-					: 1
+				profile.name === "run_tests" && index > BUCKETS * 0.6 ? 1 + (index - BUCKETS * 0.6) / 14 : 1
 
 			profile.models.forEach((model, modelIndex) => {
 				const share = 1 / profile.models.length
@@ -411,10 +409,7 @@ export function buildToolAnalyticsFixture(
 		p95: totals.p95 * 0.7,
 	}
 
-	const lastSeenBy = (
-		keyOf: (cell: ToolFixtureCell) => string,
-		pick: (a: number, b: number) => number,
-	) => {
+	const lastSeenBy = (keyOf: (cell: ToolFixtureCell) => string, pick: (a: number, b: number) => number) => {
 		const out = new Map<string, number>()
 		for (const cell of filtered) {
 			const key = keyOf(cell)
@@ -518,9 +513,9 @@ interface ErrorGroupSpec {
 const envelope = (text: string) => JSON.stringify({ result: text })
 
 const FINDINGS_CLAIM =
-	"Confirmed: the incident's failure is a disk-capacity exhaustion — the embedded chDB store on the local filesystem hit its \"no space left on device\" ceiling, and at least one trace ingest (POST /v1/traces) was rejected with HTTP 500 as a result."
+	'Confirmed: the incident\'s failure is a disk-capacity exhaustion — the embedded chDB store on the local filesystem hit its "no space left on device" ceiling, and at least one trace ingest (POST /v1/traces) was rejected with HTTP 500 as a result.'
 const LOG_PATTERN =
-	"chDB insert (traces): Code: 1001. DB::Exception: filesystem error: in create_directories: No space left on device [\"/var/lib/maple/store/traces\"]"
+	'chDB insert (traces): Code: 1001. DB::Exception: filesystem error: in create_directories: No space left on device ["/var/lib/maple/store/traces"]'
 
 const evidenceItem = (index: number, omit?: "traceIds" | "logPatterns") => ({
 	...(omit !== "logPatterns" && { logPatterns: [LOG_PATTERN] }),
@@ -596,7 +591,10 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				callsSince: 402,
 				arguments: (index) =>
 					candidate({
-						evidence: index % 3 === 2 ? [evidenceItem(0), evidenceItem(1, "logPatterns")] : [evidenceItem(0, "logPatterns"), evidenceItem(1)],
+						evidence:
+							index % 3 === 2
+								? [evidenceItem(0), evidenceItem(1, "logPatterns")]
+								: [evidenceItem(0, "logPatterns"), evidenceItem(1)],
 					}),
 			},
 			{
@@ -613,7 +611,12 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				callsSince: 284,
 				arguments: (index) =>
 					candidate({
-						evidence: [0, 1, 2].map((item) => evidenceItem(item, item === variantIndex(index, [4, 3, 2]) ? "traceIds" : undefined)),
+						evidence: [0, 1, 2].map((item) =>
+							evidenceItem(
+								item,
+								item === variantIndex(index, [4, 3, 2]) ? "traceIds" : undefined,
+							),
+						),
 					}),
 			},
 			{
@@ -623,7 +626,12 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				sessions: 6,
 				perDay: [1, 2, 2, 1, 0, 0, 0, 0],
 				callsSince: 300,
-				arguments: () => JSON.stringify({ claim: FINDINGS_CLAIM, confidence: "medium", evidence: [evidenceItem(0)] }),
+				arguments: () =>
+					JSON.stringify({
+						claim: FINDINGS_CLAIM,
+						confidence: "medium",
+						evidence: [evidenceItem(0)],
+					}),
 			},
 			{
 				message: expectedAt("array", '["suggestedActions"]'),
@@ -829,7 +837,10 @@ const fingerprintOf = (message: string, index: number) =>
 	message === ""
 		? "0"
 		: String(
-				[...message].reduce((hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n, BigInt(index + 7)),
+				[...message].reduce(
+					(hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n,
+					BigInt(index + 7),
+				),
 			)
 
 const dayStart = (ms: number) => Math.floor(ms / DAY) * DAY
@@ -838,7 +849,10 @@ const dayStart = (ms: number) => Math.floor(ms / DAY) * DAY
 export function buildToolErrorsFixture(tool: string, nowMs: number): ReadonlyArray<ToolErrorRow> {
 	const today = dayStart(nowMs)
 	return (ERROR_GROUPS.get(tool) ?? []).map((spec, index) => {
-		const days = spec.perDay.map((calls, day) => ({ bucket: today - (spec.perDay.length - 1 - day) * DAY, calls }))
+		const days = spec.perDay.map((calls, day) => ({
+			bucket: today - (spec.perDay.length - 1 - day) * DAY,
+			calls,
+		}))
 		const active = days.filter((day) => day.calls > 0)
 		const lastDay = active[active.length - 1]?.bucket ?? today
 		return {
@@ -850,7 +864,10 @@ export function buildToolErrorsFixture(tool: string, nowMs: number): ReadonlyArr
 			variants: spec.variants?.length ?? 1,
 			firstSeen: (active[0]?.bucket ?? today) + 9 * 3_600_000 + index * 60_000,
 			// The newest day at 23:48, or the morning for a group still failing today.
-			lastSeen: Math.min(lastDay + 23 * 3_600_000 + 48 * 60_000 - index * 67_000, nowMs - 22 * 3_600_000 - index * 60_000),
+			lastSeen: Math.min(
+				lastDay + 23 * 3_600_000 + 48 * 60_000 - index * 67_000,
+				nowMs - 22 * 3_600_000 - index * 60_000,
+			),
 			callsSince: spec.callsSince,
 			trend: days.filter((day) => day.calls > 0),
 		}
@@ -872,9 +889,16 @@ export function buildToolErrorDetailFixture(
 	tool: string,
 	row: ToolErrorRow,
 	options: { readonly session?: string; readonly variant?: string; readonly pages: number },
-): { readonly detail: ToolErrorDetailData; readonly occurrences: ReadonlyArray<ToolErrorOccurrenceRow>; readonly hasMore: boolean } {
-	const spec = (ERROR_GROUPS.get(tool) ?? []).find((candidate, index) => fingerprintOf(candidate.message, index) === row.fingerprint)
-	if (spec === undefined) return { detail: { sessions: [], variants: [], breakdown: [] }, occurrences: [], hasMore: false }
+): {
+	readonly detail: ToolErrorDetailData
+	readonly occurrences: ReadonlyArray<ToolErrorOccurrenceRow>
+	readonly hasMore: boolean
+} {
+	const spec = (ERROR_GROUPS.get(tool) ?? []).find(
+		(candidate, index) => fingerprintOf(candidate.message, index) === row.fingerprint,
+	)
+	if (spec === undefined)
+		return { detail: { sessions: [], variants: [], breakdown: [] }, occurrences: [], hasMore: false }
 	const variants = spec.variants ?? [{ message: spec.message, calls: spec.calls }]
 	const where = spec.where ?? [["z-ai/glm-5.3-flash:nitro", "maple-investigations", 1] as const]
 	const sessionIds = SAMPLE_SESSION_IDS.slice(0, Math.min(SAMPLE_SESSION_IDS.length, spec.sessions))
@@ -889,7 +913,13 @@ export function buildToolErrorDetailFixture(
 	}))
 
 	const all: ReadonlyArray<ToolErrorOccurrenceRow> = Array.from({ length: spec.calls }, (_, index) => {
-		const variant = variants[variantIndex(index, variants.map((candidate) => candidate.calls))]!
+		const variant =
+			variants[
+				variantIndex(
+					index,
+					variants.map((candidate) => candidate.calls),
+				)
+			]!
 		const [model, service] = where[index % where.length]!
 		const args = spec.arguments(index)
 		const result = spec.message.startsWith("{") ? variant.message : ""
@@ -920,8 +950,18 @@ export function buildToolErrorDetailFixture(
 	return {
 		detail: {
 			sessions,
-			variants: spec.variants === undefined ? [{ message: spec.message, calls: spec.calls, lastSeen: row.lastSeen }] : variants.map((candidate, index) => ({ ...candidate, lastSeen: row.lastSeen - index * 3_600_000 })),
-			breakdown: where.map(([model, service, share]) => ({ model, service, calls: Math.max(1, Math.round(spec.calls * share)) })),
+			variants:
+				spec.variants === undefined
+					? [{ message: spec.message, calls: spec.calls, lastSeen: row.lastSeen }]
+					: variants.map((candidate, index) => ({
+							...candidate,
+							lastSeen: row.lastSeen - index * 3_600_000,
+						})),
+			breakdown: where.map(([model, service, share]) => ({
+				model,
+				service,
+				calls: Math.max(1, Math.round(spec.calls * share)),
+			})),
 		},
 		occurrences: narrowed.slice(0, 25 * options.pages),
 		hasMore: narrowed.length > 25 * options.pages,
@@ -946,38 +986,37 @@ function detailSessions(
 				((seed.tools as ReadonlyArray<string>).includes(tool) &&
 					scoped.some((cell) => cell.service === seed.serviceName))) &&
 			(model === undefined || seed.model === model),
-	).map(
-		(seed, index) => {
-			const startedAt = nowMs - seed.minutesAgo * 60_000
-			const durationMs = seed.maxMs * 4 + 12_000
-			return {
-				sessionId: seed.sessionId,
-				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
-				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
-				traceCount: 1 + (index % 6),
-				spanCount: 22 + index * 97,
-				errorSpanCount: seed.errors,
-				toolErrorCount: seed.errors,
-				turnErrorCount: 0,
-				serviceNames: [seed.serviceName],
-				models: [seed.model],
-				agentNames: seed.agentName === "" ? [] : [seed.agentName],
-				firstAgentName: seed.agentName,
-				llmCalls: Math.round(seed.calls / 3),
-				toolCalls: seed.calls,
-				totalTokens: seed.calls * 900,
-				inputTokens: seed.calls * 600,
-				cacheReadTokens: seed.calls * 200,
-				cacheWriteTokens: 0,
-				outputTokens: seed.calls * 100,
-				reasoningTokens: 0,
-				cost: seed.calls * 0.004,
-				startTime: new Date(startedAt).toISOString().replace("T", " ").slice(0, 23),
-				endTime: new Date(startedAt + durationMs).toISOString().replace("T", " ").slice(0, 23),
-				durationMs,
-			}
-		},
-	)
+	).map((seed, index) => {
+		const startedAt = nowMs - seed.minutesAgo * 60_000
+		const durationMs = seed.maxMs * 4 + 12_000
+		return {
+			sessionId: seed.sessionId,
+			vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
+			vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
+			traceCount: 1 + (index % 6),
+			spanCount: 22 + index * 97,
+			errorSpanCount: seed.errors,
+			toolErrorCount: seed.errors,
+			turnErrorCount: 0,
+			failures: [],
+			serviceNames: [seed.serviceName],
+			models: [seed.model],
+			agentNames: seed.agentName === "" ? [] : [seed.agentName],
+			firstAgentName: seed.agentName,
+			llmCalls: Math.round(seed.calls / 3),
+			toolCalls: seed.calls,
+			totalTokens: seed.calls * 900,
+			inputTokens: seed.calls * 600,
+			cacheReadTokens: seed.calls * 200,
+			cacheWriteTokens: 0,
+			outputTokens: seed.calls * 100,
+			reasoningTokens: 0,
+			cost: seed.calls * 0.004,
+			startTime: new Date(startedAt).toISOString().replace("T", " ").slice(0, 23),
+			endTime: new Date(startedAt + durationMs).toISOString().replace("T", " ").slice(0, 23),
+			durationMs,
+		}
+	})
 }
 
 /** `/agent-sessions/tools/$toolName` over the same week the overview draws. */
@@ -994,18 +1033,16 @@ export function buildToolDetailFixture(
 			(search.service === undefined || cell.service === search.service) &&
 			(search.env === undefined || cell.env === search.env),
 	)
-	const series: ToolSeriesPoint[] = [
-		...rollup(scoped, (cell) => `${cell.bucket}`).entries(),
-	].map(([bucket, value]) => ({ bucket: Number(bucket), seriesKey: tool, ...value }))
+	const series: ToolSeriesPoint[] = [...rollup(scoped, (cell) => `${cell.bucket}`).entries()].map(
+		([bucket, value]) => ({ bucket: Number(bucket), seriesKey: tool, ...value }),
+	)
 	const totals: ToolTotals = rollup(scoped, () => "all").get("all") ?? EMPTY_MEASURES
 	const sessions = detailSessions(tool, nowMs, scoped, search.model)
 
 	return {
 		series,
 		totals,
-		scopeCalls: cells
-			.filter((cell) => cell.tool === tool)
-			.reduce((sum, cell) => sum + cell.calls, 0),
+		scopeCalls: cells.filter((cell) => cell.tool === tool).reduce((sum, cell) => sum + cell.calls, 0),
 		firstSeen: scoped.reduce((min, cell) => (min === 0 ? cell.bucket : Math.min(min, cell.bucket)), 0),
 		lastSeen: scoped.reduce((max, cell) => Math.max(max, cell.bucket), 0),
 		description: `Runs ${tool} in the agent's workspace and returns its output, truncated to the last 4,000 characters.`,

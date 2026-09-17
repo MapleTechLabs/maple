@@ -596,6 +596,7 @@
         "@effect-agent/sandbox": "0.1.0-beta.85",
         "@maple-dev/effect-clickhouse": "0.1.0",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
+        "@maple/agent-sessions": "workspace:*",
         "@maple/alerting-core": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",
