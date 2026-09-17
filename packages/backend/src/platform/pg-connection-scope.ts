@@ -192,7 +192,21 @@ export const makePgConnectionScope = (
 				return trackOutboundSlot(
 					executeWithSpan((hooks) => {
 						hooks.record({ "db.connect.reused": reused })
-						return Effect.flatMap(open, fn)
+						// A close can land while this call waits for a slot or the gate;
+						// label that refusal the same as the synchronous one above.
+						const opened = open.pipe(
+							Effect.tapError(() =>
+								Effect.sync(() => {
+									if (state._tag === "Closed") {
+										hooks.record({
+											"db.connect.scope_state": "closed",
+											"error.type": "SCOPE_CLOSED",
+										})
+									}
+								}),
+							),
+						)
+						return Effect.flatMap(opened, fn)
 					}, extraAttributes),
 				)
 			}),

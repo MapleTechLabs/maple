@@ -65,8 +65,9 @@ export const isRetryablePostgresContention = (error: DatabaseError): boolean => 
 /**
  * Socket-level codes for failures to establish or keep a connection, as
  * opposed to failures of a statement. node-postgres surfaces the socket's own
- * code; a dial that hit `connectionTimeoutMillis` carries no code and is
- * recognised by its `ConnectionError` reason instead.
+ * code; a dial that hit `connectionTimeoutMillis` or a dropped socket carries
+ * none, and `@effect/sql-pg` only tags SQLSTATE `08*` as `ConnectionError`, so
+ * those are recognised by node-postgres's own message instead.
  */
 const CONNECTION_ERROR_CODES: ReadonlySet<string> = new Set([
 	"CONNECT_TIMEOUT",
@@ -84,6 +85,22 @@ const CONNECTION_ERROR_CODES: ReadonlySet<string> = new Set([
 
 /** SQLSTATE: five alphanumerics, e.g. `23505`, `40001`, `57014`. */
 const SQLSTATE = /^[0-9A-Z]{5}$/
+
+/** node-postgres / pg-pool messages for code-less connection failures. */
+const CODELESS_CONNECTION_MESSAGE = /Connection terminated|timeout exceeded when trying to connect/
+
+/** A connection-class driver failure: tagged `ConnectionError`, or code-less with a connection message. */
+const isConnectionReason = (cause: unknown): boolean => {
+	const reason = driverReason(cause)
+	if (reason === undefined) return false
+	if (reason._tag === "ConnectionError") return true
+	const root = driverRootError(cause)
+	return (
+		root?.code === undefined &&
+		root?.message !== undefined &&
+		CODELESS_CONNECTION_MESSAGE.test(root.message)
+	)
+}
 
 const nestedCause = (cause: unknown): unknown =>
 	cause instanceof Error && cause.cause !== undefined ? cause.cause : undefined
@@ -103,6 +120,7 @@ const errorCode = (error: DatabaseError): string | undefined =>
 export const postgresErrorType = (error: DatabaseError): string | undefined => {
 	const code = errorCode(error)
 	if (code !== undefined) return code
+	if (isConnectionReason(error.cause)) return "ConnectionError"
 	const reason = driverReason(error.cause)
 	if (reason !== undefined) return reason._tag
 	if (error.cause instanceof Error && error.cause.name !== "Error") return error.cause.name
@@ -123,7 +141,7 @@ export const postgresSqlState = (error: DatabaseError): string | undefined => {
  * a single database-error rate hides both signals.
  */
 export const isPostgresConnectionError = (error: DatabaseError): boolean => {
-	if (driverReason(error.cause)?._tag === "ConnectionError") return true
+	if (isConnectionReason(error.cause)) return true
 	const code = errorCode(error)
 	return code !== undefined && CONNECTION_ERROR_CODES.has(code)
 }

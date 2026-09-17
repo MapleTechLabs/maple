@@ -1,6 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { createMaplePgPool, type MapleDb, type MaplePgPool, type MaplePgPoolOptions } from "@maple/db/client"
-import { Effect, Exit, Fiber, Option, Schema, Tracer } from "effect"
+import { sql } from "drizzle-orm"
+import { Effect, Exit, Fiber, Option, References, Schema, Tracer } from "effect"
+import { createServer, type Socket } from "node:net"
 import { MapleDbConnection } from "./bindings"
 import {
 	executeOnFreshPgClient,
@@ -323,6 +325,116 @@ describe("PgConnectionScope", () => {
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(rec.creations(), 1)
 			assert.strictEqual(rec.ends(), 1)
+		}),
+	)
+
+	it.live("labels a call refused by a close that landed while it waited for the gate", () =>
+		Effect.gen(function* () {
+			// The window: `run` passes its synchronous Closed check while the scope is
+			// Cold, yields before taking the gate, and `close` gets there first. A
+			// small scheduler op budget forces that interleaving deterministically;
+			// the sweep keeps the test independent of how many ops each step costs.
+			// It starts at 3: at 1 or 2 even a bare `Effect.forEach` never completes.
+			let raced = 0
+			for (let budget = 3; budget <= 48; budget++) {
+				const { spans, tracer } = makeRecordingTracer()
+				const scope = makePgConnectionScope("postgres://unused", undefined, {
+					openPool: recorder().openPool,
+				})
+				const running = yield* Effect.forkChild(
+					scope
+						.run(noop)
+						.pipe(
+							Effect.withTracer(tracer),
+							Effect.provideService(References.MaxOpsBeforeYield, budget),
+						),
+				)
+				const closing = yield* Effect.forkChild(scope.close)
+				const exit = yield* Fiber.await(running)
+				yield* Fiber.join(closing)
+
+				const [span] = dbSpans(spans)
+				// `db.connect.reused` is recorded only past the synchronous check.
+				if (!Exit.isFailure(exit) || span?.attributes.get("db.connect.reused") === undefined) continue
+				raced += 1
+				assert.strictEqual(span.attributes.get("error.type"), "SCOPE_CLOSED", `budget ${budget}`)
+				assert.strictEqual(
+					span.attributes.get("db.connect.scope_state"),
+					"closed",
+					`budget ${budget}`,
+				)
+			}
+			assert.isAbove(raced, 0, "no op budget reproduced the close-while-waiting interleaving")
+		}),
+	)
+})
+
+/**
+ * A local TCP server standing in for a Hyperdrive origin that misbehaves:
+ * `stall` accepts and never answers the startup message, `hangup` accepts and
+ * drops the socket. node-postgres reports both with no `code`, which is the
+ * shape `@effect/sql-pg` classifies as `UnknownError`.
+ */
+const misbehavingServer = (behaviour: "stall" | "hangup") =>
+	Effect.acquireRelease(
+		Effect.callback<{ readonly url: string; readonly close: () => void }>((resume) => {
+			const sockets = new Set<Socket>()
+			const server = createServer((socket) => {
+				sockets.add(socket)
+				if (behaviour === "hangup") socket.once("data", () => socket.destroy())
+			})
+			server.listen(0, "127.0.0.1", () => {
+				const address = server.address()
+				const port = typeof address === "object" && address !== null ? address.port : 0
+				resume(
+					Effect.succeed({
+						url: `postgres://maple:maple@127.0.0.1:${port}/maple`,
+						close: () => {
+							for (const socket of sockets) socket.destroy()
+							server.close()
+						},
+					}),
+				)
+			})
+		}),
+		(server) => Effect.sync(server.close),
+	)
+
+const failedDbSpan = (behaviour: "stall" | "hangup") =>
+	Effect.gen(function* () {
+		const server = yield* misbehavingServer(behaviour)
+		const { spans, tracer } = makeRecordingTracer()
+		const scope = makePgConnectionScope(server.url, undefined, {
+			// The production factory, with the dial bound shortened for the test.
+			openPool: (options) => createMaplePgPool(server.url, { ...options, connectTimeoutSeconds: 0.3 }),
+		})
+		const exit = yield* Effect.exit(
+			withPgConnectionScopeOf(
+				scope,
+				scope.run((db) => db.execute(sql`select 1`)).pipe(Effect.withTracer(tracer)),
+			),
+		)
+		assert.isTrue(Exit.isFailure(exit))
+		const [span] = dbSpans(spans)
+		assert.isDefined(span)
+		return span
+	}).pipe(Effect.scoped)
+
+describe("connection failures through the real driver", () => {
+	it.live("classifies a dial that hits the connect timeout as a connection failure", () =>
+		Effect.gen(function* () {
+			const span = yield* failedDbSpan("stall")
+			assert.strictEqual(span.attributes.get("error.type"), "ConnectionError")
+			assert.strictEqual(span.attributes.get("db.connect.failed"), true)
+			assert.isUndefined(span.attributes.get("db.response.status_code"))
+		}),
+	)
+
+	it.live("classifies a socket the server drops as a connection failure", () =>
+		Effect.gen(function* () {
+			const span = yield* failedDbSpan("hangup")
+			assert.strictEqual(span.attributes.get("error.type"), "ConnectionError")
+			assert.strictEqual(span.attributes.get("db.connect.failed"), true)
 		}),
 	)
 })

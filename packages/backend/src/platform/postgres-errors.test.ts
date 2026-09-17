@@ -7,6 +7,7 @@ import {
 	SqlError,
 	SqlSyntaxError,
 	UniqueViolation,
+	UnknownError,
 } from "effect/unstable/sql/SqlError"
 import { DatabaseError, toDatabaseError } from "./DatabaseLive"
 import {
@@ -42,19 +43,69 @@ describe("postgresErrorType", () => {
 		assert.strictEqual(error.message, "connect ECONNREFUSED 10.0.0.1:5432")
 	})
 
-	it("falls back to the reason's class for a dial that timed out without a code", () => {
-		// node-postgres reports `connectionTimeoutMillis` as a bare Error.
-		const error = toDatabaseError(
-			new SqlError({
-				reason: new ConnectionError({
-					cause: new Error("timeout exceeded when trying to connect"),
-					message: "Connection error",
-					operation: "acquireConnection",
+	it("classifies node-postgres's code-less connection failures as connection errors", () => {
+		// `@effect/sql-pg` only tags SQLSTATE 08* as `ConnectionError`; these carry
+		// no code at all, so they arrive as `UnknownError`.
+		for (const message of [
+			"Connection terminated due to connection timeout",
+			"timeout exceeded when trying to connect",
+			"Connection terminated unexpectedly",
+		]) {
+			const error = toDatabaseError(
+				new SqlError({
+					reason: new UnknownError({
+						cause: new Error(message),
+						message: "Failed to acquire connection",
+						operation: "acquireConnection",
+					}),
 				}),
-			}),
+			)
+			assert.strictEqual(postgresErrorType(error), "ConnectionError", message)
+			assert.isTrue(isPostgresConnectionError(error), message)
+			assert.isUndefined(postgresSqlState(error), message)
+		}
+	})
+
+	it("classifies a statement cut off by a dropped connection as a connection error", () => {
+		const error = toDatabaseError(
+			queryFailure(
+				'select "id" from "actors"',
+				new UnknownError({
+					cause: new Error("Connection terminated unexpectedly"),
+					message: "Failed to execute statement",
+					operation: "execute",
+				}),
+			),
 		)
 		assert.strictEqual(postgresErrorType(error), "ConnectionError")
 		assert.isTrue(isPostgresConnectionError(error))
+	})
+
+	it("keeps the driver's own ConnectionError classification", () => {
+		const error = toDatabaseError(
+			new SqlError({
+				reason: new ConnectionError({
+					cause: pgError("08006", "connection failure"),
+					message: "Connection error",
+					operation: "execute",
+				}),
+			}),
+		)
+		assert.isTrue(isPostgresConnectionError(error))
+	})
+
+	it("leaves other code-less driver failures unclassified as connection errors", () => {
+		const error = toDatabaseError(
+			new SqlError({
+				reason: new UnknownError({
+					cause: new Error("Client has already been connected. You cannot reuse a client."),
+					message: "Failed to execute statement",
+					operation: "execute",
+				}),
+			}),
+		)
+		assert.strictEqual(postgresErrorType(error), "UnknownError")
+		assert.isFalse(isPostgresConnectionError(error))
 	})
 
 	it("reports SQLSTATE for a statement failure, root cause first", () => {
