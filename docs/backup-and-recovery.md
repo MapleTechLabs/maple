@@ -69,10 +69,12 @@ login` session. Takes 10–20 minutes, most of it PlanetScale provisioning the r
 - **Failure path without a restore:** `RESTORE_TEST_SOURCE_BRANCH=does-not-exist` fails at
   `branch show`, before anything is created.
 - **In CI:** the workflow only runs on its schedule or `gh workflow run backup-restore-test.yml`
-  (after merge — a PR's CI does not run it). The first dispatch validates the service token: it
-  needs `read_backups`, `restore_production_branch_backups` and branch create/delete on the
-  database; a token missing the restore permission fails at `branch create` with nothing to
-  clean up.
+  (after merge — a PR's CI does not run it). The first dispatch validates the service token. On
+  the database it needs `read_branch`, `create_branch`, `delete_branch`, `connect_branch` (the
+  ephemeral role), `read_backups` and `restore_production_branch_backup`; a token missing
+  `read_backups` fails at `backup list`, one missing the restore access fails at `branch create`
+  — in both cases before anything is created. Only the token's creator or an organization
+  administrator can change its accesses, and only to accesses they hold themselves.
 
 ### Schedule
 
