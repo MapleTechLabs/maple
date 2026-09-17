@@ -399,6 +399,186 @@ describe("buildSessionChecks", () => {
 		expect(byId(checks(firstTurn()), "prompt-cache").status).toBe("skipped")
 	})
 
+	// The one rule behind red and amber, pinned per kind: a class that needs a
+	// fix stays red when survived; everything else survived is amber.
+	it("keeps a survived context overflow red and a survived provider error amber", () => {
+		const survived = (spanId: string, statusMessage: string, errorType: string) => [
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 10 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			llmSpan({
+				spanId,
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + SECOND,
+				durationMs: SECOND,
+				model: "claude-opus-5",
+				statusCode: "Error",
+				statusMessage,
+				genAi: { conversationId: "t2", errorType, usageInputTokens: 5000, usageOutputTokens: 0 },
+			}),
+			llmSpan({
+				spanId: `${spanId}-again`,
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + 3 * SECOND,
+				durationMs: SECOND,
+				model: "claude-opus-5",
+				genAi: { conversationId: "t2", usageInputTokens: 1200, usageOutputTokens: 80 },
+			}),
+		]
+
+		const overflow = checks(survived("l-ctx", "prompt is too long", "context_length_exceeded"))
+		expect(overflow.verdict.status).toBe("attention")
+		expect(byId(overflow, "context-window").status).toBe("failed")
+		expect(byId(overflow, "context-window").headline).toMatch(/; the session carried on$/)
+		expect(overflow.headline).toBe("but 1 check failed")
+
+		const provider = checks(survived("l-prov", "upstream unavailable", "provider_error"))
+		expect(byId(provider, "provider").status).toBe("warning")
+		expect(byId(provider, "provider").headline).toBe(
+			"1 model call failed at the provider on turn 2; the session carried on",
+		)
+		expect(provider.headline).toBe("with 1 warning")
+	})
+
+	it("names the tool that killed the final turn, in the verdict and in its own row", () => {
+		const report = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 10 * SECOND,
+				statusCode: "Error",
+				statusMessage: "Agent run failed",
+				genAi: { conversationId: "t2" },
+			}),
+			toolSpan({
+				spanId: "t2-fetch",
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + SECOND,
+				durationMs: 8 * SECOND,
+				toolName: "fetch_docs",
+				statusCode: "Error",
+				statusMessage: "deadline exceeded after 8s",
+				genAi: { conversationId: "t2", errorType: "tool_error" },
+			}),
+		])
+
+		expect(report.verdict.status).toBe("failed")
+		expect(report.headline).toBe("the final turn died on `fetch_docs` timing out")
+		expect(report.checks[0].id).toBe("tool-timeouts")
+		expect(report.checks[0].headline).toBe(
+			"`fetch_docs` timed out once on turn 2 (final): deadline exceeded after 8s",
+		)
+		expect(report.checks[0].fixArea).toBe("tool")
+	})
+
+	it("names three findings and counts the rest", () => {
+		const failing = (name: string, index: number) =>
+			toolSpan({
+				spanId: `t-${name}`,
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + index * SECOND,
+				durationMs: SECOND,
+				toolName: name,
+				statusCode: "Error",
+				statusMessage: "boom",
+				genAi: { conversationId: "t2", errorType: "tool_error" },
+			})
+		const report = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 20 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			...["t_one", "t_two", "t_three", "t_four", "t_five"].map(failing),
+			llmSpan({
+				spanId: "l2",
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + 10 * SECOND,
+				durationMs: SECOND,
+				model: "claude-opus-5",
+				genAi: { conversationId: "t2" },
+			}),
+		])
+
+		expect(byId(report, "tool-errors").headline).toBe(
+			"5 tool calls failed: `t_one` (boom, turn 2), `t_two` (boom, turn 2), `t_three` (boom, turn 2), and 2 more; the session carried on",
+		)
+		expect(byId(report, "tool-errors").findings).toHaveLength(5)
+	})
+
+	// Key order is not a difference: the same call with its arguments spelled
+	// in another order is the same call.
+	it("reads arguments in any key order as the same call", () => {
+		const read = (spanId: string, startMs: number, args: Record<string, unknown>) =>
+			toolSpan({
+				spanId,
+				parentSpanId: "a2",
+				startMs,
+				durationMs: SECOND,
+				toolName: "read_file",
+				genAi: { conversationId: "t2", toolCallArguments: args },
+			})
+		const report = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 20 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			read("r1", 5 * MINUTE + SECOND, { path: "a.ts", start_line: 1 }),
+			read("r2", 5 * MINUTE + 3 * SECOND, { start_line: 1, path: "a.ts" }),
+			read("r3", 5 * MINUTE + 5 * SECOND, { path: "a.ts", start_line: 1 }),
+		])
+
+		expect(byId(report, "repetition").status).toBe("warning")
+		expect(byId(report, "repetition").headline).toMatch(/3 in a row with identical arguments/)
+	})
+
+	// A failure another check classified is not this row's to deny.
+	it("has tool errors defer to the check that named the failure", () => {
+		const report = checks([
+			...firstTurn(),
+			agentSpan({
+				spanId: "a2",
+				startMs: 5 * MINUTE,
+				durationMs: 10 * SECOND,
+				genAi: { conversationId: "t2" },
+			}),
+			toolSpan({
+				spanId: "t2-grep",
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + SECOND,
+				durationMs: SECOND,
+				toolName: "sandbox_grep",
+				statusCode: "Error",
+				statusMessage: "GitHub App not configured for this organisation",
+				genAi: { conversationId: "t2", errorType: "tool_error" },
+			}),
+			toolSpan({
+				spanId: "t2-read",
+				parentSpanId: "a2",
+				startMs: 5 * MINUTE + 3 * SECOND,
+				durationMs: SECOND,
+				toolName: "read_file",
+				genAi: { conversationId: "t2" },
+			}),
+		])
+
+		expect(byId(report, "tool-availability").status).toBe("failed")
+		expect(byId(report, "tool-errors").status).toBe("passed")
+		expect(byId(report, "tool-errors").headline).toBe(
+			"2 tool calls; the one that failed is named by the checks above",
+		)
+	})
+
 	it("reports what the instrumentation captured, so a skipped check can say what to turn on", () => {
 		const report = checks([
 			...firstTurn(),

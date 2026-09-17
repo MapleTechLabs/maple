@@ -246,7 +246,9 @@ function completionCheck(incomplete: readonly SessionFinding[]): SessionCheck[] 
 		check(
 			identity,
 			foundStatus(incomplete),
-			`A run ${unfinished.detail ?? "ended without calling its completion tool"} on ${where(unfinished)}${carriedOn(incomplete)}`,
+			// Ending without the completion tool is how the run ended; it did not
+			// carry on past it, so the survived clause would mislead here.
+			`A run ${unfinished.detail ?? "ended without calling its completion tool"} on ${where(unfinished)}`,
 			"Give the agent a stop condition, or a larger turn budget; it ended without its completion tool.",
 			incomplete,
 		),
@@ -473,7 +475,8 @@ function toolTimeoutCheck(findings: readonly SessionFinding[], summary: SessionS
 		foundStatus(findings),
 		clauses(
 			findings,
-			(finding) => `${toolName(finding)} timed out ${times(finding.count)} on ${where(finding)}`,
+			(finding) =>
+				`${toolName(finding)} timed out ${times(finding.count)} on ${where(finding)}${detailText(finding)}`,
 		) + carriedOn(findings),
 		"Raise the tool's timeout, or make the tool faster.",
 		findings,
@@ -632,7 +635,7 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 		return check(
 			identity,
 			"skipped",
-			`Only ${plural(calls.length, "model call")} after the first reported cache usage — too few to judge the prompt cache.`,
+			`Only ${plural(reporting.length, "model call")} reported cache usage; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
 		)
 	}
 	const rate =
