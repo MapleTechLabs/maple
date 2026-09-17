@@ -403,6 +403,7 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 					<span aria-hidden className={signal.on ? "text-severity-info" : ""}>
 						{signal.on ? "✓" : "✕"}
 					</span>
+					<span className="sr-only">{signal.on ? "captured:" : "not captured:"}</span>
 					{signal.label}
 				</span>
 			))}
