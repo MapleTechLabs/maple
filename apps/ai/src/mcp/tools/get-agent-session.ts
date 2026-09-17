@@ -97,9 +97,16 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						: []),
 					...truncationNote(loaded),
 					``,
+					// Headlines carry span-derived text (tool names, error types), so they
+					// go through `tableCell` like every other cell: one line, no forged
+					// heading from a newline in an attribute.
 					`### Verdict: ${Match.value(report.verdict.status).pipe(
-						Match.when("failed", () => `Failed — ${checks.headline}`),
-						Match.whenOr("attention", "clean", () => `Completed ${checks.headline}`),
+						Match.when("failed", () => `Failed — ${tableCell(checks.headline, 200)}`),
+						Match.whenOr(
+							"attention",
+							"clean",
+							() => `Completed ${tableCell(checks.headline, 200)}`,
+						),
 						Match.exhaustive,
 					)}${report.verdict.spanId !== undefined ? ` (span ${report.verdict.spanId})` : ""}`,
 				]
@@ -113,8 +120,8 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 				// on the span they say how often a read lands on a failing session.
 				yield* Effect.annotateCurrentSpan({
 					"maple.ai.session.verdict": report.verdict.status,
-					"checks.failed": counts.failed,
-					"checks.warning": counts.warning,
+					"maple.ai.checks.failed": counts.failed,
+					"maple.ai.checks.warning": counts.warning,
 				})
 				const attention = checks.checks.filter(
 					(check) => check.status === "failed" || check.status === "warning",
@@ -137,7 +144,9 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							]),
 					...checks.checks
 						.filter((check) => check.status === "passed" || check.status === "skipped")
-						.map((check) => `- ${check.name} (${check.status}): ${check.headline}`),
+						.map(
+							(check) => `- ${check.name} (${check.status}): ${tableCell(check.headline, 200)}`,
+						),
 				)
 
 				lines.push(
