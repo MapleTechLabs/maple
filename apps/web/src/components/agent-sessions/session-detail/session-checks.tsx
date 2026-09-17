@@ -6,24 +6,11 @@ import type {
 	SessionChecksReport,
 	SessionCoverage,
 	SessionFinding,
-	SessionFixArea,
 } from "@maple/agent-sessions"
 
 import { ArrowRightIcon, CheckIcon, ChevronRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
-
-import { Pill } from "./pill"
-
-/** The tag on a check that found something: what a fix would touch. */
-const FIX_AREA_LABEL = {
-	prompt: "Prompt",
-	tool: "Tool",
-	integration: "Integration",
-	model: "Model settings",
-	provider: "Provider",
-	instrumentation: "Instrumentation",
-} satisfies Record<SessionFixArea, string>
 
 /** One tone per status, for the dot beside a name and the text of a label. */
 const STATUS_DOT = {
@@ -173,14 +160,7 @@ function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: Op
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
 			<StatusDot status={check.status} />
-			<span className="flex min-w-0 flex-col gap-1">
-				<span className="truncate font-semibold text-[13px]">{check.name}</span>
-				{check.fixArea !== undefined && (
-					<span>
-						<Pill tone="outline">{FIX_AREA_LABEL[check.fixArea]}</Pill>
-					</span>
-				)}
-			</span>
+			<span className="truncate font-semibold text-[13px]">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
 				{check.action !== undefined && (

@@ -524,15 +524,26 @@ function toolErrorCheck(findings: readonly SessionFinding[], summary: SessionSum
 		)
 	}
 	const single = findings.length === 1 ? findings[0] : undefined
+	// One failure gets its line; several get the tools and where, and the
+	// evidence rows carry each one's line — a sentence nesting three error
+	// messages in parentheses was not readable.
+	const first = findings[0]
+	const sameTurn = findings.every((finding) => finding.turnText === first?.turnText)
 	const headline =
 		single !== undefined
 			? `${toolName(single)} failed ${times(single.count)} on ${where(single)}${detailText(single)}`
-			: `${plural(total(findings), "tool call")} failed: ${clauses(
-					findings,
-					(finding) =>
-						`${toolName(finding)} (${finding.detail ?? finding.label}, ${where(finding)})`,
-					", ",
-				)}`
+			: sameTurn && first !== undefined
+				? `${plural(total(findings), "tool call")} failed on ${where(first)}: ${clauses(
+						findings,
+						(finding) => `${toolName(finding)}${finding.count > 1 ? ` ×${finding.count}` : ""}`,
+						", ",
+					)}`
+				: `${plural(total(findings), "tool call")} failed: ${clauses(
+						findings,
+						(finding) =>
+							`${toolName(finding)}${finding.count > 1 ? ` ×${finding.count}` : ""} on ${where(finding)}`,
+						", ",
+					)}`
 	return check(
 		identity,
 		foundStatus(findings),
