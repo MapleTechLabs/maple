@@ -18,7 +18,7 @@ const GENERIC_TOOL_MESSAGE = /reached a failed terminal state|^tool (execution |
 const LEADING_PREFIXES = [
 	/^tool failed:\s*/i,
 	/^model response failed:\s*/i,
-	/^[\w.]+\.streamtext:\s*/i,
+	/^[a-z0-9_]+(?:\.[a-z0-9_]+)*\.streamtext:\s*/i,
 	/^invalid output:\s*/i,
 	/^invalid parameters:\s*/i,
 	/^schemaerror\(/i,
@@ -26,9 +26,12 @@ const LEADING_PREFIXES = [
 const ERROR_TAG = /^@[\w-]+\/[\w./-]+:\s*/
 const ERROR_ENVELOPE = /^\[error\]\s*/i
 
-/** A schema failure as effect's `Schema` spells it: `Missing key\n  at
- *  [2]["params"]["suggestedActions"]` or `Expected <filter>\n  at [...]`. */
-const SCHEMA_PATH = /^(missing key|expected\s+(.+?))\s+at\s+((?:\[[^\]]+\])+)/is
+/** The path a schema failure ends in, once its whitespace is collapsed:
+ *  ` at [2]["params"]["suggestedActions"]`. Each bracket group is consumed
+ *  whole, so the match is linear in the text. */
+const SCHEMA_PATH_MARKER = " at ["
+const SCHEMA_PATH = /^(?:\[[^\]]*\])+/
+const SCHEMA_PATH_KEY = /\["([^"]+)"\]/g
 
 /** The framework's word for a run that ended without its required completion
  *  tool: `Model stopped without required completion Tool submit_plan`. */
@@ -144,22 +147,40 @@ export function stripFailurePrefixes(text: string): string {
  * kept — the path's leading indices are the batch position, not the field.
  */
 export function describeSchemaFailure(text: string): string | undefined {
-	const match = SCHEMA_PATH.exec(stripFailurePrefixes(text))
-	const path = match?.[3]
-	if (match === null || path === undefined) return undefined
-	const keys = [...path.matchAll(/\["([^"]+)"\]/g)].flatMap((entry) =>
+	// Effect's `Schema` puts the path on its own line; one space between the
+	// words and the marker is all the parse below needs.
+	const message = stripFailurePrefixes(text).replace(/\s+/g, " ")
+	const lower = message.toLowerCase()
+	const kind = lower.startsWith("missing key")
+		? "missing"
+		: lower.startsWith("expected ")
+			? "expected"
+			: undefined
+	if (kind === undefined) return undefined
+	const marker = message.indexOf(SCHEMA_PATH_MARKER)
+	if (marker === -1) return undefined
+	const path = SCHEMA_PATH.exec(message.slice(marker + SCHEMA_PATH_MARKER.length - 1))?.[0]
+	if (path === undefined) return undefined
+	const keys = [...path.matchAll(SCHEMA_PATH_KEY)].flatMap((entry) =>
 		entry[1] === undefined ? [] : [entry[1]],
 	)
 	const field = keys[keys.length - 1]
 	if (field === undefined) return undefined
-	const expected = match[2]
-	return expected === undefined ? `missing key \`${field}\`` : `\`${field}\`: expected ${expected.trim()}`
+	if (kind === "missing") {
+		return message.slice(0, marker).trim().toLowerCase() === "missing key"
+			? `missing key \`${field}\``
+			: undefined
+	}
+	const expected = message.slice("expected ".length, marker).trim()
+	return expected === "" ? undefined : `\`${field}\`: expected ${expected}`
 }
 
 /** The completion tool a run ended without calling, when the message says. */
 export function incompleteRunTool(text: string): string | undefined {
-	const tool = INCOMPLETE.exec(text)?.[1]
-	return tool === undefined ? undefined : tool.replace(/[.,;]+$/, "")
+	let tool = INCOMPLETE.exec(text)?.[1]
+	if (tool === undefined) return undefined
+	while (tool.endsWith(".") || tool.endsWith(",") || tool.endsWith(";")) tool = tool.slice(0, -1)
+	return tool === "" ? undefined : tool
 }
 
 /** The tool a parameter schema error names, when the message says. */
