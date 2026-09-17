@@ -455,7 +455,15 @@ describe("SessionOverview", () => {
 		expect(errors.getByText("Tool errors")).toBeTruthy()
 		// The tool name is set as code, so the sentence's own text starts after it.
 		expect(errors.getByText(/^1 tool call failed; the session carried on$/)).toBeTruthy()
-		expect(errors.getByText(/^Check the Tools section/)).toBeTruthy()
+		const scrollIntoView = vi.fn()
+		const original = Element.prototype.scrollIntoView
+		Element.prototype.scrollIntoView = scrollIntoView
+		try {
+			fireEvent.click(errors.getByRole("button", { name: /^Check the Tools section/ }))
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" })
+		} finally {
+			Element.prototype.scrollIntoView = original
+		}
 		fireEvent.click(screen.getByText("error · run_tests"))
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})

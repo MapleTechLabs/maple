@@ -48,7 +48,16 @@ type OpenSpan = (spanId: string) => void
  * one row away, expanded for a clean session so it still reads as inspected;
  * a check the instrumentation could not support says what to capture.
  */
-export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSpan: OpenSpan }) {
+export function SessionChecks({
+	report,
+	onOpenSpan,
+	onOpenTools,
+}: {
+	report: SessionChecksReport
+	onOpenSpan: OpenSpan
+	/** Bring the Overview's tool ledger into view: the tool-errors check's next step. */
+	onOpenTools: () => void
+}) {
 	const attention = report.checks.filter((check) => check.status === "failed" || check.status === "warning")
 	const passed = report.checks.filter((check) => check.status === "passed")
 	const skipped = report.checks.filter((check) => check.status === "skipped")
@@ -72,7 +81,12 @@ export function SessionChecks({ report, onOpenSpan }: { report: SessionChecksRep
 				) : (
 					<div className="flex flex-col divide-y divide-border border-border border-y">
 						{attention.map((check) => (
-							<CheckBlock key={check.id} check={check} onOpenSpan={onOpenSpan} />
+							<CheckBlock
+								key={check.id}
+								check={check}
+								onOpenSpan={onOpenSpan}
+								onOpenTools={onOpenTools}
+							/>
 						))}
 					</div>
 				)}
@@ -159,23 +173,44 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 /** The page has a section the MCP does not: the tool ledger at the bottom,
  *  with every call's arguments and result. For tool failures that is the
  *  next step, so the page's action points there instead of the engine's. */
-function CheckBlock({ check, onOpenSpan }: { check: SessionCheck; onOpenSpan: OpenSpan }) {
-	const action =
-		check.id === "tool-errors"
-			? "Check the Tools section at the bottom of this page for details."
-			: check.action
+function CheckBlock({
+	check,
+	onOpenSpan,
+	onOpenTools,
+}: {
+	check: SessionCheck
+	onOpenSpan: OpenSpan
+	onOpenTools: () => void
+}) {
+	// The page has a section the MCP does not — the tool ledger at the bottom,
+	// with every call's arguments and result — so for tool failures the page's
+	// next step is a jump there rather than the engine's line.
+	const toolsAction = check.id === "tool-errors"
+	const action = toolsAction ? "Check the Tools section at the bottom of this page for details." : check.action
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
 			<StatusDot status={check.status} />
 			<span className="truncate font-semibold text-[13px]">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
-				{action !== undefined && (
-					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
-						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
-						<span>{withCode(action)}</span>
-					</p>
-				)}
+				{action !== undefined &&
+					(toolsAction ? (
+						<button
+							type="button"
+							onClick={onOpenTools}
+							className="flex items-start gap-1.5 self-start text-left text-muted-foreground text-xs leading-relaxed hover:text-foreground"
+						>
+							<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
+							<span className="underline decoration-muted-foreground/40 underline-offset-2">
+								{action}
+							</span>
+						</button>
+					) : (
+						<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
+							<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
+							<span>{withCode(action)}</span>
+						</p>
+					))}
 				{check.findings.length > 0 && (
 					<div className="-ml-1.5 mt-0.5 flex flex-col">
 						{check.findings.map((finding) => (
