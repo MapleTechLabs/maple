@@ -28,9 +28,9 @@
     "apps/ai": {
       "name": "@maple/ai",
       "dependencies": {
-        "@effect-agent/core": "0.1.0-beta.74",
-        "@effect-agent/engine": "0.1.0-beta.74",
-        "@effect-agent/sandbox": "0.1.0-beta.74",
+        "@effect-agent/core": "0.1.0-beta.85",
+        "@effect-agent/engine": "0.1.0-beta.85",
+        "@effect-agent/sandbox": "0.1.0-beta.85",
         "@effect/ai-openai-compat": "catalog:effect",
         "@effect/ai-openrouter": "catalog:effect",
         "@maple-dev/effect-sdk": "workspace:*",
@@ -577,7 +577,7 @@
         "@clerk/backend": "^3.16.12",
         "@distilled.cloud/cloudflare": "1.0.0-rc.9",
         "@distilled.cloud/core": "1.0.0-rc.9",
-        "@effect-agent/sandbox": "0.1.0-beta.74",
+        "@effect-agent/sandbox": "0.1.0-beta.85",
         "@maple-dev/effect-clickhouse": "0.1.0",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple/auth": "workspace:*",
@@ -1172,11 +1172,11 @@
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 
-    "@effect-agent/core": ["@effect-agent/core@0.1.0-beta.74", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-jxgJDhY3jbt5uIvQGJjfqMkiZM3cUchIBsseaMoQYKQz11z5gsUtMaHymOtsZjGUqsMncWfoDufhkwqb7rjOAg=="],
+    "@effect-agent/core": ["@effect-agent/core@0.1.0-beta.85", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-EeqnGmz3C5YAh9dOvcdH5HwoMjRSGCrv5Y+4VNRGKpwXLzXkkO3Ln/HW7Fuv/MtevtKUKe8CbdNG8zQspho+/w=="],
 
-    "@effect-agent/engine": ["@effect-agent/engine@0.1.0-beta.74", "", { "dependencies": { "@effect-agent/core": "0.1.0-beta.74" }, "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-JzsHEnws7KZjB8OP0HD8DVB6Dga6g2PoyTai1YAVak8evzVAuPRIPB+MI+g4iCw2o+FK+/8zc8seTv6nHib4CA=="],
+    "@effect-agent/engine": ["@effect-agent/engine@0.1.0-beta.85", "", { "dependencies": { "@effect-agent/core": "0.1.0-beta.85" }, "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-39oPggBylNdxSktpOljNOC+4c4IP08PMomcPsCUoQv5/hu7OTfQm6crMoNHywgCb5vDdUfLgiLpA4wne2nNmkQ=="],
 
-    "@effect-agent/sandbox": ["@effect-agent/sandbox@0.1.0-beta.74", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-/jRSO2JPwWLb5qpWhqqgaNpi+lWZaNaO4EcvOLKdlA5x6mzTkPOtRhoyqUadh/ef+PX1pljDiH8rGO3M2nPJHQ=="],
+    "@effect-agent/sandbox": ["@effect-agent/sandbox@0.1.0-beta.85", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-dozKZLVeQONI9nVndM6H83TwRGpJwnlqvG50WmCEoD7mdsrGgtBHBGW+NgipAhfZYTVgkfdrC/BhuzuMXrRRew=="],
 
     "@effect-router/core": ["@effect-router/core@workspace:lib/effect-router"],
 
