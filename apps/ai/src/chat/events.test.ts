@@ -190,6 +190,7 @@ describe("toChatEvents", () => {
 			"CompactionPerformed",
 			"RunSuspended",
 			"ApprovalRequested",
+			"AgentUpdateEmitted",
 			// `Requested` precedes the delegation call that opens the card; `Joined` follows the
 			// result that closes it. Either would duplicate an event already sent.
 			"SubagentRequested",
