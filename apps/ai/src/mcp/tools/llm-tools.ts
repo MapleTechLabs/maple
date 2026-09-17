@@ -82,12 +82,11 @@ export interface BuildMapleToolsOptions {
 }
 
 /**
- * A tool call the run must stop on: an approval-gated mutation the model proposed.
+ * A tool's failure as the model sees it: one line of text, never a cause.
  *
- * The engine ends the run on a declared failure (that is how a proposal becomes the turn's last
- * word and reaches the approval card), so this is NOT how an ordinary tool error is reported.
- * Those are handed back as the call's text — see `dispatch` below — so the model can route
- * around them; every one of them used to end the whole pass.
+ * Where it goes depends on the tool's `failureMode` (see `buildMapleToolkit`): an ordinary tool
+ * returns it to the model, which rewrites the call; a gated tool propagates it and ends the run,
+ * which is how a proposal becomes the turn's last word and reaches the approval card.
  */
 export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 	"@maple/api/mcp/MapleToolFailure",
@@ -105,7 +104,7 @@ const fail = (message: string) => Effect.fail(new MapleToolFailure({ message }))
  * it already has, and left alone it will spend every turn it owns doing that.
  *
  * It refuses rather than denying authorization, because the two end differently: a refusal is a
- * declared tool failure the model can read and route around, and a third consecutive one trips the
+ * returned tool failure the model can read and route around, and enough consecutive ones trip the
  * policy's own `repeatedFailureLimit`, which stops the run. A host authorization denial ends the
  * run outright, and a user watching a chat turn would see an error instead of an answer.
  */
@@ -148,6 +147,8 @@ export const buildMapleToolkit = (
 			parameters: toInputSchema(definition.schema),
 			success: Schema.String,
 			failure: MapleToolFailure,
+			// A proposal must end the run; any other failure goes back to the model as the call's result.
+			failureMode: gated ? "error" : "return",
 		})
 	})
 	const toolkit = Toolkit.make(...tools)
@@ -157,20 +158,21 @@ export const buildMapleToolkit = (
 	const handlers = Object.fromEntries(
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
-			// A tool that fails — a rejected query, an unknown tool, a tenant error — answers with its
-			// message as an ordinary result. A declared failure ends the run, which is right for a
-			// proposal and wrong for a bad SQL statement the model can simply rewrite.
 			const dispatch = (params: unknown) =>
 				executor.execute(tenant, definition.name, params, options.surface ?? "chat").pipe(
-					Effect.map((result) => toolResultText(result)),
-					Effect.catchCause((cause) =>
-						Effect.succeed(`Tool failed: ${summarizeToolFailure(cause)}`),
+					// A tool that dies (unknown tool, tenant error) fails like one that reported an error.
+					// Caught before the `flatMap`, so a reported error is not wrapped a second time.
+					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
+					Effect.flatMap((result) =>
+						result.isError
+							? fail(toolResultText(result))
+							: Effect.succeed(toolResultText(result)),
 					),
 				)
 			const handle = (params: unknown) => {
 				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
 				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
-					return Effect.succeed(
+					return fail(
 						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
 							"exact arguments in this turn. Read the result you already have, or call it differently.",
 					)

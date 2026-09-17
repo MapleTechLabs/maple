@@ -31,15 +31,16 @@ export const TOOL_CONCURRENCY = 4
 /**
  * Consecutive tool-call *failures* that mean the model is stuck rather than working.
  *
- * Three, because two is a plausible retry — a model reissuing a call after a transient tool failure
- * is behaving correctly — and the third consecutive failure says nothing in the results is being
- * read. It becomes the policy's `repeatedFailureLimit`, and a success resets the count.
+ * Five, because tool errors are returned to the model: rewriting a rejected query two or three times
+ * is the model working, and one batch can fail `TOOL_CONCURRENCY` calls at once. Five in a row says
+ * nothing in the results is being read. It becomes the policy's `repeatedFailureLimit`, and a
+ * success resets the count.
  *
  * Note what it does *not* bound: identical calls that keep succeeding. That guard lives with the
  * tool handlers, as `IDENTICAL_CALL_LIMIT` in `@/mcp/tools/llm-tools`, because refusing there is a
- * declared failure the model can read — and three of those trip this limit, which stops the run.
+ * returned failure the model can read, and enough of those trip this limit, which stops the run.
  */
-export const REPEATED_TOOL_CALLS = 3
+export const REPEATED_TOOL_CALLS = 5
 
 /**
  * Wall clock one run may take.
