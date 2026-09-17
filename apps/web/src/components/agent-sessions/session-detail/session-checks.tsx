@@ -141,12 +141,17 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 						className={cn("size-2 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
 					/>
 					<span className={STATUS_TEXT[tone]}>{failed ? "Failed" : "Completed"}</span>
+					{/* Only a failed session's headline says something the count strip
+					    does not: what killed it. A completed one's ("with 2 warnings",
+					    "cleanly — 13 checks passed") restates the counts underneath. */}
 					{failed && (
-						<span aria-hidden className="text-muted-foreground">
-							—
-						</span>
+						<>
+							<span aria-hidden className="text-muted-foreground">
+								—
+							</span>
+							<span className="min-w-0 font-normal text-muted-foreground">{report.headline}</span>
+						</>
 					)}
-					<span className="min-w-0 font-normal text-muted-foreground">{report.headline}</span>
 				</p>
 				<p className="flex flex-wrap gap-x-2 pl-4 font-mono text-xs tabular-nums">
 					<Count n={counts.failed} word="failed" status="failed" />
