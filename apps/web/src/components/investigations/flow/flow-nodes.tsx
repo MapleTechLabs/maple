@@ -18,12 +18,8 @@ import {
 	BoltIcon,
 	ChartBarIcon,
 	CircleCheckIcon,
-	CircleQuestionIcon,
-	CircleXmarkIcon,
 	ClockIcon,
 	CodeIcon,
-	DotsIcon,
-	EyeIcon,
 	type IconComponent,
 	MagnifierIcon,
 	NetworkNodesIcon,
@@ -31,41 +27,14 @@ import {
 	RocketIcon,
 	ServerIcon,
 	SlidersIcon,
-	SpinnerIcon,
 	SquareTerminalIcon,
 } from "@/components/icons"
-import type { LensTone } from "../lens-derive"
 import type { ActionKind } from "./action-target"
-import type {
-	ActionNodeData,
-	FlowGlyph,
-	LensNodeData,
-	LensOverflowNodeData,
-	PendingVerdictNodeData,
-	SpineNodeData,
-} from "./provenance-graph"
+import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData } from "./provenance-graph"
 
 /* -------------------------------------------------------------------------------------------------
  * Shared
  * -----------------------------------------------------------------------------------------------*/
-
-const TONE_TEXT: Record<LensTone, string> = {
-	muted: "text-muted-foreground",
-	primary: "text-primary",
-	success: "text-success",
-	info: "text-info",
-	warning: "text-warning",
-	destructive: "text-destructive",
-} satisfies Record<LensTone, string>
-
-const TONE_BORDER: Record<LensTone, string> = {
-	muted: "border-border",
-	primary: "border-primary",
-	success: "border-success",
-	info: "border-info",
-	warning: "border-warning",
-	destructive: "border-destructive",
-} satisfies Record<LensTone, string>
 
 const GLYPH: Record<FlowGlyph, IconComponent> = {
 	issue: AlertWarningIcon,
@@ -74,30 +43,6 @@ const GLYPH: Record<FlowGlyph, IconComponent> = {
 	investigation: MagnifierIcon,
 	verdict: CircleCheckIcon,
 } satisfies Record<FlowGlyph, IconComponent>
-
-/**
- * One glyph per lane state, and only the running one is a loader.
- *
- * A queued lane and a reported lane both used to draw a stopped spinner, which
- * said "this component is broken" rather than "this lane is waiting". They now
- * split by what the lane is actually waiting on:
- *
- * - `queued` — nothing has happened. Bare dots, deliberately outside the circle
- *   family below: this lane has not entered the decision at all, which is the
- *   same thing its dashed border is saying.
- * - `reported` — the lane did its work and the answer is undecided. A question
- *   mark completes the circle vocabulary the settled states already speak in,
- *   sitting exactly between the tick and the cross.
- */
-const LENS_GLYPH: Record<LensNodeData["state"]["icon"], IconComponent> = {
-	queued: DotsIcon,
-	running: SpinnerIcon,
-	reported: CircleQuestionIcon,
-	confirmed: EyeIcon,
-	ruledOut: CircleXmarkIcon,
-	deadline: ClockIcon,
-	failed: CircleXmarkIcon,
-} satisfies Record<LensNodeData["state"]["icon"], IconComponent>
 
 /** The eyebrow strip: an icon in its tile, then the kind in caps. */
 const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.12em]"
@@ -288,98 +233,8 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 	)
 })
 
-/* -------------------------------------------------------------------------------------------------
- * Lens
- * -----------------------------------------------------------------------------------------------*/
-
-export const FlowLensNode = memo(function FlowLensNode({ data }: NodeProps & { data: LensNodeData }) {
-	const { state } = data
-	const Icon = LENS_GLYPH[state.icon]
-	const running = state.icon === "running"
-	/**
-	 * The lane's own sentence, on the lane.
-	 *
-	 * Every card used to keep this row for a skeleton bar and put the sentence in a
-	 * `title` tooltip — which meant a settled lane displayed a loading placeholder
-	 * that would never resolve, and the fan read as a column of cards still
-	 * fetching. A running lane says what it is doing, everyone else says what they
-	 * found. The row is the same row either way.
-	 */
-	const line = running ? (data.progressNote ?? data.result) : data.result
-	return (
-		<>
-			<Ports />
-			<div
-				className={cn(
-					// `bg-card`, not `bg-background`: the canvas section is `bg-card/40`, so a
-					// background-filled node punched a hole in it and read as a recess rather
-					// than as a card sitting on one.
-					"relative flex size-full flex-col justify-center gap-1 overflow-hidden rounded-md border bg-card px-2.5",
-					TONE_BORDER[state.tone],
-					state.dashed ? "border-dashed" : null,
-				)}
-				// The result first: the lane's title is already printed on the node, and
-				// what a reader hovers for is *why* it held or didn't — which is the
-				// line the deleted checks rail used to carry.
-				title={[data.title, data.result || data.question].filter(Boolean).join("\n")}
-			>
-				<p
-					className={cn(
-						"truncate font-mono text-xs leading-[1.3]",
-						state.struck ? "text-muted-foreground line-through" : "text-foreground",
-					)}
-				>
-					{data.title}
-				</p>
-				<p className="flex items-center gap-1.5">
-					<Icon
-						size={11}
-						className={cn(
-							"shrink-0",
-							TONE_TEXT[state.tone],
-							// Spec rule 04: a running lane moves, and only a running lane.
-							// It spins rather than pulses — the glyph is a loader, and a
-							// loader that fades in and out reads as a disabled control.
-							// 1.1s, slower than Tailwind's 1s default: at 11px a faster
-							// arc reads as a flicker rather than as a revolution.
-							running
-								? "animate-spin [animation-duration:1.1s] motion-reduce:animate-none"
-								: null,
-						)}
-					/>
-					<span
-						className={cn(
-							"shrink-0 text-[9px] font-medium tracking-[0.06em]",
-							TONE_TEXT[state.tone],
-						)}
-					>
-						{state.word}
-					</span>
-					<span className="min-w-0 flex-1 text-right font-mono text-[9px] text-muted-foreground tabular-nums">
-						{data.elapsed ?? ""}
-					</span>
-				</p>
-				{line ? (
-					<p className="truncate text-[9px] leading-3 text-muted-foreground" title={line}>
-						{line}
-					</p>
-				) : null}
-				{/*
-				 * On the card's bottom edge, not in the stack above it. As an inset
-				 * rounded pill sitting in the content flow it belonged to nothing —
-				 * a floating capsule with dead space under it — where flush against
-				 * the border, clipped into the card's own corner radius, it reads as
-				 * part of the card's frame. The 11px spinner stops being readable at
-				 * the 0.68 zoom a narrow window forces; this does not.
-				 */}
-				{running ? <LiveBar edge /> : null}
-			</div>
-		</>
-	)
-})
-
 /**
- * The step after the fan while the verdict is still being reached.
+ * The step after the investigation while the verdict is still being reached.
  *
  * Dashed and muted throughout — it is the one node on the canvas that describes
  * work rather than a result, and it must not be mistaken at a glance for the
@@ -426,23 +281,8 @@ export const FlowPendingVerdictNode = memo(function FlowPendingVerdictNode({
 	)
 })
 
-export const FlowLensOverflowNode = memo(function FlowLensOverflowNode({
-	data,
-}: NodeProps & { data: LensOverflowNodeData }) {
-	return (
-		<>
-			<Ports />
-			<div className="flex size-full items-center justify-center rounded-md border border-dashed border-border bg-background">
-				<span className="font-mono text-[10px] text-muted-foreground">
-					+{data.hidden} more {data.hidden === 1 ? "lens" : "lenses"}
-				</span>
-			</div>
-		</>
-	)
-})
-
 /**
- * A column heading — `FANNED OUT · 4 LENSES`. A node rather than an overlay so it
+ * A column heading — `PROPOSES · 3 ACTIONS BY IMPACT`. A node rather than an overlay so it
  * pans and zooms with the column it names; a heading that stays put while its
  * column slides out from under it is worse than none.
  */

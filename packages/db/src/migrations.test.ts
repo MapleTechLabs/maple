@@ -136,14 +136,18 @@ describe("drizzle migrations", () => {
 	 */
 	it("re-applies the idempotent migrations without error", async () => {
 		const idempotent = ["0035_planned_investigations"]
-		const pg = new PGlite()
-		await pg.exec(readBundledMigrationsSql())
 
+		// Replayed at its own point in history: a later migration may legitimately
+		// drop what an earlier one added (0058 drops the lane table 0035 extends),
+		// and what has to hold is that a half-applied branch converged at the time.
 		for (const tag of idempotent) {
+			const pg = new PGlite()
+			await pg.exec(readMigrationSqlBefore(tag))
 			const sql = readFileSync(resolve(migrationsDir(), `${tag}.sql`), "utf8")
+			await pg.exec(sql)
 			await expect(pg.exec(sql), `${tag} must be re-runnable`).resolves.toBeDefined()
+			await pg.close()
 		}
-		await pg.close()
 	}, 30_000)
 })
 
@@ -167,9 +171,9 @@ describe("bundled migrations", () => {
 		"alert_destinations",
 		// API-key live reads (0014_electric_publication_api_keys)
 		"api_keys",
-		// Investigation detail page (0037_electric_publication_investigations)
+		// Investigation detail page (0037_electric_publication_investigations);
+		// its lane table was dropped again by 0058.
 		"investigations",
-		"investigation_lens_runs",
 	]
 
 	// Published by 0009/0011, then pruned by 0022 once their client collections were

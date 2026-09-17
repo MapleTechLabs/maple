@@ -13,7 +13,6 @@ import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { EvidenceTab } from "./evidence-tab"
 import { ProvenanceCanvas } from "./flow/provenance-canvas"
 import { FollowUpComposer } from "./follow-up-composer"
-import { HypothesesTab } from "./hypotheses-tab"
 import { ImpactStrip } from "./impact-strip"
 import { investigationHeadline } from "./investigation-display"
 import { InvestigationHeader } from "./investigation-header"
@@ -265,8 +264,6 @@ export function InvestigationView({
 								<div className="flex flex-col gap-7">
 									{tab === "evidence" ? (
 										<EvidenceTab investigation={investigation} />
-									) : tab === "hypotheses" ? (
-										<HypothesesTab investigation={investigation} />
 									) : (
 										<>
 											{/*

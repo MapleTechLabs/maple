@@ -2,9 +2,7 @@ import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 
-import { hasFanout } from "./lens-derive"
-
-export const INVESTIGATION_TABS = ["overview", "evidence", "hypotheses", "chat", "transcript"] as const
+export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 
 export type InvestigationTab = (typeof INVESTIGATION_TABS)[number]
 
@@ -23,18 +21,11 @@ export function InvestigationTabs({
 	active: InvestigationTab
 }) {
 	const evidenceCount = investigation.report?.evidence.length ?? 0
-	// At a fan-out of one there are no rivals to rank, so the section would be an
-	// empty table with a heading — the design drops the tab entirely.
-	const showHypotheses = hasFanout(investigation)
-	const hypothesesCount = investigation.lens_runs.length
 
 	const tabs: ReadonlyArray<{ value: InvestigationTab; label: string; count?: number }> = [
 		{ value: "overview", label: "Overview" },
 		...(evidenceCount > 0
 			? [{ value: "evidence" as const, label: "Evidence", count: evidenceCount }]
-			: []),
-		...(showHypotheses
-			? [{ value: "hypotheses" as const, label: "Hypotheses", count: hypothesesCount }]
 			: []),
 		{ value: "chat", label: "Chat" },
 		{ value: "transcript", label: "Transcript" },

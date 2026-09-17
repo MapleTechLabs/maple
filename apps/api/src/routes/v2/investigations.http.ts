@@ -167,32 +167,6 @@ const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(fu
 		started_at: doc.startedAt,
 		diagnosed_at: doc.diagnosedAt,
 		updated_at: doc.updatedAt,
-		// Ordering is a contract — `LENS_DISPATCH_ORDER` decides which lenses a
-		// narrow run gets — and the service already returns them ordered by ordinal.
-		lens_runs: doc.lensRuns.map((lens) => ({
-			lensId: lens.lensId,
-			status: lens.status,
-			verdict: lens.verdict,
-			claim: lens.claim,
-			reason: lens.reason,
-			progressNote: lens.progressNote,
-			confidence: lens.confidence,
-			toolCount: lens.toolCount,
-			elapsedSeconds: lens.elapsedSeconds,
-			name: lens.name,
-			question: lens.question,
-			priority: lens.priority,
-			deadlineHit: lens.deadlineHit,
-		})),
-		validator:
-			doc.validator === null
-				? null
-				: {
-						status: doc.validator.status,
-						note: doc.validator.note,
-						elapsedSeconds: doc.validator.elapsedSeconds,
-					},
-		fanout: { state: doc.fanout.state, size: doc.fanout.size },
 	}
 })
 

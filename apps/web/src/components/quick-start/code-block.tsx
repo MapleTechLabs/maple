@@ -6,11 +6,11 @@ interface CodeBlockProps {
 	code: string
 	language?: string
 	className?: string
+	/** Pre-highlighted HTML, for a caller that refines Sugar High's tokens. Defaults to `highlightCode(code)`. */
+	highlighted?: string
 }
 
-export function CodeBlock({ code, language, className }: CodeBlockProps) {
-	const highlighted = highlightCode(code)
-
+export function CodeBlock({ code, language, className, highlighted = highlightCode(code) }: CodeBlockProps) {
 	return (
 		<div className={cn("relative overflow-clip rounded-md border border-border bg-muted", className)}>
 			<div className="flex items-center justify-between px-3 py-1.5 text-muted-foreground">

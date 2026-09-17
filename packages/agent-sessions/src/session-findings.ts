@@ -9,20 +9,35 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
+import { canonicalJSON } from "@maple/query-engine"
+import { clipDetail, failureDetailText } from "./failure-text"
 import {
-	clipDetail,
 	failureEvents,
 	findIdleGaps,
-	firstProse,
+	isProviderAttempt,
 	shadowedAncestorIds,
 	spanTokenBuckets,
 	type SessionFailureKind,
 	type SessionSummary,
 } from "./session-summary"
-import { classifyAiSpan, isLlmCall, spanEndMs, spanStartMs, type SessionTurn } from "./session-turns"
+import {
+	classifyAiSpan,
+	isLlmCall,
+	spanEndMs,
+	spanFailed,
+	spanStartMs,
+	type SessionTurn,
+} from "./session-turns"
 
 /** Same tool this often within one turn reads as the agent going in circles. */
 const REPEATED_TOOL_MIN_CALLS = 8
+
+/**
+ * The same call — tool and arguments — this many times in a row, with nothing
+ * between, is a loop whatever the tool's total. One unchanged retry after a
+ * failure is not: a transient 429 or timeout is retried exactly that way.
+ */
+const IDENTICAL_RUN_MIN_CALLS = 3
 
 /**
  * A hole this long INSIDE a turn is the framework stalled mid-flight. Gaps
@@ -34,21 +49,45 @@ const MID_TURN_STALL_MIN_MS = 30_000
 /** Finish reasons that mean the reply was cut off at the output token limit. */
 const TRUNCATION_FINISH_REASONS = new Set(["length", "max_tokens", "max_output_tokens"])
 
-/** Red or amber: whether the thing found affected the outcome, or merely looks
- *  wrong. The mapping for failures matches the rail's old dot colors — errors
- *  and context blowups red, recovered-shaped rate limits and refusals amber. */
+/**
+ * Failure kinds that need a fix whether or not the run survived them: the
+ * prompt will outgrow the window again, the schema will reject the next reply,
+ * the tool will still not be connected, the run will end without its
+ * completion tool again. Every other kind is red only when the final turn
+ * died on it — a rate limit, a refusal, a tool error the agent recovered from
+ * is worth a look, not a fix.
+ */
+const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
+	"contextExceeded",
+	"invalidOutput",
+	"toolUnavailable",
+	"incomplete",
+])
+
+/** Red or amber: whether the thing found ended the run or names a class that
+ *  needs a fix regardless, or was survived. The checklist's failed/warning
+ *  split reads the same field, so the two never disagree. */
 export type FindingSeverity = "failure" | "anomaly"
+
+/** Which detector produced the row: a failure kind, or one of the four
+ *  session-shape detectors below. What the checklist groups rows on. */
+export type SessionFindingKind = SessionFailureKind | "providerRetry" | "truncation" | "repetition" | "stall"
 
 export interface SessionFinding {
 	readonly id: string
+	readonly kind: SessionFindingKind
 	readonly severity: FindingSeverity
 	/** The leading token, in the instrumentation's vocabulary where one exists —
 	 *  `context_length_exceeded`, `tool_error · run_tests`, `stop length`. */
 	readonly label: string
+	/** The tool the row is about, for the kinds that name one. */
+	readonly tool: string | undefined
 	/** How many spans said it. The row prints ×N above one. */
 	readonly count: number
 	/** `Turn 14 (final)`, `Turns 9, 11` — where it happened. */
 	readonly turnText: string
+	/** The final turn died on this row's span: the verdict's own evidence. */
+	readonly terminal: boolean
 	/** One line of evidence under the label, when the spans carry any. */
 	readonly detail: string | undefined
 	/** The span the row opens in the Traces view. */
@@ -61,8 +100,6 @@ export type SessionVerdictStatus = "failed" | "attention" | "clean"
 
 export interface SessionVerdict {
 	readonly status: SessionVerdictStatus
-	/** What killed the final turn, when the session failed and a span said. */
-	readonly label: string | undefined
 	/** The failing span, for the verdict's own link. */
 	readonly spanId: string | undefined
 }
@@ -99,6 +136,7 @@ export function buildSessionFindings(
 
 	const findings = [
 		...failureFindings(events, turns, turnIndexBySpan, cause?.span.spanId, spans),
+		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
 		...repetitionFindings(turns),
 		...stallFindings(turns),
@@ -106,13 +144,13 @@ export function buildSessionFindings(
 		(a, b) =>
 			severityRank(a.severity) - severityRank(b.severity) ||
 			// The terminal failure leads: it is the verdict's own evidence.
-			Number(b.turnText.endsWith("(final)")) - Number(a.turnText.endsWith("(final)")) ||
+			Number(b.terminal) - Number(a.terminal) ||
 			a.atMs - b.atMs,
 	)
 
 	const verdict: SessionVerdict = summary.failed
-		? { status: "failed", label: cause?.label, spanId: cause?.span.spanId }
-		: { status: findings.length > 0 ? "attention" : "clean", label: undefined, spanId: undefined }
+		? { status: "failed", spanId: cause?.span.spanId }
+		: { status: findings.length > 0 ? "attention" : "clean", spanId: undefined }
 
 	return { verdict, findings }
 }
@@ -135,11 +173,15 @@ function failureFindings(
 ): SessionFinding[] {
 	const byLabel = new Map<
 		string,
-		{ kind: SessionFailureKind; members: { span: AiSessionSpan; turnIndex: number }[] }
+		{
+			kind: SessionFailureKind
+			tool: string | undefined
+			members: { span: AiSessionSpan; turnIndex: number }[]
+		}
 	>()
 	for (const event of events) {
 		const turnIndex = turnIndexBySpan.get(event.span.spanId) ?? 0
-		const group = byLabel.get(event.label) ?? { kind: event.kind, members: [] }
+		const group = byLabel.get(event.label) ?? { kind: event.kind, tool: event.tool, members: [] }
 		group.members.push({ span: event.span, turnIndex })
 		byLabel.set(event.label, group)
 	}
@@ -156,15 +198,13 @@ function failureFindings(
 		const linked = cause ?? group.members[0]
 		return {
 			id: `failure:${label}`,
-			// Rate limits and refusals are warnings unless the session died on one:
-			// the same split the failure dots have always drawn.
-			severity:
-				terminal || group.kind === "error" || group.kind === "contextExceeded"
-					? ("failure" as const)
-					: ("anomaly" as const),
+			kind: group.kind,
+			severity: terminal || FAILURE_KINDS.has(group.kind) ? ("failure" as const) : ("anomaly" as const),
 			label,
+			tool: group.tool,
 			count: group.members.length,
 			turnText: turnListText(turnIndices, turns, terminal),
+			terminal,
 			detail:
 				(group.kind === "contextExceeded" ? promptGrowth(spans) : undefined) ??
 				failureDetail(
@@ -178,27 +218,81 @@ function failureFindings(
 }
 
 /**
- * The group's evidence line: the first status message a member carries, and
- * where every member is silent, the failed tool call's own recorded result.
- *
- * The fallback exists because frameworks record a failed tool call as a value
- * on an `Ok` span — Maple's own agent stamps `error.type: tool_error` and puts
- * the error message in `gen_ai.tool.call.result`, with no status message at
- * all. For those spans the result payload IS the error.
+ * The group's evidence line: the first member that says anything, read the
+ * way `failure-text.ts` reads every failed span — the status message unless
+ * it is the framework's generic one, else the tool call's recorded result,
+ * with the framework's prefixes stripped and a schema path made readable.
  */
 function failureDetail(spans: readonly AiSessionSpan[], label: string): string | undefined {
 	for (const span of spans) {
-		const message = span.statusMessage.trim()
-		if (message === "" || message === label) continue
-		return clipDetail(message)
-	}
-	for (const span of spans) {
-		const result = span.genAi.toolCallResult ?? undefined
-		if (result === undefined) continue
-		const prose = firstProse(result)
-		if (prose !== undefined) return clipDetail(prose)
+		const detail = failureDetailText(span)
+		if (detail !== undefined && detail !== label) return detail
 	}
 	return undefined
+}
+
+/**
+ * A gateway's failed provider attempts, rolled up into one row: how many, on
+ * which statuses, at which providers, and whether the generations above them
+ * recovered. Attempts are never failure events ({@link isProviderAttempt}); a
+ * generation that ran out of providers is its own `provider_error` finding.
+ */
+function retryFindings(
+	spans: readonly AiSessionSpan[],
+	turns: readonly SessionTurn[],
+	turnIndexBySpan: ReadonlyMap<string, number>,
+): SessionFinding[] {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const attempts = spans.filter((span) => isProviderAttempt(span) && spanFailed(span))
+	const first = attempts[0]
+	if (first === undefined) return []
+
+	const byStatus = new Map<string, number>()
+	const providers = new Set<string>()
+	const generations = new Set<string>()
+	const failedGenerations = new Set<string>()
+	for (const attempt of attempts) {
+		const status = attempt.genAi.attemptStatusCode
+		const key = status === undefined ? "error" : String(status)
+		byStatus.set(key, (byStatus.get(key) ?? 0) + 1)
+		if (attempt.genAi.attemptProvider !== undefined) providers.add(attempt.genAi.attemptProvider)
+		const parent = byId.get(attempt.parentSpanId)
+		if (parent === undefined) continue
+		generations.add(parent.spanId)
+		if (spanFailed(parent)) failedGenerations.add(parent.spanId)
+	}
+
+	const statuses = [...byStatus]
+		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.map(([status, count]) => `${status} ×${count}`)
+		.join(" · ")
+	const where = providers.size === 0 ? "" : ` — ${[...providers].sort().join(", ")}`
+	const outcome =
+		generations.size === 0
+			? ""
+			: failedGenerations.size === 0
+				? " · all recovered"
+				: ` · ${failedGenerations.size} of ${generations.size} calls did not recover`
+
+	return [
+		{
+			id: "provider-retry",
+			kind: "providerRetry",
+			severity: "anomaly",
+			label: "provider_retry",
+			tool: undefined,
+			count: attempts.length,
+			turnText: turnListText(
+				distinctSorted(attempts.map((span) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				turns,
+				false,
+			),
+			terminal: false,
+			detail: clipDetail(`${statuses}${where}${outcome}`),
+			spanId: first.spanId,
+			atMs: spanStartMs(first),
+		},
+	]
 }
 
 /**
@@ -236,16 +330,19 @@ function truncationFindings(
 	return [
 		{
 			id: "truncation",
+			kind: "truncation",
 			severity: "anomaly",
 			// `stop <reason>` is how the transcript's meta line already spells a
 			// finish reason, so the finding reads in the same vocabulary.
 			label: `stop ${first.reason}`,
+			tool: undefined,
 			count: members.length,
 			turnText: turnListText(
 				distinctSorted(members.map(({ span }) => turnIndexBySpan.get(span.spanId) ?? 0)),
 				turns,
 				false,
 			),
+			terminal: false,
 			detail: "the reply hit the output token limit and was cut off",
 			spanId: first.span.spanId,
 			atMs: spanStartMs(first.span),
@@ -263,29 +360,86 @@ function truncationSignal(span: AiSessionSpan): string | undefined {
 function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	const findings: SessionFinding[] = []
 	turns.forEach((turn, index) => {
+		const calls = turn.spans.filter((span) => classifyAiSpan(span) === "tool")
 		const byTool = new Map<string, AiSessionSpan[]>()
-		for (const span of turn.spans) {
-			if (classifyAiSpan(span) !== "tool") continue
-			const name = span.genAi.toolName ?? span.spanName
+		for (const span of calls) {
+			const name = toolNameOf(span)
 			const list = byTool.get(name) ?? []
 			list.push(span)
 			byTool.set(name, list)
 		}
-		for (const [name, calls] of byTool) {
-			if (calls.length < REPEATED_TOOL_MIN_CALLS) continue
+		const runs = longestIdenticalRuns(calls)
+		for (const [name, toolCalls] of byTool) {
+			const run = runs.get(name) ?? []
+			const looped = run.length >= IDENTICAL_RUN_MIN_CALLS
+			if (toolCalls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
+			// The row links where the loop began, else the tool's first call.
+			const first = looped ? run[0] : toolCalls[0]
 			findings.push({
 				id: `repetition:${turn.id}:${name}`,
+				kind: "repetition",
 				severity: "anomaly",
 				label: name,
+				tool: name,
 				count: 1,
 				turnText: turnListText([index], turns, false),
-				detail: `called ${calls.length}× within one turn`,
-				spanId: calls[0].spanId,
-				atMs: spanStartMs(calls[0]),
+				terminal: false,
+				detail: looped
+					? spanFailed(run[0])
+						? `retried ${run.length - 1}× unchanged after it failed`
+						: `called ${toolCalls.length}× within one turn, ${run.length} in a row with identical arguments`
+					: `called ${toolCalls.length}× within one turn`,
+				spanId: first.spanId,
+				atMs: spanStartMs(first),
 			})
 		}
 	})
 	return findings
+}
+
+function toolNameOf(span: AiSessionSpan): string {
+	return span.genAi.toolName ?? span.spanName
+}
+
+/**
+ * Per tool, the longest run of back-to-back calls that sent the same
+ * arguments — back-to-back across every tool call of the turn, in start
+ * order, with nothing at all between. A test suite re-run after a write sends
+ * the same arguments over new code, which is progress; the same call three
+ * times with nothing between is not. A tool whose calls never recorded
+ * arguments has no run. Among runs of equal length the one that opened with a
+ * failure wins, since that is the one the row should say retried. Arguments
+ * compare as canonical JSON so key order cannot split a run.
+ */
+function longestIdenticalRuns(
+	calls: readonly AiSessionSpan[],
+): ReadonlyMap<string, readonly AiSessionSpan[]> {
+	const longest = new Map<string, readonly AiSessionSpan[]>()
+	let run: AiSessionSpan[] = []
+	let key: string | undefined
+	for (const span of calls) {
+		// `?? undefined`: a JSON `null` is a call that recorded nothing.
+		const args = span.genAi.toolCallArguments ?? undefined
+		const name = toolNameOf(span)
+		const next = args === undefined ? undefined : `${name}\u0000${canonicalJSON(args)}`
+		if (next !== undefined && next === key) {
+			run.push(span)
+		} else {
+			run = next === undefined ? [] : [span]
+			key = next
+		}
+		if (run.length === 0) continue
+		const best = longest.get(name)
+		if (
+			best === undefined ||
+			run.length > best.length ||
+			(run.length === best.length && spanFailed(run[0]) && !spanFailed(best[0]))
+		) {
+			// A copy: the run keeps growing after it is recorded.
+			longest.set(name, [...run])
+		}
+	}
+	return longest
 }
 
 function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
@@ -300,11 +454,14 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 				.sort((a, b) => spanEndMs(b) - spanEndMs(a))[0]
 			findings.push({
 				id: gap.id,
+				kind: "stall",
 				severity: "anomaly",
 				// The waterfall names its gap rows `idle 4m 20s`; same vocabulary.
 				label: `idle ${formatSessionDuration(gap.durationMs)}`,
+				tool: undefined,
 				count: 1,
 				turnText: turnListText([index], turns, false),
+				terminal: false,
 				detail: "no span activity mid-turn",
 				spanId: before?.spanId ?? turn.anchor.spanId,
 				atMs: gap.startMs,

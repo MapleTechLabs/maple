@@ -17,7 +17,6 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { agentForSession, chatAgent } from "./agents"
-import { buildDelegation } from "./delegation"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
@@ -92,9 +91,9 @@ export interface ChatRunInput {
 	readonly tenant: TenantContext
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
-	/** The model sub-agents run on. Defaults to the conversation's own. */
-	readonly subagentModel?: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
+	/** This run is an autonomous pass's close-out: a report it files is a partial. */
+	readonly closeOut?: boolean
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -104,6 +103,13 @@ export interface ChatRunInput {
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
 	readonly holdsTurn: () => boolean
 	readonly append: (event: ChatTurnEvent) => void
+}
+
+export interface ChatRunOutcome {
+	/** This run was an investigation's own autonomous pass. */
+	readonly autonomous: boolean
+	/** `submit_diagnosis` landed a report during this run. */
+	readonly submittedDiagnosis: boolean
 }
 
 /**
@@ -123,34 +129,17 @@ export const runChatTurn = (input: ChatRunInput) => {
 		input.submitDiagnosis,
 		input.usage,
 		input.model.name,
+		input.closeOut === true,
 	)
 
-	// The sub-agents this agent may spawn, as delegation tools. `undefined` for an agent that
-	// spawns none, which is most of them — the capability is opt-in per agent rather than a tool
-	// every turn carries and refuses.
-	const delegation = buildDelegation(
-		definition,
-		input.toolExecutor,
-		input.tenant,
-		input.model,
-		input.subagentModel ?? input.model,
-	)
+	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))
+	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
 
-	const toolkit = Toolkit.merge(
-		maple.toolkit,
-		...(completion === undefined ? [] : [completion.toolkit]),
-		...(delegation === undefined ? [] : [delegation.toolkit]),
-	)
-	const handlers = Layer.mergeAll(
-		maple.layer,
-		...(completion === undefined ? [] : [completion.layer]),
-		...(delegation === undefined ? [] : [delegation.layer]),
-	)
-
+	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const agent = chatAgent(definition, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
-			: { completion: { tool: SUBMIT_DIAGNOSIS, required: completion.required } }),
+			: { completion: { tool: SUBMIT_DIAGNOSIS, required: false } }),
 	})
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
@@ -173,6 +162,12 @@ export const runChatTurn = (input: ChatRunInput) => {
 				for (const chat of toChatEvents(event, { messageId: input.messageId, isProposed })) {
 					input.append(chat)
 				}
+			}),
+		),
+		Effect.map(
+			(): ChatRunOutcome => ({
+				autonomous: completion?.autonomous ?? false,
+				submittedDiagnosis: completion?.submitted() ?? false,
 			}),
 		),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,

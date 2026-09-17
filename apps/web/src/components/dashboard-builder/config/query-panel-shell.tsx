@@ -23,9 +23,6 @@ export const QUERY_PANEL_SOURCE_LABEL = {
 	product_events: "Product events",
 } satisfies Record<QueryPanelSource, string>
 
-export const isQueryBuilderDataSource = (source: string): source is QueryBuilderDataSource =>
-	QUERY_BUILDER_DATA_SOURCES.some((candidate) => candidate === source)
-
 /** The query-builder sources, in the order the select shows them. */
 export const QUERY_BUILDER_PANEL_SOURCES: ReadonlyArray<QueryPanelSource> = QUERY_BUILDER_DATA_SOURCES
 

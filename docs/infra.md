@@ -10,8 +10,9 @@ put it here instead. Git blame does not survive a refactor of the line it annota
 
 ## The AI Worker (`maple-ai`)
 
-`apps/ai` hosts every agent surface: the MCP transport and its tools, the chat
-`ChatSession` Durable Object, and the `InvestigationFanoutWorkflow`. `apps/api`
+`apps/ai` hosts every agent surface: the MCP transport and its tools, and the
+chat `ChatSession` Durable Object, which also runs every investigation's
+autonomous pass. `apps/api`
 keeps the hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to
 it over a service binding, so the OAuth issuer and the RFC 8707 resource
 identifiers never move off api's origin.
@@ -36,9 +37,10 @@ Two things a future change here needs to know:
   locally hosted Durable Object class while keeping a cross-script reference is
   the shape that destroys a namespace, and alchemy refuses it before uploading.
   The property is inert once a stage has transferred, so it stays.
-- **The Workflow has no equivalent.** Moving `InvestigationFanoutWorkflow` to a
-  new script mints a new physical workflow and orphans in-flight runs, which sit
-  in `status='running'` until the stale watchdog or a manual sweep clears them.
+- **A Workflow has no equivalent.** Moving one to a new script mints a new
+  physical workflow and orphans in-flight runs. (The investigation fan-out
+  Workflow that used to live here was retired in 2026-09; `ClickHouseSchemaApplyWorkflow`
+  stays on `api`.)
 
 ## Layout
 
@@ -213,19 +215,18 @@ What each kind of Worker keeps beside the module:
 impl)` over the plain `ChatSession` class — the outer Effect resolves state and env (it also runs
   at plan time against a mock state, so it must not touch storage), the inner one builds the
   session and returns its methods as Effects, which alchemy's bridge runs per RPC call and hands
-  back as-is. `ClickHouseSchemaApplyWorkflow` and `InvestigationFanoutWorkflow`
-  (`src/workflows/*.ts`) are `Cloudflare.Workflow<Self>()(name, impl)` in the documented shape: the
-  init resolves what the run needs (the fan-out yields `ChatSessionObject` for typed stubs), then
-  returns an `Effect.fn` body. The bodies (`*.run.ts`) are Effects on alchemy's step API —
+  back as-is. `ClickHouseSchemaApplyWorkflow` (`src/workflows/*.ts`) is
+  `Cloudflare.Workflow<Self>()(name, impl)` in the documented shape: the init resolves what the run
+  needs, then returns an `Effect.fn` body. The bodies (`*.run.ts`) are Effects on alchemy's step API —
   `durableStep` (`src/workflows/durable-step.ts`) is `Cloudflare.Workflows.task` over an Effect
   whose failure rejects the step, so Cloudflare retries it per config — reading `Database`,
   `Cloudflare.WorkerEnvironment` and `Cloudflare.WorkflowStep` as services. The class wraps a run
   in `withPgConnectionScope` + `layerPg` (one Postgres connection per run) and the run's own
-  `eventTelemetry` (`maple-schema-apply`, `maple-investigations`), which flushes when alchemy
+  `eventTelemetry` (`maple-schema-apply`), which flushes when alchemy
   closes the run's scope. Everything is imported statically: the Worker evaluates in ~80 ms of
   the 1 s startup-CPU budget on alchemy's bundle (`scripts/bench-startup-cpu.ts`, 2026-09-07).
   The yield is the whole declaration: the binding (named after the class — `ChatSession`,
-  `ClickHouseSchemaApplyWorkflow`, `InvestigationFanoutWorkflow`, which is what the services read
+  `ClickHouseSchemaApplyWorkflow`, which is what the services read
   off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
   `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
   hand-written entry.

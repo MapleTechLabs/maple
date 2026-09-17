@@ -43,8 +43,8 @@ describe("decodeShapeRequest", () => {
 		)
 		assert.strictEqual(expectFailure("shape=investigation&scope=").message.length > 0, true)
 		assert.strictEqual(
-			expectFailure(`shape=investigation_lens_runs&scope=${"x".repeat(129)}`).message,
-			"Shape investigation_lens_runs requires a scope",
+			expectFailure(`shape=investigation&scope=${"x".repeat(129)}`).message,
+			"Shape investigation requires a scope",
 		)
 	})
 
@@ -56,10 +56,6 @@ describe("decodeShapeRequest", () => {
 	it("pairs the scope value with its pinned column", () => {
 		assert.deepStrictEqual(expectSuccess("shape=investigation&scope=inv_1").scope, {
 			column: "id",
-			value: "inv_1",
-		})
-		assert.deepStrictEqual(expectSuccess("shape=investigation_lens_runs&scope=inv_1").scope, {
-			column: "investigation_id",
 			value: "inv_1",
 		})
 	})

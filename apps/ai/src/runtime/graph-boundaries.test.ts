@@ -25,11 +25,6 @@ describe("AI runtime graph boundaries", () => {
 				["../../runtime/mcp-service-graph"],
 				["McpServicesLive"],
 			],
-			[
-				readModule("../workflows/InvestigationFanoutWorkflow.run.ts"),
-				["../runtime/mcp-service-graph"],
-				["McpServicesLive"],
-			],
 		]
 
 		for (const [source, expectedImports, expectedRoots] of runtimeEntrypoints) {

@@ -69,3 +69,6 @@ apps/ios/build/
 
 # Generic ClickHouse benchmark artifacts (may contain literal query inputs)
 .bench/
+
+# backup restore drill reports (packages/db/scripts/restore-test.ts)
+.restore-test/

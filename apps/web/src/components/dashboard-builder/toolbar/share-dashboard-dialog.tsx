@@ -12,10 +12,10 @@
  * would hang forever.
  */
 import { useMemo, useRef, useState, type ReactNode } from "react"
-import { Exit, Schema } from "effect"
-import { DashboardId } from "@maple/domain/http"
+import { Exit } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import {
+	ArrowRotateClockwiseIcon,
 	CheckIcon,
 	CircleWarningIcon,
 	CopyIcon,
@@ -37,25 +37,18 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 import { cn } from "@maple/ui/lib/utils"
-import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "./share-support"
+import {
+	asDashboardId,
+	dashboardSharesAtom,
+	dashboardSharesReactivityKey,
+	shareUrl,
+	type ShareMode,
+	type ShareRecord,
+} from "./dashboard-shares"
 import type { Dashboard } from "@/components/dashboard-builder/types"
-
-type ShareMode = "public" | "org"
-
-/**
- * The v2 atom client hands back the *decoded* record, so these are the camelCase
- * domain names — not the snake_case the wire carries.
- */
-interface ShareRecord {
-	readonly id: string
-	readonly widgetId?: string
-	readonly mode: ShareMode
-	readonly token: string
-}
-
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 
 export function ShareDashboardDialog({
 	dashboard,
@@ -66,14 +59,7 @@ export function ShareDashboardDialog({
 	open: boolean
 	onOpenChange: (open: boolean) => void
 }) {
-	const listAtom = useMemo(
-		() =>
-			retainedQueryV2("dashboards", "listShares", {
-				params: { id: asDashboardId(dashboard.id) },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
-			}),
-		[dashboard.id],
-	)
+	const listAtom = useMemo(() => dashboardSharesAtom(dashboard.id), [dashboard.id])
 	const listResult = useAtomValue(listAtom)
 	const refreshList = useAtomRefresh(listAtom)
 
@@ -88,7 +74,7 @@ export function ShareDashboardDialog({
 	})
 
 	const shares = useMemo<ReadonlyArray<ShareRecord>>(
-		() => (Result.isSuccess(listResult) ? (listResult.value as ReadonlyArray<ShareRecord>) : []),
+		() => (Result.isSuccess(listResult) ? listResult.value : []),
 		[listResult],
 	)
 	const boardShare = useMemo(() => shares.find((share) => share.widgetId === undefined), [shares])
@@ -112,7 +98,7 @@ export function ShareDashboardDialog({
 	/*
 	 * Nothing in the dialog uses `disabled` to keep mutations from stacking —
 	 * disabling a control mid-flight dims it for the length of the round-trip, and
-	 * every pick or regenerate flashed. The guard lives here instead, so the
+	 * every pick or replace flashed. The guard lives here instead, so the
 	 * protection is centralised and no control has to change how it looks to get it.
 	 */
 	const run = async <A,>(action: () => Promise<Exit.Exit<A, unknown>>) => {
@@ -143,7 +129,7 @@ export function ShareDashboardDialog({
 			upsert({
 				params: { id: asDashboardId(dashboard.id) },
 				payload: { mode },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
+				reactivityKeys: [dashboardSharesReactivityKey(dashboard.id)],
 			}),
 		)
 
@@ -151,7 +137,7 @@ export function ShareDashboardDialog({
 		run(() =>
 			rotate({
 				params: { id: asDashboardId(dashboard.id) },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
+				reactivityKeys: [dashboardSharesReactivityKey(dashboard.id)],
 			}),
 		)
 
@@ -159,7 +145,7 @@ export function ShareDashboardDialog({
 		run(() =>
 			revoke({
 				params: { id: asDashboardId(dashboard.id) },
-				reactivityKeys: [`dashboard-shares:${dashboard.id}`],
+				reactivityKeys: [dashboardSharesReactivityKey(dashboard.id)],
 			}),
 		)
 
@@ -209,7 +195,11 @@ export function ShareDashboardDialog({
 					</RadioGroup>
 
 					{boardShare ? (
-						<ShareLinkRow token={boardShare.token} onRegenerate={() => void regenerate()} />
+						<ShareLinkRow
+							url={shareUrl(boardShare.token)}
+							onReplace={() => void regenerate()}
+							replaceWarning="Anyone using the current link loses access to this dashboard. Chart embeds keep working."
+						/>
 					) : null}
 
 					{unsupported.length > 0 && boardShare ? (
@@ -283,12 +273,26 @@ function NoticeRow({ tone = "muted", children }: { tone?: "muted" | "error"; chi
 	)
 }
 
-function ShareLinkRow({ token, onRegenerate }: { token: string; onRegenerate: () => void }) {
+/**
+ * Replacing kills the current link for good — every copy of it already handed
+ * out, every embed on someone else's page. So it asks first, inline: a second
+ * modal over the dialog would be heavier than the question.
+ */
+export function ShareLinkRow({
+	url,
+	onReplace,
+	replaceWarning,
+}: {
+	url: string
+	onReplace: () => void
+	/** What stops working when the link is replaced, shown before confirming. */
+	replaceWarning: string
+}) {
+	const [confirmingReplace, setConfirmingReplace] = useState(false)
 	const [copied, setCopied] = useState(false)
 	const [copyBlocked, setCopyBlocked] = useState(false)
 	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
 	const field = useRef<HTMLInputElement>(null)
-	const url = `${window.location.origin}/share/${token}`
 
 	// Browsers deny `writeText` outside a secure context or when the clipboard
 	// permission is refused, and the promise rejects. Without this the button just
@@ -329,10 +333,39 @@ function ShareLinkRow({ token, onRegenerate }: { token: string; onRegenerate: ()
 					{copied ? <CheckIcon /> : <CopyIcon />}
 					{copied ? "Copied" : "Copy"}
 				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => setConfirmingReplace((open) => !open)}
+					aria-expanded={confirmingReplace}
+				>
+					<ArrowRotateClockwiseIcon />
+					Replace
+				</Button>
 			</div>
-			<Button variant="ghost" size="xs" className="-ml-2 text-muted-foreground" onClick={onRegenerate}>
-				Regenerate link
-			</Button>
+			{confirmingReplace ? (
+				<div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+					<p className="text-xs leading-relaxed">
+						<span className="font-medium">Replace this link?</span>{" "}
+						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>
+					</p>
+					<div className="flex justify-end gap-2">
+						<Button variant="ghost" size="xs" onClick={() => setConfirmingReplace(false)}>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							size="xs"
+							onClick={() => {
+								setConfirmingReplace(false)
+								onReplace()
+							}}
+						>
+							Replace link
+						</Button>
+					</div>
+				</div>
+			) : null}
 			{copyBlocked ? (
 				<p className="text-muted-foreground text-xs leading-relaxed">
 					Your browser blocked the clipboard. The link is selected — copy it with ⌘C.

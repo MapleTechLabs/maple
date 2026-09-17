@@ -5,7 +5,7 @@ import { Result } from "@/lib/effect-atom"
 import { Link, linkOptions, useNavigate } from "@tanstack/react-router"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { traceFilterChips } from "@/lib/traces/trace-filter-chips"
+import { removeTraceFilterChips, traceFilterChips } from "@/lib/traces/trace-filter-chips"
 import {
 	columnSizingFeature,
 	type ColumnDef,
@@ -577,10 +577,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 	const excludedValues = excludedChips.flatMap((chip) => chip.values)
 	const clearExclusions = () =>
 		navigateTraces({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
-			}),
+			search: (prev) => removeTraceFilterChips(prev, excludedChips),
 		})
 
 	const onShowNoise = React.useCallback(() => {

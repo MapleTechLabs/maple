@@ -20,16 +20,14 @@
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import {
-	decodeChatTurnTenant,
-	investigationIdFromChatSessionId,
-	type ChatTurnTenantEncoded,
-} from "@maple/domain/chat-session"
+import { ChatMessage, decodeChatTurnTenant, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime } from "effect"
 import type { ChatSession } from "./ChatSession"
-import { makeRunUsage } from "./tools"
+import type { ChatTurnEvent } from "./events"
+import { CLOSE_OUT_PROMPT } from "./prompts"
+import { investigationForSession, isAutonomousInvestigationTurn, makeRunUsage } from "./tools"
 
 /**
  * Low-cardinality facts collected during the run and emitted once on the turn span.
@@ -42,11 +40,10 @@ interface TurnObservability {
 }
 
 const makeTurnObservability = (): TurnObservability => ({})
-import { runChatTurn } from "./run"
+import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
-import { InvestigationId } from "@maple/domain/primitives"
 
 // Deliberately not `maple-api`: background work sharing the request-facing
 // service's name skewed its percentiles (p99 32s, 2026-09-04).
@@ -100,8 +97,6 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded): TenantContext => {
  * by a second model call after the answer was delivered.
  */
 
-const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
-
 /**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
  *
@@ -117,6 +112,37 @@ const METERING_TIMEOUT = "5 seconds"
 
 /** Stable copy for the durable/browser event; detailed causes stay server-side. */
 const CHAT_TURN_FAILED = "Maple couldn't complete this response."
+const NO_DIAGNOSIS_MESSAGE = "Maple ended this investigation without a diagnosis."
+/** What the row records when the pass and its close-out both ended in prose or on an error. */
+const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
+
+/** How much of one tool's output the close-out turn is shown. */
+const CLOSE_OUT_TOOL_OUTPUT_CHARS = 4_000
+
+/**
+ * The transcript as the close-out sees it: the same messages, with each assistant message's tool
+ * calls and results rendered into its text. `promptFromHistory` replays prose only, and a pass
+ * that gathered evidence through tools and wrote nothing would otherwise close out blind.
+ */
+const withToolTranscript = (history: ReadonlyArray<ChatMessage>): ReadonlyArray<ChatMessage> =>
+	history.map((message) => {
+		if (message.role !== "assistant" || message.toolCalls.length === 0) return message
+		const calls = message.toolCalls.map((call) => {
+			const output = call.output === undefined ? "(no result)" : renderToolValue(call.output)
+			return `[${call.name} ${renderToolValue(call.input)}]\n${output}`
+		})
+		return new ChatMessage({
+			...message,
+			text: [message.text, "Evidence gathered so far:", ...calls]
+				.filter((part) => part !== "")
+				.join("\n\n"),
+		})
+	})
+
+const renderToolValue = (value: unknown): string => {
+	const text = typeof value === "string" ? value : JSON.stringify(value)
+	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS ? `${text.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)}…` : text
+}
 
 /**
  * Meter what this turn spent into the org's AI usage, alongside the fan-out workflow's triage
@@ -182,11 +208,9 @@ const investigationBilling = (
 	sessionId: string,
 	messageId: string,
 ): { readonly source: "triage"; readonly idempotencyKey: string } | undefined => {
-	const rawId = investigationIdFromChatSessionId(sessionId)
-	if (rawId === undefined) return undefined
-	const decoded = decodeInvestigationIdOption(rawId)
-	if (Option.isNone(decoded)) return undefined
-	return { source: "triage", idempotencyKey: `${decoded.value}:turn-${messageId}` }
+	const investigationId = investigationForSession(sessionId)
+	if (investigationId === undefined) return undefined
+	return { source: "triage", idempotencyKey: `${investigationId}:turn-${messageId}` }
 }
 
 /**
@@ -260,31 +284,114 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const latest = spoken.at(-1)
 		const text = latest?.role === "user" ? latest.text : ""
 		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
+		const autonomous = isAutonomousInvestigationTurn(input.sessionId, tenant)
+		const holdsTurn = () => input.session.holdsTurn(input.messageId)
 
-		yield* runChatTurn({
-			sessionId: input.sessionId,
-			messageId: input.messageId,
-			tenant,
-			toolExecutor,
-			model,
-			submitDiagnosis: investigations.submitDiagnosis,
-			text,
-			history: prior,
-			...(compaction === undefined ? undefined : { compaction }),
-			usage,
-			// An abort clears the claim; the run notices at the next event rather than streaming into
-			// a conversation that has moved on.
-			holdsTurn: () => input.session.holdsTurn(input.messageId),
-			append: (event) => {
-				input.session.append(event)
-				if (event.type === "turn-end" && event.task === undefined) {
-					recordedTerminal = true
-					observability.outcome = event.reason
-				}
-			},
-		})
+		// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
+		// in prose or died on a model error gets one close-out turn first, so its terminal is held
+		// back until the outcome is known.
+		let held: Extract<ChatTurnEvent, { readonly type: "turn-end" }> | undefined
+		const run = (turn: {
+			readonly text: string
+			readonly history: ReadonlyArray<ChatMessage>
+			readonly closeOut?: boolean
+		}) =>
+			runChatTurn({
+				sessionId: input.sessionId,
+				messageId: input.messageId,
+				tenant,
+				toolExecutor,
+				model,
+				submitDiagnosis: investigations.submitDiagnosis,
+				...(turn.closeOut === true ? { closeOut: true } : undefined),
+				text: turn.text,
+				history: turn.history,
+				...(compaction === undefined ? undefined : { compaction }),
+				usage,
+				// An abort clears the claim; the run notices at the next event rather than streaming into
+				// a conversation that has moved on.
+				holdsTurn,
+				append: (event) => {
+					if (event.type === "turn-end" && event.task === undefined) {
+						observability.outcome = event.reason
+						if (autonomous && event.reason !== "aborted") {
+							held = event
+							return
+						}
+						recordedTerminal = true
+					}
+					input.session.append(event)
+				},
+			})
 
-		if (!recordedTerminal && !input.session.holdsTurn(input.messageId)) {
+		// A pass that failed is a pass with no diagnosis yet, not a dead turn: the close-out below
+		// still gets its say. Interrupts stay interrupts.
+		const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
+			effect.pipe(
+				Effect.catchCause((cause) =>
+					Cause.hasInterruptsOnly(cause)
+						? Effect.failCause(cause)
+						: Effect.logWarning("Investigation pass failed; closing it out").pipe(
+								Effect.annotateLogs({
+									sessionId: input.sessionId,
+									messageId: input.messageId,
+									cause: summarizeCause(cause),
+								}),
+								Effect.as<ChatRunOutcome>({ autonomous: true, submittedDiagnosis: false }),
+							),
+				),
+			)
+
+		if (!autonomous) {
+			yield* run({ text, history: prior })
+			if (!recordedTerminal && !holdsTurn()) observability.outcome = "aborted"
+			yield* annotateTurn()
+			return
+		}
+
+		const first = yield* recoverAutonomousFailure(run({ text, history: prior }))
+		let submitted = first.submittedDiagnosis
+		if (!submitted && holdsTurn()) {
+			held = undefined
+			const closeOut = yield* recoverAutonomousFailure(
+				run({
+					text: CLOSE_OUT_PROMPT,
+					history: withToolTranscript(input.session.history()),
+					closeOut: true,
+				}),
+			)
+			submitted = closeOut.submittedDiagnosis
+			yield* Effect.annotateCurrentSpan("maple.investigation.closed_out", submitted)
+		}
+
+		if (holdsTurn()) {
+			const investigationId = investigationForSession(input.sessionId)
+			if (!submitted && investigationId !== undefined) {
+				observability.failureReason = "NoDiagnosis"
+				yield* investigations
+					.failInvestigation(tenant.orgId, investigationId, NO_DIAGNOSIS_ERROR)
+					.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logError("Could not record the failed pass", cause),
+						),
+					)
+			}
+			input.session.append(
+				submitted
+					? {
+							type: "turn-end",
+							messageId: input.messageId,
+							reason: held?.reason === "max-steps" ? "max-steps" : "stop",
+						}
+					: {
+							type: "turn-end",
+							messageId: input.messageId,
+							reason: "error",
+							error: NO_DIAGNOSIS_MESSAGE,
+						},
+			)
+			recordedTerminal = true
+		} else {
 			observability.outcome = "aborted"
 		}
 		yield* annotateTurn()

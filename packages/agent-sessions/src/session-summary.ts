@@ -16,6 +16,14 @@ import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
 import {
+	describeSchemaFailure,
+	failureDetailText,
+	incompleteRunTool,
+	rawFailureText,
+	stripFailurePrefixes,
+	toolNamedBySchemaError,
+} from "./failure-text"
+import {
 	classifyAiSpan,
 	isLlmCall,
 	spanEndMs,
@@ -130,14 +138,41 @@ export interface SessionToolUsage {
 	readonly events: readonly SessionToolCall[]
 }
 
-/** How a failure is named on the page — the bucket it counts in, and the label
- *  the breakdown groups by. */
-export type SessionFailureKind = "error" | "rateLimited" | "contextExceeded" | "refusal"
+/**
+ * How a failure is named on the page — the bucket it counts in, and the label
+ * the breakdown groups by.
+ *
+ * - `error`: an errored span nothing below names — the catch-all.
+ * - `rateLimited`, `contextExceeded`, `refusal`: the model-side signals the
+ *   rail has always drawn apart.
+ * - `providerError`: the model call itself failed at the provider or gateway.
+ * - `invalidOutput`: the model answered, and the answer failed the schema the
+ *   agent demanded of it — an agent-author problem, not a provider one.
+ * - `toolArguments`: a tool refused the arguments the model sent — the tool
+ *   ran fine, the model called it wrong.
+ * - `toolUnavailable`: a tool could not run at all — an integration not
+ *   connected, a repository not linked, a permission missing.
+ * - `toolTimeout`: a tool's backend gave up.
+ * - `incomplete`: the run ended without the completion the agent required.
+ */
+export type SessionFailureKind =
+	| "error"
+	| "rateLimited"
+	| "contextExceeded"
+	| "refusal"
+	| "providerError"
+	| "invalidOutput"
+	| "toolArguments"
+	| "toolUnavailable"
+	| "toolTimeout"
+	| "incomplete"
 
 export interface SessionFailureEvent {
 	readonly kind: SessionFailureKind
 	/** What went wrong, in the instrumentation's own vocabulary. */
 	readonly label: string
+	/** The tool the failure is about, for the kinds that name one. */
+	readonly tool?: string
 	readonly span: AiSessionSpan
 }
 
@@ -233,6 +268,8 @@ export function buildSessionSummary({
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
+	// The counts and the breakdown are two readings of this one list.
+	const events = failureEvents(ordered)
 
 	return {
 		startMs,
@@ -256,8 +293,8 @@ export function buildSessionSummary({
 			llmCalls: calls.length,
 			toolCalls: ordered.filter((span) => classifyAiSpan(span) === "tool").length,
 		},
-		failures: countFailures(ordered),
-		failureGroups: groupFailures(failureEvents(ordered)),
+		failures: countFailures(events),
+		failureGroups: groupFailures(events),
 		tools: toolUsage(ordered, turns),
 		spanCount: ordered.length,
 		traceCount: new Set(ordered.map((span) => span.traceId)).size,
@@ -773,7 +810,7 @@ function toolUsage(
 			durationMs: spanEndMs(span) - spanStartMs(span),
 			failed,
 			errorLabel: failed ? (span.genAi.errorType ?? "error") : undefined,
-			errorDetail: failed ? toolCallErrorDetail(span) : undefined,
+			errorDetail: failed ? failureDetailText(span) : undefined,
 			turnIndex: turnIndexBySpan.get(span.spanId),
 		})
 		byName.set(name, entry)
@@ -794,78 +831,6 @@ function toolUsage(
 			// the first thing a reader scans the ledger for.
 			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || a.name.localeCompare(b.name))
 	)
-}
-
-/**
- * A failed call's message: the span's status message, and where the framework
- * recorded the failure as a value on an `Ok` span, the recorded result itself.
- */
-function toolCallErrorDetail(span: AiSessionSpan): string | undefined {
-	const message = span.statusMessage.trim()
-	if (message !== "" && message !== span.genAi.errorType) return clipDetail(message)
-	const result = span.genAi.toolCallResult
-	if (result === undefined) return undefined
-	const prose = firstProse(result)
-	// Clipped like the status-message path above it: a framework that records a
-	// whole stack trace as the tool's result would otherwise hand the ledger an
-	// unbounded line.
-	return prose === undefined ? undefined : clipDetail(prose)
-}
-
-export function clipDetail(text: string): string {
-	return text.length > 140 ? `${text.slice(0, 139)}…` : text
-}
-
-/**
- * Keys an error payload's human message hides under, tried before anything
- * else so a structured result yields its message rather than its first field.
- * `result` and `prefix` are Maple's own `toolCallJson` wrappers — a bare error
- * string is recorded as `{result}`, an over-budget one as `{truncated, prefix}`.
- */
-const PROSE_KEYS = [
-	"error",
-	"message",
-	"error_message",
-	"errorMessage",
-	"reason",
-	"detail",
-	"result",
-	"prefix",
-	"text",
-]
-
-/**
- * The first human-readable line inside a captured payload. Maple's own tool
- * errors are plain strings; other vendors wrap the message in an object or an
- * MCP-style content array, so this walks tolerantly and gives up rather than
- * serialising structure into the row.
- */
-export function firstProse(value: unknown, depth = 0): string | undefined {
-	if (depth > 4) return undefined
-	if (typeof value === "string") {
-		const line = value
-			.split("\n")
-			.map((raw) => raw.trim())
-			.find((raw) => raw.length > 0)
-		return line
-	}
-	if (Array.isArray(value)) {
-		for (const entry of value) {
-			const prose = firstProse(entry, depth + 1)
-			if (prose !== undefined) return prose
-		}
-		return undefined
-	}
-	if (typeof value !== "object" || value === null) return undefined
-	const record = value as Record<string, unknown>
-	for (const key of PROSE_KEYS) {
-		if (key in record) {
-			const prose = firstProse(record[key], depth + 1)
-			if (prose !== undefined) return prose
-		}
-	}
-	// `content` last and on its own: MCP results nest their text parts there.
-	return "content" in record ? firstProse(record.content, depth + 1) : undefined
 }
 
 /* -------------------------------------------------------------------------- */
@@ -924,6 +889,69 @@ export function shadowedAncestorIds(
 }
 
 /**
+ * A gateway's per-provider attempt under one generation: OpenRouter tries
+ * several upstream providers for a single model call and emits a child span
+ * per try, marked with the provider and the status that moved it on. A failed
+ * attempt is the gateway's retry, not the agent's failure — the generation
+ * above it is what succeeded or failed.
+ */
+export function isProviderAttempt(span: AiSessionSpan): boolean {
+	return (
+		span.genAi.attemptIndex !== undefined ||
+		span.genAi.attemptStatusCode !== undefined ||
+		/^provider attempt\b/i.test(span.spanName)
+	)
+}
+
+/** Span kinds that are the app talking to something else: a client call's
+ *  4xx or a server span's 5xx is the app's business, never the agent's. The
+ *  warehouse spells the kind two ways (`SPAN_KIND_CLIENT` on the managed
+ *  schema, `Client` on BYO ClickHouse), so it is compared normalised. */
+const RPC_SPAN_KINDS = new Set(["CLIENT", "SERVER", "PRODUCER", "CONSUMER"])
+
+function isRpcSpan(span: AiSessionSpan): boolean {
+	return RPC_SPAN_KINDS.has(span.spanKind.replace(/^SPAN_KIND_/i, "").toUpperCase())
+}
+
+/**
+ * The app's own failed spans that restate an agent failure: the service and
+ * client spans under a failed tool call, the run wrapper over a failed model
+ * call. One cause, one event — the AI span carries it. An app span with no
+ * failed AI span above or below it is kept: it is the only record of whatever
+ * went wrong there.
+ */
+function appSpanShadowedIds(spans: readonly AiSessionSpan[]): ReadonlySet<string> {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const failedAi = spans.filter((span) => span.isAiSpan && spanFailed(span) && !isProviderAttempt(span))
+	// Every ancestor of a failed AI span is shadowed from below.
+	const shadowed = new Set<string>()
+	for (const span of failedAi) {
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			shadowed.add(parent.spanId)
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+	}
+	// A failed app span under a failed AI span is shadowed from above.
+	for (const span of spans) {
+		if (span.isAiSpan || !spanFailed(span) || shadowed.has(span.spanId)) continue
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			if (parent.isAiSpan && spanFailed(parent) && !isProviderAttempt(parent)) {
+				shadowed.add(span.spanId)
+				break
+			}
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+	}
+	return shadowed
+}
+
+/**
  * Everything that went wrong, one event per span that went wrong, in start
  * order. First match wins — a tool call that failed with a 429 is one event, a
  * rate limit, because that is the cause worth acting on — and `error` is the
@@ -937,28 +965,108 @@ export function shadowedAncestorIds(
  * Refusals are the exception: they are a finish reason on a span that
  * succeeded, so they are read independently of span status.
  *
+ * Three things a failed span can be are not events. A gateway's failed
+ * provider attempt is a retry the generation above it absorbed
+ * ({@link isProviderAttempt}); the findings report those on their own row. The
+ * app's client and server spans are the app's own traffic — a 405 from an MCP
+ * probe is not the agent failing. And the app's internal spans that sit above
+ * or below a failed AI span restate it ({@link appSpanShadowedIds}).
+ *
  * Both take the deepest reporter, because a framework that copies the model's
  * error or finish reason onto the agent span wrapping it would otherwise report
- * one failure as two.
+ * one failure as two — and a call observed by the app and again by a gateway's
+ * mirror carries the same response id, so it is one event too.
  *
  * Exported because the counts, the Overview's breakdown and its verdict are
  * three readings of this one list, and they must not disagree.
  */
 export function failureEvents(spans: readonly AiSessionSpan[]): readonly SessionFailureEvent[] {
-	const shadowedFailures = shadowedAncestorIds(spans, failureSignal)
-	const shadowedRefusals = shadowedAncestorIds(spans, refusalSignal)
+	// An attempt neither reports nor shadows: the generation above it is the
+	// one call, and its own refusal or failure is the gateway's retry.
+	const shadowedFailures = shadowedAncestorIds(spans, agentSignal(failureSignal))
+	const shadowedRefusals = shadowedAncestorIds(spans, agentSignal(refusalSignal))
+	const shadowedApp = appSpanShadowedIds(spans)
 	const events: SessionFailureEvent[] = []
 
 	for (const span of spans) {
+		if (isProviderAttempt(span)) continue
 		if (refusalSignal(span) !== undefined && !shadowedRefusals.has(span.spanId)) {
 			events.push({ kind: "refusal", label: "refusal", span })
 		}
 		if (!spanFailed(span) || shadowedFailures.has(span.spanId)) continue
+		if (!span.isAiSpan && (isRpcSpan(span) || shadowedApp.has(span.spanId))) continue
 		events.push({ ...classifyFailure(span), span })
 	}
 
-	return events
+	return dedupeByResponseId(events)
 }
+
+/** The signal as the agent's spans carry it: a provider attempt's is not read. */
+function agentSignal(
+	signalOf: (span: AiSessionSpan) => string | undefined,
+): (span: AiSessionSpan) => string | undefined {
+	return (span) => (isProviderAttempt(span) ? undefined : signalOf(span))
+}
+
+/**
+ * One model call, two observers: the app's own span and a gateway mirror of it
+ * (OpenRouter Broadcast) land in one session as separate traces with the same
+ * `gen_ai.response.id`. The observation that named the cause keeps the event:
+ * a specific kind over the catch-alls, then the longer text. Refusals are a
+ * finish reason, not a failure, so a refused call that also failed keeps both,
+ * while its refusal seen twice is one.
+ */
+function dedupeByResponseId(events: readonly SessionFailureEvent[]): readonly SessionFailureEvent[] {
+	const slots = new Map<string, { index: number; event: SessionFailureEvent }>()
+	const kept: SessionFailureEvent[] = []
+	for (const event of events) {
+		const id = event.span.genAi.responseId
+		if (id === undefined || id === "") {
+			kept.push(event)
+			continue
+		}
+		// A refusal and a failure of one call are two events; two observers of
+		// its refusal are one.
+		const key = `${event.kind === "refusal" ? "refusal" : "failure"}:${id}`
+		const slot = slots.get(key)
+		if (slot === undefined) {
+			slots.set(key, { index: kept.length, event })
+			kept.push(event)
+			continue
+		}
+		const specific = failureSpecificity(event) - failureSpecificity(slot.event)
+		const longer =
+			(rawFailureText(event.span) ?? "").length - (rawFailureText(slot.event.span) ?? "").length
+		if (specific > 0 || (specific === 0 && longer > 0)) {
+			kept[slot.index] = event
+			slot.event = event
+		}
+	}
+	return kept
+}
+
+/** Whether the event's kind says what happened, or is one of the catch-alls. */
+function failureSpecificity(event: SessionFailureEvent): number {
+	return event.kind === "error" || event.kind === "providerError" ? 0 : 1
+}
+
+// The words a failed tool's message uses for each cause. Written for what
+// frameworks and Maple's own tools actually say, so a reader gets "the model
+// called it wrong" against "it could not run" instead of one `error` bucket.
+// Matched against the message with its framework prefixes stripped — the
+// `@maple/http/errors/IntegrationsUpstreamError` tag on a GitHub 500 would
+// otherwise read as an integration that is not connected — and bounded, so a
+// megabyte tool result cannot stall the read.
+const CLASSIFIED_TEXT_CHARS = 1000
+const TOOL_TIMEOUT_PATTERN = /timeout|timed out|deadline exceeded/i
+/** A schema or parameter rejection: unambiguous, so it is read before the
+ *  availability words — a missing key named `integration` is still the model's
+ *  arguments. Read off the raw text, whose framework wrapper is the cue. */
+const TOOL_SCHEMA_PATTERN = /invalid (parameters?|arguments?|params?|input)|schemaerror|missing key/i
+const TOOL_ARGUMENTS_PATTERN =
+	/invalid (group_by|metric|filter|time range|value)|is required|requires `|must reference|must be|not a valid|unknown (function|column|table|field)|no table named|not found\b[\s\S]{0,400}available tables|resource '[^']*' not found|illegal types|too large|out of range|unsupported/i
+const TOOL_UNAVAILABLE_PATTERN =
+	/not configured|not connected|not available|unavailable|not enabled|not installed|unauthori[sz]ed|forbidden|permission denied|access denied|no sandbox|integration/i
 
 function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span"> {
 	const signal = errorSignal(span)
@@ -966,16 +1074,57 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 	if (CONTEXT_EXCEEDED_PATTERN.test(signal)) {
 		return { kind: "contextExceeded", label: "context_length_exceeded" }
 	}
+
+	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
+	const text = stripFailurePrefixes(raw)
+	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
+
 	// `error.type` is the instrumentation's own word for it; the tool name is
 	// what separates one failing tool from another under a shared `tool_error`.
 	const name = span.genAi.errorType ?? "error"
-	const tool = span.genAi.toolName
-	return { kind: "error", label: tool === undefined ? name : `${name} · ${tool}` }
+	const tool = span.genAi.toolName ?? (classifyAiSpan(span) === "tool" ? span.spanName : undefined)
+	if (tool !== undefined) {
+		// A parameter error names the tool whose schema was violated; a batch
+		// of calls can stamp a sibling's name on the span. `error.type` joins
+		// the words: a framework that stamps `timeout` and records no message
+		// has still said what happened. The schema wrapper is one of the
+		// prefixes stripping removes, so it is read off the raw text.
+		const named = toolNamedBySchemaError(raw) ?? tool
+		const words = `${span.genAi.errorType ?? ""} ${text}`
+		// The schema cue first: a rejected parameter named `timeout` is still
+		// the model's arguments.
+		if (TOOL_SCHEMA_PATTERN.test(raw))
+			return { kind: "toolArguments", label: `tool_arguments · ${named}`, tool: named }
+		if (TOOL_TIMEOUT_PATTERN.test(words)) {
+			return { kind: "toolTimeout", label: `tool_timeout · ${named}`, tool: named }
+		}
+		if (TOOL_UNAVAILABLE_PATTERN.test(words)) {
+			return { kind: "toolUnavailable", label: `tool_unavailable · ${named}`, tool: named }
+		}
+		if (TOOL_ARGUMENTS_PATTERN.test(words)) {
+			return { kind: "toolArguments", label: `tool_arguments · ${named}`, tool: named }
+		}
+		return { kind: "error", label: `${name} · ${named}`, tool: named }
+	}
+
+	if (span.genAi.errorType === "invalid_output" || describeSchemaFailure(text) !== undefined) {
+		return { kind: "invalidOutput", label: "invalid_output" }
+	}
+	// A model call that failed at the provider: Maple's own agents stamp
+	// `provider_error`; a gateway mirror's generation span stamps nothing and is
+	// known by where it came from. A more specific `error.type` keeps its name.
+	if (
+		span.genAi.errorType === "provider_error" ||
+		(span.genAi.errorType === undefined && span.vendorId === "openrouter" && isLlmCall(span))
+	) {
+		return { kind: "providerError", label: "provider_error" }
+	}
+	return { kind: "error", label: name }
 }
 
-function countFailures(spans: readonly AiSessionSpan[]): SessionFailureCounts {
+function countFailures(events: readonly SessionFailureEvent[]): SessionFailureCounts {
 	const counts = { errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 0 }
-	for (const event of failureEvents(spans)) {
+	for (const event of events) {
 		if (event.kind === "rateLimited") counts.rateLimited++
 		else if (event.kind === "contextExceeded") counts.contextExceeded++
 		else if (event.kind === "refusal") counts.refusals++

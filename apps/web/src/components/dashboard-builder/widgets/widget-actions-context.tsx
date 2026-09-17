@@ -1,4 +1,4 @@
-import { createContext, use, useMemo, type ReactNode } from "react"
+import { createContext, use, useCallback, useMemo, useState, type ReactNode } from "react"
 import { useNavigate } from "@tanstack/react-router"
 
 import type { SectionTarget } from "@maple/domain/http"
@@ -10,6 +10,10 @@ import {
 } from "@/components/chat/widget-fix-context"
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { dashboardSharesAtom } from "@/components/dashboard-builder/toolbar/dashboard-shares"
+import { EmbedWidgetDialog } from "@/components/dashboard-builder/toolbar/embed-widget-dialog"
+import { unsupportedShareWidgets } from "@/components/dashboard-builder/toolbar/share-support"
 
 export interface WidgetActions {
 	remove?: () => void
@@ -17,6 +21,12 @@ export interface WidgetActions {
 	configure?: () => void
 	createAlert?: () => void
 	fix?: () => void
+	/**
+	 * Opens the embed dialog for just this widget. `disabledReason` is set when
+	 * the item is shown but cannot be used: the widget is a kind a share cannot
+	 * render. A non-public board still opens the dialog, which explains itself.
+	 */
+	embed?: { open: () => void; disabledReason?: string }
 	/**
 	 * Pulls just this tile back to the widest window its query kind supports.
 	 * Present only while the tile is blocked on a `range` error; local to the
@@ -88,6 +98,9 @@ export function WidgetActionsProvider({
 		moveWidgetToSection,
 	} = useDashboardActions()
 	const navigate = useNavigate()
+	const [embedOpen, setEmbedOpen] = useState(false)
+	const openEmbed = useCallback(() => setEmbedOpen(true), [])
+	const embed = useWidgetEmbed(dashboardId, widget, openEmbed)
 
 	const errorTitle = dataState.status === "error" ? (dataState.title ?? null) : null
 	const errorMessage = dataState.status === "error" ? (dataState.message ?? null) : null
@@ -168,6 +181,7 @@ export function WidgetActionsProvider({
 			configure,
 			createAlert,
 			fix,
+			embed,
 			narrowRange,
 			narrowRangeLabel,
 			...(moveToSection
@@ -194,9 +208,51 @@ export function WidgetActionsProvider({
 		errorTitle,
 		errorMessage,
 		navigate,
+		embed,
 		narrowRange,
 		narrowRangeLabel,
 	])
 
-	return <WidgetActionsContext value={actions}>{children}</WidgetActionsContext>
+	return (
+		<WidgetActionsContext value={actions}>
+			{children}
+			{embedOpen ? (
+				<EmbedWidgetDialog
+					dashboardId={dashboardId}
+					widgetId={widget.id}
+					open={embedOpen}
+					onOpenChange={setEmbedOpen}
+				/>
+			) : null}
+		</WidgetActionsContext>
+	)
+}
+
+/**
+ * "Embed chart" for one widget.
+ *
+ * Absent until the share list has loaded, so the dialog always opens knowing
+ * whether the board is public. A non-public board still opens it: the dialog
+ * explains how to make it public. Only a widget a share cannot render is
+ * disabled outright.
+ */
+function useWidgetEmbed(
+	dashboardId: string,
+	widget: DashboardWidget,
+	open: () => void,
+): WidgetActions["embed"] {
+	const sharesAtom = useMemo(() => dashboardSharesAtom(dashboardId), [dashboardId])
+	const loaded = Result.isSuccess(useAtomValue(sharesAtom))
+	const supported = unsupportedShareWidgets([widget]).length === 0
+
+	return useMemo(
+		() =>
+			loaded
+				? {
+						open,
+						disabledReason: supported ? undefined : "This widget can't be shown in shared views",
+					}
+				: undefined,
+		[open, loaded, supported],
+	)
 }

@@ -3,9 +3,7 @@
 import type { CSSProperties } from "react"
 
 import { createDotm3x3Component } from "@/lib/dotmatrix-core"
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core"
-
-export type Dotm3x3_6Props = DotMatrixCommonProps
+import type { DotAnimationResolver } from "@/lib/dotmatrix-core"
 
 const animationResolver: DotAnimationResolver = ({ isActive, manhattanDistance, reducedMotion, phase }) => {
 	if (!isActive) {

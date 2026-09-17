@@ -15,26 +15,18 @@ import { and, eq, lt } from "drizzle-orm"
 import { Clock, Effect, Schema } from "effect"
 
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { widthFor } from "@maple/domain/investigation-fanout"
 
 import {
 	evaluateInvestigationQuota,
 	selectInvestigationUsage,
 } from "@maple/backend/services/errors/investigation-quota"
-import { startInvestigationFanout } from "@maple/backend/services/errors/investigation-fanout-start"
+import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
+	STALE_MS,
 	isInvestigationStale,
-	staleBudgetMs,
 	staleTimeoutMessage,
 } from "@maple/backend/services/errors/investigation-stale"
-import { UserId } from "@maple/domain/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-
-/** Identity an autonomous investigation turn runs as — the same one the internal MCP RPC uses. */
-const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
-
-/** Cloudflare Workflow binding that runs a fan-out. Present only in a Worker isolate. */
-export { INVESTIGATION_FANOUT_BINDING } from "@maple/domain/investigation-fanout"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 
@@ -182,13 +174,8 @@ export interface MaybeEnqueueTriageInput {
 	readonly incidentId: string
 	readonly issueId?: ErrorIssueId
 	readonly context: Record<string, unknown>
-	/**
-	 * The `InvestigationFanoutWorkflow` binding, read off the worker env by the
-	 * caller. Absent means the investigation cannot run and the row records why —
-	 * it does NOT silently fall back to one shallow pass, because a run that was
-	 * planned and quietly ran as a single agent is a lie in the boards.
-	 */
-	readonly fanoutBinding?: unknown
+	/** The Worker env, for the `ChatSession` binding. Absent means the row records why it could not run. */
+	readonly workerEnv?: Record<string, unknown>
 	/** Manual starts ignore the automation-enabled flag, but never the quota. */
 	readonly force?: boolean
 }
@@ -229,7 +216,7 @@ export const maybeEnqueueTriage: (
 		const existing = existingRows[0]
 		if (existing) {
 			if (isInvestigationStale(existing, nowMs)) {
-				const budget = staleBudgetMs(existing.fanoutState)
+				const budget = STALE_MS
 				yield* database.execute((db) =>
 					db
 						.update(investigations)
@@ -258,21 +245,15 @@ export const maybeEnqueueTriage: (
 			return { enqueued: false, reason: "disabled" as const }
 		}
 
-		// No routing decision to make: this producer only ever opens *incidents*, and
-		// an incident is planned. `routeInvestigation` exists for the manual path,
-		// which also has to handle free-form questions. What is left is the width.
 		const snapshot = snapshotFor(input)
-		const maxWidth = widthFor(snapshot.severity, input.incidentKind)
-		const reservedPasses = maxWidth + 2
 
-		// Runs and passes are two ceilings in two units, and this path used to sum
-		// `autonomousTurns` — a *pass* count — against `maxRunsPerDay`. Shared with
-		// `InvestigationService.ensureStartAllowed` so the two can no longer diverge.
+		// One agent, one pass. Shared with `InvestigationService` so the two ceilings
+		// are judged the same way on both paths.
 		const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
 		const verdict = evaluateInvestigationQuota({
 			usage,
 			limits: settings,
-			passCount: reservedPasses,
+			passCount: 1,
 			nowMs,
 			// Severity decides which pass ceiling applies, so that a burst of `low`
 			// incidents just after UTC midnight cannot spend the slice a `critical`
@@ -322,11 +303,7 @@ export const maybeEnqueueTriage: (
 					incidentId: input.incidentId,
 					issueId: input.issueId ?? null,
 					startedAt: new Date(nowMs),
-					fanoutState: "queued",
-					// Provisional until the planner runs; the workflow's `plan` step corrects
-					// both this and the reservation below once the real width exists.
-					fanoutSize: maxWidth,
-					autonomousTurns: reservedPasses,
+					autonomousTurns: 1,
 					createdAt: new Date(nowMs),
 					updatedAt: new Date(nowMs),
 				})
@@ -337,16 +314,20 @@ export const maybeEnqueueTriage: (
 			return { enqueued: false, reason: "duplicate" as const }
 		}
 
-		const started = yield* startInvestigationFanout({
+		const started = yield* startInvestigationTurn({
 			orgId: input.orgId,
 			investigationId,
-			maxWidth,
-			reservedPasses,
+			subject,
+			snapshot,
+			workerEnv: input.workerEnv,
 			nowMs,
-			fanoutBinding: input.fanoutBinding,
 		})
 		if (!started.started) {
-			return { enqueued: false, investigationId, reason: started.reason }
+			return {
+				enqueued: false,
+				investigationId,
+				reason: started.reason === "no_binding" ? ("no_binding" as const) : ("error" as const),
+			}
 		}
 		return { enqueued: true, investigationId }
 	},

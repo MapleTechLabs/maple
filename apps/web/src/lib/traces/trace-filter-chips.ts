@@ -17,36 +17,83 @@ const FACETS = [
 	exclude: keyof TracesSearchParams
 }>
 
+type ChipSearch = Pick<
+	TracesSearchParams,
+	(typeof FACETS)[number]["include" | "exclude"] | "attributeFilters" | "resourceAttributeFilters"
+>
+
+type AttributeParam = "attributeFilters" | "resourceAttributeFilters"
+
 export interface TraceFilterChipDescriptor {
-	/** The search param this chip owns, and what clearing it clears. */
-	param: keyof TracesSearchParams
+	/** Stable across renders: the param, plus the entry for attribute filters. */
+	id: string
 	label: string
 	values: readonly string[]
 	negated: boolean
+	/** The search without this chip's filter. */
+	remove: <S extends ChipSearch>(search: S) => S
+}
+
+function attributeChips(search: ChipSearch, param: AttributeParam): TraceFilterChipDescriptor[] {
+	const prefix = param === "resourceAttributeFilters" ? "resource." : ""
+	return (search[param] ?? []).map((entry) => ({
+		id: `${param}:${entry.key}:${entry.value}:${entry.negated ? "not" : "is"}`,
+		label: `${prefix}${entry.key}${entry.matchMode === "contains" ? " contains" : ""}`,
+		values: [entry.value],
+		negated: entry.negated === true,
+		remove: (s) => {
+			const rest = (s[param] ?? []).filter(
+				(other) =>
+					!(
+						other.key === entry.key &&
+						other.value === entry.value &&
+						other.negated === entry.negated &&
+						other.matchMode === entry.matchMode
+					),
+			)
+			return { ...s, [param]: rest.length > 0 ? rest : undefined }
+		},
+	}))
 }
 
 /**
- * The applied facet filters, ordered as the sidebar orders its sections, with exclusions pinned
- * ahead of inclusions.
+ * The applied facet and attribute filters, ordered as the sidebar orders its sections, with
+ * exclusions pinned ahead of inclusions.
  *
  * Exclusions lead because they are the ones that cannot be read off the results: an inclusion shows
  * up as what came back, an exclusion only as what didn't.
  */
-export function traceFilterChips(
-	search: Pick<TracesSearchParams, (typeof FACETS)[number]["include" | "exclude"]>,
-): TraceFilterChipDescriptor[] {
+export function traceFilterChips(search: ChipSearch): TraceFilterChipDescriptor[] {
 	const chips: TraceFilterChipDescriptor[] = []
 	for (const facet of FACETS) {
-		const excluded = search[facet.exclude]
-		if (excluded?.length) {
-			chips.push({ param: facet.exclude, label: facet.label, values: excluded, negated: true })
-		}
+		const values = search[facet.exclude]
+		if (values?.length) chips.push(facetChip(facet.exclude, facet.label, values, true))
 	}
 	for (const facet of FACETS) {
-		const included = search[facet.include]
-		if (included?.length) {
-			chips.push({ param: facet.include, label: facet.label, values: included, negated: false })
-		}
+		const values = search[facet.include]
+		if (values?.length) chips.push(facetChip(facet.include, facet.label, values, false))
 	}
+	const attributes = [
+		...attributeChips(search, "attributeFilters"),
+		...attributeChips(search, "resourceAttributeFilters"),
+	]
+	chips.push(...attributes.filter((chip) => chip.negated), ...attributes.filter((chip) => !chip.negated))
 	return chips
+}
+
+function facetChip(
+	param: (typeof FACETS)[number]["include" | "exclude"],
+	label: string,
+	values: readonly string[],
+	negated: boolean,
+): TraceFilterChipDescriptor {
+	return { id: param, label, values, negated, remove: (s) => ({ ...s, [param]: undefined }) }
+}
+
+/** The search with every chip's filter removed. */
+export function removeTraceFilterChips<S extends ChipSearch>(
+	search: S,
+	chips: readonly TraceFilterChipDescriptor[],
+): S {
+	return chips.reduce((acc, chip) => chip.remove(acc), search)
 }

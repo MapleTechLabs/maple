@@ -33,6 +33,10 @@ describe("toChatEvents", () => {
 		])
 	})
 
+	it("drops an empty text delta rather than logging it", () => {
+		assert.deepEqual(toChatEvents(event("TextDelta", { text: "" }), base), [])
+	})
+
 	it("announces a declared call with its arguments", () => {
 		assert.deepEqual(
 			toChatEvents(
@@ -186,6 +190,7 @@ describe("toChatEvents", () => {
 			"CompactionPerformed",
 			"RunSuspended",
 			"ApprovalRequested",
+			"AgentUpdateEmitted",
 			// `Requested` precedes the delegation call that opens the card; `Joined` follows the
 			// result that closes it. Either would duplicate an event already sent.
 			"SubagentRequested",
