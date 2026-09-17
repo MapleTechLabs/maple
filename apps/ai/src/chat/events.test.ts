@@ -33,6 +33,10 @@ describe("toChatEvents", () => {
 		])
 	})
 
+	it("drops an empty text delta rather than logging it", () => {
+		assert.deepEqual(toChatEvents(event("TextDelta", { text: "" }), base), [])
+	})
+
 	it("announces a declared call with its arguments", () => {
 		assert.deepEqual(
 			toChatEvents(

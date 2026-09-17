@@ -84,8 +84,9 @@ export interface BuildMapleToolsOptions {
 /**
  * A tool's failure as the model sees it: one line of text, never a cause.
  *
- * Declared rather than thrown so the runtime records a tool failure the model can route around,
- * instead of the failure ending the run.
+ * Where it goes depends on the tool's `failureMode` (see `buildMapleToolkit`): an ordinary tool
+ * returns it to the model, which rewrites the call; a gated tool propagates it and ends the run,
+ * which is how a proposal becomes the turn's last word and reaches the approval card.
  */
 export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 	"@maple/api/mcp/MapleToolFailure",
@@ -103,7 +104,7 @@ const fail = (message: string) => Effect.fail(new MapleToolFailure({ message }))
  * it already has, and left alone it will spend every turn it owns doing that.
  *
  * It refuses rather than denying authorization, because the two end differently: a refusal is a
- * declared tool failure the model can read and route around, and a third consecutive one trips the
+ * returned tool failure the model can read and route around, and enough consecutive ones trip the
  * policy's own `repeatedFailureLimit`, which stops the run. A host authorization denial ends the
  * run outright, and a user watching a chat turn would see an error instead of an answer.
  */
@@ -146,6 +147,8 @@ export const buildMapleToolkit = (
 			parameters: toInputSchema(definition.schema),
 			success: Schema.String,
 			failure: MapleToolFailure,
+			// A proposal must end the run; any other failure goes back to the model as the call's result.
+			failureMode: gated ? "error" : "return",
 		})
 	})
 	const toolkit = Toolkit.make(...tools)
@@ -157,14 +160,14 @@ export const buildMapleToolkit = (
 			const gated = options.gate?.(definition.name) ?? false
 			const dispatch = (params: unknown) =>
 				executor.execute(tenant, definition.name, params, options.surface ?? "chat").pipe(
+					// A tool that dies (unknown tool, tenant error) fails like one that reported an error.
+					// Caught before the `flatMap`, so a reported error is not wrapped a second time.
+					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 					Effect.flatMap((result) =>
 						result.isError
 							? fail(toolResultText(result))
 							: Effect.succeed(toolResultText(result)),
 					),
-					// A tool that fails outright (unknown tool, tenant error) must not kill the run —
-					// hand the model the message and let it route around.
-					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 				)
 			const handle = (params: unknown) => {
 				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
