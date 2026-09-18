@@ -15,7 +15,6 @@ export type DevApp = (typeof DEV_APPS)[number]
 
 /** The apps that run their own `dev` script as a child process; the rest are Workers on alchemy's local runtime. */
 export const DEV_PROCESS_APPS = [
-	"web",
 	"landing",
 	"ingest",
 	"local-ui",
