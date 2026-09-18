@@ -39,9 +39,9 @@ import { buildToolAnalyticsFixture, buildToolCells } from "./agent-tools-fixture
  *  into the Session cell. */
 const WIDTHS = [
 	{ label: "Full", value: null },
-	{ label: "1300px", value: 1300 },
+	{ label: "1340px", value: 1340 },
 	{ label: "1000px", value: 1000 },
-	{ label: "700px", value: 700 },
+	{ label: "740px", value: 740 },
 	{ label: "380px", value: 380 },
 ] as const
 

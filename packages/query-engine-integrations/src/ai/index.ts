@@ -26,6 +26,8 @@ export {
 	aiTraceTotalsQuery,
 	aiTraceWindowQuery,
 	idSearchPattern,
+	indexFailedSpanFromTuple,
+	MAX_FAILURES_PER_SESSION,
 	type AiSessionDistributionMeasure,
 	type AiSessionDistributionsOutput,
 	type AiSessionFacetType,

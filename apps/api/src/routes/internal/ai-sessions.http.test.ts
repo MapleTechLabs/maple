@@ -454,9 +454,25 @@ describe("POST /internal/ai-sessions/list", () => {
 		errorAgentSpans: "1",
 		toolErrors: 1,
 		turnErrors: 0,
-		// The one failed span, as the wire renders the tuple: a tool that timed
-		// out, in a trace that is not the session's last, so a warning.
+		// The failed spans, as the wire renders the tuple: a rate-limited model
+		// call — no tool, so the summary carries no `tool` key at all — and a
+		// tool that timed out, both in a trace that is not the session's last,
+		// so both warnings.
 		failures: [
+			[
+				"span-llm-1",
+				"span-agent-1",
+				0,
+				1,
+				"",
+				"",
+				"eve",
+				"429 Too Many Requests",
+				"",
+				"",
+				"trace-1",
+				"1755599604825",
+			],
 			[
 				"span-tool-1",
 				"span-agent-1",
@@ -472,8 +488,7 @@ describe("POST /internal/ai-sessions/list", () => {
 				"1755599605825",
 			],
 		],
-		lastTraceId: "trace-2",
-		lastTraceTurnFailed: 0,
+		terminalSpanId: "",
 		totalTokens: 18_400,
 		inputTokens: 12_000,
 		cacheReadTokens: 4_000,
@@ -543,8 +558,15 @@ describe("POST /internal/ai-sessions/list", () => {
 				errorSpanCount: 1,
 				toolErrorCount: 1,
 				turnErrorCount: 0,
-				// Classified off the shipped tuple by the detail page's own rule.
+				// Classified off the shipped tuples by the detail page's own rule.
 				failures: [
+					{
+						kind: "rateLimited",
+						label: "rate_limit",
+						count: 1,
+						severity: "anomaly",
+						terminal: false,
+					},
 					{
 						kind: "toolTimeout",
 						label: "tool_timeout · search_traces",

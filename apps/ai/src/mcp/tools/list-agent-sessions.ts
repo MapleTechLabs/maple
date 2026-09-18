@@ -14,6 +14,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { windowHint } from "../lib/agent-sessions"
 import { Effect, Schema } from "effect"
 import {
+	type AiSessionFailureSummary,
 	AI_SESSION_SEARCH_MAX_CHARS,
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -22,7 +23,6 @@ import {
 	RangeBound,
 } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
-import type { AiSessionFailureSummary } from "@maple/domain/http"
 import { splitCsv } from "@maple/domain/where-clause"
 import { listAiSessions } from "@maple/backend/services/ai-sessions/ai-session-reads"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
@@ -204,17 +204,22 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 }
 
 /** `!context_length_exceeded, tool_error · run_tests ×2` — the row's failures
- *  by label, a `!` on each one that needs a fix. `undefined` when the index
- *  classified none, and the raw counts say what it saw. */
+ *  by label, a `!` on each one that needs a fix, whole labels only and
+ *  `+N more` past the cell's width. `undefined` when the index classified
+ *  none, and the raw counts say what it saw. */
 function failuresCell(failures: ReadonlyArray<AiSessionFailureSummary>): string | undefined {
 	if (failures.length === 0) return undefined
-	return truncate(
-		failures
-			.map(
-				(failure) =>
-					`${failure.severity === "failure" ? "!" : ""}${failure.label}${failure.count > 1 ? ` ×${failure.count}` : ""}`,
-			)
-			.join(", "),
-		80,
+	const labels = failures.map(
+		(failure) =>
+			`${failure.severity === "failure" ? "!" : ""}${failure.label}${failure.count > 1 ? ` ×${failure.count}` : ""}`,
 	)
+	const shown: string[] = []
+	for (const label of labels) {
+		const next = [...shown, label].join(", ")
+		if (shown.length > 0 && next.length > FAILURES_CELL_MAX) break
+		shown.push(label)
+	}
+	const more = labels.length - shown.length
+	return shown.join(", ") + (more > 0 ? ` +${more} more` : "")
 }
+const FAILURES_CELL_MAX = 80

@@ -190,6 +190,24 @@ describe("AgentSessionsList", () => {
 			element?.classList.contains("rounded-full") === true && element.textContent === label
 		expect(view.getAllByText(chip("1 failure"))).toHaveLength(1)
 		expect(view.getAllByText(chip("2 warnings"))).toHaveLength(1)
+		// The breakdown is the chip's accessible name: the labels exist nowhere
+		// else until the tooltip opens.
+		expect(view.getByLabelText("context_length_exceeded (ended the run)")).toBeTruthy()
+		expect(view.getByLabelText("tool_error · run_tests ×2")).toBeTruthy()
+	})
+
+	it("counts the errored spans when the index classified none of them", () => {
+		const view = renderList(
+			<AgentSessionsList
+				{...sort}
+				sessions={[
+					{ ...session, errorSpanCount: 3, toolErrorCount: 0, turnErrorCount: 0, failures: [] },
+				]}
+			/>,
+		)
+		const chip = (label: string) => (_: string, element: Element | null) =>
+			element?.classList.contains("rounded-full") === true && element.textContent === label
+		expect(view.getAllByText(chip("3 spans"))).toHaveLength(1)
 		expect(view.getByText("18.4k")).toBeTruthy()
 		expect(view.getByText("maple-slack-agent")).toBeTruthy()
 	})
