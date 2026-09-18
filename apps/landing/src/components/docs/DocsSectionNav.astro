@@ -1,0 +1,48 @@
+---
+// Section strip under the docs header: the same four sections the sidebar
+// switcher shows, as tabs with the group glyphs. Both read getDocSections so
+// the two never disagree about where a page lives.
+import DocsCategoryIcon from "./DocsCategoryIcon.astro";
+import { getDocSections } from "../../lib/docs-order";
+
+interface Props {
+    currentSlug: string;
+}
+const { currentSlug } = Astro.props;
+const sections = await getDocSections(currentSlug);
+---
+
+<nav class="docs-section-nav flex h-10 items-stretch gap-1 overflow-x-auto border-t border-border/60 px-2 sm:px-4" aria-label="Documentation sections">
+    {sections.map((s) => (
+        <a
+            href={s.href}
+            aria-current={s.active ? "page" : undefined}
+            class:list={[
+                "group relative flex items-center gap-2 whitespace-nowrap px-2.5 text-[13px] transition-colors",
+                s.active ? "font-medium text-fg" : "text-fg-muted hover:text-fg",
+            ]}
+        >
+            <DocsCategoryIcon
+                name={s.icon}
+                class:list={["h-3.5 w-3.5 shrink-0 transition-colors", s.active ? "text-primary" : "text-fg-muted/70 group-hover:text-fg-muted"]}
+            />
+            <span>{s.label}</span>
+            <span
+                class:list={[
+                    "pointer-events-none absolute inset-x-1 -bottom-px h-0.5 bg-primary transition-opacity",
+                    s.active ? "opacity-100" : "opacity-0 group-hover:opacity-30",
+                ]}
+            ></span>
+        </a>
+    ))}
+</nav>
+
+<style>
+    /* Scrolls sideways on phones; the scrollbar would only add a second rule. */
+    .docs-section-nav {
+        scrollbar-width: none;
+    }
+    .docs-section-nav::-webkit-scrollbar {
+        display: none;
+    }
+</style>

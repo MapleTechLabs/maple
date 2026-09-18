@@ -1,12 +1,13 @@
 ---
-// The whole docs tree, always. Every group is visible on every page so a
-// reader on a Python guide can still see Go, alerting or the API without
-// going through a picker. Language rows carry their logo; Effect's platform
-// pages nest under the Effect row.
+// One section of the docs tree at a time. A switcher at the top mirrors the
+// header strip with page counts; below it, only the current section's groups
+// render, so a reader on a Python guide scans languages, not alerting.
+// Language rows carry their logo; Effect's platform pages nest under Effect.
 import { getCollection } from "astro:content";
 import DocsCategoryIcon from "./DocsCategoryIcon.astro";
 import LanguageLogo from "./LanguageLogo.astro";
-import { groupRank, isDocGroup } from "../../lib/docs-nav";
+import { groupRank, isDocGroup, sectionForGroup } from "../../lib/docs-nav";
+import { getDocSections } from "../../lib/docs-order";
 
 interface Props {
     currentSlug: string;
@@ -33,7 +34,12 @@ for (const doc of allDocs.sort(byOrder)) {
     rows.push({ doc, children: doc.id === EFFECT_ROOT ? effectChildren : [] });
     groups.set(doc.data.group, rows);
 }
-const ordered = [...groups.entries()].sort(([a], [b]) => groupRank(a) - groupRank(b) || a.localeCompare(b));
+const sections = await getDocSections(currentSlug);
+const section = sections.find((s) => s.active) ?? sections[0];
+
+const ordered = [...groups.entries()]
+    .filter(([group]) => sectionForGroup(group).id === section.id)
+    .sort(([a], [b]) => groupRank(a) - groupRank(b) || a.localeCompare(b));
 
 const label = (doc: Doc) => doc.data.navLabel ?? doc.data.title;
 const headingId = (group: string) => `${idPrefix}-${group.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -45,14 +51,34 @@ const rowClass = (active: boolean) =>
 ---
 
 <nav aria-label="Documentation">
+    <ul class="sticky top-0 z-10 mb-4 space-y-px border-b border-border bg-bg pt-6 pb-4" aria-label="Sections">
+        {sections.map((s) => (
+            <li>
+                <a
+                    href={s.href}
+                    aria-current={s.active ? "true" : undefined}
+                    class:list={[
+                        "flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 transition-colors",
+                        s.active ? "bg-bg-elevated font-medium text-fg" : "text-fg-muted hover:text-fg",
+                    ]}
+                >
+                    <span class="flex min-w-0 items-center gap-2">
+                        <DocsCategoryIcon name={s.icon} class:list={["h-3.5 w-3.5 shrink-0", s.active ? "text-primary" : "text-fg-muted/70"]} />
+                        <span class="truncate">{s.label}</span>
+                    </span>
+                    <span class="shrink-0 font-mono text-[10px] tabular-nums text-fg-muted/70">{s.count}</span>
+                </a>
+            </li>
+        ))}
+    </ul>
     {ordered.map(([groupName, rows]) => (
-        <section class="mb-6" aria-labelledby={headingId(groupName)}>
+        <section class="mb-7" aria-labelledby={headingId(groupName)}>
             <h3
                 id={headingId(groupName)}
-                class="flex items-center gap-1.5 text-[10px] text-fg/75 uppercase tracking-wider font-semibold mb-2 px-2"
+                class="mb-2 flex items-center gap-1.5 px-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted"
             >
                 {isDocGroup(groupName) && (
-                    <DocsCategoryIcon name={groupName} class="w-3 h-3 shrink-0 text-primary/80" />
+                    <DocsCategoryIcon name={groupName} class="h-3 w-3 shrink-0 text-primary/80" />
                 )}
                 {groupName}
             </h3>
@@ -65,7 +91,7 @@ const rowClass = (active: boolean) =>
                             <a
                                 href={`/docs/${doc.id}`}
                                 aria-current={active ? "page" : undefined}
-                                class:list={["flex items-center gap-2 py-1.5 px-2 text-xs transition-colors", rowClass(active)]}
+                                class:list={["flex items-center gap-2 px-2.5 py-1.5 text-[13px] leading-5 transition-colors", rowClass(active)]}
                             >
                                 {doc.data.sdk && (
                                     <LanguageLogo id={doc.data.sdk} class="h-3.5 w-3.5 shrink-0" />
@@ -75,7 +101,7 @@ const rowClass = (active: boolean) =>
                             {children.length > 0 && (
                                 <ul
                                     class:list={[
-                                        "ml-[1.15rem] border-l border-border/70 mt-px mb-1",
+                                        "ml-[1.35rem] border-l border-border/70 mt-px mb-1",
                                         !(active || childActive) && "hidden",
                                     ]}
                                 >
@@ -87,7 +113,7 @@ const rowClass = (active: boolean) =>
                                                     href={`/docs/${child.id}`}
                                                     aria-current={on ? "page" : undefined}
                                                     class:list={[
-                                                        "block py-1 pl-3 pr-2 text-xs transition-colors -ml-px",
+                                                        "-ml-px block py-1 pl-3 pr-2 text-[13px] leading-5 transition-colors",
                                                         on
                                                             ? "text-primary border-l border-primary"
                                                             : "text-fg-muted hover:text-fg border-l border-transparent",

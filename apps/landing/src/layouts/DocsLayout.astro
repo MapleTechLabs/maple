@@ -4,7 +4,7 @@ import DocsSidebar from "../components/docs/DocsSidebar.astro";
 import DocsTableOfContents from "../components/docs/DocsTableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
 import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
-import DocsCategoryNav from "../components/docs/DocsCategoryNav.astro";
+import DocsSectionNav from "../components/docs/DocsSectionNav.astro";
 import DocsSearch from "../components/docs/DocsSearch.tsx";
 import { getGitHubStars } from "../lib/github-stars";
 import { GithubStarButton } from "../components/GithubStarButton";
@@ -28,6 +28,7 @@ const stars = await getGitHubStars();
 const pageTitle = currentSlug ? `${title} — Maple Docs` : "Maple Docs";
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
 const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.site).toString();
+const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
 ---
 
 <!doctype html>
@@ -64,55 +65,49 @@ const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.si
             startLandingTelemetry();
         </script>
     </head>
-    <body class="min-h-screen antialiased bg-bg text-fg font-sans">
-        <!-- Docs header -->
+    <!-- Docs are a reading surface: proportional Geist for everything, the way
+         the blog sets its prose. Mono is opted back in per element for code,
+         eyebrows and labels. -->
+    <body class="min-h-screen antialiased bg-bg text-fg font-display">
         <header class="fixed top-0 left-0 right-0 z-50 border-b border-border bg-bg/95 backdrop-blur-md">
-            <div class="h-12 flex items-center justify-between px-5">
-                <div class="flex items-center gap-3">
-                    <a href="/" class="flex items-center gap-2 text-fg-muted hover:text-fg transition-colors">
-                        <MapleMark size={19} className="text-primary shrink-0" />
-                        <span class="text-xs font-medium text-fg">Maple</span>
-                    </a>
-                    <a
-                        href="/docs"
-                        class="text-[10px] uppercase tracking-wider font-medium px-1.5 py-0.5 border border-border text-fg-muted hover:text-fg hover:border-fg-muted/50 transition-colors"
-                    >
-                        Docs
-                    </a>
-                </div>
-                <div class="flex items-center gap-4">
+            <div class="flex h-14 items-center gap-5 px-4 sm:px-6">
+                <a href="/" class="flex items-center gap-2 text-fg transition-colors hover:text-primary">
+                    <MapleMark size={20} className="text-primary shrink-0" />
+                    <span class="text-[15px] font-semibold tracking-[-0.01em]">Maple</span>
+                </a>
+                <span class="h-4 w-px bg-border" aria-hidden="true"></span>
+                <a href="/docs" class="text-[14px] text-fg-muted transition-colors hover:text-fg">Docs</a>
+                <div class="ml-auto flex items-center gap-2.5">
                     <DocsSearch client:idle />
-                    <GithubStarButton stars={stars} className="inline-flex" />
+                    <GithubStarButton stars={stars} className="hidden sm:inline-flex" />
                     <a
                         href="https://app.maple.dev"
-                        class="text-[10px] text-fg-muted hover:text-primary transition-colors font-medium uppercase tracking-wider"
+                        class="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-xs font-medium text-fg-muted transition-colors hover:border-fg-muted/40 hover:text-fg"
                     >
-                        App
+                        Open app
                     </a>
                 </div>
             </div>
-            <DocsCategoryNav currentSlug={currentSlug} />
+            <DocsSectionNav currentSlug={currentSlug} />
         </header>
 
-        <div class="pt-[5.75rem] min-h-screen flex">
-            <!-- Sidebar -->
-            <aside class="hidden lg:block w-60 shrink-0 fixed top-[5.75rem] left-0 bottom-0 overflow-y-auto border-r border-border py-6 px-5">
+        <div class="flex min-h-screen pt-24">
+            <aside class="fixed top-24 bottom-0 left-0 hidden w-64 shrink-0 overflow-y-auto border-r border-border px-4 pb-7 lg:block">
                 <DocsSidebar currentSlug={currentSlug} />
             </aside>
 
-            <!-- Main content -->
-            <main class:list={["flex-1 min-w-0 lg:ml-60", !wide && "xl:mr-52"]}>
-                <div class:list={["mx-auto py-10 px-6", wide ? "max-w-4xl" : "max-w-3xl"]}>
+            <main class:list={["min-w-0 flex-1 lg:ml-64", hasToc && "xl:mr-60"]}>
+                <div class:list={["mx-auto px-5 py-10 sm:px-8 md:py-12", wide ? "max-w-5xl" : "max-w-3xl"]}>
                     <DocsMobileNav currentSlug={currentSlug} />
-                    {!wide && headings.some((h) => h.depth >= 2 && h.depth <= 3) && (
-                        <details class="xl:hidden mb-6 rounded-lg border border-border">
-                            <summary class="flex items-center justify-between px-4 py-3 cursor-pointer text-xs text-fg-muted hover:text-fg transition-colors list-none [&::-webkit-details-marker]:hidden">
+                    {hasToc && (
+                        <details class="mb-8 rounded-lg border border-border xl:hidden">
+                            <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
                                 <span>On this page</span>
-                                <svg class="w-3 h-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <svg class="h-3 w-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
                                     <path d="M3 5l3 3 3-3" />
                                 </svg>
                             </summary>
-                            <div class="px-4 pb-4 border-t border-border pt-4 max-h-[60vh] overflow-y-auto">
+                            <div class="max-h-[60vh] overflow-y-auto border-t border-border px-4 pt-4 pb-4">
                                 <DocsTableOfContents headings={headings} spy={false} />
                             </div>
                         </details>
@@ -122,9 +117,8 @@ const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.si
                 </div>
             </main>
 
-            <!-- Table of Contents -->
-            {!wide && (
-                <aside class="hidden xl:block w-52 shrink-0 fixed top-[5.75rem] right-0 bottom-0 overflow-y-auto py-6 px-5 border-l border-border">
+            {hasToc && (
+                <aside class="fixed top-24 right-0 bottom-0 hidden w-60 shrink-0 overflow-y-auto py-7 pr-6 pl-4 xl:block">
                     <DocsTableOfContents headings={headings} />
                 </aside>
             )}
@@ -168,20 +162,22 @@ const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.si
                 }
             }
 
-            // Sidebar: the active row is often below the fold on long trees.
+            // Sidebar: the active row is often below the fold on long trees. Scroll
+            // just far enough to show it, so the sticky section switcher stays put.
             const sidebar = document.querySelector<HTMLElement>("aside nav[aria-label='Documentation']");
             const active = sidebar?.querySelector<HTMLElement>("a[aria-current='page']");
             const rail = sidebar?.closest<HTMLElement>("aside");
-            if (active && rail && active.offsetTop > rail.clientHeight - 80) {
-                rail.scrollTop = active.offsetTop - rail.clientHeight / 2;
+            if (active && rail) {
+                const bottom = active.offsetTop + active.offsetHeight + 32;
+                if (bottom > rail.clientHeight) rail.scrollTop = bottom - rail.clientHeight;
             }
 
-            // Category strip scrolls horizontally on phones; keep the active one visible.
-            const strip = document.querySelector<HTMLElement>(".docs-cat-nav");
-            const category = strip?.querySelector<HTMLElement>("a[aria-current='page']");
-            if (strip && category) {
-                const overflow = category.offsetLeft + category.offsetWidth - strip.clientWidth;
-                if (overflow > 0) strip.scrollLeft = overflow + 24;
+            // Section strip scrolls horizontally on phones; keep the active one visible.
+            const strip = document.querySelector<HTMLElement>(".docs-section-nav");
+            const section = strip?.querySelector<HTMLElement>("a[aria-current='page']");
+            if (strip && section) {
+                const overflow = section.offsetLeft + section.offsetWidth - strip.clientWidth;
+                if (overflow > 0) strip.scrollLeft = overflow + 16;
             }
         </script>
     </body>
