@@ -9,11 +9,11 @@
  * container-backed in the script metadata, and provisions the application.
  */
 import {
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
 	WorkersObservabilityDestinations,
 	assetWorkerObservability,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { requireSecretEntry } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -29,7 +29,7 @@ const SANDBOX_IMAGE = "docker.io/cloudflare/sandbox:0.12.9"
 
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: `${import.meta.dirname}/src/worker.ts` }
-	const { stage } = yield* MapleStack
+	const { stage, region } = yield* MapleStack
 	const production = stage.kind === "prd"
 	// This Worker carries no OTel SDK — it is a plain module so its `Sandbox`
 	// class export survives — so platform logs are the only way anything it
@@ -38,9 +38,11 @@ const props = Effect.gen(function* () {
 	const destinations = yield* WorkersObservabilityDestinations
 	return {
 		main: `${import.meta.dirname}/src/worker.ts`,
-		name: resolveWorkerName("sandbox", stage),
+		name: resolveWorkerName("sandbox", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		// The container has no jurisdiction setting of its own, so the clone sits
+		// under the same best-effort placement as the Workers.
+		placement: resolveWorkerPlacement(region),
 		// Reached only over the api's service binding: no route, no hostname.
 		workersDev: false,
 		observability: assetWorkerObservability(destinations),

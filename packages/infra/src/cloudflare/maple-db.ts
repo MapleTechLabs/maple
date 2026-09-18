@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
 import {
 	type MapleDbConsumer,
-	parseMapleStage,
+	parseMapleDeployment,
 	resolveDatabaseMode,
 	resolveHyperdriveRefId,
 	resolveWorkerName,
@@ -45,11 +45,11 @@ export const MAPLE_DB_BINDING = "MAPLE_DB"
 export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 	MAPLE_DB_BINDING,
 	Effect.gen(function* () {
-		const stage = parseMapleStage(yield* Stage)
+		const { stage, region } = parseMapleDeployment(yield* Stage)
 		// A dev stage without its database URL cannot be planned: a defect, not a branch.
 		const pgUrl = new URL(yield* Effect.orDie(requiredPlain("MAPLE_PG_URL")))
 		const props: Cloudflare.Hyperdrive.Props = {
-			name: resolveWorkerName("db", stage),
+			name: resolveWorkerName("db", stage, region),
 			origin: {
 				scheme: "postgres",
 				host: pgUrl.hostname,
@@ -89,14 +89,14 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 export const MapleDb = (consumer: MapleDbConsumer) =>
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return
-		const stage = parseMapleStage(yield* Stage)
+		const { stage, region } = parseMapleDeployment(yield* Stage)
 		switch (resolveDatabaseMode(stage)) {
 			case "managed": {
 				yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)
 				return
 			}
 			case "ref": {
-				const id = resolveHyperdriveRefId(stage, consumer)
+				const id = resolveHyperdriveRefId(stage, consumer, region)
 				if (id === undefined) return
 				const host = yield* Cloudflare.Worker
 				yield* host.bind(MAPLE_DB_BINDING, {
