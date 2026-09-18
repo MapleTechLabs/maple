@@ -8,4 +8,4 @@ import { sessionIdentity } from "./session-detail/session-header"
  * unordered set — `sessionIdentity` reads the first name it is handed.
  */
 export const sessionHeading = (agentName: string, vendorId: string): string =>
-	sessionIdentity({ agentNames: agentName === "" ? [] : [agentName], vendorIds: [vendorId] }).heading
+	sessionIdentity({ agentNames: agentName === "" ? [] : [agentName], vendorIds: [vendorId] })
