@@ -409,10 +409,17 @@
       "breakpoints": true
     },
     {
-      "idx": 58,
+      "idx": 59,
       "version": "7",
-      "when": 1789595037711,
-      "tag": "0059_google_analytics_integration",
+      "when": 1789684460658,
+      "tag": "0059_planetscale_issue_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789768777806,
+      "tag": "0060_google_analytics_integration",
       "breakpoints": true
     }
   ]

@@ -37,6 +37,7 @@ import {
 	orgClickHouseSettings,
 	orgIngestKeys,
 	planetscaleConnections,
+	planetscaleIssueReceipts,
 	scrapeTargets,
 	slackWorkspaces,
 	vcsCommits,
@@ -107,6 +108,9 @@ const ORG_SCOPED_TABLES = [
 	// Holds the encrypted per-connection webhook HMAC secret — standing
 	// authority to have inbound writes attributed to an org that is gone.
 	planetscaleConnections,
+	// Dedupe receipts for the org's error issues, which are purged above; with the
+	// connection gone no redelivery can arrive for them to catch.
+	planetscaleIssueReceipts,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	liveActivities,
