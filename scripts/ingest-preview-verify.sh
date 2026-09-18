@@ -15,7 +15,13 @@ set -euo pipefail
 : "${PR_NUMBER:?PR_NUMBER is required}"
 region="${AWS_REGION:-us-east-1}"
 cluster="maple-ingest-pr-${PR_NUMBER}"
-gateway_service="maple-ingest-pr-${PR_NUMBER}"
+# The EC2 fleet (`preview:ingest-ec2`) is its own ECS service beside where
+# the Fargate one would be; the job's MAPLE_INGEST_FLEETS says which ran.
+if [[ "${MAPLE_INGEST_FLEETS:-}" == "ec2" ]]; then
+	gateway_service="maple-ingest-ec2-pr-${PR_NUMBER}"
+else
+	gateway_service="maple-ingest-pr-${PR_NUMBER}"
+fi
 collector_service="maple-otel-collector-pr-${PR_NUMBER}"
 namespace="maple-ingest-pr-${PR_NUMBER}.internal"
 failures=0
