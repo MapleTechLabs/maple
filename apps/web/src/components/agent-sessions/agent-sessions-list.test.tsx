@@ -50,6 +50,7 @@ const session: AgentSessionRow = {
 	errorSpanCount: 0,
 	toolErrorCount: 0,
 	turnErrorCount: 0,
+	failures: [],
 	serviceNames: ["maple-slack-agent"],
 	models: ["claude-sonnet-5"],
 	agentNames: ["web-fetcher", "slack-agent"],
@@ -114,7 +115,13 @@ describe("AgentSessionsList", () => {
 	it("asks for the next page when the sentinel comes into view, but not while one is in flight", () => {
 		const onReachEnd = vi.fn()
 		const view = renderList(
-			<AgentSessionsList {...sort} sessions={[session]} hasMore onReachEnd={onReachEnd} loadingMore={false} />,
+			<AgentSessionsList
+				{...sort}
+				sessions={[session]}
+				hasMore
+				onReachEnd={onReachEnd}
+				loadingMore={false}
+			/>,
 		)
 
 		const first = MockIntersectionObserver.instances[0]!
@@ -141,7 +148,7 @@ describe("AgentSessionsList", () => {
 		expect(MockIntersectionObserver.instances).toHaveLength(0)
 	})
 
-	it("names the framework by its mark alone, and splits the failures by kind", () => {
+	it("names the framework by its mark alone, and splits the failures by severity", () => {
 		const view = renderList(
 			<AgentSessionsList
 				{...sort}
@@ -151,6 +158,23 @@ describe("AgentSessionsList", () => {
 						errorSpanCount: 5,
 						toolErrorCount: 2,
 						turnErrorCount: 1,
+						failures: [
+							{
+								kind: "contextExceeded",
+								label: "context_length_exceeded",
+								count: 1,
+								severity: "failure",
+								terminal: true,
+							},
+							{
+								kind: "error",
+								label: "tool_error · run_tests",
+								tool: "run_tests",
+								count: 2,
+								severity: "anomaly",
+								terminal: false,
+							},
+						],
 					},
 				]}
 			/>,
@@ -164,8 +188,26 @@ describe("AgentSessionsList", () => {
 		// count and noun into fixed-width slots, so match on the whole chip's text.
 		const chip = (label: string) => (_: string, element: Element | null) =>
 			element?.classList.contains("rounded-full") === true && element.textContent === label
-		expect(view.getAllByText(chip("2 tools"))).toHaveLength(1)
-		expect(view.getAllByText(chip("1 turn"))).toHaveLength(1)
+		expect(view.getAllByText(chip("1 failure"))).toHaveLength(1)
+		expect(view.getAllByText(chip("2 warnings"))).toHaveLength(1)
+		// The breakdown is the chip's accessible name: the labels exist nowhere
+		// else until the tooltip opens.
+		expect(view.getByLabelText("context_length_exceeded (ended the run)")).toBeTruthy()
+		expect(view.getByLabelText("tool_error · run_tests ×2")).toBeTruthy()
+	})
+
+	it("counts the errored spans when the index classified none of them", () => {
+		const view = renderList(
+			<AgentSessionsList
+				{...sort}
+				sessions={[
+					{ ...session, errorSpanCount: 3, toolErrorCount: 0, turnErrorCount: 0, failures: [] },
+				]}
+			/>,
+		)
+		const chip = (label: string) => (_: string, element: Element | null) =>
+			element?.classList.contains("rounded-full") === true && element.textContent === label
+		expect(view.getAllByText(chip("3 spans"))).toHaveLength(1)
 		expect(view.getByText("18.4k")).toBeTruthy()
 		expect(view.getByText("maple-slack-agent")).toBeTruthy()
 	})
@@ -199,7 +241,12 @@ describe("AgentSessionsList", () => {
 	it("sorts through the column headers, marking the one the rows are in", () => {
 		const onSortChange = vi.fn()
 		const view = renderList(
-			<AgentSessionsList sessions={[session]} sortBy="cost" sortDir="desc" onSortChange={onSortChange} />,
+			<AgentSessionsList
+				sessions={[session]}
+				sortBy="cost"
+				sortDir="desc"
+				onSortChange={onSortChange}
+			/>,
 		)
 		const cost = view.getByRole("columnheader", { name: "Cost" })
 		expect(cost.getAttribute("aria-sort")).toBe("descending")

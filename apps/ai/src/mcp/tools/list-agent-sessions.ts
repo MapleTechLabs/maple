@@ -14,6 +14,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { windowHint } from "../lib/agent-sessions"
 import { Effect, Schema } from "effect"
 import {
+	type AiSessionFailureSummary,
 	AI_SESSION_SEARCH_MAX_CHARS,
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -150,7 +151,8 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				formatDurationFromMs(session.durationMs),
 				formatNumber(session.llmCalls),
 				formatNumber(session.toolCalls),
-				`${session.errorSpanCount}/${session.toolErrorCount}/${session.turnErrorCount}`,
+				failuresCell(session.failures) ??
+					`${session.errorSpanCount}/${session.toolErrorCount}/${session.turnErrorCount}`,
 				formatNumber(session.totalTokens),
 				session.cost > 0 ? formatCost(session.cost) : "—",
 				truncate(session.models.join(", "), 40),
@@ -160,7 +162,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			const lines: string[] = [
 				`## AI agent sessions (showing ${offset + 1}–${offset + sessions.length})`,
 				`Time range: ${st} — ${et}`,
-				`Every figure is over the session's AGENT spans; the app's own spans in the same traces are not counted. Errors are agent/tool/turn.`,
+				`Every figure is over the session's AGENT spans; the app's own spans in the same traces are not counted. Failures are by label, ×count; "!" marks one that needs a fix (the run died on it, or its kind always does), the rest were survived. A bare a/b/c is errored agent/tool/turn spans the index could not classify.`,
 				``,
 				formatTable(
 					[
@@ -171,7 +173,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 						"Duration",
 						"LLM calls",
 						"Tool calls",
-						"Errors",
+						"Failures",
 						"Tokens",
 						"Cost",
 						"Models",
@@ -180,7 +182,10 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					rows,
 				),
 				...(sessions.length === limit
-					? [``, `The page is full; more sessions may match — call again with offset=${offset + sessions.length}.`]
+					? [
+							``,
+							`The page is full; more sessions may match — call again with offset=${offset + sessions.length}.`,
+						]
 					: []),
 				formatNextSteps(
 					sessions.slice(0, 3).map(
@@ -197,3 +202,24 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 		}),
 	)
 }
+
+/** `!context_length_exceeded, tool_error · run_tests ×2` — the row's failures
+ *  by label, a `!` on each one that needs a fix, whole labels only and
+ *  `+N more` past the cell's width. `undefined` when the index classified
+ *  none, and the raw counts say what it saw. */
+function failuresCell(failures: ReadonlyArray<AiSessionFailureSummary>): string | undefined {
+	if (failures.length === 0) return undefined
+	const labels = failures.map(
+		(failure) =>
+			`${failure.severity === "failure" ? "!" : ""}${failure.label}${failure.count > 1 ? ` ×${failure.count}` : ""}`,
+	)
+	const shown: string[] = []
+	for (const label of labels) {
+		const next = [...shown, label].join(", ")
+		if (shown.length > 0 && next.length > FAILURES_CELL_MAX) break
+		shown.push(label)
+	}
+	const more = labels.length - shown.length
+	return shown.join(", ") + (more > 0 ? ` +${more} more` : "")
+}
+const FAILURES_CELL_MAX = 80

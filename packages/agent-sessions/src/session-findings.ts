@@ -6,7 +6,7 @@
 // instrumentation's own vocabulary. Nothing is scored, sampled or modeled: a
 // finding the reader clicks through to must be exactly what the spans say.
 
-import type { AiSessionSpan } from "@maple/domain/http"
+import type { AiSessionFailureSeverity, AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
 import { canonicalJSON } from "@maple/query-engine"
@@ -67,7 +67,14 @@ const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
 /** Red or amber: whether the thing found ended the run or names a class that
  *  needs a fix regardless, or was survived. The checklist's failed/warning
  *  split reads the same field, so the two never disagree. */
-export type FindingSeverity = "failure" | "anomaly"
+export type FindingSeverity = AiSessionFailureSeverity
+
+/** The one severity rule, for the findings here and for the list's breakdown
+ *  off the index (`index-failures.ts`): red when the run died on it or its
+ *  kind is in {@link FAILURE_KINDS}, amber otherwise. */
+export function failureSeverity(kind: SessionFailureKind, terminal: boolean): FindingSeverity {
+	return terminal || FAILURE_KINDS.has(kind) ? "failure" : "anomaly"
+}
 
 /** Which detector produced the row: a failure kind, or one of the four
  *  session-shape detectors below. What the checklist groups rows on. */
@@ -199,7 +206,7 @@ function failureFindings(
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
-			severity: terminal || FAILURE_KINDS.has(group.kind) ? ("failure" as const) : ("anomaly" as const),
+			severity: failureSeverity(group.kind, terminal),
 			label,
 			tool: group.tool,
 			count: group.members.length,

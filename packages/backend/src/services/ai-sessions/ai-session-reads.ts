@@ -35,6 +35,7 @@ import {
 	type ListAiSessionsRequest,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
+import { summarizeIndexFailures } from "@maple/agent-sessions"
 import { Array as Arr, Effect } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -206,7 +207,18 @@ export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 	)
 	// Rows returned, not rows asked for — annotated before the empty answer
 	// leaves, so a window that ranks nothing is visible as such.
-	yield* Effect.annotateCurrentSpan({ "maple.ai.page_size": page.length })
+	// The breakdown's two failure modes are otherwise invisible in a trace: a
+	// page whose rows classified nothing renders like a clean one, and a row
+	// cut at the cap may have lost the failure it died on.
+	yield* Effect.annotateCurrentSpan({
+		"maple.ai.page_size": page.length,
+		"maple.ai.failures_classified": Arr.reduce(page, 0, (n, row) => n + row.failures.length),
+		"maple.ai.failure_rows_capped": Arr.reduce(
+			page,
+			0,
+			(n, row) => n + (row.failures.length >= Integrations.MAX_FAILURES_PER_SESSION ? 1 : 0),
+		),
+	})
 	if (page.length === 0) {
 		return new ListAiSessionsResponse({ data: [] })
 	}
@@ -222,6 +234,10 @@ export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 			errorSpanCount: row.errorAgentSpans,
 			toolErrorCount: row.toolErrors,
 			turnErrorCount: row.turnErrors,
+			failures: summarizeIndexFailures(
+				row.failures.map(Integrations.indexFailedSpanFromTuple),
+				row.terminalSpanId,
+			),
 			serviceNames: row.serviceNames,
 			models: row.models,
 			agentNames: row.agentNames,

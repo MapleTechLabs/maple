@@ -37,7 +37,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -66,7 +70,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -117,7 +125,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -151,7 +163,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -207,7 +223,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -238,7 +258,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -284,8 +308,10 @@ SELECT
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          sum(arrayCount(f -> f.3 = 1, deepestFailedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1, deepestFailedSpans)) AS turnErrors,
+          [] AS failures,
+          argMax(if(turnRootFailed = 1, lastFailedSpanId, ''), tuple(traceIsMirror != 1, traceAgentEndNanos)) AS terminalSpanId,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -307,7 +333,11 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
           groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
@@ -440,6 +470,8 @@ SELECT
           errorAgentSpans AS errorAgentSpans,
           toolErrors AS toolErrors,
           turnErrors AS turnErrors,
+          failures AS failures,
+          terminalSpanId AS terminalSpanId,
           agentDurationMs AS agentDurationMs,
           toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
           arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
@@ -465,6 +497,8 @@ SELECT
           errorAgentSpans AS errorAgentSpans,
           toolErrors AS toolErrors,
           turnErrors AS turnErrors,
+          failures AS failures,
+          terminalSpanId AS terminalSpanId,
           agentDurationMs AS agentDurationMs,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -481,8 +515,10 @@ SELECT
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          sum(arrayCount(f -> f.3 = 1, deepestFailedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1, deepestFailedSpans)) AS turnErrors,
+          arraySlice(arrayReverseSort(d -> d.12, groupArrayArray(arrayFilter(d -> NOT has(tupleElement(failedSpans, 2), d.1), failedSpanDetails))), 1, 100) AS failures,
+          argMax(if(turnRootFailed = 1, lastFailedSpanId, ''), tuple(traceIsMirror != 1, traceAgentEndNanos)) AS terminalSpanId,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -504,8 +540,13 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters,
+          groupArrayIf(50)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, leftUTF8(StatusMessage, 400), leftUTF8(FailedToolCallResult, 400), ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpanDetails
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -534,6 +575,8 @@ SELECT
           errorAgentSpans AS errorAgentSpans,
           toolErrors AS toolErrors,
           turnErrors AS turnErrors,
+          failures AS failures,
+          terminalSpanId AS terminalSpanId,
           agentDurationMs AS agentDurationMs,
           toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
           arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
@@ -559,6 +602,8 @@ SELECT
           errorAgentSpans AS errorAgentSpans,
           toolErrors AS toolErrors,
           turnErrors AS turnErrors,
+          failures AS failures,
+          terminalSpanId AS terminalSpanId,
           agentDurationMs AS agentDurationMs,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -575,8 +620,10 @@ SELECT
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          sum(arrayCount(f -> f.3 = 1, deepestFailedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1, deepestFailedSpans)) AS turnErrors,
+          arraySlice(arrayReverseSort(d -> d.12, groupArrayArray(arrayFilter(d -> NOT has(tupleElement(failedSpans, 2), d.1), failedSpanDetails))), 1, 100) AS failures,
+          argMax(if(turnRootFailed = 1, lastFailedSpanId, ''), tuple(traceIsMirror != 1, traceAgentEndNanos)) AS terminalSpanId,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -598,8 +645,13 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters,
+          groupArrayIf(50)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, leftUTF8(StatusMessage, 400), leftUTF8(FailedToolCallResult, 400), ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpanDetails
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
@@ -647,6 +699,8 @@ SELECT
           errorAgentSpans AS errorAgentSpans,
           toolErrors AS toolErrors,
           turnErrors AS turnErrors,
+          failures AS failures,
+          terminalSpanId AS terminalSpanId,
           agentDurationMs AS agentDurationMs,
           toFloat64(arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 2)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, toFloat64(n.2)), arrayFilter(n -> n.1 != '', netted)))))) AS llmCalls,
           arraySum(tupleElement(arrayFilter(n -> n.1 = '', netted), 3)) + arraySum(mapValues(arrayReduce('maxMap', arrayMap(n -> map(n.1, n.3), arrayFilter(n -> n.1 != '', netted))))) AS totalTokens,
@@ -672,6 +726,8 @@ SELECT
           errorAgentSpans AS errorAgentSpans,
           toolErrors AS toolErrors,
           turnErrors AS turnErrors,
+          failures AS failures,
+          terminalSpanId AS terminalSpanId,
           agentDurationMs AS agentDurationMs,
           arrayMap(r -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))) > 0 OR greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))) > 0, NOT has(reportingIds, r.2)), greatest(0., r.3 - arrayElement(tupleElement(childClaims, 2), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.4 - arrayElement(tupleElement(childClaims, 3), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.7 - arrayElement(tupleElement(childClaims, 4), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.8 - arrayElement(tupleElement(childClaims, 5), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.9 - arrayElement(tupleElement(childClaims, 6), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.10 - arrayElement(tupleElement(childClaims, 7), indexOf(tupleElement(childClaims, 1), r.1))), greatest(0., r.11 - arrayElement(tupleElement(childClaims, 8), indexOf(tupleElement(childClaims, 1), r.1)))), reporters) AS netted
         FROM (SELECT
@@ -688,8 +744,10 @@ SELECT
           argMin(firstAgentName, firstAgentAt) AS firstAgentName,
           sum(toolCalls) AS toolCalls,
           sum(errorAgentSpans) AS errorAgentSpans,
-          sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors,
-          sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors,
+          sum(arrayCount(f -> f.3 = 1, deepestFailedSpans)) AS toolErrors,
+          sum(arrayCount(f -> f.3 != 1, deepestFailedSpans)) AS turnErrors,
+          arraySlice(arrayReverseSort(d -> d.12, groupArrayArray(arrayFilter(d -> NOT has(tupleElement(failedSpans, 2), d.1), failedSpanDetails))), 1, 100) AS failures,
+          argMax(if(turnRootFailed = 1, lastFailedSpanId, ''), tuple(traceIsMirror != 1, traceAgentEndNanos)) AS terminalSpanId,
           intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs,
           arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000) AS reporters,
           arrayReduce('sumMap', arrayMap(c -> [c.2], reporters), arrayMap(c -> [c.3], reporters), arrayMap(c -> [c.4], reporters), arrayMap(c -> [c.7], reporters), arrayMap(c -> [c.8], reporters), arrayMap(c -> [c.9], reporters), arrayMap(c -> [c.10], reporters), arrayMap(c -> [c.11], reporters)) AS childClaims,
@@ -711,8 +769,13 @@ SELECT
           min(if(AgentName != '', Timestamp, toDateTime('2106-01-01 00:00:00'))) AS firstAgentAt,
           sum(IsToolCall) AS toolCalls,
           sum(IsError) AS errorAgentSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1) AS failedSpans,
-          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans,
+          arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans,
+          arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed,
+          tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId,
+          vendorId = 'openrouter' AS traceIsMirror,
+          groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters,
+          groupArrayIf(50)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, leftUTF8(StatusMessage, 400), leftUTF8(FailedToolCallResult, 400), ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpanDetails
         FROM ai_trace_index
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'

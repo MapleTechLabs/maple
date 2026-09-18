@@ -34,14 +34,14 @@ import { buildToolAnalyticsFixture, buildToolCells } from "./agent-tools-fixture
 
 /** Widths worth checking, because the columns are container queries against
  *  `@container/page`, which `PageLayout.Content` declares: Model leaves below
- *  1270px, Services below 1110, Tokens below 940, the call counts below
- *  810/690, Cost and Duration below 580/500, and below 400 the time moves
+ *  1310px, Services below 1150, Tokens below 980, the call counts below
+ *  850/730, Cost and Duration below 620/540, and below 440 the time moves
  *  into the Session cell. */
 const WIDTHS = [
 	{ label: "Full", value: null },
-	{ label: "1300px", value: 1300 },
+	{ label: "1340px", value: 1340 },
 	{ label: "1000px", value: 1000 },
-	{ label: "700px", value: 700 },
+	{ label: "740px", value: 740 },
 	{ label: "380px", value: 380 },
 ] as const
 
@@ -53,6 +53,7 @@ const BASE: AgentSessionRow = {
 	errorSpanCount: 0,
 	toolErrorCount: 0,
 	turnErrorCount: 0,
+	failures: [],
 	serviceNames: ["maple-slack-agent"],
 	models: ["claude-sonnet-5"],
 	agentNames: ["slack-triage"],
@@ -121,6 +122,32 @@ function buildRows(nowMs: number): ReadonlyArray<AgentSessionRow> {
 			errorSpanCount: 26,
 			toolErrorCount: 24,
 			turnErrorCount: 1,
+			failures: [
+				{
+					kind: "toolUnavailable",
+					label: "tool_unavailable · github_search",
+					tool: "github_search",
+					count: 3,
+					severity: "failure",
+					terminal: false,
+				},
+				{
+					kind: "providerError",
+					label: "provider_error",
+					count: 1,
+					severity: "failure",
+					terminal: true,
+				},
+				{ kind: "rateLimited", label: "rate_limit", count: 9, severity: "anomaly", terminal: false },
+				{
+					kind: "error",
+					label: "tool_error · read_file",
+					tool: "read_file",
+					count: 12,
+					severity: "anomaly",
+					terminal: false,
+				},
+			],
 			totalTokens: 22_400_000,
 			inputTokens: 3_100_000,
 			cacheReadTokens: 17_800_000,
@@ -146,6 +173,9 @@ function buildRows(nowMs: number): ReadonlyArray<AgentSessionRow> {
 			errorSpanCount: 12,
 			toolErrorCount: 0,
 			turnErrorCount: 12,
+			failures: [
+				{ kind: "rateLimited", label: "rate_limit", count: 12, severity: "anomaly", terminal: false },
+			],
 			totalTokens: 812_000,
 			inputTokens: 0,
 			cacheReadTokens: 0,
