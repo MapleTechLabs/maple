@@ -69,13 +69,15 @@ const canonicalizeJson = (value: JsonValue): JsonValue => {
 	)
 }
 
+const assertJsonValue = Schema.decodeUnknownSync(
+	Schema.Unknown.check(
+		Schema.makeFilter((value) => isJsonValue(value), { expected: "finite acyclic JSON" }),
+	),
+)
+
 /** Stable JSON encoding for outbox collision checks and cross-host fixtures. */
 export const canonicalJson = (value: JsonValue): string => {
-	Schema.decodeUnknownSync(
-		Schema.Unknown.check(
-			Schema.makeFilter((value) => isJsonValue(value), { expected: "finite acyclic JSON" }),
-		),
-	)(value)
+	assertJsonValue(value)
 	return JSON.stringify(canonicalizeJson(value))
 }
 

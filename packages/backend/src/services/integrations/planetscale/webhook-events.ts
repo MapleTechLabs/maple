@@ -82,8 +82,7 @@ const EpochMillisSchema = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(0),
 	Schema.isLessThanOrEqualTo(8_640_000_000_000_000),
 )
-const validDate = (epochMs: number, _label: string): Date =>
-	msToDate(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
+const validDate = (epochMs: number): Date => msToDate(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
 
 export const planetScaleWebhookTimestampMillis = (payload: PlanetScaleWebhookPayload): number | null => {
 	if (payload.timestamp == null || !Number.isFinite(payload.timestamp) || payload.timestamp <= 0)
@@ -108,10 +107,10 @@ export const PLANETSCALE_WEBHOOK_ADAPTER: SignalSourceAdapter<
 		],
 	},
 	normalize: ({ connectionId, payload }, context) => {
-		const observedAtDate = validDate(Date.parse(context.acceptedAt), "receipt time")
+		const observedAtDate = validDate(Date.parse(context.acceptedAt))
 		const payloadJson = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(payload)
 		const occurredAtMs = planetScaleWebhookTimestampMillis(payload) ?? observedAtDate.getTime()
-		const occurredAt = validDate(occurredAtMs, "PlanetScale event timestamp").toISOString()
+		const occurredAt = validDate(occurredAtMs).toISOString()
 		const occurrenceId = `derived:sha256:${createHash("sha256")
 			.update(connectionId)
 			.update("\0")
@@ -214,6 +213,16 @@ const planetScaleRegistry = (
 		PLANETSCALE_REGISTRIES.set(orgId, registry)
 		return registry
 	})
+
+/**
+ * The unique-index conflict fired but the winning row is not visible. Thrown to
+ * abort the transaction; `Database.execute` surfaces it as a `DatabaseError`,
+ * so the queue retries the delivery instead of acking a lost occurrence.
+ */
+export class PlanetScaleIssueConflictUnresolved extends Schema.TaggedError<PlanetScaleIssueConflictUnresolved>()(
+	"@maple/api/planetscale/PlanetScaleIssueConflictUnresolved",
+	{ message: Schema.String, orgId: Schema.String, fingerprintHash: Schema.String },
+) {}
 
 export class PlanetScaleWebhookProjectionInvalid extends Schema.TaggedError<PlanetScaleWebhookProjectionInvalid>()(
 	"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
@@ -786,7 +795,11 @@ export const upsertPlanetScaleIssue: (
 						.for("update")
 				)[0]
 				if (winner === undefined)
-					throw new Error("PlanetScale issue conflict winner was not visible in the transaction")
+					throw new PlanetScaleIssueConflictUnresolved({
+						message: "PlanetScale issue conflict winner was not visible in the transaction",
+						orgId: input.orgId,
+						fingerprintHash,
+					})
 				return await applyExistingIssue(winner)
 			}
 

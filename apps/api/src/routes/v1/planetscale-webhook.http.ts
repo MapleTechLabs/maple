@@ -161,62 +161,63 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 			})
 
 			if (classified.action !== "issue" && classified.action !== "timeline") {
+				if (classified.action !== "test")
+					yield* Effect.logInfo("PlanetScale webhook lifecycle event acknowledged").pipe(
+						Effect.annotateLogs({ orgId: connection.orgId, event: payload.event }),
+					)
 				yield* Effect.annotateCurrentSpan({
 					"http.response.status_code": 200,
 					"maple.planetscale.webhook.outcome": "handled",
 				})
 				return textResponse("ok", 200)
 			}
-			// Queue only events that require persistence.
-			{
-				const now = yield* Clock.currentTimeMillis
-				const orgId = decodeOrgIdSync(connection.orgId)
-				const event = yield* Effect.fromResult(
-					projectPlanetScaleWebhookEvent({
-						orgId,
-						connectionId,
-						payload,
-						receivedAt: now,
-					}),
-				)
-				const job = {
-					kind: "planetscale-webhook" as const,
+			const now = yield* Clock.currentTimeMillis
+			const orgId = decodeOrgIdSync(connection.orgId)
+			const event = yield* Effect.fromResult(
+				projectPlanetScaleWebhookEvent({
 					orgId,
 					connectionId,
+					payload,
 					receivedAt: now,
-					event,
-				}
-				const prepared = preparePlanetScaleWebhookJob(job)
-				if (prepared.byteLength > MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES)
-					return yield* reject(
-						413,
-						"queue_message_too_large",
-						"Webhook payload exceeds the durable queue limit",
-					)
-				const enqueued = yield* webhookQueue.send(prepared).pipe(
-					Effect.tapError((error) =>
-						Effect.logError("PlanetScale webhook enqueue failed").pipe(
-							Effect.annotateLogs({
-								orgId: connection.orgId,
-								connectionId,
-								event: payload.event,
-								error: error.message,
-							}),
-						),
-					),
-					Effect.option,
-				)
-				if (Option.isNone(enqueued)) {
-					return yield* unavailable("queue_unavailable", "Webhook queue unavailable")
-				}
-				yield* Effect.logInfo("PlanetScale webhook event enqueued").pipe(
-					Effect.annotateLogs({
-						orgId: connection.orgId,
-						connectionId,
-						event: payload.event,
-					}),
-				)
+				}),
+			)
+			const job = {
+				kind: "planetscale-webhook" as const,
+				orgId,
+				connectionId,
+				receivedAt: now,
+				event,
 			}
+			const prepared = preparePlanetScaleWebhookJob(job)
+			if (prepared.byteLength > MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES)
+				return yield* reject(
+					413,
+					"queue_message_too_large",
+					"Webhook payload exceeds the durable queue limit",
+				)
+			const enqueued = yield* webhookQueue.send(prepared).pipe(
+				Effect.tapError((error) =>
+					Effect.logError("PlanetScale webhook enqueue failed").pipe(
+						Effect.annotateLogs({
+							orgId: connection.orgId,
+							connectionId,
+							event: payload.event,
+							error: error.message,
+						}),
+					),
+				),
+				Effect.option,
+			)
+			if (Option.isNone(enqueued)) {
+				return yield* unavailable("queue_unavailable", "Webhook queue unavailable")
+			}
+			yield* Effect.logInfo("PlanetScale webhook event enqueued").pipe(
+				Effect.annotateLogs({
+					orgId: connection.orgId,
+					connectionId,
+					event: payload.event,
+				}),
+			)
 
 			yield* Effect.annotateCurrentSpan({
 				"http.response.status_code": 202,

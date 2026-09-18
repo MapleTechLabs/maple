@@ -1,6 +1,7 @@
 import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
 import { describe, it } from "vitest"
 import { normalizeOtlpLogs } from "../src/server/eventing/otlp"
+import { ProjectionActivationConflict, SourceOccurrenceCollision } from "../src/server/eventing/runtime"
 import { __testables } from "../src/server/serve"
 
 describe("Local eventing ingest seam", () => {
@@ -559,5 +560,85 @@ describe("Local eventing ingest seam", () => {
 		strictEqual(result.accepted, 5)
 		strictEqual(inserted, true)
 		deepStrictEqual(stagedIds, ["event-1"])
+	})
+
+	it("refuses an in-batch source collision with 400 so exporters do not resend it", async () => {
+		const ingestWith = (failure: unknown) =>
+			__testables.ingest(
+				{ exec: () => undefined } as never,
+				{ isRetired: () => false } as never,
+				{
+					evaluateOtlp: () => {
+						throw failure
+					},
+				} as never,
+				"logs",
+				new Request("http://127.0.0.1/v1/logs", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ resourceLogs: [] }),
+				}),
+			)
+		const collision = await ingestWith(
+			new SourceOccurrenceCollision({ message: "source occurrence collision", occurrenceId: "a" }),
+		)
+		strictEqual(collision.response.status, 400)
+		strictEqual(collision.accepted, 0)
+		const transient = await ingestWith(new Error("control store unavailable"))
+		strictEqual(transient.response.status, 503)
+	})
+
+	it("reports a concurrent activation as a retryable 409", async () => {
+		const request = new Request("http://127.0.0.1/local/eventing/projections", {
+			method: "POST",
+			headers: { "x-maple-maintenance-token": "maintenance-secret" },
+			body: JSON.stringify({}),
+		})
+		const response = await __testables.handleProjectionActivation(
+			{
+				prepareActivation: () => ({}),
+				commitActivation: () => {
+					throw new ProjectionActivationConflict({ message: "projection registry changed" })
+				},
+			} as never,
+			new __testables.RequestQuiescenceGate(),
+			"maintenance-secret",
+			request,
+		)
+		strictEqual(response.status, 409)
+	})
+
+	it("validates outbox query parameters at the boundary and keeps store failures a 500", async () => {
+		const read = (query: string, eventing: Pick<LocalEventingRuntime, "listReady">) => {
+			const request = new Request(`http://127.0.0.1/local/eventing/outbox${query}`, {
+				headers: { "x-maple-maintenance-token": "maintenance-secret" },
+			})
+			return __testables.handleEventingRead(
+				eventing as never,
+				"maintenance-secret",
+				request,
+				new URL(request.url),
+			)
+		}
+		const listed: Array<readonly [number, number]> = []
+		const eventing = {
+			listReady: (limit: number, after: number) => {
+				listed.push([limit, after])
+				return { events: [], nextCursor: null }
+			},
+		}
+		strictEqual(read("?limit=0", eventing).status, 400)
+		strictEqual(read("?limit=1.5", eventing).status, 400)
+		strictEqual(read("?after=-1", eventing).status, 400)
+		strictEqual(read("?state=acked", eventing).status, 400)
+		strictEqual(read("?cursor=1", eventing).status, 400)
+		strictEqual(read("?limit=25&after=7", eventing).status, 200)
+		deepStrictEqual(listed, [[25, 7]])
+		const failing = {
+			listReady: () => {
+				throw new Error("database is locked")
+			},
+		}
+		strictEqual(read("", failing).status, 500)
 	})
 })

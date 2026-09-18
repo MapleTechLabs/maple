@@ -29,7 +29,12 @@ import {
 	LocalEventingControlStore,
 } from "./eventing/control-store"
 import { ensureEventConsumerToken, eventConsumerTokenMatches } from "./eventing/consumer-auth"
-import { LocalEventingRuntime } from "./eventing/runtime"
+import {
+	LocalEventingRuntime,
+	ProjectionActivationConflict,
+	ProjectionActivationInvalid,
+	SourceOccurrenceCollision,
+} from "./eventing/runtime"
 import { makeEffectEventingTelemetry } from "./eventing/telemetry"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
 import {
@@ -229,6 +234,13 @@ interface IngestResult {
 	readonly requestBytes: number
 }
 
+/**
+ * A malformed field or an in-batch identity collision fails identically on every
+ * retry, so it is a 400; OTLP exporters retry 503 and would resend the batch forever.
+ */
+const projectionFailureStatus = (error: unknown): 400 | 503 =>
+	error instanceof OtlpFieldError || error instanceof SourceOccurrenceCollision ? 400 : 503
+
 async function ingest(
 	db: Pick<Chdb, "exec">,
 	authority: RetiredDayAuthority,
@@ -266,9 +278,11 @@ async function ingest(
 	try {
 		evaluation = eventing.evaluateOtlp(signal, decoded, (rangeDate) => authority.isRetired(rangeDate))
 	} catch (error) {
-		const status = error instanceof OtlpFieldError ? 400 : 503
 		return {
-			response: text(`event projection ${signal}: ${(error as Error).message}`, status),
+			response: text(
+				`event projection ${signal}: ${describeThrown(error)}`,
+				projectionFailureStatus(error),
+			),
 			accepted: 0,
 			requestBytes,
 		}
@@ -297,9 +311,11 @@ async function ingest(
 			droppedEvents = staged.dropped
 		}
 	} catch (error) {
-		const status = error instanceof OtlpFieldError ? 400 : 503
 		return {
-			response: text(`event projection ${signal}: ${(error as Error).message}`, status),
+			response: text(
+				`event projection ${signal}: ${describeThrown(error)}`,
+				projectionFailureStatus(error),
+			),
 			accepted: 0,
 			requestBytes,
 		}
@@ -331,7 +347,7 @@ async function ingest(
 		if (readyEventIds.length > 0) eventing.markReady(readyEventIds)
 	} catch (error) {
 		return {
-			response: text(`event outbox readiness ${signal}: ${(error as Error).message}`, 503),
+			response: text(`event outbox readiness ${signal}: ${describeThrown(error)}`, 503),
 			accepted,
 			requestBytes,
 		}
@@ -665,18 +681,9 @@ const readBoundedJson = async (req: Request, maximumBytes: number): Promise<unkn
 }
 
 const recoverMaintenanceError = (error: unknown, fallback: Response): Response => {
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Union([MaintenanceInProgressError, RequestBodyTooLargeError]),
-	)(error)
-	if (Result.isFailure(decoded)) return fallback
-	return Effect.runSync(
-		Effect.fail(decoded.success).pipe(
-			Effect.catchTags({
-				"@maple/cli/MaintenanceInProgress": (error) => Effect.succeed(text(error.message, 409)),
-				"@maple/cli/RequestBodyTooLarge": (error) => Effect.succeed(text(error.message, 413)),
-			}),
-		),
-	)
+	if (error instanceof MaintenanceInProgressError) return text(error.message, 409)
+	if (error instanceof RequestBodyTooLargeError) return text(error.message, 413)
+	return fallback
 }
 const invalidJsonResponse = (error: unknown): Response =>
 	recoverMaintenanceError(error, text("invalid JSON body", 400))
@@ -810,61 +817,39 @@ const handleProjectionActivation = async (
 		// normal ingest/query admission remains open.
 		activation = eventing.prepareActivation(body)
 	} catch (error) {
-		return text(
-			`invalid event projection: ${error instanceof Error ? error.message : String(error)}`,
-			400,
-		)
+		return text(`invalid event projection: ${describeThrown(error)}`, 400)
 	}
 	try {
 		await gate.exclusive(async () => eventing.commitActivation(activation))
 		return json({ active: eventing.listActive() })
 	} catch (error) {
-		return recoverMaintenanceError(error, text(`invalid event projection: ${describeThrown(error)}`, 400))
+		if (error instanceof ProjectionActivationConflict) return text(error.message, 409)
+		if (error instanceof ProjectionActivationInvalid) return text(error.message, 400)
+		return recoverMaintenanceError(
+			error,
+			text(`event projection activation failed: ${describeThrown(error)}`, 500),
+		)
 	}
 }
 
 const eventConsumerErrorResponse = (error: unknown): Response => {
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Union([
-			EventConsumerInputError,
-			EventConsumerNotFoundError,
-			EventConsumerConflictError,
-			EventConsumerLeaseError,
-			EventConsumerDeliveryGapError,
-			OutboxAdministrationInvalid,
-		]),
-	)(error)
-	if (Result.isFailure(decoded))
-		return text(`event consumer operation failed: ${describeThrown(error)}`, 500)
-	return Effect.runSync(
-		Effect.fail(decoded.success).pipe(
-			Effect.catchTags({
-				"@maple/cli/eventing/EventConsumerDeliveryGap": (error) =>
-					Effect.succeed(
-						json(
-							{
-								error: error._tag,
-								message: error.message,
-								consumerId: error.consumerId,
-								generation: error.generation,
-								droppedEvents: error.droppedEvents,
-							},
-							409,
-						),
-					),
-				"@maple/cli/eventing/OutboxAdministrationInvalid": (error) =>
-					Effect.succeed(text(error.message, 400)),
-				"@maple/cli/eventing/EventConsumerInputInvalid": (error) =>
-					Effect.succeed(text(error.message, 400)),
-				"@maple/cli/eventing/EventConsumerNotFound": (error) =>
-					Effect.succeed(text(error.message, 404)),
-				"@maple/cli/eventing/EventConsumerConflict": (error) =>
-					Effect.succeed(text(error.message, 409)),
-				"@maple/cli/eventing/EventConsumerLeaseConflict": (error) =>
-					Effect.succeed(text(error.message, 409)),
-			}),
-		),
-	)
+	if (error instanceof EventConsumerDeliveryGapError)
+		return json(
+			{
+				error: error._tag,
+				message: error.message,
+				consumerId: error.consumerId,
+				generation: error.generation,
+				droppedEvents: error.droppedEvents,
+			},
+			409,
+		)
+	if (error instanceof OutboxAdministrationInvalid || error instanceof EventConsumerInputError)
+		return text(error.message, 400)
+	if (error instanceof EventConsumerNotFoundError) return text(error.message, 404)
+	if (error instanceof EventConsumerConflictError || error instanceof EventConsumerLeaseError)
+		return text(error.message, 409)
+	return text(`event consumer operation failed: ${describeThrown(error)}`, 500)
 }
 
 const ConsumerIdSchema = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9._-]{0,63}$/))
@@ -1041,6 +1026,19 @@ const handleOutboxAdministration = async (
 	})
 }
 
+const decodeOutboxQuery = Schema.decodeUnknownResult(
+	Schema.Struct({
+		state: Schema.optionalKey(Schema.Literals(["ready", "staged"])),
+		limit: Schema.optionalKey(
+			Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 1000 })),
+		),
+		after: Schema.optionalKey(
+			Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+		),
+	}),
+	{ onExcessProperty: "error" },
+)
+
 const handleEventingRead = (
 	eventing: LocalEventingRuntime,
 	token: string,
@@ -1053,17 +1051,15 @@ const handleEventingRead = (
 	if (url.pathname === "/local/eventing/projections") return json(eventing.listActive())
 	if (url.pathname === "/local/eventing/consumers") return json(eventing.listConsumers())
 	if (url.pathname === "/local/eventing/outbox") {
-		const rawLimit = url.searchParams.get("limit")
-		const limit = rawLimit === null ? 100 : Number(rawLimit)
-		const rawAfter = url.searchParams.get("after")
-		const after = rawAfter === null ? 0 : Number(rawAfter)
-		const state = url.searchParams.get("state") ?? "ready"
+		const query = decodeOutboxQuery(Object.fromEntries(url.searchParams))
+		if (Result.isFailure(query)) return text(`invalid outbox query: ${query.failure.message}`, 400)
+		const { state = "ready", limit = 100, after = 0 } = query.success
 		try {
-			if (state === "ready") return json(eventing.listReady(limit, after))
-			if (state === "staged") return json(eventing.listStaged(limit, after))
-			return text("outbox state must be ready or staged", 400)
+			return json(
+				state === "ready" ? eventing.listReady(limit, after) : eventing.listStaged(limit, after),
+			)
 		} catch (error) {
-			return text(error instanceof Error ? error.message : String(error), 400)
+			return text(`outbox read failed: ${describeThrown(error)}`, 500)
 		}
 	}
 	return text("not found", 404)
@@ -1197,7 +1193,7 @@ export const startServer = (
 				catch: (error) =>
 					new EventingStartupError({
 						cause: error,
-						message: `failed to open local eventing control store: ${error instanceof Error ? error.message : String(error)}`,
+						message: `failed to open local eventing control store: ${describeThrown(error)}`,
 					}),
 			}),
 			(store) =>
@@ -1217,7 +1213,7 @@ export const startServer = (
 			catch: (error) =>
 				new EventingStartupError({
 					cause: error,
-					message: `failed to compile local event projections: ${error instanceof Error ? error.message : String(error)}`,
+					message: `failed to compile local event projections: ${describeThrown(error)}`,
 				}),
 		})
 		// `CREATE ... IF NOT EXISTS` does not repair a table whose physical
@@ -1281,8 +1277,9 @@ export const startServer = (
 		const consumerToken = yield* Effect.tryPromise({
 			try: () => ensureEventConsumerToken(options.dataDir),
 			catch: (error) =>
-				new ChdbError({
-					message: `failed to load event consumer token: ${error instanceof Error ? error.message : String(error)}`,
+				new EventingStartupError({
+					cause: error,
+					message: `failed to load event consumer token: ${describeThrown(error)}`,
 				}),
 		})
 		const gate = new RequestQuiescenceGate()

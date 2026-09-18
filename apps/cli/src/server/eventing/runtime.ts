@@ -22,6 +22,29 @@ import { NOOP_EVENTING_TELEMETRY, type EventingTelemetry } from "./telemetry"
 
 const TENANT_ID = "local"
 
+/** A batch carries two different records under one source identity; retrying it cannot succeed. */
+export class SourceOccurrenceCollision extends Schema.TaggedError<SourceOccurrenceCollision>()(
+	"@maple/cli/eventing/SourceOccurrenceCollision",
+	{ message: Schema.String, occurrenceId: Schema.NullOr(Schema.String) },
+) {}
+
+/** A staged occurrence can no longer be recovered safely; the batch is refused until an operator abandons it. */
+export class StagedOccurrenceUnrecoverable extends Schema.TaggedError<StagedOccurrenceUnrecoverable>()(
+	"@maple/cli/eventing/StagedOccurrenceUnrecoverable",
+	{ message: Schema.String, occurrenceId: Schema.String },
+) {}
+
+export class ProjectionActivationInvalid extends Schema.TaggedError<ProjectionActivationInvalid>()(
+	"@maple/cli/eventing/ProjectionActivationInvalid",
+	{ message: Schema.String },
+) {}
+
+/** Another activation committed between prepare and commit; the request can be retried. */
+export class ProjectionActivationConflict extends Schema.TaggedError<ProjectionActivationConflict>()(
+	"@maple/cli/eventing/ProjectionActivationConflict",
+	{ message: Schema.String },
+) {}
+
 export interface LocalProjectionEvaluation {
 	readonly events: readonly MapleCloudEvent[]
 	readonly eventSourceFingerprints: ReadonlyMap<string, string>
@@ -112,7 +135,9 @@ export class LocalEventingRuntime {
 		assertSignalProjectionInputBudget(candidate)
 		const spec = Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate)
 		if (spec.tenantId !== TENANT_ID)
-			throw new Error(`Maple Local only accepts projections for tenant ${TENANT_ID}`)
+			throw new ProjectionActivationInvalid({
+				message: `Maple Local only accepts projections for tenant ${TENANT_ID}`,
+			})
 		const active = this.#store
 			.loadEnabledProjections(TENANT_ID)
 			.filter((candidate) => candidate.id !== spec.id)
@@ -125,7 +150,9 @@ export class LocalEventingRuntime {
 
 	commitActivation(activation: LocalProjectionActivation): void {
 		if (activation.generation !== this.#generation)
-			throw new Error("projection registry changed during activation; retry the request")
+			throw new ProjectionActivationConflict({
+				message: "projection registry changed during activation; retry the request",
+			})
 		this.#store.saveProjection(activation.spec)
 		this.#compiled = activation.compiled
 		this.#activeSourceKinds = new Set(activation.next.map(({ sourceKind }) => sourceKind))
@@ -189,16 +216,18 @@ export class LocalEventingRuntime {
 			const fingerprint = sourceOccurrenceFingerprint(occurrence)
 			const prior = sourceFingerprints.get(key)
 			if (prior !== undefined && prior !== fingerprint)
-				throw new Error(
-					`source occurrence collision within one ingest batch: ${occurrence.occurrenceId}`,
-				)
+				throw new SourceOccurrenceCollision({
+					message: `source occurrence collision within one ingest batch: ${occurrence.occurrenceId}`,
+					occurrenceId: occurrence.occurrenceId,
+				})
 			sourceFingerprints.set(key, fingerprint)
 		}
 		for (const identity of unprojectedIdentities) {
 			if (sourceFingerprints.has(recoveryIdentityKey(identity)))
-				throw new Error(
-					`source occurrence collision with an unprojectable record within one ingest batch: ${identity.occurrenceId}`,
-				)
+				throw new SourceOccurrenceCollision({
+					message: `source occurrence collision with an unprojectable record within one ingest batch: ${identity.occurrenceId}`,
+					occurrenceId: identity.occurrenceId,
+				})
 			if (
 				this.#store.hasStagedSourceOccurrence(
 					identity.tenantId,
@@ -207,9 +236,10 @@ export class LocalEventingRuntime {
 					identity.occurrenceId,
 				)
 			)
-				throw new Error(
-					`cannot safely recover staged source occurrence after projection normalization failed: ${identity.occurrenceId}`,
-				)
+				throw new StagedOccurrenceUnrecoverable({
+					message: `cannot safely recover staged source occurrence after projection normalization failed: ${identity.occurrenceId}`,
+					occurrenceId: identity.occurrenceId,
+				})
 		}
 		const snapshot = this.#compiled
 		const events: MapleCloudEvent[] = []
@@ -250,7 +280,10 @@ export class LocalEventingRuntime {
 			for (const event of result.events) {
 				const priorFingerprint = eventSourceFingerprints.get(event.id)
 				if (priorFingerprint !== undefined && priorFingerprint !== sourceFingerprint)
-					throw new Error(`source occurrence collision within one ingest batch: ${event.id}`)
+					throw new SourceOccurrenceCollision({
+						message: `source occurrence collision within one ingest batch: ${event.id}`,
+						occurrenceId: occurrence.occurrenceId,
+					})
 				eventSourceFingerprints.set(event.id, sourceFingerprint)
 			}
 			failures.push(...result.failures)
