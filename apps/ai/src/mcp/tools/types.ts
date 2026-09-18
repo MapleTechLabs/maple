@@ -1,6 +1,7 @@
 import type { Effect } from "effect"
 import { Schema, SchemaTransformation } from "effect"
 import { WarehouseTimeInput } from "@maple/query-engine"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { McpToolRequirements } from "./runtime-requirements"
 
 class McpTenantError extends Schema.TaggedError<McpTenantError>()("@maple/mcp/errors/McpTenantError", {
@@ -46,12 +47,36 @@ export interface McpToolResult {
 	isError?: boolean
 }
 
+/**
+ * Who a tool is for.
+ *
+ * `public` tools are listed on and callable from every surface, the MCP transport
+ * included. `internal` tools exist for Maple's own agents only — the chat agent
+ * and the investigation pass — and the public transport neither lists nor
+ * executes them. Declared at registration, so a tool cannot reach a third-party
+ * MCP client by the mere fact of being in the registry: until this existed,
+ * registering was publishing, and `sandbox_exec` shipped as a public tool.
+ */
+export type McpToolAudience = "public" | "internal"
+
+export interface McpToolOptions {
+	/** Defaults to `public`. */
+	readonly audience?: McpToolAudience
+}
+
+const INTERNAL_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["chat", "workflow"])
+
+/** Whether a surface may see and call a tool of this audience. */
+export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boolean =>
+	audience === "public" || INTERNAL_SURFACES.has(surface)
+
 export interface McpToolRegistrar {
 	tool<TSchema extends Schema.Codec<unknown, unknown, never, unknown>, R extends McpToolRequirements>(
 		name: string,
 		description: string,
 		schema: TSchema,
 		handler: (params: TSchema["Type"]) => Effect.Effect<McpToolResult, McpToolError, R>,
+		options?: McpToolOptions,
 	): void
 }
 

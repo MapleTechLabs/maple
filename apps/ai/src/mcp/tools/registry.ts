@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Effect, Schema } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
@@ -61,7 +62,13 @@ import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
-import type { McpToolError, McpToolRegistrar, McpToolResult } from "./types"
+import {
+	audienceAdmits,
+	type McpToolAudience,
+	type McpToolError,
+	type McpToolRegistrar,
+	type McpToolResult,
+} from "./types"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
@@ -70,6 +77,7 @@ interface MapleToolDefinition {
 	readonly name: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
+	readonly audience: McpToolAudience
 	readonly handler: (params: unknown) => Effect.Effect<McpToolResult, McpToolError, McpToolRequirements>
 }
 
@@ -77,6 +85,7 @@ export interface MapleToolCatalogEntry {
 	readonly name: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
+	readonly audience: McpToolAudience
 }
 
 class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/decode-error", {
@@ -175,11 +184,12 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 
 const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
-	const collect: McpToolRegistrar["tool"] = (name, description, schema, handler) => {
+	const collect: McpToolRegistrar["tool"] = (name, description, schema, handler, options) => {
 		definitions.push({
 			name,
 			description,
 			schema,
+			audience: options?.audience ?? "public",
 			handler: (params) => handler(params as typeof schema.Type),
 		})
 	}
@@ -255,8 +265,12 @@ const mapleToolDefinitions = collectMapleToolDefinitions()
 
 /** Handler-free registry view for schemas, permissions, MCP discovery, and tests. */
 export const mapleToolCatalog: ReadonlyArray<MapleToolCatalogEntry> = mapleToolDefinitions.map(
-	({ name, description, schema }) => ({ name, description, schema }),
+	({ name, description, schema, audience }) => ({ name, description, schema, audience }),
 )
+
+/** The catalog as one surface sees it. What a surface cannot see, it cannot call either. */
+export const mapleToolCatalogFor = (surface: McpToolSurface): ReadonlyArray<MapleToolCatalogEntry> =>
+	mapleToolCatalog.filter((definition) => audienceAdmits(definition.audience, surface))
 
 const toDecodeErrorMessage = (definition: MapleToolDefinition, error: unknown): string => {
 	if (Schema.isSchemaError(error)) {
@@ -268,13 +282,23 @@ const toDecodeErrorMessage = (definition: MapleToolDefinition, error: unknown): 
 /**
  * The one raw registry entry point. Its full Effect environment is intentionally
  * preserved; only `McpToolExecutor` may close it with tenant and app services.
+ *
+ * The surface is part of the lookup: an internal tool called from a surface it
+ * is not exposed on does not exist there, and gets the same answer as an unknown
+ * name, so the public transport cannot enumerate the internal set by probing.
  */
 export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execute")(function* (
 	name: string,
 	input: unknown,
+	surface: McpToolSurface,
 ) {
 	const definition = mapleToolDefinitions.find((candidate) => candidate.name === name)
-	if (!definition) {
+	if (!definition || !audienceAdmits(definition.audience, surface)) {
+		if (definition) {
+			yield* Effect.logWarning("MCP tool is not exposed on this surface").pipe(
+				Effect.annotateLogs({ "maple.mcp.tool": name, "maple.mcp.surface": surface }),
+			)
+		}
 		return yield* new McpToolNotFoundError({
 			name,
 			message: `Unknown MCP tool: ${name}`,

@@ -16,7 +16,7 @@ import { Cause, Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { mapleToolCatalog, toInputSchema } from "./registry"
+import { mapleToolCatalogFor, toInputSchema } from "./registry"
 import { truncateToolOutput } from "./tool-output"
 import { withToolCallContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -123,9 +123,15 @@ const repeats = (dispatched: Map<string, number>, name: string, params: unknown)
 	return seen
 }
 
-/** The registry entries this build exposes, after the caller's `include` filter. */
+/**
+ * The registry entries this build exposes: what the surface may see at all, then
+ * the caller's `include` filter. The surface cut comes first so a ruleset that
+ * allows `*` cannot widen a build past its audience.
+ */
 const exposed = (options: BuildMapleToolsOptions) =>
-	mapleToolCatalog.filter((definition) => options.include?.(definition.name) ?? true)
+	mapleToolCatalogFor(options.surface ?? "chat").filter(
+		(definition) => options.include?.(definition.name) ?? true,
+	)
 
 /**
  * The Maple MCP registry as an Effect AI toolkit plus its handler layer.
