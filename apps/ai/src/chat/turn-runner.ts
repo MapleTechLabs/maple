@@ -21,13 +21,20 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, decodeChatTurnTenant, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
+import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { CLOSE_OUT_PROMPT } from "./prompts"
-import { investigationForSession, isAutonomousInvestigationTurn, makeRunUsage } from "./tools"
+import { makeProgressRecorder, parseToolInput } from "./progress"
+import {
+	investigationForSession,
+	isAutonomousInvestigationTurn,
+	makeRunUsage,
+	SUBMIT_DIAGNOSIS,
+} from "./tools"
 
 /**
  * Low-cardinality facts collected during the run and emitted once on the turn span.
@@ -265,6 +272,42 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				: { "maple.chat.failure_reason": observability.failureReason }),
 		})
 
+	const investigationId = investigationForSession(input.sessionId)
+
+	// Mirror the autonomous pass's tool calls onto the investigation row. Writes are chained so
+	// two heartbeats cannot land out of order, and so `drainProgress` has one promise to await
+	// before the runtime is disposed. A failed write is logged and dropped: it is only a feed.
+	const progress = makeProgressRecorder()
+	let progressWrites: Promise<void> = Promise.resolve()
+	const writeProgress = (record: InvestigationProgress | undefined) => {
+		if (record === undefined || investigationId === undefined) return
+		progressWrites = progressWrites.then(
+			(): Promise<void> =>
+				runtime
+					.runPromise(
+						InvestigationService.pipe(
+							Effect.flatMap((service) =>
+								service.recordProgress(tenant.orgId, investigationId, record),
+							),
+							Effect.catch((error) =>
+								Effect.logWarning("Could not record investigation progress").pipe(
+									Effect.annotateLogs({ investigationId, error: error.message }),
+								),
+							),
+						),
+					)
+					.catch(() => undefined),
+		)
+	}
+
+	// Flush the steps the heartbeat swallowed and await whatever is in flight. Called before
+	// `failInvestigation` so the tail lands while the row is still `investigating`, and again
+	// from `ensuring` so an interrupted pass never disposes the runtime mid-write.
+	const drainProgress = Effect.suspend(() => {
+		writeProgress(progress.pending())
+		return Effect.promise(() => progressWrites)
+	})
+
 	const program = Effect.gen(function* () {
 		const investigations = yield* InvestigationService
 		const toolExecutor = yield* McpToolExecutor
@@ -286,7 +329,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
 		const autonomous = isAutonomousInvestigationTurn(input.sessionId, tenant)
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
-
 		// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
 		// in prose or died on a model error gets one close-out turn first, so its terminal is held
 		// back until the outcome is known.
@@ -312,6 +354,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				// a conversation that has moved on.
 				holdsTurn,
 				append: (event) => {
+					// The diagnosis call is the run ending, not a step of it; recording it would also
+					// race the status flip and land on some rows but not others.
+					if (
+						autonomous &&
+						event.type === "tool-call" &&
+						event.proposed !== true &&
+						event.name !== SUBMIT_DIAGNOSIS
+					) {
+						writeProgress(progress.step(event.name, parseToolInput(event.input), Date.now()))
+					}
 					if (event.type === "turn-end" && event.task === undefined) {
 						observability.outcome = event.reason
 						if (autonomous && event.reason !== "aborted") {
@@ -364,8 +416,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			yield* Effect.annotateCurrentSpan("maple.investigation.closed_out", submitted)
 		}
 
+		yield* drainProgress
+
 		if (holdsTurn()) {
-			const investigationId = investigationForSession(input.sessionId)
 			if (!submitted && investigationId !== undefined) {
 				observability.failureReason = "NoDiagnosis"
 				yield* investigations
@@ -399,6 +452,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
 		// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 		Effect.ensuring(Effect.suspend(() => meterTurn(input, tenant, usage))),
+		Effect.ensuring(drainProgress),
 		Effect.tapCause((cause) => {
 			observability.outcome = "error"
 			observability.failureReason ??= "UnhandledTurnFailure"

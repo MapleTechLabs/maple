@@ -88,6 +88,34 @@ export function ensureStoredTab(orgId: string, id: string, title: string) {
 	saveState(orgId, next)
 }
 
+const SHEET_TAB_KEY_PREFIX = "maple-chat-sheet-tab:"
+
+const sheetTabKey = (orgId: string) => `${SHEET_TAB_KEY_PREFIX}${orgId}`
+
+/**
+ * The conversation the global chat sheet last showed for this org. Restored on
+ * reopen so a thread started from "New chat" is not lost the moment the sheet
+ * closes. Falls back to `fallback` (the quick thread, which is never in the tab
+ * list) when nothing is stored or the stored tab has since been closed.
+ */
+export function loadSheetTab(orgId: string, fallback: string): string {
+	try {
+		const stored = localStorage.getItem(sheetTabKey(orgId))
+		if (!stored || stored === fallback) return fallback
+		return loadState(orgId).tabs.some((t) => t.id === stored) ? stored : fallback
+	} catch {
+		return fallback
+	}
+}
+
+export function saveSheetTab(orgId: string, id: string) {
+	try {
+		localStorage.setItem(sheetTabKey(orgId), id)
+	} catch {
+		// ignore
+	}
+}
+
 export function useChatTabs(orgId: string, initialTabId?: string) {
 	const [state, setState] = useState<ChatTabsState>(() => {
 		const s = loadState(orgId)

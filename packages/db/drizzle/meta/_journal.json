@@ -418,8 +418,15 @@
     {
       "idx": 60,
       "version": "7",
-      "when": 1789768777806,
-      "tag": "0060_google_analytics_integration",
+      "when": 1789772881572,
+      "tag": "0060_investigation_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789774463955,
+      "tag": "0061_google_analytics_integration",
       "breakpoints": true
     }
   ]

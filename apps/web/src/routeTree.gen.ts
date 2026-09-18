@@ -58,6 +58,7 @@ import { Route as LabQueryBuilderRouteImport } from './routes/lab/query-builder'
 import { Route as LabServiceMap3dRouteImport } from './routes/lab/service-map-3d'
 import { Route as LabTimeRangeRouteImport } from './routes/lab/time-range'
 import { Route as LabTimelineRouteImport } from './routes/lab/timeline'
+import { Route as LabVerdictRouteImport } from './routes/lab/verdict'
 import { Route as LabWidgetsRouteImport } from './routes/lab/widgets'
 import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
@@ -347,6 +348,11 @@ const LabTimelineRoute = LabTimelineRouteImport.update({
   path: '/timeline',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabVerdictRoute = LabVerdictRouteImport.update({
+  id: '/verdict',
+  path: '/verdict',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabWidgetsRoute = LabWidgetsRouteImport.update({
   id: '/widgets',
   path: '/widgets',
@@ -617,6 +623,7 @@ export interface FileRoutesByFullPath {
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
+  '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
@@ -710,6 +717,7 @@ export interface FileRoutesByTo {
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
+  '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
@@ -805,6 +813,7 @@ export interface FileRoutesById {
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
+  '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
@@ -901,6 +910,7 @@ export interface FileRouteTypes {
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
+    | '/lab/verdict'
     | '/lab/widgets'
     | '/logs/$logId'
     | '/metrics/$metricName'
@@ -994,6 +1004,7 @@ export interface FileRouteTypes {
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
+    | '/lab/verdict'
     | '/lab/widgets'
     | '/logs/$logId'
     | '/metrics/$metricName'
@@ -1088,6 +1099,7 @@ export interface FileRouteTypes {
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
+    | '/lab/verdict'
     | '/lab/widgets'
     | '/logs/$logId'
     | '/metrics/$metricName'
@@ -1559,6 +1571,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabTimelineRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/verdict': {
+      id: '/lab/verdict'
+      path: '/verdict'
+      fullPath: '/lab/verdict'
+      preLoaderRoute: typeof LabVerdictRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/widgets': {
       id: '/lab/widgets'
       path: '/widgets'
@@ -1878,6 +1897,7 @@ interface LabRouteRouteChildren {
   LabServiceMap3dRoute: typeof LabServiceMap3dRoute
   LabTimeRangeRoute: typeof LabTimeRangeRoute
   LabTimelineRoute: typeof LabTimelineRoute
+  LabVerdictRoute: typeof LabVerdictRoute
   LabWidgetsRoute: typeof LabWidgetsRoute
   LabIndexRoute: typeof LabIndexRoute
   LabBenchAgentTranscriptRoute: typeof LabBenchAgentTranscriptRoute
@@ -1904,6 +1924,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabServiceMap3dRoute: LabServiceMap3dRoute,
   LabTimeRangeRoute: LabTimeRangeRoute,
   LabTimelineRoute: LabTimelineRoute,
+  LabVerdictRoute: LabVerdictRoute,
   LabWidgetsRoute: LabWidgetsRoute,
   LabIndexRoute: LabIndexRoute,
   LabBenchAgentTranscriptRoute: LabBenchAgentTranscriptRoute,
