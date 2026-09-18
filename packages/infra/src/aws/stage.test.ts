@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { parseMapleStage } from "../cloudflare/stage.ts"
 import {
+	parseIngestFleets,
 	parseMapleRegion,
 	resolveAwsRegion,
 	resolveAwsResourceName,
@@ -124,5 +125,21 @@ describe("resolveIngestScaling", () => {
 	it("keeps every other stage at a fixed count", () => {
 		expect(resolveIngestScaling(parseMapleStage("pr-12"))).toBeUndefined()
 		expect(resolveIngestScaling(parseMapleStage("dev-alice"))).toBeUndefined()
+	})
+})
+
+describe("parseIngestFleets", () => {
+	it("is Fargate only when unset", () => {
+		expect(parseIngestFleets(undefined)).toEqual({ fargate: true, ec2: false })
+		expect(parseIngestFleets("")).toEqual({ fargate: true, ec2: false })
+	})
+
+	it("runs both fleets during the cutover", () => {
+		expect(parseIngestFleets("fargate, ec2")).toEqual({ fargate: true, ec2: true })
+		expect(parseIngestFleets("ec2")).toEqual({ fargate: false, ec2: true })
+	})
+
+	it("rejects a fleet it does not know rather than deploying neither", () => {
+		expect(() => parseIngestFleets("ec2,metal")).toThrow(/metal/)
 	})
 })
