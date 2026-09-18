@@ -407,6 +407,13 @@
       "when": 1789425475824,
       "tag": "0058_drop_investigation_lanes",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789684460658,
+      "tag": "0059_planetscale_issue_receipts",
+      "breakpoints": true
     }
   ]
 }

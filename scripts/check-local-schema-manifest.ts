@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { LOCAL_CONTROL_SCHEMA_HISTORY } from "../apps/cli/src/server/local-schema-history"
+import { LOCAL_CONTROL_SCHEMA_VERSION } from "../apps/cli/src/server/local-schema-version"
 import { execFileSync } from "node:child_process"
 import {
 	CURRENT_LOCAL_SCHEMA,
@@ -163,6 +167,21 @@ if (baseRefExists) {
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "ignore"],
 		})
+		const controlSection =
+			/LOCAL_CONTROL_SCHEMA_HISTORY = Object\.freeze\(\[([\s\S]*?)\] as const\)/.exec(
+				baseSource,
+			)?.[1] ?? ""
+		if (baseSource.includes("LOCAL_CONTROL_SCHEMA_HISTORY") && controlSection.trim() === "")
+			fail("could not parse the base branch control schema history")
+		const baseControl = Array.from(
+			controlSection.matchAll(/version:\s*(\d+),\s*digest:\s*"([0-9a-f]{64})"/g),
+			(match) => ({ version: Number(match[1]), digest: match[2] }),
+		)
+		if (
+			JSON.stringify(LOCAL_CONTROL_SCHEMA_HISTORY.slice(0, baseControl.length)) !==
+			JSON.stringify(baseControl)
+		)
+			fail("control schema history is not append-only")
 		const baseHistory = parseHistorySource(baseSource)
 		if (baseSource.includes("LOCAL_SCHEMA_HISTORY") && baseHistory.length === 0)
 			fail("could not parse the base branch's local schema identity history")
@@ -185,6 +204,19 @@ if (baseRefExists) {
 		)
 			throw error
 	}
+}
+
+const controlTip = LOCAL_CONTROL_SCHEMA_HISTORY.at(-1)
+const controlSql = readFileSync("apps/cli/src/server/schema/control-schema.sql", "utf8")
+const controlDigest = (sql: string) => createHash("sha256").update(sql).digest("hex")
+if (controlTip?.version !== LOCAL_CONTROL_SCHEMA_VERSION || controlTip.digest !== controlDigest(controlSql))
+	fail("control schema changed without a versioned identity; run local-schema:bump --control")
+if (!controlSql.includes(`PRAGMA user_version = ${LOCAL_CONTROL_SCHEMA_VERSION};`))
+	fail("control DDL pragma does not match its version identity")
+for (const [index, entry] of LOCAL_CONTROL_SCHEMA_HISTORY.entries()) {
+	if (entry.version !== index + 1) fail("control schema history versions must be sequential from 1")
+	const snapshot = readFileSync(`apps/cli/src/server/schema/control-schema-v${entry.version}.sql`, "utf8")
+	if (controlDigest(snapshot) !== entry.digest) fail(`immutable control schema v${entry.version} drifted`)
 }
 
 console.log(
