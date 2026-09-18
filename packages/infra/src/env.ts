@@ -279,6 +279,19 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 )
 
 /**
+ * The GitHub App as a repository reader: app id + private key mint installation
+ * tokens, `GITHUB_API_BASE_URL` points them at GitHub Enterprise Server. Bound by
+ * every Worker that resolves a connected repository — api for the integration,
+ * maple-ai for the agents' source and sandbox tools. The install flow's client
+ * id/secret and the webhook secret stay api-only.
+ */
+export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("GITHUB_APP_ID"),
+	optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+	optionalPlain("GITHUB_API_BASE_URL"),
+)
+
+/**
  * Google Analytics 4 integration (Google OAuth — confidential client, no PKCE).
  *
  * `analytics.readonly` is a SENSITIVE scope: the registered Google Cloud client must clear

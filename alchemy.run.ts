@@ -95,6 +95,7 @@ const devEnv = devApps
 			MAPLE_API_BASE_URL: Portless.routeUrl("api"),
 			MAPLE_APP_BASE_URL: Portless.routeUrl("web"),
 			MAPLE_ELECTRIC_SYNC_URL: Portless.routeUrl("electric-sync"),
+			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
 		}
 	: undefined
 
@@ -112,7 +113,17 @@ const MapleStackLive = Layer.effect(
 			domains,
 			urls: {
 				api: devEnv?.MAPLE_API_BASE_URL ?? (yield* resolveUrl(domains.api, "MAPLE_API_BASE_URL")),
-				ingest: yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev"),
+				// The dev branch matters here for the same reason it does above, and it
+				// was missing: on a dev stage this resolved to the PRODUCTION ingest
+				// host. It went unnoticed while web's dev bundle took its
+				// `VITE_INGEST_URL` from `vite.config.ts`'s `PORTLESS_URL` sibling
+				// lookup instead of from here. Now that web is a vite-source Worker
+				// whose props feed the bundle, this value IS what the browser SDK
+				// posts to, and a default of `ingest.maple.dev` would send local
+				// telemetry to production.
+				ingest:
+					devEnv?.MAPLE_INGEST_URL ??
+					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev")),
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
@@ -138,6 +149,19 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 			PORT: Output.map(Output.asOutput(route.port), String),
 			PORTLESS_URL: Portless.routeUrl(app),
 			MAPLE_API_URL: Portless.routeUrl("api"),
+			// The alchemy CLI sets NODE_ENV=production for its own renderer, and a
+			// `Command.Dev` child inherits it. A vite or astro dev server reads that
+			// variable for `import.meta.env.DEV`/`PROD` rather than taking it from
+			// `--mode`, so without this a child serves `MODE: "development"` next to
+			// `DEV: false, PROD: true`: every dev-only branch dead and every
+			// production branch live, on a dev server.
+			//
+			// Alchemy strips it for the vite servers IT spawns, and says why
+			// (`Cloudflare/Workers/ViteChild.ts`), but that spawner only runs for a
+			// Worker with a vite source. These apps are not that, so they need it
+			// said here. `env` is the only lever `Command.Dev` offers: undefined
+			// values are dropped rather than unset, and `extendEnv` is not a prop.
+			NODE_ENV: "development",
 		},
 	})
 
@@ -216,22 +240,22 @@ export default Alchemy.Stack(
 		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
 
 		// The agents' repository sandbox: it hosts Cloudflare's Sandbox Durable
-		// Object, and the api binds it as `SANDBOX`. Yielded first so the binding
+		// Object, and maple-ai binds it as `SANDBOX`. Yielded first so the binding
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
 		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
 		// Every agent surface — the MCP server and its tools, the chat agent, the
-		// investigation fan-out. Yielded before api because api binds it, and a
+		// investigation pass. Yielded before api because api binds it, and a
 		// `Worker.ref` cannot see a sibling this deploy creates.
 		// The root IS the entry point, and the AI Worker hosts the chat Durable
 		// Object: yielding the Worker resolves the class, and its Live layer is what
 		// registers the class in the deployed bundle's exports.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		const ai = yield* Effect.provide(MapleAi, MapleAiLive)
-		yield* serveWorker("ai", ai)
-		const api = yield* Effect.provideService(MapleApi, AiWorker, ai).pipe((withAi) =>
-			sandbox === undefined ? withAi : Effect.provideService(withAi, SandboxWorker, sandbox),
+		const ai = yield* Effect.provide(MapleAi, MapleAiLive).pipe((withLive) =>
+			sandbox === undefined ? withLive : Effect.provideService(withLive, SandboxWorker, sandbox),
 		)
+		yield* serveWorker("ai", ai)
+		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd — dev stages use the
@@ -256,12 +280,17 @@ export default Alchemy.Stack(
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
 
-		// See `isDevServer`: each of these three is gated on a production
-		// `Command.Build`, so including them would make `alchemy dev` build the
-		// whole frontend before serving anything. web's props bind the api
-		// Worker (its `API` service binding), handed over as `ApiWorker`.
-		const web = isDevServer ? undefined : yield* Effect.provideService(Web, ApiWorker, api)
+		// web is a `Cloudflare.Website.Vite` Worker, so alchemy owns its vite build
+		// AND its dev server: it is served here like any other Worker rather than
+		// spawned beside the stack, and `alchemy dev` runs vite rather than the
+		// production build. Its props bind the api Worker (its `API` service
+		// binding), handed over as `ApiWorker`.
+		const web = yield* Effect.provideService(Web, ApiWorker, api)
+		yield* serveWorker("web", web)
 
+		// Still gated on a production `Command.Build`, so including them would make
+		// `alchemy dev` build the whole frontend before serving anything. Both run
+		// their own dev script under `Command.Dev` instead (`DEV_PROCESS_APPS`).
 		const landing = isDevServer ? undefined : yield* Landing
 
 		const localUi = isDevServer ? undefined : yield* LocalUi

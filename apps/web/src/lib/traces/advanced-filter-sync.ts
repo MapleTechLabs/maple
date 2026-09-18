@@ -99,28 +99,25 @@ export function parseWhereClause(whereClause: string | undefined): {
 			}
 		}
 
-		// Handle attr.* and resource.* prefixes before Match
-		if (key.startsWith("attr.")) {
-			const attributeKey = key.slice(5).trim()
-			if (!attributeKey || parsed.attributeFilters.length >= 5) continue
-			parsed.attributeFilters.push({
+		// Attribute keys are case-sensitive, so they come from the key as typed.
+		const typedKey = (clause.rawKey ?? clause.key).trim()
+		function pushAttribute(target: AttributeFilterEntry[], attributeKey: string) {
+			if (!attributeKey || target.length >= 5) return
+			target.push({
 				key: attributeKey,
 				value: clause.value,
 				matchMode: isContains ? "contains" : undefined,
 				negated: isNegated || undefined,
 			})
+		}
+
+		if (key.startsWith("attr.")) {
+			pushAttribute(parsed.attributeFilters, typedKey.slice(5).trim())
 			continue
 		}
 
 		if (key.startsWith("resource.")) {
-			const resourceKey = key.slice(9).trim()
-			if (!resourceKey || parsed.resourceAttributeFilters.length >= 5) continue
-			parsed.resourceAttributeFilters.push({
-				key: resourceKey,
-				value: clause.value,
-				matchMode: isContains ? "contains" : undefined,
-				negated: isNegated || undefined,
-			})
+			pushAttribute(parsed.resourceAttributeFilters, typedKey.slice(9).trim())
 			continue
 		}
 
@@ -213,7 +210,16 @@ export function parseWhereClause(whereClause: string | undefined): {
 				}
 				return { ...parsed, maxDurationMs: numeric }
 			}),
-			Match.orElse(() => parsed),
+			// Any other key is a span attribute (`request.id = "x"` means `attr.request.id`), as
+			// long as the operator is one an attribute filter can express.
+			Match.orElse(() => {
+				if (clause.operator === "=" || clause.operator === "!=" || isContains) {
+					pushAttribute(parsed.attributeFilters, typedKey)
+				} else {
+					hasIncompleteClauses = true
+				}
+				return parsed
+			}),
 		)
 	}
 

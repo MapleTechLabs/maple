@@ -24,12 +24,15 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use autumn::{AutumnEntitlements, AutumnTracker};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
+use axum::extract::MatchedPath;
+use axum::extract::Request;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::header::{HeaderName, AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, RETRY_AFTER};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::middleware::Next;
 use axum::routing::{get, post};
 use axum::Router;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -148,6 +151,9 @@ struct AppConfig {
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
     org_max_in_flight: u64,
+    /// Wall-clock deadline for one HTTP request, or `Duration::ZERO` to run
+    /// without one. See `request_timeout_middleware`.
+    request_timeout: Duration,
     require_tls: bool,
     key_store_backend: KeyStoreBackend,
     clickhouse_encryption_key: Option<[u8; 32]>,
@@ -332,6 +338,16 @@ impl AppConfig {
                 maple_ingest::telemetry::WAL_SEGMENT_MAX_BYTES,
             )?,
             wal_store_heartbeat_interval: Duration::from_secs(heartbeat_secs),
+            // 5 minutes. Telemetry that has waited this long has already missed
+            // the dashboards and alerts it was collected for, and exporting it
+            // competes with the fresh rows trying to catch up. 0 disables the
+            // bound, restoring the previous behaviour of queueing until the byte
+            // caps or the channel slots run out.
+            queue_max_age: Duration::from_secs(parse_u64(
+                "INGEST_QUEUE_MAX_AGE_SECS",
+                std::env::var("INGEST_QUEUE_MAX_AGE_SECS").ok(),
+                300,
+            )?),
             batch_max_rows: parse_usize(
                 "INGEST_BATCH_MAX_ROWS",
                 std::env::var("INGEST_BATCH_MAX_ROWS").ok(),
@@ -406,6 +422,15 @@ impl AppConfig {
         if org_max_in_flight == 0 {
             return Err("INGEST_ORG_MAX_IN_FLIGHT must be greater than 0".to_owned());
         }
+
+        // 30s. Comfortably above a healthy p99 (single-digit ms) and below the
+        // load balancer idle timeout, so the gateway answers rather than having
+        // the connection cut out from under it. 0 disables the deadline.
+        let request_timeout = Duration::from_secs(parse_u64(
+            "INGEST_REQUEST_TIMEOUT_SECS",
+            std::env::var("INGEST_REQUEST_TIMEOUT_SECS").ok(),
+            30,
+        )?);
 
         let require_tls = parse_bool(
             "INGEST_REQUIRE_TLS",
@@ -623,6 +648,7 @@ impl AppConfig {
             tinybird,
             max_request_body_bytes,
             org_max_in_flight,
+            request_timeout,
             require_tls,
             key_store_backend,
             clickhouse_encryption_key,
@@ -745,6 +771,41 @@ struct ClickHouseTargetResolver {
     store: Arc<dyn KeyStore>,
     encryption_key: Option<[u8; 32]>,
     cache: Cache<String, ClickHouseTarget>,
+    /// Orgs that resolved to "no ready target" — no row, or a row stamped with a
+    /// schema revision this binary predates.
+    ///
+    /// Without this, `None` was the one outcome nothing remembered, so the export
+    /// retry loop re-queried Postgres on every one of its
+    /// `INGEST_EXPORT_MAX_ATTEMPTS` attempts, for every batch, for as long as the
+    /// org stayed unresolvable — against the same pool (`max_size(8)`, no checkout
+    /// timeout) the accept path resolves ingest keys through. The TTL is short
+    /// because the fix for an unresolvable org is a row change that should take
+    /// effect without a deploy.
+    negative_cache: Cache<String, ()>,
+}
+
+/// How long a resolved ClickHouse target is reused.
+const CLICKHOUSE_TARGET_TTL: Duration = Duration::from_mins(1);
+/// How long "no ready ClickHouse target" is remembered. Matches the ingest-key
+/// negative cache: long enough to collapse a retry storm, short enough that
+/// provisioning an org's target takes effect promptly.
+const CLICKHOUSE_TARGET_NEGATIVE_TTL: Duration = Duration::from_secs(30);
+
+impl ClickHouseTargetResolver {
+    fn new(store: Arc<dyn KeyStore>, encryption_key: Option<[u8; 32]>, capacity: u64) -> Self {
+        Self {
+            store,
+            encryption_key,
+            cache: Cache::builder()
+                .time_to_live(CLICKHOUSE_TARGET_TTL)
+                .max_capacity(capacity)
+                .build(),
+            negative_cache: Cache::builder()
+                .time_to_live(CLICKHOUSE_TARGET_NEGATIVE_TTL)
+                .max_capacity(capacity)
+                .build(),
+        }
+    }
 }
 
 /// Database-agnostic surface used by the resolvers. Implementations:
@@ -1346,6 +1407,21 @@ static INGEST_INTERNAL_ERROR: FailureKind = FailureKind {
     retry_after_seconds: None,
 };
 
+/// The request outran `INGEST_REQUEST_TIMEOUT_SECS` and was abandoned.
+///
+/// 503 rather than 504: nothing upstream timed out, this gateway gave up on its
+/// own work. Retryable — the batch was not acknowledged, so resending it is the
+/// correct response.
+static INGEST_REQUEST_TIMEOUT: FailureKind = FailureKind {
+    tag: "@maple/ingest/RequestTimeout",
+    code: "ingest_request_timeout",
+    title: "Ingest request timed out",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "timeout",
+    retry_after_seconds: Some(5),
+};
+
 /// The per-org byte budget is full: the caller's batch was refused, nothing was
 /// written, and the same batch will be accepted once the lane drains.
 static INGEST_THROTTLED: FailureKind = FailureKind {
@@ -1524,6 +1600,56 @@ impl IntoResponse for ApiError {
         }
         response
     }
+}
+
+/// Abandon a request that has outrun `timeout` and answer 503.
+///
+/// Without this the gateway had no deadline anywhere on the accept path, so
+/// saturation did not surface as errors at all: requests queued on the WAL
+/// append and sat there. p95 went to tens of seconds while every per-route error
+/// rate stayed flat near zero, because a hung request is not a failed one. The
+/// per-org in-flight cap, the only limiter that fires under this, is a
+/// concurrency bound with no time bound, so its permits were held for the whole
+/// stall rather than turning anything away.
+///
+/// Dropping the handler future is what makes this shed rather than merely
+/// report: the WAL append it was waiting on is abandoned and
+/// `OrgBytesReservation` returns the bytes it had reserved. The `spawn_blocking`
+/// already in flight is not cancellable and still completes its write; that
+/// frame is simply never sent to its lane, and the lane's cursor passes over it.
+async fn request_timeout_middleware(
+    State(timeout): State<Duration>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+    // The metric gets the matched route pattern, not the raw path: one route
+    // carries a path parameter (`/v1/logpush/cloudflare/http_requests/{connector_id}`),
+    // and labelling by raw path would add a metric series per connector. This
+    // layer sits on the `Router`, so routing has already run and the extension is
+    // populated; "unknown" only appears if that ever stops being true.
+    let matched_path = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or("unknown", MatchedPath::as_str)
+        .to_owned();
+    let Ok(response) = tokio::time::timeout(timeout, next.run(request)).await else {
+        metrics::request_timed_out(&matched_path);
+        warn!(
+            %method,
+            path,
+            timeout_secs = timeout.as_secs(),
+            "Abandoning ingest request that exceeded the gateway timeout"
+        );
+        return ApiError::tagged(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &INGEST_REQUEST_TIMEOUT,
+            "Ingest gateway timed out while accepting this request",
+        )
+        .into_response();
+    };
+    response
 }
 
 /// OTEL span status (`otel.status_code`) for a rejected request.
@@ -2054,14 +2180,11 @@ async fn main() {
         matches!(config.key_store_backend, KeyStoreBackend::Postgres { .. });
     let clickhouse_target_provider: Option<Arc<dyn ClickHouseTargetProvider>> =
         if direct_clickhouse_possible {
-            Some(Arc::new(ClickHouseTargetResolver {
-                store: Arc::clone(&store),
-                encryption_key: config.clickhouse_encryption_key,
-                cache: Cache::builder()
-                    .time_to_live(Duration::from_mins(1))
-                    .max_capacity(10_000)
-                    .build(),
-            }) as Arc<dyn ClickHouseTargetProvider>)
+            Some(Arc::new(ClickHouseTargetResolver::new(
+                Arc::clone(&store),
+                config.clickhouse_encryption_key,
+                10_000,
+            )) as Arc<dyn ClickHouseTargetProvider>)
         } else {
             None
         };
@@ -2247,6 +2370,7 @@ async fn main() {
         ]);
 
     let grpc_state = Arc::clone(&state);
+    let request_timeout = config.request_timeout;
     let app = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
@@ -2264,6 +2388,19 @@ async fn main() {
         .layer(cors)
         .layer(DefaultBodyLimit::max(config.max_request_body_bytes))
         .with_state(state);
+
+    // Outermost, and applied after `with_state` so it carries its own state: the
+    // deadline has to cover the whole stack, body collection included, or a
+    // request stalled before it reaches a handler is still unbounded.
+    let app = if request_timeout.is_zero() {
+        warn!("INGEST_REQUEST_TIMEOUT_SECS=0: serving without a request deadline");
+        app
+    } else {
+        app.layer(axum::middleware::from_fn_with_state(
+            request_timeout,
+            request_timeout_middleware,
+        ))
+    };
 
     let listener = match tokio::net::TcpListener::bind(("0.0.0.0", config.port)).await {
         Ok(listener) => listener,
@@ -5535,11 +5672,17 @@ impl ClickHouseTargetProvider for ClickHouseTargetResolver {
         if let Some(target) = self.cache.get(org_id).await {
             return Ok(Some(target));
         }
+        // Checked after the positive cache so a resolvable org never pays for it.
+        if self.negative_cache.get(org_id).await.is_some() {
+            return Ok(None);
+        }
 
         let Some(row) = self.store.fetch_clickhouse_target(org_id).await? else {
+            self.negative_cache.insert(org_id.to_owned(), ()).await;
             return Ok(None);
         };
         if !schema_revision_is_compatible(&row.schema_version) {
+            self.negative_cache.insert(org_id.to_owned(), ()).await;
             return Ok(None);
         }
 
@@ -6990,6 +7133,7 @@ mod tests {
         ingest_key_fetches: AtomicU64,
         connector_fetches: AtomicU64,
         routing_fetches: AtomicU64,
+        target_fetches: AtomicU64,
         routing_errors: AtomicBool,
     }
 
@@ -7080,6 +7224,7 @@ mod tests {
             &self,
             org_id: &str,
         ) -> Result<Option<ClickHouseTargetRow>, String> {
+            self.target_fetches.fetch_add(1, Ordering::Relaxed);
             Ok(self.targets.lock().unwrap().get(org_id).cloned())
         }
         async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String> {
@@ -7232,6 +7377,7 @@ mod tests {
             wal_store_heartbeat_interval: maple_ingest::wal_store::DEFAULT_HEARTBEAT_INTERVAL,
             batch_max_rows: 100,
             batch_max_bytes: 1024 * 1024,
+            queue_max_age: Duration::ZERO,
             batch_max_wait: Duration::from_millis(1),
             export_concurrency_per_shard: 1,
             export_max_attempts: 1,
@@ -7304,14 +7450,8 @@ mod tests {
         let tinybird = test_tinybird_config(queue_dir);
         let key_store: Arc<dyn KeyStore> = Arc::<FakeKeyStore>::clone(&store);
         let routing = make_routing_resolver(Arc::clone(&store), routing_ttl);
-        let clickhouse_targets = Arc::new(ClickHouseTargetResolver {
-            store: Arc::clone(&key_store),
-            encryption_key: None,
-            cache: Cache::builder()
-                .time_to_live(Duration::from_mins(1))
-                .max_capacity(16)
-                .build(),
-        });
+        let clickhouse_targets =
+            Arc::new(ClickHouseTargetResolver::new(Arc::clone(&key_store), None, 16));
         let http_client = Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
@@ -7337,6 +7477,7 @@ mod tests {
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
                 org_max_in_flight: 100,
+                request_timeout: Duration::from_secs(30),
                 require_tls: false,
                 key_store_backend: KeyStoreBackend::Static {
                     org_id: "org_test".to_owned(),
@@ -7952,6 +8093,113 @@ mod tests {
             "message must keep the stable fingerprint prefix, got {:?}",
             rejection.message
         );
+    }
+
+    #[tokio::test]
+    async fn unresolvable_clickhouse_target_is_only_looked_up_once_per_ttl() {
+        // The export retry loop calls this on every attempt of every batch, and a
+        // `None` used to be the one outcome nothing cached — so an org with no
+        // target row (or one stamped with a schema revision this binary predates)
+        // drove `INGEST_EXPORT_MAX_ATTEMPTS` Postgres queries per batch, against
+        // the same 8-connection pool the accept path resolves ingest keys
+        // through.
+        let store = Arc::new(FakeKeyStore::default());
+        let resolver =
+            ClickHouseTargetResolver::new(Arc::clone(&store) as Arc<dyn KeyStore>, None, 16);
+
+        for _ in 0..20 {
+            assert!(resolver
+                .resolve_clickhouse_target("org_missing")
+                .await
+                .unwrap()
+                .is_none());
+        }
+        assert_eq!(
+            store.target_fetches.load(Ordering::Relaxed),
+            1,
+            "a missing target must be remembered, not re-queried on every attempt"
+        );
+
+        // A row stamped with a revision this binary refuses — here the legacy
+        // content-hash shape, which parses to -1 — is equally unresolvable, and
+        // equally pointless to re-query.
+        store.insert_clickhouse_target(
+            "org_legacy_revision",
+            ClickHouseTargetRow {
+                ch_url: "https://ch.example.com".to_owned(),
+                ch_user: "ingest".to_owned(),
+                ch_password_ciphertext: None,
+                ch_password_iv: None,
+                ch_password_tag: None,
+                ch_database: "maple".to_owned(),
+                schema_version: "2967fa9b".to_owned(),
+            },
+        );
+        for _ in 0..20 {
+            assert!(resolver
+                .resolve_clickhouse_target("org_legacy_revision")
+                .await
+                .unwrap()
+                .is_none());
+        }
+        assert_eq!(
+            store.target_fetches.load(Ordering::Relaxed),
+            2,
+            "a refused schema revision must be remembered too"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_timeout_sheds_a_stalled_request_as_a_retryable_503() {
+        // The condition this exists for: a handler that neither fails nor
+        // returns. Before the deadline the request simply sat there, so the
+        // stall showed up as p95 in the tens of seconds with a per-route error
+        // rate of zero — a hung request is not a failed one, and nothing on the
+        // accept path was counting the difference.
+        // A parameterised route, so the middleware's `MatchedPath` lookup is
+        // exercised on the shape that would otherwise put one metric label on
+        // every connector id.
+        let app = Router::new()
+            .route(
+                "/v1/logpush/cloudflare/http_requests/{connector_id}",
+                post(|| async {
+                    std::future::pending::<()>().await;
+                    StatusCode::OK
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                Duration::from_millis(50),
+                request_timeout_middleware,
+            ));
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = Client::new()
+            .post(format!(
+                "http://{addr}/v1/logpush/cloudflare/http_requests/conn_abc123"
+            ))
+            .body("x")
+            .send()
+            .await
+            .expect("the gateway must answer rather than hang");
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        // Retry-After and a retryable tag are the difference between a client
+        // that backs off and one that hammers a saturated gateway.
+        assert_eq!(
+            response
+                .headers()
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            Some("5")
+        );
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["error"]["_tag"], "@maple/ingest/RequestTimeout");
+        assert_eq!(body["error"]["retryable"], true);
     }
 
     #[test]
@@ -8765,14 +9013,7 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver {
-            store,
-            encryption_key: None,
-            cache: Cache::builder()
-                .time_to_live(Duration::from_mins(1))
-                .max_capacity(16)
-                .build(),
-        };
+        let resolver = ClickHouseTargetResolver::new(store, None, 16);
 
         let target = resolver
             .resolve_clickhouse_target("org_old")
@@ -8797,17 +9038,10 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver {
-            store,
-            encryption_key: Some(
+        let resolver = ClickHouseTargetResolver::new(store, Some(
                 parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
                     .unwrap(),
-            ),
-            cache: Cache::builder()
-                .time_to_live(Duration::from_mins(1))
-                .max_capacity(16)
-                .build(),
-        };
+            ), 16);
 
         let target = resolver
             .resolve_clickhouse_target("org_ready")
@@ -8836,17 +9070,10 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver {
-            store,
-            encryption_key: Some(
+        let resolver = ClickHouseTargetResolver::new(store, Some(
                 parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
                     .unwrap(),
-            ),
-            cache: Cache::builder()
-                .time_to_live(Duration::from_mins(1))
-                .max_capacity(16)
-                .build(),
-        };
+            ), 16);
 
         let error = resolver
             .resolve_clickhouse_target("org_insecure")

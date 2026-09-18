@@ -244,6 +244,9 @@ struct BreakerState {
     consecutive_failures: u32,
     /// When the breaker last tripped open. `None` while closed.
     opened_at: Option<Instant>,
+    /// When the in-flight half-open probe was admitted. `None` when no probe is
+    /// outstanding. Only meaningful while `opened_at` is set.
+    probe_started_at: Option<Instant>,
 }
 
 /// Pure transition: should the next attempt run, given the current state? Kept
@@ -254,14 +257,24 @@ fn breaker_decision(
     cfg: ClickHouseBreakerConfig,
     now: Instant,
 ) -> BreakerDecision {
-    match state.opened_at {
-        // Still within the cooldown window → keep shedding.
-        Some(opened) if now.duration_since(opened) < cfg.cooldown => BreakerDecision::Shed,
-        // Closed, or cooldown elapsed (half-open) → allow. Note half-open is not
-        // single-probe gated: while cooldown is elapsed, every batch that checks
-        // is allowed, so several lane workers can probe a recovering target
-        // concurrently until one records on_success/on_failure. Harmless here —
-        // the extra probes just re-confirm health or re-open the breaker.
+    // Closed → nothing to gate.
+    let Some(opened) = state.opened_at else {
+        return BreakerDecision::Allow;
+    };
+    // Still within the cooldown window → keep shedding.
+    if now.duration_since(opened) < cfg.cooldown {
+        return BreakerDecision::Shed;
+    }
+    // Half-open, and gated to a single probe. Every lane worker checks this
+    // registry, so an ungated half-open let all of them attempt the recovering
+    // target at once the instant cooldown elapsed — a thundering herd against a
+    // target that had just been declared unhealthy, repeated every cooldown.
+    //
+    // A probe that has not reported an outcome within one cooldown is treated as
+    // abandoned and a fresh one is admitted, so a worker that dies mid-probe
+    // cannot wedge the breaker open forever.
+    match state.probe_started_at {
+        Some(started) if now.duration_since(started) < cfg.cooldown => BreakerDecision::Shed,
         _ => BreakerDecision::Allow,
     }
 }
@@ -294,8 +307,9 @@ impl ClickHouseBreakerRegistry {
             .clone()
     }
 
-    /// Decide whether to attempt an export for `org_id`. Read-only: never
-    /// allocates breaker state for an org that has only ever succeeded.
+    /// Decide whether to attempt an export for `org_id`, claiming the half-open
+    /// probe slot when this caller is the one admitted. Never allocates breaker
+    /// state for an org that has only ever succeeded.
     fn decide(&self, org_id: &str, now: Instant) -> BreakerDecision {
         if !self.enabled() {
             return BreakerDecision::Allow;
@@ -303,10 +317,17 @@ impl ClickHouseBreakerRegistry {
         let Some(state) = self.states.get(org_id) else {
             return BreakerDecision::Allow;
         };
-        let guard = state
+        let mut guard = state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        breaker_decision(&guard, self.cfg, now)
+        let decision = breaker_decision(&guard, self.cfg, now);
+        // An `Allow` while open is the half-open probe, and the slot is claimed
+        // under the same lock the decision was read under — otherwise two workers
+        // racing here would both be told to probe.
+        if decision == BreakerDecision::Allow && guard.opened_at.is_some() {
+            guard.probe_started_at = Some(now);
+        }
+        decision
     }
 
     fn on_success(&self, org_id: &str) {
@@ -319,6 +340,7 @@ impl ClickHouseBreakerRegistry {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             guard.consecutive_failures = 0;
             guard.opened_at = None;
+            guard.probe_started_at = None;
         }
     }
 
@@ -331,6 +353,9 @@ impl ClickHouseBreakerRegistry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.consecutive_failures = guard.consecutive_failures.saturating_add(1);
+        // The probe (if this was one) has reported; release the slot so the next
+        // cooldown can admit a fresh one.
+        guard.probe_started_at = None;
         if guard.consecutive_failures >= self.cfg.failure_threshold {
             // Re-stamped on every failure on purpose: `on_failure` only runs for
             // attempts the breaker *allowed*, so each one is either a pre-open
@@ -441,6 +466,17 @@ pub struct TinybirdConfig {
     pub wal_segment_max_bytes: u64,
     /// How often this task refreshes its owner marker in the durability tier.
     pub wal_store_heartbeat_interval: Duration,
+    /// How long a frame may sit in its lane's channel before the export worker
+    /// sheds it instead of exporting it. `Duration::ZERO` disables the bound.
+    ///
+    /// The byte and slot caps alone do not bound this. A lane holds
+    /// `queue_channel_capacity` frames (100k by default) and the WAL holds
+    /// `queue_max_bytes`, so a stalled downstream target absorbs minutes of
+    /// traffic before either cap is reached — and the accept path queues behind
+    /// it the whole time rather than shedding. Telemetry that old has missed the
+    /// dashboards and alerts it existed for, so exporting it costs the same
+    /// downstream capacity that fresh rows need in order to catch up.
+    pub queue_max_age: Duration,
     pub batch_max_rows: usize,
     pub batch_max_bytes: usize,
     pub batch_max_wait: Duration,
@@ -695,6 +731,12 @@ struct QueuedFrame {
     /// WAL frame, because a frame replayed after a restart belongs to a trace
     /// that ended long ago. Replayed frames carry `None`.
     source_span: Option<SpanContext>,
+    /// When this frame entered its lane's channel, for the `queue_max_age`
+    /// bound. In-memory like `source_span`: a replayed frame's original commit
+    /// time did not survive the restart, so replay stamps `Instant::now()` and a
+    /// recovered backlog gets a full max-age window to export in rather than
+    /// being shed on sight for having been written before the restart.
+    enqueued_at: Instant,
 }
 
 #[derive(Debug)]
@@ -1058,11 +1100,25 @@ impl TelemetryPipeline {
                 let queued_bytes = frame.payload.len() as u64;
                 self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
                     .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
-                let (segment, start, end) = self.inner.wal.append(lane, &frame).await.map_err(|error| {
-                    self.release_org_queue_bytes(&frame.org_id, queued_bytes);
-                    record_failing_frame(shard, lane, &frame.datasource);
-                    PipelineError::QueueUnavailable(error)
-                })?;
+                // Every exit from here to `commit()` — the error below, an early
+                // return above it, or this future being dropped mid-append —
+                // releases the reservation.
+                let reservation = OrgBytesReservation {
+                    counters: &self.inner.org_queue_bytes,
+                    org_id: &frame.org_id,
+                    bytes: queued_bytes,
+                    committed: false,
+                };
+                let (segment, start, end) = match self.inner.wal.append(lane, &frame).await {
+                    Ok(position) => {
+                        reservation.commit();
+                        position
+                    }
+                    Err(error) => {
+                        record_failing_frame(shard, lane, &frame.datasource);
+                        return Err(PipelineError::QueueUnavailable(error));
+                    }
+                };
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
                 permit.send(QueuedFrame {
@@ -1078,6 +1134,7 @@ impl TelemetryPipeline {
                     row_count: frame.row_count,
                     payload: frame.payload,
                     source_span: source_span.clone(),
+                    enqueued_at: Instant::now(),
                 });
             }
 
@@ -1148,10 +1205,6 @@ impl TelemetryPipeline {
                 return Ok(());
             }
         }
-    }
-
-    fn release_org_queue_bytes(&self, org_id: &str, bytes: u64) {
-        release_org_queue_bytes(&self.inner.org_queue_bytes, org_id, bytes);
     }
 
     #[hotpath::measure]
@@ -1418,10 +1471,14 @@ impl WalLane {
         enforce_cap: bool,
     ) -> Result<(u64, u64, u64), String> {
         let added = encoded.len() as u64;
+        let append_started = Instant::now();
         let mut state = self
             .append
             .lock()
             .map_err(|_| "WAL lane mutex poisoned".to_owned())?;
+        // Everything before this point was queueing behind other appenders on
+        // this lane; everything after is this append's own work.
+        let lock_wait = append_started.elapsed();
         if enforce_cap
             && self
                 .live_bytes
@@ -1436,10 +1493,12 @@ impl WalLane {
             .file
             .write_all(encoded)
             .map_err(|error| format!("write WAL: {error}"))?;
+        let fsync_started = Instant::now();
         state
             .file
             .sync_data()
             .map_err(|error| format!("sync WAL: {error}"))?;
+        let fsync = fsync_started.elapsed();
         let seq = state.seq;
         let start = state.len;
         let end = start + added;
@@ -1455,6 +1514,15 @@ impl WalLane {
 
         metrics::wal_commit_bytes(self.shard, self.destination.as_str(), added);
         metrics::wal_shard_bytes(self.shard, self.destination.as_str(), live);
+        // Recorded after the lock is released: the append is done, and holding it
+        // to emit metrics would make the very contention this measures worse.
+        metrics::wal_append_durations(
+            self.shard,
+            self.destination.as_str(),
+            lock_wait.as_secs_f64(),
+            fsync.as_secs_f64(),
+            append_started.elapsed().as_secs_f64(),
+        );
         Ok((seq, start, end))
     }
 
@@ -2126,6 +2194,10 @@ fn replay_lane(lane: usize, lane_ref: &WalLane) -> Result<Vec<QueuedFrame>, Stri
                 payload: frame.payload,
                 // Replayed from disk after a restart: the originating trace is gone.
                 source_span: None,
+                // Stamped now, not at the original commit, which did not survive
+                // the restart: a recovered backlog gets a full `queue_max_age`
+                // window to export in instead of being shed on sight.
+                enqueued_at: Instant::now(),
             });
         }
     }
@@ -2408,6 +2480,40 @@ fn add_org_queue_bytes(counters: &Arc<DashMap<String, Arc<AtomicU64>>>, org_id: 
     metrics::org_queue_bytes(org_id, current);
 }
 
+/// Holds an org's reserved queue bytes until the frame reaches its lane.
+///
+/// The reservation deliberately outlives the request — `commit_frames` reserves
+/// before the WAL append and the export worker releases after the export — but
+/// only once the frame is actually in the channel. Between the two sits the
+/// `wal.append` await, and an await is a cancellation point: axum drops the
+/// handler future when the client disconnects, and now also when the request
+/// timeout fires. Dropped there, nobody released the bytes and nobody ever
+/// would, so the org's counter drifted up permanently until it was throttled by
+/// a queue that did not exist.
+struct OrgBytesReservation<'a> {
+    counters: &'a Arc<DashMap<String, Arc<AtomicU64>>>,
+    org_id: &'a str,
+    bytes: u64,
+    committed: bool,
+}
+
+impl OrgBytesReservation<'_> {
+    /// The frame is on its way to the lane; the export worker owns the release
+    /// from here. Consumes the guard so the borrow ends and the frame's fields
+    /// can be moved into the `QueuedFrame`.
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for OrgBytesReservation<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            release_org_queue_bytes(self.counters, self.org_id, self.bytes);
+        }
+    }
+}
+
 fn release_org_queue_bytes(
     counters: &Arc<DashMap<String, Arc<AtomicU64>>>,
     org_id: &str,
@@ -2496,6 +2602,8 @@ impl ExportWorker {
                     u64::try_from(batch_wait.as_millis()).unwrap_or(u64::MAX),
                 "maple.ingest.linked_traces" = links.len(),
                 "maple.ingest.source_trace_count" = source_trace_count,
+                "maple.ingest.shed_frames" = tracing::field::Empty,
+                "maple.ingest.shed_rows" = tracing::field::Empty,
             );
             for link in links {
                 span.add_link(link);
@@ -2512,6 +2620,13 @@ impl ExportWorker {
     }
 
     #[hotpath::measure]
+    #[expect(
+        clippy::too_many_lines,
+        clippy::cognitive_complexity,
+        reason = "one linear batch pass: age-shed, group by target, export, then advance the \
+                  cursor — splitting it would thread the frame slice and the shed counters \
+                  through helpers that have no meaning apart from it"
+    )]
     async fn export_and_mark(&self, frames: Vec<QueuedFrame>) -> Result<(), String> {
         if frames.is_empty() {
             return Ok(());
@@ -2526,9 +2641,40 @@ impl ExportWorker {
             "lane {} received a frame for the wrong destination",
             self.lane
         );
+        // Oldest frame first: one sample per batch rather than per frame, and the
+        // oldest is the number that says how far behind this lane is.
+        let now = Instant::now();
+        if let Some(oldest) = frames.iter().map(|frame| frame.enqueued_at).min() {
+            metrics::queue_age(
+                self.destination.as_str(),
+                frames[0].signal.as_str(),
+                now.duration_since(oldest).as_secs_f64(),
+            );
+        }
+        let max_age = self.cfg.queue_max_age;
+        // Shed, not drop-and-forget: a shed frame still advances the cursor and
+        // releases its org bytes below, because leaving it in the WAL would keep
+        // the very backlog this is cutting.
+        let is_stale = |frame: &QueuedFrame| {
+            !max_age.is_zero() && now.duration_since(frame.enqueued_at) > max_age
+        };
+        let mut shed_frames = 0usize;
+        let mut shed_rows = 0usize;
+
         let mut by_tinybird: BTreeMap<String, Vec<&QueuedFrame>> = BTreeMap::new();
         let mut by_clickhouse: BTreeMap<(String, String), Vec<&QueuedFrame>> = BTreeMap::new();
         for frame in &frames {
+            if is_stale(frame) {
+                shed_frames += 1;
+                shed_rows += frame.row_count;
+                metrics::queue_age_shed(
+                    &frame.org_id,
+                    frame.destination.as_str(),
+                    &frame.datasource,
+                    frame.row_count as u64,
+                );
+                continue;
+            }
             match frame.destination {
                 // Tinybird groups by datasource alone; the workspace is the
                 // lane's property, not the frame's.
@@ -2545,6 +2691,21 @@ impl ExportWorker {
                         .push(frame);
                 }
             }
+        }
+
+        if shed_frames > 0 {
+            let span = tracing::Span::current();
+            span.record("maple.ingest.shed_frames", shed_frames);
+            span.record("maple.ingest.shed_rows", shed_rows);
+            warn!(
+                shard = self.shard,
+                lane = self.lane,
+                destination = self.destination.as_str(),
+                frames = shed_frames,
+                rows = shed_rows,
+                max_age_secs = max_age.as_secs(),
+                "Shedding ingest frames that exceeded the lane's max queue age"
+            );
         }
 
         let start = Instant::now();
@@ -3997,6 +4158,7 @@ mod tests {
             row_count: 0,
             payload: Vec::new(),
             source_span,
+            enqueued_at: Instant::now(),
         }
     }
 
@@ -4077,6 +4239,7 @@ mod tests {
             wal_store_heartbeat_interval: crate::wal_store::DEFAULT_HEARTBEAT_INTERVAL,
             batch_max_rows: 100,
             batch_max_bytes: 1024 * 1024,
+            queue_max_age: Duration::ZERO,
             batch_max_wait: Duration::from_millis(10),
             export_concurrency_per_shard: 1,
             export_max_attempts: 20,
@@ -5294,6 +5457,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn frames_older_than_the_max_queue_age_are_shed_and_still_drain_the_wal() {
+        // The byte and slot caps do not bound how long a frame waits: a lane
+        // holds 100k frames and the WAL 20 GiB, so a stalled target absorbs
+        // minutes of traffic while the accept path queues behind it. Past
+        // `queue_max_age` the frame has outlived the dashboards and alerts it was
+        // collected for, so it is shed — and shedding has to release the WAL too,
+        // or the backlog it is meant to cut survives it.
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+
+        let queue_dir = unique_test_dir("queue-age-shed");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        // Any frame that survives a channel hop is already older than this.
+        cfg.queue_max_age = Duration::from_nanos(1);
+
+        let pipeline = TelemetryPipeline::new(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs("org_stale", &populated_log_request())
+            .await
+            .unwrap();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), primary_rx.recv())
+                .await
+                .is_err(),
+            "a frame past the max queue age must not be exported"
+        );
+        assert_eq!(
+            pipeline.drain_wal(Duration::from_secs(5)).await,
+            0,
+            "a shed frame must still advance the lane cursor, or it keeps the \
+             backlog it was shed to cut"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
     async fn drain_wal_reports_the_backlog_when_the_destination_is_unreachable() {
         let queue_dir = unique_test_dir("drain-stuck");
         let mut cfg = test_cfg();
@@ -5385,6 +5598,55 @@ mod tests {
         registry.on_failure("org", recovered);
         registry.on_failure("org", recovered);
         assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
+    }
+
+    #[test]
+    fn clickhouse_breaker_half_open_admits_one_probe_at_a_time() {
+        // Every lane worker consults this registry, so an ungated half-open let
+        // all of them hit the recovering target the instant cooldown elapsed —
+        // a thundering herd against a target that had just been declared
+        // unhealthy, repeated every cooldown for as long as it stayed down.
+        let cooldown = Duration::from_secs(30);
+        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
+            failure_threshold: 1,
+            cooldown,
+        });
+        let t0 = Instant::now();
+        registry.on_failure("org", t0);
+        assert_eq!(registry.decide("org", t0), BreakerDecision::Shed);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
+        // Every other worker arriving in the same window is shed, not admitted.
+        for _ in 0..10 {
+            assert_eq!(registry.decide("org", half_open), BreakerDecision::Shed);
+        }
+
+        // The probe succeeding closes the breaker for everyone.
+        registry.on_success("org");
+        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
+    }
+
+    #[test]
+    fn clickhouse_breaker_readmits_a_probe_that_never_reported() {
+        // A worker that dies between being admitted and recording an outcome
+        // must not wedge the breaker open forever: the claim expires after one
+        // cooldown and the next caller probes.
+        let cooldown = Duration::from_secs(30);
+        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
+            failure_threshold: 1,
+            cooldown,
+        });
+        let t0 = Instant::now();
+        registry.on_failure("org", t0);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
+        assert_eq!(registry.decide("org", half_open), BreakerDecision::Shed);
+
+        // No on_success/on_failure ever arrived for that probe.
+        let abandoned = half_open + cooldown + Duration::from_secs(1);
+        assert_eq!(registry.decide("org", abandoned), BreakerDecision::Allow);
     }
 
     #[test]

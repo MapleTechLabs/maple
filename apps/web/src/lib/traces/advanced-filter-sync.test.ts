@@ -105,6 +105,25 @@ describe("parseWhereClause", () => {
 		])
 	})
 
+	it("treats an unrecognised key as a span attribute", () => {
+		const { filters, hasIncompleteClauses } = parseWhereClause('request.id = "req_01M2G2ZJ"')
+		expect(filters.attributeFilters).toEqual([
+			{ key: "request.id", value: "req_01M2G2ZJ", matchMode: undefined },
+		])
+		expect(hasIncompleteClauses).toBe(false)
+	})
+
+	it("keeps attribute key case as typed", () => {
+		const { filters } = parseWhereClause('attr.userId = "u1" AND tenantId != "t1"')
+		expect(filters.attributeFilters.map((f) => f.key)).toEqual(["userId", "tenantId"])
+	})
+
+	it("flags range operators on an attribute key as incomplete", () => {
+		const { filters, hasIncompleteClauses } = parseWhereClause("retry.count > 3")
+		expect(filters.attributeFilters).toEqual([])
+		expect(hasIncompleteClauses).toBe(true)
+	})
+
 	it("caps attr.* filters at 5", () => {
 		const clause = Array.from({ length: 7 }, (_, i) => `attr.key${i} = "val${i}"`).join(" AND ")
 		const { filters } = parseWhereClause(clause)

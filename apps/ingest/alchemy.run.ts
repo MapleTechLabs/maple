@@ -676,6 +676,8 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 				...(yield* optionalPlain("INGEST_BATCH_MAX_WAIT_MS")),
 				...(yield* optionalPlain("INGEST_ORG_QUEUE_MAX_BYTES")),
 				...(yield* optionalPlain("INGEST_ORG_MAX_IN_FLIGHT")),
+				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
+				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS")),
 				...(yield* optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD")),

@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto"
 import {
 	type AiTriageIncidentKind,
 	AiTriageResult,
-	type InvestigationConfidence,
 	InvestigationCreateRequest,
 	InvestigationDataCorruptionError,
 	InvestigationDocument,
@@ -26,7 +25,11 @@ import { investigations, type InvestigationRow } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import { applyDiagnosisWrites, subjectTypeOf } from "@maple/backend/services/errors/apply-diagnosis"
+import {
+	applyDiagnosisWrites,
+	applyInconclusiveWrites,
+	subjectTypeOf,
+} from "@maple/backend/services/errors/apply-diagnosis"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
 	STALE_MS,
@@ -603,26 +606,41 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				}
 
 				const result = request.report
-				const confidence: InvestigationConfidence = result.confidence
+				const model = request.model ?? row.model ?? null
+				const inputTokens = request.inputTokens ?? row.inputTokens ?? null
+				const outputTokens = request.outputTokens ?? row.outputTokens ?? null
 
-				// Shared with the fan-out workflow's `persist` step so a diagnosis means
-				// the same thing whichever path produced it — same status transition, same
-				// severity application, same deterministically-keyed timeline event.
-				// `provideService(Database, database)`: the shared writer carries Database
-				// in R, while this service's API effects are R = never. `mapError` keeps
-				// this method's persistence-error channel — the writer stays neutral
-				// because the fan-out workflow maps it differently.
-				yield* applyDiagnosisWrites({
-					orgId,
-					investigationId: id,
-					report: result,
-					issueId: row.issueId ?? null,
-					subjectType: subjectTypeOf(row.subjectJson),
-					model: request.model ?? row.model ?? null,
-					inputTokens: request.inputTokens ?? row.inputTokens ?? null,
-					outputTokens: request.outputTokens ?? row.outputTokens ?? null,
-					nowMs,
-				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
+				// A close-out's report is a partial by construction: the pass ended without
+				// one, and what the close-out files is what it had. It lands as
+				// `inconclusive`, and never touches the linked issue.
+				// `provideService(Database, database)`: the shared writers carry Database
+				// in R, while this service's API effects are R = never.
+				const write =
+					request.partial === true
+						? applyInconclusiveWrites({
+								orgId,
+								investigationId: id,
+								report: result,
+								model,
+								inputTokens,
+								outputTokens,
+								nowMs,
+							})
+						: applyDiagnosisWrites({
+								orgId,
+								investigationId: id,
+								report: result,
+								issueId: row.issueId ?? null,
+								subjectType: subjectTypeOf(row.subjectJson),
+								model,
+								inputTokens,
+								outputTokens,
+								nowMs,
+							})
+				yield* write.pipe(
+					Effect.mapError(makePersistenceError),
+					Effect.provideService(Database, database),
+				)
 
 				// Deliberately does NOT meter. `request.inputTokens`/`outputTokens` are persisted onto
 				// the row above for display, but the charge is raised per *turn* in

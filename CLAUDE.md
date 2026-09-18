@@ -232,9 +232,12 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
 ## Repository sandbox (agent code access)
 
-When an org has connected GitHub, every agent surface (chat, investigation lanes, public MCP)
-gets `sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
-(`apps/ai/src/mcp/tools/sandbox.ts`). They run against a **full git clone at an exact commit**
+When an org has connected GitHub, Maple's own agents (chat and the investigation pass) get
+`sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
+(`apps/ai/src/mcp/tools/sandbox.ts`). They are registered with `audience: "internal"`
+(`McpToolRegistrar`), so the public MCP transport neither lists nor executes them — a tool's
+audience is declared at registration, and `public` is the default only for tools that read
+telemetry. They run against a **full git clone at an exact commit**
 inside Cloudflare's Sandbox container, so history works (`git log`, `git blame`, `git show`).
 `git grep` and `git ls-files` back the search and listing tools, because the image ships git and
 not ripgrep — and its git is old enough to lack `git grep --max-count`, which is the kind of thing
@@ -277,7 +280,9 @@ that the unit tests could not see (a `mktemp -d` mode, a git flag this image pre
 adding `USER` and `LOGNAME` after `env -i`) was found by running the image.
 
 End to end needs a real deployment: `stageDeploysSandbox` is `prd` only, so `bun dev` binds no
-`SANDBOX` and the four tools report that no sandbox is available.
+`SANDBOX` and the four tools report that no sandbox is available. The binding, its
+`SANDBOX_INTERNAL_SERVICE_TOKEN` and the GitHub App reader secrets (`githubAppSourceEnv`) are
+declared on **maple-ai**, the Worker that runs the tools — api only keeps the install flow.
 
 The container is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the script
 must export, and an Effect-native Worker's generated entry exports only its own bridge classes. It
@@ -307,6 +312,7 @@ there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER
 gets diagnosed, fixed and verified — read before touching `packages/backend/src/services/errors/`) ·
 `sampling-throughput.md` · `persistence.md` ·
 `ingest-wal-durability.md` (WAL segments, the S3 tier, and what survives a task dying) ·
+`backup-and-recovery.md` (system inventory, the PlanetScale restore drill, and the compliance evidence it feeds) ·
 `docker-container-monitoring.md` (Docker agent → `/infra/containers` lifecycle + its invariants) ·
 `service-map-architecture.md` (the map's tiers, its splice invariant, and what a new overlay costs) ·
 `warehouse-rollups.md` (MV/rollup tiering contract — read before adding a materialized view) ·

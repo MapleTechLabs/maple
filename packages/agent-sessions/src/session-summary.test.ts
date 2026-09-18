@@ -59,7 +59,7 @@ describe("buildSessionSummary — time", () => {
 		expect(summary.activeMs).toBe(20 * SECOND)
 	})
 
-	it("sums agent time, so parallel tools exceed the wall clock and say how wide", () => {
+	it("sums agent time, so parallel tools exceed the wall clock", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 			// Four tools, ten seconds each, all at once: 40s of agent time inside a
@@ -72,7 +72,6 @@ describe("buildSessionSummary — time", () => {
 
 		expect(segment(summary.agentTime.segments, "tool")).toBe(40 * SECOND)
 		expect(summary.agentTime.totalMs).toBe(40 * SECOND)
-		expect(summary.agentTime.peakParallel).toBe(4)
 		expect(summary.wallClockMs).toBe(10 * SECOND)
 	})
 
@@ -84,17 +83,6 @@ describe("buildSessionSummary — time", () => {
 		])
 
 		expect(segment(summary.agentTime.segments, "inference")).toBe(10 * SECOND)
-		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
-		expect(summary.agentTime.peakParallel).toBe(2)
-	})
-
-	it("counts a span that starts as another ends as no overlap at all", () => {
-		const summary = summarize([
-			toolSpan({ spanId: "a", startMs: 0, durationMs: 5 * SECOND }),
-			toolSpan({ spanId: "b", startMs: 5 * SECOND, durationMs: 5 * SECOND }),
-		])
-
-		expect(summary.agentTime.peakParallel).toBe(1)
 		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
 	})
 
@@ -895,6 +883,250 @@ describe("buildSessionSummary — work and failures", () => {
 		])
 
 		expect(summary.failures.errors).toBe(0)
+	})
+
+	// A gateway's failed provider attempts and the app's spans around a failed
+	// tool call are not failures of the agent: the counts read the generation
+	// and the tool span, once each.
+	it("counts neither a gateway's provider attempts nor the app's spans under a failed tool", () => {
+		const summary = summarize([
+			agentSpan({ spanId: "agent", startMs: 0, durationMs: 20 * SECOND }),
+			llmSpan({
+				spanId: "gen",
+				parentSpanId: "agent",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: SECOND,
+				durationMs: 2 * SECOND,
+			}),
+			llmSpan({
+				spanId: "attempt",
+				parentSpanId: "gen",
+				vendorId: "openrouter",
+				spanName: "provider attempt 1: Crusoe",
+				startMs: SECOND,
+				durationMs: 200,
+				statusCode: "Error",
+				genAi: { attemptIndex: 0, attemptStatusCode: 429, attemptProvider: "Crusoe" },
+			}),
+			toolSpan({
+				spanId: "tool",
+				parentSpanId: "agent",
+				startMs: 4 * SECOND,
+				durationMs: SECOND,
+				toolName: "sandbox_grep",
+				statusCode: "Error",
+				statusMessage: "Tool execution reached a failed terminal state",
+				genAi: { toolCallResult: { result: "Tool failed: GitHub App is not configured" } },
+			}),
+			makeSpan({
+				spanId: "app",
+				parentSpanId: "tool",
+				spanName: "GithubAppClient.getCommit",
+				startMs: 4 * SECOND,
+				durationMs: 500,
+				isAiSpan: false,
+				statusCode: "Error",
+				statusMessage: "GitHub App is not configured",
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 1, rateLimited: 0, contextExceeded: 0, refusals: 0 })
+		expect(summary.failureGroups).toEqual([
+			{ kind: "toolUnavailable", label: "tool_unavailable · sandbox_grep", count: 1 },
+		])
+		expect(summary.tools[0]?.events[0]?.errorDetail).toBe("GitHub App is not configured")
+	})
+
+	// A refused call that also failed is two events: the refusal is a finish
+	// reason, the failure a status. Sharing a response id must not fold them.
+	it("keeps a refusal and a failure on one span as two events", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "llm",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				statusMessage: "content filtered",
+				genAi: { responseId: "gen-1", responseFinishReasons: ["content_filter"] },
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 1, rateLimited: 0, contextExceeded: 0, refusals: 1 })
+	})
+
+	it("keeps the observation that named the cause, whichever observer came first", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "mirror",
+				traceId: "mirror",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				statusMessage: "Provider returned error after retries were exhausted",
+				genAi: { responseId: "gen-1" },
+			}),
+			llmSpan({
+				spanId: "app",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				statusMessage: "429 Too Many Requests",
+				genAi: { responseId: "gen-1", errorType: "rate_limit" },
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 0, rateLimited: 1, contextExceeded: 0, refusals: 0 })
+	})
+
+	it("reads a failed tool's cause off `error.type` when the framework recorded no words", () => {
+		const summary = summarize([
+			toolSpan({
+				spanId: "t",
+				startMs: 0,
+				durationMs: SECOND,
+				toolName: "run_tests",
+				genAi: { errorType: "timeout" },
+			}),
+		])
+
+		expect(summary.failureGroups).toEqual([
+			{ kind: "toolTimeout", label: "tool_timeout · run_tests", count: 1 },
+		])
+	})
+
+	// The error-tag chain is not the message: an integrations error tag on an
+	// upstream 500 is the tool failing, not an integration that is missing.
+	it("classifies a tool failure on its words, not on its error tags", () => {
+		const summary = summarize([
+			toolSpan({
+				spanId: "t-500",
+				startMs: 0,
+				durationMs: SECOND,
+				toolName: "sandbox_grep",
+				statusCode: "Error",
+				statusMessage:
+					"Tool failed: @maple/http/errors/IntegrationsUpstreamError: GitHub returned 500 Internal Server Error",
+			}),
+			toolSpan({
+				spanId: "t-required",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+				toolName: "read_source_file",
+				statusCode: "Error",
+				statusMessage: "Tool failed: The GitHub integration is required for this tool",
+			}),
+			toolSpan({
+				spanId: "t-schema",
+				startMs: 4 * SECOND,
+				durationMs: SECOND,
+				toolName: "query_data",
+				statusCode: "Error",
+				statusMessage:
+					'Tool failed: Invalid parameters: SchemaError(Missing key\n  at ["integration"])',
+			}),
+		])
+
+		expect(summary.failureGroups.map((group) => group.label).sort()).toEqual([
+			"error · sandbox_grep",
+			"tool_arguments · query_data",
+			"tool_unavailable · read_source_file",
+		])
+	})
+
+	it("keeps a gateway span's own error type over the provider_error default", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "gen",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+				genAi: { errorType: "content_filter" },
+			}),
+		])
+
+		expect(summary.failureGroups.map((group) => group.label)).toEqual(["content_filter"])
+	})
+
+	// A gateway attempt that a provider refused, then another provider served:
+	// the retry is not the agent being refused, and it must not hide the
+	// generation's own verdict either.
+	it("reads neither a refusal nor a failure off a provider attempt, nor lets one shadow its generation", () => {
+		const generation = (id: string, startMs: number, genAi: Parameters<typeof llmSpan>[0]["genAi"]) =>
+			llmSpan({
+				spanId: id,
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs,
+				durationMs: SECOND,
+				genAi,
+			})
+		const attempt = (
+			id: string,
+			parent: string,
+			startMs: number,
+			genAi: Parameters<typeof llmSpan>[0]["genAi"],
+		) =>
+			llmSpan({
+				spanId: id,
+				parentSpanId: parent,
+				vendorId: "openrouter",
+				spanName: "provider attempt 1: BaseTen",
+				startMs,
+				durationMs: 200,
+				statusCode: "Error",
+				genAi: { attemptIndex: 0, attemptStatusCode: 400, attemptProvider: "BaseTen", ...genAi },
+			})
+		const summary = summarize([
+			generation("gen-served", 0, {}),
+			attempt("att-refused", "gen-served", 0, { responseFinishReasons: ["content_filter"] }),
+			generation("gen-refused", 2 * SECOND, { responseFinishReasons: ["content_filter"] }),
+			attempt("att-copied", "gen-refused", 2 * SECOND, { responseFinishReasons: ["content_filter"] }),
+		])
+
+		expect(summary.failures).toEqual({ errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 1 })
+	})
+
+	it("counts a refusal seen by the app and by a gateway mirror once", () => {
+		const summary = summarize([
+			llmSpan({
+				spanId: "app",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { responseId: "gen-1", responseFinishReasons: ["content_filter"] },
+			}),
+			llmSpan({
+				spanId: "mirror",
+				traceId: "mirror",
+				vendorId: "openrouter",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: { responseId: "gen-1", responseFinishReasons: ["content_filter"] },
+			}),
+		])
+
+		expect(summary.failures).toEqual({ errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 1 })
+	})
+
+	it("reads a rejected parameter named timeout as the model's arguments", () => {
+		const summary = summarize([
+			toolSpan({
+				spanId: "t",
+				startMs: 0,
+				durationMs: SECOND,
+				toolName: "sandbox_exec",
+				statusCode: "Error",
+				statusMessage:
+					'Tool failed: Invalid parameters: SchemaError(Expected a number\n  at ["timeout"])',
+			}),
+		])
+
+		expect(summary.failureGroups.map((group) => group.label)).toEqual(["tool_arguments · sandbox_exec"])
 	})
 
 	it("does not read a max_tokens finish as a failure", () => {

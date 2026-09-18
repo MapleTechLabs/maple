@@ -12,8 +12,17 @@ import { ErrorState } from "@/components/common/error-state"
 import { ListToolbar } from "@/components/common/list-toolbar"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { useListNavigation } from "@/hooks/use-list-navigation"
+import {
+	HUB_SORTS,
+	HUB_VIEWS,
+	SEVERITY_FILTERS,
+	type HubSort,
+	type HubView,
+	type SeverityFilter,
+} from "@/lib/errors/hub-params"
 import type { ErrorSignal } from "@/lib/models/error-signal"
 import {
+	allToggledSelection,
 	clearedSelection,
 	type IssueSelectionMsg,
 	type IssueSelectionState,
@@ -22,7 +31,13 @@ import {
 	updateIssueSelection,
 } from "@/lib/models/issue-selection"
 
-import { ErrorSignalHeader, ErrorSignalRow, ErrorSignalRowSkeleton, type RowPicker } from "./error-signal-row"
+import {
+	ErrorSignalHeader,
+	ErrorSignalRow,
+	ErrorSignalRowSkeleton,
+	type HeaderSelection,
+	type RowPicker,
+} from "./error-signal-row"
 import { IssuesBulkBar } from "./issues-bulk-bar"
 import { SEVERITY_FILL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
 import { useIssueMutations } from "./use-issue-mutations"
@@ -39,9 +54,6 @@ import { useIssueMutations } from "./use-issue-mutations"
 
 /** Enough to fill the fold without pretending to know the page size. */
 const SKELETON_ROWS = 8
-
-export const HUB_VIEWS = ["open", "triage", "active", "resolved", "all"] as const
-export type HubView = (typeof HUB_VIEWS)[number]
 
 const VIEW_LABEL: Record<HubView, string> = {
 	open: "Open",
@@ -84,12 +96,6 @@ export function viewCovers(view: HubView, state: WorkflowState): boolean {
 	return states === "all" || states.includes(state)
 }
 
-/** `last_seen` leads because it is the default: newest activity first, paged
- *  back through older issues. `volume` is the one sort only the warehouse can
- *  answer, so it is the one scoped to the time range. */
-export const HUB_SORTS = ["last_seen", "volume", "severity"] as const
-export type HubSort = (typeof HUB_SORTS)[number]
-
 const SORT_LABEL: Record<HubSort, string> = {
 	last_seen: "Most recent",
 	volume: "Most errors",
@@ -109,9 +115,6 @@ export interface HubPaging {
 /** Placeholder rows under the list while the next page loads. Fewer than the
  *  first paint's, because the reader already has rows to look at. */
 const LOAD_MORE_SKELETON_ROWS = 3
-
-export const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
-export type SeverityFilter = (typeof SEVERITY_FILTERS)[number]
 
 const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
 	all: "All severities",
@@ -424,13 +427,17 @@ function HubList({
 	)
 
 	const clearSelection = useCallback(() => dispatchSelection(clearedSelection), [])
+	const toggleAll = useCallback(() => dispatchSelection(allToggledSelection(ids)), [ids])
+
+	const headerSelection: HeaderSelection =
+		selectedIds.size === 0 ? "none" : ids.every((id) => selectedIds.has(id)) ? "all" : "some"
 
 	const { focusedId, setFocusedId } = useListNavigation({
 		ids,
 		onOpen: (id) => navigate({ to: "/errors/issues/$issueId", params: { issueId: id } }),
-		// Selection is keyboard-only now that rows carry no checkbox: "x" on the
-		// focused row, shift+"x" to extend. Per-row actions moved to the right-click
-		// menu, which is also where a single-row transition belongs.
+		// "x" on the focused row, shift+"x" to extend: the keyboard twin of the
+		// row's checkbox. Per-row actions live in the right-click menu, which is
+		// also where a single-row transition belongs.
 		onToggleSelect: toggleSelection,
 		onEscape: () => {
 			if (selectedIds.size === 0) return false
@@ -474,7 +481,7 @@ function HubList({
 				/* The header labels the columns; it is not one of the items, so it
 				   sits outside the list rather than inside it. */
 				<div>
-					<ErrorSignalHeader />
+					<ErrorSignalHeader select={{ selection: headerSelection, onToggleAll: toggleAll }} />
 					<div role="list" className="divide-y divide-border/40">
 						{signals.map((signal) => (
 							<div role="listitem" key={signal.id}>
@@ -483,6 +490,8 @@ function HubList({
 									sparkWindow={sparkWindow}
 									mutations={mutations}
 									selected={selectedIds.has(signal.id)}
+									selecting={selectedIds.size > 0}
+									onToggleSelect={toggleSelection}
 									focused={focusedId === signal.id}
 									onFocus={setFocusedId}
 									picker={openPicker?.id === signal.id ? openPicker.kind : null}

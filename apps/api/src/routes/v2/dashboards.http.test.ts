@@ -454,6 +454,17 @@ describe("v2 dashboard shares", () => {
 			),
 		)
 
+	/** The mode a token actually grants, or `"__not_found__"`. */
+	const resolveMode = (harness: Harness, token: string) =>
+		harness.runtime.runPromise(
+			SharedDashboardService.resolveByToken(token).pipe(
+				Effect.map((resolved) => resolved.share.mode),
+				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
+					Effect.succeed("__not_found__"),
+				),
+			),
+		)
+
 	it("mints a token once, and never hands it back", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
@@ -668,6 +679,10 @@ describe("v2 dashboard shares", () => {
 		expect(shared.status).toBe(200)
 		expect(shared.body.widget_id).toBe("w-1")
 		expect(typeof shared.body.token).toBe("string")
+
+		// Minted, but dormant until the board itself is shared.
+		expect(await resolve(harness, shared.body.token)).toBe("__not_found__")
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode: "public" })
 		expect(await resolve(harness, shared.body.token)).toBe(id)
 
 		await harness.dispose()
@@ -691,7 +706,7 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
-	it("keeps a widget share independent of the dashboard's own", async () => {
+	it("gates a widget share on the dashboard's own", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
 		const id = await createDashboard(harness, key.secret)
@@ -711,16 +726,18 @@ describe("v2 dashboard shares", () => {
 		const listed = await harness.request("GET", `/v2/dashboards/${id}/shares`, key.secret)
 		expect(listed.body).toHaveLength(2)
 
-		// This is the property an embed depends on: unsharing the board must not
-		// break a chart already embedded in someone else's page.
+		// Unsharing the board takes its chart links down with it...
 		await harness.request("DELETE", `/v2/dashboards/${id}/share`, key.secret)
 		expect(await resolve(harness, boardToken)).toBe("__not_found__")
-		expect(await resolve(harness, widgetToken)).toBe(id)
+		expect(await resolve(harness, widgetToken)).toBe("__not_found__")
 
-		// And the reverse: rotating the widget link leaves the board's alone.
+		// ...and sharing it again brings the same chart link back.
 		const reshared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
 			mode: "public",
 		})
+		expect(await resolve(harness, widgetToken)).toBe(id)
+
+		// Rotating the widget link leaves the board's alone.
 		const rotated = await harness.request(
 			"POST",
 			`/v2/dashboards/${id}/widgets/w-1/share/rotate`,
@@ -729,6 +746,48 @@ describe("v2 dashboard shares", () => {
 		expect(await resolve(harness, widgetToken)).toBe("__not_found__")
 		expect(await resolve(harness, rotated.body.token)).toBe(id)
 		expect(await resolve(harness, reshared.body.token)).toBe(id)
+
+		// And rotating the board's link keeps its chart links alive: the board is
+		// still shared, just under a new token.
+		const boardRotated = await harness.request("POST", `/v2/dashboards/${id}/share/rotate`, key.secret)
+		expect(await resolve(harness, reshared.body.token)).toBe("__not_found__")
+		expect(await resolve(harness, boardRotated.body.token)).toBe(id)
+		expect(await resolve(harness, rotated.body.token)).toBe(id)
+
+		await harness.dispose()
+	})
+
+	it("never grants a chart link more than its board's mode", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const id = await createDashboard(harness, key.secret)
+		const share = (mode: "public" | "org") =>
+			harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode })
+
+		await share("public")
+		const chart = await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
+			mode: "public",
+		})
+		const token: string = chart.body.token
+		expect(await resolveMode(harness, token)).toBe("public")
+
+		// An org-only board caps a public chart link at org: no anonymous embed.
+		await share("org")
+		expect(await resolveMode(harness, token)).toBe("org")
+		const anonymous = await harness.request("POST", "/v2/share/resolve", undefined, { token })
+		expect(anonymous.status).toBe(403)
+		expect(anonymous.body.error.code).toBe("share_signin_required")
+
+		// The cap only ever narrows: an org chart link on a public board stays org.
+		await share("public")
+		await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, { mode: "org" })
+		expect(await resolveMode(harness, token)).toBe("org")
+
+		await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
+			mode: "public",
+		})
+		expect(await resolveMode(harness, token)).toBe("public")
+		expect((await harness.request("POST", "/v2/share/resolve", undefined, { token })).status).toBe(200)
 
 		await harness.dispose()
 	})
@@ -822,6 +881,34 @@ describe("v2 share previews", () => {
 			{ x: 0, y: 0, w: 3, h: 4, title: "Requests", visualization: "stat" },
 			{ x: 3, y: 0, w: 9, h: 4, title: "Latency", visualization: "chart" },
 		])
+
+		await harness.dispose()
+	})
+
+	it("hides a chart's preview while its board is not public", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const id = await createDashboard(harness, key.secret)
+		await share(harness, key.secret, id, "public")
+		const chart = await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
+			mode: "public",
+		})
+		const token: string = chart.body.token
+
+		const meta = await harness.request("POST", "/v2/share/og-meta", undefined, { token })
+		expect(meta.status).toBe(200)
+		const ogId = meta.body.imagePath.slice("/share/og/".length, -".png".length)
+		expect((await harness.request("POST", "/v2/share/og-card", undefined, { ogId })).status).toBe(200)
+
+		// The chart row itself stays `public`; the board's mode is what the card
+		// checks, so a saved image URL stops rendering the moment the board goes
+		// org-only — and comes back when it is public again.
+		await share(harness, key.secret, id, "org")
+		expect((await harness.request("POST", "/v2/share/og-meta", undefined, { token })).status).toBe(404)
+		expect((await harness.request("POST", "/v2/share/og-card", undefined, { ogId })).status).toBe(404)
+
+		await share(harness, key.secret, id, "public")
+		expect((await harness.request("POST", "/v2/share/og-card", undefined, { ogId })).status).toBe(200)
 
 		await harness.dispose()
 	})

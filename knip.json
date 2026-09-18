@@ -1,7 +1,7 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
-	"ignore": [".context/**", ".deepsec/**", "**/*.type-test.ts"],
+	"ignore": [".deepsec/**", "**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
 		".": {
@@ -9,9 +9,15 @@
 			"ignoreBinaries": ["tb", "pscale"]
 		},
 		"apps/web": {
+			// `src/worker-entry.ts` is the deployed Worker entry, named by the vite
+			// source as the string `main: "src/worker-entry.ts"` in `src/worker.ts`'s
+			// props. knip cannot follow a path in a string, so without this it reports
+			// the entry and everything only it reaches (the handler, the OG renderers)
+			// as unused files.
 			"entry": [
 				"src/routes/**/*.tsx",
 				"src/worker.ts",
+				"src/worker-entry.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
 				"src/lib/effect-atom.ts"

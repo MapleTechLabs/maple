@@ -319,6 +319,25 @@ describe("non-AI spans", () => {
 		expect(mapped.isAiSpan).toBe(false)
 	})
 
+	it("does not treat a gateway's routing metadata as AI signal", () => {
+		// `span.metadata.*` is any instrumentation's to stamp. The attempt fields
+		// are decoded for the span that has them, but they do not make it an AI
+		// span — the operation name on a real provider attempt does that.
+		const attempt = {
+			"span.metadata.attempt_index": "1",
+			"span.metadata.status_code": "429",
+			"trace.metadata.openrouter.provider_name": "Fireworks",
+		}
+		const bare = mapAiSpan(row(attempt))
+		expect(bare.isAiSpan).toBe(false)
+		expect(bare.genAi.attemptStatusCode).toBe(429)
+
+		const real = mapAiSpan(row({ ...attempt, "gen_ai.operation.name": "chat" }))
+		expect(real.isAiSpan).toBe(true)
+		expect(real.genAi.attemptIndex).toBe(1)
+		expect(real.genAi.attemptProvider).toBe("Fireworks")
+	})
+
 	it("counts the gateway stamp alone as AI signal", () => {
 		// The gateway saw evidence the read path cannot (scope, resource SDK
 		// name, span events), so its stamp outranks the absence of gen_ai keys.

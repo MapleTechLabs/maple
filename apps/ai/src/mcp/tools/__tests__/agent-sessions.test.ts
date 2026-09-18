@@ -321,6 +321,14 @@ describe("get_agent_session rendering", () => {
 		expect(answer.content).toHaveLength(1)
 		const output = markdown(answer)
 		expect(output).toContain("### Verdict")
+		// The checks are the reading: a heading with the counts even when nothing
+		// needs attention, the failed tool as a row with what to do, and the
+		// checks that passed as bullets with the fact each measured.
+		expect(output).toMatch(/### Checks \(\d+ failed · \d+ warnings? · \d+ passed · \d+ not checked\)/)
+		expect(output).toMatch(
+			/^\| (failed|warning) \| Tool errors \| .+ \| Fix the tool, or make its error text say what to do next\. \|$/m,
+		)
+		expect(output).toMatch(/^- Rate limits \(passed\): No model call was rate-limited$/m)
 		expect(output).toContain("tool_error")
 		expect(output).toContain("### Tokens")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")

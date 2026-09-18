@@ -151,13 +151,11 @@ export function ErrorSection({ message, title = "Error", badge, prompt, classNam
 				    per-token spans, which `-webkit-box` does not lay out. */}
 				<pre
 					className={cn(
-						// The two overflow states are mutually exclusive rather than
-						// layered: `overflow-hidden` is a shorthand and would race the
-						// `overflow-y` longhand on stylesheet order.
+						// Expanded shows everything: the surrounding panel already scrolls,
+						// and a capped inner scroller put a scroll box inside it.
 						"whitespace-pre-wrap break-words",
-						clamped
-							? "overflow-hidden [mask-image:linear-gradient(to_bottom,black_calc(100%-1.25em),transparent)]"
-							: "max-h-64 overflow-y-auto",
+						clamped &&
+							"overflow-hidden [mask-image:linear-gradient(to_bottom,black_calc(100%-1.25em),transparent)]",
 					)}
 					style={clamped ? { maxHeight: `${COLLAPSED_LINES * LINE_HEIGHT}em` } : undefined}
 				>

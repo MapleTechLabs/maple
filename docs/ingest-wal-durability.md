@@ -95,9 +95,38 @@ has an S3 gateway endpoint and no NAT, so this traffic is free.
 | `INGEST_WAL_S3_HEARTBEAT_SECS`    | 60                                  | Owner heartbeat interval                                |
 | `INGEST_WAL_S3_TIMEOUT_MS`        | 10000                               | Per-request timeout                                     |
 | `INGEST_SHUTDOWN_DRAIN_SECS`      | 90                                  | Must stay inside the task's 120s `stopTimeout`          |
+| `INGEST_QUEUE_MAX_AGE_SECS`       | 300                                 | Age past which a queued frame is shed; 0 disables       |
+| `INGEST_REQUEST_TIMEOUT_SECS`     | 30                                  | Gateway request deadline; 0 disables                    |
 
 The bucket, its lifecycle rule (7-day expiry as a backstop for deletes that were lost) and the
 task-role policy are in `apps/ingest/alchemy.run.ts`.
+
+## What bounds the backlog
+
+The byte caps bound how much the WAL holds, not how long a frame waits in it, and those are
+different limits. A lane's channel holds `INGEST_QUEUE_CHANNEL_CAPACITY` frames (100k) and the WAL
+holds `INGEST_QUEUE_MAX_BYTES` (20 GiB), so a stalled downstream target absorbs minutes of traffic
+before either cap is reached — and for all of those minutes the accept path queues behind it on the
+WAL append rather than shedding, because `try_reserve_owned` only refuses once the slots are gone.
+Two limits close that gap:
+
+- **`INGEST_QUEUE_MAX_AGE_SECS`** sheds a frame the export worker picks up more than this long after
+  it was committed. This is **deliberate data loss** and is metered as `ingest_queue_age_shed_total`
+  (per org, destination and datasource) — alert on it. A shed frame still advances the lane cursor
+  and releases its org bytes, or it would keep the backlog it was shed to cut. Frames recovered by
+  WAL replay are stamped at replay time, so a restart's backlog gets a full window to export in
+  rather than being shed on sight for having been written before the restart. Set to 0 to queue without an age bound.
+- **`INGEST_REQUEST_TIMEOUT_SECS`** bounds one HTTP request. Without it the accept path had no
+  deadline anywhere, so saturation did not surface as errors: requests queued on the WAL append and
+  sat there, p95 in the tens of seconds with per-route error rates flat near zero. Timed-out
+  requests answer 503 `@maple/ingest/RequestTimeout` with `Retry-After`, and are counted by
+  `ingest_request_timeouts_total`.
+
+`ingest_wal_append_duration_seconds` splits into `ingest_wal_lock_wait_duration_seconds` and
+`ingest_wal_fsync_duration_seconds`. When `ingest.wal_commit` climbs, their ratio is what says which
+lever helps: lock wait dominating means the lane count is the ceiling, so more lanes (more vCPU,
+`INGEST_WAL_SHARDS`) buys headroom; fsync dominating means the device is the ceiling, and more lanes
+only redistribute the same IO.
 
 ## Metrics
 
