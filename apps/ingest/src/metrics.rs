@@ -118,10 +118,6 @@ static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
-/// Frames dropped for exceeding `INGEST_QUEUE_MAX_AGE_SECS`. This is deliberate
-/// data loss and must be alertable: non-zero means a downstream target stalled
-/// long enough that the gateway chose to cut the backlog rather than let the
-/// accept path keep queueing behind it.
 /// Requests abandoned by the gateway deadline. The signal that saturation is
 /// being shed rather than queued — before this existed the same condition was
 /// invisible in error rates because a hung request never fails.
@@ -132,6 +128,10 @@ static REQUEST_TIMEOUTS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+/// Frames dropped for exceeding `INGEST_QUEUE_MAX_AGE_SECS`. This is deliberate
+/// data loss and must be alertable: non-zero means a downstream target stalled
+/// long enough that the gateway chose to cut the backlog rather than let the
+/// accept path keep queueing behind it.
 static QUEUE_AGE_SHED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_queue_age_shed_total")
@@ -345,12 +345,6 @@ static WAL_COMMIT_BYTES: LazyLock<Histogram<u64>> = LazyLock::new(|| {
         .build()
 });
 
-/// Split three ways on purpose. A WAL append is `lock -> write -> fsync`, and
-/// when `ingest.wal_commit` blows up these are the only numbers that say which
-/// of the three it was: lock wait dominating means the lane count is the
-/// ceiling (more lanes / more vCPU helps), fsync dominating means the device is
-/// (more lanes just redistribute the same IO). Without this split the only way
-/// to tell them apart was to read the source.
 /// How long frames actually waited in their lane before export. The companion
 /// to `ingest_queue_age_shed_total`: this shows the backlog building, that one
 /// shows it being cut.
@@ -362,6 +356,12 @@ static QUEUE_AGE_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
         .build()
 });
 
+/// Split three ways on purpose. A WAL append is `lock -> write -> fsync`, and
+/// when `ingest.wal_commit` blows up these are the only numbers that say which
+/// of the three it was: lock wait dominating means the lane count is the ceiling
+/// (more lanes / more vCPU helps), fsync dominating means the device is the
+/// ceiling (more lanes just redistribute the same IO). Without this split the
+/// only way to tell them apart was to read the source.
 static WAL_APPEND_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
     METER
         .f64_histogram("ingest_wal_append_duration_seconds")
@@ -620,9 +620,11 @@ pub fn wal_commit_bytes(shard: usize, destination: &str, bytes: u64) {
     );
 }
 
-/// A request was abandoned by the gateway deadline.
-pub fn request_timed_out(path: &str) {
-    REQUEST_TIMEOUTS_TOTAL.add(1, &[KeyValue::new("path", path.to_owned())]);
+/// A request was abandoned by the gateway deadline. `route` is the matched route
+/// pattern, never a raw URI — one ingest route carries a path parameter, and a
+/// label per connector id is unbounded cardinality.
+pub fn request_timed_out(route: &str) {
+    REQUEST_TIMEOUTS_TOTAL.add(1, &[KeyValue::new("route", route.to_owned())]);
 }
 
 /// Age of a frame at the moment its export batch was assembled.

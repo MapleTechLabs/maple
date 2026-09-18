@@ -24,6 +24,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use autumn::{AutumnEntitlements, AutumnTracker};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
+use axum::extract::MatchedPath;
 use axum::extract::Request;
 use axum::extract::Path;
 use axum::extract::Query;
@@ -1623,8 +1624,18 @@ async fn request_timeout_middleware(
 ) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_owned();
+    // The metric gets the matched route pattern, not the raw path: one route
+    // carries a path parameter (`/v1/logpush/cloudflare/http_requests/{connector_id}`),
+    // and labelling by raw path would add a metric series per connector. This
+    // layer sits on the `Router`, so routing has already run and the extension is
+    // populated; "unknown" only appears if that ever stops being true.
+    let matched_path = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or("unknown", MatchedPath::as_str)
+        .to_owned();
     let Ok(response) = tokio::time::timeout(timeout, next.run(request)).await else {
-        metrics::request_timed_out(&path);
+        metrics::request_timed_out(&matched_path);
         warn!(
             %method,
             path,
@@ -8145,9 +8156,12 @@ mod tests {
         // stall showed up as p95 in the tens of seconds with a per-route error
         // rate of zero — a hung request is not a failed one, and nothing on the
         // accept path was counting the difference.
+        // A parameterised route, so the middleware's `MatchedPath` lookup is
+        // exercised on the shape that would otherwise put one metric label on
+        // every connector id.
         let app = Router::new()
             .route(
-                "/v1/traces",
+                "/v1/logpush/cloudflare/http_requests/{connector_id}",
                 post(|| async {
                     std::future::pending::<()>().await;
                     StatusCode::OK
@@ -8165,7 +8179,9 @@ mod tests {
         });
 
         let response = Client::new()
-            .post(format!("http://{addr}/v1/traces"))
+            .post(format!(
+                "http://{addr}/v1/logpush/cloudflare/http_requests/conn_abc123"
+            ))
             .body("x")
             .send()
             .await
