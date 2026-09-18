@@ -6,10 +6,9 @@ import {
 	type NormalizedSignal,
 	type SignalFieldCatalogEntry,
 	type SignalScalar,
-	type SignalSourceAdapter,
 	type SignalSourceDefinition,
 } from "@maple/eventing-core"
-import { Result, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { OtlpFieldError, spanIdHex, traceIdHex, type AnyValue, type KeyValue } from "../otlp/encode"
 
 const NumberOrString = Schema.Union([Schema.String, Schema.Number])
@@ -70,11 +69,12 @@ const LogsRequestSchema = Schema.Struct({
 		),
 	),
 })
-const decodeLogsRequest = (request: unknown) => {
-	const decoded = Schema.decodeUnknownResult(LogsRequestSchema)(request ?? {})
-	if (Result.isFailure(decoded)) throw new OtlpFieldError(`invalid OTLP logs: ${decoded.failure.message}`)
-	return decoded.success
-}
+const isOtlpFieldError = Schema.is(OtlpFieldError)
+
+const decodeLogsRequest = (request: unknown): Effect.Effect<typeof LogsRequestSchema.Type, OtlpFieldError> =>
+	Schema.decodeUnknownEffect(LogsRequestSchema)(request ?? {}).pipe(
+		Effect.mapError((error) => new OtlpFieldError({ message: `invalid OTLP logs: ${error.message}` })),
+	)
 
 const MAX_ATTRIBUTES = 256
 const MAX_STRING_BYTES = 16 * 1024
@@ -147,20 +147,21 @@ interface ValueBudget {
 
 const assertStringBound = (value: string, label: string): string => {
 	if (Buffer.byteLength(value, "utf8") > MAX_STRING_BYTES)
-		throw new OtlpFieldError(`${label} exceeds ${MAX_STRING_BYTES} UTF-8 bytes`)
+		throw new OtlpFieldError({ message: `${label} exceeds ${MAX_STRING_BYTES} UTF-8 bytes` })
 	return value
 }
 
 const int64 = (value: string | number, label: string): string => {
 	if (typeof value === "number" && !Number.isSafeInteger(value))
-		throw new OtlpFieldError(
-			`${label} must encode int64 as a decimal string when outside safe integer range`,
-		)
+		throw new OtlpFieldError({
+			message: `${label} must encode int64 as a decimal string when outside safe integer range`,
+		})
 	const decimal = String(value)
-	if (!/^-?(?:0|[1-9][0-9]*)$/.test(decimal)) throw new OtlpFieldError(`${label} is not an int64`)
+	if (!/^-?(?:0|[1-9][0-9]*)$/.test(decimal))
+		throw new OtlpFieldError({ message: `${label} is not an int64` })
 	const parsed = BigInt(decimal)
 	if (parsed < -(1n << 63n) || parsed > (1n << 63n) - 1n)
-		throw new OtlpFieldError(`${label} is outside the int64 range`)
+		throw new OtlpFieldError({ message: `${label} is outside the int64 range` })
 	return decimal
 }
 
@@ -171,7 +172,8 @@ const anyValueScalar = (value: AnyValue | undefined, label: string): SignalScala
 	if (value.boolValue !== undefined) return { type: "boolean", value: value.boolValue }
 	if (value.intValue !== undefined) return { type: "int64", value: int64(value.intValue, label) }
 	if (value.doubleValue !== undefined) {
-		if (!Number.isFinite(value.doubleValue)) throw new OtlpFieldError(`${label} must be finite`)
+		if (!Number.isFinite(value.doubleValue))
+			throw new OtlpFieldError({ message: `${label} must be finite` })
 		return { type: "float64", value: value.doubleValue }
 	}
 	return null
@@ -184,8 +186,9 @@ const anyValueJson = (
 	budget: ValueBudget = { nodes: 0 },
 ): JsonValue | null => {
 	budget.nodes += 1
-	if (budget.nodes > MAX_VALUE_NODES) throw new OtlpFieldError(`${label} exceeds value node limit`)
-	if (depth > MAX_VALUE_DEPTH) throw new OtlpFieldError(`${label} exceeds value depth limit`)
+	if (budget.nodes > MAX_VALUE_NODES)
+		throw new OtlpFieldError({ message: `${label} exceeds value node limit` })
+	if (depth > MAX_VALUE_DEPTH) throw new OtlpFieldError({ message: `${label} exceeds value depth limit` })
 	const scalar = anyValueScalar(value, label)
 	if (scalar) return scalar.value
 	if (!value) return null
@@ -213,7 +216,7 @@ interface NormalizedAttributes {
 
 const attributes = (values: readonly KeyValue[] | undefined, label: string): NormalizedAttributes => {
 	if ((values?.length ?? 0) > MAX_ATTRIBUTES)
-		throw new OtlpFieldError(`${label} exceeds ${MAX_ATTRIBUTES} attributes`)
+		throw new OtlpFieldError({ message: `${label} exceeds ${MAX_ATTRIBUTES} attributes` })
 	const scalars = new Map<string, SignalScalar>()
 	const data: Record<string, JsonValue> = Object.create(null)
 	for (const [index, entry] of (values ?? []).entries()) {
@@ -228,12 +231,8 @@ const attributes = (values: readonly KeyValue[] | undefined, label: string): Nor
 
 const epochNanos = (value: string | number | undefined): bigint | null => {
 	if (value === undefined || value === "" || value === 0 || value === "0") return null
-	try {
-		const parsed = BigInt(value)
-		return parsed >= 0 ? parsed : null
-	} catch {
-		return null
-	}
+	const parsed = Result.try(() => BigInt(value))
+	return Result.isSuccess(parsed) && parsed.success >= 0 ? parsed.success : null
 }
 
 const nanosToTimestamp = (nanos: bigint): string => {
@@ -242,7 +241,7 @@ const nanosToTimestamp = (nanos: bigint): string => {
 	const milliseconds = Number(seconds) * 1_000
 	const date = new Date(milliseconds)
 	if (!Number.isFinite(milliseconds) || Number.isNaN(date.getTime()))
-		throw new OtlpFieldError("OTLP timestamp is outside the supported date range")
+		throw new OtlpFieldError({ message: "OTLP timestamp is outside the supported date range" })
 	return `${date.toISOString().slice(0, 19)}.${fraction.toString().padStart(9, "0")}Z`
 }
 
@@ -327,12 +326,11 @@ const recoveryIdentity = (
 
 	const occurredNanos = epochNanos(log.timeUnixNano) ?? epochNanos(log.observedTimeUnixNano)
 	let occurredAt: string | null = null
-	if (occurredNanos !== null)
-		try {
-			occurredAt = nanosToTimestamp(occurredNanos)
-		} catch (error) {
-			if (!(error instanceof OtlpFieldError)) throw error
-		}
+	if (occurredNanos !== null) {
+		const timestamp = Result.try(() => nanosToTimestamp(occurredNanos))
+		if (Result.isSuccess(timestamp)) occurredAt = timestamp.success
+		else if (!isOtlpFieldError(timestamp.failure)) throw timestamp.failure
+	}
 	return { sourceKind: "otel.log", source, tenantId, occurrenceId, occurredAt }
 }
 
@@ -375,7 +373,7 @@ const normalizeLogRecord = (
 		},
 	}
 	if (Buffer.byteLength(canonicalJson(data), "utf8") > MAX_DATA_BYTES)
-		throw new OtlpFieldError(`normalized log event exceeds ${MAX_DATA_BYTES} UTF-8 bytes`)
+		throw new OtlpFieldError({ message: `normalized log event exceeds ${MAX_DATA_BYTES} UTF-8 bytes` })
 	const source = sourceUri(resource, record)
 	const occurrenceId = sourceOccurrenceId(record)
 	const subject = stringAttribute(record, "event.subject") ?? stringAttribute(record, "cloudevents.subject")
@@ -490,12 +488,10 @@ export interface OtlpLogNormalizationResult {
 }
 
 /** Projection limits isolate individual records; resource and scope attributes are normalized once per group. */
-export const normalizeOtlpLogsWithDiagnostics = (
-	request: unknown,
-	_acceptedAt = new Date().toISOString(),
-	tenantId = "local",
+const normalizeDecodedLogs = (
+	input: typeof LogsRequestSchema.Type,
+	tenantId: string,
 ): OtlpLogNormalizationResult => {
-	const input = decodeLogsRequest(request)
 	const signals: NormalizedSignal[] = []
 	const unprojectedIdentities: OtlpRecoveryIdentity[] = []
 	let ineligible = 0
@@ -515,7 +511,7 @@ export const normalizeOtlpLogsWithDiagnostics = (
 					)
 				})
 				if (Result.isFailure(normalized)) {
-					if (!(normalized.failure instanceof OtlpFieldError)) throw normalized.failure
+					if (!isOtlpFieldError(normalized.failure)) throw normalized.failure
 					failures += 1
 				} else if (normalized.success === null) ineligible += 1
 				else {
@@ -530,16 +526,20 @@ export const normalizeOtlpLogsWithDiagnostics = (
 	return { signals, unprojectedIdentities, ineligible, failures }
 }
 
+/** An undecodable request fails as a whole; a malformed record is counted and skipped. */
+export const normalizeOtlpLogsWithDiagnostics = (
+	request: unknown,
+	_acceptedAt = new Date().toISOString(),
+	tenantId = "local",
+): Effect.Effect<OtlpLogNormalizationResult, OtlpFieldError> =>
+	decodeLogsRequest(request).pipe(
+		// Per-record field errors are already counted, so anything thrown here is a defect.
+		Effect.flatMap((input) => Effect.sync(() => normalizeDecodedLogs(input, tenantId))),
+	)
+
 export const normalizeOtlpLogs = (
 	request: unknown,
 	acceptedAt = new Date().toISOString(),
 	tenantId = "local",
-): readonly NormalizedSignal[] => normalizeOtlpLogsWithDiagnostics(request, acceptedAt, tenantId).signals
-
-export const OTLP_LOG_ADAPTER: SignalSourceAdapter<
-	unknown,
-	{ readonly acceptedAt: string; readonly tenantId: string }
-> = {
-	definition: OTLP_LOG_SOURCE,
-	normalize: (raw, context) => normalizeOtlpLogs(raw, context.acceptedAt, context.tenantId),
-}
+): Effect.Effect<readonly NormalizedSignal[], OtlpFieldError> =>
+	normalizeOtlpLogsWithDiagnostics(request, acceptedAt, tenantId).pipe(Effect.map(({ signals }) => signals))

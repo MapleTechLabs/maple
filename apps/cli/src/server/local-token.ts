@@ -3,9 +3,16 @@ import { lstatSync, readFileSync } from "node:fs"
 import { Result, Schema } from "effect"
 import { durableWrite } from "./durable-files"
 
+/** A credential or ledger path that is a symlink or a non-file; refused rather than followed. */
+export class LocalFileNotReal extends Schema.TaggedError<LocalFileNotReal>()("@maple/cli/LocalFileNotReal", {
+	message: Schema.String,
+	path: Schema.String,
+}) {}
+
 export const readRealFile = (path: string, label: string): string => {
 	const stat = lstatSync(path)
-	if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`${label} is not a real file: ${path}`)
+	if (stat.isSymbolicLink() || !stat.isFile())
+		throw new LocalFileNotReal({ message: `${label} is not a real file: ${path}`, path })
 	return readFileSync(path, "utf8")
 }
 

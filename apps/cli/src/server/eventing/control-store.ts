@@ -15,9 +15,9 @@ import {
 	type ProjectionFailure,
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
-import { Result, Schema } from "effect"
+import { Context, Effect, Layer, Result, Schema, type Scope } from "effect"
 import { durableWrite, ensurePrivateDirectory } from "../durable-files"
-import { NOOP_EVENTING_TELEMETRY, type EventingTelemetry } from "./telemetry"
+import { observeEventing } from "./telemetry"
 
 const CONTROL_DIRECTORY = "control"
 const CONTROL_DATABASE = "eventing.sqlite"
@@ -241,9 +241,51 @@ interface DeliveryGapRow {
 	readonly last_dropped_at: string
 }
 
+/** Any other control-store failure: SQLite, an invariant, or a corrupt row. */
+export class EventingControlStoreError extends Schema.TaggedError<EventingControlStoreError>()(
+	"@maple/cli/eventing/ControlStoreFailed",
+	{ message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
+) {}
+
+export type EventConsumerFailure =
+	| EventConsumerInputError
+	| EventConsumerNotFoundError
+	| EventConsumerConflictError
+	| EventConsumerLeaseError
+	| EventConsumerDeliveryGapError
+	| EventingControlStoreError
+
+const storeError = (message: string): EventingControlStoreError => new EventingControlStoreError({ message })
+
+const isStoreError = Schema.is(EventingControlStoreError)
+const isConsumerFailure = Schema.is(
+	Schema.Union([
+		EventConsumerInputError,
+		EventConsumerNotFoundError,
+		EventConsumerConflictError,
+		EventConsumerLeaseError,
+		EventConsumerDeliveryGapError,
+		EventingControlStoreError,
+	]),
+)
+const isOutboxAdministrationInvalid = Schema.is(OutboxAdministrationInvalid)
+
+/** Maps a failure thrown inside one synchronous SQLite step onto the typed channel. */
+const storeFailure = (error: unknown): EventingControlStoreError =>
+	isStoreError(error)
+		? error
+		: new EventingControlStoreError({
+				message: error instanceof Error ? error.message : String(error),
+				cause: error,
+			})
+const consumerFailure = (error: unknown): EventConsumerFailure =>
+	isConsumerFailure(error) ? error : storeFailure(error)
+const administrationFailure = (error: unknown): OutboxAdministrationInvalid | EventingControlStoreError =>
+	isOutboxAdministrationInvalid(error) ? error : storeFailure(error)
+
 const asNumber = (value: number | bigint): number => {
 	const number = Number(value)
-	if (!Number.isSafeInteger(number) || number < 0) throw new Error(`invalid SQLite integer: ${value}`)
+	if (!Number.isSafeInteger(number) || number < 0) throw storeError(`invalid SQLite integer: ${value}`)
 	return number
 }
 
@@ -251,21 +293,21 @@ const decodeProjection = (json: string): SignalProjectionSpec =>
 	decodeSignalProjectionSpec(Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json))
 
 const decodeEvent = (json: string): MapleCloudEvent => {
-	return Result.getOrThrow(
-		validateMapleCloudEvent(Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json)),
-	).event
+	const validated = validateMapleCloudEvent(
+		Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json),
+	)
+	if (Result.isFailure(validated)) throw validated.failure
+	return validated.success.event
 }
 
 const assertRealDatabaseFile = (path: string): void => {
-	let info
-	try {
-		info = lstatSync(path)
-	} catch (error) {
-		if (Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }))(error)) return
-		throw error
+	const info = Result.try(() => lstatSync(path))
+	if (Result.isFailure(info)) {
+		if (Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }))(info.failure)) return
+		throw info.failure
 	}
-	if (info.isSymbolicLink() || !info.isFile())
-		throw new Error(`eventing control database is not a real file: ${path}`)
+	if (info.success.isSymbolicLink() || !info.success.isFile())
+		throw storeError(`eventing control database is not a real file: ${path}`)
 }
 
 const configure = (db: Database): void => {
@@ -276,25 +318,25 @@ const configure = (db: Database): void => {
 
 const checkpointWal = (db: Database): void => {
 	const result = db.query<WalCheckpointRow, []>("PRAGMA wal_checkpoint(TRUNCATE)").get()
-	if (!result) throw new Error("eventing control WAL checkpoint returned no result")
+	if (!result) throw storeError("eventing control WAL checkpoint returned no result")
 	const busy = asNumber(result.busy)
 	const log = asNumber(result.log)
 	const checkpointed = asNumber(result.checkpointed)
 	if (busy !== 0 || log !== 0)
-		throw new Error(
+		throw storeError(
 			`eventing control WAL checkpoint incomplete (busy=${busy}, log=${log}, checkpointed=${checkpointed})`,
 		)
 }
 
 const validateLimits = (limits: LocalEventingControlLimits): ResolvedLocalEventingControlLimits => {
 	if (!Number.isSafeInteger(limits.maxOutboxEvents) || limits.maxOutboxEvents < 1)
-		throw new Error("maxOutboxEvents must be a positive safe integer")
+		throw storeError("maxOutboxEvents must be a positive safe integer")
 	if (!Number.isSafeInteger(limits.maxOutboxBytes) || limits.maxOutboxBytes < 1)
-		throw new Error("maxOutboxBytes must be a positive safe integer")
+		throw storeError("maxOutboxBytes must be a positive safe integer")
 	const retainAcknowledgedReadyEvents =
 		limits.retainAcknowledgedReadyEvents ?? DEFAULT_RETAIN_ACKNOWLEDGED_READY_EVENTS
 	if (!Number.isSafeInteger(retainAcknowledgedReadyEvents) || retainAcknowledgedReadyEvents < 0)
-		throw new Error("retainAcknowledgedReadyEvents must be a non-negative safe integer")
+		throw storeError("retainAcknowledgedReadyEvents must be a non-negative safe integer")
 	return { ...limits, retainAcknowledgedReadyEvents }
 }
 
@@ -303,12 +345,12 @@ const validateOpenDatabase = (
 	acceptedSchemaVersions: readonly number[] = [CONTROL_SCHEMA_VERSION],
 ): EventingControlSnapshotValidation => {
 	const quick = db.query<QuickCheckRow, []>("PRAGMA quick_check").get()
-	if (quick?.quick_check !== "ok") throw new Error(`eventing control database quick_check failed`)
+	if (quick?.quick_check !== "ok") throw storeError(`eventing control database quick_check failed`)
 	const version = db.query<UserVersionRow, []>("PRAGMA user_version").get()
-	if (!version) throw new Error("eventing control database has no schema version")
+	if (!version) throw storeError("eventing control database has no schema version")
 	const schemaVersion = asNumber(version.user_version)
 	if (!acceptedSchemaVersions.includes(schemaVersion))
-		throw new Error(
+		throw storeError(
 			`unsupported eventing control schema ${schemaVersion}; expected ${acceptedSchemaVersions.join(" or ")}`,
 		)
 	// Full accounting verification belongs at open/restore, never on the ingest hot path.
@@ -321,19 +363,19 @@ const validateOpenDatabase = (
 	try {
 		const row = accounting.get()
 		if (row === null || asNumber(row.count) !== 1)
-			throw new Error("eventing control outbox accounting is inconsistent")
+			throw storeError("eventing control outbox accounting is inconsistent")
 	} finally {
 		accounting.finalize()
 	}
 	const count = (where: string): number => {
 		const row = db.query<CountRow, []>(`SELECT count(*) AS count FROM outbox_events ${where}`).get()
-		if (!row) throw new Error("eventing control count query returned no row")
+		if (!row) throw storeError("eventing control count query returned no row")
 		return asNumber(row.count)
 	}
 	const revisions = db.query<CountRow, []>("SELECT count(*) AS count FROM projection_revisions").get()
-	if (!revisions) throw new Error("eventing projection count query returned no row")
+	if (!revisions) throw storeError("eventing projection count query returned no row")
 	const failures = db.query<CountRow, []>("SELECT count(*) AS count FROM projection_failures").get()
-	if (!failures) throw new Error("eventing projection-failure count query returned no row")
+	if (!failures) throw storeError("eventing projection-failure count query returned no row")
 	const invalidReadiness = db
 		.query<CountRow, []>(
 			`SELECT count(*) AS count
@@ -346,9 +388,9 @@ const validateOpenDatabase = (
 			 ))`,
 		)
 		.get()
-	if (!invalidReadiness) throw new Error("eventing readiness validation query returned no row")
+	if (!invalidReadiness) throw storeError("eventing readiness validation query returned no row")
 	if (asNumber(invalidReadiness.count) !== 0)
-		throw new Error("eventing control database has inconsistent outbox readiness state")
+		throw storeError("eventing control database has inconsistent outbox readiness state")
 	{
 		const consumers = db
 			.query<Pick<ConsumerRow, "lease_expires_at" | "registered_at" | "disabled_at">, []>(
@@ -383,9 +425,9 @@ const validateOpenDatabase = (
 			statement.finalize()
 		}
 		if (invalidFingerprints === null)
-			throw new Error("eventing staged source-fingerprint validation returned no row")
+			throw storeError("eventing staged source-fingerprint validation returned no row")
 		if (asNumber(invalidFingerprints.count) > 0)
-			throw new Error("eventing control database has an invalid staged source fingerprint")
+			throw storeError("eventing control database has an invalid staged source fingerprint")
 	}
 	return {
 		schemaVersion,
@@ -435,145 +477,424 @@ const decodeConsumer = (row: ConsumerRow): EventConsumer => ({
 	disabledAt: row.disabled_at,
 })
 
-export class LocalEventingControlStore {
-	readonly #db: Database
-	#stagedSourceKinds = new Set<string>()
-	readonly #limits: ResolvedLocalEventingControlLimits
-	readonly #telemetry: EventingTelemetry
+const DEFAULT_LIMITS: LocalEventingControlLimits = {
+	maxOutboxEvents: DEFAULT_MAX_OUTBOX_EVENTS,
+	maxOutboxBytes: DEFAULT_MAX_OUTBOX_BYTES,
+	retainAcknowledgedReadyEvents: DEFAULT_RETAIN_ACKNOWLEDGED_READY_EVENTS,
+}
+
+/** Where the control store lives; supplied by the application root. */
+export class LocalEventingControlConfig extends Context.Service<
+	LocalEventingControlConfig,
+	{ readonly dataDir: string; readonly limits?: LocalEventingControlLimits }
+>()("@maple/cli/eventing/LocalEventingControlConfig") {}
+
+export type OutboxCapacity = LocalEventingControlLimits & {
+	readonly currentEvents: number
+	readonly currentBytes: number
+}
+
+export interface LocalEventingControlStoreApi {
 	readonly path: string
-
-	private constructor(
+	readonly saveProjection: (
+		spec: SignalProjectionSpec,
+		createdAt?: string,
+	) => Effect.Effect<void, EventingControlStoreError>
+	readonly loadEnabledProjections: (
+		tenantId: string,
+	) => Effect.Effect<readonly SignalProjectionSpec[], EventingControlStoreError>
+	readonly stageEvents: (
+		events: readonly MapleCloudEvent[],
+		sourceFingerprints?: ReadonlyMap<string, string>,
+		stagedAt?: string,
+	) => Effect.Effect<StageEventsResult, EventingControlStoreError>
+	readonly deliveryGap: (tenantId: string) => Effect.Effect<DeliveryGap, EventingControlStoreError>
+	readonly acceptDeliveryGap: (
+		tenantId: string,
+		consumerId: string,
+		generation: number,
+	) => Effect.Effect<DeliveryGap, EventConsumerFailure>
+	/** Operator-authorized loss; the HTTP caller drains admission before invoking this transaction. */
+	readonly abandonEvents: (
+		tenantId: string,
+		eventIds: readonly string[],
+	) => Effect.Effect<
+		{ readonly abandoned: number; readonly gap: DeliveryGap },
+		OutboxAdministrationInvalid | EventingControlStoreError
+	>
+	readonly hasStagedSourceKind: (tenantId: string, sourceKind: string) => Effect.Effect<boolean>
+	readonly hasStagedSourceOccurrence: (
+		tenantId: string,
+		sourceKind: string,
+		source: string,
+		sourceOccurrenceId: string,
+	) => Effect.Effect<boolean, EventingControlStoreError>
+	readonly stagedEventIdsForOccurrence: (
+		tenantId: string,
+		sourceKind: string,
+		source: string,
+		sourceOccurrenceId: string,
+		sourceFingerprint: string,
+	) => Effect.Effect<readonly string[], EventingControlStoreError>
+	readonly markReady: (
+		eventIds: readonly string[],
+		readyAt?: string,
+	) => Effect.Effect<void, EventingControlStoreError>
+	readonly listReady: (
+		limit?: number,
+		after?: number,
+	) => Effect.Effect<EventingOutboxPage, EventingControlStoreError>
+	readonly listStaged: (
+		limit?: number,
+		after?: number,
+	) => Effect.Effect<EventingOutboxPage, EventingControlStoreError>
+	readonly listConsumers: (
+		tenantId: string,
+	) => Effect.Effect<readonly EventConsumer[], EventingControlStoreError>
+	readonly registerConsumer: (
+		tenantId: string,
+		consumerId: string,
+		startAt: EventConsumerStart,
+		registeredAt?: string,
+	) => Effect.Effect<EventConsumer, EventConsumerFailure>
+	readonly disableConsumer: (
+		tenantId: string,
+		consumerId: string,
+		disabledAt?: string,
+	) => Effect.Effect<EventConsumer, EventConsumerFailure>
+	readonly claimReady: (
+		tenantId: string,
+		consumerId: string,
+		limit: number,
+		leaseSeconds: number,
+		now?: string,
+	) => Effect.Effect<EventConsumerClaim, EventConsumerFailure>
+	readonly acknowledgeClaim: (
+		tenantId: string,
+		consumerId: string,
+		leaseToken: string,
+		throughSequence: number,
+		now?: string,
+	) => Effect.Effect<EventConsumerAcknowledgement, EventConsumerFailure>
+	readonly outboxCapacity: Effect.Effect<OutboxCapacity, EventingControlStoreError>
+	readonly recordProjectionFailures: (
+		tenantId: string,
+		failures: readonly ProjectionFailure[],
+		createdAt?: string,
+	) => Effect.Effect<void, EventingControlStoreError>
+	readonly validate: Effect.Effect<EventingControlSnapshotValidation, EventingControlStoreError>
+	/** Synchronous so a caller can pair it with another synchronous capture. */
+	readonly captureSnapshot: Effect.Effect<Uint8Array, EventingControlStoreError>
+	readonly backupTo: (
 		path: string,
-		db: Database,
-		limits: ResolvedLocalEventingControlLimits,
-		telemetry: EventingTelemetry,
-	) {
-		this.path = path
-		this.#db = db
-		this.#limits = limits
-		this.#telemetry = telemetry
-		this.#refreshStagedSourceKinds()
-	}
+	) => Effect.Effect<EventingControlSnapshotValidation, EventingControlStoreError>
+}
 
-	static async open(
-		dataDir: string,
-		limits: LocalEventingControlLimits = {
-			maxOutboxEvents: DEFAULT_MAX_OUTBOX_EVENTS,
-			maxOutboxBytes: DEFAULT_MAX_OUTBOX_BYTES,
-			retainAcknowledgedReadyEvents: DEFAULT_RETAIN_ACKNOWLEDGED_READY_EVENTS,
+const now = (): string => new Date().toISOString()
+
+/** Opens, migrates, and validates the database; a failure here closes the handle it opened. */
+const openDatabase = (path: string): Effect.Effect<Database, EventingControlStoreError> =>
+	Effect.try({
+		try: () => {
+			assertRealDatabaseFile(path)
+			return new Database(path, { create: true, readwrite: true, strict: true, safeIntegers: true })
 		},
-		telemetry: EventingTelemetry = NOOP_EVENTING_TELEMETRY,
-	): Promise<LocalEventingControlStore> {
-		const validatedLimits = validateLimits(limits)
-		const directory = eventingControlDirectory(dataDir)
-		await ensurePrivateDirectory(directory)
-		const path = eventingControlPath(dataDir)
-		assertRealDatabaseFile(path)
-		const db = new Database(path, { create: true, readwrite: true, strict: true, safeIntegers: true })
-		try {
-			configure(db)
-			db.exec("PRAGMA journal_mode = WAL")
-			db.exec("PRAGMA synchronous = FULL")
-			const version = db.query<UserVersionRow, []>("PRAGMA user_version").get()
-			if (!version) throw new Error("eventing control database has no schema version")
-			let schemaVersion = asNumber(version.user_version)
-			if (schemaVersion === 0) {
-				db.transaction(() => db.exec(CREATE_SCHEMA)).exclusive()
-				schemaVersion = CONTROL_SCHEMA_VERSION
+		catch: storeFailure,
+	}).pipe(
+		Effect.flatMap((db) =>
+			Effect.try({
+				try: () => {
+					configure(db)
+					db.exec("PRAGMA journal_mode = WAL")
+					db.exec("PRAGMA synchronous = FULL")
+					const version = db.query<UserVersionRow, []>("PRAGMA user_version").get()
+					if (!version) throw storeError("eventing control database has no schema version")
+					let schemaVersion = asNumber(version.user_version)
+					if (schemaVersion === 0) {
+						db.transaction(() => db.exec(CREATE_SCHEMA)).exclusive()
+						schemaVersion = CONTROL_SCHEMA_VERSION
+					}
+					if (schemaVersion !== CONTROL_SCHEMA_VERSION)
+						throw storeError(
+							`unsupported eventing control schema ${schemaVersion}; expected ${CONTROL_SCHEMA_VERSION}`,
+						)
+					chmodSync(path, 0o600)
+					validateOpenDatabase(db)
+					return db
+				},
+				catch: storeFailure,
+			}).pipe(Effect.onError(() => Effect.sync(() => db.close()))),
+		),
+	)
+
+/** A clean close truncates the WAL so the next open and any file-level copy see one file. */
+const closeDatabase = (db: Database): Effect.Effect<void> =>
+	Effect.try({
+		try: () => {
+			checkpointWal(db)
+			db.close(true)
+		},
+		catch: (cause) =>
+			new EventingControlStoreError({ message: "failed to close eventing control store", cause }),
+	}).pipe(Effect.catchTag("@maple/cli/eventing/ControlStoreFailed", (error) => Effect.logError(error)))
+
+export class LocalEventingControlStore extends Context.Service<
+	LocalEventingControlStore,
+	LocalEventingControlStoreApi
+>()("@maple/cli/eventing/LocalEventingControlStore") {
+	static readonly make: Effect.Effect<
+		LocalEventingControlStoreApi,
+		EventingControlStoreError,
+		LocalEventingControlConfig | Scope.Scope
+	> = Effect.gen(function* () {
+		const config = yield* LocalEventingControlConfig
+		const limits = yield* Effect.try({
+			try: () => validateLimits(config.limits ?? DEFAULT_LIMITS),
+			catch: storeFailure,
+		})
+		yield* Effect.tryPromise({
+			try: () => ensurePrivateDirectory(eventingControlDirectory(config.dataDir)),
+			catch: storeFailure,
+		})
+		const path = eventingControlPath(config.dataDir)
+		const db = yield* Effect.acquireRelease(openDatabase(path), closeDatabase)
+
+		const readStagedSourceKinds = (): Set<string> => {
+			const statement = db.prepare<{ tenant_id: string; source_kind: string }, []>(
+				"SELECT DISTINCT tenant_id, source_kind FROM outbox_events WHERE state = 'staged' AND source_kind IS NOT NULL",
+			)
+			try {
+				return new Set(statement.all().map((row) => JSON.stringify([row.tenant_id, row.source_kind])))
+			} finally {
+				statement.finalize()
 			}
-			if (schemaVersion !== CONTROL_SCHEMA_VERSION)
-				throw new Error(
-					`unsupported eventing control schema ${schemaVersion}; expected ${CONTROL_SCHEMA_VERSION}`,
-				)
-			chmodSync(path, 0o600)
-			validateOpenDatabase(db)
-			return new LocalEventingControlStore(path, db, validatedLimits, telemetry)
-		} catch (error) {
-			db.close()
-			throw error
 		}
-	}
+		// Read on every ingest request, so it is cached and refreshed after each committed write.
+		let stagedSourceKinds = yield* Effect.try({ try: readStagedSourceKinds, catch: storeFailure })
+		const refreshStagedSourceKinds = Effect.try({
+			try: () => {
+				stagedSourceKinds = readStagedSourceKinds()
+			},
+			catch: storeFailure,
+		})
 
-	close(): void {
-		checkpointWal(this.#db)
-		this.#db.close(true)
-	}
-
-	saveProjection(spec: SignalProjectionSpec, createdAt = new Date().toISOString()): void {
-		const decoded = decodeSignalProjectionSpec(spec)
-		if (!isJsonValue(decoded)) throw new Error("projection spec must be finite JSON")
-		const specJson = canonicalJson(decoded)
-		this.#db
-			.transaction(() => {
-				const latest = this.#db
-					.query<RevisionRow, [string, string]>(
-						"SELECT max(revision) AS revision FROM projection_revisions WHERE tenant_id = ? AND projection_id = ?",
-					)
-					.get(decoded.tenantId, decoded.id)
-				const latestRevision = latest?.revision == null ? null : asNumber(latest.revision)
-				const existing = this.#db
-					.query<ProjectionJsonRow, [string, string, number]>(
-						"SELECT spec_json FROM projection_revisions WHERE tenant_id = ? AND projection_id = ? AND revision = ?",
-					)
-					.get(decoded.tenantId, decoded.id, decoded.revision)
-				if (existing) {
-					if (existing.spec_json !== specJson)
-						throw new Error(
-							`projection revision is immutable: ${decoded.tenantId}:${decoded.id}@${decoded.revision}`,
-						)
-					if (latestRevision !== decoded.revision)
-						throw new Error(
-							`stale projection revision: ${decoded.tenantId}:${decoded.id}@${decoded.revision}; latest is ${latestRevision}`,
-						)
-					const active = this.#db
-						.query<ActiveRevisionRow, [string, string]>(
-							"SELECT revision FROM active_projections WHERE tenant_id = ? AND projection_id = ?",
-						)
-						.get(decoded.tenantId, decoded.id)
-					const activeRevision = active === null ? null : asNumber(active.revision)
-					const expectedActiveRevision = decoded.enabled ? decoded.revision : null
-					if (activeRevision !== expectedActiveRevision)
-						throw new Error(
-							`projection active state conflicts with exact revision replay: ${decoded.tenantId}:${decoded.id}@${decoded.revision}`,
-						)
-					return
-				} else {
-					const expected = latestRevision === null ? 1 : latestRevision + 1
-					if (decoded.revision !== expected)
-						throw new Error(
-							`projection revision must be ${expected}: ${decoded.tenantId}:${decoded.id}@${decoded.revision}`,
-						)
-					this.#db.run(
-						"INSERT INTO projection_revisions (tenant_id, projection_id, revision, enabled, spec_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-						[
-							decoded.tenantId,
-							decoded.id,
-							decoded.revision,
-							decoded.enabled ? 1 : 0,
-							specJson,
-							createdAt,
-						],
-					)
-				}
-
-				if (decoded.enabled)
-					this.#db.run(
-						"INSERT INTO active_projections (tenant_id, projection_id, revision) VALUES (?, ?, ?) ON CONFLICT (tenant_id, projection_id) DO UPDATE SET revision = excluded.revision",
-						[decoded.tenantId, decoded.id, decoded.revision],
-					)
-				else
-					this.#db.run("DELETE FROM active_projections WHERE tenant_id = ? AND projection_id = ?", [
-						decoded.tenantId,
-						decoded.id,
-					])
+		const readDeliveryGap = (tenantId: string): DeliveryGap => {
+			const statement = db.prepare<DeliveryGapRow, [string]>(
+				"SELECT generation, dropped_events, last_dropped_at FROM delivery_gaps WHERE tenant_id = ?",
+			)
+			try {
+				const row = statement.get(tenantId)
+				return row === null
+					? { generation: 0, droppedEvents: 0, lastDroppedAt: null }
+					: {
+							generation: asNumber(row.generation),
+							droppedEvents: asNumber(row.dropped_events),
+							lastDroppedAt: row.last_dropped_at,
+						}
+			} finally {
+				statement.finalize()
+			}
+		}
+		const recordDeliveryGap = (tenantId: string, count: number, at: string): void => {
+			if (count === 0) return
+			db.run(
+				`INSERT INTO delivery_gaps (tenant_id, generation, dropped_events, last_dropped_at) VALUES (?, 1, ?, ?)
+   ON CONFLICT (tenant_id) DO UPDATE SET generation = generation + 1, dropped_events = dropped_events + excluded.dropped_events, last_dropped_at = excluded.last_dropped_at`,
+				[tenantId, count, at],
+			)
+		}
+		const outboxUsage = (): OutboxUsageRow => {
+			const statement = db.prepare<OutboxUsageRow, []>(
+				"SELECT count, bytes FROM outbox_usage WHERE singleton = 1",
+			)
+			try {
+				const usage = statement.get()
+				if (usage === null) throw storeError("event outbox usage query returned no row")
+				return usage
+			} finally {
+				statement.finalize()
+			}
+		}
+		const consumerRow = (tenantId: string, consumerId: string): ConsumerRow | null =>
+			db
+				.query<ConsumerRow, [string, string]>(
+					`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
+				        lease_expires_at, claimed_through_sequence, registered_at, disabled_at
+				 FROM event_consumers
+				 WHERE tenant_id = ? AND consumer_id = ?`,
+				)
+				.get(tenantId, consumerId)
+		const consumerLag = (tenantId: string, lastAcknowledgedSequence: number): number => {
+			const latest = db
+				.query<SequenceRow, [string]>(
+					`SELECT max(readiness.sequence) AS sequence
+				 FROM outbox_ready_events AS readiness
+				 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
+				 WHERE event.tenant_id = ? AND event.state = 'ready'`,
+				)
+				.get(tenantId)
+			return Math.max(
+				0,
+				(latest?.sequence == null ? 0 : asNumber(latest.sequence)) - lastAcknowledgedSequence,
+			)
+		}
+		const pruneAcknowledgedReady = (tenantId: string): number => {
+			const boundary = db
+				.query<SequenceRow, [string]>(
+					"SELECT min(last_acked_sequence) AS sequence FROM event_consumers WHERE tenant_id = ? AND active = 1",
+				)
+				.get(tenantId)
+			if (boundary?.sequence == null) return 0
+			const rows = db
+				.query<EventIdRow, [string, number]>(
+					`SELECT readiness.event_id
+				 FROM outbox_ready_events AS readiness
+				 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
+				 WHERE event.tenant_id = ? AND readiness.sequence <= ?
+				 ORDER BY readiness.sequence`,
+				)
+				.all(tenantId, asNumber(boundary.sequence))
+			const pruneCount = Math.max(0, rows.length - limits.retainAcknowledgedReadyEvents)
+			for (const { event_id } of rows.slice(0, pruneCount)) {
+				db.run("DELETE FROM outbox_ready_events WHERE event_id = ?", [event_id])
+				db.run("DELETE FROM outbox_events WHERE event_id = ? AND state = 'ready'", [event_id])
+			}
+			return pruneCount
+		}
+		const listOutbox = (
+			state: "ready" | "staged",
+			limit = 100,
+			after = 0,
+		): Effect.Effect<EventingOutboxPage, EventingControlStoreError> =>
+			Effect.try({
+				try: () => {
+					if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000)
+						throw storeError("outbox-event limit must be between 1 and 1000")
+					if (!Number.isSafeInteger(after) || after < 0)
+						throw storeError("outbox cursor must be a non-negative safe integer")
+					const rows =
+						state === "ready"
+							? db
+									.query<EventJsonRow, [number, number]>(
+										`SELECT readiness.sequence, event.event_json, event.staged_at, readiness.ready_at
+							 FROM outbox_ready_events AS readiness
+							 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
+							 WHERE event.state = 'ready' AND readiness.sequence > ?
+							 ORDER BY readiness.sequence
+							 LIMIT ?`,
+									)
+									.all(after, limit + 1)
+							: db
+									.query<EventJsonRow, [number, number]>(
+										`SELECT sequence, event_json, staged_at, ready_at
+							 FROM outbox_events
+							 WHERE state = 'staged' AND sequence > ?
+							 ORDER BY sequence
+							 LIMIT ?`,
+									)
+									.all(after, limit + 1)
+					const hasMore = rows.length > limit
+					const pageRows = hasMore ? rows.slice(0, limit) : rows
+					const page = pageRows.map(({ sequence, event_json, staged_at, ready_at }) => ({
+						sequence: asNumber(sequence),
+						event: decodeEvent(event_json),
+						stagedAt: staged_at,
+						readyAt: ready_at,
+					}))
+					return {
+						events: page,
+						nextCursor: hasMore ? (page.at(-1)?.sequence ?? null) : null,
+					}
+				},
+				catch: storeFailure,
 			})
-			.immediate()
-	}
+		const captureSnapshot = Effect.try({
+			try: () => {
+				checkpointWal(db)
+				return db.serialize()
+			},
+			catch: storeFailure,
+		})
 
-	loadEnabledProjections(tenantId: string): readonly SignalProjectionSpec[] {
-		return this.#db
-			.query<ProjectionJsonRow, [string]>(
-				`SELECT r.spec_json
+		const saveProjection: LocalEventingControlStoreApi["saveProjection"] = (spec, createdAt = now()) =>
+			Effect.try({
+				try: () => {
+					const decoded = decodeSignalProjectionSpec(spec)
+					if (!isJsonValue(decoded)) throw storeError("projection spec must be finite JSON")
+					const specJson = canonicalJson(decoded)
+					db.transaction(() => {
+						const latest = db
+							.query<RevisionRow, [string, string]>(
+								"SELECT max(revision) AS revision FROM projection_revisions WHERE tenant_id = ? AND projection_id = ?",
+							)
+							.get(decoded.tenantId, decoded.id)
+						const latestRevision = latest?.revision == null ? null : asNumber(latest.revision)
+						const existing = db
+							.query<ProjectionJsonRow, [string, string, number]>(
+								"SELECT spec_json FROM projection_revisions WHERE tenant_id = ? AND projection_id = ? AND revision = ?",
+							)
+							.get(decoded.tenantId, decoded.id, decoded.revision)
+						if (existing) {
+							if (existing.spec_json !== specJson)
+								throw storeError(
+									`projection revision is immutable: ${decoded.tenantId}:${decoded.id}@${decoded.revision}`,
+								)
+							if (latestRevision !== decoded.revision)
+								throw storeError(
+									`stale projection revision: ${decoded.tenantId}:${decoded.id}@${decoded.revision}; latest is ${latestRevision}`,
+								)
+							const active = db
+								.query<ActiveRevisionRow, [string, string]>(
+									"SELECT revision FROM active_projections WHERE tenant_id = ? AND projection_id = ?",
+								)
+								.get(decoded.tenantId, decoded.id)
+							const activeRevision = active === null ? null : asNumber(active.revision)
+							const expectedActiveRevision = decoded.enabled ? decoded.revision : null
+							if (activeRevision !== expectedActiveRevision)
+								throw storeError(
+									`projection active state conflicts with exact revision replay: ${decoded.tenantId}:${decoded.id}@${decoded.revision}`,
+								)
+							return
+						} else {
+							const expected = latestRevision === null ? 1 : latestRevision + 1
+							if (decoded.revision !== expected)
+								throw storeError(
+									`projection revision must be ${expected}: ${decoded.tenantId}:${decoded.id}@${decoded.revision}`,
+								)
+							db.run(
+								"INSERT INTO projection_revisions (tenant_id, projection_id, revision, enabled, spec_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+								[
+									decoded.tenantId,
+									decoded.id,
+									decoded.revision,
+									decoded.enabled ? 1 : 0,
+									specJson,
+									createdAt,
+								],
+							)
+						}
+
+						if (decoded.enabled)
+							db.run(
+								"INSERT INTO active_projections (tenant_id, projection_id, revision) VALUES (?, ?, ?) ON CONFLICT (tenant_id, projection_id) DO UPDATE SET revision = excluded.revision",
+								[decoded.tenantId, decoded.id, decoded.revision],
+							)
+						else
+							db.run(
+								"DELETE FROM active_projections WHERE tenant_id = ? AND projection_id = ?",
+								[decoded.tenantId, decoded.id],
+							)
+					}).immediate()
+				},
+				catch: storeFailure,
+			})
+
+		const loadEnabledProjections: LocalEventingControlStoreApi["loadEnabledProjections"] = (tenantId) =>
+			Effect.try({
+				try: () =>
+					db
+						.query<ProjectionJsonRow, [string]>(
+							`SELECT r.spec_json
                  FROM active_projections a
                  JOIN projection_revisions r
                    ON r.tenant_id = a.tenant_id
@@ -581,795 +902,825 @@ export class LocalEventingControlStore {
                   AND r.revision = a.revision
                 WHERE a.tenant_id = ?
                 ORDER BY a.projection_id`,
-			)
-			.all(tenantId)
-			.map(({ spec_json }) => decodeProjection(spec_json))
-	}
+						)
+						.all(tenantId)
+						.map(({ spec_json }) => decodeProjection(spec_json)),
+				catch: storeFailure,
+			})
 
-	stageEvents(
-		events: readonly MapleCloudEvent[],
-		sourceFingerprints: ReadonlyMap<string, string> = new Map(),
-		stagedAt = new Date().toISOString(),
-	): StageEventsResult {
-		let inserted = 0
-		let deduplicated = 0
-		const droppedByTenant = new Map<string, number>()
-		let dropped = 0
-		const eventIds: string[] = []
-		try {
-			this.#db
-				.transaction(() => {
-					const usage = this.#outboxUsage()
-					if (!usage) throw new Error("event outbox usage query returned no row")
-					let outboxEvents = asNumber(usage.count)
-					let outboxBytes = asNumber(usage.bytes)
-					for (const candidate of events) {
-						const validated = Result.getOrThrow(validateMapleCloudEvent(candidate))
-						const { event, canonicalJson: eventJson, byteLength: eventBytes } = validated
-						const sourceFingerprint = sourceFingerprints.get(event.id) ?? null
-						if (sourceFingerprint !== null && !/^sha256:[0-9a-f]{64}$/.test(sourceFingerprint))
-							throw new Error(`event has invalid source fingerprint: ${event.id}`)
-						if (event.sourceoccurrenceid !== undefined && sourceFingerprint === null)
-							throw new Error(
-								`event with source occurrence ID requires a source fingerprint: ${event.id}`,
-							)
-						let sourceKind: string | null = null
-						if (event.sourceoccurrenceid !== undefined) {
-							const projection = this.#db
-								.query<ProjectionJsonRow, [string, string, number]>(
-									"SELECT spec_json FROM projection_revisions WHERE tenant_id = ? AND projection_id = ? AND revision = ?",
+		const stageEvents: LocalEventingControlStoreApi["stageEvents"] = (
+			events,
+			sourceFingerprints = new Map(),
+			stagedAt = now(),
+		) =>
+			Effect.try({
+				try: () =>
+					db
+						.transaction(() => {
+							let inserted = 0
+							let deduplicated = 0
+							const droppedByTenant = new Map<string, number>()
+							let dropped = 0
+							const eventIds: string[] = []
+							const usage = outboxUsage()
+							let outboxEvents = asNumber(usage.count)
+							let outboxBytes = asNumber(usage.bytes)
+							for (const candidate of events) {
+								const validation = validateMapleCloudEvent(candidate)
+								if (Result.isFailure(validation)) throw validation.failure
+								const {
+									event,
+									canonicalJson: eventJson,
+									byteLength: eventBytes,
+								} = validation.success
+								const sourceFingerprint = sourceFingerprints.get(event.id) ?? null
+								if (
+									sourceFingerprint !== null &&
+									!/^sha256:[0-9a-f]{64}$/.test(sourceFingerprint)
 								)
-								.get(event.tenantid, event.projectionid, event.projectionrevision)
-							if (projection === null)
-								throw new Error(
-									`event references unknown projection revision: ${event.tenantid}:${event.projectionid}@${event.projectionrevision}`,
-								)
-							sourceKind = decodeProjection(projection.spec_json).sourceKind
-						}
-						const existing = this.#db
-							.query<EventRow, [string]>(
-								"SELECT event_id, event_json, state, source_fingerprint FROM outbox_events WHERE event_id = ?",
-							)
-							.get(event.id)
-						if (existing) {
-							if (existing.event_json !== eventJson)
-								throw new Error(`event ID collision with different payload: ${event.id}`)
-							if (
-								sourceFingerprint !== null &&
-								existing.source_fingerprint !== null &&
-								existing.source_fingerprint !== sourceFingerprint
-							)
-								throw new Error(
-									`event ID collision with different source occurrence: ${event.id}`,
-								)
-							if (
-								existing.state === "staged" &&
-								sourceFingerprint !== null &&
-								existing.source_fingerprint === null
-							)
-								throw new Error(`staged event has no recovery fingerprint: ${event.id}`)
-							deduplicated += 1
-						} else {
-							if (
-								outboxEvents + 1 > this.#limits.maxOutboxEvents ||
-								outboxBytes + eventBytes > this.#limits.maxOutboxBytes
-							) {
-								dropped += 1
-								droppedByTenant.set(
-									event.tenantid,
-									(droppedByTenant.get(event.tenantid) ?? 0) + 1,
-								)
-								continue
+									throw storeError(`event has invalid source fingerprint: ${event.id}`)
+								if (event.sourceoccurrenceid !== undefined && sourceFingerprint === null)
+									throw storeError(
+										`event with source occurrence ID requires a source fingerprint: ${event.id}`,
+									)
+								let sourceKind: string | null = null
+								if (event.sourceoccurrenceid !== undefined) {
+									const projection = db
+										.query<ProjectionJsonRow, [string, string, number]>(
+											"SELECT spec_json FROM projection_revisions WHERE tenant_id = ? AND projection_id = ? AND revision = ?",
+										)
+										.get(event.tenantid, event.projectionid, event.projectionrevision)
+									if (projection === null)
+										throw storeError(
+											`event references unknown projection revision: ${event.tenantid}:${event.projectionid}@${event.projectionrevision}`,
+										)
+									sourceKind = decodeProjection(projection.spec_json).sourceKind
+								}
+								const existing = db
+									.query<EventRow, [string]>(
+										"SELECT event_id, event_json, state, source_fingerprint FROM outbox_events WHERE event_id = ?",
+									)
+									.get(event.id)
+								if (existing) {
+									if (existing.event_json !== eventJson)
+										throw storeError(
+											`event ID collision with different payload: ${event.id}`,
+										)
+									if (
+										sourceFingerprint !== null &&
+										existing.source_fingerprint !== null &&
+										existing.source_fingerprint !== sourceFingerprint
+									)
+										throw storeError(
+											`event ID collision with different source occurrence: ${event.id}`,
+										)
+									if (
+										existing.state === "staged" &&
+										sourceFingerprint !== null &&
+										existing.source_fingerprint === null
+									)
+										throw storeError(
+											`staged event has no recovery fingerprint: ${event.id}`,
+										)
+									deduplicated += 1
+								} else {
+									if (
+										outboxEvents + 1 > limits.maxOutboxEvents ||
+										outboxBytes + eventBytes > limits.maxOutboxBytes
+									) {
+										dropped += 1
+										droppedByTenant.set(
+											event.tenantid,
+											(droppedByTenant.get(event.tenantid) ?? 0) + 1,
+										)
+										continue
+									}
+									db.run(
+										"INSERT INTO outbox_events (event_id, tenant_id, projection_id, projection_revision, source_kind, source, source_occurrence_id, source_fingerprint, state, event_json, staged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?)",
+										[
+											event.id,
+											event.tenantid,
+											event.projectionid,
+											event.projectionrevision,
+											sourceKind,
+											event.sourceoccurrenceid === undefined ? null : event.source,
+											event.sourceoccurrenceid ?? null,
+											sourceFingerprint,
+											eventJson,
+											stagedAt,
+										],
+									)
+									inserted += 1
+									outboxEvents += 1
+									outboxBytes += eventBytes
+								}
+								eventIds.push(event.id)
 							}
-							this.#db.run(
-								"INSERT INTO outbox_events (event_id, tenant_id, projection_id, projection_revision, source_kind, source, source_occurrence_id, source_fingerprint, state, event_json, staged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'staged', ?, ?)",
-								[
-									event.id,
-									event.tenantid,
-									event.projectionid,
-									event.projectionrevision,
-									sourceKind,
-									event.sourceoccurrenceid === undefined ? null : event.source,
-									event.sourceoccurrenceid ?? null,
-									sourceFingerprint,
-									eventJson,
-									stagedAt,
-								],
+							for (const [tenantId, count] of droppedByTenant)
+								recordDeliveryGap(tenantId, count, stagedAt)
+							return { inserted, deduplicated, dropped, eventIds }
+						})
+						.immediate(),
+				catch: storeFailure,
+			}).pipe(
+				Effect.tapError(() => observeEventing({ operation: "outbox_stage", outcome: "failure" })),
+				Effect.tap(() => refreshStagedSourceKinds),
+				Effect.tap((result) =>
+					Effect.all(
+						[
+							observeEventing({
+								operation: "outbox_stage",
+								outcome: "success",
+								count: result.inserted,
+							}),
+							observeEventing({
+								operation: "outbox_dedup",
+								outcome: "success",
+								count: result.deduplicated,
+							}),
+							observeEventing({
+								operation: "outbox_stage",
+								outcome: "dropped",
+								count: result.dropped,
+							}),
+						],
+						{ discard: true },
+					),
+				),
+			)
+
+		const deliveryGap: LocalEventingControlStoreApi["deliveryGap"] = (tenantId) =>
+			Effect.try({ try: () => readDeliveryGap(tenantId), catch: storeFailure })
+
+		const acceptDeliveryGap: LocalEventingControlStoreApi["acceptDeliveryGap"] = (
+			tenantId,
+			consumerId,
+			generation,
+		) =>
+			Effect.try({
+				try: () => {
+					validateConsumerId(consumerId)
+					return db
+						.transaction(() => {
+							const consumer = consumerRow(tenantId, consumerId)
+							if (consumer === null)
+								throw EventConsumerNotFoundError.create(
+									`event consumer not found: ${consumerId}`,
+									consumerId,
+								)
+							const gap = readDeliveryGap(tenantId)
+							if (
+								!Number.isSafeInteger(generation) ||
+								generation < 1 ||
+								generation !== gap.generation
 							)
-							inserted += 1
-							outboxEvents += 1
-							outboxBytes += eventBytes
-						}
-						eventIds.push(event.id)
-					}
-					for (const [tenantId, count] of droppedByTenant)
-						this.#recordDeliveryGap(tenantId, count, stagedAt)
-				})
-				.immediate()
-		} catch (error) {
-			this.#telemetry.record({ operation: "outbox_stage", outcome: "failure" })
-			throw error
-		}
-		this.#refreshStagedSourceKinds()
-		this.#telemetry.record({ operation: "outbox_stage", outcome: "success", count: inserted })
-		this.#telemetry.record({ operation: "outbox_dedup", outcome: "success", count: deduplicated })
-		this.#telemetry.record({ operation: "outbox_stage", outcome: "dropped", count: dropped })
-		return { inserted, deduplicated, dropped, eventIds }
-	}
-
-	deliveryGap(tenantId: string): DeliveryGap {
-		const statement = this.#db.prepare<DeliveryGapRow, [string]>(
-			"SELECT generation, dropped_events, last_dropped_at FROM delivery_gaps WHERE tenant_id = ?",
-		)
-		try {
-			const row = statement.get(tenantId)
-			return row === null
-				? { generation: 0, droppedEvents: 0, lastDroppedAt: null }
-				: {
-						generation: asNumber(row.generation),
-						droppedEvents: asNumber(row.dropped_events),
-						lastDroppedAt: row.last_dropped_at,
-					}
-		} finally {
-			statement.finalize()
-		}
-	}
-	#recordDeliveryGap(tenantId: string, count: number, at: string): void {
-		if (count === 0) return
-		this.#db.run(
-			`INSERT INTO delivery_gaps (tenant_id, generation, dropped_events, last_dropped_at) VALUES (?, 1, ?, ?)
-   ON CONFLICT (tenant_id) DO UPDATE SET generation = generation + 1, dropped_events = dropped_events + excluded.dropped_events, last_dropped_at = excluded.last_dropped_at`,
-			[tenantId, count, at],
-		)
-	}
-	acceptDeliveryGap(tenantId: string, consumerId: string, generation: number): DeliveryGap {
-		validateConsumerId(consumerId)
-		return this.#db
-			.transaction(() => {
-				const consumer = this.#consumer(tenantId, consumerId)
-				if (consumer === null)
-					throw EventConsumerNotFoundError.create(
-						`event consumer not found: ${consumerId}`,
-						consumerId,
-					)
-				const gap = this.deliveryGap(tenantId)
-				if (!Number.isSafeInteger(generation) || generation < 1 || generation !== gap.generation)
-					throw EventConsumerConflictError.create(
-						"delivery gap generation changed; inspect current health before accepting",
-						consumerId,
-					)
-				this.#db.run(
-					"UPDATE event_consumers SET accepted_gap_generation = ? WHERE tenant_id = ? AND consumer_id = ?",
-					[generation, tenantId, consumerId],
-				)
-				return gap
-			})
-			.immediate()
-	}
-	/** Operator-authorized loss; the HTTP caller drains admission before invoking this transaction. */
-	abandonEvents(
-		tenantId: string,
-		eventIds: readonly string[],
-	): { readonly abandoned: number; readonly gap: DeliveryGap } {
-		if (eventIds.length < 1 || eventIds.length > 1000 || new Set(eventIds).size !== eventIds.length)
-			throw new OutboxAdministrationInvalid({ message: "abandon requires 1–1000 distinct event IDs" })
-		const result = this.#db
-			.transaction(() => {
-				const lookup = this.#db.prepare<EventIdRow, [string, string]>(
-					"SELECT event_id FROM outbox_events WHERE tenant_id = ? AND event_id = ?",
-				)
-				try {
-					for (const eventId of eventIds)
-						if (lookup.get(tenantId, eventId) === null)
-							throw new OutboxAdministrationInvalid({
-								message: `unknown event ID for abandonment: ${eventId}`,
-							})
-				} finally {
-					lookup.finalize()
-				}
-				for (const eventId of eventIds) {
-					this.#db.run("DELETE FROM outbox_ready_events WHERE event_id = ?", [eventId])
-					this.#db.run("DELETE FROM outbox_events WHERE tenant_id = ? AND event_id = ?", [
-						tenantId,
-						eventId,
-					])
-				}
-				this.#recordDeliveryGap(tenantId, eventIds.length, new Date().toISOString())
-				this.#db.run(
-					"UPDATE event_consumers SET lease_token_hash = NULL, lease_expires_at = NULL, claimed_through_sequence = NULL WHERE tenant_id = ?",
-					[tenantId],
-				)
-				return { abandoned: eventIds.length, gap: this.deliveryGap(tenantId) }
-			})
-			.immediate()
-		this.#refreshStagedSourceKinds()
-		this.#telemetry.record({ operation: "outbox_abandon", outcome: "success", count: result.abandoned })
-		return result
-	}
-
-	#refreshStagedSourceKinds(): void {
-		const statement = this.#db.prepare<{ tenant_id: string; source_kind: string }, []>(
-			"SELECT DISTINCT tenant_id, source_kind FROM outbox_events WHERE state = 'staged' AND source_kind IS NOT NULL",
-		)
-		try {
-			this.#stagedSourceKinds = new Set(
-				statement.all().map((row) => JSON.stringify([row.tenant_id, row.source_kind])),
-			)
-		} finally {
-			statement.finalize()
-		}
-	}
-	#outboxUsage(): OutboxUsageRow {
-		const statement = this.#db.prepare<OutboxUsageRow, []>(
-			"SELECT count, bytes FROM outbox_usage WHERE singleton = 1",
-		)
-		try {
-			const usage = statement.get()
-			if (usage === null) throw new Error("event outbox usage query returned no row")
-			return usage
-		} finally {
-			statement.finalize()
-		}
-	}
-	hasStagedSourceKind(tenantId: string, sourceKind: string): boolean {
-		return this.#stagedSourceKinds.has(JSON.stringify([tenantId, sourceKind]))
-	}
-
-	hasStagedSourceOccurrence(
-		tenantId: string,
-		sourceKind: string,
-		source: string,
-		sourceOccurrenceId: string,
-	): boolean {
-		const row = this.#db
-			.query<CountRow, [string, string, string, string]>(
-				"SELECT count(*) AS count FROM outbox_events WHERE tenant_id = ? AND source_kind = ? AND source = ? AND source_occurrence_id = ? AND state = 'staged'",
-			)
-			.get(tenantId, sourceKind, source, sourceOccurrenceId)
-		if (row === null) throw new Error("staged source-occurrence query returned no row")
-		return asNumber(row.count) > 0
-	}
-
-	stagedEventIdsForOccurrence(
-		tenantId: string,
-		sourceKind: string,
-		source: string,
-		sourceOccurrenceId: string,
-		sourceFingerprint: string,
-	): readonly string[] {
-		const rows = this.#db
-			.query<StagedOccurrenceRow, [string, string, string, string]>(
-				"SELECT event_id, source_fingerprint FROM outbox_events WHERE tenant_id = ? AND source_kind = ? AND source = ? AND source_occurrence_id = ? AND state = 'staged' ORDER BY sequence",
-			)
-			.all(tenantId, sourceKind, source, sourceOccurrenceId)
-		for (const row of rows) {
-			if (row.source_fingerprint === null)
-				throw new Error(`staged source occurrence has no recovery fingerprint: ${row.event_id}`)
-			if (row.source_fingerprint !== sourceFingerprint)
-				throw new Error(`staged source occurrence collision: ${sourceOccurrenceId}`)
-		}
-		return rows.map(({ event_id }) => event_id)
-	}
-
-	markReady(eventIds: readonly string[], readyAt = new Date().toISOString()): void {
-		let markedReady = 0
-		try {
-			this.#db
-				.transaction(() => {
-					for (const eventId of eventIds) {
-						const row = this.#db
-							.query<Pick<EventRow, "state">, [string]>(
-								"SELECT state FROM outbox_events WHERE event_id = ?",
+								throw EventConsumerConflictError.create(
+									"delivery gap generation changed; inspect current health before accepting",
+									consumerId,
+								)
+							db.run(
+								"UPDATE event_consumers SET accepted_gap_generation = ? WHERE tenant_id = ? AND consumer_id = ?",
+								[generation, tenantId, consumerId],
 							)
-							.get(eventId)
-						if (!row) throw new Error(`cannot mark unknown event ready: ${eventId}`)
-						if (row.state === "ready") continue
-						this.#db.run("INSERT INTO outbox_ready_events (event_id, ready_at) VALUES (?, ?)", [
-							eventId,
-							readyAt,
-						])
-						this.#db.run(
-							"UPDATE outbox_events SET state = 'ready', ready_at = ? WHERE event_id = ? AND state = 'staged'",
-							[readyAt, eventId],
+							return gap
+						})
+						.immediate()
+				},
+				catch: consumerFailure,
+			})
+
+		const abandonEvents: LocalEventingControlStoreApi["abandonEvents"] = (tenantId, eventIds) =>
+			Effect.try({
+				try: () => {
+					if (
+						eventIds.length < 1 ||
+						eventIds.length > 1000 ||
+						new Set(eventIds).size !== eventIds.length
+					)
+						throw new OutboxAdministrationInvalid({
+							message: "abandon requires 1–1000 distinct event IDs",
+						})
+					return db
+						.transaction(() => {
+							const lookup = db.prepare<EventIdRow, [string, string]>(
+								"SELECT event_id FROM outbox_events WHERE tenant_id = ? AND event_id = ?",
+							)
+							try {
+								for (const eventId of eventIds)
+									if (lookup.get(tenantId, eventId) === null)
+										throw new OutboxAdministrationInvalid({
+											message: `unknown event ID for abandonment: ${eventId}`,
+										})
+							} finally {
+								lookup.finalize()
+							}
+							for (const eventId of eventIds) {
+								db.run("DELETE FROM outbox_ready_events WHERE event_id = ?", [eventId])
+								db.run("DELETE FROM outbox_events WHERE tenant_id = ? AND event_id = ?", [
+									tenantId,
+									eventId,
+								])
+							}
+							recordDeliveryGap(tenantId, eventIds.length, now())
+							db.run(
+								"UPDATE event_consumers SET lease_token_hash = NULL, lease_expires_at = NULL, claimed_through_sequence = NULL WHERE tenant_id = ?",
+								[tenantId],
+							)
+							return { abandoned: eventIds.length, gap: readDeliveryGap(tenantId) }
+						})
+						.immediate()
+				},
+				catch: administrationFailure,
+			}).pipe(
+				Effect.tap(() => refreshStagedSourceKinds),
+				Effect.tap((result) =>
+					observeEventing({
+						operation: "outbox_abandon",
+						outcome: "success",
+						count: result.abandoned,
+					}),
+				),
+			)
+
+		const hasStagedSourceKind: LocalEventingControlStoreApi["hasStagedSourceKind"] = (
+			tenantId,
+			sourceKind,
+		) => Effect.sync(() => stagedSourceKinds.has(JSON.stringify([tenantId, sourceKind])))
+
+		const hasStagedSourceOccurrence: LocalEventingControlStoreApi["hasStagedSourceOccurrence"] = (
+			tenantId,
+			sourceKind,
+			source,
+			sourceOccurrenceId,
+		) =>
+			Effect.try({
+				try: () => {
+					const row = db
+						.query<CountRow, [string, string, string, string]>(
+							"SELECT count(*) AS count FROM outbox_events WHERE tenant_id = ? AND source_kind = ? AND source = ? AND source_occurrence_id = ? AND state = 'staged'",
 						)
-						markedReady += 1
+						.get(tenantId, sourceKind, source, sourceOccurrenceId)
+					if (row === null) throw storeError("staged source-occurrence query returned no row")
+					return asNumber(row.count) > 0
+				},
+				catch: storeFailure,
+			})
+
+		const stagedEventIdsForOccurrence: LocalEventingControlStoreApi["stagedEventIdsForOccurrence"] = (
+			tenantId,
+			sourceKind,
+			source,
+			sourceOccurrenceId,
+			sourceFingerprint,
+		) =>
+			Effect.try({
+				try: () => {
+					const rows = db
+						.query<StagedOccurrenceRow, [string, string, string, string]>(
+							"SELECT event_id, source_fingerprint FROM outbox_events WHERE tenant_id = ? AND source_kind = ? AND source = ? AND source_occurrence_id = ? AND state = 'staged' ORDER BY sequence",
+						)
+						.all(tenantId, sourceKind, source, sourceOccurrenceId)
+					for (const row of rows) {
+						if (row.source_fingerprint === null)
+							throw storeError(
+								`staged source occurrence has no recovery fingerprint: ${row.event_id}`,
+							)
+						if (row.source_fingerprint !== sourceFingerprint)
+							throw storeError(`staged source occurrence collision: ${sourceOccurrenceId}`)
 					}
-				})
-				.immediate()
-		} catch (error) {
-			this.#telemetry.record({ operation: "outbox_ready", outcome: "failure" })
-			throw error
-		}
-		this.#refreshStagedSourceKinds()
-		this.#telemetry.record({ operation: "outbox_ready", outcome: "success", count: markedReady })
-	}
+					return rows.map(({ event_id }) => event_id)
+				},
+				catch: storeFailure,
+			})
 
-	#listOutbox(state: "ready" | "staged", limit = 100, after = 0): EventingOutboxPage {
-		if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000)
-			throw new Error("outbox-event limit must be between 1 and 1000")
-		if (!Number.isSafeInteger(after) || after < 0)
-			throw new Error("outbox cursor must be a non-negative safe integer")
-		const rows =
-			state === "ready"
-				? this.#db
-						.query<EventJsonRow, [number, number]>(
-							`SELECT readiness.sequence, event.event_json, event.staged_at, readiness.ready_at
-							 FROM outbox_ready_events AS readiness
-							 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
-							 WHERE event.state = 'ready' AND readiness.sequence > ?
-							 ORDER BY readiness.sequence
-							 LIMIT ?`,
-						)
-						.all(after, limit + 1)
-				: this.#db
-						.query<EventJsonRow, [number, number]>(
-							`SELECT sequence, event_json, staged_at, ready_at
-							 FROM outbox_events
-							 WHERE state = 'staged' AND sequence > ?
-							 ORDER BY sequence
-							 LIMIT ?`,
-						)
-						.all(after, limit + 1)
-		const hasMore = rows.length > limit
-		const pageRows = hasMore ? rows.slice(0, limit) : rows
-		const page = pageRows.map(({ sequence, event_json, staged_at, ready_at }) => ({
-			sequence: asNumber(sequence),
-			event: decodeEvent(event_json),
-			stagedAt: staged_at,
-			readyAt: ready_at,
-		}))
-		return {
-			events: page,
-			nextCursor: hasMore ? (page.at(-1)?.sequence ?? null) : null,
-		}
-	}
+		const markReady: LocalEventingControlStoreApi["markReady"] = (eventIds, readyAt = now()) =>
+			Effect.try({
+				try: () =>
+					db
+						.transaction(() => {
+							let markedReady = 0
+							for (const eventId of eventIds) {
+								const row = db
+									.query<Pick<EventRow, "state">, [string]>(
+										"SELECT state FROM outbox_events WHERE event_id = ?",
+									)
+									.get(eventId)
+								if (!row) throw storeError(`cannot mark unknown event ready: ${eventId}`)
+								if (row.state === "ready") continue
+								db.run("INSERT INTO outbox_ready_events (event_id, ready_at) VALUES (?, ?)", [
+									eventId,
+									readyAt,
+								])
+								db.run(
+									"UPDATE outbox_events SET state = 'ready', ready_at = ? WHERE event_id = ? AND state = 'staged'",
+									[readyAt, eventId],
+								)
+								markedReady += 1
+							}
+							return markedReady
+						})
+						.immediate(),
+				catch: storeFailure,
+			}).pipe(
+				Effect.tapError(() => observeEventing({ operation: "outbox_ready", outcome: "failure" })),
+				Effect.tap(() => refreshStagedSourceKinds),
+				Effect.flatMap((markedReady) =>
+					observeEventing({ operation: "outbox_ready", outcome: "success", count: markedReady }),
+				),
+			)
 
-	listReady(limit = 100, after = 0): EventingOutboxPage {
-		return this.#listOutbox("ready", limit, after)
-	}
-
-	listStaged(limit = 100, after = 0): EventingOutboxPage {
-		return this.#listOutbox("staged", limit, after)
-	}
-
-	listConsumers(tenantId: string): readonly EventConsumer[] {
-		return this.#db
-			.query<ConsumerRow, [string]>(
-				`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
+		const listConsumers: LocalEventingControlStoreApi["listConsumers"] = (tenantId) =>
+			Effect.try({
+				try: () =>
+					db
+						.query<ConsumerRow, [string]>(
+							`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
 				        lease_expires_at, claimed_through_sequence, registered_at, disabled_at
 				 FROM event_consumers
 				 WHERE tenant_id = ?
 				 ORDER BY consumer_id`,
-			)
-			.all(tenantId)
-			.map(decodeConsumer)
-	}
+						)
+						.all(tenantId)
+						.map(decodeConsumer),
+				catch: storeFailure,
+			})
 
-	registerConsumer(
-		tenantId: string,
-		consumerId: string,
-		startAt: EventConsumerStart,
-		registeredAt = new Date().toISOString(),
-	): EventConsumer {
-		validateConsumerId(consumerId)
-		if (startAt !== "beginning" && startAt !== "latest")
-			throw EventConsumerInputError.create("startAt must be beginning or latest")
-		canonicalInstant(registeredAt, "event consumer registeredAt")
-		return this.#db
-			.transaction(() => {
-				const existing = this.#consumer(tenantId, consumerId)
-				if (existing)
-					throw EventConsumerConflictError.create(
-						`event consumer already exists: ${consumerId}`,
-						consumerId,
-					)
-				const boundary = this.#db
-					.query<SequenceRow, [string]>(
-						startAt === "latest"
-							? `SELECT max(readiness.sequence) AS sequence
+		const registerConsumer: LocalEventingControlStoreApi["registerConsumer"] = (
+			tenantId,
+			consumerId,
+			startAt,
+			registeredAt = now(),
+		) =>
+			Effect.try({
+				try: () => {
+					validateConsumerId(consumerId)
+					if (startAt !== "beginning" && startAt !== "latest")
+						throw EventConsumerInputError.create("startAt must be beginning or latest")
+					canonicalInstant(registeredAt, "event consumer registeredAt")
+					return db
+						.transaction(() => {
+							const existing = consumerRow(tenantId, consumerId)
+							if (existing)
+								throw EventConsumerConflictError.create(
+									`event consumer already exists: ${consumerId}`,
+									consumerId,
+								)
+							const boundary = db
+								.query<SequenceRow, [string]>(
+									startAt === "latest"
+										? `SELECT max(readiness.sequence) AS sequence
 							   FROM outbox_ready_events AS readiness
 							   INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
 							   WHERE event.tenant_id = ?`
-							: `SELECT min(readiness.sequence) AS sequence
+										: `SELECT min(readiness.sequence) AS sequence
 							   FROM outbox_ready_events AS readiness
 							   INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
 							   WHERE event.tenant_id = ?`,
-					)
-					.get(tenantId)
-				const sequence = boundary?.sequence == null ? 0 : asNumber(boundary.sequence)
-				const lastAcknowledged = startAt === "beginning" ? Math.max(0, sequence - 1) : sequence
-				this.#db.run(
-					"INSERT INTO event_consumers (consumer_id, tenant_id, active, last_acked_sequence, registered_at) VALUES (?, ?, 1, ?, ?)",
-					[consumerId, tenantId, lastAcknowledged, registeredAt],
-				)
-				if (startAt === "latest")
-					this.#db.run(
-						"UPDATE event_consumers SET accepted_gap_generation = ? WHERE tenant_id = ? AND consumer_id = ?",
-						[this.deliveryGap(tenantId).generation, tenantId, consumerId],
-					)
-				const updated = this.#consumer(tenantId, consumerId)
-				if (updated === null)
-					throw EventConsumerNotFoundError.create(
-						`event consumer not found: ${consumerId}`,
-						consumerId,
-					)
-				return decodeConsumer(updated)
+								)
+								.get(tenantId)
+							const sequence = boundary?.sequence == null ? 0 : asNumber(boundary.sequence)
+							const lastAcknowledged =
+								startAt === "beginning" ? Math.max(0, sequence - 1) : sequence
+							db.run(
+								"INSERT INTO event_consumers (consumer_id, tenant_id, active, last_acked_sequence, registered_at) VALUES (?, ?, 1, ?, ?)",
+								[consumerId, tenantId, lastAcknowledged, registeredAt],
+							)
+							if (startAt === "latest")
+								db.run(
+									"UPDATE event_consumers SET accepted_gap_generation = ? WHERE tenant_id = ? AND consumer_id = ?",
+									[readDeliveryGap(tenantId).generation, tenantId, consumerId],
+								)
+							const updated = consumerRow(tenantId, consumerId)
+							if (updated === null)
+								throw EventConsumerNotFoundError.create(
+									`event consumer not found: ${consumerId}`,
+									consumerId,
+								)
+							return decodeConsumer(updated)
+						})
+						.immediate()
+				},
+				catch: consumerFailure,
 			})
-			.immediate()
-	}
 
-	disableConsumer(
-		tenantId: string,
-		consumerId: string,
-		disabledAt = new Date().toISOString(),
-	): EventConsumer {
-		validateConsumerId(consumerId)
-		canonicalInstant(disabledAt, "event consumer disabledAt")
-		return this.#db
-			.transaction(() => {
-				const existing = this.#consumer(tenantId, consumerId)
-				if (!existing)
-					throw EventConsumerNotFoundError.create(
-						`unknown event consumer: ${consumerId}`,
-						consumerId,
-					)
-				if (asNumber(existing.active) === 0) return decodeConsumer(existing)
-				this.#db.run(
-					`UPDATE event_consumers
+		const disableConsumer: LocalEventingControlStoreApi["disableConsumer"] = (
+			tenantId,
+			consumerId,
+			disabledAt = now(),
+		) =>
+			Effect.try({
+				try: () => {
+					validateConsumerId(consumerId)
+					canonicalInstant(disabledAt, "event consumer disabledAt")
+					return db
+						.transaction(() => {
+							const existing = consumerRow(tenantId, consumerId)
+							if (!existing)
+								throw EventConsumerNotFoundError.create(
+									`unknown event consumer: ${consumerId}`,
+									consumerId,
+								)
+							if (asNumber(existing.active) === 0) return decodeConsumer(existing)
+							db.run(
+								`UPDATE event_consumers
 					 SET active = 0, lease_token_hash = NULL, lease_expires_at = NULL,
 					     claimed_through_sequence = NULL, disabled_at = ?
 					 WHERE tenant_id = ? AND consumer_id = ?`,
-					[disabledAt, tenantId, consumerId],
-				)
-				this.#pruneAcknowledgedReady(tenantId)
-				const updated = this.#consumer(tenantId, consumerId)
-				if (updated === null)
-					throw EventConsumerNotFoundError.create(
-						`event consumer not found: ${consumerId}`,
-						consumerId,
-					)
-				return decodeConsumer(updated)
-			})
-			.immediate()
-	}
-
-	claimReady(
-		tenantId: string,
-		consumerId: string,
-		limit: number,
-		leaseSeconds: number,
-		now = new Date().toISOString(),
-	): EventConsumerClaim {
-		let reclaimedExpiredLease = false
-		let lag = 0
-		try {
-			validateConsumerId(consumerId)
-			if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000)
-				throw EventConsumerInputError.create("claim limit must be between 1 and 1000")
-			if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 5 || leaseSeconds > 300)
-				throw EventConsumerInputError.create("leaseSeconds must be between 5 and 300")
-			const nowMilliseconds = canonicalInstant(now, "claim time")
-			const claim = this.#db
-				.transaction(() => {
-					const consumer = this.#consumer(tenantId, consumerId)
-					if (!consumer)
-						throw EventConsumerNotFoundError.create(
-							`unknown event consumer: ${consumerId}`,
-							consumerId,
-						)
-					const gap = this.deliveryGap(tenantId)
-					if (gap.generation > asNumber(consumer.accepted_gap_generation))
-						throw new EventConsumerDeliveryGapError({
-							message:
-								"Event delivery has a gap; an operator must acknowledge the reported generation before claiming more events",
-							consumerId,
-							generation: gap.generation,
-							droppedEvents: gap.droppedEvents,
+								[disabledAt, tenantId, consumerId],
+							)
+							pruneAcknowledgedReady(tenantId)
+							const updated = consumerRow(tenantId, consumerId)
+							if (updated === null)
+								throw EventConsumerNotFoundError.create(
+									`event consumer not found: ${consumerId}`,
+									consumerId,
+								)
+							return decodeConsumer(updated)
 						})
-					if (asNumber(consumer.active) === 0)
-						throw EventConsumerConflictError.create(
-							`event consumer is disabled: ${consumerId}`,
-							consumerId,
-						)
-					if (
-						consumer.lease_expires_at !== null &&
-						canonicalInstant(consumer.lease_expires_at, "event consumer leaseExpiresAt") >
-							nowMilliseconds
-					)
-						throw EventConsumerLeaseError.create(
-							`event consumer already has an active lease: ${consumerId}`,
-							consumerId,
-							consumer.lease_expires_at,
-						)
-					if (consumer.lease_expires_at !== null) reclaimedExpiredLease = true
-					lag = this.#consumerLag(tenantId, asNumber(consumer.last_acked_sequence))
+						.immediate()
+				},
+				catch: consumerFailure,
+			})
 
-					const rows = this.#db
-						.query<EventJsonRow, [string, number, number]>(
-							`SELECT readiness.sequence, event.event_json, event.staged_at, readiness.ready_at
+		const observeConsumerFailure = (
+			operation: "consumer_claim" | "consumer_ack",
+			error: EventConsumerFailure,
+		) =>
+			Effect.all(
+				[
+					observeEventing({ operation, outcome: "failure" }),
+					error._tag === "@maple/cli/eventing/EventConsumerLeaseConflict"
+						? observeEventing({ operation: "consumer_lease", outcome: "failure" })
+						: Effect.void,
+				],
+				{ discard: true },
+			)
+
+		const claimReady: LocalEventingControlStoreApi["claimReady"] = (
+			tenantId,
+			consumerId,
+			limit,
+			leaseSeconds,
+			claimedAt = now(),
+		) =>
+			Effect.try({
+				try: () => {
+					validateConsumerId(consumerId)
+					if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000)
+						throw EventConsumerInputError.create("claim limit must be between 1 and 1000")
+					if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 5 || leaseSeconds > 300)
+						throw EventConsumerInputError.create("leaseSeconds must be between 5 and 300")
+					const nowMilliseconds = canonicalInstant(claimedAt, "claim time")
+					return db
+						.transaction(() => {
+							const consumer = consumerRow(tenantId, consumerId)
+							if (!consumer)
+								throw EventConsumerNotFoundError.create(
+									`unknown event consumer: ${consumerId}`,
+									consumerId,
+								)
+							const gap = readDeliveryGap(tenantId)
+							if (gap.generation > asNumber(consumer.accepted_gap_generation))
+								throw new EventConsumerDeliveryGapError({
+									message:
+										"Event delivery has a gap; an operator must acknowledge the reported generation before claiming more events",
+									consumerId,
+									generation: gap.generation,
+									droppedEvents: gap.droppedEvents,
+								})
+							if (asNumber(consumer.active) === 0)
+								throw EventConsumerConflictError.create(
+									`event consumer is disabled: ${consumerId}`,
+									consumerId,
+								)
+							if (
+								consumer.lease_expires_at !== null &&
+								canonicalInstant(consumer.lease_expires_at, "event consumer leaseExpiresAt") >
+									nowMilliseconds
+							)
+								throw EventConsumerLeaseError.create(
+									`event consumer already has an active lease: ${consumerId}`,
+									consumerId,
+									consumer.lease_expires_at,
+								)
+							const reclaimedExpiredLease = consumer.lease_expires_at !== null
+							const lag = consumerLag(tenantId, asNumber(consumer.last_acked_sequence))
+
+							const rows = db
+								.query<EventJsonRow, [string, number, number]>(
+									`SELECT readiness.sequence, event.event_json, event.staged_at, readiness.ready_at
 						 FROM outbox_ready_events AS readiness
 						 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
 						 WHERE event.tenant_id = ? AND event.state = 'ready' AND readiness.sequence > ?
 						 ORDER BY readiness.sequence
 						 LIMIT ?`,
-						)
-						.all(tenantId, asNumber(consumer.last_acked_sequence), limit)
-					if (rows.length === 0) {
-						this.#db.run(
-							"UPDATE event_consumers SET lease_token_hash = NULL, lease_expires_at = NULL, claimed_through_sequence = NULL WHERE tenant_id = ? AND consumer_id = ?",
-							[tenantId, consumerId],
-						)
-						return {
-							consumerId,
-							leaseToken: null,
-							leaseExpiresAt: null,
-							throughSequence: null,
-							events: [],
-						}
-					}
+								)
+								.all(tenantId, asNumber(consumer.last_acked_sequence), limit)
+							if (rows.length === 0) {
+								db.run(
+									"UPDATE event_consumers SET lease_token_hash = NULL, lease_expires_at = NULL, claimed_through_sequence = NULL WHERE tenant_id = ? AND consumer_id = ?",
+									[tenantId, consumerId],
+								)
+								const claim: EventConsumerClaim = {
+									consumerId,
+									leaseToken: null,
+									leaseExpiresAt: null,
+									throughSequence: null,
+									events: [],
+								}
+								return { claim, lag, reclaimedExpiredLease }
+							}
 
-					const leaseToken = randomBytes(32).toString("hex")
-					const leaseExpiresAt = new Date(nowMilliseconds + leaseSeconds * 1_000).toISOString()
-					const last = rows.at(-1)
-					if (last === undefined) throw EventConsumerConflictError.create("empty claim", consumerId)
-					const throughSequence = asNumber(last.sequence)
-					this.#db.run(
-						`UPDATE event_consumers
+							const leaseToken = randomBytes(32).toString("hex")
+							const leaseExpiresAt = new Date(
+								nowMilliseconds + leaseSeconds * 1_000,
+							).toISOString()
+							const last = rows.at(-1)
+							if (last === undefined)
+								throw EventConsumerConflictError.create("empty claim", consumerId)
+							const throughSequence = asNumber(last.sequence)
+							db.run(
+								`UPDATE event_consumers
 					 SET lease_token_hash = ?, lease_expires_at = ?, claimed_through_sequence = ?
 					 WHERE tenant_id = ? AND consumer_id = ?`,
-						[tokenHash(leaseToken), leaseExpiresAt, throughSequence, tenantId, consumerId],
-					)
-					return {
-						consumerId,
-						leaseToken,
-						leaseExpiresAt,
-						throughSequence,
-						events: rows.map(({ sequence, event_json, staged_at, ready_at }) => ({
-							sequence: asNumber(sequence),
-							event: decodeEvent(event_json),
-							stagedAt: staged_at,
-							readyAt: ready_at,
-						})),
-					}
-				})
-				.immediate()
-			this.#telemetry.record({
-				operation: "consumer_claim",
-				outcome: claim.events.length === 0 ? "empty" : "success",
-				count: Math.max(1, claim.events.length),
-			})
-			this.#telemetry.record({ operation: "consumer_lag", outcome: "observed", lag })
-			if (reclaimedExpiredLease)
-				this.#telemetry.record({ operation: "consumer_lease", outcome: "reclaimed" })
-			return claim
-		} catch (error) {
-			this.#telemetry.record({ operation: "consumer_claim", outcome: "failure" })
-			if (Schema.is(EventConsumerLeaseError)(error))
-				this.#telemetry.record({ operation: "consumer_lease", outcome: "failure" })
-			throw error
-		}
-	}
+								[
+									tokenHash(leaseToken),
+									leaseExpiresAt,
+									throughSequence,
+									tenantId,
+									consumerId,
+								],
+							)
+							const claim: EventConsumerClaim = {
+								consumerId,
+								leaseToken,
+								leaseExpiresAt,
+								throughSequence,
+								events: rows.map(({ sequence, event_json, staged_at, ready_at }) => ({
+									sequence: asNumber(sequence),
+									event: decodeEvent(event_json),
+									stagedAt: staged_at,
+									readyAt: ready_at,
+								})),
+							}
+							return { claim, lag, reclaimedExpiredLease }
+						})
+						.immediate()
+				},
+				catch: consumerFailure,
+			}).pipe(
+				Effect.tapError((error) => observeConsumerFailure("consumer_claim", error)),
+				Effect.tap(({ claim, lag, reclaimedExpiredLease }) =>
+					Effect.all(
+						[
+							observeEventing({
+								operation: "consumer_claim",
+								outcome: claim.events.length === 0 ? "empty" : "success",
+								count: Math.max(1, claim.events.length),
+							}),
+							observeEventing({ operation: "consumer_lag", outcome: "observed", lag }),
+							reclaimedExpiredLease
+								? observeEventing({ operation: "consumer_lease", outcome: "reclaimed" })
+								: Effect.void,
+						],
+						{ discard: true },
+					),
+				),
+				Effect.map(({ claim }) => claim),
+			)
 
-	acknowledgeClaim(
-		tenantId: string,
-		consumerId: string,
-		leaseToken: string,
-		throughSequence: number,
-		now = new Date().toISOString(),
-	): EventConsumerAcknowledgement {
-		try {
-			validateConsumerId(consumerId)
-			if (!Number.isSafeInteger(throughSequence) || throughSequence < 1)
-				throw EventConsumerInputError.create("throughSequence must be a positive safe integer")
-			const nowMilliseconds = canonicalInstant(now, "acknowledgement time")
-			const acknowledgement = this.#db
-				.transaction(() => {
-					const consumer = this.#consumer(tenantId, consumerId)
-					if (!consumer)
-						throw EventConsumerNotFoundError.create(
-							`unknown event consumer: ${consumerId}`,
-							consumerId,
+		const acknowledgeClaim: LocalEventingControlStoreApi["acknowledgeClaim"] = (
+			tenantId,
+			consumerId,
+			leaseToken,
+			throughSequence,
+			acknowledgedAt = now(),
+		) =>
+			Effect.try({
+				try: () => {
+					validateConsumerId(consumerId)
+					if (!Number.isSafeInteger(throughSequence) || throughSequence < 1)
+						throw EventConsumerInputError.create(
+							"throughSequence must be a positive safe integer",
 						)
-					if (asNumber(consumer.active) === 0)
-						throw EventConsumerConflictError.create(
-							`event consumer is disabled: ${consumerId}`,
-							consumerId,
-						)
-					if (
-						consumer.lease_token_hash === null ||
-						consumer.lease_expires_at === null ||
-						consumer.claimed_through_sequence === null
-					)
-						throw EventConsumerLeaseError.create(
-							`event consumer has no active lease: ${consumerId}`,
-							consumerId,
-							consumer.lease_expires_at,
-						)
-					if (
-						canonicalInstant(consumer.lease_expires_at, "event consumer leaseExpiresAt") <=
-						nowMilliseconds
-					)
-						throw EventConsumerLeaseError.create(
-							`event consumer lease has expired: ${consumerId}`,
-							consumerId,
-							consumer.lease_expires_at,
-						)
-					if (!tokenHashMatches(consumer.lease_token_hash, leaseToken))
-						throw EventConsumerLeaseError.create(
-							"event consumer lease token does not match",
-							consumerId,
-							consumer.lease_expires_at,
-						)
-					const claimedThrough = asNumber(consumer.claimed_through_sequence)
-					if (throughSequence !== claimedThrough)
-						throw EventConsumerLeaseError.create(
-							`acknowledgement must cover the complete claimed batch through sequence ${claimedThrough}`,
-							consumerId,
-							consumer.lease_expires_at,
-						)
-					this.#db.run(
-						`UPDATE event_consumers
+					const nowMilliseconds = canonicalInstant(acknowledgedAt, "acknowledgement time")
+					return db
+						.transaction((): EventConsumerAcknowledgement => {
+							const consumer = consumerRow(tenantId, consumerId)
+							if (!consumer)
+								throw EventConsumerNotFoundError.create(
+									`unknown event consumer: ${consumerId}`,
+									consumerId,
+								)
+							if (asNumber(consumer.active) === 0)
+								throw EventConsumerConflictError.create(
+									`event consumer is disabled: ${consumerId}`,
+									consumerId,
+								)
+							if (
+								consumer.lease_token_hash === null ||
+								consumer.lease_expires_at === null ||
+								consumer.claimed_through_sequence === null
+							)
+								throw EventConsumerLeaseError.create(
+									`event consumer has no active lease: ${consumerId}`,
+									consumerId,
+									consumer.lease_expires_at,
+								)
+							if (
+								canonicalInstant(
+									consumer.lease_expires_at,
+									"event consumer leaseExpiresAt",
+								) <= nowMilliseconds
+							)
+								throw EventConsumerLeaseError.create(
+									`event consumer lease has expired: ${consumerId}`,
+									consumerId,
+									consumer.lease_expires_at,
+								)
+							if (!tokenHashMatches(consumer.lease_token_hash, leaseToken))
+								throw EventConsumerLeaseError.create(
+									"event consumer lease token does not match",
+									consumerId,
+									consumer.lease_expires_at,
+								)
+							const claimedThrough = asNumber(consumer.claimed_through_sequence)
+							if (throughSequence !== claimedThrough)
+								throw EventConsumerLeaseError.create(
+									`acknowledgement must cover the complete claimed batch through sequence ${claimedThrough}`,
+									consumerId,
+									consumer.lease_expires_at,
+								)
+							db.run(
+								`UPDATE event_consumers
 					 SET last_acked_sequence = ?, lease_token_hash = NULL, lease_expires_at = NULL,
 					     claimed_through_sequence = NULL
 					 WHERE tenant_id = ? AND consumer_id = ?`,
-						[throughSequence, tenantId, consumerId],
-					)
-					return {
-						consumerId,
-						acknowledgedThrough: throughSequence,
-						prunedEvents: this.#pruneAcknowledgedReady(tenantId),
-					}
-				})
-				.immediate()
-			this.#telemetry.record({ operation: "consumer_ack", outcome: "success" })
-			this.#telemetry.record({
-				operation: "consumer_lag",
-				outcome: "observed",
-				lag: this.#consumerLag(tenantId, acknowledgement.acknowledgedThrough),
+								[throughSequence, tenantId, consumerId],
+							)
+							return {
+								consumerId,
+								acknowledgedThrough: throughSequence,
+								prunedEvents: pruneAcknowledgedReady(tenantId),
+							}
+						})
+						.immediate()
+				},
+				catch: consumerFailure,
+			}).pipe(
+				Effect.flatMap((acknowledgement) =>
+					Effect.try({
+						try: () => consumerLag(tenantId, acknowledgement.acknowledgedThrough),
+						catch: storeFailure,
+					}).pipe(
+						Effect.tap((lag) =>
+							Effect.all(
+								[
+									observeEventing({ operation: "consumer_ack", outcome: "success" }),
+									observeEventing({ operation: "consumer_lag", outcome: "observed", lag }),
+								],
+								{ discard: true },
+							),
+						),
+						Effect.as(acknowledgement),
+					),
+				),
+				Effect.tapError((error) => observeConsumerFailure("consumer_ack", error)),
+			)
+
+		const outboxCapacity: LocalEventingControlStoreApi["outboxCapacity"] = Effect.try({
+			try: () => {
+				const usage = outboxUsage()
+				return {
+					...limits,
+					currentEvents: asNumber(usage.count),
+					currentBytes: asNumber(usage.bytes),
+				}
+			},
+			catch: storeFailure,
+		})
+
+		const recordProjectionFailures: LocalEventingControlStoreApi["recordProjectionFailures"] = (
+			tenantId,
+			failures,
+			createdAt = now(),
+		) =>
+			Effect.try({
+				try: () =>
+					db
+						.transaction(() => {
+							for (const failure of failures)
+								db.run(
+									"INSERT OR IGNORE INTO projection_failures (tenant_id, projection_id, projection_revision, occurrence_id, message, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+									[
+										tenantId,
+										failure.projectionId,
+										failure.projectionRevision,
+										failure.occurrenceId,
+										failure.message.slice(0, 4_096),
+										createdAt,
+									],
+								)
+							db.run(
+								"DELETE FROM projection_failures WHERE tenant_id = ? AND sequence NOT IN (SELECT sequence FROM projection_failures WHERE tenant_id = ? ORDER BY sequence DESC LIMIT ?)",
+								[tenantId, tenantId, MAX_FAILURES_PER_TENANT],
+							)
+						})
+						.immediate(),
+				catch: storeFailure,
 			})
-			return acknowledgement
-		} catch (error) {
-			this.#telemetry.record({ operation: "consumer_ack", outcome: "failure" })
-			if (Schema.is(EventConsumerLeaseError)(error))
-				this.#telemetry.record({ operation: "consumer_lease", outcome: "failure" })
-			throw error
-		}
-	}
 
-	#consumerLag(tenantId: string, lastAcknowledgedSequence: number): number {
-		const latest = this.#db
-			.query<SequenceRow, [string]>(
-				`SELECT max(readiness.sequence) AS sequence
-				 FROM outbox_ready_events AS readiness
-				 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
-				 WHERE event.tenant_id = ? AND event.state = 'ready'`,
-			)
-			.get(tenantId)
-		return Math.max(
-			0,
-			(latest?.sequence == null ? 0 : asNumber(latest.sequence)) - lastAcknowledgedSequence,
-		)
-	}
-
-	#consumer(tenantId: string, consumerId: string): ConsumerRow | null {
-		return this.#db
-			.query<ConsumerRow, [string, string]>(
-				`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
-				        lease_expires_at, claimed_through_sequence, registered_at, disabled_at
-				 FROM event_consumers
-				 WHERE tenant_id = ? AND consumer_id = ?`,
-			)
-			.get(tenantId, consumerId)
-	}
-
-	#pruneAcknowledgedReady(tenantId: string): number {
-		const boundary = this.#db
-			.query<SequenceRow, [string]>(
-				"SELECT min(last_acked_sequence) AS sequence FROM event_consumers WHERE tenant_id = ? AND active = 1",
-			)
-			.get(tenantId)
-		if (boundary?.sequence == null) return 0
-		const rows = this.#db
-			.query<EventIdRow, [string, number]>(
-				`SELECT readiness.event_id
-				 FROM outbox_ready_events AS readiness
-				 INNER JOIN outbox_events AS event ON event.event_id = readiness.event_id
-				 WHERE event.tenant_id = ? AND readiness.sequence <= ?
-				 ORDER BY readiness.sequence`,
-			)
-			.all(tenantId, asNumber(boundary.sequence))
-		const pruneCount = Math.max(0, rows.length - this.#limits.retainAcknowledgedReadyEvents)
-		for (const { event_id } of rows.slice(0, pruneCount)) {
-			this.#db.run("DELETE FROM outbox_ready_events WHERE event_id = ?", [event_id])
-			this.#db.run("DELETE FROM outbox_events WHERE event_id = ? AND state = 'ready'", [event_id])
-		}
-		return pruneCount
-	}
-
-	outboxCapacity(): LocalEventingControlLimits & {
-		readonly currentEvents: number
-		readonly currentBytes: number
-	} {
-		const usage = this.#outboxUsage()
-		if (!usage) throw new Error("event outbox usage query returned no row")
 		return {
-			...this.#limits,
-			currentEvents: asNumber(usage.count),
-			currentBytes: asNumber(usage.bytes),
-		}
-	}
+			path,
+			saveProjection,
+			loadEnabledProjections,
+			stageEvents,
+			deliveryGap,
+			acceptDeliveryGap,
+			abandonEvents,
+			hasStagedSourceKind,
+			hasStagedSourceOccurrence,
+			stagedEventIdsForOccurrence,
+			markReady,
+			listReady: (limit, after) => listOutbox("ready", limit, after),
+			listStaged: (limit, after) => listOutbox("staged", limit, after),
+			listConsumers,
+			registerConsumer,
+			disableConsumer,
+			claimReady,
+			acknowledgeClaim,
+			outboxCapacity,
+			recordProjectionFailures,
+			validate: Effect.try({ try: () => validateOpenDatabase(db), catch: storeFailure }),
+			captureSnapshot,
+			backupTo: (target) =>
+				Effect.flatMap(captureSnapshot, (bytes) => writeControlSnapshot(target, bytes)),
+		} satisfies LocalEventingControlStoreApi
+	})
 
-	recordProjectionFailures(
-		tenantId: string,
-		failures: readonly ProjectionFailure[],
-		createdAt = new Date().toISOString(),
-	): void {
-		this.#db
-			.transaction(() => {
-				for (const failure of failures)
-					this.#db.run(
-						"INSERT OR IGNORE INTO projection_failures (tenant_id, projection_id, projection_revision, occurrence_id, message, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-						[
-							tenantId,
-							failure.projectionId,
-							failure.projectionRevision,
-							failure.occurrenceId,
-							failure.message.slice(0, 4_096),
-							createdAt,
-						],
-					)
-				this.#db.run(
-					"DELETE FROM projection_failures WHERE tenant_id = ? AND sequence NOT IN (SELECT sequence FROM projection_failures WHERE tenant_id = ? ORDER BY sequence DESC LIMIT ?)",
-					[tenantId, tenantId, MAX_FAILURES_PER_TENANT],
-				)
-			})
-			.immediate()
-	}
-
-	validate(): EventingControlSnapshotValidation {
-		return validateOpenDatabase(this.#db)
-	}
-
-	captureSnapshot(): Uint8Array {
-		checkpointWal(this.#db)
-		return this.#db.serialize()
-	}
-
-	static async writeSnapshot(path: string, bytes: Uint8Array): Promise<EventingControlSnapshotValidation> {
-		await durableWrite(path, bytes)
-		return LocalEventingControlStore.validateSnapshot(path)
-	}
-
-	async backupTo(path: string): Promise<EventingControlSnapshotValidation> {
-		return LocalEventingControlStore.writeSnapshot(path, this.captureSnapshot())
-	}
-
-	static validateSnapshot(path: string): EventingControlSnapshotValidation {
-		assertRealDatabaseFile(path)
-		if (!existsSync(path)) throw new Error(`eventing control snapshot is missing: ${path}`)
-		const uri = `${pathToFileURL(path).href}?immutable=1`
-		const db = new Database(uri, sqliteConstants.SQLITE_OPEN_READONLY | sqliteConstants.SQLITE_OPEN_URI)
-		try {
-			configure(db)
-			return validateOpenDatabase(db)
-		} finally {
-			db.close(true)
-		}
-	}
-
-	static async restoreSnapshot(snapshotPath: string, dataDir: string): Promise<void> {
-		LocalEventingControlStore.validateSnapshot(snapshotPath)
-		const stagingDataDir = mkdtempSync(
-			join(dirname(resolve(dataDir)), ".maple-eventing-control-restore-"),
-		)
-		let restored: LocalEventingControlStore | undefined
-		try {
-			await durableWrite(eventingControlPath(stagingDataDir), readFileSync(snapshotPath))
-			restored = await LocalEventingControlStore.open(stagingDataDir)
-			await restored.backupTo(eventingControlPath(dataDir))
-		} finally {
-			restored?.close()
-			rmSync(stagingDataDir, { recursive: true, force: true })
-		}
-	}
+	static readonly layer = Layer.effect(this, this.make)
 }
+
+/** Opens a store outside a layer graph (checkpoint restore, tests); it closes with the scope. */
+export const openControlStore = (
+	dataDir: string,
+	limits?: LocalEventingControlLimits,
+): Effect.Effect<LocalEventingControlStoreApi, EventingControlStoreError, Scope.Scope> =>
+	LocalEventingControlStore.make.pipe(
+		Effect.provideService(
+			LocalEventingControlConfig,
+			limits === undefined ? { dataDir } : { dataDir, limits },
+		),
+	)
+
+export const validateControlSnapshot = (
+	path: string,
+): Effect.Effect<EventingControlSnapshotValidation, EventingControlStoreError> =>
+	Effect.try({
+		try: () => {
+			assertRealDatabaseFile(path)
+			if (!existsSync(path)) throw storeError(`eventing control snapshot is missing: ${path}`)
+			const uri = `${pathToFileURL(path).href}?immutable=1`
+			const db = new Database(
+				uri,
+				sqliteConstants.SQLITE_OPEN_READONLY | sqliteConstants.SQLITE_OPEN_URI,
+			)
+			try {
+				configure(db)
+				return validateOpenDatabase(db)
+			} finally {
+				db.close(true)
+			}
+		},
+		catch: storeFailure,
+	})
+
+export const writeControlSnapshot = (
+	path: string,
+	bytes: Uint8Array,
+): Effect.Effect<EventingControlSnapshotValidation, EventingControlStoreError> =>
+	Effect.tryPromise({ try: () => durableWrite(path, bytes), catch: storeFailure }).pipe(
+		Effect.andThen(validateControlSnapshot(path)),
+	)
+
+/** Round-trips the snapshot through a staging store so the target is written by a clean close. */
+export const restoreControlSnapshot = (
+	snapshotPath: string,
+	dataDir: string,
+): Effect.Effect<void, EventingControlStoreError> =>
+	Effect.gen(function* () {
+		yield* validateControlSnapshot(snapshotPath)
+		const stagingDataDir = yield* Effect.acquireRelease(
+			Effect.try({
+				try: () => mkdtempSync(join(dirname(resolve(dataDir)), ".maple-eventing-control-restore-")),
+				catch: storeFailure,
+			}),
+			(directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true })),
+		)
+		yield* Effect.tryPromise({
+			try: () => durableWrite(eventingControlPath(stagingDataDir), readFileSync(snapshotPath)),
+			catch: storeFailure,
+		})
+		const restored = yield* openControlStore(stagingDataDir)
+		yield* restored.backupTo(eventingControlPath(dataDir))
+	}).pipe(Effect.scoped)

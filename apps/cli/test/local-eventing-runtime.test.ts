@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Effect, Result } from "effect"
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -13,11 +13,10 @@ import {
 	type SignalProjectionSpec,
 	type SignalScalar,
 } from "@maple/eventing-core"
-import { LocalEventingControlStore } from "../src/server/eventing/control-store"
 import { normalizeOtlpLogs, normalizeOtlpLogsWithDiagnostics } from "../src/server/eventing/otlp"
-import { LocalEventingRuntime, sourceOccurrenceFingerprint } from "../src/server/eventing/runtime"
-import type { EventingTelemetryObservation } from "../src/server/eventing/telemetry"
+import { sourceOccurrenceFingerprint } from "../src/server/eventing/runtime"
 import { encodeLogs } from "../src/server/otlp/encode"
+import { makeRuntime, metricRecorder, openStore, run } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void>): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-eventing-runtime-"))
@@ -192,22 +191,24 @@ describe("OTLP eventing input validation", () => {
 	it("rejects non-string attribute keys before normalization", () => {
 		throws(
 			() =>
-				normalizeOtlpLogs({
-					resourceLogs: [
-						{
-							scopeLogs: [
-								{
-									logRecords: [
-										{
-											timeUnixNano: "1786125600000000000",
-											attributes: [{ key: 123, value: { stringValue: "bad" } }],
-										},
-									],
-								},
-							],
-						},
-					],
-				}),
+				run(
+					normalizeOtlpLogs({
+						resourceLogs: [
+							{
+								scopeLogs: [
+									{
+										logRecords: [
+											{
+												timeUnixNano: "1786125600000000000",
+												attributes: [{ key: 123, value: { stringValue: "bad" } }],
+											},
+										],
+									},
+								],
+							},
+						],
+					}),
+				),
 			/invalid OTLP logs/,
 		)
 	})
@@ -216,27 +217,25 @@ describe("OTLP eventing input validation", () => {
 describe("LocalEventingRuntime", () => {
 	it("records bounded normalization and projection outcomes without signal data", async () =>
 		withDataDir(async (dataDir) => {
-			const observations: EventingTelemetryObservation[] = []
-			const telemetry = {
-				record: (observation: EventingTelemetryObservation) => observations.push(observation),
-			}
-			const store = await LocalEventingControlStore.open(dataDir)
+			const metrics = metricRecorder()
+			const observed = <A, E>(effect: Effect.Effect<A, E>): A => run(metrics.observe(effect))
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, telemetry, exampleProjectors())
-				runtime.activate(projection())
-				strictEqual(runtime.evaluateOtlp("logs", exampleRecordObserved).events.length, 1)
+				const runtime = makeRuntime(store, exampleProjectors())
+				run(runtime.activate(projection()))
+				strictEqual(observed(runtime.evaluateOtlp("logs", exampleRecordObserved)).events.length, 1)
 
 				const malformed = structuredClone(exampleRecordObserved)
 				firstLogRecord(malformed).attributes = firstLogRecord(malformed).attributes.filter(
 					({ key }) => key !== "example.collection.name",
 				)
-				strictEqual(runtime.evaluateOtlp("logs", malformed).failures.length, 1)
+				strictEqual(observed(runtime.evaluateOtlp("logs", malformed)).failures.length, 1)
 
 				const mismatched = structuredClone(exampleRecordObserved)
 				firstLogRecord(mismatched).attributes = firstLogRecord(mismatched).attributes.map((entry) =>
 					entry.key === "example.record.sequence" ? attr(entry.key, { stringValue: "42" }) : entry,
 				)
-				deepStrictEqual(runtime.evaluateOtlp("logs", mismatched).typeMismatchFields, [
+				deepStrictEqual(observed(runtime.evaluateOtlp("logs", mismatched)).typeMismatchFields, [
 					"attribute:example.record.sequence",
 				])
 
@@ -246,28 +245,26 @@ describe("LocalEventingRuntime", () => {
 						attr(`projection-only-${index}`, { stringValue: "warehouse-valid" }),
 					),
 				)
-				strictEqual(runtime.evaluateOtlp("logs", projectionBoundFailure).events.length, 0)
+				strictEqual(observed(runtime.evaluateOtlp("logs", projectionBoundFailure)).events.length, 0)
 
-				const operationOutcomes = observations.map(
-					({ operation, outcome }) => `${operation}:${outcome}`,
-				)
+				const operationOutcomes = metrics.operationOutcomes()
 				ok(operationOutcomes.includes("normalization:success"))
 				ok(operationOutcomes.includes("normalization:failure"))
 				ok(operationOutcomes.includes("projection:success"))
 				ok(operationOutcomes.includes("projection:failure"))
 				ok(operationOutcomes.includes("selector_type_mismatch:observed"))
-				const serialized = JSON.stringify(observations)
+				const serialized = metrics.attributes()
 				strictEqual(serialized.includes("Observe example events"), false)
 				strictEqual(serialized.includes("01K20EXAMPLERECORD42"), false)
 				strictEqual(serialized.includes("example-record-observed"), false)
 				strictEqual(serialized.includes("example.record.sequence"), false)
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("normalizes typed generic OTLP fields while preserving the existing warehouse encoding", () => {
-		const [signal] = normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z")
+		const [signal] = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z"))
 		strictEqual(signal?.occurrenceId, "01K20EXAMPLERECORD42")
 		strictEqual(signal?.identityQuality, "source")
 		strictEqual(signal?.source, "https://events.example.test")
@@ -289,7 +286,7 @@ describe("LocalEventingRuntime", () => {
 			attr("cloudevents.id", { stringValue: " cloud-event-42 " }),
 			...aliasedRecord.attributes.filter(({ key }) => !["event.id", "cloudevents.id"].includes(key)),
 		]
-		const [aliasedSignal] = normalizeOtlpLogs(aliased, "2026-08-07T20:00:00Z")
+		const [aliasedSignal] = run(normalizeOtlpLogs(aliased, "2026-08-07T20:00:00Z"))
 		strictEqual(aliasedSignal?.occurrenceId, "cloud-event-42")
 		strictEqual(aliasedSignal?.identityQuality, "source")
 
@@ -302,8 +299,8 @@ describe("LocalEventingRuntime", () => {
 		)
 		const derivedB = structuredClone(derivedA)
 		firstLogRecord(derivedB).body = { stringValue: "A different record occurrence" }
-		const [signalA] = normalizeOtlpLogs(derivedA, "2026-08-07T20:00:00Z")
-		const [signalB] = normalizeOtlpLogs(derivedB, "2026-08-07T20:00:00Z")
+		const [signalA] = run(normalizeOtlpLogs(derivedA, "2026-08-07T20:00:00Z"))
+		const [signalB] = run(normalizeOtlpLogs(derivedB, "2026-08-07T20:00:00Z"))
 		strictEqual(signalA?.identityQuality, "derived")
 		strictEqual(signalB?.identityQuality, "derived")
 		strictEqual(signalA?.occurrenceId?.startsWith("derived:sha256:"), true)
@@ -311,8 +308,8 @@ describe("LocalEventingRuntime", () => {
 	})
 
 	it("keeps projectable retries byte-identical and skips timestamp-less durable logs", () => {
-		const first = normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z")
-		const retry = normalizeOtlpLogs(exampleRecordObserved, "2026-08-08T20:00:00Z")
+		const first = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z"))
+		const retry = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-08T20:00:00Z"))
 		deepStrictEqual(first, retry)
 
 		const timestampLess = structuredClone(exampleRecordObserved)
@@ -322,9 +319,10 @@ describe("LocalEventingRuntime", () => {
 		}
 		delete timestampLessRecord.timeUnixNano
 		delete timestampLessRecord.observedTimeUnixNano
-		deepStrictEqual(normalizeOtlpLogs(timestampLess, "2026-08-07T20:00:00Z"), [])
+		deepStrictEqual(run(normalizeOtlpLogs(timestampLess, "2026-08-07T20:00:00Z")), [])
 		deepStrictEqual(
-			normalizeOtlpLogsWithDiagnostics(timestampLess, "2026-08-07T20:00:00Z").unprojectedIdentities,
+			run(normalizeOtlpLogsWithDiagnostics(timestampLess, "2026-08-07T20:00:00Z"))
+				.unprojectedIdentities,
 			[
 				{
 					sourceKind: "otel.log",
@@ -338,15 +336,18 @@ describe("LocalEventingRuntime", () => {
 	})
 
 	it("uses a locale-independent source-fingerprint field order", () => {
-		const [signal] = normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z")
+		const [signal] = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z"))
 		const fields = new Map(signal!.fields)
 		fields.set("attribute:ä", { type: "string", value: "umlaut" })
 		fields.set("attribute:z", { type: "string", value: "ascii" })
 		const forward = { ...signal!, fields }
 		const reverse = { ...signal!, fields: new Map([...fields].reverse()) }
-		strictEqual(sourceOccurrenceFingerprint(forward), sourceOccurrenceFingerprint(reverse))
 		strictEqual(
-			sourceOccurrenceFingerprint(forward),
+			Result.getOrThrow(sourceOccurrenceFingerprint(forward)),
+			Result.getOrThrow(sourceOccurrenceFingerprint(reverse)),
+		)
+		strictEqual(
+			Result.getOrThrow(sourceOccurrenceFingerprint(forward)),
 			"sha256:4ed4d210645f2df1959e5c56acb5b22140a01aa267fdf1fab8b62e56ea63e31e",
 		)
 	})
@@ -361,7 +362,7 @@ describe("LocalEventingRuntime", () => {
 				kvlistValue: { values: [attr("__proto__", { stringValue: "nested" })] },
 			}),
 		)
-		const [signal] = normalizeOtlpLogs(request, "2026-08-07T20:00:00Z")
+		const [signal] = run(normalizeOtlpLogs(request, "2026-08-07T20:00:00Z"))
 		const record = (signal!.data as { record: { attributes: Record<string, JsonValue> } }).record
 		ok(Object.prototype.hasOwnProperty.call(record.attributes, "__proto__"))
 		// Attribute maps are null-prototype on purpose, so a `__proto__` key stays data.
@@ -377,43 +378,47 @@ describe("LocalEventingRuntime", () => {
 
 	it("catalogs only the scalar body field that the OTLP adapter can populate", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
+				const runtime = makeRuntime(store, exampleProjectors())
 				throws(
 					() =>
-						runtime.prepareActivation(
-							projection({
-								selector: {
-									op: "exists",
-									field: { namespace: "body", key: "text", type: "string" },
-								},
-							}),
+						run(
+							runtime.prepareActivation(
+								projection({
+									selector: {
+										op: "exists",
+										field: { namespace: "body", key: "text", type: "string" },
+									},
+								}),
+							),
 						),
 					/unknown field body:text/,
 				)
-				const activation = runtime.prepareActivation(
-					projection({
-						selector: {
-							op: "exists",
-							field: { namespace: "body", key: "value", type: "boolean" },
-						},
-					}),
+				const activation = run(
+					runtime.prepareActivation(
+						projection({
+							selector: {
+								op: "exists",
+								field: { namespace: "body", key: "value", type: "boolean" },
+							},
+						}),
+					),
 				)
 				strictEqual(activation.spec.selector.op, "exists")
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("projects before storage, deduplicates retry delivery, and makes the event ready after commit", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-				strictEqual(runtime.hasActiveSource("otel.log"), false)
-				runtime.activate(projection())
-				const first = runtime.evaluateOtlp("logs", exampleRecordObserved)
+				const runtime = makeRuntime(store, exampleProjectors())
+				strictEqual(run(runtime.hasActiveSource("otel.log")), false)
+				run(runtime.activate(projection()))
+				const first = run(runtime.evaluateOtlp("logs", exampleRecordObserved))
 				strictEqual(first.failures.length, 0)
 				strictEqual(first.events.length, 1)
 				deepStrictEqual(first.events[0], {
@@ -444,14 +449,14 @@ describe("LocalEventingRuntime", () => {
 						serviceName: "example-service",
 					},
 				})
-				const staged = runtime.stage(first.events, first.eventSourceFingerprints)
+				const staged = run(runtime.stage(first.events, first.eventSourceFingerprints))
 				strictEqual(staged.inserted, 1)
-				strictEqual(runtime.listReady().events.length, 0)
+				strictEqual(run(runtime.listReady()).events.length, 0)
 				deepStrictEqual(
-					runtime.listStaged().events.map(({ event }) => event),
+					run(runtime.listStaged()).events.map(({ event }) => event),
 					first.events,
 				)
-				runtime.activate(projection({ revision: 2, enabled: false }))
+				run(runtime.activate(projection({ revision: 2, enabled: false })))
 				const projectionIneligibleRetry = structuredClone(exampleRecordObserved)
 				firstLogRecord(projectionIneligibleRetry).attributes.push(
 					...Array.from({ length: 257 }, (_, index) =>
@@ -459,39 +464,39 @@ describe("LocalEventingRuntime", () => {
 					),
 				)
 				throws(
-					() => runtime.evaluateOtlp("logs", projectionIneligibleRetry, () => true),
+					() => run(runtime.evaluateOtlp("logs", projectionIneligibleRetry, () => true)),
 					/cannot safely recover staged source occurrence/,
 				)
-				strictEqual(runtime.listStaged().events.length, 1)
-				strictEqual(runtime.listReady().events.length, 0)
+				strictEqual(run(runtime.listStaged()).events.length, 1)
+				strictEqual(run(runtime.listReady()).events.length, 0)
 				const changedRetry = structuredClone(exampleRecordObserved)
 				firstLogRecord(changedRetry).body = { stringValue: "changed retry content" }
 				throws(
-					() => runtime.evaluateOtlp("logs", changedRetry, () => true),
+					() => run(runtime.evaluateOtlp("logs", changedRetry, () => true)),
 					/staged source occurrence collision/,
 				)
-				strictEqual(runtime.listStaged().events.length, 1)
-				strictEqual(runtime.listReady().events.length, 0)
-				const retry = runtime.evaluateOtlp("logs", exampleRecordObserved, () => true)
+				strictEqual(run(runtime.listStaged()).events.length, 1)
+				strictEqual(run(runtime.listReady()).events.length, 0)
+				const retry = run(runtime.evaluateOtlp("logs", exampleRecordObserved, () => true))
 				deepStrictEqual(retry.events, [])
 				deepStrictEqual(retry.recoveredEventIds, staged.eventIds)
-				runtime.markReady(retry.recoveredEventIds)
+				run(runtime.markReady(retry.recoveredEventIds))
 				deepStrictEqual(
-					runtime.listReady().events.map(({ event }) => event),
+					run(runtime.listReady()).events.map(({ event }) => event),
 					first.events,
 				)
-				deepStrictEqual(runtime.listStaged().events, [])
+				deepStrictEqual(run(runtime.listStaged()).events, [])
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("rejects same event bytes with conflicting source content within one batch", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-				runtime.activate(projection())
+				const runtime = makeRuntime(store, exampleProjectors())
+				run(runtime.activate(projection()))
 				const request = structuredClone(exampleRecordObserved)
 				const first = firstLogRecord(request)
 				first.attributes.push(attr("example.projector.ignored", { stringValue: "first" }))
@@ -503,43 +508,43 @@ describe("LocalEventingRuntime", () => {
 				)
 				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(second)
 				throws(
-					() => runtime.evaluateOtlp("logs", request),
+					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
 				)
-				strictEqual(runtime.listStaged().events.length, 0)
-				strictEqual(runtime.listReady().events.length, 0)
+				strictEqual(run(runtime.listStaged()).events.length, 0)
+				strictEqual(run(runtime.listReady()).events.length, 0)
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("rejects matching and nonmatching records that reuse one source occurrence", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-				runtime.activate(eventNameProjection("observed-only", "example.record.observed"))
+				const runtime = makeRuntime(store, exampleProjectors())
+				run(runtime.activate(eventNameProjection("observed-only", "example.record.observed")))
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.ignored"
 				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
 				throws(
-					() => runtime.evaluateOtlp("logs", request),
+					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
 				)
-				strictEqual(runtime.listStaged().events.length, 0)
-				strictEqual(runtime.listReady().events.length, 0)
+				strictEqual(run(runtime.listStaged()).events.length, 0)
+				strictEqual(run(runtime.listReady()).events.length, 0)
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("rejects projectable and projection-ineligible records with one source occurrence", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-				runtime.activate(projection())
+				const runtime = makeRuntime(store, exampleProjectors())
+				run(runtime.activate(projection()))
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.attributes.push(
@@ -549,73 +554,75 @@ describe("LocalEventingRuntime", () => {
 				)
 				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
 				throws(
-					() => runtime.evaluateOtlp("logs", request),
+					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision with an unprojectable record within one ingest batch/,
 				)
-				strictEqual(runtime.listStaged().events.length, 0)
-				strictEqual(runtime.listReady().events.length, 0)
+				strictEqual(run(runtime.listStaged()).events.length, 0)
+				strictEqual(run(runtime.listReady()).events.length, 0)
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("rejects disjoint projections over conflicting records with one source occurrence", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-				runtime.activate(eventNameProjection("observed-events", "example.record.observed"))
-				runtime.activate(eventNameProjection("alternate-events", "example.record.alternate"))
+				const runtime = makeRuntime(store, exampleProjectors())
+				run(runtime.activate(eventNameProjection("observed-events", "example.record.observed")))
+				run(runtime.activate(eventNameProjection("alternate-events", "example.record.alternate")))
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.alternate"
 				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
 				throws(
-					() => runtime.evaluateOtlp("logs", request),
+					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
 				)
-				strictEqual(runtime.listStaged().events.length, 0)
-				strictEqual(runtime.listReady().events.length, 0)
+				strictEqual(run(runtime.listStaged()).events.length, 0)
+				strictEqual(run(runtime.listReady()).events.length, 0)
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("activates a validated revision without restart and reloads it after restart", async () =>
 		withDataDir(async (dataDir) => {
-			let store = await LocalEventingControlStore.open(dataDir)
-			let runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-			runtime.activate(projection())
-			strictEqual(runtime.evaluateOtlp("logs", exampleRecordObserved).events.length, 1)
-			runtime.activate(
-				projection({
-					revision: 2,
-					selector: {
-						op: "eq",
-						field: { namespace: "signal", key: "event.name", type: "string" },
-						value: { type: "string", value: "example.record.closed" },
-					},
-				}),
+			let store = await openStore(dataDir)
+			let runtime = makeRuntime(store, exampleProjectors())
+			run(runtime.activate(projection()))
+			strictEqual(run(runtime.evaluateOtlp("logs", exampleRecordObserved)).events.length, 1)
+			run(
+				runtime.activate(
+					projection({
+						revision: 2,
+						selector: {
+							op: "eq",
+							field: { namespace: "signal", key: "event.name", type: "string" },
+							value: { type: "string", value: "example.record.closed" },
+						},
+					}),
+				),
 			)
-			strictEqual(runtime.evaluateOtlp("logs", exampleRecordObserved).events.length, 0)
-			store.close()
+			strictEqual(run(runtime.evaluateOtlp("logs", exampleRecordObserved)).events.length, 0)
+			await store.close()
 
-			store = await LocalEventingControlStore.open(dataDir)
+			store = await openStore(dataDir)
 			try {
-				runtime = new LocalEventingRuntime(store, undefined, exampleProjectors())
-				strictEqual(runtime.listActive()[0]?.revision, 2)
-				strictEqual(runtime.evaluateOtlp("logs", exampleRecordObserved).events.length, 0)
+				runtime = makeRuntime(store, exampleProjectors())
+				strictEqual(run(runtime.listActive)[0]?.revision, 2)
+				strictEqual(run(runtime.evaluateOtlp("logs", exampleRecordObserved)).events.length, 0)
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 
 	it("does no normalization or event work for a source with no active projection", async () =>
 		withDataDir(async (dataDir) => {
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			try {
-				const runtime = new LocalEventingRuntime(store)
-				deepStrictEqual(runtime.evaluateOtlp("logs", { malformed: Symbol("not decoded") }), {
+				const runtime = makeRuntime(store)
+				deepStrictEqual(run(runtime.evaluateOtlp("logs", { malformed: Symbol("not decoded") })), {
 					events: [],
 					eventSourceFingerprints: new Map(),
 					recoveredEventIds: [],
@@ -623,7 +630,7 @@ describe("LocalEventingRuntime", () => {
 					typeMismatchFields: [],
 				})
 			} finally {
-				store.close()
+				await store.close()
 			}
 		}))
 })
