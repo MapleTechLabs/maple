@@ -12,39 +12,35 @@
 // What the index cannot say, the list does not claim: refusals and truncated
 // replies (finish reasons), loops and stalls (the turn timeline) are the
 // detail page's, and all of them are amber there unless the run died on one.
+// The index also carries no `gen_ai.response.status`, so a rate limit a span
+// reports there and nowhere else is a plain `error` here and `rate_limit` on
+// the detail page; and no attempt marker, so a gateway's provider attempts
+// (`isProviderAttempt`) count here where the detail page folds them into
+// one retry.
 
+import type { AiSessionIndexFailedSpan } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 import { rawFailureTextOf } from "./failure-text"
 import { failureSeverity, type FindingSeverity } from "./session-findings"
 import {
 	classifyFailureSignal,
 	failureSpecificity,
+	type FailureSignal,
 	type SessionFailureClass,
 	type SessionFailureKind,
 } from "./session-summary"
 
-/** One failed agent span as the page query ships it: the deepest span of a
- *  roll-up, with the index columns the classifier reads. */
-export interface IndexFailedSpan {
-	readonly spanId: string
-	readonly traceId: string
-	readonly isToolCall: boolean
-	readonly isLlmCall: boolean
-	/** `''` where the span stamped none, or the row predates migration 0032. */
-	readonly errorType: string
-	readonly toolName: string
-	readonly vendorId: string
-	readonly statusMessage: string
-	readonly failedToolCallResult: string
-	readonly responseId: string
-	readonly atMs: number
-}
+/** One failed agent span as the page query ships it — see the domain type. */
+export type IndexFailedSpan = AiSessionIndexFailedSpan
 
 /** One line of the list's breakdown: a failure label, how often, how bad. */
 export interface SessionFailureSummary {
 	readonly kind: SessionFailureKind
 	/** `context_length_exceeded`, `tool_error · run_tests` — the finding's label. */
 	readonly label: string
-	readonly tool: string | undefined
+	/** Absent, not `undefined`: the wire schema's `optionalKey` rejects a
+	 *  present key holding `undefined`. */
+	readonly tool?: string
 	readonly count: number
 	readonly severity: FindingSeverity
 	/** The session's last turn died on it. */
@@ -55,27 +51,33 @@ export interface SessionFailureSummary {
  * Failures grouped by label, red ones first and the terminal one leading —
  * the order `buildSessionFindings` gives its failure rows.
  *
- * `terminal` is the detail page's verdict approximated one trace deep: the
- * session's last trace had a turn-level failure (`lastTraceTurnFailed`, from
- * every failed span of that trace, echoes included), and the failure it died
- * on is the last one in that trace. A turn that crosses traces can differ.
+ * `terminalSpanId` is the span the page query resolved the session's last
+ * turn died on (`terminalSpanIdExpr`), or `''`; the group holding that span
+ * — under whichever observation of the call the dedupe kept — is terminal.
+ * A terminal span the query did not ship (past its per-trace detail cap)
+ * marks nothing: the verdict is by identity, never by position.
  */
 export function summarizeIndexFailures(
 	spans: readonly IndexFailedSpan[],
-	lastTrace: { readonly traceId: string; readonly turnFailed: boolean },
+	terminalSpanId: string,
 ): readonly SessionFailureSummary[] {
 	const events = dedupeByResponseId(
 		[...spans]
-			.sort((a, b) => a.atMs - b.atMs)
-			.map((span) => ({ span, ...classifyFailureSignal(signalOf(span)) })),
+			// Span id breaks a same-millisecond tie: the array arrives in no order.
+			.sort((a, b) => a.atMs - b.atMs || a.spanId.localeCompare(b.spanId))
+			.map((span) => ({ span, spanIds: [span.spanId], ...classifyFailureSignal(signalOf(span)) })),
 	)
-	const cause = lastTrace.turnFailed
-		? events.findLast((event) => event.span.traceId === lastTrace.traceId)
-		: undefined
 
 	const groups = new Map<
 		string,
-		{ kind: SessionFailureKind; tool: string | undefined; count: number; terminal: boolean; atMs: number }
+		{
+			kind: SessionFailureKind
+			tool: string | undefined
+			count: number
+			terminal: boolean
+			atMs: number
+			spanId: string
+		}
 	>()
 	for (const event of events) {
 		const group = groups.get(event.label) ?? {
@@ -84,45 +86,66 @@ export function summarizeIndexFailures(
 			count: 0,
 			terminal: false,
 			atMs: event.span.atMs,
+			spanId: event.span.spanId,
 		}
 		group.count += 1
-		group.terminal ||= event === cause
+		group.terminal ||= terminalSpanId !== "" && event.spanIds.includes(terminalSpanId)
 		groups.set(event.label, group)
 	}
 
 	return [...groups]
-		.map(([label, group]) => ({
-			kind: group.kind,
-			label,
-			tool: group.tool,
-			count: group.count,
-			severity: failureSeverity(group.kind, group.terminal),
-			terminal: group.terminal,
-			atMs: group.atMs,
-		}))
+		.map(([label, group]) => {
+			const summary = {
+				kind: group.kind,
+				label,
+				count: group.count,
+				severity: failureSeverity(group.kind, group.terminal),
+				terminal: group.terminal,
+				atMs: group.atMs,
+				spanId: group.spanId,
+			}
+			return group.tool === undefined ? summary : { ...summary, tool: group.tool }
+		})
 		.sort(
 			(a, b) =>
 				Number(a.severity === "anomaly") - Number(b.severity === "anomaly") ||
 				Number(b.terminal) - Number(a.terminal) ||
-				a.atMs - b.atMs,
+				a.atMs - b.atMs ||
+				a.spanId.localeCompare(b.spanId),
 		)
-		.map(({ atMs: _atMs, ...summary }) => summary)
+		.map(({ atMs: _atMs, spanId: _spanId, ...summary }) => summary)
 }
 
-function signalOf(span: IndexFailedSpan) {
+function signalOf(span: IndexFailedSpan): FailureSignal {
 	return {
 		errorType: span.errorType === "" ? undefined : span.errorType,
 		responseStatus: undefined,
 		statusMessage: span.statusMessage,
-		// The view keeps the result only on failed tool calls, as text.
-		toolCallResult: span.failedToolCallResult === "" ? undefined : span.failedToolCallResult,
+		// The view keeps a failed tool call's result as text, clipped; the
+		// classifier reads it as the span carries it — JSON where it still
+		// parses, else the text itself.
+		toolCallResult:
+			span.failedToolCallResult === "" ? undefined : toolCallResultOf(span.failedToolCallResult),
 		tool: span.toolName !== "" ? span.toolName : span.isToolCall ? "tool" : undefined,
 		isLlmCall: span.isLlmCall,
 		vendorId: span.vendorId === "" ? undefined : span.vendorId,
 	}
 }
 
-type IndexFailureEvent = SessionFailureClass & { readonly span: IndexFailedSpan }
+type ToolCallResult = FailureSignal["toolCallResult"]
+const decodeJsonText = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+/** The clipped text parsed where it still is JSON, else as it is. */
+function toolCallResultOf(text: string): ToolCallResult {
+	return Option.getOrElse(decodeJsonText(text), () => text)
+}
+
+interface IndexFailureEvent extends SessionFailureClass {
+	readonly span: IndexFailedSpan
+	/** Every observation's span this event stands for — its own, plus those
+	 *  of the duplicates dropped under it, so the terminal span is found under
+	 *  whichever observation the dedupe kept. */
+	readonly spanIds: string[]
+}
 
 /** Same rule as `session-summary.ts`'s `dedupeByResponseId`, over index rows:
  *  a call the app and a gateway mirror both observed is one failure, and the
@@ -144,10 +167,10 @@ function dedupeByResponseId(events: readonly IndexFailureEvent[]): readonly Inde
 		}
 		const specific = failureSpecificity(event) - failureSpecificity(slot.event)
 		const longer = textLength(event.span) - textLength(slot.event.span)
-		if (specific > 0 || (specific === 0 && longer > 0)) {
-			kept[slot.index] = event
-			slot.event = event
-		}
+		const winner = specific > 0 || (specific === 0 && longer > 0) ? event : slot.event
+		const merged = { ...winner, spanIds: [...slot.event.spanIds, ...event.spanIds] }
+		kept[slot.index] = merged
+		slot.event = merged
 	}
 	return kept
 }

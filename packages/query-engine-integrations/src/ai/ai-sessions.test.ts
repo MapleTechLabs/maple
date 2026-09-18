@@ -12,6 +12,7 @@ import {
 	aiSessionDistributionsQuery,
 	aiSessionFacetsQuery,
 	idSearchPattern,
+	indexFailedSpanFromTuple,
 	mergeAiSessionDetails,
 	aiSessionPageQuery,
 	aiSessionSpansQuery,
@@ -295,8 +296,7 @@ describe("aiSessionPageQuery", () => {
 							"1755599605825",
 						],
 					],
-					lastTraceId: "trace-3",
-					lastTraceTurnFailed: 0,
+					terminalSpanId: "",
 					totalTokens: 184_320,
 					inputTokens: 120_000,
 					cacheReadTokens: 60_000,
@@ -341,8 +341,7 @@ describe("aiSessionPageQuery", () => {
 						1_755_599_605_825,
 					],
 				],
-				lastTraceId: "trace-3",
-				lastTraceTurnFailed: 0,
+				terminalSpanId: "",
 				totalTokens: 184_320,
 				inputTokens: 120_000,
 				cacheReadTokens: 60_000,
@@ -467,25 +466,64 @@ describe("aiSessionPageQuery", () => {
 		const { sessions: outer, traces: inner } = levels(sql)
 
 		expect(inner).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, StatusMessage, FailedToolCallResult, ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpans",
 		)
 		// A failed span whose own child also failed is the child's echo, not a
 		// second failure — the turn span a framework fails alongside its call.
-		expect(outer).toContain(
-			"sum(arrayCount(f -> f.3 = 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS toolErrors",
+		// Filtered once per trace; the counts read the result.
+		expect(inner).toContain(
+			"arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans) AS deepestFailedSpans",
+		)
+		expect(outer).toContain("sum(arrayCount(f -> f.3 = 1, deepestFailedSpans)) AS toolErrors")
+		expect(outer).toContain("sum(arrayCount(f -> f.3 != 1, deepestFailedSpans)) AS turnErrors")
+	})
+
+	it("ships the page's failure breakdown and the span the last turn died on", () => {
+		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
+		const { sessions: outer, traces: inner } = levels(sql)
+
+		// The detail tuple, capped per trace with its texts clipped, only on
+		// the page query; the deepest filter reads the thin array.
+		expect(inner).toContain(
+			"groupArrayIf(50)(tuple(SpanId, ParentSpanId, IsToolCall, IsLlmCall, ErrorType, ToolName, VendorId, leftUTF8(StatusMessage, 400), leftUTF8(FailedToolCallResult, 400), ResponseId, TraceId, toUnixTimestamp64Milli(Timestamp)), IsError = 1) AS failedSpanDetails",
 		)
 		expect(outer).toContain(
-			"sum(arrayCount(f -> f.3 != 1 AND NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)) AS turnErrors",
+			"arraySlice(arrayReverseSort(d -> d.12, groupArrayArray(arrayFilter(d -> NOT has(tupleElement(failedSpans, 2), d.1), failedSpanDetails))), 1, 100) AS failures",
 		)
-		// The same deepest spans, kept for the row's breakdown and capped; and
-		// whether the last trace's turn failed, off every failed span of it.
+		// The verdict: a turn-root failure in the trace, that trace's last
+		// failure, resolved over the session's last non-mirror trace.
+		expect(inner).toContain(
+			"arrayExists(f -> (f.3 != 1 AND f.4 != 1) OR f.2 = '', failedSpans) AS turnRootFailed",
+		)
+		expect(inner).toContain(
+			"tupleElement(arrayReverseSort(f -> f.5, deepestFailedSpans)[1], 1) AS lastFailedSpanId",
+		)
 		expect(outer).toContain(
-			"arraySlice(groupArrayArray(arrayFilter(f -> NOT has(tupleElement(failedSpans, 2), f.1), failedSpans)), 1, 100) AS failures",
+			"argMax(if(turnRootFailed = 1, lastFailedSpanId, ''), tuple(traceIsMirror != 1, traceAgentEndNanos)) AS terminalSpanId",
 		)
-		expect(outer).toContain("argMax(traceId, traceAgentEndNanos) AS lastTraceId")
-		expect(outer).toContain(
-			"argMax(arrayExists(f -> f.3 != 1, failedSpans), traceAgentEndNanos) AS lastTraceTurnFailed",
-		)
+
+		// The distributions read the same session level and decode none of it.
+		const distributions = compileUnsafe(aiSessionDistributionsQuery(), params).sql
+		expect(distributions).not.toContain("failedSpanDetails")
+		expect(distributions).toContain("[] AS failures")
+	})
+
+	it("names a failure tuple's positions the way the SQL orders them", () => {
+		expect(
+			indexFailedSpanFromTuple(["s", "p", 1, 0, "et", "tn", "vid", "msg", "res", "rid", "tid", 42]),
+		).toEqual({
+			spanId: "s",
+			traceId: "tid",
+			isToolCall: true,
+			isLlmCall: false,
+			errorType: "et",
+			toolName: "tn",
+			vendorId: "vid",
+			statusMessage: "msg",
+			failedToolCallResult: "res",
+			responseId: "rid",
+			atMs: 42,
+		})
 	})
 
 	it("filters the ranked row with HAVING, after the session grouping", () => {

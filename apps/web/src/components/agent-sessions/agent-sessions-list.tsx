@@ -17,13 +17,7 @@ import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatCount } from "@maple/ui/components/filters/range-filter-section"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	FaceRobotIcon,
-	GearIcon,
-	PixelSparkleIcon,
-	SquareSparkleIcon,
-	type IconComponent,
-} from "@/components/icons"
+import { GearIcon, PixelSparkleIcon, SquareSparkleIcon, type IconComponent } from "@/components/icons"
 import { ServicePills } from "@/components/common/service-pills"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { useDetectedModels } from "@/hooks/use-detected-models"
@@ -403,7 +397,7 @@ export function AgentSessionsList({
 					"errorSpanCount",
 					"Failures the run needs fixed, and warnings it survived",
 				),
-				size: 100,
+				size: 140,
 				cell: ({ row }) => <ErrorChips session={row.original} />,
 			},
 			{
@@ -583,15 +577,19 @@ export function AgentSessionsList({
 function Hint({
 	content,
 	className,
+	label,
 	children,
 }: {
 	content: ReactNode
 	className?: string
+	/** The tooltip's words for a reader who cannot hover, when the trigger's
+	 *  own text does not carry them. */
+	label?: string
 	children: ReactNode
 }) {
 	return (
 		<Tooltip>
-			<TooltipTrigger render={<span />} className={className}>
+			<TooltipTrigger render={<span />} className={className} aria-label={label}>
 				{children}
 			</TooltipTrigger>
 			<TooltipContent>{content}</TooltipContent>
@@ -810,13 +808,24 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 	}
 	const failures = session.failures.filter((failure) => failure.severity === "failure")
 	const warnings = session.failures.filter((failure) => failure.severity === "anomaly")
-	const classified = session.toolErrorCount + session.turnErrorCount
-	const other = session.errorSpanCount - classified
+	// Nothing classified: the errored spans are outside the agent's own (the
+	// details read counts every span), or the row predates the breakdown.
+	if (failures.length === 0 && warnings.length === 0) {
+		return (
+			<ErrorChip
+				count={session.errorSpanCount}
+				noun="span"
+				hint={`${plural(session.errorSpanCount, "errored span")} outside the agent's turns and tools`}
+				className="border-destructive/30 bg-destructive/10 text-destructive"
+			/>
+		)
+	}
+	// Severity is the colour, as on the Overview's checklist: no icon, because
+	// a red chip may be a tool and an amber one a model call.
 	return (
 		<div className="flex flex-col items-start gap-1">
 			{failures.length > 0 && (
 				<ErrorChip
-					icon={FaceRobotIcon}
 					count={sumCounts(failures)}
 					noun="failure"
 					hint={
@@ -825,24 +834,17 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 							lede="Needs a fix — the run died on it, or it will recur"
 						/>
 					}
+					label={breakdownText(failures)}
 					className="border-destructive/30 bg-destructive/10 text-destructive"
 				/>
 			)}
 			{warnings.length > 0 && (
 				<ErrorChip
-					icon={GearIcon}
 					count={sumCounts(warnings)}
 					noun="warning"
 					hint={<FailureBreakdown rows={warnings} lede="Survived — retried or recovered from" />}
+					label={breakdownText(warnings)}
 					className="border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
-				/>
-			)}
-			{classified === 0 && other > 0 && (
-				<ErrorChip
-					count={other}
-					noun="span"
-					hint={`${plural(other, "errored span")} outside the agent's turns and tools`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
 				/>
 			)}
 		</div>
@@ -852,15 +854,24 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 const sumCounts = (rows: ReadonlyArray<AiSessionFailureSummary>) =>
 	rows.reduce((total, row) => total + row.count, 0)
 
+/** The breakdown as one line, for the chip's accessible name. */
+const breakdownText = (rows: ReadonlyArray<AiSessionFailureSummary>) =>
+	rows
+		.map(
+			(row) =>
+				`${row.label}${row.count > 1 ? ` ×${row.count}` : ""}${row.terminal ? " (ended the run)" : ""}`,
+		)
+		.join(", ")
+
 /** The hover: one line per label, in the Overview's own words and order. */
 function FailureBreakdown({ rows, lede }: { rows: ReadonlyArray<AiSessionFailureSummary>; lede: string }) {
 	return (
-		<div className="flex flex-col gap-1">
+		<div className="flex max-w-72 flex-col gap-1">
 			<span className="text-muted-foreground">{lede}</span>
 			<ul className="flex flex-col gap-0.5">
 				{rows.map((row) => (
 					<li key={row.label} className="flex items-baseline gap-2 font-mono text-[11px]">
-						<span className="truncate">{row.label}</span>
+						<span className="break-all">{row.label}</span>
 						{row.count > 1 && (
 							<span className="tabular-nums text-muted-foreground">×{row.count}</span>
 						)}
@@ -873,16 +884,16 @@ function FailureBreakdown({ rows, lede }: { rows: ReadonlyArray<AiSessionFailure
 }
 
 function ErrorChip({
-	icon: Icon,
 	count,
 	noun,
 	hint,
+	label,
 	className,
 }: {
-	icon?: IconComponent
 	count: number
 	noun: string
 	hint: ReactNode
+	label?: string
 	className: string
 }) {
 	return (
@@ -892,19 +903,16 @@ function ErrorChip({
 				className,
 			)}
 			content={hint}
+			label={label}
 		>
-			{Icon ? (
-				<Icon size={10} className="shrink-0" aria-hidden />
-			) : (
-				<span className="size-1 rounded-full bg-current" aria-hidden />
-			)}
+			<span className="size-1 rounded-full bg-current" aria-hidden />
 			{/* Two digits of room, and the noun always as wide as its plural: a
-			    row's "1 tool" above the next row's "12 tools" otherwise makes two
-			    chips that never line up. Past 99 the chip does widen — a third
+			    row's "1 failure" above the next row's "12 failures" otherwise makes
+			    two chips that never line up. Past 99 the chip does widen — a third
 			    digit costs every row space for a count almost no session reaches. */}
 			<span>
 				<span className="inline-block min-w-[2ch] text-right">{count}</span>{" "}
-				<span className="inline-block min-w-[5ch]">{count === 1 ? noun : `${noun}s`}</span>
+				<span className="inline-block min-w-[8ch]">{count === 1 ? noun : `${noun}s`}</span>
 			</span>
 		</Hint>
 	)

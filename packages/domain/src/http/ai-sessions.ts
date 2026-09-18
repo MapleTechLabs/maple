@@ -150,6 +150,35 @@ export const AiSessionFailureKind = Schema.Literals([
 ])
 export type AiSessionFailureKind = Schema.Schema.Type<typeof AiSessionFailureKind>
 
+/** Red or amber: `failure` needs a fix (the run died on it, or its kind always
+ *  does), `anomaly` was survived. `FindingSeverity` in `@maple/agent-sessions`
+ *  is this type. */
+export const AiSessionFailureSeverity = Schema.Literals(["failure", "anomaly"])
+export type AiSessionFailureSeverity = Schema.Schema.Type<typeof AiSessionFailureSeverity>
+
+/**
+ * One failed agent span as `ai_trace_index` carries it since migration 0032 —
+ * the deepest span of a roll-up, with the columns the failure classifier
+ * reads. The page query ships it as a positional tuple
+ * (`@maple/query-engine-integrations`' `indexFailedSpanFromTuple` names the
+ * positions) and `summarizeIndexFailures` in `@maple/agent-sessions` grades
+ * it. `''` where the span stamped nothing, or the row predates 0032.
+ */
+export interface AiSessionIndexFailedSpan {
+	readonly spanId: string
+	readonly traceId: string
+	readonly isToolCall: boolean
+	readonly isLlmCall: boolean
+	readonly errorType: string
+	readonly toolName: string
+	readonly vendorId: string
+	readonly statusMessage: string
+	readonly failedToolCallResult: string
+	readonly responseId: string
+	/** The span's start, epoch ms. */
+	readonly atMs: number
+}
+
 /**
  * One line of a list row's failure breakdown: the failures sharing a label,
  * classified off the index the way the detail page classifies them off the
@@ -162,7 +191,7 @@ export const AiSessionFailureSummary = Schema.Struct({
 	label: Schema.String,
 	tool: Schema.optionalKey(Schema.String),
 	count: Schema.Number,
-	severity: Schema.Literals(["failure", "anomaly"]),
+	severity: AiSessionFailureSeverity,
 	/** The session's last turn died on it. */
 	terminal: Schema.Boolean,
 })

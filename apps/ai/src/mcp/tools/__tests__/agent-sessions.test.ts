@@ -61,6 +61,23 @@ const listRow = {
 	errorAgentSpans: 1,
 	toolErrors: 1,
 	turnErrors: 0,
+	failures: [
+		[
+			"span-tool-1",
+			"span-agent-1",
+			1,
+			0,
+			"TimeoutError",
+			"search_traces",
+			"eve",
+			"search timed out",
+			"",
+			"",
+			"trace-1",
+			1755599605825,
+		],
+	],
+	terminalSpanId: "",
 	serviceNames: ["agent-runner"],
 	models: ["gpt-5"],
 	agentNames: ["maple"],
@@ -291,7 +308,8 @@ describe("list_agent_sessions rendering", () => {
 		expect(cells?.[1]).toBe("maple")
 		expect(cells?.[2]).toBe("eve")
 		// Errors are agent/tool/turn, in that order.
-		expect(cells?.[7]).toBe("1/1/0")
+		// The breakdown by label, not the raw counts, once the index classified one.
+		expect(cells?.[7]).toBe("tool_timeout · search_traces")
 		// The hint is the row's bounds PADDED the way the page pads them: a row's
 		// bounds are its agent spans' extent, and both read levels bound on
 		// `Timestamp`, so handing them over verbatim would drop the app spans
