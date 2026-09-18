@@ -1380,6 +1380,62 @@
 }
 
 /* ──────────────────────────────────────────────────────────────
+   Docs reading scale. Docs pages run in proportional Geist (DocsLayout
+   sets it on <body>, as the blog does for its prose), so this block only
+   sizes the type; `.docs-content` above stays the shared plumbing the
+   changelog also renders with. Same specificity — source order decides,
+   so it stays below the .docs-content block.
+   ────────────────────────────────────────────────────────────── */
+.docs-prose p {
+	@apply text-[15px] leading-[1.7] text-fg/80 mb-5;
+}
+
+.docs-prose ul,
+.docs-prose ol {
+	@apply text-[15px] leading-[1.7] text-fg/80 mb-5 space-y-1.5 pl-5;
+}
+
+.docs-prose h2 {
+	@apply text-[22px] tracking-[-0.02em] mt-12 mb-4;
+}
+
+.docs-prose h3 {
+	@apply text-[17px] tracking-[-0.01em] mt-9 mb-3;
+}
+
+.docs-prose h4 {
+	@apply text-[15px] font-semibold text-fg mt-7 mb-2;
+}
+
+/* The body sits under its own rule, so the first heading needs no top gap. */
+.docs-prose .docs-body > :first-child {
+	margin-top: 0;
+}
+
+.docs-prose blockquote {
+	@apply text-[14.5px] leading-[1.65] text-fg/80 my-6;
+}
+
+.docs-prose table {
+	@apply text-[14px];
+}
+
+.docs-prose th {
+	@apply font-mono p-2.5;
+}
+
+.docs-prose td {
+	@apply p-2.5 align-top;
+}
+
+/* Shiki wraps lines inline (`wrap: true`, for the blog column). Guides are
+   read for their commands, so code scrolls sideways instead of folding. */
+.docs-prose pre {
+	white-space: pre !important;
+	@apply my-6;
+}
+
+/* ──────────────────────────────────────────────────────────────
    Blog long-form scale. Blog posts render with
    class="docs-content blog-content": the docs rules above supply the
    plumbing, this block regrows the type for essay-length reading.
@@ -1511,7 +1567,7 @@ html {
 	scroll-padding-top: 5rem;
 }
 
-/* Docs stack a category strip under the header (5.75rem), so anchors need more room. */
+/* Docs stack a section strip under the header (6rem), so anchors need more room. */
 html.docs {
-	scroll-padding-top: 6.75rem;
+	scroll-padding-top: 7rem;
 }
