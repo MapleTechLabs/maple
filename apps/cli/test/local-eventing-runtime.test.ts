@@ -364,7 +364,11 @@ describe("LocalEventingRuntime", () => {
 		const [signal] = normalizeOtlpLogs(request, "2026-08-07T20:00:00Z")
 		const record = (signal!.data as { record: { attributes: Record<string, JsonValue> } }).record
 		ok(Object.prototype.hasOwnProperty.call(record.attributes, "__proto__"))
-		deepStrictEqual(record.attributes["__proto__"], { nested: "top-level" })
+		// Attribute maps are null-prototype on purpose, so a `__proto__` key stays data.
+		deepStrictEqual(
+			record.attributes["__proto__"],
+			Object.assign(Object.create(null), { nested: "top-level" }),
+		)
 		const safe = record.attributes.safe as Record<string, JsonValue>
 		ok(Object.prototype.hasOwnProperty.call(safe, "__proto__"))
 		strictEqual(safe["__proto__"], "nested")
