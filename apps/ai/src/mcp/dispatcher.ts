@@ -29,7 +29,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer } from "effect"
-import { executeRegisteredMcpToolUnscoped, mapleToolCatalog, toInputSchema } from "./tools/registry"
+import { executeRegisteredMcpToolUnscoped, mapleToolCatalogFor, toInputSchema } from "./tools/registry"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpTenant } from "./lib/query-warehouse"
@@ -49,21 +49,26 @@ import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
 let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
 
 const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
-	(toolDescriptors ??= mapleToolCatalog.map((definition) => ({
+	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
 		name: definition.name,
 		description: definition.description,
 		inputSchema: toInputSchema(definition.schema),
 	})))
 
+/** The public transport's `tools/list`: the catalog minus every `internal` tool. */
 export const listMcpTools = Effect.sync(listToolDescriptors)
 
 /** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */
-const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (name: string, input: unknown) {
+const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
+	name: string,
+	input: unknown,
+	surface: McpToolSurface,
+) {
 	// The tool name was a log annotation only, so per-tool attribution worked
 	// solely because each handler happens to carry its own `McpTool.<name>` span
 	// — every usage query had to reconstruct it with `substring(SpanName, 9)`.
 	yield* Effect.annotateCurrentSpan("maple.mcp.tool", name)
-	return yield* executeRegisteredMcpToolUnscoped(name, input).pipe(
+	return yield* executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
 		Effect.catchTag("@maple/mcp/decode-error", (error) =>
 			recordExpectedMcpFailure(error, "Invalid parameters").pipe(
 				Effect.as({
@@ -209,7 +214,7 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 					"maple.mcp.tool": name,
 					"maple.mcp.surface": surface,
 				})
-				const result = yield* callMcpToolUnscoped(name, input).pipe(
+				const result = yield* callMcpToolUnscoped(name, input, surface).pipe(
 					Effect.provideService(CurrentMcpTenant, tenant),
 					Effect.provide(runtimeServices),
 				)

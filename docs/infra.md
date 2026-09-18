@@ -239,8 +239,9 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   not the only way to run this image — an alchemy `Cloudflare.DurableObject` in the api
   can front a `Cloudflare.Container` and talk to its port directly — but that means
   owning the container's control protocol instead of using the vendor client, so this
-  buys the client at the price of an app. It has no route and no hostname: the api reaches
-  it over a `SANDBOX` service binding, provided by the root as `SandboxWorker`, and every
+  buys the client at the price of an app. It has no route and no hostname: maple-ai, whose
+  agents run the sandbox tools, reaches it over a `SANDBOX` service binding, provided by the
+  root as `SandboxWorker`, and every
   request carries `SANDBOX_INTERNAL_SERVICE_TOKEN` — deliberately not the shared
   `INTERNAL_SERVICE_TOKEN`, which lets its holder act as any organization.
 

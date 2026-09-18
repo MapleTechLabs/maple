@@ -1,5 +1,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
+import { createHash } from "node:crypto"
+import { sha256File } from "../src/server/checkpoint-digest"
 import { Clock, Duration, Effect, Exit, Option } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
@@ -58,6 +60,7 @@ import {
 import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
+import { eventingControlSnapshotPath, LocalEventingControlStore } from "../src/server/eventing/control-store"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-checkpoint-test-"))
@@ -309,7 +312,77 @@ describe("checkpoint IDs and strict parsers", () => {
 	})
 })
 
+describe("checkpoint snapshot hashing", () => {
+	it("hashes a multi-chunk snapshot while allowing the event loop to progress", async () => {
+		await withDataDir(async (dataDir) => {
+			const path = join(dataDir, "snapshot.bin")
+			const bytes = Buffer.alloc(2 * 1024 * 1024 + 17)
+			for (let index = 0; index < bytes.length; index++) bytes[index] = index % 251
+			writeFileSync(path, bytes)
+			const expected = createHash("sha256").update(bytes).digest("hex")
+			let yielded = false
+			const immediate = setImmediate(() => {
+				yielded = true
+			})
+			try {
+				strictEqual(await sha256File(path), expected)
+				ok(yielded, "snapshot hashing must yield while reading the file")
+			} finally {
+				clearImmediate(immediate)
+			}
+		})
+	})
+
+	it("hashes empty snapshots and propagates file-open/read failures", async () => {
+		await withDataDir(async (dataDir) => {
+			const path = join(dataDir, "empty.bin")
+			writeFileSync(path, "")
+			strictEqual(
+				await sha256File(path),
+				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			)
+			await rejects(sha256File(join(dataDir, "missing.bin")), /ENOENT/)
+			await rejects(sha256File(dataDir), /EISDIR/)
+		})
+	})
+})
+
 describe("checkpoint state resolution", () => {
+	it("binds a version-2 checkpoint to its eventing control snapshot", async () => {
+		await withDataDir(async (dataDir) => {
+			const checkpointId = newCheckpointId()
+			const operationId = newCheckpointOperationId()
+			const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
+			mkdirSync(join(snapshot, "backup"), { recursive: true })
+			writeFileSync(join(snapshot, "backup", "data.bin"), "backup")
+
+			const store = await LocalEventingControlStore.open(dataDir)
+			const controlPath = eventingControlSnapshotPath(dataDir, checkpointId)
+			const controlValidation = await store.backupTo(controlPath)
+			store.close()
+			const controlBytes = readFileSync(controlPath)
+			writeFileSync(
+				join(snapshot, "manifest.json"),
+				`${JSON.stringify({
+					...manifest(checkpointId, operationId, dataDir),
+					formatVersion: 2,
+					backupBytes: 6,
+					controlRelativePath: `snapshots/${checkpointId}/control.sqlite`,
+					controlBytes: controlBytes.byteLength,
+					controlSha256: createHash("sha256").update(controlBytes).digest("hex"),
+					controlValidation,
+				})}\n`,
+			)
+			writeState(dataDir, checkpointId)
+			strictEqual((await resolveCheckpoint(dataDir)).manifest.formatVersion, 2)
+
+			const corrupted = Buffer.from(controlBytes)
+			corrupted[corrupted.length - 1] ^= 1
+			writeFileSync(controlPath, corrupted)
+			await rejects(resolveCheckpoint(dataDir), /digest mismatch|quick_check failed/)
+		})
+	})
+
 	it("resolves immutable current, previous, and explicit IDs", async () => {
 		await withDataDir(async (dataDir) => {
 			const current = newCheckpointId()
@@ -693,9 +766,11 @@ describe("live-store reset safety", () => {
 			writeSnapshot(dataDir, checkpointId)
 			writeState(dataDir, checkpointId)
 			mkdirSync(join(dataDir, "store"), { recursive: true })
+			mkdirSync(join(dataDir, "control"), { recursive: true })
 			mkdirSync(join(dataDir, "metadata"), { recursive: true })
 			mkdirSync(join(dataDir, "tmp"), { recursive: true })
 			writeFileSync(join(dataDir, "store", "part.bin"), "live")
+			writeFileSync(join(dataDir, "control", "eventing.sqlite"), "live")
 			writeFileSync(join(dataDir, "metadata", "table.sql"), "live")
 			writeFileSync(join(dataDir, "status"), "live")
 			writeFileSync(join(dataDir, "tmp", "scratch.bin"), "live")
@@ -707,6 +782,7 @@ describe("live-store reset safety", () => {
 			strictEqual((await readCheckpointState(dataDir)).current, checkpointId)
 			ok(existsSync(checkpointSnapshotDir(dataDir, checkpointId)))
 			ok(!existsSync(join(dataDir, "store")))
+			ok(!existsSync(join(dataDir, "control")))
 			ok(!existsSync(join(dataDir, "metadata")))
 			ok(!existsSync(join(dataDir, "status")))
 			ok(!existsSync(join(dataDir, "tmp")))
@@ -762,7 +838,7 @@ describe("live-store reset safety", () => {
 				const checkpointId = newCheckpointId()
 				writeSnapshot(dataDir, checkpointId)
 				writeState(dataDir, checkpointId)
-				for (const entry of ["data", "metadata", "store", "tmp"]) {
+				for (const entry of ["control", "data", "metadata", "store", "tmp"]) {
 					mkdirSync(join(dataDir, entry), { recursive: true })
 					writeFileSync(join(dataDir, entry, "live.bin"), "live")
 				}
@@ -784,7 +860,7 @@ describe("live-store reset safety", () => {
 				)
 				await Effect.runPromise(reconcileCheckpointRecovery(dataDir))
 
-				for (const entry of ["data", "metadata", "status", "store", "tmp"]) {
+				for (const entry of ["control", "data", "metadata", "status", "store", "tmp"]) {
 					ok(!existsSync(join(dataDir, entry)), `${boundary}: ${entry}`)
 				}
 				strictEqual((await readCheckpointState(dataDir)).current, checkpointId)

@@ -1,6 +1,11 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
+import { cpSync, mkdtempSync, rmSync } from "node:fs"
 import { readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, resolve } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import { describe, expect, it } from "vitest"
 import { listBundledMigrations, readBundledMigrationsSql } from "./migrate"
 
@@ -39,6 +44,51 @@ describe("drizzle migrations", () => {
 			).toBe(true)
 		}
 	})
+
+	it("upgrades a database at the incident-hold head to receipts and safely re-runs", async () => {
+		// A database migrated up to `alert_incident_hold` (production's head before
+		// this line of work), then migrated with the full folder: the receipts table
+		// and its predecessors land, a row written between the two runs survives a
+		// third run, and the migrations table ends up with one row per folder.
+		const directory = mkdtempSync(resolve(tmpdir(), "maple-receipts-upgrade-"))
+		const pg = new PGlite()
+		try {
+			const head = migrationNamed("alert_incident_hold").name
+			const migrations = listBundledMigrations()
+			const upTo = migrations.filter((migration) => migration.name <= head)
+			for (const migration of upTo) {
+				cpSync(dirname(migration.sqlPath), resolve(directory, migration.name), { recursive: true })
+			}
+			const db = drizzle({ client: pg })
+			await migrate(db, { migrationsFolder: directory })
+			const before = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
+			)
+			expect(before.rows[0]?.count).toBe(upTo.length)
+
+			const full = dirname(dirname(migrations[0]!.sqlPath))
+			await migrate(db, { migrationsFolder: full })
+			await pg.exec(
+				"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org-upgrade', 'event-upgrade', now())",
+			)
+			await migrate(db, { migrationsFolder: full })
+			const receipts = await pg.query<{ event_id: string }>(
+				"SELECT event_id FROM planetscale_issue_receipts",
+			)
+			expect(receipts.rows).toEqual([{ event_id: "event-upgrade" }])
+			const after = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
+			)
+			expect(after.rows[0]?.count).toBe(migrations.length)
+			const holdColumns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
+			)
+			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
+		} finally {
+			await pg.close()
+			rmSync(directory, { recursive: true, force: true })
+		}
+	}, 30_000)
 
 	/**
 	 * A migration is only recorded in `drizzle.__drizzle_migrations` after the

@@ -32,8 +32,8 @@ It records, in order:
 1. **Backup configuration as observed** — the source branch (cluster size, region, replica count)
    and the recent backups with state, size, completion and expiry, from which the actual cadence
    and retention are derived. This is the "backup settings" half of the evidence.
-2. **The restore** — `pscale branch create <db> restore-test-<stamp> --restore <backup-id>`, then
-   waits for the branch to be ready. The source branch is only ever read (`branch show`,
+2. **The restore** — `pscale branch create <db> restore-test-<stamp> --restore <backup-id>
+   --cluster-size PS_DEV`, then waits for the branch to be ready. The source branch is only ever read (`branch show`,
    `backup list`); the restore lands in a new branch on its own cluster.
 3. **Verification** on the restored branch, each a pass/fail row in the report:
     - the Drizzle migrations journal is present;
@@ -69,10 +69,18 @@ login` session. Takes 10–20 minutes, most of it PlanetScale provisioning the r
 - **Failure path without a restore:** `RESTORE_TEST_SOURCE_BRANCH=does-not-exist` fails at
   `branch show`, before anything is created.
 - **In CI:** the workflow only runs on its schedule or `gh workflow run backup-restore-test.yml`
-  (after merge — a PR's CI does not run it). The first dispatch validates the service token: it
-  needs `read_backups`, `restore_production_branch_backups` and branch create/delete on the
-  database; a token missing the restore permission fails at `branch create` with nothing to
-  clean up.
+  (after merge — a PR's CI does not run it). The first dispatch validates the service token. On
+  the database it needs `read_branch`, `create_branch`, `delete_branch`, `connect_branch`,
+  `delete_branch_password`, `read_backups` and `restore_production_branch_backup` — the
+  development-branch accesses only, never `delete_production_branch`. A token missing
+  `read_backups` fails at `backup list`, one missing the restore access fails at `branch
+create`, both before anything is created; one missing the delete accesses restores fine and
+  then leaves the branch behind, which the drill reports as a failed check. Only the token's
+  creator or an organization administrator can change its accesses.
+- **Why the restore is `--cluster-size PS_DEV`:** a restore without an explicit size becomes a
+  PS-10 branch flagged `production: true`, which only `delete_production_branch` can remove —
+  and PlanetScale cannot demote a Postgres restore branch afterwards. A PS_DEV restore is a
+  development branch, so the CI token never needs an access that could reach `main`.
 
 ### Schedule
 

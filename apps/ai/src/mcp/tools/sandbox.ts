@@ -76,6 +76,13 @@ const describeFailure = (error: SandboxError): string => {
 const toToolError = (operation: string) => (error: SandboxError) =>
 	new McpQueryError({ message: describeFailure(error), pipeName: operation, cause: error })
 
+/**
+ * Maple's own agents only. These run commands inside a container holding the
+ * org's source, and until the audience existed they were published to every MCP
+ * client like any other tool.
+ */
+const INTERNAL = { audience: "internal" } as const
+
 const header = (repository: string, ref: string | undefined, result: SandboxCommandResult): string =>
 	`Repository: ${repository}${ref ? ` · Ref: \`${ref}\`` : ""} · Exit: ${result.exitCode} · ${result.wallTimeMs} ms`
 
@@ -157,6 +164,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
+		INTERNAL,
 	)
 
 	server.tool(
@@ -196,6 +204,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
+		INTERNAL,
 	)
 
 	server.tool(
@@ -251,6 +260,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				"```",
 			])
 		}),
+		INTERNAL,
 	)
 
 	server.tool(
@@ -317,5 +327,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
+		INTERNAL,
 	)
 }

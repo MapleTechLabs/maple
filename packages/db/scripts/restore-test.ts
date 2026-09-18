@@ -12,8 +12,8 @@
  *   1. Records the backup configuration as PlanetScale reports it: the source
  *      branch (cluster, region, replicas) and its recent backups, from which
  *      the observed cadence and retention are derived.
- *   2. Restores the newest successful backup into a fresh, throwaway branch
- *      (`restore-test-<utc stamp>`) with `pscale branch create --restore`.
+ *   2. Restores the newest successful backup into a fresh, throwaway PS_DEV
+ *      branch (`restore-test-<utc stamp>`) with `pscale branch create --restore`.
  *   3. Connects to the restored branch and verifies the data is usable: the
  *      migrations journal is present, every critical table exists and holds
  *      rows, the newest record sits inside the backup's window (so this is the
@@ -504,7 +504,22 @@ const main = async (): Promise<void> => {
 		}
 	})
 
-	const create = runPscale(["branch", "create", database, branch, "--restore", latest.id, "--wait"])
+	// PS_DEV is not only the cheapest size: a restore without an explicit size
+	// lands as a PS-10 branch flagged `production: true`, which the CI token can
+	// only delete with production-delete accesses — the same accesses that could
+	// delete `main`. A PS_DEV restore is a development branch, so `delete_branch`
+	// and `delete_branch_password` suffice and the token never holds more.
+	const create = runPscale([
+		"branch",
+		"create",
+		database,
+		branch,
+		"--restore",
+		latest.id,
+		"--cluster-size",
+		"PS_DEV",
+		"--wait",
+	])
 	cleanupOwed = true
 	if (create.exitCode !== 0 && !/timed out/i.test(`${create.stdout}\n${create.stderr}`)) {
 		fail(`Could not create ${branch} from backup ${latest.id}`)
@@ -565,14 +580,32 @@ const main = async (): Promise<void> => {
 		deleted = requestDelete(database, branch, sourceBranch) && (await waitUntilGone(database, branch))
 		cleanupOwed = false
 	}
-	const finalReport: Report = { ...report, restore: { ...report.restore, deleted } }
+	// A restore branch that outlives the drill bills until someone notices, so
+	// a failed delete is a failed run even when every data check passed.
+	const cleanup: ReadonlyArray<Check> = keepBranch
+		? []
+		: [
+				{
+					name: "restore branch deleted",
+					pass: deleted === true,
+					detail: deleted ? branch : `${branch} still exists — delete it by hand`,
+				},
+			]
+	const finalChecks = [...verification.checks, ...cleanup]
+	const finalStatus: Report["status"] = finalChecks.every((c) => c.pass) ? "pass" : "fail"
+	const finalReport: Report = {
+		...report,
+		status: finalStatus,
+		restore: { ...report.restore, deleted },
+		verification: { ...verification, checks: finalChecks },
+	}
 	const json = writeReport(reportDir, finalReport)
 	const markdown = renderMarkdown(finalReport)
 	if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`)
 
 	console.log(`\n${markdown}`)
 	console.log(`Report: ${json}`)
-	if (status !== "pass") fail("Restore drill FAILED — see the verification table above")
+	if (finalStatus !== "pass") fail("Restore drill FAILED — see the verification table above")
 	console.log("✓ Restore drill passed")
 }
 

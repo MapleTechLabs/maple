@@ -40,6 +40,21 @@ const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 }
 
 describe("buildMapleToolkit", () => {
+	it("offers internal tools to the agents and to no other surface", () => {
+		const { executor } = countingExecutor()
+		const chat = buildMapleToolkit(executor, TENANT, { surface: "chat" }).handlers
+		const workflow = buildMapleToolkit(executor, TENANT, { surface: "workflow" }).handlers
+		const mcp = buildMapleToolkit(executor, TENANT, { surface: "mcp" }).handlers
+		assert.isDefined(chat.sandbox_exec)
+		assert.isDefined(workflow.sandbox_exec)
+		assert.isUndefined(mcp.sandbox_exec)
+		// A ruleset allowing everything does not widen a build past its audience.
+		assert.isUndefined(
+			buildMapleToolkit(executor, TENANT, { surface: "mcp", include: () => true }).handlers
+				.sandbox_exec,
+		)
+	})
+
 	/**
 	 * A tool error is the call's answer, not the run's end: `"return"` hands it to the model. Only a
 	 * gated tool propagates, because a proposal must be the turn's last word.

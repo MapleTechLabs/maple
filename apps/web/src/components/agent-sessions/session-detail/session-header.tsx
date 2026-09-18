@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
-import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
@@ -22,11 +21,13 @@ import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
  * session id or the opening prompt: the id says nothing to a human, and the
  * first line of a prompt is usually a boilerplate instruction that reads as a
  * title the session doesn't deserve. The prompt is the transcript's own first
- * line and is not repeated here; the id stays as the last fact, in full, one
- * click from the clipboard.
+ * line and is not repeated here; the id stays as the last fact, shortened to
+ * its first characters, in full one click from the clipboard. Duration and
+ * framework are not facts here: the Overview's time bar states the clocks, and
+ * the vendor's mark beside the heading already says what ran.
  */
 export function SessionHeader({ sessionId, summary }: { sessionId: string; summary: SessionSummary }) {
-	const identity = sessionIdentity(summary)
+	const heading = sessionIdentity(summary)
 	const VendorIcon = vendorIcon(summary.vendorIds[0] ?? "")
 	// A `trace:<id>` session is one Maple synthesized from a single trace: the
 	// id a reader wants in their clipboard is the trace id, not the prefix.
@@ -41,28 +42,26 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 					style={{ color: vendorColor(summary.vendorIds[0] ?? "") }}
 					aria-hidden
 				/>
-				<DashboardLayout.Title title={identity.heading}>{identity.heading}</DashboardLayout.Title>
+				<DashboardLayout.Title title={heading}>{heading}</DashboardLayout.Title>
 				{summary.failed && <Badge variant="error">Failed</Badge>}
 			</div>
 
 			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-				{identity.framework !== undefined && <Fact label="Framework">{identity.framework}</Fact>}
 				<Fact label="Started" title={new Date(summary.startMs).toLocaleString()}>
 					{formatRelativeTimeOrDate(summary.startMs)}
 				</Fact>
-				<Fact label="Duration">{formatSessionDuration(summary.wallClockMs)}</Fact>
 				{summary.serviceNames.length > 0 && (
 					<Fact label="Service" title={summary.serviceNames.join(", ")} mono>
 						{firstPlusRest(summary.serviceNames)}
 					</Fact>
 				)}
-				<Fact label={traceId === undefined ? "Session ID" : "Trace ID"}>
+				<Fact label={traceId === undefined ? "Session ID" : "Trace ID"} title={traceId ?? sessionId}>
 					<CopyableValue
 						value={traceId ?? sessionId}
 						label={traceId === undefined ? "Session ID" : "Trace ID"}
 						className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
 					>
-						<span className="min-w-0 truncate">{traceId ?? sessionId}</span>
+						<span className="min-w-0 truncate">{shortId(traceId ?? sessionId)}</span>
 						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
 					</CopyableValue>
 				</Fact>
@@ -76,24 +75,27 @@ const PLACEHOLDER_AGENT_NAME = "default"
 /**
  * What to call the session. A named agent is the best name there is; without
  * one the framework stands in, and without even that the page says "Agent
- * session" rather than parroting an unidentified vendor id. The framework is
- * returned separately only when it is not already the heading.
+ * session" rather than parroting an unidentified vendor id.
  *
  * `default` is what an SDK stamps when the app named no agent, so it is treated
  * as no name: a list of sessions all headed "default" identifies none of them.
  */
-export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "vendorIds">): {
-	heading: string
-	framework: string | undefined
-} {
+export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "vendorIds">): string {
 	const vendorId = summary.vendorIds[0]
 	const framework = vendorId === undefined ? undefined : vendorLabel(vendorId)
 	const agentName = summary.agentNames.find((name) => name !== PLACEHOLDER_AGENT_NAME)
-	if (agentName !== undefined) return { heading: agentName, framework }
-	if (framework !== undefined && framework !== "Unidentified") {
-		return { heading: `${framework} session`, framework: undefined }
-	}
-	return { heading: "Agent session", framework: undefined }
+	if (agentName !== undefined) return agentName
+	if (framework !== undefined && framework !== "Unidentified") return `${framework} session`
+	return "Agent session"
+}
+
+/** A session id is an emitter's string of any length; a 32-char (trace id sized)
+ *  prefix identifies it as well as the whole, and the whole is in the `title`
+ *  and the clipboard. */
+const ID_PREFIX_LENGTH = 32
+
+function shortId(id: string): string {
+	return id.length > ID_PREFIX_LENGTH ? `${id.slice(0, ID_PREFIX_LENGTH)}…` : id
 }
 
 function Fact({
