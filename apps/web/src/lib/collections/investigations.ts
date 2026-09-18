@@ -52,7 +52,7 @@ const decodeInvestigation = Schema.decodeUnknownOption(Schema.toType(V2Investiga
 // Rows
 
 /**
- * Identity row schema for the `investigation` shape — one struct per column the
+ * Identity row schema for the `investigation_v2` shape. One struct per column the
  * proxy projects, so a post-deploy column drift surfaces as a SchemaValidationError
  * (→ the bounded self-heal) rather than as silently-missing fields. Timestamps stay
  * `Schema.String`: the timestamptz parser has already normalized them to ISO.
@@ -65,6 +65,7 @@ export const InvestigationRowSchema = Schema.Struct({
 	subject_json: Schema.Unknown,
 	snapshot_json: Schema.NullOr(Schema.Unknown),
 	report_json: Schema.NullOr(Schema.Unknown),
+	progress_json: Schema.NullOr(Schema.Unknown),
 	severity: Schema.NullOr(Schema.String),
 	confidence: Schema.NullOr(Schema.String),
 	model: Schema.NullOr(Schema.String),
@@ -195,6 +196,7 @@ export const rowsToInvestigation = (row: InvestigationRow): V2Investigation | nu
 		subject,
 		snapshot: Option.getOrElse(stored, () => fallbackSnapshot(subject)),
 		report: row.report_json,
+		progress: row.progress_json,
 		model: row.model,
 		severity: row.severity,
 		confidence: row.confidence,
@@ -215,7 +217,7 @@ export const rowsToInvestigation = (row: InvestigationRow): V2Investigation | nu
 
 export const createInvestigationCollection = (orgId: string, investigationId: string) =>
 	createSyncedCollection({
-		shape: "investigation",
+		shape: "investigation_v2",
 		scope: investigationId,
 		orgId,
 		schema: InvestigationRowSchema,

@@ -228,7 +228,7 @@ describe("buildUpstreamShapeUrl", () => {
 	 * an org-wide shape would stream the whole history to read a single page.
 	 */
 	it("narrows a scoped shape to one investigation, positionally", () => {
-		const { params } = buildUrl("investigation", { scopeValue: "inv_1" })
+		const { params } = buildUrl("investigation_v2", { scopeValue: "inv_1" })
 		assert.strictEqual(params.get("table"), "investigations")
 		assert.strictEqual(params.get("where"), `"org_id" = $1 AND "id" = $2`)
 		assert.strictEqual(params.get("params[1]"), "org_123")
@@ -241,14 +241,14 @@ describe("buildUpstreamShapeUrl", () => {
 	 * whitelist rather than the request.
 	 */
 	it("binds a hostile scope value as a parameter rather than into the WHERE", () => {
-		const { params } = buildUrl("investigation", { scopeValue: `x" OR "org_id" <> '` })
+		const { params } = buildUrl("investigation_v2", { scopeValue: `x" OR "org_id" <> '` })
 		assert.strictEqual(params.get("where"), `"org_id" = $1 AND "id" = $2`)
 		assert.strictEqual(params.get("params[2]"), `x" OR "org_id" <> '`)
 	})
 
 	it("projects only the investigation columns the page renders", () => {
 		const columns =
-			buildUrl("investigation", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ?? []
+			buildUrl("investigation_v2", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ?? []
 		assert.include(columns, "id")
 		assert.include(columns, "org_id")
 		assert.include(columns, "report_json")

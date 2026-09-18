@@ -38,13 +38,13 @@ describe("decodeShapeRequest", () => {
 	 */
 	it("rejects a scoped shape that arrives without a usable scope", () => {
 		assert.strictEqual(
-			expectFailure("shape=investigation&offset=-1").message,
-			"Shape investigation requires a scope",
+			expectFailure("shape=investigation_v2&offset=-1").message,
+			"Shape investigation_v2 requires a scope",
 		)
-		assert.strictEqual(expectFailure("shape=investigation&scope=").message.length > 0, true)
+		assert.strictEqual(expectFailure("shape=investigation_v2&scope=").message.length > 0, true)
 		assert.strictEqual(
-			expectFailure(`shape=investigation&scope=${"x".repeat(129)}`).message,
-			"Shape investigation requires a scope",
+			expectFailure(`shape=investigation_v2&scope=${"x".repeat(129)}`).message,
+			"Shape investigation_v2 requires a scope",
 		)
 	})
 
@@ -54,7 +54,7 @@ describe("decodeShapeRequest", () => {
 	 * the URL builder has no "scoped shape, no value" case to fall through.
 	 */
 	it("pairs the scope value with its pinned column", () => {
-		assert.deepStrictEqual(expectSuccess("shape=investigation&scope=inv_1").scope, {
+		assert.deepStrictEqual(expectSuccess("shape=investigation_v2&scope=inv_1").scope, {
 			column: "id",
 			value: "inv_1",
 		})

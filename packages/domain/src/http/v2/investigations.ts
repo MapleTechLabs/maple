@@ -154,6 +154,14 @@ const V2AiTriageEvidence = Schema.Struct({
 
 /** Snake-case v2 wire projection of the internal AI triage result. */
 const V2AiTriageResult = Schema.Struct({
+	/**
+	 * `optionalKey`, mirroring the internal report: reports stored before the
+	 * field existed still decode, and a client falls back to `summary`.
+	 */
+	headline: Schema.optionalKey(Schema.String).annotate({
+		description:
+			"One line naming the suspected cause, for list rows and headings. Absent on reports produced before the field existed.",
+	}),
 	summary: Schema.String,
 	suspectedCause: Schema.String,
 	/**
@@ -189,6 +197,24 @@ const V2AiTriageResult = Schema.Struct({
 		ruledOut: "ruled_out",
 	}),
 )
+
+/** Snake-case v2 wire projection of a run's step tail. */
+const V2InvestigationProgress = Schema.Struct({
+	/**
+	 * How many steps the run has taken, which `steps.length` does not answer:
+	 * `steps` is a capped tail, so a long run reports more steps than it carries.
+	 */
+	stepCount: Schema.Number,
+	steps: Schema.Array(
+		Schema.Struct({
+			tool: Schema.String,
+			label: Schema.String,
+			at: Schema.Number,
+		}),
+	),
+	/** Epoch ms of the last step. What a reader checks to see the run is alive. */
+	updatedAt: Schema.Number,
+}).pipe(Schema.encodeKeys({ stepCount: "step_count", updatedAt: "updated_at" }))
 
 const V2InvestigationSnapshot = Schema.Struct({
 	title: Schema.String,
@@ -269,6 +295,7 @@ const investigationExample = {
 		incident_ended_at: null,
 	},
 	report: {
+		headline: "Deploy 4f21a shortened checkout-api's upstream timeout",
 		summary: "A deploy to checkout-api four minutes before the onset regressed the timeout budget.",
 		suspected_cause: "Deploy 4f21a shortened the upstream timeout below the p99 of the call it guards.",
 		severity_assessment: "high",
@@ -281,6 +308,17 @@ const investigationExample = {
 		// since it was added and was never projected onto the wire.
 		ruled_out: ["Downstream dependency: every callee stayed under 90ms in the window."],
 		unchecked: [],
+	},
+	// A diagnosed investigation, so the run is over and the feed is its record of
+	// how it got there. A running example would need a wall-clock `updated_at` to
+	// make sense, which an OpenAPI example cannot have.
+	progress: {
+		step_count: 9,
+		steps: [
+			{ tool: "diagnose_service", label: "Diagnose service · checkout-api", at: 1_763_020_800_000 },
+			{ tool: "inspect_trace", label: "Inspect trace · 7f3a9c04b1", at: 1_763_020_812_000 },
+		],
+		updated_at: 1_763_020_812_000,
 	},
 	model: "claude-opus-4-8",
 	severity: "high",
@@ -311,6 +349,10 @@ export const V2Investigation = Schema.Struct({
 	snapshot: V2InvestigationSnapshot.annotate({
 		description:
 			"A display-ready snapshot captured when the investigation was opened, retained even after source telemetry expires.",
+	}),
+	progress: Schema.NullOr(V2InvestigationProgress).annotate({
+		description:
+			"What the pass is doing, or got as far as doing, as a capped tail of steps. `null` before the first step. Kept after the run ends.",
 	}),
 	report: Schema.NullOr(V2AiTriageResult).annotate({
 		description:

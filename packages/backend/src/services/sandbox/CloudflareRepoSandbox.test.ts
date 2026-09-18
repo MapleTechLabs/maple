@@ -20,7 +20,8 @@ import {
 	SandboxRuntime,
 	SandboxSecretHandle,
 } from "@effect-agent/sandbox/Sandbox"
-import { Duration, Effect, Exit, Option, Schema, Stream } from "effect"
+import { Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
 import { NETWORK_DISABLED, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
@@ -76,6 +77,39 @@ const failureTag = (exit: Exit.Exit<unknown, { readonly _tag: string }>): string
 	Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail"
 		? exit.cause.reasons[0].error._tag
 		: undefined
+
+const failureMessage = (
+	exit: Exit.Exit<unknown, { readonly _tag: string; readonly message: string }>,
+): string | undefined =>
+	Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail"
+		? exit.cause.reasons[0].error.message
+		: undefined
+
+/**
+ * Advance the test clock one poll at a time until the forked run settles. One big adjustment
+ * would land before the port's first sleep exists (it awaits a real digest first) and never wake it.
+ */
+const settleWithClock = <A, E>(fiber: Fiber.Fiber<A, E>) =>
+	Effect.gen(function* () {
+		for (let step = 0; step < 100; step++) {
+			yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+			if (fiber.pollUnsafe() !== undefined) break
+			yield* TestClock.adjust(Duration.seconds(2))
+		}
+		return yield* Fiber.join(fiber)
+	})
+
+const exited = () =>
+	new SandboxRunExited({
+		exitCode: 0,
+		stdout: "src/a.ts:1:boom",
+		stderr: "",
+		stdoutBytes: 16,
+		stderrBytes: 0,
+		stdoutTruncated: false,
+		stderrTruncated: false,
+		wallTimeMs: 12,
+	})
 
 describe("admit", () => {
 	it.effect("accepts the request shape the tools build", () =>
@@ -206,16 +240,24 @@ describe("the Cloudflare repository sandbox", () => {
 			)
 			assert.strictEqual(failureTag(timedOut), "SandboxTimeoutError")
 
-			const pending = yield* Effect.exit(
-				Stream.runCollect(
-					makeSandbox(() => new SandboxRunCheckoutPending({ message: "still preparing" })).execute(
-						request(),
+			// A checkout that never becomes ready is waited on up to the budget, and
+			// then reported as a spawn failure: no process ran, so it must not borrow
+			// the contract's "the process ran and exited" failure.
+			const waiting = yield* Effect.forkChild(
+				Effect.exit(
+					Stream.runCollect(
+						makeSandbox(
+							() => new SandboxRunCheckoutPending({ message: "still preparing" }),
+						).execute(request()),
 					),
 				),
 			)
-			// A checkout that is not ready never started a process, so it must not
-			// borrow the contract's "the process ran and exited" failure.
+			const pending = yield* settleWithClock(waiting)
 			assert.strictEqual(failureTag(pending), "SandboxSpawnError")
+			assert.match(
+				failureMessage(pending) ?? "",
+				/still being cloned .* come back to this repository later/,
+			)
 
 			const brokenCheckout = yield* Effect.exit(
 				Stream.runCollect(
@@ -234,6 +276,23 @@ describe("the Cloudflare repository sandbox", () => {
 				),
 			)
 			assert.strictEqual(failureTag(gone), "SandboxSpawnError")
+		}),
+	)
+
+	it.effect("waits for a cold checkout itself instead of handing the wait to the model", () =>
+		Effect.gen(function* () {
+			const calls: string[] = []
+			let answers = 0
+			const sandbox = makeSandbox(
+				() =>
+					++answers < 3 ? new SandboxRunCheckoutPending({ message: "still preparing" }) : exited(),
+				calls,
+			)
+			const running = yield* Effect.forkChild(Stream.runCollect(sandbox.execute(request())))
+			const events = Array.from(yield* settleWithClock(running))
+			assert.strictEqual(calls.filter((call) => call.startsWith("exec:")).length, 3)
+			assert.strictEqual(calls.filter((call) => call.startsWith("checkout:")).length, 1)
+			assert.strictEqual(events.at(-1)?._tag, "SandboxExited")
 		}),
 	)
 

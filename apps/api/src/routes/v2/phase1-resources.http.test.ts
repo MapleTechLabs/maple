@@ -136,6 +136,7 @@ const investigationFixture = new InvestigationDocument({
 		incidentEndedAt: null,
 	}),
 	report: new AiTriageResult({
+		headline: "A database connection pool regression",
 		summary: "Checkout failures increased after a deploy.",
 		suspectedCause: "A database connection pool regression.",
 		severityAssessment: "high",
@@ -151,6 +152,7 @@ const investigationFixture = new InvestigationDocument({
 		suggestedActions: ["Roll back the pool change."],
 		confidence: "high",
 	}),
+	progress: null,
 	model: "claude-opus-4-8",
 	severity: "high",
 	confidence: "high",
@@ -786,6 +788,7 @@ describe("v2 investigations over HTTP", () => {
 			incident_ended_at: null,
 		})
 		expect(list.body.data[0].report).toEqual({
+			headline: "A database connection pool regression",
 			summary: "Checkout failures increased after a deploy.",
 			suspected_cause: "A database connection pool regression.",
 			severity_assessment: "high",
