@@ -13,6 +13,12 @@ import type { OtlpSpan, SpanBuffer } from "./flushable-tracer.js"
 
 /** Disable a signal for this long after a failed POST so a broken collector isn't hammered. */
 const COOLDOWN_MS = 60_000
+/**
+ * Abort a POST that has not completed by then. A flush is awaited at boundaries that hold real
+ * resources — a Worker's `waitUntil`, a Durable Object turn's slot — so a stalled collector must
+ * fail (and enter the cooldown) rather than hold them open.
+ */
+const POST_TIMEOUT_MS = 15_000
 
 /**
  * Minimal resource shape consumed by {@link buildResolved}. Structurally
@@ -135,7 +141,12 @@ const anyValue = (value: unknown): unknown => {
 
 /** Plain `fetch` POST. Throws on non-2xx so {@link flushSignal} records a cooldown. */
 const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<void> => {
-	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
+	const res = await fetch(url, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(body),
+		signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+	})
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)
 	}
@@ -153,9 +164,10 @@ const flushSignal = async <A>(args: {
 	readonly signal: string
 	readonly transport: FlushTransport
 	readonly logPrefix: string
+	readonly force: boolean
 }): Promise<void> => {
-	const { url, headers, buffer, body, state, signal, transport, logPrefix } = args
-	if (state.disabledUntil && Date.now() < state.disabledUntil) {
+	const { url, headers, buffer, body, state, signal, transport, logPrefix, force } = args
+	if (!force && state.disabledUntil && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -236,6 +248,9 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  * - `noOp`: drain so the buffers don't grow unbounded, fire `onNoOp` (one-shot
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
+ * - `force`: POST even inside a signal's cooldown. For the last flush a unit of work will ever
+ *   make — after it nothing else drains these buffers, so the cooldown's "try again later" has no
+ *   later. A failure still arms the cooldown for whoever flushes next.
  */
 export const runFlush = async (args: {
 	readonly resolved: Resolved
@@ -248,6 +263,7 @@ export const runFlush = async (args: {
 	readonly transport: FlushTransport
 	readonly logPrefix: string
 	readonly onNoOp: () => void
+	readonly force?: boolean | undefined
 }): Promise<void> => {
 	const {
 		resolved: r,
@@ -261,6 +277,7 @@ export const runFlush = async (args: {
 		logPrefix,
 		onNoOp,
 	} = args
+	const force = args.force === true
 
 	if (r.noOp) {
 		spans.drain()
@@ -280,6 +297,7 @@ export const runFlush = async (args: {
 			signal: "traces",
 			transport,
 			logPrefix,
+			force,
 		}),
 		flushSignal({
 			url: r.logsUrl,
@@ -290,6 +308,7 @@ export const runFlush = async (args: {
 			signal: "logs",
 			transport,
 			logPrefix,
+			force,
 		}),
 		flushSignal({
 			url: r.metricsUrl,
@@ -300,6 +319,7 @@ export const runFlush = async (args: {
 			signal: "metrics",
 			transport,
 			logPrefix,
+			force,
 		}),
 	])
 }

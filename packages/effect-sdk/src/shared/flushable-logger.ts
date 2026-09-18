@@ -14,6 +14,7 @@ export interface LogBuffer {
 	readonly size: () => number
 }
 
+/** Same cap and eviction as the span buffer: when full the OLDEST record goes, so the line that closes a unit of work survives and lines keep pointing at spans that were kept. */
 const MAX_BUFFER = 10_000
 
 export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = {}): LogBuffer => {
@@ -23,7 +24,7 @@ export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = 
 
 	const logger = Logger.make<unknown, void>((logOptions) => {
 		if (disabled) return
-		if (buffer.length >= MAX_BUFFER) return
+		if (buffer.length >= MAX_BUFFER) buffer.shift()
 		buffer.push(makeLogRecord(logOptions, excludeLogSpans))
 	})
 
@@ -36,7 +37,7 @@ export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = 
 		},
 		restore: (items) => {
 			if (disabled || items.length === 0) return
-			buffer = [...items, ...buffer].slice(0, MAX_BUFFER)
+			buffer = [...items, ...buffer].slice(-MAX_BUFFER)
 		},
 		setDisabled: (value) => {
 			disabled = value
