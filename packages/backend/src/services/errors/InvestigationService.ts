@@ -13,6 +13,7 @@ import {
 	InvestigationSnapshotFact,
 	InvestigationSubjectSnapshot,
 	InvestigationsListResponse,
+	InvestigationProgress,
 	type InvestigationStatus,
 	InvestigationSubject,
 	type OrgId,
@@ -121,6 +122,15 @@ export interface InvestigationServiceApi {
 		InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 	>
 	/**
+	 * Record what the running pass is doing. The caller owns accumulation and write rate (the table
+	 * replicates with REPLICA IDENTITY FULL). Only a row still `investigating` moves.
+	 */
+	readonly recordProgress: (
+		orgId: OrgId,
+		id: InvestigationId,
+		progress: InvestigationProgress,
+	) => Effect.Effect<void, InvestigationPersistenceError>
+	/**
 	 * Record that the autonomous pass ended without a diagnosis. Only a row still
 	 * `investigating` moves; a diagnosis that landed meanwhile is never overwritten.
 	 */
@@ -213,6 +223,27 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					? Effect.succeed(null)
 					: decodeStoredField(row.id, "report", AiTriageResult, row.reportJson)
 
+			// Progress degrades to null rather than failing the document: unlike `report`, it is not
+			// part of what an investigation is, and losing it should not take the diagnosis down.
+			const parseProgress = (row: InvestigationRow) =>
+				row.progressJson == null
+					? Effect.succeed(null)
+					: decodeStoredField(row.id, "progress", InvestigationProgress, row.progressJson).pipe(
+							Effect.catchTag(
+								"@maple/http/investigations/InvestigationDataCorruptionError",
+								(error) =>
+									Effect.logWarning(
+										"Dropping an undecodable investigation progress record",
+									).pipe(
+										Effect.annotateLogs({
+											investigationId: row.id,
+											error: error.message,
+										}),
+										Effect.as(null),
+									),
+							),
+						)
+
 			const rowToDocument = Effect.fnUntraced(function* (row: InvestigationRow) {
 				const subject = yield* decodeStoredField(
 					row.id,
@@ -230,6 +261,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								row.snapshotJson,
 							)
 				const report = yield* parseReport(row)
+				const progress = yield* parseProgress(row)
 				return yield* Effect.try({
 					try: () =>
 						new InvestigationDocument({
@@ -238,6 +270,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							subject,
 							snapshot,
 							report,
+							progress,
 							model: row.model ?? null,
 							severity: row.severity ?? null,
 							confidence: row.confidence ?? null,
@@ -656,6 +689,30 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				return yield* documentFor(orgId, updated ?? row)
 			})
 
+			const recordProgress: InvestigationServiceApi["recordProgress"] = Effect.fn(
+				"InvestigationService.recordProgress",
+			)(function* (orgId, id, progress) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.investigation.id": id,
+					"maple.investigation.step_count": progress.stepCount,
+				})
+				// `updatedAt` is left alone: the hub sorts on it, and bumping it every heartbeat would
+				// walk a running row up the list under the reader. Liveness is `progress.updatedAt`.
+				yield* dbExecute((db) =>
+					db
+						.update(investigations)
+						.set({ progressJson: progress })
+						.where(
+							and(
+								eq(investigations.orgId, orgId),
+								eq(investigations.id, id),
+								eq(investigations.status, "investigating"),
+							),
+						),
+				)
+			})
+
 			const failInvestigation: InvestigationServiceApi["failInvestigation"] = Effect.fn(
 				"InvestigationService.failInvestigation",
 			)(function* (orgId, id, error) {
@@ -683,6 +740,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				restartInvestigation,
 				updateStatus,
 				submitDiagnosis,
+				recordProgress,
 				failInvestigation,
 			} satisfies InvestigationServiceApi
 		}),

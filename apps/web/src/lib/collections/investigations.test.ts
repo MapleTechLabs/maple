@@ -23,7 +23,9 @@ const row = (overrides: Partial<InvestigationRow> = {}): InvestigationRow => ({
 		incidentStartedAt: "2026-08-01T14:02:00.000Z",
 		incidentEndedAt: null,
 	},
+	progress_json: null,
 	report_json: {
+		headline: "Pool exhaustion in checkout-api",
 		summary: "checkout-api saturated its connection pool",
 		suspectedCause: "Pool exhaustion in checkout-api",
 		severityAssessment: "critical",

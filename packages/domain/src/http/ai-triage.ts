@@ -22,6 +22,12 @@ export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEv
 }) {}
 
 export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult")({
+	/**
+	 * One line naming the cause, for the hub row, the verdict heading and the graph node; `summary`
+	 * and `suspectedCause` are both prompted as prose. `optionalKey` so older reports decode, and
+	 * unenforced at the tool boundary for the reason on `ruledOut`. Readers fall back to `summary`.
+	 */
+	headline: Schema.optionalKey(Schema.String),
 	summary: Schema.String,
 	suspectedCause: Schema.String,
 	/**
