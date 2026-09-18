@@ -6,16 +6,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"
 import { RetiredDayAuthority } from "../src/server/archives/retention"
-import { LocalEventingControlStore } from "../src/server/eventing/control-store"
-import { LocalEventingRuntime } from "../src/server/eventing/runtime"
 import { __testables } from "../src/server/serve"
+import { makeRuntime, openStore, run, serveWith } from "./eventing-test-support"
 
 describe("Durable outbox overflow", () => {
 	it("keeps warehouse ingestion available and requires explicit gap recovery across reopen", async () => {
 		const parent = mkdtempSync(join(tmpdir(), "maple-overflow-"))
 		const dataDir = join(parent, "data")
 		mkdirSync(dataDir)
-		const store = await LocalEventingControlStore.open(dataDir, {
+		const store = await openStore(dataDir, {
 			maxOutboxEvents: 1,
 			maxOutboxBytes: 1024 * 1024,
 		})
@@ -32,17 +31,22 @@ describe("Durable outbox overflow", () => {
 					project: () => ({ data: { observed: true } }),
 				}),
 			)
-			const runtime = new LocalEventingRuntime(store, undefined, projectors)
-			runtime.activate({
-				id: "observed",
-				revision: 1,
-				enabled: true,
-				tenantId: "local",
-				sourceKind: "otel.log",
-				selector: { op: "exists", field: { namespace: "signal", key: "event.name", type: "string" } },
-				projector: { id: "example.observed", version: 1, config: {} },
-				activeFrom: "1970-01-01T00:00:00Z",
-			})
+			const runtime = makeRuntime(store, projectors)
+			run(
+				runtime.activate({
+					id: "observed",
+					revision: 1,
+					enabled: true,
+					tenantId: "local",
+					sourceKind: "otel.log",
+					selector: {
+						op: "exists",
+						field: { namespace: "signal", key: "event.name", type: "string" },
+					},
+					projector: { id: "example.observed", version: 1, config: {} },
+					activeFrom: "1970-01-01T00:00:00Z",
+				}),
+			)
 			const statements: string[] = []
 			const warehouse = {
 				exec: (sql: string) => {
@@ -51,34 +55,36 @@ describe("Durable outbox overflow", () => {
 			}
 			const authority = new RetiredDayAuthority(dataDir)
 			const ingest = (id: string) =>
-				__testables.ingest(
-					warehouse,
-					authority,
+				serveWith(
 					runtime,
-					"logs",
-					new Request("http://localhost/v1/logs", {
-						method: "POST",
-						headers: { "content-type": "application/json" },
-						body: JSON.stringify({
-							resourceLogs: [
-								{
-									scopeLogs: [
-										{
-											logRecords: [
-												{
-													eventName: "example.observed",
-													timeUnixNano: "1786131720123456789",
-													attributes: [
-														{ key: "event.id", value: { stringValue: id } },
-													],
-												},
-											],
-										},
-									],
-								},
-							],
+					__testables.ingest(
+						warehouse,
+						authority,
+						"logs",
+						new Request("http://localhost/v1/logs", {
+							method: "POST",
+							headers: { "content-type": "application/json" },
+							body: JSON.stringify({
+								resourceLogs: [
+									{
+										scopeLogs: [
+											{
+												logRecords: [
+													{
+														eventName: "example.observed",
+														timeUnixNano: "1786131720123456789",
+														attributes: [
+															{ key: "event.id", value: { stringValue: id } },
+														],
+													},
+												],
+											},
+										],
+									},
+								],
+							}),
 						}),
-					}),
+					),
 				)
 			const first = await ingest("record-1")
 			strictEqual(first.accepted, 1)
@@ -88,69 +94,73 @@ describe("Durable outbox overflow", () => {
 			strictEqual(second.response.status, 200)
 			strictEqual(second.response.headers.get("x-maple-eventing-dropped"), "1")
 			strictEqual(statements.length, 2)
-			const retained = store.listReady(10).events
+			const retained = run(store.listReady(10)).events
 			strictEqual(retained.length, 1)
 			const eventId = retained[0]?.event.id
 			if (eventId === undefined) throw new Error("missing retained event")
-			store.registerConsumer("local", "consumer", "beginning")
-			throws(() => store.claimReady("local", "consumer", 10, 60), /delivery has a gap/)
-			throws(() => store.acceptDeliveryGap("local", "consumer", 2), /generation changed/)
-			store.acceptDeliveryGap("local", "consumer", 1)
-			strictEqual(store.claimReady("local", "consumer", 10, 60).events.length, 1)
-			throws(() => store.abandonEvents("other-tenant", [eventId]), /unknown event ID/)
-			throws(() => store.abandonEvents("local", [eventId, "missing"]), /unknown event ID/)
-			strictEqual(store.listReady(10).events.length, 1)
-			strictEqual(store.deliveryGap("local").generation, 1)
-			const unauthorized = await __testables.handleOutboxAdministration(
+			run(store.registerConsumer("local", "consumer", "beginning"))
+			throws(() => run(store.claimReady("local", "consumer", 10, 60)), /delivery has a gap/)
+			throws(() => run(store.acceptDeliveryGap("local", "consumer", 2)), /generation changed/)
+			run(store.acceptDeliveryGap("local", "consumer", 1))
+			strictEqual(run(store.claimReady("local", "consumer", 10, 60)).events.length, 1)
+			throws(() => run(store.abandonEvents("other-tenant", [eventId])), /unknown event ID/)
+			throws(() => run(store.abandonEvents("local", [eventId, "missing"])), /unknown event ID/)
+			strictEqual(run(store.listReady(10)).events.length, 1)
+			strictEqual(run(store.deliveryGap("local")).generation, 1)
+			const unauthorized = await serveWith(
 				runtime,
-				new __testables.RequestQuiescenceGate(),
-				"secret",
-				new Request("http://localhost/local/eventing/outbox/abandon", {
-					method: "POST",
-					body: JSON.stringify({ eventIds: [eventId] }),
-				}),
-				"abandon",
+				__testables.handleOutboxAdministration(
+					new __testables.RequestQuiescenceGate(),
+					"secret",
+					new Request("http://localhost/local/eventing/outbox/abandon", {
+						method: "POST",
+						body: JSON.stringify({ eventIds: [eventId] }),
+					}),
+					"abandon",
+				),
 			)
 			strictEqual(unauthorized.status, 403)
-			strictEqual(store.listReady(10).events.length, 1)
+			strictEqual(run(store.listReady(10)).events.length, 1)
 			const gate = new __testables.RequestQuiescenceGate()
 			const release = gate.enter()
 			if (release === null) throw new Error("gate unexpectedly closed")
-			const pending = __testables.handleOutboxAdministration(
+			const pending = serveWith(
 				runtime,
-				gate,
-				"secret",
-				new Request("http://localhost/local/eventing/outbox/abandon", {
-					method: "POST",
-					headers: { "x-maple-maintenance-token": "secret" },
-					body: JSON.stringify({ eventIds: [eventId] }),
-				}),
-				"abandon",
+				__testables.handleOutboxAdministration(
+					gate,
+					"secret",
+					new Request("http://localhost/local/eventing/outbox/abandon", {
+						method: "POST",
+						headers: { "x-maple-maintenance-token": "secret" },
+						body: JSON.stringify({ eventIds: [eventId] }),
+					}),
+					"abandon",
+				),
 			)
 			await Promise.resolve()
-			strictEqual(store.listReady(10).events.length, 1)
+			strictEqual(run(store.listReady(10)).events.length, 1)
 			release()
 			strictEqual((await pending).status, 200)
-			strictEqual(store.deliveryGap("local").generation, 2)
-			throws(() => store.claimReady("local", "consumer", 10, 60), /delivery has a gap/)
-			store.acceptDeliveryGap("local", "consumer", 2)
+			strictEqual(run(store.deliveryGap("local")).generation, 2)
+			throws(() => run(store.claimReady("local", "consumer", 10, 60)), /delivery has a gap/)
+			run(store.acceptDeliveryGap("local", "consumer", 2))
 			// Abandonment cleared the old lease and transactional counters free capacity.
 			const third = await ingest("record-3")
 			strictEqual(third.accepted, 1)
 			strictEqual(third.response.headers.get("x-maple-eventing-dropped"), null)
-			strictEqual(store.claimReady("local", "consumer", 10, 60).events.length, 1)
-			store.validate()
+			strictEqual(run(store.claimReady("local", "consumer", 10, 60)).events.length, 1)
+			run(store.validate)
 		} finally {
-			store.close()
+			await store.close()
 		}
 		try {
-			const reopened = await LocalEventingControlStore.open(dataDir)
+			const reopened = await openStore(dataDir)
 			try {
-				strictEqual(reopened.deliveryGap("local").generation, 2)
-				strictEqual(reopened.deliveryGap("local").droppedEvents, 2)
-				strictEqual(reopened.listReady(10).events.length, 1)
+				strictEqual(run(reopened.deliveryGap("local")).generation, 2)
+				strictEqual(run(reopened.deliveryGap("local")).droppedEvents, 2)
+				strictEqual(run(reopened.listReady(10)).events.length, 1)
 			} finally {
-				reopened.close()
+				await reopened.close()
 			}
 		} finally {
 			rmSync(parent, { recursive: true, force: true })

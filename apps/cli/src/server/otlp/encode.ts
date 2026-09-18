@@ -19,6 +19,8 @@
  *   - attributes are arrays of `{ key, value: AnyValue }`
  */
 
+import { Schema } from "effect"
+
 export interface EncodedBatch {
 	datasource: string
 	rowCount: number
@@ -96,14 +98,10 @@ function base64ToBytes(b64: string): Uint8Array {
  * 400 from the ingest handler rather than the generic 500 an encoder crash
  * would produce.
  */
-// The pure encoder throws this sentinel for its HTTP adapter to translate into a 400 response.
-// oxlint-disable-next-line effecttsgo/extends-native-error
-export class OtlpFieldError extends Error {
-	constructor(message: string) {
-		super(message)
-		this.name = "OtlpFieldError"
-	}
-}
+// The pure encoder throws this for its HTTP adapter; eventing normalization fails with it.
+export class OtlpFieldError extends Schema.TaggedError<OtlpFieldError>()("@maple/cli/OtlpFieldError", {
+	message: Schema.String,
+}) {}
 
 const HEX_ONLY = /^[0-9a-fA-F]+$/
 const ALL_ZERO_HEX = /^0+$/
@@ -151,9 +149,9 @@ function idHex(value: string | undefined, byteLength: number, field: string): st
 		// noise ("deadbeef" is 4 hex bytes, but decodes as 6 base64 bytes).
 		const base64Chars = Math.ceil(byteLength / 3) * 4
 		const shown = value.length > 80 ? `${value.slice(0, 80)}…` : value
-		throw new OtlpFieldError(
-			`${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${JSON.stringify(shown)} (${value.length} chars)`,
-		)
+		throw new OtlpFieldError({
+			message: `${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${JSON.stringify(shown)} (${value.length} chars)`,
+		})
 	}
 	return hexFromBytes(bytes)
 }

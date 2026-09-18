@@ -60,7 +60,8 @@ import {
 import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { eventingControlSnapshotPath, LocalEventingControlStore } from "../src/server/eventing/control-store"
+import { eventingControlSnapshotPath } from "../src/server/eventing/control-store"
+import { openStore, runAsync } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-checkpoint-test-"))
@@ -356,10 +357,10 @@ describe("checkpoint state resolution", () => {
 			mkdirSync(join(snapshot, "backup"), { recursive: true })
 			writeFileSync(join(snapshot, "backup", "data.bin"), "backup")
 
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			const controlPath = eventingControlSnapshotPath(dataDir, checkpointId)
-			const controlValidation = await store.backupTo(controlPath)
-			store.close()
+			const controlValidation = await runAsync(store.backupTo(controlPath))
+			await store.close()
 			const controlBytes = readFileSync(controlPath)
 			writeFileSync(
 				join(snapshot, "manifest.json"),
