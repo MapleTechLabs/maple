@@ -99,7 +99,14 @@ nothing**. A row like that is a migration that was applied and later renumbered 
 or one applied from a branch that never merged. Check before migrating. The report prints a
 DELETE for a superseded row and an UPDATE for a renumbered row whose SQL is byte-identical; a row
 whose SQL changed after it ran gets a `git diff` instead, because relabelling it would record
-statements this database never saw as applied:
+statements this database never saw as applied.
+
+The report also lists every local migration no row matches, because the v1 migrator applies all
+of them where the 0.x migrator only applied those newer than the newest recorded timestamp. A
+migration whose DDL reached the schema without a row (a `db:push`, a run that died after its
+transaction committed) used to be skipped silently and now fails on the objects that already
+exist. Compare each pending folder's first statement with the schema; record the ones already
+applied with the INSERT the report prints rather than replaying them:
 
 ```bash
 bun run --cwd packages/db db:migrate:preflight              # DATABASE_URL, defaults to the docker Postgres

@@ -289,6 +289,13 @@ What B1 settled that the plan above left open:
   `bun run --cwd packages/db ps:migrations-preflight main` (read-only) names each row and prints
   the DELETE (superseded) or UPDATE (renumbered, identical SQL); a row whose SQL changed after it
   ran gets a `git diff` to apply by hand first. Run it before `bun run migrate:prod`.
+- **The v1 migrator applies every unrecorded folder**, not only those newer than the last
+  recorded row. Rehearsed on the docker database (2026-09-19): three migrations whose DDL was
+  present without a row (`issue_pull_requests_verification`, `anomaly_index_tightening`,
+  `home_list_indexes`) made the run fail with `42P07 relation already exists` after the table
+  upgrade had committed. The preflight now lists the pending folders with their first statement
+  and the INSERT that records an already-applied one. After recording those three, the run applied
+  the seven true pending migrations and a second run was a no-op.
 
 ## What to carry over from the previous assessment
 

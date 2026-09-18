@@ -12,13 +12,21 @@
  *
  *   DATABASE_URL=postgres://… bun scripts/migrations-preflight.ts
  *
+ * It also lists every local migration no row matches, because the v1 migrator
+ * applies all of them (the 0.x migrator only applied those newer than the
+ * newest recorded timestamp). One whose DDL is already in the schema must be
+ * recorded, not replayed.
+ *
  * Read-only. Exits 1 when the migrator would refuse.
  */
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
+import { resolve } from "node:path"
 import postgres from "postgres"
 import { listBundledMigrations } from "../src/migrate"
+
+const migrationsFolder = resolve(import.meta.dir, "../drizzle")
 
 const url = process.env.DATABASE_URL ?? "postgres://maple:maple@localhost:5499/maple"
 
@@ -93,6 +101,31 @@ const historicalBlobs = (): Map<string, HistoricalBlob> => {
 	return blobs
 }
 
+/**
+ * The v1 migrator applies every unrecorded folder, where the 0.x migrator only
+ * applied those newer than the newest recorded timestamp. A migration whose
+ * DDL reached the schema without a row used to be skipped and now fails on the
+ * objects that already exist, so say exactly what will run.
+ */
+const reportPending = (recordedNames: ReadonlySet<string>): void => {
+	const pending = locals.filter((local) => !recordedNames.has(local.name))
+	console.log(`\n${pending.length} local migration(s) have no row and WILL be applied by the v1 migrator:`)
+	for (const local of pending) {
+		const first = readFileSync(resolve(migrationsFolder, local.name, "migration.sql"), "utf8")
+			.split("\n")
+			.find((line) => /^(create|alter|drop)\b/i.test(line))
+		console.log(`  ${local.name}\n    ${first?.slice(0, 110) ?? "(no DDL statement)"}`)
+	}
+	if (pending.length > 0) {
+		console.log(
+			"  If one of these already reached the schema without a row, record it instead of replaying it:\n" +
+				"  INSERT INTO drizzle.__drizzle_migrations (hash, created_at, name) VALUES ('<hash>', <created_at>, '<name>');",
+		)
+		for (const local of pending)
+			console.log(`    ${local.name}: hash ${local.hash} created_at ${local.millis}`)
+	}
+}
+
 const sql = postgres(url, { max: 1, fetch_types: false })
 try {
 	const columns = await sql<{ column_name: string }[]>`
@@ -104,13 +137,15 @@ try {
 	}
 	if (columns.some((c) => c.column_name === "name")) {
 		console.log("Migrations table is already on the v1 layout (has `name`); the upgrade will not run.")
+		const named = await sql<{ name: string | null }[]>`select name from drizzle.__drizzle_migrations`
+		reportPending(new Set(named.flatMap((row) => (row.name === null ? [] : [row.name]))))
 		process.exit(0)
 	}
 	const rows = await sql<{ id: number; created_at: string; hash: string }[]>`
 		select id, created_at, hash from drizzle.__drizzle_migrations order by id asc`
 
 	const orphans: Array<{ id: number; createdAt: number; hash: string }> = []
-	let matched = 0
+	const matchedNames = new Set<string>()
 	for (const row of rows) {
 		const createdAt = Number(row.created_at)
 		const millis = Math.floor(createdAt / 1000) * 1000
@@ -121,12 +156,15 @@ try {
 				: candidates && candidates.length > 1
 					? candidates.find((c) => c.hash === row.hash)
 					: byHash.get(row.hash)
-		if (found) matched += 1
+		if (found) matchedNames.add(found.name)
 		else orphans.push({ id: row.id, createdAt, hash: row.hash })
 	}
 	console.log(
-		`${rows.length} rows, ${matched} match a local migration, ${orphans.length} would make the migrator refuse.`,
+		`${rows.length} rows, ${matchedNames.size} match a local migration, ${orphans.length} would make the migrator refuse.`,
 	)
+
+	reportPending(matchedNames)
+
 	if (orphans.length === 0) process.exit(0)
 
 	const history = historicalBlobs()
