@@ -49,6 +49,7 @@ import {
 	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
+	GoogleAnalyticsServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 
@@ -170,6 +171,7 @@ const makeHarness = (slack: Partial<SlackIntegrationServiceApi> = {}, planetscal
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(slackServiceLayer(slack)),
 		Layer.provide(planetscaleServiceLayer(planetscale)),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),

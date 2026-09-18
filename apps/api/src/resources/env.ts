@@ -18,6 +18,7 @@ import {
 	cloudflareOAuthEnv,
 	derived,
 	githubAppSourceEnv,
+	googleAnalyticsOAuthEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -103,4 +104,5 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		googleAnalyticsOAuthEnv,
 	)

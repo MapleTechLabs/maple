@@ -301,8 +301,11 @@ const icons = {
 
 type SidebarIconName = keyof typeof icons
 
-// `in` would accept `__proto__`, `constructor` and every other inherited name,
-// and hand the SVG a function to render.
+/**
+ * Sidebar names come from doc frontmatter, so an unknown one is expected, not a bug — and since
+ * the name is arbitrary text, `in` is the wrong test: it would accept `__proto__`, `constructor`
+ * and every other inherited name, and hand the SVG a function to render.
+ */
 function isSidebarIconName(name: string): name is SidebarIconName {
 	return Object.hasOwn(icons, name)
 }
