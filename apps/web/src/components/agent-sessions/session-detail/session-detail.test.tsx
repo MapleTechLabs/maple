@@ -405,13 +405,12 @@ describe("SessionOverview", () => {
 
 	// Agent time, not the clock: 23s of tools and 18s of model calls inside a
 	// 5m 12s session, with two of those tools running at the same time.
-	it("splits agent time by class of work, and says how wide the fan-out got", () => {
+	it("splits agent time by class of work", () => {
 		render(<Overview />)
 
 		expect(screen.getByText("Tool execution")).toBeTruthy()
 		expect(screen.getByText("Agent time").nextElementSibling?.textContent).toBe("41s")
 		expect(screen.getByText("Wall clock").nextElementSibling?.textContent).toBe("5m 12s")
-		expect(screen.getByText("agents in parallel").previousElementSibling?.textContent).toBe("2×")
 	})
 
 	// Idle is not agent time, but nothing at all was running then — disjoint

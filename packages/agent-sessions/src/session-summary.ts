@@ -61,15 +61,13 @@ export interface AgentTimeSegment {
  * What the agents spent, rather than what the clock did. Every work span
  * contributes its whole duration, so two subagents inferring at once cost two
  * seconds of agent time per second of wall clock — `totalMs` exceeding the wall
- * clock is the fan-out, not an error, and `peakParallel` says how wide it got.
+ * clock is the fan-out, not an error.
  */
 export interface SessionAgentTime {
 	readonly totalMs: number
 	/** Non-zero segments only, stacked in `AGENT_TIME_KIND_ORDER`: an
 	 *  unavailable TTFT is absent, never a zero-width band. */
 	readonly segments: readonly AgentTimeSegment[]
-	/** Most work spans in flight at once — 1 when nothing ever overlapped. */
-	readonly peakParallel: number
 }
 
 export interface SessionTokenTotals {
@@ -365,14 +363,12 @@ export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentT
 	const add = (kind: AgentTimeKind, ms: number) => {
 		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
 	}
-	const work: Interval[] = []
 
 	for (const span of spans) {
 		const spanStart = spanStartMs(span)
 		const spanEnd = spanEndMs(span)
 		const category = classifyAiSpan(span)
 		if (category !== "tool" && category !== "inference") continue
-		work.push({ startMs: spanStart, endMs: spanEnd })
 		if (category === "tool") {
 			add("tool", spanEnd - spanStart)
 			continue
@@ -391,26 +387,7 @@ export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentT
 	return {
 		totalMs: segments.reduce((total, segment) => total + segment.ms, 0),
 		segments,
-		peakParallel: peakParallel(work),
 	}
-}
-
-/** Most work spans open at once, by a sweep over their endpoints. Ends are
- *  processed before starts, so a span beginning as another ends is not overlap. */
-function peakParallel(work: readonly Interval[]): number {
-	const events = work
-		.flatMap((interval) => [
-			{ atMs: interval.startMs, delta: 1 },
-			{ atMs: interval.endMs, delta: -1 },
-		])
-		.sort((a, b) => a.atMs - b.atMs || a.delta - b.delta)
-	let open = 0
-	let peak = 0
-	for (const event of events) {
-		open += event.delta
-		if (open > peak) peak = open
-	}
-	return Math.max(peak, 1)
 }
 
 /* -------------------------------------------------------------------------- */

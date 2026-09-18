@@ -144,7 +144,7 @@ type OpenSpan = (spanId: string) => void
 /* -------------------------------------------------------------------------- */
 
 function TimeComposition({ summary }: { summary: SessionSummary }) {
-	const { segments, totalMs, peakParallel } = summary.agentTime
+	const { segments, totalMs } = summary.agentTime
 	// Agent time, not the clock: each band is the whole time that class of work
 	// ran, summed across every agent, so two subagents inferring at once are two
 	// seconds here per second of wall clock — the fan-out made visible rather
@@ -168,8 +168,7 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 	return (
 		<RailSection title="Where the time went">
 			{/* The two clocks the bands are read against, stated rather than left
-			    to be inferred from the bar — and the fan-out that makes them
-			    differ, which is the one number the bar itself cannot show. */}
+			    to be inferred from the bar. */}
 			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 				<Clock
 					label="Agent time"
@@ -177,15 +176,6 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 					className="text-chart-ai-inference"
 				/>
 				<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
-				{peakParallel > 1 && (
-					<span
-						className="flex items-baseline gap-1.5 rounded-sm bg-chart-ai-agent/12 px-1.5 py-0.5 text-chart-ai-agent"
-						title={`At its widest, ${peakParallel} model calls or tools were running at the same time.`}
-					>
-						<span className="font-mono font-semibold text-xs tabular-nums">{peakParallel}×</span>
-						<span className="text-[11px]">agents in parallel</span>
-					</span>
-				)}
 			</div>
 
 			<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
