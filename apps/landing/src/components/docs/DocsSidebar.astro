@@ -1,7 +1,7 @@
 ---
-// One section of the docs tree at a time. A switcher at the top mirrors the
-// header strip with page counts; below it, only the current section's groups
-// render, so a reader on a Python guide scans languages, not alerting.
+// One section of the docs tree at a time: only the groups of the section
+// picked in the header strip render, so a reader on a Python guide scans
+// languages, not alerting.
 // Language rows carry their logo; Effect's platform pages nest under Effect.
 import { getCollection } from "astro:content";
 import DocsCategoryIcon from "./DocsCategoryIcon.astro";
@@ -51,26 +51,6 @@ const rowClass = (active: boolean) =>
 ---
 
 <nav aria-label="Documentation">
-    <ul class="sticky top-0 z-10 mb-4 space-y-px border-b border-border bg-bg pt-6 pb-4" aria-label="Sections">
-        {sections.map((s) => (
-            <li>
-                <a
-                    href={s.href}
-                    aria-current={s.active ? "true" : undefined}
-                    class:list={[
-                        "flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 transition-colors",
-                        s.active ? "bg-bg-elevated font-medium text-fg" : "text-fg-muted hover:text-fg",
-                    ]}
-                >
-                    <span class="flex min-w-0 items-center gap-2">
-                        <DocsCategoryIcon name={s.icon} class:list={["h-3.5 w-3.5 shrink-0", s.active ? "text-primary" : "text-fg-muted/70"]} />
-                        <span class="truncate">{s.label}</span>
-                    </span>
-                    <span class="shrink-0 font-mono text-[10px] tabular-nums text-fg-muted/70">{s.count}</span>
-                </a>
-            </li>
-        ))}
-    </ul>
     {ordered.map(([groupName, rows]) => (
         <section class="mb-7" aria-labelledby={headingId(groupName)}>
             <h3

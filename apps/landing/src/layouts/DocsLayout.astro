@@ -92,7 +92,7 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
         </header>
 
         <div class="flex min-h-screen pt-24">
-            <aside class="fixed top-24 bottom-0 left-0 hidden w-64 shrink-0 overflow-y-auto border-r border-border px-4 pb-7 lg:block">
+            <aside class="fixed top-24 bottom-0 left-0 hidden w-64 shrink-0 overflow-y-auto border-r border-border px-4 py-7 lg:block">
                 <DocsSidebar currentSlug={currentSlug} />
             </aside>
 
@@ -163,7 +163,7 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
             }
 
             // Sidebar: the active row is often below the fold on long trees. Scroll
-            // just far enough to show it, so the sticky section switcher stays put.
+            // just far enough to show it.
             const sidebar = document.querySelector<HTMLElement>("aside nav[aria-label='Documentation']");
             const active = sidebar?.querySelector<HTMLElement>("a[aria-current='page']");
             const rail = sidebar?.closest<HTMLElement>("aside");
