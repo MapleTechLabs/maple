@@ -1,7 +1,9 @@
 ---
-// Previous / next across the whole docs tree in sidebar order, so reading
-// straight through follows the same path the sidebar shows.
+// Previous / next within the current section, in sidebar order, so reading
+// straight through follows the same path the sidebar shows and stops where
+// the section does.
 import { getDocGroups } from "../../lib/docs-order";
+import { sectionForGroup } from "../../lib/docs-nav";
 
 interface Props {
     currentSlug: string;
@@ -9,25 +11,28 @@ interface Props {
 
 const { currentSlug } = Astro.props;
 
-const flat = (await getDocGroups()).flatMap((g) => g.docs);
+const groups = await getDocGroups();
+const current = groups.flatMap((g) => g.docs).find((d) => d.id === currentSlug);
+const section = current ? sectionForGroup(current.data.group) : null;
+const flat = groups.filter((g) => section && sectionForGroup(g.group).id === section.id).flatMap((g) => g.docs);
 const i = flat.findIndex((d) => d.id === currentSlug);
 const prev = i > 0 ? flat[i - 1] : null;
 const next = i >= 0 && i < flat.length - 1 ? flat[i + 1] : null;
 ---
 
-<nav class="mt-12 pt-8 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Page navigation">
+<nav class="mt-14 grid grid-cols-1 gap-3 border-t border-border pt-8 sm:grid-cols-2" aria-label="Page navigation">
     {prev ? (
         <a href={`/docs/${prev.id}`} class="group rounded-lg border border-border p-4 hover:bg-bg-elevated transition-colors">
-            <span class="block text-[10px] text-fg-muted uppercase tracking-wider">Previous</span>
-            <span class="block text-sm text-fg mt-1">{prev.data.title}</span>
-            <span class="block text-[11px] text-fg-muted mt-0.5">{prev.data.group}</span>
+            <span class="block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">Previous</span>
+            <span class="mt-1.5 block text-[14px] font-medium text-fg">{prev.data.title}</span>
+            <span class="mt-0.5 block text-[12px] text-fg-muted">{prev.data.group}</span>
         </a>
     ) : <div />}
     {next ? (
         <a href={`/docs/${next.id}`} class="group rounded-lg border border-border p-4 hover:bg-bg-elevated transition-colors sm:text-right">
-            <span class="block text-[10px] text-fg-muted uppercase tracking-wider">Next</span>
-            <span class="block text-sm text-fg mt-1">{next.data.title}</span>
-            <span class="block text-[11px] text-fg-muted mt-0.5">{next.data.group}</span>
+            <span class="block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">Next</span>
+            <span class="mt-1.5 block text-[14px] font-medium text-fg">{next.data.title}</span>
+            <span class="mt-0.5 block text-[12px] text-fg-muted">{next.data.group}</span>
         </a>
     ) : <div />}
 </nav>

@@ -4,7 +4,11 @@ import { SessionHeader } from "@/components/agent-sessions/session-detail/sessio
 import { SessionViews, type SessionView } from "@/components/agent-sessions/session-detail/session-views"
 import { Toggle } from "@maple/ui/components/ui/toggle"
 import { buildSessionSummary, buildSessionTurns } from "@maple/agent-sessions"
-import { buildAgentSessionFixture, buildCaptureOffFixture } from "@maple/agent-sessions/testing"
+import {
+	buildAgentSessionFixture,
+	buildCaptureOffFixture,
+	buildCleanFixture,
+} from "@maple/agent-sessions/testing"
 /**
  * The session detail page's views over a fixture — the fastest way to eyeball
  * the Overview, the waterfall, the flow graph and the transcript without a
@@ -12,7 +16,9 @@ import { buildAgentSessionFixture, buildCaptureOffFixture } from "@maple/agent-s
  *
  * The toggle is the session-level state no fixture can be in and out of at
  * once: message capture off, the production default, which the transcript has
- * to survive as pure structure. A partly loaded session is not simulated here —
+ * to survive as pure structure. Clean is the other: the same session with
+ * nothing going wrong, the only way to see the Overview's passed list as the
+ * page's content rather than a row under the findings. A partly loaded session is not simulated here —
  * it needs the paged reads, and the page is where those live.
  *
  * The page's own scroller is a `PageLayout.ScrollArea`, which is where the
@@ -21,10 +27,11 @@ import { buildAgentSessionFixture, buildCaptureOffFixture } from "@maple/agent-s
  */
 export function AgentSessionLab({ initialView }: { initialView?: SessionView }) {
 	const [captureOff, setCaptureOff] = useState(false)
+	const [clean, setClean] = useState(false)
 
 	const spans = useMemo(
-		() => (captureOff ? buildCaptureOffFixture() : buildAgentSessionFixture()),
-		[captureOff],
+		() => (clean ? buildCleanFixture() : captureOff ? buildCaptureOffFixture() : buildAgentSessionFixture()),
+		[captureOff, clean],
 	)
 	const turns = useMemo(() => buildSessionTurns(spans), [spans])
 	const summary = useMemo(() => buildSessionSummary({ spans, turns }), [spans, turns])
@@ -43,6 +50,15 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 					)}
 				</div>
 				<div className="ml-auto flex shrink-0 items-center gap-2">
+					<Toggle
+						variant="outline"
+						size="sm"
+						pressed={clean}
+						onPressedChange={setClean}
+						className="text-xs"
+					>
+						Clean
+					</Toggle>
 					<Toggle
 						variant="outline"
 						size="sm"

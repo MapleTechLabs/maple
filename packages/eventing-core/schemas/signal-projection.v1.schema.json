@@ -1,0 +1,393 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "urn:maple:eventing:schema:signal-projection:v1",
+	"$ref": "#/$defs/SignalProjectionSpec",
+	"$defs": {
+		"SignalPredicate_1": {
+			"$ref": "#/$defs/Union_",
+			"description": "Consumers MUST enforce a maximum predicate depth of 8 (root depth 1) and 64 total predicate nodes before recursive validation. Count nodes by occurrence, including repeated subtrees. These whole-tree limits are enforced by the shared decoder but are not expressed by JSON Schema validation keywords."
+		},
+		"SignalFieldRef": {
+			"type": "object",
+			"properties": {
+				"namespace": {
+					"type": "string",
+					"enum": [
+						"signal",
+						"resource",
+						"scope",
+						"attribute",
+						"body"
+					]
+				},
+				"key": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 512
+				},
+				"type": {
+					"type": "string",
+					"enum": [
+						"string",
+						"boolean",
+						"int64",
+						"float64",
+						"timestamp",
+						"duration"
+					]
+				}
+			},
+			"required": [
+				"namespace",
+				"key",
+				"type"
+			],
+			"additionalProperties": false
+		},
+		"SignalLiteral": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"type": {
+							"type": "string",
+							"enum": [
+								"string"
+							]
+						},
+						"value": {
+							"type": "string",
+							"maxLength": 1024
+						}
+					},
+					"required": [
+						"type",
+						"value"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"type": {
+							"type": "string",
+							"enum": [
+								"boolean"
+							]
+						},
+						"value": {
+							"type": "boolean"
+						}
+					},
+					"required": [
+						"type",
+						"value"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"type": {
+							"type": "string",
+							"enum": [
+								"int64"
+							]
+						},
+						"value": {
+							"type": "string",
+							"maxLength": 20,
+							"pattern": "^(?:(?:0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-6]|9223372036854775807)|-(?:0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7]|9223372036854775808))$"
+						}
+					},
+					"required": [
+						"type",
+						"value"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"type": {
+							"type": "string",
+							"enum": [
+								"float64"
+							]
+						},
+						"value": {
+							"type": "number"
+						}
+					},
+					"required": [
+						"type",
+						"value"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"type": {
+							"type": "string",
+							"enum": [
+								"timestamp"
+							]
+						},
+						"value": {
+							"type": "string",
+							"pattern": "^(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8]))|(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29)T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+						}
+					},
+					"required": [
+						"type",
+						"value"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"type": {
+							"type": "string",
+							"enum": [
+								"duration"
+							]
+						},
+						"value": {
+							"type": "string",
+							"maxLength": 20,
+							"pattern": "^(?:(?:0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-6]|9223372036854775807)|-(?:0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7]|9223372036854775808))$"
+						}
+					},
+					"required": [
+						"type",
+						"value"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"Union_": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"op": {
+							"type": "string",
+							"enum": [
+								"all"
+							]
+						},
+						"clauses": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SignalPredicate_1"
+							},
+							"minItems": 1,
+							"maxItems": 64
+						}
+					},
+					"required": [
+						"op",
+						"clauses"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"op": {
+							"type": "string",
+							"enum": [
+								"any"
+							]
+						},
+						"clauses": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SignalPredicate_1"
+							},
+							"minItems": 1,
+							"maxItems": 64
+						}
+					},
+					"required": [
+						"op",
+						"clauses"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"op": {
+							"type": "string",
+							"enum": [
+								"not"
+							]
+						},
+						"clause": {
+							"$ref": "#/$defs/SignalPredicate_1"
+						}
+					},
+					"required": [
+						"op",
+						"clause"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"op": {
+							"type": "string",
+							"enum": [
+								"exists"
+							]
+						},
+						"field": {
+							"$ref": "#/$defs/SignalFieldRef"
+						}
+					},
+					"required": [
+						"op",
+						"field"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"op": {
+							"type": "string",
+							"enum": [
+								"eq",
+								"neq",
+								"gt",
+								"gte",
+								"lt",
+								"lte",
+								"contains"
+							]
+						},
+						"field": {
+							"$ref": "#/$defs/SignalFieldRef"
+						},
+						"value": {
+							"$ref": "#/$defs/SignalLiteral"
+						}
+					},
+					"required": [
+						"op",
+						"field",
+						"value"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"op": {
+							"type": "string",
+							"enum": [
+								"in"
+							]
+						},
+						"field": {
+							"$ref": "#/$defs/SignalFieldRef"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SignalLiteral"
+							},
+							"minItems": 1,
+							"maxItems": 100
+						}
+					},
+					"required": [
+						"op",
+						"field",
+						"values"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"SignalPredicate": {
+			"$ref": "#/$defs/Union_",
+			"description": "Consumers MUST enforce a maximum predicate depth of 8 (root depth 1) and 64 total predicate nodes before recursive validation. Count nodes by occurrence, including repeated subtrees. These whole-tree limits are enforced by the shared decoder but are not expressed by JSON Schema validation keywords."
+		},
+		"SignalProjectionSpec": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"revision": {
+					"type": "integer",
+					"exclusiveMinimum": 0
+				},
+				"enabled": {
+					"type": "boolean"
+				},
+				"tenantId": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"sourceKind": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"selector": {
+					"$ref": "#/$defs/SignalPredicate"
+				},
+				"projector": {
+					"type": "object",
+					"properties": {
+						"id": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 256,
+							"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+						},
+						"version": {
+							"type": "integer",
+							"exclusiveMinimum": 0
+						},
+						"config": {}
+					},
+					"required": [
+						"id",
+						"version",
+						"config"
+					],
+					"additionalProperties": false
+				},
+				"activeFrom": {
+					"type": "string",
+					"pattern": "^(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8]))|(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29)T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+				}
+			},
+			"required": [
+				"id",
+				"revision",
+				"enabled",
+				"tenantId",
+				"sourceKind",
+				"selector",
+				"projector",
+				"activeFrom"
+			],
+			"additionalProperties": false
+		}
+	}
+}

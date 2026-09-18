@@ -46,9 +46,13 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", async (importOriginal) => 
 })
 
 import type { AiSessionSpan, GetAiSessionSummaryResponse } from "@maple/domain/http"
-import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
-import { buildSessionSummary, buildSessionTurns, type SessionSummary, type SessionTurn } from "@maple/agent-sessions"
+import {
+	buildSessionSummary,
+	buildSessionTurns,
+	type SessionSummary,
+	type SessionTurn,
+} from "@maple/agent-sessions"
 import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "@maple/agent-sessions/testing"
 import { SessionFlow } from "./session-flow"
 import { SessionHeader, sessionIdentity } from "./session-header"
@@ -401,13 +405,12 @@ describe("SessionOverview", () => {
 
 	// Agent time, not the clock: 23s of tools and 18s of model calls inside a
 	// 5m 12s session, with two of those tools running at the same time.
-	it("splits agent time by class of work, and says how wide the fan-out got", () => {
+	it("splits agent time by class of work", () => {
 		render(<Overview />)
 
 		expect(screen.getByText("Tool execution")).toBeTruthy()
 		expect(screen.getByText("Agent time").nextElementSibling?.textContent).toBe("41s")
 		expect(screen.getByText("Wall clock").nextElementSibling?.textContent).toBe("5m 12s")
-		expect(screen.getByText("agents in parallel").previousElementSibling?.textContent).toBe("2×")
 	})
 
 	// Idle is not agent time, but nothing at all was running then — disjoint
@@ -437,15 +440,28 @@ describe("SessionOverview", () => {
 	})
 
 	// A mid-session failure the session recovered from is not a failed session —
-	// but it is exactly what the findings list exists to surface. There is no
-	// verdict line above it: the findings ARE the verdict, and a headline
-	// counting them said it twice.
-	it("leads with the findings when something failed mid-session, and opens one", () => {
+	// but it is exactly what the checklist exists to surface: the session
+	// completed, the tool check says what failed and what to do, and its
+	// evidence row opens the span.
+	it("leads with the checks that need attention when something failed mid-session, and opens one", () => {
 		const onSelectSpan = vi.fn()
 		render(<Overview onSelectSpan={onSelectSpan} />)
 
-		expect(screen.queryByText(/^Completed/)).toBeNull()
-		expect(screen.getByText("Findings")).toBeTruthy()
+		expect(screen.getByText("Completed")).toBeTruthy()
+		expect(screen.getByText("Needs attention")).toBeTruthy()
+		const errors = within(screen.getByTestId("check-tool-errors"))
+		expect(errors.getByText("Tool errors")).toBeTruthy()
+		// The tool name is set as code, so the sentence's own text starts after it.
+		expect(errors.getByText(/^1 tool call failed; the session carried on$/)).toBeTruthy()
+		const scrollIntoView = vi.fn()
+		const original = Element.prototype.scrollIntoView
+		Element.prototype.scrollIntoView = scrollIntoView
+		try {
+			fireEvent.click(errors.getByRole("button", { name: "Tools section" }))
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" })
+		} finally {
+			Element.prototype.scrollIntoView = original
+		}
 		fireEvent.click(screen.getByText("error · run_tests"))
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
@@ -488,12 +504,17 @@ describe("SessionOverview", () => {
 		expect(onSelectSpan).toHaveBeenCalledWith(undefined)
 	})
 
-	it("says a clean session completed cleanly, and what that claim covers", () => {
+	// A clean session is not an empty page: the passed list opens on its own,
+	// and every row says what it measured.
+	it("says a clean session completed cleanly, and opens the passed checks with their facts", () => {
 		render(<Overview turns={quietTurns} summary={quiet} />)
 
-		expect(screen.getByText("Completed cleanly")).toBeTruthy()
-		expect(screen.getByText(/No errors, refusals, truncated replies/)).toBeTruthy()
-		expect(screen.getByText("No findings.")).toBeTruthy()
+		expect(screen.getByText("Completed")).toBeTruthy()
+		// The headline is the count strip's job here; only a failed session names a cause.
+		expect(screen.queryByText(/^cleanly —/)).toBeNull()
+		expect(screen.getByText(/^Nothing to fix/)).toBeTruthy()
+		expect(screen.getByRole("button", { name: /^Passed/ }).getAttribute("aria-expanded")).toBe("true")
+		expect(screen.getByText("No model call was rate-limited")).toBeTruthy()
 	})
 
 	// The ledger's row is a summary; the calls behind it are the point. A mark is
@@ -1189,7 +1210,13 @@ describe("SessionViews", () => {
 	// in hand and marks that its end is not here yet. Nothing asks the reader
 	// to load anything.
 	it("waits for the agent's spans in the Overview and marks the transcript's open end while loading", () => {
-		const progress: SessionLoadProgress = { phase: "agent", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = {
+			phase: "agent",
+			agentSpansComplete: false,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry: noop,
+		}
 		render(<Views view="overview" progress={progress} totals={totals} />)
 
 		const waiting = screen.getByTestId("overview-waiting")
@@ -1205,7 +1232,13 @@ describe("SessionViews", () => {
 	// while the app's spans are still filling in behind it, and the transcript
 	// has its end.
 	it("renders the Overview and a closed transcript once the agent's spans are all in", () => {
-		const progress: SessionLoadProgress = { phase: "app", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = {
+			phase: "app",
+			agentSpansComplete: true,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry: noop,
+		}
 		render(<Views view="overview" progress={progress} totals={totals} />)
 		expect(screen.queryByTestId("overview-waiting")).toBeNull()
 		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
@@ -1215,7 +1248,13 @@ describe("SessionViews", () => {
 	// A page that did not come back is the one case with something to press.
 	it("offers a retry where an agent page failed", () => {
 		const retry = vi.fn()
-		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: false, loadedSpans: 8, loadedAgentSpans: 6, retry }
+		const progress: SessionLoadProgress = {
+			phase: "failed",
+			agentSpansComplete: false,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry,
+		}
 		render(<Views view="transcript" progress={progress} totals={totals} />)
 		expect(screen.getByText("The rest of this session didn't load")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }))
@@ -1226,7 +1265,13 @@ describe("SessionViews", () => {
 	// alone: the Overview stands and the transcript has its end. The header
 	// indicator is where that failure is reported.
 	it("keeps the Overview and a closed transcript when only an app page failed", () => {
-		const progress: SessionLoadProgress = { phase: "failed", agentSpansComplete: true, loadedSpans: 8, loadedAgentSpans: 6, retry: noop }
+		const progress: SessionLoadProgress = {
+			phase: "failed",
+			agentSpansComplete: true,
+			loadedSpans: 8,
+			loadedAgentSpans: 6,
+			retry: noop,
+		}
 		render(<Views view="overview" progress={progress} totals={totals} />)
 		expect(screen.queryByTestId("overview-waiting")).toBeNull()
 		fireEvent.click(screen.getByRole("tab", { name: /Transcript/ }))
@@ -1382,13 +1427,14 @@ describe("SessionViews", () => {
 })
 
 describe("SessionHeader", () => {
-	it("names the session after its agent, with the framework as a fact beside it", () => {
+	it("names the session after its agent, and leaves the framework to its mark", () => {
 		const { summary: vendorSummary } = sessionOf([
 			agentSpan({ spanId: "v-agent", startMs: 0, durationMs: SECOND, vendorId: "langchain" }),
 		])
 		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} />)
 		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("billing-agent")
-		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
+		expect(screen.queryByText("Framework")).toBeNull()
+		expect(screen.queryByText("LangChain")).toBeNull()
 	})
 
 	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
@@ -1396,18 +1442,28 @@ describe("SessionHeader", () => {
 		expect(screen.queryByText(/webhook/)).toBeNull()
 	})
 
-	it("shows the full session id as a copyable fact, never as the heading", () => {
+	it("shows the session id as a copyable fact, never as the heading", () => {
 		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} />)
 		const copy = screen.getByRole("button", { name: "Copy Session ID" })
 		expect(copy.textContent).toContain("0f3c9a1e-long-session-id")
 		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("0f3c9a1e")
 	})
 
-	it("shows the duration, and neither the model nor a turn count", () => {
+	// An id is emitter input of any length: the fact shows a prefix, the
+	// clipboard and the tooltip carry the whole.
+	it("shortens a long session id to its first 32 characters, keeping the whole to copy", () => {
+		const long = "a".repeat(32) + "b".repeat(20)
+		render(<SessionHeader sessionId={long} summary={summary} />)
+		const copy = screen.getByRole("button", { name: "Copy Session ID" })
+		expect(copy.textContent).toContain(`${"a".repeat(32)}…`)
+		expect(copy.textContent).not.toContain("b")
+		expect(screen.getByTitle(long)).toBeTruthy()
+	})
+
+	it("states neither the duration, the framework, the model nor a turn count", () => {
 		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.getByText("Duration").nextElementSibling?.textContent).toBe(
-			formatSessionDuration(summary.wallClockMs),
-		)
+		expect(screen.queryByText("Duration")).toBeNull()
+		expect(screen.queryByText("Framework")).toBeNull()
 		expect(screen.queryByText("Turns")).toBeNull()
 		expect(screen.queryByText("Model")).toBeNull()
 	})
@@ -1420,22 +1476,14 @@ describe("SessionHeader", () => {
 	})
 
 	it("falls back to the framework, then to a generic name, when no agent is named", () => {
-		expect(sessionIdentity({ agentNames: [], vendorIds: ["claude_agent_sdk"] })).toEqual({
-			heading: "Claude Agent SDK session",
-			framework: undefined,
-		})
-		expect(sessionIdentity({ agentNames: [], vendorIds: ["unknown:foo"] })).toEqual({
-			heading: "Agent session",
-			framework: undefined,
-		})
-		expect(sessionIdentity({ agentNames: ["planner"], vendorIds: [] })).toEqual({
-			heading: "planner",
-			framework: undefined,
-		})
+		expect(sessionIdentity({ agentNames: [], vendorIds: ["claude_agent_sdk"] })).toBe(
+			"Claude Agent SDK session",
+		)
+		expect(sessionIdentity({ agentNames: [], vendorIds: ["unknown:foo"] })).toBe("Agent session")
+		expect(sessionIdentity({ agentNames: ["planner"], vendorIds: [] })).toBe("planner")
 		// `default` is the SDK's placeholder, not a name.
-		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toEqual({
-			heading: "Claude Agent SDK session",
-			framework: undefined,
-		})
+		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toBe(
+			"Claude Agent SDK session",
+		)
 	})
 })

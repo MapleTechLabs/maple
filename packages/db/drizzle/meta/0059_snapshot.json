@@ -1,5 +1,5 @@
 {
-  "id": "51b10aa6-d93b-4f4b-906e-6e4bdcdb1a3c",
+  "id": "24e1da2d-418a-4012-a13f-d0a60b042c23",
   "prevId": "05023a0b-d80d-4e35-a2ba-f042bb12470b",
   "version": "7",
   "dialect": "postgresql",
@@ -5637,12 +5637,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "progress_json": {
-          "name": "progress_json",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "severity": {
           "name": "severity",
           "type": "text",
@@ -7345,6 +7339,61 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.planetscale_issue_receipts": {
+      "name": "planetscale_issue_receipts",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "planetscale_issue_receipts_processed_at_idx": {
+          "name": "planetscale_issue_receipts_processed_at_idx",
+          "columns": [
+            {
+              "expression": "processed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "planetscale_issue_receipts_org_id_event_id_pk": {
+          "name": "planetscale_issue_receipts_org_id_event_id_pk",
+          "columns": [
+            "org_id",
+            "event_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

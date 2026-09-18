@@ -15,14 +15,9 @@ import { makeV2Client, toV2Timestamp } from "./v2-client"
 // So the rule here: assert the OUTBOUND request. URL, method, and body shape
 // are the contract with the server, and they are what drifts.
 //
-// Two mechanics matter for the harness itself:
-//
-//  - Plain awaited tests, not `it.effect`. The stub is global state, and
-//    overlapping test fibers let one test's stub answer another's request.
-//  - The stub is installed ONCE, at module scope, with a swappable responder.
-//    `FetchHttpClient` captures `globalThis.fetch` when the client is first
-//    built, so reassigning it per test only ever affects whichever test ran
-//    first — every later test's request lands in the first test's recorder.
+// Run plain awaited tests because the recorder and responder are shared within
+// this file. Supply the fetch stub through Effect's service context: a global
+// replacement depends on whether another suite has already built an HTTP client.
 
 interface CapturedRequest {
 	readonly url: string
@@ -62,8 +57,6 @@ const fetchStub = Object.assign(
 	{ preconnect: globalThis.fetch.preconnect },
 ) satisfies typeof fetch
 
-globalThis.fetch = fetchStub
-
 const stubV2 = (respond: (url: string) => StubResponse) => {
 	responder = respond
 	return requests
@@ -73,6 +66,7 @@ const RANGE = { startTime: "2026-08-15 12:00:00", endTime: "2026-08-15 13:00:00"
 
 const v2Client = makeV2Client("https://api.maple.test", "maple_ak_testtoken").pipe(
 	Effect.provide(FetchHttpClient.layer),
+	Effect.provideService(FetchHttpClient.Fetch, fetchStub),
 )
 
 const listEnvelope = (data: ReadonlyArray<unknown>) => ({
