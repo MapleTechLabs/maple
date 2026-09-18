@@ -154,6 +154,50 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
 }
 
 /**
+ * Which fleets run the gateway. Both can run at once, each behind its own ALB,
+ * which is how the Fargate → EC2 cutover works: bring EC2 up beside Fargate,
+ * flip the proxied `ingest` CNAME, then drop Fargate.
+ */
+export interface IngestFleets {
+	fargate: boolean
+	ec2: boolean
+}
+
+/**
+ * Parses `MAPLE_INGEST_FLEETS` (`fargate`, `ec2`, or `fargate,ec2`). Unset is
+ * Fargate only, the state before the cutover.
+ */
+export function parseIngestFleets(value: string | undefined): IngestFleets {
+	const requested = (value ?? "")
+		.split(",")
+		.map((fleet) => fleet.trim())
+		.filter((fleet) => fleet !== "")
+	if (requested.length === 0) return { fargate: true, ec2: false }
+	const unknown = requested.filter((fleet) => fleet !== "fargate" && fleet !== "ec2")
+	if (unknown.length > 0) {
+		throw new Error(
+			`MAPLE_INGEST_FLEETS: unknown fleet(s) "${unknown.join(", ")}" (expected fargate, ec2)`,
+		)
+	}
+	return { fargate: requested.includes("fargate"), ec2: requested.includes("ec2") }
+}
+
+/**
+ * EC2 instance type for the gateway: Graviton3 with a 118 GB local NVMe
+ * instance store, which holds the WAL. The `d` is the point: the WAL fsyncs
+ * every frame, and instance-store fsync is tens of microseconds where Fargate's
+ * network-backed ephemeral storage is milliseconds.
+ */
+export const INGEST_EC2_INSTANCE_TYPE = "c7gd.large"
+
+/**
+ * Task size on the EC2 fleet, every stage. One task per instance (host
+ * networking binds the port), so it claims the c7gd.large's 2 vCPU and most of
+ * its ~3.7 GiB registered memory, leaving room for a per-host monitoring daemon.
+ */
+export const INGEST_EC2_TASK_SIZE: IngestTaskSize = { cpu: 2048, memory: 3072 }
+
+/**
  * Whether a stage gets an AWS ingest deployment at all.
  *
  * Every deployed stage does — prd and PR previews. Dev stages run the gateway

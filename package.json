@@ -127,6 +127,7 @@
 		"@effect/ai-openrouter@4.0.0-rc.116": "patches/@effect%2Fai-openrouter@4.0.0-rc.116.patch",
 		"@effect/vitest@4.0.0-rc.116": "patches/@effect%2Fvitest@4.0.0-rc.116.patch",
 		"effect@4.0.0-rc.116": "patches/effect@4.0.0-rc.116.patch",
-		"@maple-dev/effect-clickhouse@0.1.0": "patches/@maple-dev%2Feffect-clickhouse@0.1.0.patch"
+		"@maple-dev/effect-clickhouse@0.1.0": "patches/@maple-dev%2Feffect-clickhouse@0.1.0.patch",
+		"alchemy@2.0.0-beta.79": "patches/alchemy@2.0.0-beta.79.patch"
 	}
 }
