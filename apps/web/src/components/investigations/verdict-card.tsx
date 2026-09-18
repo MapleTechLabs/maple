@@ -175,21 +175,11 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 			}
 		>
 			<Eyebrow tone="text-primary">Suspected cause</Eyebrow>
-			{/*
-			 * The heading is `headline`, which is the only field prompted to be one.
-			 * It used to be `suspectedCause`, which is prompted for a mechanism as
-			 * well as a cause and arrives as a paragraph, so the page headline was
-			 * whatever length the model felt like. `reportHeadline` falls back for
-			 * reports written before the field existed.
-			 */}
+			{/* `headline` is the only field prompted to be one line; `reportHeadline` falls back for older reports. */}
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				{heading}
 			</h2>
-			{/*
-			 * Each body field is drawn only if the heading is not already it. On a
-			 * report written before `headline` existed the heading IS the summary, and
-			 * printing both put the same sentence on the card twice.
-			 */}
+			{/* Each body field is drawn only if the heading is not already it (older reports fall back to `summary`). */}
 			<Body heading={heading} text={report.summary} />
 			<Mechanism heading={heading} text={report.suspectedCause} />
 			<NextActions actions={report.suggestedActions} />
@@ -207,14 +197,7 @@ function Body({ heading, text }: { heading: string | null; text: string }) {
 	return <p className="text-sm leading-6 text-muted-foreground">{text}</p>
 }
 
-/**
- * The mechanism by which the cause produces the symptoms.
- *
- * Bordered off rather than run on as a third paragraph. The two above it are the
- * finding and its summary and are read every time; this is the explanation, it is
- * the longest thing on the card, and a reader who already believes the verdict
- * should be able to skip it at a glance.
- */
+/** The mechanism, set off by a rule so a reader who already believes the verdict can skip it. */
 function Mechanism({ heading, text }: { heading: string | null; text: string }) {
 	if (repeatsHeading(heading, text)) return null
 	return (
@@ -224,14 +207,7 @@ function Mechanism({ heading, text }: { heading: string | null; text: string }) 
 	)
 }
 
-/**
- * What to do about it, on the page rather than behind the graph.
- *
- * These were only ever reachable as nodes on the provenance canvas, one click
- * deep in a detail sheet. They are the half of a diagnosis a responder acts on,
- * and a verdict that names a cause without them is an explanation rather than a
- * handover.
- */
+/** Suggested actions on the card; they used to be reachable only as graph nodes behind a click. */
 function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 	if (actions.length === 0) return null
 	return (
@@ -239,11 +215,10 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
 				What to do
 			</span>
-			{/* Ordered, because the report is prompted for ordered steps and a reader
-			    acting on the first one needs to know it is the first one. */}
+			{/* Ordered, because the report is prompted for ordered steps. */}
 			<ol className="flex flex-col gap-2">
 				{actions.map((action, index) => (
-					<li key={action} className="flex gap-3 text-sm leading-6 text-foreground">
+					<li key={index} className="flex gap-3 text-sm leading-6 text-foreground">
 						<span className="mt-px shrink-0 text-xs tabular-nums text-muted-foreground">
 							{index + 1}
 						</span>
@@ -296,11 +271,6 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 				One agent is working this question: reading the traces, logs and metrics around it and testing
 				the likely explanations.
 			</p>
-			{/*
-			 * The sentence above is the same on every investigation and stays the same
-			 * for the whole run, which is why it used to end by pointing at the
-			 * transcript tab. The feed is what it was pointing at.
-			 */}
 			<RunProgress investigation={investigation} className="mt-1 border-t pt-4" />
 		</VerdictShell>
 	)
@@ -341,8 +311,6 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				The pass ended without a diagnosis
 			</h2>
-			{/* "The transcript keeps whatever the agent gathered" used to be here,
-			    pointing at a tab. The feed below is that, on this card. */}
 			<p className="text-sm leading-6 text-muted-foreground">
 				No report was recorded. Retry to run the pass again.
 			</p>
@@ -357,12 +325,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 					</code>
 				</div>
 			) : null}
-			{/*
-			 * How far it got, which on a failed pass is the only account of the run
-			 * that outlives the agent's event stream. "The transcript keeps whatever
-			 * the agent gathered" above is true and is a tab away; this is the part a
-			 * reader deciding whether to retry actually needs.
-			 */}
+			{/* How far the pass got: on a failed run, the only account that outlives the event stream. */}
 			<RunProgress investigation={investigation} className="mt-1 border-t pt-4" />
 		</VerdictShell>
 	)

@@ -1,17 +1,7 @@
 /**
- * What a running investigation is doing, written to its row as it goes.
- *
- * Before this the row said nothing between being opened and a report landing.
- * The page could show that a pass was running and for how long, and that was all
- * of it: every step the run took lived in the agent's event stream, behind a
- * different tab, and was gone the moment the run ended without one.
- *
- * The accumulation is here rather than in `InvestigationService` because this is
- * where the events are. A recorder holds the tail in memory and hands the
- * service a whole record on a heartbeat, so a hundred tool calls cost a handful
- * of writes. That matters more than it looks: `investigations` replicates with
- * REPLICA IDENTITY FULL, so every write ships the entire row, including the
- * subject, snapshot and report blobs.
+ * What a running investigation is doing, accumulated from its tool-call events and handed to
+ * `InvestigationService` as a whole record on a heartbeat. The table replicates with REPLICA
+ * IDENTITY FULL, so a write per tool call would ship the entire row up to a hundred times a run.
  */
 import { Option, Schema } from "effect"
 import {
@@ -20,15 +10,7 @@ import {
 	type InvestigationStep,
 } from "@maple/domain/http"
 
-/**
- * A tool call's arguments, once.
- *
- * `ChatToolCallEvent.input` is `Schema.Unknown` on the wire, because the union
- * of ~47 tools' parameter schemas is not a type worth writing and no consumer
- * has ever needed one. This is the parse that makes it a value: an open record,
- * decoded at the one place a tool call enters this module, so nothing below has
- * to take `unknown` and guess.
- */
+/** `ChatToolCallEvent.input` is `Schema.Unknown` on the wire; this is the one parse into a record. */
 export const ToolCallInput = Schema.Record(Schema.String, Schema.Unknown)
 export type ToolCallInput = Schema.Schema.Type<typeof ToolCallInput>
 
@@ -43,14 +25,7 @@ export const PROGRESS_HEARTBEAT_MS = 8_000
 /** Longest argument fragment a label will carry. */
 const ARG_MAX = 32
 
-/**
- * Input keys worth naming in a label, most specific first.
- *
- * A generic "Search logs" says the run is alive; "Search logs in checkout-api"
- * says what it is thinking about, which is the only reason to watch a feed at
- * all. The order is the order a reader would want them, not the order tools
- * declare them.
- */
+/** Input keys worth naming in a label, most specific first. */
 const SALIENT_KEYS = [
 	"trace_id",
 	"fingerprint",
@@ -74,13 +49,7 @@ const clamp = (value: string): string => {
 	return line.length > ARG_MAX ? `${line.slice(0, ARG_MAX - 1).trimEnd()}…` : line
 }
 
-/**
- * The one argument worth showing, or nothing.
- *
- * Nothing is a perfectly good answer. A label that pads itself with whichever
- * key happened to be first reads as detail while carrying none, and the tools
- * whose arguments are all time bounds are exactly the ones where that happens.
- */
+/** The one argument worth showing, or nothing: a label padded with a time bound reads as detail while carrying none. */
 const salientArg = (input: ToolCallInput): string | null => {
 	for (const key of SALIENT_KEYS) {
 		const text = asText(input[key])
@@ -89,29 +58,25 @@ const salientArg = (input: ToolCallInput): string | null => {
 	return null
 }
 
+/** Words that stay upper case when a tool name is read as a phrase. */
+const ACRONYMS = new Set(["sql", "id", "api", "mcp"])
+
+const word = (raw: string, first: boolean): string =>
+	ACRONYMS.has(raw) ? raw.toUpperCase() : first ? `${raw.charAt(0).toUpperCase()}${raw.slice(1)}` : raw
+
 /**
- * A tool call as a line of English.
- *
- * Derived from the tool name rather than mapped from it. A map over ~47 tools is
- * a map that goes stale the first time one is added and nobody notices, because
- * a missing entry degrades to something plausible. Maple's tool names are
- * already verb-first snake case, so the derivation is the map.
+ * A tool call as a line of English, derived from the verb-first snake-case tool name rather than
+ * mapped from it: a map over ~47 tools goes stale the first time one is added and nobody notices.
  */
 export const stepLabel = (tool: string, input: ToolCallInput): string => {
-	const words = tool.split("_").filter((word) => word.length > 0)
-	const phrase =
-		words.length === 0
-			? tool
-			: `${words[0]!.charAt(0).toUpperCase()}${words[0]!.slice(1)} ${words.slice(1).join(" ")}`.trim()
+	const words = tool.split("_").filter((part) => part.length > 0)
+	const phrase = words.length === 0 ? tool : words.map((part, index) => word(part, index === 0)).join(" ")
 	const arg = salientArg(input)
 	return arg === null ? phrase : `${phrase} · ${arg}`
 }
 
 export interface ProgressRecorder {
-	/**
-	 * Note a tool call. Returns the record to write, or `undefined` while the
-	 * heartbeat has not elapsed.
-	 */
+	/** Note a tool call. Returns the record to write, or `undefined` while the heartbeat has not elapsed. */
 	readonly step: (tool: string, input: ToolCallInput, nowMs: number) => InvestigationProgress | undefined
 	/** The record as it stands, for the flush a run's end owes its last steps. */
 	readonly pending: () => InvestigationProgress | undefined
@@ -136,9 +101,7 @@ export const makeProgressRecorder = (): ProgressRecorder => {
 				-INVESTIGATION_PROGRESS_STEPS,
 			)
 			dirty = true
-			// The first step always writes. It is the one that turns a page saying
-			// "gathering evidence" into a page saying what is being gathered, and
-			// making a reader wait a heartbeat for it is the whole complaint.
+			// The first step always writes; making a reader wait a heartbeat for it is the whole complaint.
 			if (lastWriteMs !== undefined && nowMs - lastWriteMs < PROGRESS_HEARTBEAT_MS) return undefined
 			lastWriteMs = nowMs
 			dirty = false

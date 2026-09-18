@@ -31,8 +31,8 @@ describe("stepLabel", () => {
 		expect(label.endsWith("…")).toBe(true)
 	})
 
-	it("survives a tool name that is not snake case", () => {
-		expect(stepLabel("run_sql", { sql: "SELECT 1" })).toBe("Run sql · SELECT 1")
+	it("keeps acronyms upper case", () => {
+		expect(stepLabel("run_sql", { sql: "SELECT 1" })).toBe("Run SQL · SELECT 1")
 	})
 })
 

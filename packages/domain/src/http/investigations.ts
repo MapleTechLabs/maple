@@ -51,13 +51,7 @@ export type InvestigationConfidence = Schema.Schema.Type<typeof InvestigationCon
 
 // Run progress
 
-/**
- * One thing the pass did, as a line a person can read.
- *
- * `tool` is kept beside `label` rather than being mapped away, because the label
- * is a display string with no stable meaning and the tool name is the only part
- * of a step worth matching on later.
- */
+/** One thing the pass did. `tool` stays beside the display `label` because it is the only part worth matching on later. */
 export const InvestigationStep = Schema.Struct({
 	tool: Schema.String,
 	label: Schema.String,
@@ -69,21 +63,9 @@ export type InvestigationStep = Schema.Schema.Type<typeof InvestigationStep>
 export const INVESTIGATION_PROGRESS_STEPS = 12
 
 /**
- * What a running pass is doing, durably.
- *
- * It exists because the row said nothing between `created_at` and a report
- * landing: the page could show that a pass was running and for how long, and
- * that was the whole of it. Everything a run was actually doing lived in the
- * agent's event stream, behind a different tab, gone as soon as the tab closed.
- *
- * `steps` is the tail rather than the whole run, capped at
- * {@link INVESTIGATION_PROGRESS_STEPS}. The full record is the transcript; this
- * answers "is it alive, and what is it looking at", which only the last few
- * steps bear on. The cap also bounds a column on a table replicated with
- * REPLICA IDENTITY FULL, where every write ships the whole row.
- *
- * `steps` is the tail of a run that may have taken more steps than it holds, so
- * `stepCount` is stored rather than derived from the array's length.
+ * What a running pass is doing, durably. `steps` is a tail capped at
+ * {@link INVESTIGATION_PROGRESS_STEPS} (the transcript is the full record, and the table
+ * replicates with REPLICA IDENTITY FULL), so `stepCount` is stored rather than derived.
  */
 export const InvestigationProgress = Schema.Struct({
 	stepCount: Schema.Number,
@@ -240,11 +222,7 @@ export class InvestigationDocument extends Schema.Class<InvestigationDocument>("
 	snapshot: InvestigationSubjectSnapshot,
 	/** The latest structured diagnosis, or null until the first `submit_diagnosis`. */
 	report: Schema.NullOr(AiTriageResult),
-	/**
-	 * What the pass is doing, or got as far as doing. Null before the first step,
-	 * and kept after the run ends: on a pass that failed it is the only surviving
-	 * record of how far it got.
-	 */
+	/** What the pass is doing, or got as far as doing. Null before the first step; kept after the run ends. */
 	progress: Schema.NullOr(InvestigationProgress),
 	model: Schema.NullOr(Schema.String),
 	/** Denormalized from the report for cheap war-room list rendering. */

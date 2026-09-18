@@ -78,10 +78,8 @@ const SUBSCRIPTIONS = {
 	// org-wide shape would stream the entire history to read a single page. The
 	// scope column is pinned here; only its *value* comes from the client, and only
 	// as positional `$2`.
-	// `_v2` because `columns` gained `progress_json`. Both fields here are
-	// immutable per the note above, so widening the projection is a new shape and
-	// a full re-sync. It is cheap on this one: a browser holds a single row of it,
-	// scoped to the investigation on screen, and drops it on navigate.
+	// `_v2` because `columns` gained `progress_json`: widening an immutable projection is a new
+	// shape and a full re-sync, cheap here since a browser holds one row of it.
 	investigation_v2: {
 		table: "investigations",
 		scope: "id",

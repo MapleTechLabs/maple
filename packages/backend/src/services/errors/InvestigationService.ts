@@ -122,16 +122,8 @@ export interface InvestigationServiceApi {
 		InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 	>
 	/**
-	 * Record what the running pass is doing, so the row says something before a
-	 * report lands.
-	 *
-	 * The caller owns the accumulation and the write rate. It is the one holding
-	 * the run's event stream, so it can batch steps without a read-back, and this
-	 * table replicates with REPLICA IDENTITY FULL: a write per tool call would
-	 * ship the whole row, jsonb blobs included, up to a hundred times a run.
-	 *
-	 * Only a row still `investigating` moves. A late step arriving after a
-	 * diagnosis landed must not re-open the record of how the run went.
+	 * Record what the running pass is doing. The caller owns accumulation and write rate (the table
+	 * replicates with REPLICA IDENTITY FULL). Only a row still `investigating` moves.
 	 */
 	readonly recordProgress: (
 		orgId: OrgId,
@@ -231,16 +223,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					? Effect.succeed(null)
 					: decodeStoredField(row.id, "report", AiTriageResult, row.reportJson)
 
-			/**
-			 * Progress degrades to null rather than corrupting the document.
-			 *
-			 * It is the only jsonb column here that is not part of what an
-			 * investigation IS. A report that will not decode has to be a corruption
-			 * error, because a caller silently handed a report-shaped null is worse
-			 * off than one handed an error. A step feed that will not decode costs
-			 * the reader a progress panel, and failing the whole document over it
-			 * would take the diagnosis down with it.
-			 */
+			// Progress degrades to null rather than failing the document: unlike `report`, it is not
+			// part of what an investigation is, and losing it should not take the diagnosis down.
 			const parseProgress = (row: InvestigationRow) =>
 				row.progressJson == null
 					? Effect.succeed(null)
@@ -713,10 +697,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					"maple.investigation.id": id,
 					"maple.investigation.step_count": progress.stepCount,
 				})
-				// `updatedAt` is deliberately left alone. The hub sorts on it, and
-				// bumping it every heartbeat would walk a running investigation up the
-				// list under the reader's cursor every few seconds. Liveness is
-				// `progress.updatedAt`, which is what a reader of progress wants anyway.
+				// `updatedAt` is left alone: the hub sorts on it, and bumping it every heartbeat would
+				// walk a running row up the list under the reader. Liveness is `progress.updatedAt`.
 				yield* dbExecute((db) =>
 					db
 						.update(investigations)
