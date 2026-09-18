@@ -240,22 +240,22 @@ export default Alchemy.Stack(
 		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
 
 		// The agents' repository sandbox: it hosts Cloudflare's Sandbox Durable
-		// Object, and the api binds it as `SANDBOX`. Yielded first so the binding
+		// Object, and maple-ai binds it as `SANDBOX`. Yielded first so the binding
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
 		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
 		// Every agent surface — the MCP server and its tools, the chat agent, the
-		// investigation fan-out. Yielded before api because api binds it, and a
+		// investigation pass. Yielded before api because api binds it, and a
 		// `Worker.ref` cannot see a sibling this deploy creates.
 		// The root IS the entry point, and the AI Worker hosts the chat Durable
 		// Object: yielding the Worker resolves the class, and its Live layer is what
 		// registers the class in the deployed bundle's exports.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		const ai = yield* Effect.provide(MapleAi, MapleAiLive)
-		yield* serveWorker("ai", ai)
-		const api = yield* Effect.provideService(MapleApi, AiWorker, ai).pipe((withAi) =>
-			sandbox === undefined ? withAi : Effect.provideService(withAi, SandboxWorker, sandbox),
+		const ai = yield* Effect.provide(MapleAi, MapleAiLive).pipe((withLive) =>
+			sandbox === undefined ? withLive : Effect.provideService(withLive, SandboxWorker, sandbox),
 		)
+		yield* serveWorker("ai", ai)
+		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd — dev stages use the

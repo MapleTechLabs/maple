@@ -3,7 +3,7 @@ import { Context, Effect, Schema, Tracer } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
-import { mapleToolCatalog, toInputSchema } from "./tools/registry"
+import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
@@ -54,7 +54,7 @@ describe("MCP dispatcher", () => {
 		Effect.gen(function* () {
 			const descriptors = yield* listMcpTools
 			expect(descriptors).toEqual(
-				mapleToolCatalog.map((definition) => ({
+				mapleToolCatalogFor("mcp").map((definition) => ({
 					name: definition.name,
 					description: definition.description,
 					inputSchema: toInputSchema(definition.schema),
@@ -62,6 +62,57 @@ describe("MCP dispatcher", () => {
 			)
 		}),
 	)
+
+	describe("tool audience", () => {
+		// The sandbox tools execute code inside a container holding the org's source.
+		// They are for Maple's own agents; a third-party MCP client never sees them.
+		const INTERNAL_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+
+		it("keeps the sandbox tools internal", () => {
+			const internal = mapleToolCatalog.filter((d) => d.audience === "internal").map((d) => d.name)
+			expect(internal.sort()).toEqual([...INTERNAL_TOOLS].sort())
+		})
+
+		it.effect("does not list an internal tool on the public transport", () =>
+			Effect.gen(function* () {
+				const listed = new Set((yield* listMcpTools).map((descriptor) => descriptor.name))
+				expect(INTERNAL_TOOLS.filter((name) => listed.has(name))).toEqual([])
+				// The agents' catalogs still carry them.
+				const chat = new Set(mapleToolCatalogFor("chat").map((d) => d.name))
+				const workflow = new Set(mapleToolCatalogFor("workflow").map((d) => d.name))
+				expect(INTERNAL_TOOLS.filter((name) => !chat.has(name) || !workflow.has(name))).toEqual([])
+			}),
+		)
+
+		it.effect("refuses an internal tool from the public transport as an unknown tool", () =>
+			Effect.gen(function* () {
+				const executor = yield* makeValidationExecutor
+				const error = yield* Effect.flip(
+					executor.execute(
+						TENANT,
+						"sandbox_exec",
+						{ repository: "acme/app", command: "git", args: ["log"] },
+						"mcp",
+					) as Effect.Effect<never, McpToolNotFoundError, never>,
+				)
+				// Same answer as a name that was never registered, so probing cannot
+				// tell the two apart.
+				expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
+				expect(error.name).toBe("sandbox_exec")
+			}),
+		)
+
+		it.effect("dispatches the same tool for an internal surface", () =>
+			Effect.gen(function* () {
+				const executor = yield* makeValidationExecutor
+				// Empty input stops at schema decoding, after the audience check and
+				// before the handler reads a sandbox service this executor lacks.
+				const result = yield* executor.execute(TENANT, "sandbox_exec", {}, "chat")
+				expect(result.isError).toBe(true)
+				expect(result.content[0]?.text).toContain("Invalid parameters")
+			}),
+		)
+	})
 
 	it("normalizes an empty Struct root and rejects a non-object root", () => {
 		// Effect emits `{ anyOf: [{type:"object"},{type:"array"}] }` — no `type` —

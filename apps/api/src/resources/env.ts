@@ -10,13 +10,14 @@
  * optional-omit rule, the PR-preview exclusions and the `derived` values the
  * environment must not override.
  */
-import { type MapleDomains, type MapleStage, stageDeploysSandbox } from "@maple/infra/cloudflare"
+import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
 	derived,
+	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -81,11 +82,6 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		// Billing details (company name, address, tax IDs) are written to the Stripe
 		// customer Autumn links; Autumn itself has no API for them.
 		optionalSecret("STRIPE_SECRET_KEY"),
-		// The api's half of the sandbox service binding's auth. Declared only on the
-		// stages that deploy a sandbox Worker, and required there: without it the
-		// binding is present but every call is refused, which reads to the agent as
-		// "no sandbox in this deployment" — the shape prd was in until 2026-09-11.
-		...(stageDeploysSandbox(stage) ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("HAZEL_API_BASE_URL"),
@@ -98,13 +94,13 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		optionalSecret("SLACK_CLIENT_SECRET"),
 		optionalSecret("SLACK_INTERNAL_SERVICE_TOKEN"),
 		apnsEnv,
-		optionalPlain("GITHUB_APP_ID"),
+		// The repository-reading half is shared with maple-ai; the install flow and
+		// the webhook receiver are this Worker's alone.
+		githubAppSourceEnv,
 		optionalPlain("GITHUB_APP_SLUG"),
-		optionalSecret("GITHUB_APP_PRIVATE_KEY"),
 		optionalPlain("GITHUB_APP_CLIENT_ID"),
 		optionalSecret("GITHUB_APP_CLIENT_SECRET"),
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
-		optionalPlain("GITHUB_API_BASE_URL"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
 	)

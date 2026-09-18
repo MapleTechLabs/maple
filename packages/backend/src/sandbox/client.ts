@@ -1,8 +1,9 @@
 /**
- * The api's half of the sandbox service binding.
+ * The consuming Worker's half of the sandbox service binding — maple-ai's, whose
+ * agents run the sandbox tools.
  *
  * The sandbox Worker owns Cloudflare's Sandbox Durable Object and the container
- * behind it; this is the only way the api reaches it. The binding is absent on a
+ * behind it; this is the only way to reach it. The binding is absent on a
  * deployment that did not provision one, which is a first-class answer rather
  * than a crash: the tools then report that no sandbox is available.
  */
