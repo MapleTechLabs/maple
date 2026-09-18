@@ -174,7 +174,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						summary.agentTime.segments
 							.map((segment) => `${segment.kind} ${formatDurationFromMs(segment.ms)}`)
 							.join(", ") || "unbroken"
-					}), peak parallel ${summary.agentTime.peakParallel}`,
+					})`,
 					``,
 					`### Work`,
 					`- ${summary.work.turns} turns · ${summary.work.llmCalls} LLM calls · ${summary.work.toolCalls} tool calls · ${summary.spanCount} spans · ${summary.traceCount} traces`,

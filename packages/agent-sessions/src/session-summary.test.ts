@@ -59,7 +59,7 @@ describe("buildSessionSummary — time", () => {
 		expect(summary.activeMs).toBe(20 * SECOND)
 	})
 
-	it("sums agent time, so parallel tools exceed the wall clock and say how wide", () => {
+	it("sums agent time, so parallel tools exceed the wall clock", () => {
 		const summary = summarize([
 			agentSpan({ spanId: "agent", startMs: 0, durationMs: 10 * SECOND }),
 			// Four tools, ten seconds each, all at once: 40s of agent time inside a
@@ -72,7 +72,6 @@ describe("buildSessionSummary — time", () => {
 
 		expect(segment(summary.agentTime.segments, "tool")).toBe(40 * SECOND)
 		expect(summary.agentTime.totalMs).toBe(40 * SECOND)
-		expect(summary.agentTime.peakParallel).toBe(4)
 		expect(summary.wallClockMs).toBe(10 * SECOND)
 	})
 
@@ -84,17 +83,6 @@ describe("buildSessionSummary — time", () => {
 		])
 
 		expect(segment(summary.agentTime.segments, "inference")).toBe(10 * SECOND)
-		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
-		expect(summary.agentTime.peakParallel).toBe(2)
-	})
-
-	it("counts a span that starts as another ends as no overlap at all", () => {
-		const summary = summarize([
-			toolSpan({ spanId: "a", startMs: 0, durationMs: 5 * SECOND }),
-			toolSpan({ spanId: "b", startMs: 5 * SECOND, durationMs: 5 * SECOND }),
-		])
-
-		expect(summary.agentTime.peakParallel).toBe(1)
 		expect(segment(summary.agentTime.segments, "tool")).toBe(10 * SECOND)
 	})
 
