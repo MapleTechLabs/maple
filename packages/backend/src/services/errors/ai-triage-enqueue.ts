@@ -255,9 +255,9 @@ export const maybeEnqueueTriage: (
 			limits: settings,
 			passCount: 1,
 			nowMs,
-			// Severity decides which pass ceiling applies, so that a burst of `low`
-			// incidents just after UTC midnight cannot spend the slice a `critical`
-			// opening at noon needs.
+			// Severity decides which ceiling applies, in both units, so that a burst of
+			// `low` incidents just after UTC midnight cannot spend the slice a
+			// `critical` opening at noon needs.
 			severity: snapshot.severity,
 		})
 		if (verdict.kind === "exceeded") {
@@ -267,6 +267,12 @@ export const maybeEnqueueTriage: (
 					incidentId: input.incidentId,
 					quotaDimension: verdict.dimension,
 					quotaLimit: verdict.limit,
+					// Without this the log says a start was refused but not what was
+					// refused. "runs, 100" read the same for a `low` anomaly and for the
+					// `critical` the reserve exists to protect, so there was no way to tell
+					// a working ceiling from one that had just turned away the day's only
+					// real incident.
+					severity: snapshot.severity ?? "unclassified",
 				}),
 			)
 			// A refused start has to be visible as a *refusal*. `start_result` used to
@@ -278,6 +284,7 @@ export const maybeEnqueueTriage: (
 				"maple.investigation.start_result": "quota_exceeded",
 				"maple.investigation.quota_dimension": verdict.dimension,
 				"maple.investigation.quota_limit": verdict.limit,
+				"maple.investigation.severity": snapshot.severity ?? "unclassified",
 			})
 			return { enqueued: false, reason: "daily_cap" as const }
 		}

@@ -36,6 +36,11 @@ const makeLayer = () => {
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_enqueue_test")
 
+/**
+ * Three runs, not two: the runs ceiling carries the severity reserve, so an
+ * unclassified start is judged against `floor(3 * 0.7) = 2`. A ceiling of two
+ * would leave one ordinary slot and read like an off-by-one here.
+ */
 const enableSettings = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
@@ -43,7 +48,7 @@ const enableSettings = Effect.gen(function* () {
 		db.insert(aiTriageSettings).values({
 			orgId: ORG,
 			enabled: true,
-			maxRunsPerDay: 2,
+			maxRunsPerDay: 3,
 			updatedAt: new Date(nowMs),
 		}),
 	)
@@ -199,7 +204,8 @@ describe("maybeEnqueueTriage", () => {
 			const chat = fakeChatSession()
 			const start = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
 
-			// `maxRunsPerDay` is 2 here, so the runs ceiling is what bites.
+			// `maxRunsPerDay` is 3 here and these starts carry no severity, so the
+			// ordinary slice of the runs ceiling is what bites, at two.
 			assert.isTrue((yield* start("incident-1")).enqueued)
 			assert.isTrue((yield* start("incident-2")).enqueued)
 			assert.deepStrictEqual(yield* start("incident-3"), {

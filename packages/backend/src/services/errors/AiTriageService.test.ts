@@ -120,17 +120,31 @@ describe("AiTriageService.getSettings pause state", () => {
 	)
 
 	/**
-	 * The runs ceiling is checked before any pass arithmetic and has no reserve,
-	 * so it stops every severity. Reporting it as a pass problem would tell an
-	 * operator that criticals are covered when they are not, and point them at a
-	 * number that was never the constraint.
+	 * The runs ceiling carries the same reserve the passes ceiling does, so the
+	 * two pause at different points. Ten runs leaves seven for ordinary work and
+	 * three that only `high` and `critical` may spend.
 	 */
-	it.effect("names the runs ceiling and pauses every severity with it", () =>
+	it.effect("pauses ordinary triage at the run reserve while priority still starts", () =>
 		Effect.gen(function* () {
-			yield* seedSettings(3, 10_000)
-			yield* seedStartedRuns(3)
+			yield* seedSettings(10, 10_000)
+			yield* seedStartedRuns(7)
 			const doc = yield* (yield* AiTriageService).getSettings(ORG)
-			assert.strictEqual(doc.pausedDimension, "runs")
+			assert.strictEqual(doc.pausedDimension, "runs_reserved")
+			assert.isTrue(doc.ordinaryPaused)
+			assert.isFalse(doc.priorityPaused)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	/**
+	 * Telling an operator that urgent incidents are still covered while the whole
+	 * ceiling is spent is worse than saying nothing, so `priorityPaused` has to
+	 * flip even though the ordinary probe still reports the reserved dimension.
+	 */
+	it.effect("pauses every severity once the whole runs ceiling is spent", () =>
+		Effect.gen(function* () {
+			yield* seedSettings(10, 10_000)
+			yield* seedStartedRuns(10)
+			const doc = yield* (yield* AiTriageService).getSettings(ORG)
 			assert.isTrue(doc.ordinaryPaused)
 			assert.isTrue(doc.priorityPaused)
 		}).pipe(Effect.provide(makeLayer())),
