@@ -615,33 +615,37 @@ const make: Effect.Effect<
 		// incident resolution or its timeline event could never be repaired: a
 		// retry sees `fromState === toState` and returns before reaching them.
 		yield* dbExecute((db) =>
-			db.transaction(async (tx) => {
-				await tx
-					.update(errorIssues)
-					.set(update)
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, row.id)))
-				if (toState === "done") {
-					await tx
-						.update(errorIncidents)
-						.set({
-							status: "resolved",
-							resolvedAt: msToDate(timestamp),
-							updatedAt: msToDate(timestamp),
-						})
-						.where(
-							and(
-								eq(errorIncidents.orgId, orgId),
-								eq(errorIncidents.issueId, row.id),
-								eq(errorIncidents.status, "open"),
-							),
-						)
-					await tx
-						.update(errorIssueStates)
-						.set({ openIncidentId: null, updatedAt: msToDate(timestamp) })
-						.where(and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, row.id)))
-				}
-				await tx.insert(errorIssueEvents).values(eventInsert)
-			}),
+			db.transaction((tx) =>
+				Effect.gen(function* () {
+					yield* tx
+						.update(errorIssues)
+						.set(update)
+						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, row.id)))
+					if (toState === "done") {
+						yield* tx
+							.update(errorIncidents)
+							.set({
+								status: "resolved",
+								resolvedAt: msToDate(timestamp),
+								updatedAt: msToDate(timestamp),
+							})
+							.where(
+								and(
+									eq(errorIncidents.orgId, orgId),
+									eq(errorIncidents.issueId, row.id),
+									eq(errorIncidents.status, "open"),
+								),
+							)
+						yield* tx
+							.update(errorIssueStates)
+							.set({ openIncidentId: null, updatedAt: msToDate(timestamp) })
+							.where(
+								and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, row.id)),
+							)
+					}
+					yield* tx.insert(errorIssueEvents).values(eventInsert)
+				}),
+			),
 		)
 		if (actorId) {
 			yield* recordEventAudit(orgId, row.id, actorId, "state_change", { fromState, toState })
@@ -869,23 +873,28 @@ const make: Effect.Effect<
 			// could never page anyone — a retry sees the severity already stored and
 			// returns before reaching the outbox insert.
 			const severityRows = yield* dbExecute((db) =>
-				db.transaction(async (tx) => {
-					const rows = await tx
-						.update(errorIssues)
-						.set({
-							severity,
-							severitySource: nextSource,
-							updatedAt: msToDate(timestamp),
-						})
-						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-						.returning(txidColumn)
-					if (Option.isSome(eventInsert))
-						await tx.insert(errorIssueEvents).values(eventInsert.value)
-					if (Option.isSome(escalationInsert)) {
-						await tx.insert(issueEscalations).values(escalationInsert.value).onConflictDoNothing()
-					}
-					return rows
-				}),
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						const rows = yield* tx
+							.update(errorIssues)
+							.set({
+								severity,
+								severitySource: nextSource,
+								updatedAt: msToDate(timestamp),
+							})
+							.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
+							.returning(txidColumn)
+						if (Option.isSome(eventInsert))
+							yield* tx.insert(errorIssueEvents).values(eventInsert.value)
+						if (Option.isSome(escalationInsert)) {
+							yield* tx
+								.insert(issueEscalations)
+								.values(escalationInsert.value)
+								.onConflictDoNothing()
+						}
+						return rows
+					}),
+				),
 			)
 			if (Option.isSome(eventInsert)) {
 				yield* recordEventAudit(orgId, issueId, actorId, "severity_change", {})

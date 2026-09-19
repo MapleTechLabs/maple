@@ -1,8 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import { makeDbExecute, makePersistenceErrorMapper } from "./db-execute"
-import { DatabaseError, type DatabaseClient, type DatabaseApi } from "./DatabaseLive"
+import { DatabaseError, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
 
 class TestPersistenceError extends Schema.TaggedError<TestPersistenceError>()(
 	"@maple/api/test/TestPersistenceError",
@@ -11,6 +10,10 @@ class TestPersistenceError extends Schema.TaggedError<TestPersistenceError>()(
 		cause: Schema.optionalKey(Schema.String),
 	},
 ) {}
+
+class TestDomainError extends Schema.TaggedError<TestDomainError>()("@maple/api/test/TestDomainError", {
+	message: Schema.String,
+}) {}
 
 const toTestError = makePersistenceErrorMapper(TestPersistenceError, "Test persistence failure")
 
@@ -21,12 +24,17 @@ const toTestError = makePersistenceErrorMapper(TestPersistenceError, "Test persi
 const failingDatabase = (error: DatabaseError) => {
 	const attempts = { count: 0 }
 	const database: DatabaseApi = {
-		execute: <T>(_fn: (db: DatabaseClient) => Promise<T>) =>
+		execute: () =>
 			Effect.sync(() => {
 				attempts.count += 1
-			}).pipe(Effect.flatMap(() => Effect.fail(error))) as Effect.Effect<T, DatabaseError>,
+			}).pipe(Effect.flatMap(() => Effect.fail(error))),
 	}
 	return { database, attempts }
+}
+
+/** A `Database` whose callback runs against nothing — for what the callback itself fails with. */
+const passthroughDatabase: DatabaseApi = {
+	execute: (fn) => executeWithSpan(() => fn(undefined as never)),
 }
 
 const contentionError = new DatabaseError({
@@ -35,8 +43,8 @@ const contentionError = new DatabaseError({
 })
 
 const connectionError = new DatabaseError({
-	message: "write CONNECT_TIMEOUT 10.0.0.1:5432",
-	cause: { code: "CONNECT_TIMEOUT" },
+	message: "connect ECONNREFUSED 10.0.0.1:5432",
+	cause: { code: "ECONNREFUSED" },
 })
 
 describe("makeDbExecute", () => {
@@ -47,7 +55,7 @@ describe("makeDbExecute", () => {
 
 			// Real time: the schedule is exponential from 50ms capped at 3
 			// recurrences, so the whole replay costs ~350ms.
-			const exit = yield* Effect.exit(dbExecute(() => Promise.resolve("unused")))
+			const exit = yield* Effect.exit(dbExecute(() => Effect.succeed("unused")))
 
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(attempts.count, 4)
@@ -59,7 +67,7 @@ describe("makeDbExecute", () => {
 			const { database, attempts } = failingDatabase(connectionError)
 			const dbExecute = makeDbExecute(database, "TestService", toTestError)
 
-			yield* Effect.exit(dbExecute(() => Promise.resolve("unused")))
+			yield* Effect.exit(dbExecute(() => Effect.succeed("unused")))
 
 			assert.strictEqual(attempts.count, 1)
 		}),
@@ -70,11 +78,30 @@ describe("makeDbExecute", () => {
 			const { database } = failingDatabase(connectionError)
 			const dbExecute = makeDbExecute(database, "TestService", toTestError)
 
-			const exit = yield* Effect.exit(dbExecute(() => Promise.resolve("unused")))
+			const error = yield* Effect.flip(dbExecute(() => Effect.succeed("unused")))
 
-			assert.isTrue(Exit.isFailure(exit))
-			const failure = Exit.isFailure(exit) ? exit.cause : undefined
-			assert.isDefined(failure)
+			assert.strictEqual(error._tag, "@maple/api/test/TestPersistenceError")
+		}),
+	)
+
+	it.effect("passes the callback's own failure through unmapped and unreplayed", () =>
+		Effect.gen(function* () {
+			const dbExecute = makeDbExecute(passthroughDatabase, "TestService", toTestError)
+			let attempts = 0
+
+			const error = yield* Effect.flip(
+				dbExecute(() =>
+					Effect.suspend(() => {
+						attempts += 1
+						return Effect.fail(new TestDomainError({ message: "rolled back on purpose" }))
+					}),
+				),
+			)
+
+			// A domain error raised inside a transaction is the caller's, not the
+			// database's: no retry, no persistence-error disguise.
+			assert.strictEqual(error._tag, "@maple/api/test/TestDomainError")
+			assert.strictEqual(attempts, 1)
 		}),
 	)
 })

@@ -78,26 +78,28 @@ describe("selectDistinctOrgIds", () => {
 			const db = createTestDb(createdDbs)
 			const database = yield* Database.pipe(Effect.provide(db.layer))
 
-			yield* database.execute(async (client) => {
-				await client.insert(errorIssueStates).values([
-					{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
-					{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
-					{ orgId: asOrgId("org_a"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
-				])
-				await client.insert(orgClickHouseSettings).values(
-					["org_z", "org_y"].map((orgId) => ({
-						orgId,
-						chUrl: "https://ch.example",
-						chUser: "default",
-						chDatabase: "maple",
-						syncStatus: "connected",
-						createdAt: new Date(0),
-						updatedAt: new Date(0),
-						createdBy: "test",
-						updatedBy: "test",
-					})),
-				)
-			})
+			yield* database.execute((client) =>
+				Effect.gen(function* () {
+					yield* client.insert(errorIssueStates).values([
+						{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
+						{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
+						{ orgId: asOrgId("org_a"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
+					])
+					yield* client.insert(orgClickHouseSettings).values(
+						["org_z", "org_y"].map((orgId) => ({
+							orgId,
+							chUrl: "https://ch.example",
+							chUser: "default",
+							chDatabase: "maple",
+							syncStatus: "connected",
+							createdAt: new Date(0),
+							updatedAt: new Date(0),
+							createdBy: "test",
+							updatedBy: "test",
+						})),
+					)
+				}),
+			)
 
 			const states = yield* database.execute((client) =>
 				selectDistinctOrgIds(client, errorIssueStates, errorIssueStates.orgId),

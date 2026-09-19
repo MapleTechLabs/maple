@@ -229,56 +229,63 @@ const make = Effect.gen(function* () {
 		// One transaction for the credential tables: a partial purge here is the
 		// exact half-revoked state the whole fix exists to prevent.
 		const credentials = yield* dbExecute((db) =>
-			db.transaction(async (tx) => {
-				const mcpFamiliesRevoked = await revokeRefreshFamiliesForMember(tx, orgId, userId, revokedAt)
-				// After the families, so an MCP access key retired above is already
-				// `revoked` and is simply not claimed twice.
-				const revokedKeys = await tx
-					.update(apiKeys)
-					.set({ revoked: true, revokedAt })
-					.where(
-						and(
-							...(orgId === null ? [] : [eq(apiKeys.orgId, orgId)]),
-							eq(apiKeys.createdBy, userId),
-							eq(apiKeys.revoked, false),
-						),
+			db.transaction((tx) =>
+				Effect.gen(function* () {
+					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(
+						tx,
+						orgId,
+						userId,
+						revokedAt,
 					)
-					.returning({ id: apiKeys.id })
-				const cliDeleted = await tx
-					.delete(cliDeviceAuthorizations)
-					.where(
-						and(
-							...(orgId === null ? [] : [eq(cliDeviceAuthorizations.approvedOrgId, orgId)]),
-							eq(cliDeviceAuthorizations.approvedUserId, userId),
-						),
-					)
-					.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
-				const mcpAuthDeleted = await tx
-					.delete(mcpOAuthAuthorizations)
-					.where(
-						and(
-							...(orgId === null ? [] : [eq(mcpOAuthAuthorizations.approvedOrgId, orgId)]),
-							eq(mcpOAuthAuthorizations.approvedUserId, userId),
-						),
-					)
-					.returning({ requestIdHash: mcpOAuthAuthorizations.requestIdHash })
-				const devicesDeleted = await tx
-					.delete(mobileDevices)
-					.where(
-						and(
-							...(orgId === null ? [] : [eq(mobileDevices.orgId, orgId)]),
-							eq(mobileDevices.userId, userId),
-						),
-					)
-					.returning({ id: mobileDevices.id })
-				return {
-					apiKeysRevoked: revokedKeys.length,
-					mcpFamiliesRevoked,
-					cliAuthorizationsDeleted: cliDeleted.length,
-					mcpAuthorizationsDeleted: mcpAuthDeleted.length,
-					mobileDevicesDeleted: devicesDeleted.length,
-				}
-			}),
+					// After the families, so an MCP access key retired above is already
+					// `revoked` and is simply not claimed twice.
+					const revokedKeys = yield* tx
+						.update(apiKeys)
+						.set({ revoked: true, revokedAt })
+						.where(
+							and(
+								...(orgId === null ? [] : [eq(apiKeys.orgId, orgId)]),
+								eq(apiKeys.createdBy, userId),
+								eq(apiKeys.revoked, false),
+							),
+						)
+						.returning({ id: apiKeys.id })
+					const cliDeleted = yield* tx
+						.delete(cliDeviceAuthorizations)
+						.where(
+							and(
+								...(orgId === null ? [] : [eq(cliDeviceAuthorizations.approvedOrgId, orgId)]),
+								eq(cliDeviceAuthorizations.approvedUserId, userId),
+							),
+						)
+						.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
+					const mcpAuthDeleted = yield* tx
+						.delete(mcpOAuthAuthorizations)
+						.where(
+							and(
+								...(orgId === null ? [] : [eq(mcpOAuthAuthorizations.approvedOrgId, orgId)]),
+								eq(mcpOAuthAuthorizations.approvedUserId, userId),
+							),
+						)
+						.returning({ requestIdHash: mcpOAuthAuthorizations.requestIdHash })
+					const devicesDeleted = yield* tx
+						.delete(mobileDevices)
+						.where(
+							and(
+								...(orgId === null ? [] : [eq(mobileDevices.orgId, orgId)]),
+								eq(mobileDevices.userId, userId),
+							),
+						)
+						.returning({ id: mobileDevices.id })
+					return {
+						apiKeysRevoked: revokedKeys.length,
+						mcpFamiliesRevoked,
+						cliAuthorizationsDeleted: cliDeleted.length,
+						mcpAuthorizationsDeleted: mcpAuthDeleted.length,
+						mobileDevicesDeleted: devicesDeleted.length,
+					}
+				}),
+			),
 		)
 
 		const emailDestinationsUpdated = yield* stripFromEmailDestinations(orgId, userId)
@@ -324,33 +331,35 @@ const make = Effect.gen(function* () {
 		const now = yield* Clock.currentTimeMillis
 		const revokedAt = msToDate(now)
 		const summary = yield* dbExecute((db) =>
-			db.transaction(async (tx) => {
-				const live = await tx
-					.select({ id: apiKeys.id, metadataJson: apiKeys.metadataJson })
-					.from(apiKeys)
-					.where(
-						and(
-							eq(apiKeys.orgId, orgId),
-							eq(apiKeys.createdBy, userId),
-							eq(apiKeys.revoked, false),
-						),
-					)
-				const stale = live
-					.filter((row) => {
-						const pinned = decodePinnedRoles(row.metadataJson)
-						return pinned._tag === "Some" && isAdmin(pinned.value.roles)
-					})
-					.map((row) => row.id)
-				if (stale.length === 0) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
+			db.transaction((tx) =>
+				Effect.gen(function* () {
+					const live = yield* tx
+						.select({ id: apiKeys.id, metadataJson: apiKeys.metadataJson })
+						.from(apiKeys)
+						.where(
+							and(
+								eq(apiKeys.orgId, orgId),
+								eq(apiKeys.createdBy, userId),
+								eq(apiKeys.revoked, false),
+							),
+						)
+					const stale = live
+						.filter((row) => {
+							const pinned = decodePinnedRoles(row.metadataJson)
+							return pinned._tag === "Some" && isAdmin(pinned.value.roles)
+						})
+						.map((row) => row.id)
+					if (stale.length === 0) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
 
-				const revoked = await tx
-					.update(apiKeys)
-					.set({ revoked: true, revokedAt })
-					.where(and(inArray(apiKeys.id, stale), eq(apiKeys.revoked, false)))
-					.returning({ id: apiKeys.id })
-				const mcpFamiliesRevoked = await revokeFamiliesForAccessKeys(tx, stale, revokedAt)
-				return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
-			}),
+					const revoked = yield* tx
+						.update(apiKeys)
+						.set({ revoked: true, revokedAt })
+						.where(and(inArray(apiKeys.id, stale), eq(apiKeys.revoked, false)))
+						.returning({ id: apiKeys.id })
+					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(tx, stale, revokedAt)
+					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
+				}),
+			),
 		)
 
 		yield* Effect.annotateCurrentSpan({
