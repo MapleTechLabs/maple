@@ -1,7 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Fiber } from "effect"
 import { forkRequestScoped } from "./fork-request-scoped"
+import { createMaplePgPool } from "@maple/db/client"
 import {
+	makePgConnectionScope,
 	PgConnectionScope,
 	type PgConnectionScopeApi,
 	PgConnectionScopeClosedError,
@@ -18,7 +20,7 @@ const refusingScope = () => {
 	let closed = false
 	let runs = 0
 	const scope: PgConnectionScopeApi = {
-		run: <T>(fn: (db: never) => Promise<T>) =>
+		run: (fn) =>
 			Effect.suspend(() => {
 				if (closed) {
 					return Effect.fail(
@@ -26,28 +28,70 @@ const refusingScope = () => {
 					)
 				}
 				runs += 1
-				return Effect.promise(() => fn(undefined as never))
+				return fn(undefined as never)
 			}),
-		close: async () => {
+		close: Effect.sync(() => {
 			closed = true
-		},
+		}),
 	}
 	return { scope, runs: () => runs }
 }
 
 const dbCall = Effect.gen(function* () {
 	const scope = yield* PgConnectionScope
-	return yield* scope!.run(() => Promise.resolve("touched"))
+	return yield* scope!.run(() => Effect.succeed("touched"))
 })
 
 describe("forkRequestScoped", () => {
-	// Mirrors the production nesting: `HttpEffect.toHandled` creates the request
-	// Scope OUTSIDE the middleware stack, so it outlives `pgConnectionMiddleware`.
+	it.live("lets a DB call already under way finish when the request ends", () =>
+		Effect.gen(function* () {
+			let finished = false
+			const scope: PgConnectionScopeApi = makePgConnectionScope("postgres://unused", undefined, {
+				openPool: (options) => createMaplePgPool("postgres://maple:maple@127.0.0.1:1/never", options),
+			})
+
+			yield* withPgConnectionScopeOf(
+				scope,
+				Effect.scoped(
+					forkRequestScoped(
+						Effect.gen(function* () {
+							const current = yield* PgConnectionScope
+							// Stands in for a statement waiting on a pool checkout.
+							yield* current!.run(() =>
+								Effect.sleep("30 millis").pipe(
+									Effect.tap(() => Effect.sync(() => (finished = true))),
+								),
+							)
+						}),
+					),
+				),
+			)
+
+			assert.isTrue(finished)
+		}),
+	)
+
+	it.live("still interrupts forked work that has not reached the database", () =>
+		Effect.gen(function* () {
+			const { scope, runs } = refusingScope()
+			const startedAt = Date.now()
+
+			yield* withPgConnectionScopeOf(
+				scope,
+				Effect.scoped(forkRequestScoped(Effect.sleep("5 seconds").pipe(Effect.andThen(dbCall)))),
+			)
+
+			// The response is not held for work that is not yet a DB call.
+			assert.isBelow(Date.now() - startedAt, 1000)
+			assert.strictEqual(runs(), 0)
+		}),
+	)
+
 	// A handler that forks and then finishes with no further async work must
-	// still get its background DB call onto the socket before the middleware's
-	// `ensuring` releases it — this is the shape `ApiKeysService.touchLastUsed` had
-	// on `POST /mcp` (it is awaited inline now), which used to land every call
-	// as `SCOPE_CLOSED`.
+	// still get its background DB call in before the connection scope closes —
+	// the shape `ApiKeysService.touchLastUsed` had on `POST /mcp` (it is awaited
+	// inline now), which used to land every call as `SCOPE_CLOSED`. The real
+	// pool's checkout timing is covered by the Postgres integration suite.
 	it.effect("runs the forked DB call before the connection scope closes", () =>
 		Effect.scoped(
 			Effect.gen(function* () {

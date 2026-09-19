@@ -151,8 +151,8 @@ Gotchas worth knowing:
 
 - **The dev Hyperdrive origin must set `sslmode: "disable"`.** Alchemy defaults a local
   origin to `sslmode=prefer` (`Cloudflare/Hyperdrive/ConnectBinding.ts`), the driver then
-  attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s with
-  `CONNECT_TIMEOUT` after the dial budget. See `ManagedMapleDb`.
+  attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s after the
+  dial budget (`error.type = ConnectionError`; `CONNECT_TIMEOUT` under the old postgres.js driver). See `ManagedMapleDb`.
 - **`MAPLE_OTEL_INGEST_KEY` is optional on dev stages only** (`selfObservabilityEnv`). The
   local stack resolves the same env contract as a deploy, and no developer has a real
   ingest key; without the exemption the whole stack refuses to start over a key whose only

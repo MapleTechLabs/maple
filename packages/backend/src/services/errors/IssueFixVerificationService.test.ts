@@ -4,9 +4,10 @@ import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effe
 import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
 import { errorIssues, errorIssueEvents, errorIssueVerifications } from "@maple/db"
-import type { MapleDatabaseTransaction } from "@maple/db/client"
+import type { MapleTx } from "@maple/db/client"
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { eq } from "drizzle-orm"
-import { Database, type DatabaseApi, type DatabaseClient } from "@maple/backend/platform/DatabaseLive"
+import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -911,6 +912,35 @@ describe("dueVerifications", () => {
 })
 
 /**
+ * A statement that fails when run, the way a dying connection fails one. It
+ * still accepts the builder chain (`.values`, `.onConflictDoNothing`,
+ * `.returning`) so the failure lands where the real statement would run, and
+ * it is a driver error so `Database.execute` absorbs it exactly as it would a
+ * real one.
+ */
+const failingStatement = (): Effect.Effect<never, EffectDrizzleQueryError> => {
+	const failure = Effect.fail(
+		new EffectDrizzleQueryError({
+			query: "insert (sabotaged)",
+			params: [],
+			cause: new Error("injected insert failure"),
+		}),
+	)
+	const chain: typeof failure = new Proxy(failure, {
+		get(target, property) {
+			if (property in target) {
+				// SAFETY: a Proxy get trap receives a key for its target; indexed access keeps
+				// the Effect's own property types while the runtime branch checks callability.
+				const value = target[property as keyof typeof target]
+				return typeof value === "function" ? value.bind(target) : value
+			}
+			return () => chain
+		},
+	})
+	return chain
+}
+
+/**
  * The client with one table's inserts sabotaged, inside and outside
  * transactions — a stand-in for the connection dying mid-write, which
  * `applyVerdict` must survive without settling a row it did not fully record.
@@ -923,21 +953,14 @@ const failInsertOf = <T extends object>(client: T, failTable: unknown): T =>
 			const value = target[property as keyof T]
 			if (typeof value !== "function") return value
 			if (property === "insert") {
-				return (table: unknown) => {
-					if (table === failTable) throw new Error("injected insert failure")
-					return value.call(target, table)
-				}
+				return (table: unknown) =>
+					table === failTable ? failingStatement() : value.call(target, table)
 			}
 			if (property === "transaction") {
-				return <Result>(
-					callback: (tx: MapleDatabaseTransaction) => Promise<Result>,
+				return <Result, E, R>(
+					callback: (tx: MapleTx) => Effect.Effect<Result, E, R>,
 					...rest: ReadonlyArray<unknown>
-				) =>
-					value.call(
-						target,
-						(tx: MapleDatabaseTransaction) => callback(failInsertOf(tx, failTable)),
-						...rest,
-					)
+				) => value.call(target, (tx: MapleTx) => callback(failInsertOf(tx, failTable)), ...rest)
 			}
 			return value.bind(target)
 		},
@@ -949,8 +972,7 @@ const failingEventInsertLayer = (base: Layer.Layer<Database>) =>
 		Effect.gen(function* () {
 			const real = yield* Database
 			return {
-				execute: <T>(fn: (db: DatabaseClient) => Promise<T>) =>
-					real.execute((db) => fn(failInsertOf(db, errorIssueEvents))),
+				execute: (fn) => real.execute((db) => fn(failInsertOf(db, errorIssueEvents))),
 			} satisfies DatabaseApi
 		}),
 	).pipe(Layer.provide(base))
