@@ -14,6 +14,33 @@ import Testing
 struct DecodingTests {
 	private let decoder = JSONDecoder()
 
+	@Test("Decodes a service overview, null bucket included")
+	func serviceOverview() throws {
+		let json = Data(
+			"""
+			{"object":"service_overview",
+			 "service":{"object":"service","name":"api","service_namespaces":[],"deployment_environments":["production"],
+			   "throughput":12.5,"traced_throughput":12.5,"span_count":45000,"error_count":12,"error_rate":0.00027,
+			   "p50_latency_ms":18.4,"p95_latency_ms":142.9,"p99_latency_ms":890.1,"has_sampling":false,"sampling_weight":1,
+			   "baseline_p95_latency_ms":120,"baseline_span_count":300000},
+			 "start_time":"2026-07-15T12:00:00.000Z","end_time":"2026-07-15T13:00:00.000Z",
+			 "bucket_seconds":null,"points":[],
+			 "operations":[{"name":"GET /checkout","span_count":20000,"estimated_span_count":20000,"error_count":8,
+			   "error_rate":0.0004,"p50_latency_ms":22,"p95_latency_ms":180,"p99_latency_ms":910}]}
+			""".utf8
+		)
+
+		let overview = try decoder.decode(Components.Schemas.ServiceOverview.self, from: json)
+		// The nullable-union collapse: an `Int?`, not a wrapper, and null decodes as nil.
+		let bucket: Int? = overview.bucketSeconds
+		#expect(bucket == nil)
+		#expect(overview.points.isEmpty)
+		#expect(overview.service.baselineP95LatencyMs == 120)
+		let operation = try #require(overview.operations.first)
+		#expect(operation.name == "GET /checkout")
+		#expect(operation.p95LatencyMs == 180)
+	}
+
 	@Test("Decodes a service list")
 	func serviceList() throws {
 		let json = Data(

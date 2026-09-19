@@ -39,6 +39,9 @@ public typealias AnomalySignalType = Components.Schemas._MapleAnomalySignalType
 public typealias MobileDevice = Components.Schemas.MobileDevice
 public typealias PushEnvironment = Components.Schemas._MapleMobilePushEnvironment
 
+public typealias ServiceOverview = Components.Schemas.ServiceOverview
+public typealias ServiceOverviewPoint = Components.Schemas.ServiceOverviewPoint
+public typealias ServiceOperation = Components.Schemas.ServiceOperation
 public typealias TraceTimeseriesResult = Components.Schemas.TraceTimeseriesResult
 public typealias TraceBreakdownResult = Components.Schemas.TraceBreakdownResult
 public typealias TraceAggregation = Components.Schemas.TraceTimeseriesParams.AggregationPayload
@@ -140,6 +143,9 @@ public protocol MapleAPI: Sendable {
 	/// Aggregated across environments: `GET /v2/services/{name}` takes no
 	/// environment parameter, so the scope is ignored here rather than faked.
 	func service(named name: String, window: ResolvedTimeWindow) async throws -> Service
+	/// The service detail screen in one round-trip: summary, per-bucket golden
+	/// signals, busiest operations. Honours the environment scope.
+	func serviceOverview(_ request: ServiceOverviewRequest) async throws -> ServiceOverview
 	func issues(query: IssueQuery, window: ResolvedTimeWindow?, limit: Int, cursor: String?) async throws
 		-> Page<ErrorIssue>
 	func issue(id: String) async throws -> ErrorIssueDetail

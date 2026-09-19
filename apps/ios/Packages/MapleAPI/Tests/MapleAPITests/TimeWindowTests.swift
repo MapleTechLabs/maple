@@ -58,6 +58,18 @@ struct TimeWindowTests {
 		#expect(window.duration <= 7 * 24 * 3600)
 	}
 
+	@Test("Buckets snap up to whole minutes and never below one", arguments: TimeWindow.allCases)
+	func bucketsAreMinuteMultiples(window: TimeWindow) throws {
+		let resolved = window.resolve()
+		let bucket = resolved.bucketSeconds(targetPoints: 48)
+		#expect(bucket >= 60)
+		#expect(bucket % 60 == 0)
+		// Never denser than asked for: the rounding only ever widens a bucket.
+		let points = Int(window.duration) / bucket
+		#expect(points <= 48)
+		#expect(points >= 24, "a \(window.rawValue) window at \(bucket)s gives only \(points) buckets")
+	}
+
 	@Test("Round-trips the timestamps the API returns")
 	func parsesApiTimestamps() throws {
 		let withFraction = try #require(ResolvedTimeWindow.parse("2026-08-17T12:34:56.789Z"))
