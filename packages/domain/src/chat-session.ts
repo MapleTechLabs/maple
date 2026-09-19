@@ -138,10 +138,9 @@ export class ChatMessage extends Schema.Class<ChatMessage>("@maple/ChatMessage")
 	/**
 	 * The seq of the event that opened this message.
 	 *
-	 * Compaction splits the transcript at a `throughSeq`, and `createdAt` cannot do that job: it is
-	 * a non-unique wall clock, and it is denominated in milliseconds while the split point is
-	 * denominated in event sequence. Both producers are server-side and have the seq in hand at
-	 * exactly the right moment, so this is required rather than optional.
+	 * A non-unique wall clock in milliseconds cannot order or split a transcript; event sequence
+	 * can. Both producers are server-side and have the seq in hand at exactly the right moment, so
+	 * this is required rather than optional.
 	 */
 	startSeq: Schema.Number,
 }) {}
@@ -261,24 +260,6 @@ const eventFields = {
 		delayMs: Schema.Number,
 		...task,
 	},
-	/**
-	 * Everything at or before `throughSeq` has been summarized; the next turn replays the summary
-	 * plus whatever follows, instead of dropping the head of the conversation.
-	 *
-	 * An event rather than a side table on the Durable Object, because `history()` is the single
-	 * source of truth and a side table would be invisible to a reconnecting client. Inert for
-	 * display, though: unlike opencode — where the transcript and the model input are the same list
-	 * — Maple's user must still see what they actually said. Only `toLlmMessages` reads this.
-	 */
-	compaction: {
-		type: Schema.Literal("compaction"),
-		/** The assistant message the compaction was produced after. */
-		messageId: Schema.String,
-		/** Model-facing prose. Never rendered. */
-		summary: Schema.String,
-		/** Last event covered. Messages starting after this are replayed verbatim. */
-		throughSeq: Schema.Number,
-	},
 	"turn-end": {
 		type: Schema.Literal("turn-end"),
 		messageId: Schema.String,
@@ -319,10 +300,6 @@ export class ChatTurnRetryEvent extends Schema.Class<ChatTurnRetryEvent>("chat.t
 	withSeq(eventFields["turn-retry"]),
 ) {}
 
-export class ChatCompactionEvent extends Schema.Class<ChatCompactionEvent>("chat.compaction")(
-	withSeq(eventFields.compaction),
-) {}
-
 export class ChatTurnEndEvent extends Schema.Class<ChatTurnEndEvent>("chat.turn-end")(
 	withSeq(eventFields["turn-end"]),
 ) {}
@@ -334,7 +311,6 @@ export const ChatEvent = Schema.Union([
 	ChatToolCallEvent,
 	ChatToolResultEvent,
 	ChatTurnRetryEvent,
-	ChatCompactionEvent,
 	ChatTurnEndEvent,
 ]).pipe(Schema.toTaggedUnion("type"))
 export type ChatEvent = Schema.Schema.Type<typeof ChatEvent>
@@ -382,7 +358,6 @@ const ChatEventPayload = Schema.Union([
 	Schema.Struct(eventFields["tool-call"]),
 	Schema.Struct(eventFields["tool-result"]),
 	Schema.Struct(eventFields["turn-retry"]),
-	Schema.Struct(eventFields.compaction),
 	Schema.Struct(eventFields["turn-end"]),
 ]).pipe(Schema.toTaggedUnion("type"))
 

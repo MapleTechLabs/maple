@@ -168,27 +168,6 @@ export class ChatSession {
 		}
 	}
 
-	/**
-	 * The most recent compaction, if the conversation has been summarized.
-	 *
-	 * A targeted reverse scan rather than a second full fold: `history()` already walks every row,
-	 * and this is read once per turn by `toLlmMessages`. `LIMIT 1` on a descending scan stops at the
-	 * newest compaction, which by definition is near the end of the log.
-	 */
-	compaction(): { summary: string; throughSeq: number } | undefined {
-		const rows = this.sql
-			.exec<EventRow>(
-				"SELECT seq, created_at, payload FROM events WHERE payload LIKE ? ORDER BY seq DESC LIMIT 1",
-				'%"type":"compaction"%',
-			)
-			.toArray()
-		const row = rows[0]
-		if (!row) return undefined
-		const event = decodeChatEventPayload(row.payload, row.seq)
-		if (event.type !== "compaction") return undefined
-		return { summary: event.summary, throughSeq: event.throughSeq }
-	}
-
 	/** Highest assigned seq, i.e. the cursor a client that has read everything holds. */
 	cursor(): number {
 		const row = this.sql.exec<CursorRow>("SELECT MAX(seq) AS seq FROM events").one()
@@ -510,7 +489,7 @@ export class ChatSession {
 			// `task` tool call — not to the top-level conversation. Routing it here is what keeps a
 			// fan-out of sub-agents from appearing as a dozen stray assistant messages, in the
 			// browser *and* in what `toLlmMessages` replays to the model on the next turn.
-			if (event.type !== "user-message" && event.type !== "compaction" && event.task !== undefined) {
+			if (event.type !== "user-message" && event.task !== undefined) {
 				foldTaskEvent(top, nested, event, event.task, row.created_at)
 				continue
 			}
@@ -623,11 +602,6 @@ const foldInto = (transcript: Transcript, event: ChatEvent, createdAt: number): 
 			message.text = message.text.slice(0, Math.max(0, message.text.length - event.retractChars))
 			break
 		}
-		// Inert for display. Unlike opencode — where the transcript and the model input are the same
-		// list — a Maple user scrolling back must still see what they actually said. Only
-		// `toLlmMessages` reads a compaction, through `ChatSession.compaction()`.
-		case "compaction":
-			break
 		case "turn-end":
 			break
 	}

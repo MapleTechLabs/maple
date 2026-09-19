@@ -129,12 +129,6 @@ describe("chat event storage codec", () => {
 				reason: "Transport",
 				delayMs: 1_000,
 			},
-			{
-				type: "compaction",
-				messageId: "a1",
-				summary: "the user asked about checkout",
-				throughSeq: 12,
-			},
 			// Sub-agent events: the same members, tagged.
 			{
 				type: "turn-start",
