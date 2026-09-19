@@ -88,10 +88,15 @@ bun run --cwd packages/db db:studio
 
 ## Deployment and tests
 
-Production migrations are applied by hand, before the Worker deploy: `bun run --cwd packages/db
-ps:migrations-preflight main` (read-only, below), then `bun run migrate:prod`, which runs
-`drizzle-kit migrate` against PlanetScale's **direct** port 5432. Never run migrations through a
-pooler or Hyperdrive. The deployed Worker does not migrate on boot.
+The prd deploy applies migrations: `alchemy.run.ts` declares the PlanetScale `main` branch as
+`Planetscale.PostgresBranch` with `migrations` pointed at `packages/db/drizzle`, and the api, ai and
+alerting Workers carry its name in their env so they upload after it. Bookkeeping is alchemy's
+`__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
+`drizzle-kit migrate` against prd. The deploy migrates as a temporary role, not `postgres`, so the
+branch's default privileges do not cover the tables it creates: a migration that creates one grants
+it `TO PUBLIC` itself. The stack registers `Planetscale.providers()`, so `alchemy` commands need
+PlanetScale in the alchemy profile or `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
+`PLANETSCALE_ORGANIZATION` in the environment.
 
 The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__drizzle_migrations`
 in place (adds `name` and `applied_at`), matching every existing row to a local folder by

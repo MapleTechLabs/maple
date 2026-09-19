@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "maple",
+      "dependencies": {
+        "pg": "^8.23.0",
+      },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/platform-node": "4.0.0-rc.112",

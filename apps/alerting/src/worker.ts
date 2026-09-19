@@ -110,7 +110,7 @@ const configuredEnv = (stage: MapleStage) =>
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, workerDev, devEnv } = yield* MapleStack
+	const { stage, workerDev, devEnv, dbSchema } = yield* MapleStack
 	const env = yield* configuredEnv(stage)
 	return {
 		main: import.meta.url,
@@ -121,7 +121,12 @@ const props = Effect.gen(function* () {
 		dev: workerDev("alerting"),
 		workersDev: false,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
-		env: { ...makeWorkerBindings({ stage }), ...env, ...devEnv },
+		env: {
+			...makeWorkerBindings({ stage }),
+			...(dbSchema && { MAPLE_DB_BRANCH: dbSchema.name }),
+			...env,
+			...devEnv,
+		},
 	}
 })
 

@@ -14,6 +14,8 @@ import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
+import * as Planetscale from "alchemy/Planetscale"
+import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import {
@@ -130,6 +132,16 @@ const MapleStackLive = Layer.effect(
 			},
 			workerDev,
 			devEnv,
+			// prd's database: the PlanetScale `main` branch, adopted, whose deploy applies the drizzle
+			// migrations. The Workers that bind it put its name in their env so they upload after it.
+			dbSchema:
+				resolveDatabaseMode(stage) === "ref"
+					? yield* Planetscale.PostgresBranch("maple-db-main", {
+							database: "maple",
+							name: "main",
+							migrations: "packages/db/drizzle",
+						}).pipe(RemovalPolicy.retain())
+					: undefined,
 		}
 		return context
 	}),
@@ -181,6 +193,7 @@ const providers =
 	Acm.providers().pipe(
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
+		Layer.provideMerge(Planetscale.providers()),
 		Layer.provideMerge(Portless.providers()),
 	)
 
