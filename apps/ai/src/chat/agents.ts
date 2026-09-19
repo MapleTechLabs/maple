@@ -22,7 +22,14 @@ import type { Toolkit } from "effect/unstable/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
-import { MAX_TOOL_CALLS, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY, TURN_MAX_DURATION } from "./budgets"
+import {
+	type AgentBudget,
+	CHAT_BUDGET,
+	INVESTIGATION_BUDGET,
+	liveContextLimit,
+	REPEATED_TOOL_CALLS,
+	TOOL_CONCURRENCY,
+} from "./budgets"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
 import { DEFAULT_RULESET } from "./permissions"
@@ -33,6 +40,11 @@ export interface AgentDefinition {
 	readonly description: string
 	readonly prompt: string
 	readonly permission: PermissionRuleset
+	/**
+	 * What a turn as this agent may spend. An attended reply and an unattended investigation are
+	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
+	 */
+	readonly budget: AgentBudget
 }
 
 export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
@@ -41,24 +53,31 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		description: "General Maple assistant.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
+		budget: CHAT_BUDGET,
 	},
 	alert: {
 		name: "alert",
 		description: "Assists with an alert in context.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
+		budget: CHAT_BUDGET,
 	},
 	"widget-fix": {
 		name: "widget-fix",
 		description: "Repairs a dashboard widget in context.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
+		budget: CHAT_BUDGET,
 	},
 	investigate: {
 		name: "investigate",
 		description: "Runs an autonomous investigation.",
 		prompt: INVESTIGATE_SYSTEM_PROMPT,
+		// The ruleset a *turn* runs under is narrowed further when the turn is the autonomous pass;
+		// see `rulesetForTurn` in `./permissions`. This is what an attended follow-up in the same
+		// session gets.
 		permission: DEFAULT_RULESET,
+		budget: INVESTIGATION_BUDGET,
 	},
 } as const satisfies Readonly<Record<string, AgentDefinition>>
 
@@ -75,25 +94,31 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => agent.promp
 /**
  * A Maple agent record as a finite policy.
  *
- * Every ceiling comes from `./budgets.ts`, which is still the one place they are collected and
- * reasoned about against each other. `maxToolCalls` is the ceiling that actually binds a turn;
- * `maxTurns` matches it so a turn can never be stopped for thinking more often than it called a
- * tool.
+ * Every ceiling comes from the agent's own `budget` and from `./budgets.ts`, which is still the one
+ * place they are collected and reasoned about against each other. `maxToolCalls` is the ceiling
+ * that binds a turn; `maxTurns` matches it so a turn can never be stopped for thinking more often
+ * than it called a tool.
  *
- * `contextTokenLimit` is what makes compaction the engine's job instead of `turn-runner`'s. It
- * arrives from the resolved model rather than the agent, because it is a property of the model.
+ * `contextTokenLimit` is what makes compaction the engine's job. It is derived from the resolved
+ * model rather than taken from it: handing over the model's whole window, as this did until
+ * 2026-09-20, put the limit an order of magnitude above any prompt the agent sends, so compaction
+ * never ran. `liveContextLimit` explains both bounds.
  */
-export const agentPolicyFor = (_agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
+export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
+	const budget = agent.budget
 	return AgentPolicy.make({
-		maxTurns: MAX_TOOL_CALLS,
-		maxToolCalls: MAX_TOOL_CALLS,
-		maxDuration: TURN_MAX_DURATION,
+		maxTurns: budget.maxToolCalls,
+		maxToolCalls: budget.maxToolCalls,
+		maxDuration: budget.maxDuration,
+		tokenBudget: budget.tokenBudget,
+		completionReserveTokens: budget.completionReserveTokens,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
-		// The closing step, as policy: a turn that runs out of turns gets one more, without tools,
-		// to answer from what it found rather than stopping on a wall of tool rows.
+		// The closing step, as policy: a turn that runs out of turns, or out of tokens, gets one
+		// more without tools, to answer from what it found rather than stopping on a wall of tool
+		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.
 		onExhaustion: "final-answer",
-		...(contextTokens === undefined ? undefined : { contextTokenLimit: contextTokens }),
+		...(contextTokens === undefined ? undefined : { contextTokenLimit: liveContextLimit(contextTokens) }),
 	})
 }
 
