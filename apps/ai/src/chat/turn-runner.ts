@@ -52,12 +52,37 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
+/**
+ * The engine's per-response-part bookkeeping, which is named and therefore traced.
+ *
+ * `AgentRuntime.ownModelResponsePart` is an `Effect.fn` on the hot path: one zero-duration span per
+ * streamed delta. A model that streams a delta per reasoning token turns one investigation into
+ * thousands of spans carrying nothing. Measured on the internal org 2026-09-18: 472,523 spans on
+ * this service for 71 investigations, about 6,655 each, 99.8% of them this one name.
+ *
+ * Dropping them is a correctness fix before it is a cost one. The SDK's span buffer holds 10,000
+ * and discards silently past that, so the deltas were evicting the spans that say what the run
+ * actually did. Two hours that day exported exactly 10,000 spans and no `chat.turn` at all.
+ *
+ * Named one by one rather than by an `AgentRuntime.` prefix: `AgentRuntime.run` and
+ * `AgentRuntime.model` are the run, and `dropSpanNames` matches on prefix.
+ */
+const ENGINE_BOOKKEEPING_SPANS = [
+	"AgentRuntime.ownModelResponsePart",
+	"AgentRuntime.estimateContextTokens",
+	"AgentRuntime.nextContextEstimate",
+	"AgentRuntime.decodeEventJson",
+	"AgentRuntime.schedulingConcurrency",
+	"ToolExposure.eligibleCatalog",
+]
+
 // Deliberately not `maple-api`: background work sharing the request-facing
 // service's name skewed its percentiles (p99 32s, 2026-09-04).
 const telemetry = MapleCloudflareSDK.make(
 	workerTelemetryConfig({
 		serviceName: "maple-chat",
 		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+		dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
 	}),
 )
 
