@@ -88,26 +88,45 @@ describe("cycleSpend", () => {
 })
 
 describe("projectCycleSpend", () => {
-	it("extrapolates overage only, holding the base fee flat", () => {
-		const day = 86_400_000
-		// Day 29 of 31: $39 base + $160.40 overage → $39 + $171.46.
+	const day = 86_400_000
+	const logs = (used: number) => ({
+		logs: { used, included: 100, ratePerUnit: 0.5, unlimited: false },
+	})
+
+	it("extrapolates usage, then prices only what crosses the allotment", () => {
+		// Day 10 of 30 at 60 GB → 180 GB, 80 GB over at $0.50 → $39 + $40.
 		expect(
 			projectCycleSpend({
-				baseCents: 3_900,
-				overageCents: 16_040,
-				elapsedMs: 29 * day,
-				totalMs: 31 * day,
+				baseDollars: 39,
+				features: logs(60),
+				elapsedMs: 10 * day,
+				totalMs: 30 * day,
 			}),
-		).toBe(21_046)
+		).toBe(7_900)
+	})
+
+	it("paces on this cycle's usage, not on a balance carrying the trial", () => {
+		// The balance holds 320 GB (trial + 2 paid days); only 40 GB landed in
+		// the cycle. 320 + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.50.
+		// Pacing the whole balance over 2 days would have projected 4,800 GB.
+		expect(
+			projectCycleSpend({
+				baseDollars: 39,
+				features: logs(320),
+				cycleUsage: { logs: 40 },
+				elapsedMs: 2 * day,
+				totalMs: 30 * day,
+			}),
+		).toBe(3_900 + 39_000)
 	})
 
 	it("returns spend as-is at cycle end or with nothing elapsed", () => {
 		expect(
-			projectCycleSpend({ baseCents: 3_900, overageCents: 16_040, elapsedMs: 100, totalMs: 100 }),
-		).toBe(19_940)
-		expect(
-			projectCycleSpend({ baseCents: 3_900, overageCents: 16_040, elapsedMs: 0, totalMs: 100 }),
-		).toBe(19_940)
+			projectCycleSpend({ baseDollars: 39, features: logs(200), elapsedMs: 100, totalMs: 100 }),
+		).toBe(8_900)
+		expect(projectCycleSpend({ baseDollars: 39, features: logs(200), elapsedMs: 0, totalMs: 100 })).toBe(
+			8_900,
+		)
 	})
 })
 

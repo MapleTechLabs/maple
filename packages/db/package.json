@@ -15,6 +15,7 @@
 		"test": "vitest run --passWithNoTests",
 		"db:generate": "drizzle-kit generate --config ./drizzle.config.ts",
 		"db:migrate": "drizzle-kit migrate --config ./drizzle.config.ts",
+		"db:migrate:preflight": "bun scripts/migrations-preflight.ts",
 		"db:push": "drizzle-kit push --config ./drizzle.config.ts",
 		"db:studio": "drizzle-kit studio --config ./drizzle.config.ts",
 		"db:ensure-privileges": "bun scripts/ensure-privileges.ts",
@@ -22,14 +23,18 @@
 		"db:audit-raw-sql": "bun scripts/audit-raw-sql.ts",
 		"db:normalize-preview": "bun scripts/normalize-preview-ownership.ts",
 		"ps:apply-schema": "bun scripts/planetscale-apply-schema.ts",
+		"ps:migrations-preflight": "bun scripts/planetscale-migrations-preflight.ts",
 		"db:restore-test": "bun scripts/restore-test.ts",
 		"db:backfill:dashboards-v3": "bun scripts/backfill-dashboard-datasource-v3.ts"
 	},
 	"dependencies": {
-		"@electric-sql/pglite": "^0.5.2",
+		"@effect/sql-pg": "4.0.0-rc.112",
+		"@effect/sql-pglite": "4.0.0-rc.112",
+		"@electric-sql/pglite": "^0.5.6",
 		"@maple/domain": "workspace:*",
-		"drizzle-orm": "^0.45.1",
+		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
+		"pg": "^8.23.0",
 		"postgres": "^3.4.9"
 	},
 	"devDependencies": {
@@ -37,7 +42,8 @@
 		"@effect/language-service": "catalog:effect",
 		"@maple/widgets": "workspace:*",
 		"@types/node": "catalog:tooling",
-		"drizzle-kit": "^0.31.9",
+		"@types/pg": "^8.23.1",
+		"drizzle-kit": "1.0.0-rc.5-5935859",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

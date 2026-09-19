@@ -156,21 +156,31 @@ Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/
 `packages/db/src/schema/`, on the PlanetScale `main` branch (prd — the only stage with a
 database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
+- Drizzle is Effect-native (`drizzle-orm/effect-postgres` over `@effect/sql-pg`, node-postgres
+  underneath): `Database.execute` takes an Effect callback, queries are `yield*`ed, and
+  `db.transaction` takes an Effect callback. Driver failures become `DatabaseError` at that
+  boundary; a `Schema.TaggedError` failed inside a transaction rolls it back and reaches the caller
+  as itself. Raw `db.execute(sql…)` returns the driver's result object — wrap it in `rawRows`.
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
   `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare `new Date(ms)` /
-  `.getTime()`, including inside Promise-land helpers. Never read driver write-result shapes
-  — use `.returning()` + length. `count(*)` needs `::int` (bigint → string).
+  `.getTime()`. Never read driver write-result shapes — use `.returning()` + length. `count(*)`
+  needs `::int` (bigint → string).
 - Layers: `DatabasePgLive` (Workers) and `DatabasePgliteLive` (tests/local; `createTestDb()` in
   `packages/backend/src/platform/test-pglite.ts`).
-- One Postgres connection per invocation — request, cron tick, or Workflow run — created lazily and
+- One Postgres pool per invocation — request, cron tick, or Workflow run — created lazily and
   closed at the boundary, which is Cloudflare's documented Hyperdrive shape. The single primitive is
-  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
-  installs it for HTTP, `withPgConnectionScope` for cron. Sockets are request-bound on Workers, so a
-  connection may be reused freely WITHIN an invocation but must never outlive it. `max` is 5
-  (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost 3–6x on p50) and the
-  dial is bounded so a stall lands as `error.type = CONNECT_TIMEOUT` instead of hanging.
-- Migrations: `bun run --cwd packages/db db:generate`; CI applies them against the branch's DIRECT
-  port 5432 (never a pooler) before `alchemy deploy`. PGlite applies them at layer build.
+  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`;
+  `withPgConnectionScope` installs it around each worker's request handler and cron tick. Sockets are
+  request-bound on Workers, so a connection may be reused freely WITHIN an invocation but must never
+  outlive it. `max` is 5 (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost
+  3–6x on p50). The 10s bound is on each client's DIAL, never the pool: pg-pool applies a pool-level
+  `connectionTimeoutMillis` to queue waits too. A stalled dial lands as `error.type = ConnectionError`
+  (a refused one carries the socket code, `ECONNREFUSED`). Fork DB work off a request only with
+  `forkRequestScoped`, which interrupts it at the response but lets a DB call already under way finish.
+- Migrations: `bun run --cwd packages/db db:generate`. Production is applied BY HAND before the
+  Worker deploy: `bun run --cwd packages/db ps:migrations-preflight main` (read-only; the v1
+  migrator refuses unmatched rows and replays unrecorded folders), then `bun run migrate:prod`
+  against the DIRECT port 5432 (never a pooler). PGlite applies them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a
   preview only while it carries the `preview` label; `deploy-pr-preview.yml` triggers on
   `opened, reopened, synchronize, labeled, unlabeled, closed` and tears the stack down the moment

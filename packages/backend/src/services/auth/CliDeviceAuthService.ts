@@ -352,44 +352,46 @@ export class CliDeviceAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const won = yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						const claimed = await tx
-							.update(cliDeviceAuthorizations)
-							.set({
-								apiKeyId,
-								tokenCiphertext: encrypted.ciphertext,
-								tokenIv: encrypted.iv,
-								tokenTag: encrypted.tag,
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							const claimed = yield* tx
+								.update(cliDeviceAuthorizations)
+								.set({
+									apiKeyId,
+									tokenCiphertext: encrypted.ciphertext,
+									tokenIv: encrypted.iv,
+									tokenTag: encrypted.tag,
+								})
+								.where(
+									and(
+										eq(cliDeviceAuthorizations.deviceCodeHash, row.deviceCodeHash),
+										isNull(cliDeviceAuthorizations.apiKeyId),
+									),
+								)
+								.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
+							if (claimed.length === 0) return false
+							yield* tx.insert(apiKeysTable).values({
+								id: apiKeyId,
+								orgId: row.approvedOrgId!,
+								name: row.deviceName,
+								description: "Created by maple auth login",
+								keyHash: hashApiKey(rawToken, apiKeyHmacKey),
+								keyPrefix: rawToken.slice(0, 12) + "...",
+								kind: "standard",
+								scopes: null,
+								metadataJson: {
+									source: "maple_cli",
+									roles: row.approvedRoles,
+									deviceName: row.deviceName,
+								},
+								expiresAt: new Date(now + CLI_KEY_TTL_MS),
+								createdAt: new Date(now),
+								createdBy: row.approvedUserId!,
+								createdByEmail: row.approvedUserEmail,
 							})
-							.where(
-								and(
-									eq(cliDeviceAuthorizations.deviceCodeHash, row.deviceCodeHash),
-									isNull(cliDeviceAuthorizations.apiKeyId),
-								),
-							)
-							.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
-						if (claimed.length === 0) return false
-						await tx.insert(apiKeysTable).values({
-							id: apiKeyId,
-							orgId: row.approvedOrgId!,
-							name: row.deviceName,
-							description: "Created by maple auth login",
-							keyHash: hashApiKey(rawToken, apiKeyHmacKey),
-							keyPrefix: rawToken.slice(0, 12) + "...",
-							kind: "standard",
-							scopes: null,
-							metadataJson: {
-								source: "maple_cli",
-								roles: row.approvedRoles,
-								deviceName: row.deviceName,
-							},
-							expiresAt: new Date(now + CLI_KEY_TTL_MS),
-							createdAt: new Date(now),
-							createdBy: row.approvedUserId!,
-							createdByEmail: row.approvedUserEmail,
-						})
-						return true
-					}),
+							return true
+						}),
+					),
 				)
 				.pipe(Effect.mapError(persistenceError))
 			if (!won) {

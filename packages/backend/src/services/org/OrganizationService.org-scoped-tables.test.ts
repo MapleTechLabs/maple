@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as schema from "@maple/db"
-import { getTableColumns, is, Table } from "drizzle-orm"
+import { getColumns, is, Table } from "drizzle-orm"
 import { ORG_DELETE_REGISTRY } from "./OrganizationService"
 
 /**
@@ -17,7 +17,7 @@ const orgScopedTables = () => {
 	const found = new Map<string, string>()
 	for (const [exportName, value] of Object.entries(schema)) {
 		if (!is(value, Table)) continue
-		const columns = getTableColumns(value)
+		const columns = getColumns(value)
 		for (const column of Object.values(columns)) {
 			if (ORG_COLUMN_NAMES.has(column.name)) {
 				found.set(exportName, column.name)

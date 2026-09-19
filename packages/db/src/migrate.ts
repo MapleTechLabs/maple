@@ -4,38 +4,45 @@ import { fileURLToPath } from "node:url"
 import type { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
-import * as schema from "./schema"
 
 const migrationsFolder = () => resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle")
 
 /**
  * Applies the bundled drizzle migrations to an embedded PGlite instance.
- * Local-dev and test path only — deployed stages run `drizzle-kit migrate`
- * against the real Postgres in CI before `alchemy deploy`.
+ * Local-dev and test path only — production runs `drizzle-kit migrate` by hand
+ * (`bun run migrate:prod`) before the Worker deploy.
  */
 export const runMigrations = async (pglite: PGlite): Promise<void> => {
-	const db = drizzle(pglite, { schema })
+	const db = drizzle({ client: pglite })
 	await migrate(db, { migrationsFolder: migrationsFolder() })
 }
 
 let cachedMigrationsSql: string | undefined
 
+/** drizzle-kit v1 layout: one `<timestamp>_<name>/migration.sql` folder per migration, in name order. */
+export const listBundledMigrations = (): ReadonlyArray<{
+	readonly name: string
+	readonly sqlPath: string
+}> => {
+	const dir = migrationsFolder()
+	return readdirSync(dir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name)
+		.sort()
+		.map((name) => ({ name, sqlPath: join(dir, name, "migration.sql") }))
+}
+
 /**
- * The bundled migration SQL (all `drizzle/*.sql` in filename order), read and
- * concatenated once. The test harness applies this via a single
- * `pglite.exec()` per instance instead of the drizzle migrator — no per-test
- * filesystem reads or `__drizzle_migrations` bookkeeping, which matters when
- * hundreds of fresh PGlite instances boot under CI contention. Fine for
- * ephemeral PGlite (always built from scratch); deployed Postgres still uses
- * the real `drizzle-kit migrate`.
+ * The bundled migration SQL, concatenated once in the migrator's own order
+ * (folder name, which the kit derives from the migration timestamp). The test
+ * harness keys its pre-migrated PGlite snapshot on a hash of this text, so any
+ * new migration invalidates the snapshot automatically. Deployed Postgres still
+ * uses the real `drizzle-kit migrate`.
  */
 export const readBundledMigrationsSql = (): string => {
 	if (cachedMigrationsSql !== undefined) return cachedMigrationsSql
-	const dir = migrationsFolder()
-	const sql = readdirSync(dir)
-		.filter((file) => file.endsWith(".sql"))
-		.sort()
-		.map((file) => readFileSync(join(dir, file), "utf8"))
+	const sql = listBundledMigrations()
+		.map(({ sqlPath }) => readFileSync(sqlPath, "utf8"))
 		.join("\n")
 	cachedMigrationsSql = sql
 	return sql

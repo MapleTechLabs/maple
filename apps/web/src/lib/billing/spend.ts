@@ -248,8 +248,9 @@ export function buildSpendModel({
 		overageCents: spend.overageCents,
 		spendCents: spend.totalCents,
 		projectedCents: projectCycleSpend({
-			baseCents: spend.baseCents,
-			overageCents: spend.overageCents,
+			baseDollars,
+			features: pricing,
+			cycleUsage: Object.fromEntries(SPEND_FEATURES.map((id) => [id, usage?.[id]?.sum ?? undefined])),
 			elapsedMs,
 			totalMs: cycle.endMs - cycle.startMs,
 		}),

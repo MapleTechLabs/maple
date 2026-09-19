@@ -1,13 +1,14 @@
+import type { MapleDb } from "@maple/db/client"
 import { Effect, Layer, Option } from "effect"
 import { MapleDbConnection } from "./bindings"
 import { Env } from "./Env"
-import { Database, type DatabaseClient, DatabaseError, type DatabaseApi } from "./DatabaseLive"
+import { Database, DatabaseError, type DatabaseApi } from "./DatabaseLive"
 import { executeOnFreshPgClient, PgConnectionScope } from "./pg-connection-scope"
 
 // Worker TCP sockets are request-bound, so this layer holds only the connection
 // string and defers the dial to whoever owns the invocation: `PgConnectionScope`
-// on the request and cron paths (one socket, reused by every execute), else a
-// dial per execute.
+// on the request and cron paths (one pool, reused by every execute), else a
+// pool per execute.
 const makePgDatabase = Effect.gen(function* () {
 	const connection = yield* MapleDbConnection
 
@@ -26,7 +27,7 @@ const makePgDatabase = Effect.gen(function* () {
 
 	const { connectionString, attributes } = connection.value
 	return Database.of({
-		execute: <T>(fn: (db: DatabaseClient) => Promise<T>) =>
+		execute: <A, E, R>(fn: (db: MapleDb) => Effect.Effect<A, E, R>) =>
 			Effect.flatMap(PgConnectionScope, (scope) =>
 				scope === undefined
 					? executeOnFreshPgClient(connectionString, fn, attributes)

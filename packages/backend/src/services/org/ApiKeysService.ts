@@ -14,7 +14,7 @@ import {
 	RoleName,
 } from "@maple/domain/http"
 import { API_KEY_PREFIX, apiKeys, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
-import { and, desc, eq, getTableColumns, gt, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, getColumns, gt, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
@@ -383,36 +383,38 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 
 			const inserted = yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						await tx
-							.update(apiKeys)
-							.set({ revoked: true, revokedAt: msToDate(now) })
-							.where(liveDeviceKeysFor(orgId, params.deviceId))
-						return await tx
-							.insert(apiKeys)
-							.values({
-								id,
-								orgId,
-								name: params.name,
-								description: null,
-								keyHash,
-								keyPrefix,
-								kind: "device",
-								scopes,
-								expiresAt: msToDate(expiresAt),
-								createdAt: new Date(now),
-								createdBy: userId,
-								createdByEmail,
-								metadataJson: {
-									source: WIDGET_DEVICE_KEY_SOURCE,
-									// The minting session's roles, so the key on the
-									// phone can never outrank the human who created it.
-									roles: [...params.roles],
-									deviceId: params.deviceId,
-								},
-							})
-							.returning(txidColumn)
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx
+								.update(apiKeys)
+								.set({ revoked: true, revokedAt: msToDate(now) })
+								.where(liveDeviceKeysFor(orgId, params.deviceId))
+							return yield* tx
+								.insert(apiKeys)
+								.values({
+									id,
+									orgId,
+									name: params.name,
+									description: null,
+									keyHash,
+									keyPrefix,
+									kind: "device",
+									scopes,
+									expiresAt: msToDate(expiresAt),
+									createdAt: new Date(now),
+									createdBy: userId,
+									createdByEmail,
+									metadataJson: {
+										source: WIDGET_DEVICE_KEY_SOURCE,
+										// The minting session's roles, so the key on the
+										// phone can never outrank the human who created it.
+										roles: [...params.roles],
+										deviceId: params.deviceId,
+									},
+								})
+								.returning(txidColumn)
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			const txid = readTxid(inserted)
@@ -491,41 +493,43 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// revoke/roll race can no longer mint a successor for a dead one.
 			const rolled = yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						const claimed = await tx
-							.update(apiKeys)
-							.set({ revoked: true, revokedAt: msToDate(now) })
-							.where(
-								and(
-									eq(apiKeys.id, keyId),
-									eq(apiKeys.orgId, orgId),
-									eq(apiKeys.revoked, false),
-								),
-							)
-							.returning({ ...getTableColumns(apiKeys), ...txidColumn })
-						if (claimed.length === 0) return undefined
-						const source = claimed[0]
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							const claimed = yield* tx
+								.update(apiKeys)
+								.set({ revoked: true, revokedAt: msToDate(now) })
+								.where(
+									and(
+										eq(apiKeys.id, keyId),
+										eq(apiKeys.orgId, orgId),
+										eq(apiKeys.revoked, false),
+									),
+								)
+								.returning({ ...getColumns(apiKeys), ...txidColumn })
+							if (claimed.length === 0) return undefined
+							const source = claimed[0]
 
-						await tx.insert(apiKeys).values({
-							id,
-							orgId,
-							name: source.name,
-							description: source.description ?? null,
-							keyHash,
-							keyPrefix,
-							kind: source.kind,
-							scopes: source.scopes ?? null,
-							// Carry the role metadata across: a rolled key that lost it
-							// would resolve with the null (= `root`) default, silently
-							// escalating a CLI/MCP key beyond its creator's roles.
-							metadataJson: source.metadataJson,
-							expiresAt: null,
-							createdAt: msToDate(now),
-							createdBy: userId,
-							createdByEmail,
-						})
-						return source
-					}),
+							yield* tx.insert(apiKeys).values({
+								id,
+								orgId,
+								name: source.name,
+								description: source.description ?? null,
+								keyHash,
+								keyPrefix,
+								kind: source.kind,
+								scopes: source.scopes ?? null,
+								// Carry the role metadata across: a rolled key that lost it
+								// would resolve with the null (= `root`) default, silently
+								// escalating a CLI/MCP key beyond its creator's roles.
+								metadataJson: source.metadataJson,
+								expiresAt: null,
+								createdAt: msToDate(now),
+								createdBy: userId,
+								createdByEmail,
+							})
+							return source
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -569,26 +573,28 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// (which would also replicate a pointless row out through Electric).
 			const revokedRows = yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						const claimed = await tx
-							.update(apiKeys)
-							.set({ revoked: true, revokedAt: msToDate(now) })
-							.where(
-								and(
-									eq(apiKeys.id, keyId),
-									eq(apiKeys.orgId, orgId),
-									eq(apiKeys.revoked, false),
-								),
-							)
-							.returning({ ...getTableColumns(apiKeys), ...txidColumn })
-						// An MCP key is the visible face of an OAuth grant whose refresh
-						// family re-mints it hourly. Flipping `revoked` here alone was a
-						// no-op the next rotation undid, so the family goes with it.
-						if (claimed[0]?.kind === "mcp") {
-							await revokeFamiliesForAccessKeys(tx, [claimed[0].id], msToDate(now))
-						}
-						return claimed
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							const claimed = yield* tx
+								.update(apiKeys)
+								.set({ revoked: true, revokedAt: msToDate(now) })
+								.where(
+									and(
+										eq(apiKeys.id, keyId),
+										eq(apiKeys.orgId, orgId),
+										eq(apiKeys.revoked, false),
+									),
+								)
+								.returning({ ...getColumns(apiKeys), ...txidColumn })
+							// An MCP key is the visible face of an OAuth grant whose refresh
+							// family re-mints it hourly. Flipping `revoked` here alone was a
+							// no-op the next rotation undid, so the family goes with it.
+							if (claimed[0]?.kind === "mcp") {
+								yield* revokeFamiliesForAccessKeys(tx, [claimed[0].id], msToDate(now))
+							}
+							return claimed
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 

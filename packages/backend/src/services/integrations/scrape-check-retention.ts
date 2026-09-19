@@ -67,35 +67,39 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 	const capCandidates = targets.filter(canExceedRowCap)
 	const database = yield* Database
 
-	yield* database.execute(async (db) => {
-		await db
-			.delete(scrapeTargetChecks)
-			.where(and(inArray(scrapeTargetChecks.targetId, ids), lt(scrapeTargetChecks.checkedAt, cutoff)))
-
-		// Cap backstop for misconfigured/very short intervals: drop everything
-		// older than the Nth-newest row per target. The OFFSET probe rides the
-		// (target_id, checked_at) index, so it stays cheaper than a window
-		// function over the target's full history.
-		for (const target of capCandidates) {
-			const capBoundary = await db
-				.select({ checkedAt: scrapeTargetChecks.checkedAt })
-				.from(scrapeTargetChecks)
-				.where(eq(scrapeTargetChecks.targetId, target.id))
-				.orderBy(desc(scrapeTargetChecks.checkedAt))
-				.limit(1)
-				.offset(CHECK_MAX_ROWS_PER_TARGET - 1)
-			const boundary = capBoundary[0]
-			if (boundary === undefined) continue
-			await db
+	yield* database.execute((db) =>
+		Effect.gen(function* () {
+			yield* db
 				.delete(scrapeTargetChecks)
 				.where(
-					and(
-						eq(scrapeTargetChecks.targetId, target.id),
-						lt(scrapeTargetChecks.checkedAt, boundary.checkedAt),
-					),
+					and(inArray(scrapeTargetChecks.targetId, ids), lt(scrapeTargetChecks.checkedAt, cutoff)),
 				)
-		}
-	})
+
+			// Cap backstop for misconfigured/very short intervals: drop everything
+			// older than the Nth-newest row per target. The OFFSET probe rides the
+			// (target_id, checked_at) index, so it stays cheaper than a window
+			// function over the target's full history.
+			for (const target of capCandidates) {
+				const capBoundary = yield* db
+					.select({ checkedAt: scrapeTargetChecks.checkedAt })
+					.from(scrapeTargetChecks)
+					.where(eq(scrapeTargetChecks.targetId, target.id))
+					.orderBy(desc(scrapeTargetChecks.checkedAt))
+					.limit(1)
+					.offset(CHECK_MAX_ROWS_PER_TARGET - 1)
+				const boundary = capBoundary[0]
+				if (boundary === undefined) continue
+				yield* db
+					.delete(scrapeTargetChecks)
+					.where(
+						and(
+							eq(scrapeTargetChecks.targetId, target.id),
+							lt(scrapeTargetChecks.checkedAt, boundary.checkedAt),
+						),
+					)
+			}
+		}),
+	)
 	yield* Effect.annotateCurrentSpan({
 		"scrape.retention.targets": targets.length,
 		"scrape.retention.cap_probed": capCandidates.length,

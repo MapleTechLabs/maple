@@ -151,23 +151,36 @@ export function cycleSpend({
 }
 
 /**
- * Straight-line projection of `spentCents` to the end of the cycle, holding the
- * base fee flat: only overage accrues with time. Returns `spentCents` when the
- * cycle has no elapsed portion to extrapolate from.
+ * Where the cycle lands at the current pace: each feature's remaining usage is
+ * extrapolated and added to what is already metered, then priced, so overage
+ * only starts once the projection crosses the allotment.
+ *
+ * The pace comes from `cycleUsage` (units recorded inside this cycle), not from
+ * `used`: Autumn doesn't reset a balance when a trial converts, so `used` in the
+ * first paid cycle still carries the trial. Pacing that over a few paid days
+ * projected many times the real bill. A feature without `cycleUsage` paces on
+ * `used`. Returns the current spend when nothing has elapsed.
  */
 export function projectCycleSpend({
-	baseCents,
-	overageCents,
+	baseDollars,
+	features,
+	cycleUsage,
 	elapsedMs,
 	totalMs,
 }: {
-	readonly baseCents: number
-	readonly overageCents: number
+	readonly baseDollars: number | null
+	readonly features: Readonly<Record<string, FeatureUsagePricing>>
+	readonly cycleUsage?: Readonly<Record<string, number | undefined>>
 	readonly elapsedMs: number
 	readonly totalMs: number
 }): number {
-	if (elapsedMs <= 0 || totalMs <= 0 || elapsedMs >= totalMs) return baseCents + overageCents
-	return baseCents + Math.round(overageCents * (totalMs / elapsedMs))
+	const remaining = elapsedMs <= 0 || totalMs <= elapsedMs ? 0 : (totalMs - elapsedMs) / elapsedMs
+	const projected: Record<string, FeatureUsagePricing> = {}
+	for (const [featureId, feature] of Object.entries(features)) {
+		const paced = Math.min(cycleUsage?.[featureId] ?? feature.used, feature.used)
+		projected[featureId] = { ...feature, used: feature.used + paced * remaining }
+	}
+	return cycleSpend({ baseDollars, features: projected }).totalCents
 }
 
 // Whose prices apply

@@ -6986,6 +6986,11 @@ mod tests {
             let mut objects = state.objects.lock().unwrap();
             match method {
                 axum::http::Method::PUT => {
+                    // Real S3 refuses a PUT without Content-Length (411
+                    // MissingContentLength); accepting one hid the heartbeat bug.
+                    if !headers.contains_key("content-length") {
+                        return (StatusCode::LENGTH_REQUIRED, Vec::new());
+                    }
                     if headers.contains_key("if-none-match") && objects.contains_key(&key) {
                         return (StatusCode::PRECONDITION_FAILED, Vec::new());
                     }
@@ -7206,6 +7211,27 @@ mod tests {
         assert!(
             !second.claim("task-that-died", now).await.unwrap(),
             "the second is told someone else has it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_heartbeat_lands_and_makes_its_owner_claimable_once_stale() {
+        // The heartbeat is an EMPTY PUT, the one request shape the fake used to
+        // accept and S3 refused. Without it no owner object exists, so a dead
+        // task is never seen as stale and nothing it shipped is ever recovered.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let store = test_wal_store(&endpoint);
+        store.heartbeat().await.expect("heartbeat PUT succeeds");
+
+        let owner_key = format!("wal/v1/owners/{}", store.owner());
+        assert!(bucket.get(&owner_key).is_some(), "heartbeat object exists");
+
+        let successor = test_wal_store(&endpoint);
+        let later = Utc::now() + chrono::Duration::hours(1);
+        assert_eq!(
+            successor.stale_owners(later).await.unwrap(),
+            vec![store.owner().to_owned()],
+            "a heartbeat that stops refreshing is found as a stale owner"
         );
     }
 
