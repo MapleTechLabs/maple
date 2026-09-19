@@ -17,11 +17,13 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { agentForSession, chatAgent } from "./agents"
+import { rulesetForTurn } from "./permissions"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
 	buildChatToolkit,
 	buildDiagnosisCompletion,
+	isAutonomousInvestigationTurn,
 	SUBMIT_DIAGNOSIS,
 	type RunUsage,
 	type SubmitDiagnosis,
@@ -31,18 +33,16 @@ import {
  * The transcript the model starts from.
  *
  * Supplied as run options rather than retained by the engine: `ChatSession` is the authority on what
- * was said, and a second history owner would be a second answer to the same question. A compaction
- * replaces everything up to its `throughSeq` with its summary, exactly as before.
+ * was said, and a second history owner would be a second answer to the same question.
+ *
+ * Bounded by count and characters, and that is the whole of it. There was a durable `compaction`
+ * event here once, carrying a summary and a `throughSeq` to replay from, but nothing ever wrote one:
+ * the engine's compaction is per-model-call and lives inside the run, and `toChatEvents` mapped
+ * `CompactionPerformed` to nothing. Summarizing *across* turns is a separate design, not a branch
+ * that was already half-built.
  */
-export const promptFromHistory = (
-	history: ReadonlyArray<ChatMessage>,
-	compaction?: { readonly summary: string; readonly throughSeq: number },
-): ReadonlyArray<PromptMessage> => {
-	const spoken = (
-		compaction === undefined
-			? history
-			: history.filter((message) => message.startSeq > compaction.throughSeq)
-	).filter((message) => message.text.trim() !== "")
+export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): ReadonlyArray<PromptMessage> => {
+	const spoken = history.filter((message) => message.text.trim() !== "")
 
 	// Bounded here as well as by the policy's context limit. Compaction acts once a request crosses
 	// the limit; this keeps the *first* request of a long conversation from being the one that does.
@@ -58,19 +58,10 @@ export const promptFromHistory = (
 	}
 	kept.reverse()
 
-	const messages = kept.map((message) => ({
+	return kept.map((message) => ({
 		role: message.role === "user" ? ("user" as const) : ("assistant" as const),
 		content: [{ type: "text" as const, text: message.text }],
 	}))
-	return compaction === undefined
-		? messages
-		: [
-				{
-					role: "user" as const,
-					content: [{ type: "text" as const, text: COMPACTION_PREAMBLE + compaction.summary }],
-				},
-				...messages,
-			]
 }
 
 /** One replayed turn, in the shape `Prompt.make` accepts. */
@@ -81,9 +72,6 @@ export interface PromptMessage {
 
 const MAX_REPLAYED_MESSAGES = 40
 const MAX_REPLAYED_CHARS = 60_000
-
-/** How the summary is introduced to the model. */
-const COMPACTION_PREAMBLE = "Summary of the earlier part of this conversation, which has been condensed:\n\n"
 
 export interface ChatRunInput {
 	readonly sessionId: string
@@ -97,7 +85,6 @@ export interface ChatRunInput {
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
-	readonly compaction?: { readonly summary: string; readonly throughSeq: number }
 	/** Accumulated across the run; `submit_diagnosis` reads it mid-run. */
 	readonly usage: RunUsage
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
@@ -110,6 +97,14 @@ export interface ChatRunOutcome {
 	readonly autonomous: boolean
 	/** `submit_diagnosis` landed a report during this run. */
 	readonly submittedDiagnosis: boolean
+	/**
+	 * How many times the engine compacted this run's context.
+	 *
+	 * Reported because the limit that triggers it is set from measured prod traffic, and a limit set
+	 * from traffic has to be watched against it. Compaction should be rare; routinely non-zero means
+	 * either the bound is too tight or a run is carrying far more evidence than it is reading.
+	 */
+	readonly compactions: number
 }
 
 /**
@@ -121,7 +116,9 @@ export interface ChatRunOutcome {
  */
 export const runChatTurn = (input: ChatRunInput) => {
 	const definition = agentForSession(input.sessionId)
-	const ruleset = definition.permission
+	// Not `definition.permission`: an unattended pass is offered fewer tools than the same agent
+	// answering a person in the same session. See `rulesetForTurn`.
+	const ruleset = rulesetForTurn(definition, isAutonomousInvestigationTurn(input.sessionId, input.tenant))
 	const maple = buildChatToolkit(input.toolExecutor, input.tenant, ruleset)
 	const completion = buildDiagnosisCompletion(
 		input.sessionId,
@@ -146,9 +143,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 	// ruleset knows the call is a proposal.
 	const isProposed = (name: string) => evaluatePermission(ruleset, name) === "ask"
 
+	let compactions = 0
+
 	return AgentRuntime.stream(agent, input.text, {
 		threadId: decodeThreadId(input.sessionId),
-		history: Prompt.make(promptFromHistory(input.history, input.compaction)),
+		history: Prompt.make(promptFromHistory(input.history)),
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine
 		// reports token usage as it accrues — the event stream carries none — and `submit_diagnosis`
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
@@ -159,6 +158,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		Stream.takeWhile(() => input.holdsTurn()),
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
+				if (event._tag === "CompactionPerformed") compactions += 1
 				for (const chat of toChatEvents(event, { messageId: input.messageId, isProposed })) {
 					input.append(chat)
 				}
@@ -168,6 +168,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 			(): ChatRunOutcome => ({
 				autonomous: completion?.autonomous ?? false,
 				submittedDiagnosis: completion?.submitted() ?? false,
+				compactions,
 			}),
 		),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
