@@ -9,7 +9,6 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
-import { TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 
 /**
  * The billing page's spend model: one place that turns the Autumn snapshot plus
@@ -155,24 +154,6 @@ const cycleWindow = (customer: BillingCustomer | undefined, nowMs: number) => {
 }
 
 /**
- * When the meter behind `used` started counting. Autumn doesn't reset balances
- * when a trial converts, so the first paid cycle's usage includes the trial.
- * Pacing that over the few paid days alone projects a bill many times too high,
- * so when the trial ended at this cycle's start the window reaches back to the
- * trial's start instead.
- */
-const meterWindowStart = (
-	sub: BillingCustomer["subscriptions"][number] | undefined,
-	cycleStartMs: number,
-	nowMs: number,
-): number => {
-	const trialEndsAt = sub?.trialEndsAt
-	if (trialEndsAt == null || trialEndsAt > nowMs) return cycleStartMs
-	if (Math.abs(trialEndsAt - cycleStartMs) > DAY_MS) return cycleStartMs
-	return Math.min(cycleStartMs, trialEndsAt - TRIAL_DURATION_DAYS * DAY_MS)
-}
-
-/**
  * Everything the page needs about this cycle's spend. Returns null only when the
  * customer hasn't loaded — a customer with no plan still has a model (zero base,
  * real usage), because the page must show usage before it shows a bill.
@@ -260,7 +241,6 @@ export function buildSpendModel({
 	const cycleDays = Math.max(1, Math.round((cycle.endMs - cycle.startMs) / DAY_MS))
 	const elapsedMs = Math.max(0, Math.min(nowMs, cycle.endMs) - cycle.startMs)
 	const dayOfCycle = Math.min(cycleDays, Math.floor(elapsedMs / DAY_MS) + 1)
-	const meterStartMs = meterWindowStart(activeSub, cycle.startMs, nowMs)
 
 	return {
 		currency: "usd",
@@ -270,8 +250,9 @@ export function buildSpendModel({
 		projectedCents: projectCycleSpend({
 			baseDollars,
 			features: pricing,
-			elapsedMs: Math.max(0, Math.min(nowMs, cycle.endMs) - meterStartMs),
-			totalMs: cycle.endMs - meterStartMs,
+			cycleUsage: Object.fromEntries(SPEND_FEATURES.map((id) => [id, usage?.[id]?.sum ?? undefined])),
+			elapsedMs,
+			totalMs: cycle.endMs - cycle.startMs,
 		}),
 		partial: spend.partial,
 		features,

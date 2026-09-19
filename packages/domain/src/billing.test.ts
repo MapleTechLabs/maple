@@ -105,15 +105,17 @@ describe("projectCycleSpend", () => {
 		).toBe(7_900)
 	})
 
-	it("paces carried-over trial usage across the whole metering window", () => {
-		// 14 trial days + 2 paid days metered 320 GB. Pacing that over the 2 paid
-		// days alone projects 4,800 GB; over the 16 metered days it is 880 GB.
+	it("paces on this cycle's usage, not on a balance carrying the trial", () => {
+		// The balance holds 320 GB (trial + 2 paid days); only 40 GB landed in
+		// the cycle. 320 + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.50.
+		// Pacing the whole balance over 2 days would have projected 4,800 GB.
 		expect(
 			projectCycleSpend({
 				baseDollars: 39,
 				features: logs(320),
-				elapsedMs: 16 * day,
-				totalMs: 44 * day,
+				cycleUsage: { logs: 40 },
+				elapsedMs: 2 * day,
+				totalMs: 30 * day,
 			}),
 		).toBe(3_900 + 39_000)
 	})

@@ -81,7 +81,7 @@ describe("buildSpendModel", () => {
 		expect(result.planName).toBe("Startup")
 	})
 
-	it("paces usage carried over from the trial across the trial days too", () => {
+	it("paces on this cycle's events when the balance still carries the trial", () => {
 		const day = 86_400_000
 		const paidStart = Date.UTC(2026, 6, 15)
 		const customer = buildCustomer({
@@ -90,24 +90,24 @@ describe("buildSpendModel", () => {
 					planId: "startup",
 					status: "active",
 					addOn: false,
-					trialEndsAt: paidStart,
 					currentPeriodStart: paidStart,
 					currentPeriodEnd: paidStart + 30 * day,
 				},
 			],
+			// Autumn didn't reset the balance at conversion: 280 GB of it is trial.
+			balances: { logs: { granted: 100, usage: 320 } },
 		})
-		// 14 trial days + 2 paid days metered 320 GB of logs.
 		const result = buildSpendModel({
 			customer,
 			plans: [startupPlan],
-			usage: { logs: { sum: 320 } } as BillingUsage["total"],
+			usage: { logs: { sum: 40 } } as BillingUsage["total"],
 			nowMs: paidStart + 2 * day,
 		})
 		if (result === null) throw new Error("expected a model")
 
 		expect(result.dayOfCycle).toBe(3)
-		// 320 GB over 16 metered days → 880 GB by cycle end, 780 GB over at $0.30.
-		// Pacing over the 2 paid days alone would have projected 4,800 GB.
+		// 320 GB + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.30.
+		// Pacing the whole balance over 2 days would have projected 4,800 GB.
 		expect(result.projectedCents).toBe(3_900 + 23_400)
 	})
 
