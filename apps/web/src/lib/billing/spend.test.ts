@@ -75,7 +75,7 @@ describe("buildSpendModel", () => {
 		// Usage extrapolates on elapsed time (28.5 of 31 days at noon on the
 		// 29th) and is then priced; the base fee stays flat. Fractional elapsed on
 		// purpose: rounding to whole days makes the projection jump at midnight.
-		expect(result.projectedCents).toBe(PROJECTED)
+		expect(result.projectedCents).toBe(22_224)
 		expect(result.dayOfCycle).toBe(29)
 		expect(result.cycleDays).toBe(31)
 		expect(result.planName).toBe("Startup")
