@@ -151,23 +151,30 @@ export function cycleSpend({
 }
 
 /**
- * Straight-line projection of `spentCents` to the end of the cycle, holding the
- * base fee flat: only overage accrues with time. Returns `spentCents` when the
- * cycle has no elapsed portion to extrapolate from.
+ * Where the cycle lands at the current pace: each feature's usage is
+ * extrapolated over the metering window and then priced, so overage only starts
+ * once the projected usage crosses the allotment. `elapsedMs`/`totalMs` describe
+ * the window the meter has been counting over, which can start before the cycle
+ * (trial usage carried into the first paid cycle). Returns the current spend
+ * when there is no elapsed portion to extrapolate from.
  */
 export function projectCycleSpend({
-	baseCents,
-	overageCents,
+	baseDollars,
+	features,
 	elapsedMs,
 	totalMs,
 }: {
-	readonly baseCents: number
-	readonly overageCents: number
+	readonly baseDollars: number | null
+	readonly features: Readonly<Record<string, FeatureUsagePricing>>
 	readonly elapsedMs: number
 	readonly totalMs: number
 }): number {
-	if (elapsedMs <= 0 || totalMs <= 0 || elapsedMs >= totalMs) return baseCents + overageCents
-	return baseCents + Math.round(overageCents * (totalMs / elapsedMs))
+	const scale = elapsedMs <= 0 || totalMs <= 0 || elapsedMs >= totalMs ? 1 : totalMs / elapsedMs
+	const projected: Record<string, FeatureUsagePricing> = {}
+	for (const [featureId, feature] of Object.entries(features)) {
+		projected[featureId] = { ...feature, used: feature.used * scale }
+	}
+	return cycleSpend({ baseDollars, features: projected }).totalCents
 }
 
 // Whose prices apply
