@@ -43,9 +43,29 @@ public struct TraceTimeseriesRequest: Hashable, Sendable {
 	/// number of minutes keeps bucket boundaries aligned with the window's
 	/// minute-snapped end.
 	public var resolvedBucketSeconds: Int {
-		if let bucketSeconds { return bucketSeconds }
-		let raw = window.end.timeIntervalSince(window.start) / Double(Self.targetPoints)
-		return max(60, Int((raw / 60).rounded(.up)) * 60)
+		bucketSeconds ?? window.bucketSeconds(targetPoints: Self.targetPoints)
+	}
+}
+
+/// The service detail screen's one read: the window summary, every golden
+/// signal per bucket, and the busiest operations, composed server-side.
+public struct ServiceOverviewRequest: Hashable, Sendable {
+	public var serviceName: String
+	public var window: ResolvedTimeWindow
+	/// Buckets behind the chart. The default is denser than a sparkline's
+	/// because this series is drawn full-width and scrubbed by hand.
+	public var bucketSeconds: Int?
+
+	public static let targetPoints = 48
+
+	public init(serviceName: String, window: ResolvedTimeWindow, bucketSeconds: Int? = nil) {
+		self.serviceName = serviceName
+		self.window = window
+		self.bucketSeconds = bucketSeconds
+	}
+
+	public var resolvedBucketSeconds: Int {
+		bucketSeconds ?? window.bucketSeconds(targetPoints: Self.targetPoints)
 	}
 }
 
@@ -75,6 +95,23 @@ public struct TraceBreakdownRequest: Hashable, Sendable {
 }
 
 extension MapleClient {
+	public func serviceOverview(_ request: ServiceOverviewRequest) async throws -> ServiceOverview {
+		try await mapping {
+			let output = try await client.getServiceOverview(
+				.init(
+					path: .init(name: request.serviceName),
+					query: .init(
+						startTime: request.window.startTime,
+						endTime: request.window.endTime,
+						deploymentEnvironment: environment,
+						bucketSeconds: String(request.resolvedBucketSeconds)
+					)
+				)
+			)
+			return try output.ok.body.json
+		}
+	}
+
 	public func traceTimeseries(_ request: TraceTimeseriesRequest) async throws -> TraceTimeseriesResult {
 		try await mapping {
 			let output = try await client.queryTraceTimeseries(

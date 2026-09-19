@@ -15,6 +15,7 @@ import {
 	V2LogNotFound,
 	V2LogQueryInvalid,
 	V2MetricQueryInvalid,
+	SERVICE_OVERVIEW_OPERATIONS_LIMIT,
 	V2ServiceNotFound,
 	V2SpanNotFound,
 	V2TelemetryBreakdownFilterRequired,
@@ -30,6 +31,8 @@ import {
 	type V2MetricFilters,
 	type V2Service,
 	type V2ServiceMapEdge,
+	type V2ServiceOperation,
+	type V2ServiceOverviewPoint,
 	type V2Span,
 	type V2TraceFilters,
 	type V2TraceSummary,
@@ -54,6 +57,7 @@ import { Effect, Encoding, Option, Result, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -1061,6 +1065,35 @@ export const toService = (
 	}
 }
 
+/**
+ * The all-metrics timeseries as the overview carries it: one object per
+ * bucket, in the engine's bucket order. The engine names the metrics; an
+ * absent key is a bucket the engine hole-filled, which reads as zero.
+ */
+const toOverviewPoints = (
+	data: ReadonlyArray<{ readonly bucket: string; readonly series: Readonly<Record<string, number>> }>,
+): ReadonlyArray<V2ServiceOverviewPoint> =>
+	data.map((point) => ({
+		timestamp: chToIso(point.bucket),
+		span_count: Number(point.series.count ?? 0),
+		estimated_span_count: Number(point.series.estimated_span_count ?? point.series.count ?? 0),
+		error_rate: Number(point.series.error_rate ?? 0),
+		p50_latency_ms: Number(point.series.p50_duration ?? 0),
+		p95_latency_ms: Number(point.series.p95_duration ?? 0),
+		p99_latency_ms: Number(point.series.p99_duration ?? 0),
+	}))
+
+const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
+	name: String(row.spanName),
+	span_count: Number(row.spanCount),
+	estimated_span_count: Number(row.estimatedSpanCount),
+	error_count: Number(row.errorCount),
+	error_rate: Number(row.errorRate),
+	p50_latency_ms: Number(row.p50DurationMs),
+	p95_latency_ms: Number(row.p95DurationMs),
+	p99_latency_ms: Number(row.p99DurationMs),
+})
+
 export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (handlers) =>
 	Effect.gen(function* () {
 		const warehouse = yield* WarehouseQueryService
@@ -1135,49 +1168,209 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 						),
 					)
 			})
-		return handlers
-			.handle("list", ({ query }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const window = yield* parseWindow(query.start_time, query.end_time, {
-						maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
-						// Reads the hourly rollups, whose Timestamp is a plain DateTime.
-						precision: "second",
-						rangeLabel: "Service queries",
-					})
-					const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {
-						deploymentEnvironment: query.deployment_environment,
-						serviceNamespace: query.service_namespace,
-					})
-					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
-						execute(tenant, window, baselines, {
+		return (
+			handlers
+				.handle("list", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const window = yield* parseWindow(query.start_time, query.end_time, {
+							maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+							// Reads the hourly rollups, whose Timestamp is a plain DateTime.
+							precision: "second",
+							rangeLabel: "Service queries",
+						})
+						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {
 							deploymentEnvironment: query.deployment_environment,
 							serviceNamespace: query.service_namespace,
-							limit,
-							offset,
-						}),
-					)
-					return { object: "list" as const, ...page }
-				}),
-			)
-			.handle("retrieve", ({ params, query }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const window = yield* parseWindow(query.start_time, query.end_time, {
-						maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
-						// Reads the hourly rollups, whose Timestamp is a plain DateTime.
-						precision: "second",
-						rangeLabel: "Service queries",
-					})
-					const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {})
-					const rows = yield* execute(tenant, window, baselines, {
-						serviceName: params.name,
-						limit: 1,
-					})
-					if (!rows[0]) return yield* Effect.fail(V2ServiceNotFound.make())
-					return rows[0]
-				}),
-			)
+						})
+						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
+							execute(tenant, window, baselines, {
+								deploymentEnvironment: query.deployment_environment,
+								serviceNamespace: query.service_namespace,
+								limit,
+								offset,
+							}),
+						)
+						return { object: "list" as const, ...page }
+					}),
+				)
+				.handle("retrieve", ({ params, query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const window = yield* parseWindow(query.start_time, query.end_time, {
+							maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+							// Reads the hourly rollups, whose Timestamp is a plain DateTime.
+							precision: "second",
+							rangeLabel: "Service queries",
+						})
+						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {})
+						const rows = yield* execute(tenant, window, baselines, {
+							serviceName: params.name,
+							limit: 1,
+						})
+						if (!rows[0]) return yield* Effect.fail(V2ServiceNotFound.make())
+						return rows[0]
+					}),
+				)
+				/**
+				 * The reads behind a service detail screen, in one Worker invocation.
+				 *
+				 * The phone used to compose this from six requests (the summary, three
+				 * single-metric timeseries, two breakdowns), each re-resolving per-org
+				 * config and paying its own round-trip, and painted only when the
+				 * slowest landed. Here config resolves once, the three warehouse reads
+				 * run concurrently, and the all-metrics timeseries is one query for
+				 * every signal rather than one per signal.
+				 *
+				 * The summary is the screen, so its failure is the request's. The
+				 * series and the operations are context next to it and degrade in
+				 * place — a null `bucket_seconds` with no points, an empty operations
+				 * list — the way the widget summary's sparklines do.
+				 */
+				.handle("overview", ({ params, query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// The series read raw traces (or the minutely tier), so the window
+						// takes the timeseries range cap rather than the catalog's annual one.
+						const window = yield* parseWindow(query.start_time, query.end_time, {
+							maxSeconds: MAX_QUERY_RANGE_SECONDS,
+							precision: "second",
+							rangeLabel: "Service overview queries",
+						})
+						const bucketSeconds = yield* validateTimeseriesBucket(
+							query.start_time,
+							query.end_time,
+							window.rangeSeconds,
+							query.bucket_seconds,
+						)
+						const environmentFilter = query.deployment_environment
+							? { deploymentEnvironment: query.deployment_environment }
+							: {}
+						const timeseriesRequest = yield* decodeQueryEngineRequest(
+							{
+								startTime: window.startTime,
+								endTime: window.endTime,
+								query: {
+									kind: "timeseries",
+									source: "traces",
+									metric: "count",
+									allMetrics: true,
+									bucketSeconds,
+									filters: {
+										serviceName: params.name,
+										...(query.deployment_environment
+											? { environments: [query.deployment_environment] }
+											: undefined),
+									},
+								},
+							},
+							() => V2TraceQueryInvalid.make(undefined, { param: "bucket_seconds" }),
+						)
+
+						yield* warehouse.warmRoute(tenant)
+
+						const summary = Effect.gen(function* () {
+							const baselines = yield* loadBaselines(
+								tenant,
+								Date.parse(query.start_time),
+								environmentFilter,
+							)
+							const rows = yield* execute(tenant, window, baselines, {
+								serviceName: params.name,
+								...environmentFilter,
+								limit: 1,
+							})
+							return rows[0]
+						})
+
+						const points = queryEngine.execute(tenant, timeseriesRequest).pipe(
+							Effect.map((response) =>
+								response.result.kind === "timeseries"
+									? toOverviewPoints(response.result.data)
+									: [],
+							),
+							Effect.catchCause((cause) =>
+								Effect.as(
+									Effect.logWarning("v2 service overview timeseries read failed", cause),
+									null,
+								),
+							),
+						)
+
+						const operationOptions = {
+							serviceName: params.name,
+							environments: query.deployment_environment
+								? [query.deployment_environment]
+								: undefined,
+							limit: SERVICE_OVERVIEW_OPERATIONS_LIMIT,
+						}
+						const operationParams = {
+							orgId: tenant.orgId,
+							startTime: window.startTime,
+							endTime: window.endTime,
+						}
+						const operationRowSchema = { rowSchema: CH.serviceOperationsSummaryRowSchema }
+						const runOperations = (rollup: boolean) =>
+							warehouse.compiledQuery(
+								tenant,
+								rollup
+									? CH.compile(
+											CH.serviceOperationsSummaryQuery(operationOptions),
+											operationParams,
+											operationRowSchema,
+										)
+									: CH.compile(
+											CH.serviceOperationsSummaryRawQuery(operationOptions),
+											operationParams,
+											operationRowSchema,
+										),
+								{
+									profile: "aggregation",
+									context: rollup
+										? "v2ServiceOverviewOperations"
+										: "v2ServiceOverviewOperationsRaw",
+								},
+							)
+						// Same rollout state as the internal Operations tab: the
+						// `service_operations_*` rollups reach a BYO cluster only when its
+						// admin applies schema, so a missing table reads raw traces instead.
+						const operations = runOperations(true).pipe(
+							Effect.catch((error) =>
+								isMissingServiceOperationsRollup(error)
+									? Effect.logWarning(
+											"service_operations rollup is absent on this cluster; reading raw traces for the v2 service overview.",
+										).pipe(
+											Effect.annotateLogs({ orgId: tenant.orgId }),
+											Effect.andThen(runOperations(false)),
+										)
+									: Effect.fail(error),
+							),
+							Effect.map((rows) => rows.map(toOperation)),
+							Effect.catchCause((cause) =>
+								Effect.as(
+									Effect.logWarning("v2 service overview operations read failed", cause),
+									[] as ReadonlyArray<V2ServiceOperation>,
+								),
+							),
+						)
+
+						const [service, series, operationRows] = yield* Effect.all(
+							[summary, points, operations],
+							{ concurrency: 3 },
+						)
+						if (!service) return yield* Effect.fail(V2ServiceNotFound.make())
+						return {
+							object: "service_overview" as const,
+							service,
+							start_time: timestamp(query.start_time),
+							end_time: timestamp(query.end_time),
+							bucket_seconds: series === null ? null : bucketSeconds,
+							points: series ?? [],
+							operations: operationRows,
+						}
+					}),
+				)
+		)
 	}),
 )
 
