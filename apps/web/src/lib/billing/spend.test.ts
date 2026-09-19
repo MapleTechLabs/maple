@@ -72,13 +72,43 @@ describe("buildSpendModel", () => {
 		expect(result.baseCents).toBe(3_900)
 		expect(result.overageCents).toBe(16_040)
 		expect(result.spendCents).toBe(19_940)
-		// Overage extrapolates on elapsed time (28.5 of 31 days at noon on the
-		// 29th), the base fee stays flat. Fractional elapsed on purpose: rounding
-		// to whole days makes the projection jump at midnight.
-		expect(result.projectedCents).toBe(21_347)
+		// Usage extrapolates on elapsed time (28.5 of 31 days at noon on the
+		// 29th) and is then priced; the base fee stays flat. Fractional elapsed on
+		// purpose: rounding to whole days makes the projection jump at midnight.
+		expect(result.projectedCents).toBe(PROJECTED)
 		expect(result.dayOfCycle).toBe(29)
 		expect(result.cycleDays).toBe(31)
 		expect(result.planName).toBe("Startup")
+	})
+
+	it("paces usage carried over from the trial across the trial days too", () => {
+		const day = 86_400_000
+		const paidStart = Date.UTC(2026, 6, 15)
+		const customer = buildCustomer({
+			subscriptions: [
+				{
+					planId: "startup",
+					status: "active",
+					addOn: false,
+					trialEndsAt: paidStart,
+					currentPeriodStart: paidStart,
+					currentPeriodEnd: paidStart + 30 * day,
+				},
+			],
+		})
+		// 14 trial days + 2 paid days metered 320 GB of logs.
+		const result = buildSpendModel({
+			customer,
+			plans: [startupPlan],
+			usage: { logs: { sum: 320 } } as BillingUsage["total"],
+			nowMs: paidStart + 2 * day,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.dayOfCycle).toBe(3)
+		// 320 GB over 16 metered days → 880 GB by cycle end, 780 GB over at $0.30.
+		// Pacing over the 2 paid days alone would have projected 4,800 GB.
+		expect(result.projectedCents).toBe(3_900 + 23_400)
 	})
 
 	it("names the top cost driver by overage dollars, not by volume", () => {
