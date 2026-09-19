@@ -21,7 +21,7 @@ boundary — use `msToDate` / `dateToMs` from `packages/backend/src/platform/tim
 
 ## Connections on Workers
 
-One connection per invocation — request, cron tick, or Workflow run — created lazily on the first
+One connection pool per invocation — request, cron tick, or Workflow run — created lazily on the first
 query and closed at the boundary. This is Cloudflare's documented Hyperdrive shape, and
 `makePgConnectionScope` (`packages/backend/src/platform/pg-connection-scope.ts`) is the only implementation
 of it: `withPgConnectionScope` installs a scope around each worker's request handler and cron tick, and
@@ -88,9 +88,10 @@ bun run --cwd packages/db db:studio
 
 ## Deployment and tests
 
-CI runs `drizzle-kit migrate` against the stage's PlanetScale **direct** port 5432 before the
-Alchemy deployment. Never run migrations through a pooler or Hyperdrive. The deployed Worker
-does not migrate on boot.
+Production migrations are applied by hand, before the Worker deploy: `bun run --cwd packages/db
+ps:migrations-preflight main` (read-only, below), then `bun run migrate:prod`, which runs
+`drizzle-kit migrate` against PlanetScale's **direct** port 5432. Never run migrations through a
+pooler or Hyperdrive. The deployed Worker does not migrate on boot.
 
 The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__drizzle_migrations`
 in place (adds `name` and `applied_at`), matching every existing row to a local folder by

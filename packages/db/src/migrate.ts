@@ -9,8 +9,8 @@ const migrationsFolder = () => resolve(dirname(fileURLToPath(import.meta.url)), 
 
 /**
  * Applies the bundled drizzle migrations to an embedded PGlite instance.
- * Local-dev and test path only — deployed stages run `drizzle-kit migrate`
- * against the real Postgres in CI before `alchemy deploy`.
+ * Local-dev and test path only — production runs `drizzle-kit migrate` by hand
+ * (`bun run migrate:prod`) before the Worker deploy.
  */
 export const runMigrations = async (pglite: PGlite): Promise<void> => {
 	const db = drizzle({ client: pglite })

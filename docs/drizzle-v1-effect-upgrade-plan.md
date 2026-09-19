@@ -225,7 +225,7 @@ Landed on the branch; nothing deployed. What the conversion actually took:
   having already deleted the `.sql` files it converted. Four hand-authored migrations had no
   snapshot (`0029`, `0036`, `0038`, `0045`). The fix was to restore the folder, synthesise the four
   snapshots from their exact neighbours (0029 is data-only so equals 0027; 0036 is 0035 minus
-  `org_spend_limits`; 0039 is data-only so its snapshot is the state after 0038; 0045 is 0046 minus
+  `org_spend_limits`; 0038 takes 0039's snapshot, since 0039 is data-only; 0045 is 0046 minus
   `live_activities` and `mobile_devices.live_activity_start_token`), re-link `prevId` through them,
   and rerun `up`. Every `migration.sql` is byte-identical to the old file, so the migrator's
   hash-based backfill of `drizzle.__drizzle_migrations` will match production rows.

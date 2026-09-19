@@ -1,4 +1,5 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
+import { createHash } from "node:crypto"
 import { cpSync, mkdtempSync, rmSync } from "node:fs"
 import { readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -44,6 +45,89 @@ describe("drizzle migrations", () => {
 			).toBe(true)
 		}
 	})
+
+	/**
+	 * Production's first v1 run: the table is still on the 0.x shape. The upgrade
+	 * must match every row by its second (0.x stored the journal's millis) or, for
+	 * a same-second pair, by hash, and apply nothing. The last rows use the
+	 * preflight's pre-upgrade INSERT, which has no `name` column to fill.
+	 */
+	const legacyTable = async (pg: PGlite) => {
+		await pg.exec(`
+			CREATE SCHEMA drizzle;
+			CREATE TABLE drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint);
+		`)
+		return listBundledMigrations().map((migration) => {
+			const stamp = migration.name.slice(0, 14)
+			return {
+				name: migration.name,
+				hash: createHash("sha256").update(readFileSync(migration.sqlPath)).digest("hex"),
+				millis: Date.UTC(
+					Number(stamp.slice(0, 4)),
+					Number(stamp.slice(4, 6)) - 1,
+					Number(stamp.slice(6, 8)),
+					Number(stamp.slice(8, 10)),
+					Number(stamp.slice(10, 12)),
+					Number(stamp.slice(12, 14)),
+				),
+			}
+		})
+	}
+
+	it("upgrades a 0.x migrations table in place without replaying anything", async () => {
+		const pg = new PGlite()
+		try {
+			const locals = await legacyTable(pg)
+			const preflightRecorded = 3
+			for (const [index, local] of locals.entries()) {
+				const createdAt =
+					index < locals.length - preflightRecorded ? local.millis + 437 : local.millis
+				await pg.query(
+					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+					[local.hash, createdAt],
+				)
+			}
+			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
+			// No schema exists, so replaying any migration would fail on a missing table.
+			await migrate(drizzle({ client: pg }), { migrationsFolder: full })
+
+			const rows = await pg.query<{ name: string | null }>(
+				"SELECT name FROM drizzle.__drizzle_migrations ORDER BY id",
+			)
+			expect(rows.rows.map((row) => row.name)).toEqual(locals.map((local) => local.name))
+			const tables = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public'",
+			)
+			expect(tables.rows[0]?.count).toBe(0)
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
+	it("refuses a 0.x table with a row no folder matches and leaves it untouched", async () => {
+		const pg = new PGlite()
+		try {
+			const locals = await legacyTable(pg)
+			for (const local of locals)
+				await pg.query(
+					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+					[local.hash, local.millis],
+				)
+			await pg.query("INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)", [
+				"0".repeat(64),
+				Date.UTC(2026, 0, 1),
+			])
+			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
+			await expect(migrate(drizzle({ client: pg }), { migrationsFolder: full })).rejects.toThrow()
+
+			const columns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_schema = 'drizzle' AND table_name = '__drizzle_migrations' ORDER BY ordinal_position",
+			)
+			expect(columns.rows.map((row) => row.column_name)).toEqual(["id", "hash", "created_at"])
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
 
 	it("upgrades a database at the incident-hold head to receipts and safely re-runs", async () => {
 		// A database migrated up to `alert_incident_hold` (production's head before

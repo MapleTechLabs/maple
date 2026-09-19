@@ -174,15 +174,20 @@ export const makePgConnectionScope = (
 		Effect.suspend(() => {
 			if (state._tag === "Open") return Effect.succeed(state.db)
 			if (state._tag === "Closed") return Effect.fail(closedFailure())
-			return Effect.gen(function* () {
-				const scope = yield* Scope.make()
-				const db = yield* makeMapleEffectDb(acquirePool).pipe(
-					Scope.provide(scope),
-					Effect.mapError(toDatabaseError),
-				)
-				state = { _tag: "Open", scope, db }
-				return db
-			})
+			// Uninterruptible (nothing here dials) and closed on failure, so the
+			// scope either becomes `Open` or is released; never orphaned while Cold.
+			return Effect.uninterruptible(
+				Effect.gen(function* () {
+					const scope = yield* Scope.make()
+					const db = yield* makeMapleEffectDb(acquirePool).pipe(
+						Scope.provide(scope),
+						Effect.mapError(toDatabaseError),
+						Effect.onError(() => Scope.close(scope, Exit.void)),
+					)
+					state = { _tag: "Open", scope, db }
+					return db
+				}),
+			)
 		}),
 	)
 

@@ -118,9 +118,10 @@ const absorbDriverErrors = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effec
 			(error): error is Extract<E, MapleDbError> => isMapleDbError(error),
 			(error) => Effect.fail(toDatabaseError(error)),
 		),
-		// Only a driver defect is caught; any other defect keeps its original Cause.
+		// Only a driver defect is caught; any other defect keeps its original Cause,
+		// and an interrupted call whose ROLLBACK died stays interrupted.
 		Effect.catchCauseIf(
-			(cause) => driverDefect(cause) !== undefined,
+			(cause) => !Cause.hasInterrupts(cause) && driverDefect(cause) !== undefined,
 			(cause) => Effect.fail(toDatabaseError(driverDefect(cause))),
 		),
 	)

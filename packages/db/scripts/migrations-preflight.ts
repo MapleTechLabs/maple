@@ -78,7 +78,9 @@ interface HistoricalBlob {
  */
 const historicalBlobs = (): Map<string, HistoricalBlob> => {
 	const blobs = new Map<string, { oid: string; names: Set<string> }>()
-	const listing = spawnSync("git", ["rev-list", "--all", "--objects", "--", "drizzle"], {
+	// `cwd` pins the pathspec to this folder whichever directory the script runs from.
+	const listing = spawnSync("git", ["rev-list", "--all", "--objects", "--", "."], {
+		cwd: migrationsFolder,
 		encoding: "utf8",
 	})
 	if (listing.status !== 0) return blobs
@@ -88,7 +90,7 @@ const historicalBlobs = (): Map<string, HistoricalBlob> => {
 		if (!oid || !path?.endsWith(".sql")) continue
 		let digest = digests.get(oid)
 		if (digest === undefined) {
-			const blob = spawnSync("git", ["cat-file", "blob", oid])
+			const blob = spawnSync("git", ["cat-file", "blob", oid], { cwd: migrationsFolder })
 			if (blob.status !== 0) continue
 			digest = createHash("sha256").update(blob.stdout).digest("hex")
 			digests.set(oid, digest)
@@ -106,8 +108,11 @@ const historicalBlobs = (): Map<string, HistoricalBlob> => {
  * applied those newer than the newest recorded timestamp. A migration whose
  * DDL reached the schema without a row used to be skipped and now fails on the
  * objects that already exist, so say exactly what will run.
+ *
+ * `hasNameColumn` picks the INSERT: before the upgrade the table has no `name`,
+ * and a row on the folder's second is matched to it by the upgrade itself.
  */
-const reportPending = (recordedNames: ReadonlySet<string>): void => {
+const reportPending = (recordedNames: ReadonlySet<string>, hasNameColumn: boolean): void => {
 	const pending = locals.filter((local) => !recordedNames.has(local.name))
 	console.log(`\n${pending.length} local migration(s) have no row and WILL be applied by the v1 migrator:`)
 	for (const local of pending) {
@@ -117,9 +122,11 @@ const reportPending = (recordedNames: ReadonlySet<string>): void => {
 		console.log(`  ${local.name}\n    ${first?.slice(0, 110) ?? "(no DDL statement)"}`)
 	}
 	if (pending.length > 0) {
+		const insert = hasNameColumn
+			? "INSERT INTO drizzle.__drizzle_migrations (hash, created_at, name) VALUES ('<hash>', <created_at>, '<name>');"
+			: "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ('<hash>', <created_at>);"
 		console.log(
-			"  If one of these already reached the schema without a row, record it instead of replaying it:\n" +
-				"  INSERT INTO drizzle.__drizzle_migrations (hash, created_at, name) VALUES ('<hash>', <created_at>, '<name>');",
+			`  If one of these already reached the schema without a row, record it instead of replaying it:\n  ${insert}`,
 		)
 		for (const local of pending)
 			console.log(`    ${local.name}: hash ${local.hash} created_at ${local.millis}`)
@@ -127,19 +134,21 @@ const reportPending = (recordedNames: ReadonlySet<string>): void => {
 }
 
 const sql = postgres(url, { max: 1, fetch_types: false })
-try {
+
+/** The exit code; returned rather than `process.exit`ed so the connection is closed first. */
+const preflight = async (): Promise<number> => {
 	const columns = await sql<{ column_name: string }[]>`
 		select column_name from information_schema.columns
 		where table_schema = 'drizzle' and table_name = '__drizzle_migrations' order by ordinal_position`
 	if (columns.length === 0) {
 		console.log("No drizzle.__drizzle_migrations table: a fresh database, nothing to upgrade.")
-		process.exit(0)
+		return 0
 	}
 	if (columns.some((c) => c.column_name === "name")) {
 		console.log("Migrations table is already on the v1 layout (has `name`); the upgrade will not run.")
 		const named = await sql<{ name: string | null }[]>`select name from drizzle.__drizzle_migrations`
-		reportPending(new Set(named.flatMap((row) => (row.name === null ? [] : [row.name]))))
-		process.exit(0)
+		reportPending(new Set(named.flatMap((row) => (row.name === null ? [] : [row.name]))), true)
+		return 0
 	}
 	const rows = await sql<{ id: number; created_at: string; hash: string }[]>`
 		select id, created_at, hash from drizzle.__drizzle_migrations order by id asc`
@@ -163,9 +172,9 @@ try {
 		`${rows.length} rows, ${matchedNames.size} match a local migration, ${orphans.length} would make the migrator refuse.`,
 	)
 
-	reportPending(matchedNames)
+	reportPending(matchedNames, false)
 
-	if (orphans.length === 0) process.exit(0)
+	if (orphans.length === 0) return 0
 
 	const history = historicalBlobs()
 	const recorded = new Set(rows.map((r) => Math.floor(Number(r.created_at) / 1000) * 1000))
@@ -218,7 +227,8 @@ try {
 			)
 		}
 	}
-	process.exit(1)
-} finally {
-	await sql.end()
+	return 1
 }
+
+const code = await preflight().finally(() => sql.end())
+process.exit(code)
