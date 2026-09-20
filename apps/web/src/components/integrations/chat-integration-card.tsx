@@ -282,8 +282,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 							</span>
 						</div>
 						<p className="text-xs text-muted-foreground">
-							The Maple bot answers anyone in this workspace on your organization&apos;s behalf.
-							Changes it proposes are approved in {manifest.name}.
+							Linked to your organization, for everyone in this workspace — no {manifest.name}{" "}
+							account is tied to an individual Maple user.
 						</p>
 						<div className="text-[11px] text-muted-foreground">
 							Connected {formatRelativeTime(workspace.created_at)}
@@ -329,7 +329,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					<AlertDialogHeader>
 						<AlertDialogTitle>Disconnect workspace</AlertDialogTitle>
 						<AlertDialogDescription>
-							The Maple bot stops answering in this workspace immediately. Removing the bot from
+							This workspace is unlinked from your organization immediately. Removing the bot from
 							the workspace itself is done in {manifest.name}.
 						</AlertDialogDescription>
 					</AlertDialogHeader>

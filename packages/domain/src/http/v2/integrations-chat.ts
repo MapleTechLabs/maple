@@ -71,7 +71,7 @@ export const V2ChatWorkspace = Schema.Struct({
 	identifier: "ChatWorkspace",
 	title: "Chat workspace",
 	description:
-		"A chat workspace linked to your organization. The Maple bot answers any member of the workspace on your organization's behalf — there is no per-user link — and the writes it proposes are approved inside the chat platform.",
+		"A chat workspace linked to your organization. The link is organization-level: it covers every member of the workspace, and no chat account is linked to an individual Maple user.",
 	examples: [wireExample(chatWorkspaceExample)],
 })
 export type V2ChatWorkspace = Schema.Schema.Type<typeof V2ChatWorkspace>
@@ -256,7 +256,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				identifier: "deleteChatWorkspace",
 				summary: "Unlink a chat workspace",
 				description:
-					"Unlinks a chat workspace: the bot stops answering in it immediately. Removing the bot from the workspace itself is done on the chat platform. Requires an org-admin role and the `integrations:write` scope.",
+					"Unlinks a chat workspace from your organization. Removing the bot from the workspace itself is done on the chat platform. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -266,6 +266,6 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 		OpenApi.annotations({
 			title: "Chat Integrations",
 			description:
-				"Link chat workspaces to your organization. The Maple bot answers questions from any member of a linked workspace and asks for approval there before it writes anything.",
+				"Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist.",
 		}),
 	) {}

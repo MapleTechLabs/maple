@@ -7701,7 +7701,7 @@
       "name": "Slack Integration"
     },
     {
-      "description": "Link chat workspaces to your organization. The Maple bot answers questions from any member of a linked workspace and asks for approval there before it writes anything.",
+      "description": "Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist.",
       "name": "Chat Integrations"
     },
     {

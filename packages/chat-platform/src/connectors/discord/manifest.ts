@@ -11,7 +11,7 @@ export const discordManifest: ChatConnectorManifest = {
 	id: Schema.decodeSync(ChatConnectorId)("discord"),
 	name: "Discord",
 	description:
-		"Add the Maple bot to a Discord server — ask Maple questions in a channel, and approve the changes it proposes.",
+		"Add the Maple bot to a Discord server and link that server to your Maple organization.",
 	icon: {
 		viewBox: "0 0 24 24",
 		paths: [
