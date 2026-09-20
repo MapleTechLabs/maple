@@ -469,8 +469,9 @@ export class ChatSession {
 	/**
 	 * Replay the whole log into a transcript.
 	 *
-	 * The fold itself is `@maple/domain/chat-transcript`, so a consumer tailing the live event
-	 * stream derives the same messages this returns.
+	 * The fold itself is `@maple/domain/chat-transcript`, so a consumer tailing `subscribe` builds
+	 * the same messages out of the same events. Only `createdAt` differs: the row's stored time
+	 * here, receive time for a tail, because a `ChatEvent` carries no timestamp of its own.
 	 */
 	history(): ReadonlyArray<ChatMessage> {
 		const transcript = makeChatTranscript()

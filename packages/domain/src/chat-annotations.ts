@@ -6,8 +6,10 @@
  * back out before rendering the rest as markdown. The contract lives here so those renderings
  * cannot disagree about what counts as a card.
  *
- * The payloads are model output, not tool output, so every field is validated before it reaches a
- * card — a hallucinated payload renders as text rather than crashing the transcript.
+ * The payloads are model output, not tool output, so each one is structurally checked before it
+ * reaches a card — a payload missing a field, or with the wrong type in one, renders as text
+ * rather than crashing the transcript. The *values* are still whatever the model wrote: a trace
+ * id that decodes here may well name no trace.
  */
 import { Option, Schema } from "effect"
 
@@ -127,6 +129,10 @@ function decodeSegment(type: string, raw: string): AnnotationSegment | null {
 	}
 }
 
+/**
+ * Split a reply into prose and cards. Safe on a partial reply: a card whose payload has not
+ * finished streaming is held back as nothing at all, and the next token re-parses from scratch.
+ */
 export function parseAnnotations(text: string): AnnotationSegment[] {
 	const segments: AnnotationSegment[] = []
 	let lastIndex = 0

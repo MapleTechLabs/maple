@@ -5,10 +5,16 @@
  * identically wherever it is read. Text deltas concatenate; tool calls attach to the assistant
  * message that issued them and are completed in place by their result.
  *
- * The fold lives here rather than in the `ChatSession` Durable Object because two things need it
- * and must not disagree: the object's `history()` replays the stored log through it on a cold
- * load, and a consumer tailing the live event stream — a chat-platform bot — folds the same
- * events into the same messages without waiting for a history read.
+ * The fold lives here rather than in the `ChatSession` Durable Object because more than one
+ * reader needs it and they must not disagree: the object's `history()` replays the stored log
+ * through it on a cold load, and a consumer tailing the live event stream folds the same events
+ * into the same messages without waiting for a history read. (Web is a third reader of the same
+ * events, but it folds into its own `UIMessage` — per-part streaming state, prose re-interleaved
+ * at each call's `textOffset` — which is a different function, not this one.)
+ *
+ * The one thing a live fold cannot reproduce exactly is `createdAt`: a `ChatEvent` carries no
+ * timestamp, so the value is whatever the caller passes. `history()` passes the row's stored
+ * `created_at`; a tail can only pass receive time. Message *content* is identical either way.
  */
 import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState, ChatToolCall } from "./chat-session"
 
@@ -19,19 +25,40 @@ import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState, ChatToolCall }
  * whole log per arriving event is quadratic in a turn that streams hundreds of deltas.
  */
 export interface ChatTranscript {
-	/** Fold one event. Events must arrive in `seq` order; `createdAt` is epoch ms. */
+	/**
+	 * Fold one event, in `seq` order, with `createdAt` in epoch ms.
+	 *
+	 * Start from seq 0 or not at all. Joining mid-conversation is not a partial transcript but a
+	 * subtly wrong one: a sub-agent's events are dropped deny-by-default when the `task` tool call
+	 * that owns them arrived before the cursor.
+	 */
 	readonly add: (event: ChatEvent, createdAt: number) => void
 	/** The transcript so far — the live array the fold appends to, not a copy. */
 	readonly messages: ReadonlyArray<ChatMessage>
+	/** The seq folded so far, which is also the cursor to resume a dropped stream from. */
+	readonly seq: number
 }
 
+/** An empty transcript, ready to be fed a log replay or a live tail. */
 export const makeChatTranscript = (): ChatTranscript => {
 	const top = makeDrafts()
 	/** Nested transcripts by task call id, owned by this transcript. */
 	const nested = new Map<string, Drafts>()
+	let seq = 0
 	return {
 		messages: top.messages,
+		get seq() {
+			return seq
+		},
 		add: (event, createdAt) => {
+			// The fold is not idempotent — a re-applied delta doubles its text, a re-applied
+			// `user-message` pushes the message twice — and a reconnect is *expected* to replay:
+			// `subscribe(cursor)` resends from the cursor, and the cursor a reader held may predate
+			// events it already folded. Dropping what this transcript has seen is what makes
+			// "resume from here" and "do not re-apply this" the same number.
+			if (event.seq <= seq) return
+			seq = event.seq
+
 			// A task-tagged event belongs to a sub-agent's transcript, which hangs off the parent's
 			// `task` tool call — not to the top-level conversation. Routing it here is what keeps a
 			// fan-out of sub-agents from appearing as a dozen stray assistant messages, in the
@@ -151,13 +178,21 @@ const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => 
 	}
 }
 
-/** Terminal reason → the status the UI shows on the sub-agent's card. */
-const TASK_STATUS: Record<string, ChatTaskState["status"]> = {
+/**
+ * Terminal reason → the status the UI shows on the sub-agent's card.
+ *
+ * Checked against the reason union rather than against `string`, so a reason added to `ChatEvent`
+ * is a compile error here. Open-keyed with a `?? "completed"` default, it would instead have
+ * shown the new terminal state as a success.
+ */
+const TASK_STATUS = {
 	stop: "completed",
 	error: "error",
 	aborted: "aborted",
 	"max-steps": "aborted",
-} satisfies Record<string, ChatTaskState["status"]>
+} satisfies { readonly [R in TurnEndReason]: ChatTaskState["status"] }
+
+type TurnEndReason = Extract<ChatEvent, { type: "turn-end" }>["reason"]
 
 /**
  * Route one sub-agent event into the transcript hanging off its parent's `task` tool call.
@@ -190,7 +225,7 @@ const foldTaskEvent = (
 		task: {
 			id: ref.id,
 			agent: ref.agent,
-			status: event.type === "turn-end" ? (TASK_STATUS[event.reason] ?? "completed") : "running",
+			status: event.type === "turn-end" ? TASK_STATUS[event.reason] : "running",
 			// The nested drafts are structurally `ChatSubMessage` already — a sub-agent cannot nest
 			// further, so no `task` field is ever present on them.
 			messages: child.messages,
