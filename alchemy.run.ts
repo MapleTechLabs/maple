@@ -41,6 +41,7 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
+import ChatBotLive, { ChatBot } from "./apps/chat-bot/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
@@ -298,6 +299,15 @@ export default Alchemy.Stack(
 		const alerting = yield* Alerting
 		yield* serveWorker("alerting", alerting)
 
+		// Chat-platform ingress: the connector registry's sockets and the generic
+		// webhook route, plus the `ConnectorSocket` Durable Object that holds one
+		// connection per socket connector. Like maple-ai, the Worker hosts a class,
+		// so its Live layer is what registers that class in the deployed bundle.
+		// It is inert on a stage with no connector credentials.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
+		yield* serveWorker("chat-bot", chatBot)
+
 		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each
 		// handed its route's port. (A Worker binds its port in `precreate`, before
 		// Outputs resolve, so a Worker's route follows the Worker instead.)
@@ -361,6 +371,7 @@ export default Alchemy.Stack(
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
+			chatBotWorker: chatBot.workerName,
 		}
 		// The stack IS the entry point: the one place `MapleStack` is provided.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
