@@ -865,7 +865,9 @@
 .logo-cell {
 	display: inline-flex;
 	align-items: center;
-	gap: 14px;
+	/* 16px = half the 32px mark height: the clear space Effect's brand
+	   guidelines require around their logomark, applied to every cell. */
+	gap: 16px;
 	padding: 0 clamp(30px, 4.5vw, 60px);
 	white-space: nowrap;
 	color: var(--muted-foreground);

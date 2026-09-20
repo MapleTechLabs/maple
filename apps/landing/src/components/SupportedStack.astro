@@ -18,7 +18,7 @@
 import type { AstroComponentFactory } from "astro/runtime/server/index.js";
 import * as m from "../paraglide/messages.js";
 import { BRAND_MARKS, brandMark, markColor, type BrandMarkId } from "../lib/brand-marks";
-import EffectLogo from "./icons/EffectLogo.astro";
+import EffectLogomark from "./icons/EffectLogomark.astro";
 import NodeJsLogo from "./icons/NodeJsLogo.astro";
 import NextjsLogo from "./icons/NextjsLogo.astro";
 import PythonLogo from "./icons/PythonLogo.astro";
@@ -41,7 +41,7 @@ const groups: { title: string; body: string; link: string; href: string; chips: 
 		link: m.stack_apm_link(),
 		href: "/docs/instrumentation",
 		chips: [
-			{ name: "Effect", Icon: EffectLogo },
+			{ name: "Effect", Icon: EffectLogomark },
 			{ name: "Node.js", Icon: NodeJsLogo },
 			{ name: "Next.js", Icon: NextjsLogo },
 			{ name: "Python", Icon: PythonLogo },
