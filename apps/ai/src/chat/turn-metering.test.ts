@@ -11,7 +11,7 @@
  * of the three, never two. The source it picks must be the surface the turn actually ran on, which
  * is why the bot cases go through the same `agentForTurn` the toolkit does.
  */
-import { botSessionId, CHAT_BOT_USER_ID } from "@maple/domain/chat-session"
+import { botSessionId, CHAT_BOT_USER_ID, ChatConnectorId } from "@maple/domain/chat-session"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
@@ -141,11 +141,11 @@ describe("meterTurn", () => {
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${ORG}:default:msg-1:chat:output`])
 	})
 
-	it("charges a chat-platform bot session as `bot`", async () => {
+	it("charges a bot session as `bot`", async () => {
 		// Same features and the same org; the source is what separates the bot's spend from the
 		// in-app chat it shares this runner with. Built rather than spelled, so the tab format
 		// lives in one place.
-		const session = botSessionId(orgId, "discord", "994")
+		const session = botSessionId(orgId, Schema.decodeSync(ChatConnectorId)("testchat"), "994")
 		await meter(session, "msg-1", 1000, 100)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])

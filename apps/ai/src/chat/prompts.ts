@@ -27,7 +27,7 @@ directive.`
  * {@link APPROVAL_NOTE} for a surface with no Maple UI in front of it.
  *
  * Same gate, same prohibition on imitating it; only where the approval is rendered differs — the
- * platform adapter posts the proposal under the bot's own message, for the channel to act on.
+ * platform connector posts the proposal under the bot's own message, for the channel to act on.
  */
 const BOT_APPROVAL_NOTE = `## Mutating actions are approved before they take effect
 Tools that create, update, delete, or transition state (dashboards, alert rules,
@@ -148,9 +148,9 @@ ${APPROVAL_NOTE}
 /**
  * The chat-platform bot: the same engine and the same tools, answering in someone else's client.
  *
- * Platform-neutral on purpose — Discord and Slack are transports, and each adapter renders the
- * chart fences, entity annotations and approvals its own way, so the model must not write for
- * either one. One section of {@link SYSTEM_PROMPT} is gone rather than adapted: the 420px panel,
+ * Platform-neutral on purpose — a chat platform is a transport, and each connector renders the
+ * chart fences, entity annotations and approvals its own way, so the model must not write for one
+ * of them. One section of {@link SYSTEM_PROMPT} is gone rather than adapted: the 420px panel,
  * which does not exist here. The approval note is adapted instead, to {@link BOT_APPROVAL_NOTE}.
  */
 export const BOT_SYSTEM_PROMPT = `You are Maple AI, an observability debugging assistant. You answer in a team's chat platform, where they watch their services through the traces, logs, metrics and errors they send over OpenTelemetry.

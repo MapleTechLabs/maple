@@ -66,22 +66,33 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 }
 
 /**
- * The chat platforms a bot session can belong to.
+ * Which chat connector a bot session arrived through.
  *
- * Closed, and closed on names with no `-` in them, because the platform sits between two dashes in
- * a tab id that is parsed by prefix: an open string would let one platform's thread id spell
- * another's session and land two conversations in the same Durable Object.
+ * Opaque here on purpose: the engine runs one bot, and every difference between one chat platform
+ * and the next belongs to that platform's connector, never to a literal the core would have to be
+ * reopened to extend. This is the only thing the core needs to know about a connector — that its
+ * sessions are its own.
+ *
+ * Lowercase alphanumeric, no `-`, because the id sits between two dashes in a tab id that is parsed
+ * by prefix: a dash in the id would let one connector's thread id spell another's session and land
+ * two conversations in the same Durable Object.
  */
-export const ChatBotPlatform = Schema.Literals(["discord", "slack"])
-export type ChatBotPlatform = Schema.Schema.Type<typeof ChatBotPlatform>
+export const ChatConnectorId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isPattern(/^[a-z][a-z0-9]*$/),
+).pipe(
+	Schema.brand("@maple/ChatConnectorId"),
+	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
+)
+export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>
 
 /**
- * The session a chat-platform bot thread's conversation lives in.
+ * The session a bot thread's conversation lives in.
  *
  * One session per thread, so the transcript the bot replays is the thread it is answering in.
  */
-export const botSessionId = (orgId: OrgId, platform: ChatBotPlatform, threadId: string): ChatSessionId =>
-	makeChatSessionId(orgId, `bot-${platform}-${threadId}`)
+export const botSessionId = (orgId: OrgId, connectorId: ChatConnectorId, threadId: string): ChatSessionId =>
+	makeChatSessionId(orgId, `bot-${connectorId}-${threadId}`)
 
 // Durable transcript
 

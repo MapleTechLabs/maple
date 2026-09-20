@@ -5,6 +5,7 @@ import {
 	botSessionId,
 	botTurnTenant,
 	CHAT_BOT_USER_ID,
+	ChatConnectorId,
 	ChatTurnTenant,
 	chatModeFromSessionId,
 	decodeChatTurnTenant,
@@ -25,6 +26,8 @@ import {
 } from "./chat-session"
 
 const orgId = Schema.decodeSync(OrgId)
+/** A connector id, not a real one: the domain never learns which chat platform it answers in. */
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
 
 describe("chat session ids", () => {
 	it("round-trips org and tab", () => {
@@ -51,16 +54,27 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
 		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
-		expect(chatModeFromSessionId("o:bot-discord-994")).toBe("bot")
+		expect(chatModeFromSessionId("o:bot-testchat-994")).toBe("bot")
 	})
 
 	it("builds a bot thread's session id in bot mode", () => {
 		// The prefix is what puts a turn on the bot agent when the actor does not, so the builder
 		// and `chatModeFromSessionId` have to agree.
-		const id = botSessionId(orgId("org_abc"), "discord", "994")
-		expect(id).toBe("org_abc:bot-discord-994")
+		const id = botSessionId(orgId("org_abc"), connectorId, "994")
+		expect(id).toBe("org_abc:bot-testchat-994")
 		expect(chatModeFromSessionId(id)).toBe("bot")
 		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
+	})
+
+	it("refuses a connector id that would blur the tab encoding", () => {
+		// The id sits between two dashes in `bot-<connector>-<thread>`, which is parsed by prefix, so
+		// a dash inside it would let one connector's thread id spell another's session — and land two
+		// conversations in the same Durable Object.
+		const decode = Schema.decodeUnknownSync(ChatConnectorId)
+		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", ""]) {
+			expect(() => decode(bad), bad).toThrow()
+		}
+		expect(decode("testchat2")).toBe("testchat2")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {

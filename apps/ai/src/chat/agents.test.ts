@@ -2,7 +2,13 @@
  * The agent registry's invariants: a mode with no agent is a runtime `undefined` in the middle of
  * a turn, which is cheap to assert here and expensive to debug live.
  */
-import { botSessionId, CHAT_BOT_USER_ID, ChatMode, makeChatSessionId } from "@maple/domain/chat-session"
+import {
+	botSessionId,
+	CHAT_BOT_USER_ID,
+	ChatConnectorId,
+	ChatMode,
+	makeChatSessionId,
+} from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
@@ -15,6 +21,9 @@ import { AGENTS, agentForSession, agentForTurn, buildSystemPrompt } from "./agen
 import { CHAT_BUDGET } from "./budgets"
 import { turnToolPolicy } from "./run"
 import { buildChatToolkit } from "./tools"
+
+/** A connector id, not a real one: the engine never learns which chat platform it answers in. */
+const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
 
 describe("AGENTS", () => {
 	it("names an agent for every wire mode", () => {
@@ -34,7 +43,7 @@ describe("agentForSession", () => {
 		assert.equal(agentForSession(makeChatSessionId("org_1", "alert-123")).name, "alert")
 		assert.equal(agentForSession(makeChatSessionId("org_1", "inv-abc")).name, "investigate")
 		assert.equal(
-			agentForSession(botSessionId(Schema.decodeSync(OrgId)("org_1"), "discord", "994")).name,
+			agentForSession(botSessionId(Schema.decodeSync(OrgId)("org_1"), CONNECTOR, "994")).name,
 			"bot",
 		)
 	})
@@ -42,13 +51,13 @@ describe("agentForSession", () => {
 
 /**
  * The bot answers in a channel anyone can post in, under an org-level actor. It proposes mutations
- * exactly as in-app chat does — the approval is rendered by the platform adapter instead of the
+ * exactly as in-app chat does — the approval is rendered by the platform connector instead of the
  * Maple UI — but it runs on a surface that is not internal, so the agents-only tools never enter
  * its catalog at all. The tests below are that boundary in both directions.
  */
 describe("the bot agent", () => {
 	const orgId = Schema.decodeSync(OrgId)("org_test")
-	const botSession = botSessionId(orgId, "discord", "994")
+	const botSession = botSessionId(orgId, CONNECTOR, "994")
 	const tenant = (userId: string): TenantContext => ({
 		orgId,
 		userId: Schema.decodeSync(UserId)(userId),
@@ -73,7 +82,7 @@ describe("the bot agent", () => {
 
 	it("is offered every mutating tool, and proposes rather than performs each one", () => {
 		// `ask` is the whole of a proposal — it is what `run.ts`'s `isProposed` reads, and what makes
-		// the dispatched call refuse. The tool is still offered with its real schema, so the adapter
+		// the dispatched call refuse. The tool is still offered with its real schema, so the connector
 		// has the arguments to render for approval.
 		const { policy, tools } = toolsFor(botSession, CHAT_BOT_USER_ID)
 		for (const name of MUTATING_TOOL_NAMES) {
@@ -121,11 +130,17 @@ describe("the bot agent", () => {
 	})
 })
 
-/** The bot prompt's own invariants. */
+/**
+ * The bot prompt's own invariants.
+ *
+ * That it names no chat platform is not asserted here, because the assertion would have to name
+ * them: nothing in this package or the domain knows one exists, so a vendor name in the prompt
+ * would have to be typed in by hand against the grain of everything around it.
+ */
 describe("BOT_SYSTEM_PROMPT", () => {
 	it("teaches the approval step, and the prohibition on imitating one in prose", () => {
 		// The model's mutations are gated, so it has to be told — and told not to render the gate
-		// itself, which the adapter does. The prohibition quotes "[Approve]" on purpose.
+		// itself, which the connector does. The prohibition quotes "[Approve]" on purpose.
 		assert.include(AGENTS.bot.prompt, "approved before they take effect")
 		assert.include(AGENTS.bot.prompt, 'NEVER emit "[Approve]"')
 	})
@@ -136,13 +151,7 @@ describe("BOT_SYSTEM_PROMPT", () => {
 		assert.notInclude(AGENTS.bot.prompt, "Maple app")
 	})
 
-	it("names no chat platform, because the adapters differ and the model must not write for one", () => {
-		for (const platform of ["Discord", "Slack", "discord", "slack"]) {
-			assert.notInclude(AGENTS.bot.prompt, platform)
-		}
-	})
-
-	it("keeps the renderings the chat adapters depend on", () => {
+	it("keeps the renderings the chat connectors depend on", () => {
 		assert.include(AGENTS.bot.prompt, "```chart")
 		assert.include(AGENTS.bot.prompt, "<<maple:trace:")
 	})

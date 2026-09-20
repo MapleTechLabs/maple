@@ -102,7 +102,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		description: "Answers in a chat platform's channels.",
 		prompt: BOT_SYSTEM_PROMPT,
 		// The same propose-then-apply model as in-app chat: reads run, mutations are proposed and
-		// wait. The platform adapter renders the proposal for the channel to approve or reject.
+		// wait. The platform connector renders the proposal for the channel to approve or reject.
 		permission: DEFAULT_RULESET,
 		// What the bot does *not* get is the internal audience: `bot` is not an internal surface, so
 		// the agents-only tools — the repository sandbox above all — are never in its catalog. A
